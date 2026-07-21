@@ -85,10 +85,10 @@ def test_format_tokens_missing_metrics_file(tmp_path):
 
 
 def test_format_tokens_missing_tokens_block(tmp_path):
-    """metrics.json exists but no 'tokens' key (gemini provider) → fallback."""
+    """metrics.json exists but no 'tokens' key (agy provider) → fallback."""
     session = make_session(tmp_path)
     session.metrics_path.write_text(
-        json.dumps({"exit_code": 0, "role": "primary", "provider": "gemini"})
+        json.dumps({"exit_code": 0, "role": "primary", "provider": "agy"})
     )
 
     assert _format_tokens(session) == "🪙 Tokens: n/a"

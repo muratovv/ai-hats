@@ -193,13 +193,13 @@ def _finalize_sub_agent(
     session_dir is always consistently closed: transcript.txt + reasoning.log
     written if we have any output, metrics.json written with exit_code and
     optional timed_out/error/tags/duration_s fields. Provider-agnostic —
-    behaves identically for claude and gemini.
+    behaves identically for claude and agy.
 
     ``extra_metrics`` (HATS-474): provider-specific keys to merge into
     the metrics dict — e.g. ``claude_session_id``, ``total_cost_usd``,
     ``num_turns``, ``stop_reason`` from the Claude Agent SDK path.
     ``None`` values inside are skipped so legacy subprocess callers
-    (Gemini) that have no such telemetry keep producing the same
+    (Agy) that have no such telemetry keep producing the same
     metrics.json shape they always did.
 
     ``work_dir`` (HATS-535): cwd the SDK ran under — encoded as
@@ -251,7 +251,7 @@ def _finalize_sub_agent(
     # HATS-535: opt-in structured audit.md via finalize-subagent
     # sub-pipeline. Requires both work_dir (for JSONL project_key
     # encoding) and a claude_session_id (no claude jsonl without it —
-    # e.g. Gemini provider has neither).
+    # e.g. Agy provider has neither).
     claude_session_id = None
     if extra_metrics:
         claude_session_id = extra_metrics.get("claude_session_id")

@@ -88,10 +88,10 @@ def test_init_preserves_concurrent_customization(project: Path) -> None:
     asm = Assembler(project)
     _write_marker(asm.config_path)
 
-    asm.init(provider="gemini")
+    asm.init(provider="agy")
 
     on_disk = ProjectConfig.from_yaml(asm.config_path)
-    assert on_disk.provider == "gemini"
+    assert on_disk.provider == "agy"
     _assert_marker_alive(asm.config_path)
 
 

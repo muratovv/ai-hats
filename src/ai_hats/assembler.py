@@ -62,7 +62,7 @@ from .constants import (
     CANONICAL_MANIFEST,
     GITIGNORE_FILE,
     USER_RULES_SUBDIR,
-    PROVIDER_GEMINI,
+    PROVIDER_AGY,
 )
 
 from typing import TYPE_CHECKING, Any
@@ -231,7 +231,7 @@ class Assembler:
     def _ensure_scaffold(self, provider: Provider) -> None:
         """Write the provider's prompt-file scaffold from a library template.
 
-        - No-op if the provider declares no scaffold (e.g. Gemini).
+        - No-op if the provider declares no scaffold (e.g. Agy).
         - No-op if the prompt file already exists (user owns).
         - Soft no-op if the template asset is missing from library paths.
         """
@@ -269,7 +269,7 @@ class Assembler:
            that the canonical aggregator now replaces — keeps `skills/`
            since that one is auto-discovered by Claude Code.
 
-        Provider must declare a scaffold template (Gemini is a no-op via
+        Provider must declare a scaffold template (Agy is a no-op via
         that contract).
         """
         rel = provider.scaffold_template_relpath()
@@ -494,9 +494,9 @@ class Assembler:
         if early_delta:
             # Provider must be set before the very first save (yaml is
             # rejected without it). Pick the requested value, fall back
-            # to whatever's already on the config, finally gemini.
+            # to whatever's already on the config, finally agy.
             if not self.config_path.exists() and not self.project_config.provider:
-                early_delta["provider"] = provider or PROVIDER_GEMINI
+                early_delta["provider"] = provider or PROVIDER_AGY
             self.save_config(**early_delta)
 
         # HATS-312 / HATS-313 / HATS-314: all framework roots live under
@@ -519,7 +519,7 @@ class Assembler:
         # Create/update ai-hats.yaml (delta-write, HATS-526)
         delta: dict[str, Any] = {}
         if greenfield:
-            delta["provider"] = provider or PROVIDER_GEMINI
+            delta["provider"] = provider or PROVIDER_AGY
             if role:
                 delta["default_role"] = role
             # HATS-471: greenfield projects start at the latest migration
@@ -799,14 +799,14 @@ class Assembler:
 
         HATS-469: delegated to :meth:`_refresh` (install_time=False — runtime
         bootstrap does not re-run migrations; init/bump already did). The
-        Gemini inline-prompt path and ``active_role``/``provider`` persist
+        Agy inline-prompt path and ``active_role``/``provider`` persist
         stay here as set_role-only concerns.
 
         HATS-407: backup/clean/copy_components/verify side-effects were
         removed; per-session compose (HATS-294) means framework content is
-        never materialized into the canonical tree. The Gemini inline-prompt
+        never materialized into the canonical tree. The Agy inline-prompt
         path is retained as a known asymmetry (no scaffold-template
-        equivalent for bare-gemini in project_dir).
+        equivalent for bare-agy in project_dir).
 
         Fails loudly on unknown role/provider: the project must not end up
         in a half-applied state where active_role is saved but composition
@@ -819,7 +819,7 @@ class Assembler:
 
         provider = get_provider(provider_name or self.project_config.provider)
         # HATS-456: single derivation point — used for hooks install
-        # AND build_system_prompt for Gemini scaffold-less branch (below).
+        # AND build_system_prompt for Agy scaffold-less branch (below).
         result = compose_for_role(self, role_name)
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
@@ -842,11 +842,11 @@ class Assembler:
         # (HATS-469 R3).
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 
-        # Provider inline system prompt — Gemini-only path.
+        # Provider inline system prompt — Agy-only path.
         # Claude declares a scaffold template (HATS-284); ./CLAUDE.md is
-        # owned by the scaffold + canonical aggregator. Gemini has no
-        # scaffold mechanism, so bare-gemini in project_dir relies on
-        # ./GEMINI.md inline-block injection. Documented asymmetry with
+        # owned by the scaffold + canonical aggregator. Agy has no
+        # scaffold mechanism, so bare-agy in project_dir relies on
+        # ./AGY.md inline-block injection. Documented asymmetry with
         # Claude Fork B (HATS-294); separate cleanup task tracks
         # symmetric drop later.
         if provider.scaffold_template_relpath() is None:
@@ -1186,7 +1186,7 @@ class Assembler:
         verifiable here:
 
         - ``<ai_hats_dir>/imports.md`` — canonical user-rules aggregator.
-        - Provider system prompt (``./CLAUDE.md`` / ``./GEMINI.md``).
+        - Provider system prompt (``./CLAUDE.md`` / ``./AGY.md``).
         """
         del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}

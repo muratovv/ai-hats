@@ -31,12 +31,12 @@ def test_detect_lists_claude_when_dotclaude_exists(tmp_path, monkeypatch):
     assert _detected_providers() == ["claude"]
 
 
-def test_detect_lists_gemini_when_only_dotgemini_exists(tmp_path, monkeypatch):
+def test_detect_lists_agy_when_only_dotagy_exists(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
-    (fake_home / ".gemini").mkdir()
+    (fake_home / ".agy").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detected_providers() == ["gemini"]
+    assert _detected_providers() == ["agy"]
 
 
 def test_detect_empty_when_neither(tmp_path, monkeypatch):
@@ -50,14 +50,14 @@ def test_detect_lists_both_when_both_present(tmp_path, monkeypatch):
     """Both home dirs present → BOTH detected, in PROVIDERS order (HATS-613).
 
     Pre-HATS-613 the helper returned a single string (the dict-first match,
-    gemini), hiding that claude was also installed.
+    agy), hiding that claude was also installed.
     """
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     (fake_home / ".claude").mkdir()
-    (fake_home / ".gemini").mkdir()
+    (fake_home / ".agy").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detected_providers() == ["gemini", "claude"]
+    assert _detected_providers() == ["claude", "agy"]
 
 
 # ---------- _wizard_provider_prompt: marker + default policy ----------
@@ -73,7 +73,7 @@ def test_wizard_prompt_no_default_when_multiple_detected(monkeypatch):
         return "claude"
 
     monkeypatch.setattr("ai_hats.cli.assembly.click.prompt", fake_prompt)
-    assert _wizard_provider_prompt(["gemini", "claude"]) == "claude"
+    assert _wizard_provider_prompt(["agy", "claude"]) == "claude"
     assert captured["default"] is None
     assert captured["show_default"] is False
 
@@ -88,9 +88,9 @@ def test_wizard_prompt_preselects_when_single_detected(monkeypatch):
         return default  # simulate the user pressing Enter
 
     monkeypatch.setattr("ai_hats.cli.assembly.click.prompt", fake_prompt)
-    # claude is index 2 in PROVIDERS order (gemini, claude).
+    # claude is index 1 in PROVIDERS order (claude, agy).
     assert _wizard_provider_prompt(["claude"]) == "claude"
-    assert captured["default"] == "2"
+    assert captured["default"] == "1"
     assert captured["show_default"] is True
 
 
@@ -99,7 +99,7 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
     fake_home = fresh_project.parent / "home"
     fake_home.mkdir()
     (fake_home / ".claude").mkdir()
-    (fake_home / ".gemini").mkdir()
+    (fake_home / ".agy").mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     runner = CliRunner()
@@ -109,7 +109,7 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
     ):
         result = runner.invoke(main, ["self", "init", "--no-update"], input="claude\n")
     assert result.exit_code == 0, result.output
-    assert "detected — found ~/.gemini" in result.output
+    assert "detected — found ~/.agy" in result.output
     assert "detected — found ~/.claude" in result.output
     assert "recommended" not in result.output
 
@@ -183,7 +183,7 @@ def test_init_wizard_with_provider_flag_skips_provider_prompt(fresh_project, mon
         # Provider via flag — no remaining CLI prompts (HATS-366 removed
         # the advanced-setup gate). LLM wizard handles paths/venv/gitignore.
         result = runner.invoke(
-            main, ["self", "init", "-p", "gemini", "--no-update"],
+            main, ["self", "init", "-p", "agy", "--no-update"],
         )
     assert result.exit_code == 0, result.output
     assert "Choose provider" not in result.output

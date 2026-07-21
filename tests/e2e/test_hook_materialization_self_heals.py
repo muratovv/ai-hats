@@ -220,14 +220,14 @@ def _make_gate_project(tmp_path: Path) -> tuple[Path, Path]:
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
     (project / PROJECT_CONFIG).write_text(
-        "provider: gemini\nlibrary_paths:\n  - " + str(lib) + "\n"
+        "provider: claude\nlibrary_paths:\n  - " + str(lib) + "\n"
     )
     return project, lib
 
 
 def _self_init(project: Path) -> None:
     cp = subprocess.run(
-        [*AI_HATS_CMD, "self", "init", "-p", "gemini", "-r", "gate-role", "--no-wizard"],
+        [*AI_HATS_CMD, "self", "init", "-p", "claude", "-r", "gate-role", "--no-wizard"],
         cwd=str(project),
         env=_binary_env(),
         capture_output=True,

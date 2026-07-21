@@ -26,9 +26,9 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import session_cache_dir, session_cache_root
 from ai_hats.providers import (
     ClaudeProvider,
-    GeminiProvider,
     _extract_frontmatter_description,
 )
+from ai_hats_agy.provider import AgyProvider
 from ai_hats.runtime import _cleanup_session_cache, _sweep_orphan_session_caches
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -287,7 +287,7 @@ def test_build_session_prompt_recovers_from_stale_cache_dir(project_with_library
 
 # --------------------------------------------------------------------- #
 # HATS-701 — AVAILABLE SKILLS index is provider-specific: Claude omits it
-# (skills reach the agent via the native --plugin-dir registry), Gemini
+# (skills reach the agent via the native --plugin-dir registry), Agy
 # keeps it (no native registry — the index is the only discovery channel).
 # --------------------------------------------------------------------- #
 
@@ -329,29 +329,29 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
 def test_native_registry_providers_omit_skills_index(tmp_path):
     """Skills reach the agent via each provider's native registry, so the
     AVAILABLE SKILLS text-index is a duplicate: Claude --plugin-dir (HATS-701),
-    gemini .gemini/skills/ (HATS-993)."""
+    agy .agy/skills/ (HATS-993)."""
     result = _skill_composition(tmp_path)
 
     claude_prompt = ClaudeProvider().build_system_prompt(result)
-    gemini_prompt = GeminiProvider().build_system_prompt(result)
+    agy_prompt = AgyProvider().build_system_prompt(result)
 
     # The divergence — the core of HATS-701.
     assert "## AVAILABLE SKILLS" not in claude_prompt, (
         "Claude must NOT emit the AVAILABLE SKILLS index — skills reach the "
         "agent via the --plugin-dir native registry. Prompt:\n" + claude_prompt
     )
-    # HATS-993: gemini joined the native-registry providers (.gemini/skills/).
-    assert "## AVAILABLE SKILLS" not in gemini_prompt, (
-        "Gemini must NOT emit the AVAILABLE SKILLS index — skills reach the "
-        "agent via the native .gemini/skills/ registry (HATS-993)."
+    # HATS-993: agy joined the native-registry providers (.agy/skills/).
+    assert "## AVAILABLE SKILLS" not in agy_prompt, (
+        "Agy must NOT emit the AVAILABLE SKILLS index — skills reach the "
+        "agent via the native .agy/skills/ registry (HATS-993)."
     )
     # The skill name follows its section: absent from both prompts.
     assert "doc-protocol" not in claude_prompt
-    assert "doc-protocol" not in gemini_prompt
+    assert "doc-protocol" not in agy_prompt
 
     # Non-skill sections are unaffected for BOTH providers (shared helper
     # must not drop priorities / always-on rules / their relocation).
-    for prompt in (claude_prompt, gemini_prompt):
+    for prompt in (claude_prompt, agy_prompt):
         assert "## PRIORITIES" in prompt
         assert "Reliability" in prompt
         assert "dev_rule_tool_call_hygiene" in prompt

@@ -21,7 +21,6 @@ from pydantic import (
 from ai_hats_core import YamlModel as _YamlModel
 from ai_hats_core import atomic_write_text, file_lock
 
-from ..constants import PROVIDER_GEMINI
 from .harness import FeedbackConfig, HarnessConfig
 from .migrations import _migrate_v1_to_v2, _migrate_v2_to_v3, _migrate_v3_to_v4
 from .overlay import OverlayConfig
@@ -63,7 +62,7 @@ class ProjectConfig(_YamlModel):
     # Reject unknown keys so typos in ai-hats.yaml fail loudly instead of silently dropping.
     model_config = ConfigDict(extra="forbid")
 
-    provider: str = PROVIDER_GEMINI
+    provider: str = "claude"
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 4

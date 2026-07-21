@@ -5,7 +5,7 @@ against CLI commands that don't require an active agent (free-tier:
 no SDK calls, $0 quota, <5s wall-clock target). Each maps to a Core
 scenario from the HATS-466 scenarios catalog:
 
-* ``test_list_providers_includes_claude_and_gemini`` → S-CLI-22
+* ``test_list_providers_includes_claude`` → S-CLI-22
 * ``test_list_roles_shows_bundled_defaults`` → S-CLI-23 (adjusted:
   empty ``library_paths`` falls back to the framework-bundled library,
   so the stable assertion is "the well-known defaults are visible",
@@ -29,10 +29,14 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_list_providers_includes_claude_and_gemini(tmp_project) -> None:
-    """``ai-hats list providers`` enumerates the two bundled providers."""
+def test_list_providers_includes_claude(tmp_project) -> None:
+    """``ai-hats list providers`` enumerates the builtin provider (claude).
+
+    agy/cline are out-of-tree entry-point surfaces, absent from the free-tier
+    checkout PYTHONPATH — only the builtin shows here.
+    """
     tmp_project.run("list", "providers").expect_ok().expect_stdout_contains(
-        "claude", "gemini",
+        "claude",
     )
 
 

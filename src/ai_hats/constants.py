@@ -63,5 +63,5 @@ HOOK_NOTIFICATION = "Notification"
 
 
 # Provider registry names (HATS-917) — leaf home: runners must not import providers.
+PROVIDER_AGY = "agy"
 PROVIDER_CLAUDE = "claude"
-PROVIDER_GEMINI = "gemini"

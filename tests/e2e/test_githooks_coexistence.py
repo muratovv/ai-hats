@@ -113,14 +113,14 @@ def _make_coexist_project(tmp_path: Path) -> Path:
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
     (project / PROJECT_CONFIG).write_text(
-        "provider: gemini\nlibrary_paths:\n  - " + str(lib) + "\n"
+        "provider: claude\nlibrary_paths:\n  - " + str(lib) + "\n"
     )
     return project
 
 
 def _self_init(project: Path) -> subprocess.CompletedProcess[str]:
     cp = subprocess.run(
-        [*AI_HATS_CMD, "self", "init", "-p", "gemini", "-r", "guard-role", "--no-wizard"],
+        [*AI_HATS_CMD, "self", "init", "-p", "claude", "-r", "guard-role", "--no-wizard"],
         cwd=str(project),
         env=_binary_env(),
         capture_output=True,

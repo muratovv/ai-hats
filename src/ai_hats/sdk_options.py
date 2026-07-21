@@ -155,7 +155,7 @@ def build_options(
     Notes
     -----
     The SDK import is deferred to call time so framework imports stay
-    cheap and deployments running only the Gemini provider don't pull
+    cheap and deployments running only the Agy provider don't pull
     the SDK transitively at every CLI invocation.
 
     Deliberate long API param contract — noqa: comment-length.
@@ -213,7 +213,7 @@ def build_first_user_message(
     ``LINKED_CONTEXT`` (HATS-689) carries the cards of the ticket's directly-
     linked tasks (parent epic + plan.md, plus depends_on/related/see_also
     cards), assembled by ``SubAgentRunner._load_linked_context``. This is the
-    live Claude channel for that section; the Gemini path mirrors it in
+    live Claude channel for that section; the Agy path mirrors it in
     ``SubAgentRunner._build_meta_prompt``.
 
     Used by ``SubAgentRunner._run_attempt``. Defined here so the structure is

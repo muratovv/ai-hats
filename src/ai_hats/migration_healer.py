@@ -6,7 +6,7 @@ ai-hats owns (``.agent/{hooks,rules,skills,backlog,...}/`` →
 hold the OLD paths:
 
   - ``.claude/settings.json`` PreToolUse hook command paths,
-  - ``CLAUDE.md`` / ``GEMINI.md`` prose mentions,
+  - ``CLAUDE.md`` / ``AGY.md`` prose mentions,
   - runbooks, README, shell wrappers, ansible templates.
 
 The healer scans for those refs after migration and:

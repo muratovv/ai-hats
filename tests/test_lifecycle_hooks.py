@@ -181,7 +181,7 @@ def test_plan_sections_config_swept_on_revert(project, lib):
 
 @pytest.fixture
 def assembler(project, lib) -> Assembler:
-    ProjectConfig(provider="gemini").save(project / PROJECT_CONFIG)
+    ProjectConfig(provider="agy").save(project / PROJECT_CONFIG)
     return Assembler(project_dir=project, library_paths=[lib])
 
 
@@ -226,7 +226,7 @@ def test_unwired_library_paths_skip_surface(project):
 
     hm = HooksManager(
         project,
-        ProjectConfig(provider="gemini"),
+        ProjectConfig(provider="agy"),
         compose=lambda role: None,
         resolve_provider=lambda name: None,
     )

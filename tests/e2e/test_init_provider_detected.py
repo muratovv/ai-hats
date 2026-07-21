@@ -91,12 +91,10 @@ def test_e2e_init_marks_every_detected_provider(tmp_venv_project, tmp_path):
 
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
-    (home / ".gemini").mkdir(parents=True)
 
     plain, status = _drive_init_menu(venv_python, tmp_venv_project.path, home)
 
-    # Both providers detected; never the old "recommended" wording.
-    assert "detected — found ~/.gemini" in plain, plain[-1200:]
+    # Providers detected; never the old "recommended" wording.
     assert "detected — found ~/.claude" in plain, plain[-1200:]
     assert "recommended" not in plain, plain[-1200:]
 

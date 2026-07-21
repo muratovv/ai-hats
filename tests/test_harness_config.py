@@ -16,7 +16,7 @@ from ai_hats.models import (
 from ai_hats.paths import PROJECT_CONFIG
 
 # Minimal valid v4 ai-hats.yaml prelude (ai_hats_dir required, provider valid).
-BASE = "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n"
+BASE = "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: agy\n"
 
 
 def _write(tmp_path, body: str):
@@ -142,7 +142,7 @@ def test_newer_schema_version_fails_loud(tmp_path):
     Fail-under-revert: remove the from_yaml guard → schema_version 5 loads
     silently and this raise-assertion fails.
     """
-    p = _write(tmp_path, "schema_version: 5\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n")
+    p = _write(tmp_path, "schema_version: 5\nai_hats_dir: .agent/ai-hats\nprovider: agy\n")
 
     with pytest.raises(ProjectConfigError) as exc:
         ProjectConfig.from_yaml(p)
@@ -155,7 +155,7 @@ def test_save_refuses_to_clobber_newer_schema_on_disk(tmp_path):
     """HATS-792: an old binary must not overwrite a future config it cannot
     represent — even on a bypass path that constructs a config WITHOUT loading
     the existing (future) file first."""
-    p = _write(tmp_path, "schema_version: 99\nai_hats_dir: .agent/ai-hats\nprovider: gemini\n")
+    p = _write(tmp_path, "schema_version: 99\nai_hats_dir: .agent/ai-hats\nprovider: agy\n")
     before = p.read_text()
 
     with pytest.raises(ProjectConfigError) as exc:

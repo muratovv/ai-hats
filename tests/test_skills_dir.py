@@ -27,7 +27,7 @@ def test_materializes_skill_and_writes_marker(tmp_path: Path) -> None:
     skills_root = tmp_path / "src"
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
-    target = tmp_path / ".gemini" / "skills"
+    target = tmp_path / ".agy" / "skills"
 
     materialize_skills_dir(target, [skill], tmp_path, "sid-1")
 
@@ -122,15 +122,15 @@ def test_gitignore_entry_appended_once(tmp_path: Path) -> None:
     skills_root = tmp_path / "src"
     skills_root.mkdir()
     alpha = _make_skill("alpha", skills_root)
-    target = tmp_path / ".gemini" / "skills"
+    target = tmp_path / ".agy" / "skills"
 
     for _ in range(2):
         materialize_skills_dir(
-            target, [alpha], tmp_path, "sid-1", gitignore_entry=".gemini/skills/"
+            target, [alpha], tmp_path, "sid-1", gitignore_entry=".agy/skills/"
         )
 
     lines = (tmp_path / ".gitignore").read_text().splitlines()
-    assert lines.count(".gemini/skills/") == 1
+    assert lines.count(".agy/skills/") == 1
 
 
 def test_corrupt_marker_starts_fresh(tmp_path: Path) -> None:

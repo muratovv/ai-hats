@@ -13,7 +13,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ai_hats.composition_seam import build_composition_payload
-from ai_hats.providers import ClaudeProvider, GeminiProvider
+from ai_hats.providers import ClaudeProvider
+from ai_hats_agy.provider import AgyProvider
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
 
@@ -22,8 +23,8 @@ def test_claude_provider_uses_claude_parser() -> None:
     assert isinstance(ClaudeProvider().transcript_parser(), ClaudeParser)
 
 
-def test_gemini_provider_uses_trace_only_parser() -> None:
-    parser = GeminiProvider().transcript_parser()
+def test_agy_provider_uses_trace_only_parser() -> None:
+    parser = AgyProvider().transcript_parser()
     assert isinstance(parser, TraceParser)
     assert not isinstance(parser, ClaudeParser)
 

@@ -16,7 +16,7 @@ def _make_project(tmp_path: Path, *, ai_hats_dir: str = ".agent/ai-hats", venv_p
     project.mkdir()
 
     config = ProjectConfig(
-        provider="gemini",
+        provider="agy",
         ai_hats_dir=ai_hats_dir,
         venv_path=venv_path,
         manage_gitignore=manage_gitignore,

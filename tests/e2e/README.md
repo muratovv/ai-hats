@@ -36,7 +36,7 @@ handful live. Always prefer free over venv over live.
    # free-tier — see tests/e2e/test_wave1_free_tier.py
    def test_something(tmp_project) -> None:
        tmp_project.run("list", "providers").expect_ok().expect_stdout_contains(
-           "claude", "gemini",
+           "claude", "claude",
        )
 
    # venv-tier — see tests/e2e/test_wave1_venv_tier.py

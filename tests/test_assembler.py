@@ -85,7 +85,7 @@ injection: Other role injection.
     from ai_hats.migrations import latest_step
 
     config = ProjectConfig(
-        provider="gemini",
+        provider="agy",
         library_paths=[str(lib)],
         migration_step=latest_step(),
     )
@@ -135,7 +135,7 @@ def test_set_role(project_with_library):
 
     assert result.name == "test-role"
     assert len(result.errors) == 0
-    # Gemini inline path: ./GEMINI.md exists with role injection.
+    # Agy inline path: ./GEMINI.md exists with role injection.
     assert (project / "GEMINI.md").exists()
     prompt = (project / "GEMINI.md").read_text()
     assert "Role injection" in prompt
@@ -175,7 +175,7 @@ def test_status(project_with_library):
 
     status = asm.status()
     assert status["role"] == "test-role"
-    assert status["provider"] == "gemini"
+    assert status["provider"] == "agy"
     assert status["tree"] is not None
     assert "imports.md" in status["health"]
     assert status["health"]["imports.md"] == "OK"
@@ -482,14 +482,14 @@ def test_bump_skips_normalize_when_v07_migration_refuses(project_with_library):
 def test_set_role_then_switch_provider(project_with_library):
     """Switching provider must regenerate system prompt for the new provider.
 
-    Regression: setting role with gemini created GEMINI.md, then wrapping
+    Regression: setting role with agy created GEMINI.md, then wrapping
     with claude found no CLAUDE.md — agent saw no instructions.
     """
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    # Set role for gemini (default)
+    # Set role for agy (default)
     asm.set_role("test-role")
     assert (project / "GEMINI.md").exists()
     assert "Role injection" in (project / "GEMINI.md").read_text()
@@ -512,19 +512,19 @@ def test_set_role_then_switch_provider(project_with_library):
 def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     """WrapRunner must auto-reassemble when provider differs from profile.
 
-    Scenario: role set with gemini, then `ai-hats wrap claude` — should
+    Scenario: role set with agy, then `ai-hats wrap claude` — should
     automatically rebuild CLAUDE.md before launching.
     """
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")  # provider=gemini
+    asm.set_role("test-role")  # provider=agy
 
     # Simulate what WrapRunner.run() does on provider mismatch
     from ai_hats.models import ProjectConfig
 
     profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
-    assert profile.provider == "gemini"
+    assert profile.provider == "agy"
 
     target_provider = "claude"
     if profile.active_role and profile.provider != target_provider:
@@ -689,21 +689,21 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
         _shutil.rmtree(args[args.index("--plugin-dir") + 1], ignore_errors=True)
 
 
-def test_gemini_build_session_prompt_creates_rules_dir(project_with_library):
+def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
     """HATS-993: session role rides a GEMINI.md in an --include-directories dir."""
     import shutil
-    from ai_hats.providers import GeminiProvider
+    from ai_hats_agy.provider import AgyProvider
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     asm.set_role("test-role")  # sets up .agent/rules/
 
-    provider = GeminiProvider()
+    provider = AgyProvider()
     result = asm.composer.compose("other-role")
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
-    assert args[0] == "--include-directories"
+    assert args[0] == "--add-dir"
     assert env == {}
     rules_dir = Path(args[1])
     assert rules_dir.exists()
@@ -1259,14 +1259,14 @@ def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_libra
     _assert_no_literal_placeholder(canonical / "imports.md")
 
 
-def test_gemini_inline_prompt_has_no_literal_placeholder(
+def test_agy_inline_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """`./GEMINI.md` injection block (Gemini's set_role path) must be expanded."""
+    """`./GEMINI.md` injection block (Agy's set_role path) must be expanded."""
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("ph-role", provider_name="gemini")
+    asm.set_role("ph-role", provider_name="agy")
 
     gemini_md = project / "GEMINI.md"
     assert gemini_md.exists()
@@ -1276,12 +1276,12 @@ def test_gemini_inline_prompt_has_no_literal_placeholder(
     assert ".agent/ai-hats/sessions/audits/" in content
 
 
-def test_gemini_build_session_prompt_has_no_literal_placeholder(
+def test_agy_build_session_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """Gemini session GEMINI.md must be expanded."""
+    """Agy session GEMINI.md must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.providers import GeminiProvider
+    from ai_hats_agy.provider import AgyProvider
     from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
@@ -1289,7 +1289,7 @@ def test_gemini_build_session_prompt_has_no_literal_placeholder(
     asm.init()
     result = Composer(LibraryResolver([lib])).compose("ph-role")
 
-    args, _, _ = GeminiProvider().build_session_prompt(project, result, "test-sid")
+    args, _, _ = AgyProvider().build_session_prompt(project, result, "test-sid")
     override = Path(args[1]) / "GEMINI.md"
     content = override.read_text()
     assert "<ai_hats_dir>" not in content

@@ -150,14 +150,14 @@ def test_e2e_reinit_replays_registry_once_and_runs_diagnostics(
     # First: greenfield init to materialize the structure. Then rewind
     # migration_step to 0 to emulate a project upgrading from a pre-
     # HATS-471 release.
-    _init(launcher, project, env, "-p", "gemini", "--no-wizard")
+    _init(launcher, project, env, "-p", "claude", "--no-wizard")
     cfg_path = project / PROJECT_CONFIG
     raw = yaml.safe_load(cfg_path.read_text())
     raw["migration_step"] = 0
     cfg_path.write_text(yaml.safe_dump(raw))
 
     # Re-init #1: registry MUST fire.
-    res1 = _init(launcher, project, env, "-p", "gemini", "--no-wizard")
+    res1 = _init(launcher, project, env, "-p", "claude", "--no-wizard")
     assert MIGRATION_BANNER in res1.stderr, (
         f"Re-init on migration_step=0 did NOT replay registry "
         f"(HATS-469 R6 broken — _refresh(install_time=True) on init "
@@ -165,7 +165,7 @@ def test_e2e_reinit_replays_registry_once_and_runs_diagnostics(
     )
 
     # Re-init #2: registry MUST NOT fire (gated by advanced step).
-    res2 = _init(launcher, project, env, "-p", "gemini", "--no-wizard")
+    res2 = _init(launcher, project, env, "-p", "claude", "--no-wizard")
     assert MIGRATION_BANNER not in res2.stderr, (
         f"Second re-init replayed registry (gate broken):\n{res2.stderr}"
     )
