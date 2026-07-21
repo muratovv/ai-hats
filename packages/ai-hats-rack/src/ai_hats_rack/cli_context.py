@@ -25,10 +25,13 @@ from .cli_common import (
     fail,
     handle_rack_error,
     resolve_error,
+    resolve_project_roots,
+    resolve_roots,
     resolved_root,
 )
 from .composition import build_read_subscribers, stock_factories
 from .docstore import DocInfo
+from .roots_registry import registered_root_by_id
 from .linked import (
     DEFAULT_MAX_BYTES,
     ContextPackage,
@@ -227,6 +230,13 @@ def _echo_attrs(attrs: tuple[str, ...], payload: dict[str, object]) -> None:
 @click.option("--event", "event_key", default=None, help="--attr audit only: exact event key.")
 @click.option("--since", default=None, help="--attr audit only: ISO-8601 UTC lower bound (incl.).")
 @click.option("--actor", "actor_filter", default=None, help="--attr audit only: exact actor.")
+@click.option(
+    "--root",
+    "root_flags",
+    multiple=True,
+    help="Also mount this project root so a cross-project id resolves (repeatable, "
+    "HATS-1081). A `<root_id>:<id>` qualifier resolves registered roots without it.",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def context_cmd(
@@ -237,6 +247,7 @@ def context_cmd(
     event_key: str | None,
     since: str | None,
     actor_filter: str | None,
+    root_flags: tuple[str, ...],
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -268,11 +279,20 @@ def context_cmd(
         fail(as_json, "invalid_request", "provide at least one task id")
         return
 
-    # Resolve the workspace ONCE: the discover walk + stock factories are the
-    # per-invocation setup a batch exists to amortize (HATS-1074). Read
-    # subscribers are memoized per catalog (a viewport is usually one prefix).
+    # Resolve the workspace ONCE (batch amortizes the discover walk, HATS-1074).
+    # Cross-project (HATS-1081): mount CWD ∪ --root ∪ any registered root a
+    # `<root_id>:<id>` qualifier names, so a qualified read routes there.
     try:
-        workspace = Workspace.discover([resolved_root(tasks_dir, Path.cwd())])
+        extra_roots = list(root_flags)
+        for tid in ids:
+            root_id = tid.split(":", 1)[0] if ":" in tid else None
+            if root_id:
+                path = registered_root_by_id(root_id)
+                if path is not None:
+                    extra_roots.append(str(path))
+        workspace = Workspace.discover(
+            resolve_roots(tasks_dir, Path.cwd(), tuple(extra_roots))
+        )
         factories = stock_factories()
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_rack_error(exc, as_json)
@@ -280,18 +300,19 @@ def context_cmd(
     subs_cache: dict[Path, list] = {}
 
     def _assemble(task_id: str) -> tuple[ContextPackage, dict[str, object], Path]:
-        # Route by the id's prefix (HATS-1044): a tasks-only repo resolves to the
-        # tasks catalog — same registry, same output as before.
+        # Route by the id's prefix / `<root>:<id>` qualifier (HATS-1044/1081); the
+        # card lookup uses the bare id (qualifier stripped).
         instance = workspace.instance_for(task_id)
         catalog = instance.catalog
         defn = instance.definition
+        bare_id = task_id.split(":", 1)[1] if ":" in task_id else task_id
         read_subscribers = subs_cache.get(catalog)
         if read_subscribers is None:
             read_subscribers = build_read_subscribers(defn, catalog, factories)
             subs_cache[catalog] = read_subscribers
         pkg = build_context(
             catalog,
-            task_id,
+            bare_id,
             registry=defn.links_registry,
             with_patterns=with_patterns,
             max_bytes=max_bytes,
@@ -367,38 +388,60 @@ def _cap(items: list, show_all: bool) -> tuple[list, int, bool]:
 
 
 def _emit_scan(
-    rows: list[linked.CardRow], as_json: bool, show_all: bool, *, show_backlog: bool = False
+    rows: list[linked.CardRow],
+    as_json: bool,
+    show_all: bool,
+    *,
+    show_backlog: bool = False,
+    show_project: bool = False,
+    skipped: list[str] | None = None,
 ) -> None:
+    skipped = skipped or []
     shown, total, capped = _cap(rows, show_all)
     if as_json:
-        emit_json(
-            {
-                "tasks": [r.to_dict() for r in shown],
-                "count": len(shown),
-                "total": total,
-                "capped": capped,
-            }
-        )
+        payload = {
+            "tasks": [r.to_dict() for r in shown],
+            "count": len(shown),
+            "total": total,
+            "capped": capped,
+        }
+        if skipped:
+            payload["skipped"] = skipped
+        emit_json(payload)
         return
     if not rows:
         click.echo("No tasks match.")
+        _echo_skipped(skipped)
         return
-    if show_backlog:
-        table = [[r.backlog, r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
-    else:
-        table = [[r.id, f"[{r.state}]", r.priority, r.title] for r in shown]
-    for line in _columns(table):
+
+    def _cols(r: linked.CardRow) -> list[str]:
+        # marker columns lead (project, then backlog) only when >1 in view (R7)
+        lead = ([r.project] if show_project else []) + ([r.backlog] if show_backlog else [])
+        return [*lead, r.id, f"[{r.state}]", r.priority, r.title]
+
+    for line in _columns([_cols(r) for r in shown]):
         click.echo(line)
     if capped:
         click.echo(
             f"  showing {DEFAULT_LS_LIMIT} of {total} — --all for all, "
             "or narrow with --tag/--state/--parent"
         )
-    elif show_backlog:
-        backlogs = len({r.backlog for r in shown})
-        click.echo(f"  {total} card(s) across {backlogs} backlog(s)")
+    elif show_project or show_backlog:
+        spans = []
+        if show_project:
+            spans.append(f"{len({r.project for r in shown})} project(s)")
+        if show_backlog:
+            spans.append(f"{len({r.backlog for r in shown})} backlog(s)")
+        click.echo(f"  {total} card(s) across {', '.join(spans)}")
     else:
         click.echo(f"  {total} task(s)  tip: rack context <ID> for the full package")
+    _echo_skipped(skipped)
+
+
+def _echo_skipped(skipped: list[str]) -> None:
+    """Non-silent footer for registered roots that could not be read (R5, C3)."""
+    if skipped:
+        click.echo(f"  {len(skipped)} root(s) skipped (unreachable): {', '.join(skipped)}")
 
 
 def _emit_walk(
@@ -477,6 +520,20 @@ def _emit_walk(
     is_flag=True,
     help="No-id scan: scan every mounted backlog (tasks + siblings) interleaved.",
 )
+@click.option(
+    "--root",
+    "root_flags",
+    multiple=True,
+    help="No-id scan: also scan this project root, added to the current one "
+    "(repeatable, HATS-1081); rows are marked by project. Default is the current "
+    "project only.",
+)
+@click.option(
+    "--projects",
+    default=None,
+    help="No-id scan: sweep registered projects (`rack root`) — `all` or a comma "
+    "list of root_ids — unioned with the current project (HATS-1081).",
+)
 @TASKS_DIR_OPT
 @JSON_OPT
 def ls_cmd(
@@ -490,6 +547,8 @@ def ls_cmd(
     show_all: bool,
     backlog: tuple[str, ...],
     all_backlogs: bool,
+    root_flags: tuple[str, ...],
+    projects: str | None,
     tasks_dir: Path | None,
     as_json: bool,
 ) -> None:
@@ -497,8 +556,12 @@ def ls_cmd(
     if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return
-    if task_id is not None and (backlog or all_backlogs):
-        fail(as_json, "invalid_request", "--backlog/--all-backlogs apply to the no-id scan only")
+    if task_id is not None and (backlog or all_backlogs or root_flags or projects):
+        fail(
+            as_json,
+            "invalid_request",
+            "--backlog/--all-backlogs/--root/--projects apply to the no-id scan only",
+        )
         return
     if backlog and all_backlogs:
         fail(as_json, "invalid_request", "--backlog and --all-backlogs are mutually exclusive")
@@ -506,22 +569,31 @@ def ls_cmd(
     try:
         root = resolved_root(tasks_dir, Path.cwd())
         if task_id is None:
-            workspace = Workspace.discover([root])
+            roots = resolve_roots(tasks_dir, Path.cwd(), root_flags)
+            skipped_roots: list[str] = []
+            if projects is not None:
+                roots, skipped_roots = resolve_project_roots(roots, projects)
+            workspace = Workspace.discover(roots)
             if all_backlogs:
                 selected = list(workspace.instances)
             elif backlog:
-                seen: set[str] = set()
+                seen: set[tuple[str, str]] = set()
                 selected = []
-                for name in backlog:  # repeatable; dedup so a repeat is not double-scanned
-                    inst = workspace.instance_by_name(name)
-                    if inst.name not in seen:
-                        seen.add(inst.name)
-                        selected.append(inst)
+                # repeatable × every root: dedup by (root_id, backlog name) so a
+                # repeat is not double-scanned, but the same backlog in different
+                # projects is kept (HATS-1081).
+                for name in backlog:
+                    for inst in workspace.instances_by_name(name):
+                        key = (inst.root_id, inst.name)
+                        if key not in seen:
+                            seen.add(key)
+                            selected.append(inst)
             else:
                 selected = [i for i in workspace.instances if i.is_tasks]
-            # Stamp the backlog origin only when the filter is engaged, so the
-            # default `rack ls` output stays annotation-free (R2).
-            feature = bool(backlog or all_backlogs)
+            # Stamp origin only when the matching filter is engaged, so the default
+            # `rack ls` output stays annotation-free (R2, HATS-1080/1081).
+            backlog_feature = bool(backlog or all_backlogs)
+            project_feature = bool(root_flags) or projects is not None
             rows = [
                 row
                 for inst in selected
@@ -531,10 +603,18 @@ def ls_cmd(
                     tag=tag,
                     state=state,
                     parent=parent,
-                    backlog=(inst.definition.cli_alias or inst.name) if feature else "",
+                    backlog=(inst.definition.cli_alias or inst.name) if backlog_feature else "",
+                    project=inst.root_id if project_feature else "",
                 )
             ]
-            _emit_scan(rows, as_json, show_all, show_backlog=len(selected) > 1)
+            _emit_scan(
+                rows,
+                as_json,
+                show_all,
+                show_backlog=len({i.name for i in selected}) > 1,
+                show_project=len({i.root_id for i in selected}) > 1,
+                skipped=skipped_roots,
+            )
             return
         instance = Workspace.discover([root]).instance_for(task_id)
         neighbors = walk_neighborhood(

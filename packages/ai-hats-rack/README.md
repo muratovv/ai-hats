@@ -153,14 +153,15 @@ warns when a task moved states with an empty journal (zero-events, PROP-005/076)
 
 ## CLI
 
-Four verbs, each with `--json` (JSON-first, HATS-1031 API-D surface):
+Four verbs plus a `root` group, each with `--json` (JSON-first, HATS-1031 API-D surface):
 
-| Verb                   | Role                                                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                                                                                                                                                                                  |
-| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`; `--backlog <name>` / `--all-backlogs` pick which mounted backlog(s), HATS-1080) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)                                                                                               |
-| `rack context <ID…>`   | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log`. Batch (`context ID1 ID2 …`, ≥2 ids) assembles all in one process → `{"contexts": {id: …}}`, skip-and-continue; one id stays unwrapped byte-identical (HATS-1074) |
-| `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                                                                                                                                                                                   |
+| Verb                   | Role                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rack create <title>`  | new card; `--id/--parent/--depends/--tag/...`; initial state from backlog.yaml                                                                                                                                                                                                                                                                                    |
+| `rack ls [<ID>]`       | backlog scan (`--grep/--tag/--state/--parent`; `--backlog <name>` / `--all-backlogs` pick which mounted backlog(s), HATS-1080; `--root <path>` / `--projects all\|<ids>` sweep across projects, HATS-1081) or graph walk (`ls <ID> --deep N [--link <glob>…]`, repeatable OR)                                                                                     |
+| `rack context <ID…>`   | THE read package: full card + top-level `links` + document paths; repeatable `--with <glob>` embeds, `--attr audit\|work_log`; `--root`/`<root_id>:<id>` route a cross-project read (HATS-1081). Batch (`context ID1 ID2 …`, ≥2 ids) assembles all in one process → `{"contexts": {id: …}}`, skip-and-continue; one id stays unwrapped byte-identical (HATS-1074) |
+| `rack transition <ID>` | THE mutating verb: an ordered composite of ops under one lock                                                                                                                                                                                                                                                                                                     |
+| `rack root add/ls/rm`  | cross-project roots registry (`~/.ai-hats/roots.yaml`) feeding `ls --projects` (HATS-1081)                                                                                                                                                                                                                                                                        |
 
 `transition` ops run in **argv order** under ONE task lock with a single persist;
 effects of earlier ops are visible to later ones, any abort rolls the whole
@@ -210,6 +211,21 @@ which stays annotation-free). This is the read-side mirror of the write-side gro
 — one "backlog = dimension" model. Filters stay read-tolerant: `--tag`/`--parent`/
 `--state` on cards that lack the value simply exclude them (never an error), and
 `--state` self-narrows to the backlogs whose vocabulary uses the value.
+
+### Cross-project sweep (HATS-1081)
+
+The scan spans several projects — "hypotheses of all projects" in one listing.
+`--root <path>` (repeatable) adds a project root to the current one; `--projects
+all | <root_ids>` sweeps the roots registered with `rack root add`, **unioned with
+the current project** (the CWD is always the agent's working context). Roots dedup by
+resolved path; each row gains a `project` marker (leading column / `project` json key,
+absent in the single-project default). It composes with the backlog filter —
+`rack ls --backlog hyp --projects all` hits the `hyp` backlog in every swept project.
+Read-tolerant: a registered root that is gone is **skipped** with a non-silent footer
+(the sweep survives), while an explicit `--root` to a non-project is a hard error.
+`root_id` is the folder name (no alias); a name collision is disambiguated by the full
+path via `--root`. A cross-project READ routes with the `<root_id>:<id>` qualifier
+(`rack context projB:HATS-9`) or `--root`; all cross-project WRITES are HATS-1088.
 
 ### Per-backlog groups (HATS-1036 R2/R5, ADR-0017 §4/§7)
 
