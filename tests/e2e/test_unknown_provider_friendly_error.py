@@ -76,3 +76,19 @@ def test_e2e_unknown_provider_exits_clean_with_provider_list(tmp_project) -> Non
         f"traceback leaked to user-facing output:\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+
+def test_unknown_provider_handler_includes_surface_remediation(capsys) -> None:
+    """_handle_unknown_provider prints surface installation instructions for a surface provider."""
+    from ai_hats.providers import UnknownProviderError
+    from ai_hats.cli._helpers import _handle_unknown_provider
+
+    with pytest.raises(SystemExit) as exc_info:
+        _handle_unknown_provider(UnknownProviderError("cline", ["claude"]))
+
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "Surface provider 'cline' is not installed." in captured.err
+    assert "Fix: " in captured.err
+    assert "cline" in captured.err
+
