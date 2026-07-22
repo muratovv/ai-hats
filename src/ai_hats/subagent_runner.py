@@ -318,14 +318,15 @@ class SubAgentRunner:
                         meta_prompt,
                         model=model or None,
                     )
-                    proc = subprocess.run(
-                        full_cmd,
-                        cwd=str(work_dir),
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout_s,
-                    )
+                    with provider.execution_context(self.project_dir):
+                        proc = subprocess.run(
+                            full_cmd,
+                            cwd=str(work_dir),
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout_s,
+                        )
                     session.log_res(f"Exit code: {proc.returncode}")
                     _finalize_sub_agent(
                         session,

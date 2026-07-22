@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 import json
 import logging
 import warnings
@@ -100,6 +101,14 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def rules_dir(self, session_dir: Path) -> Path:
         """Directory where rules files should be placed."""
+
+    @contextlib.contextmanager
+    def execution_context(self, project_dir: Path) -> contextlib.AbstractContextManager[None]:
+        """Context manager active around provider CLI execution.
+
+        Subclasses override to perform workspace setup/teardown during launch.
+        """
+        yield
 
     @abc.abstractmethod
     def build_system_prompt(self, result: CompositionResult) -> str:
