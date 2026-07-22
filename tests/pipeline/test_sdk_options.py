@@ -1,4 +1,4 @@
-"""Unit tests for ``ai_hats.sdk_options`` (HATS-474 Phase 1)."""
+"""Unit tests for ``ai_hats.surfaces.claude.sdk_options`` (HATS-474 Phase 1)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.providers import ClaudeProvider
-from ai_hats.sdk_options import (
+from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats.surfaces.claude.sdk_options import (
     _build_plugins,
     _build_system_prompt,
     build_first_user_message,

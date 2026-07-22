@@ -7,7 +7,7 @@ Claude-specific; ``WrapRunner`` only consumes ``Provider.settings_lint_warnings`
 import json
 from pathlib import Path
 
-from ai_hats.providers import ClaudeProvider, lint_permission_rules, lint_settings_files
+from ai_hats.surfaces.claude.provider import ClaudeProvider, lint_permission_rules, lint_settings_files
 
 SRC = Path("/x/.claude/settings.json")
 

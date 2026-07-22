@@ -14,12 +14,12 @@ from ai_hats.models import ProjectConfig
 
 # HATS-469: ``Assembler.bump()`` removed; use the test pipeline helper.
 from tests._assembler_helpers import bump_pipeline
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats.providers import (
     INJECTION_END,
     INJECTION_START,
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
-    ClaudeProvider,
 )
 from ai_hats.paths import PROJECT_CONFIG
 

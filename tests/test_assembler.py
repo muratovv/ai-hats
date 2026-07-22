@@ -597,7 +597,7 @@ def test_preserve_local_rules(project_with_library):
 
 def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     """ClaudeProvider.build_session_prompt() creates temp file with override prompt."""
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -641,7 +641,7 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
 def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(project_with_library):
     """HATS-307: spawned role's skills must end up under --plugin-dir/skills/."""
     import shutil as _shutil
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -666,7 +666,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
 def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_with_library):
     """build_session_prompt() must never modify the project CLAUDE.md."""
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
@@ -1301,7 +1301,7 @@ def test_claude_build_session_prompt_has_no_literal_placeholder(
 ):
     """Claude --system-prompt-file content must be expanded."""
     from ai_hats.composer import Composer
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
     from ai_hats.resolver import LibraryResolver
 
     project, lib = project_with_placeholder_library
@@ -1349,11 +1349,12 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    meta_prompt = runner._build_meta_prompt(
+    meta_prompt = get_provider("claude").build_meta_prompt(
         result=result,
-        provider=get_provider("claude"),
+        project_dir=project,
+        ticket_context="",
+        linked_context="",
         task="",
-        ticket_id="",
     )
 
     assert "<ai_hats_dir>" not in meta_prompt
@@ -1390,11 +1391,12 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    meta_prompt = runner._build_meta_prompt(
+    meta_prompt = get_provider("claude").build_meta_prompt(
         result=result,
-        provider=get_provider("claude"),
+        project_dir=project,
+        ticket_context="",
+        linked_context="",
         task="do the real thing",
-        ticket_id="",
     )
 
     assert "# TASK" in meta_prompt  # the real task still lands
@@ -1426,10 +1428,12 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    audit = runner._build_sdk_prompt_audit(
+    audit = runner.payload.provider.build_meta_prompt(
         result=result,
+        project_dir=project,
+        ticket_context="",
+        linked_context="",
         task="do the real thing",
-        ticket_id="",
     )
 
     assert "# TASK" in audit  # the real task still lands
