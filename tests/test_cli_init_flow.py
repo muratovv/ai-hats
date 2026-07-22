@@ -328,7 +328,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, runner = cli_project
 
@@ -366,7 +366,7 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
