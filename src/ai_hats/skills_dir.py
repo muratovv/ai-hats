@@ -30,18 +30,16 @@ MANAGED_MARKER = ".ai-hats-managed"
 _LOCK_TIMEOUT = 30.0
 
 
-def collect_skill_script_paths(
+def find_skill_script_collisions(
     skills: Iterable[ResolvedComponent],
     session_skills_dir: Path | None = None,
-) -> list[Path]:
-    """Collect existing `scripts/` and `bin/` directory paths from composed skills.
+) -> list[str]:
+    """Find script filename collisions across composed skills.
 
-    If multiple skills declare scripts with identical filenames, PATH resolution
-    follows composition order: the skill appearing earlier in ``skills`` takes
-    precedence. Collisions are logged as warnings.
+    Returns a list of human-readable warning strings suitable for startup notices.
     """
-    paths: list[Path] = []
-    seen_scripts: dict[str, str] = {}  # script_filename -> skill_name
+    seen_scripts: dict[str, str] = {}  # filename -> skill_name
+    collisions: list[str] = []
 
     for skill in skills:
         dirs_to_check: list[Path] = []
@@ -52,21 +50,47 @@ def collect_skill_script_paths(
 
         for p in dirs_to_check:
             if p.is_dir():
-                if p not in paths:
-                    paths.append(p)
                 for item in p.iterdir():
                     if item.is_file() and not item.name.startswith("."):
                         if item.name in seen_scripts and seen_scripts[item.name] != skill.name:
                             msg = (
-                                f"WARN: script name collision: {item.name!r} in skill {skill.name!r} "
+                                f"Script name collision: {item.name!r} in skill {skill.name!r} "
                                 f"is shadowed by skill {seen_scripts[item.name]!r} earlier in PATH"
                             )
-                            logger.warning(msg)
-                            print(f"[ai-hats] {msg}", file=sys.stderr)
+                            if msg not in collisions:
+                                collisions.append(msg)
                         else:
                             seen_scripts[item.name] = skill.name
+    return collisions
 
+
+def collect_skill_script_paths(
+    skills: Iterable[ResolvedComponent],
+    session_skills_dir: Path | None = None,
+) -> list[Path]:
+    """Collect existing `scripts/` and `bin/` directory paths from composed skills.
+
+    If multiple skills declare scripts with identical filenames, PATH resolution
+    follows composition order: the skill appearing earlier in ``skills`` takes
+    precedence. Collisions are logged via logger.warning.
+    """
+    paths: list[Path] = []
+    collisions = find_skill_script_collisions(skills, session_skills_dir)
+    for msg in collisions:
+        logger.warning(msg)
+
+    for skill in skills:
+        dirs_to_check: list[Path] = []
+        if session_skills_dir is not None:
+            dirs_to_check.extend([session_skills_dir / skill.name / sub for sub in ("scripts", "bin")])
+        if hasattr(skill, "source_path") and skill.source_path and skill.source_path.is_dir():
+            dirs_to_check.extend([skill.source_path / sub for sub in ("scripts", "bin")])
+
+        for p in dirs_to_check:
+            if p.is_dir() and p not in paths:
+                paths.append(p)
     return paths
+
 
 
 
