@@ -23,6 +23,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .harness.diagnostic import diagnose_silent_session
 from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
+from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -267,7 +268,9 @@ class SubAgentRunner:
             state_dir=worktrees_dir(self.project_dir),
         ) as work_dir:
             session.log_sub(f"Working directory: {work_dir}")
+            SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode.value, provider_name)
             t0 = time.monotonic()
+
             try:
                 if provider_name == PROVIDER_CLAUDE:
                     # HATS-474 Phase 2: SDK engine.
@@ -384,7 +387,9 @@ class SubAgentRunner:
                 _ctx.__exit__(None, None, None)
                 _cleanup_session_cache(self.project_dir, session.session_id)
 
+        SurfaceGuard.post_flight_guard(session, work_dir, provider_name)
         return session
+
 
     def _release_ownership_on_finish(self, session: "Session") -> None:
         """Drop this finished session's ownership holds (HATS-1045).
