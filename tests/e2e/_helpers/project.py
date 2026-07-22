@@ -132,8 +132,11 @@ class Project:
     def run(self, *args: str, timeout: float = 60.0,
             extra_env: dict[str, str] | None = None) -> RunResult:
         """Run ``ai-hats <args>`` against this project's binary."""
+        from _helpers.env import clean_env
+
         cmd = (str(self.ai_hats_binary), *args)
-        env = {**os.environ, **self.env}
+        env = clean_env(os.environ)
+        env.update(self.env)
         if extra_env:
             env.update(extra_env)
         t0 = time.monotonic()
