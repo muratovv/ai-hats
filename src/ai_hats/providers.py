@@ -235,6 +235,17 @@ class Provider(abc.ABC):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this provider."""
 
+    def get_cli_launch_args(
+        self, base_cmd: list[str], session_id: str, is_resume: bool
+    ) -> list[str]:
+        """Provider-specific launch flags (e.g. session-id linkage).
+
+        Default: none. ``wrap_runner`` calls this on EVERY provider, so a
+        claude-only override left agy/cline/gemini raising AttributeError
+        before launch (HATS-1130).
+        """
+        return base_cmd
+
     def model_flags(self, model: str) -> list[str]:
         """Convert a model name into provider-specific CLI flags."""
         return ["--model", model]

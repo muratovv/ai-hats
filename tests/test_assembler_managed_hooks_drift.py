@@ -227,7 +227,8 @@ class TestSyncHooksOrchestration:
         )
         monkeypatch.setattr(asm.hooks, "install_git_hooks", lambda result: calls.append("git"))
         monkeypatch.setattr(
-            "ai_hats.providers.ClaudeProvider.ensure_runtime_hooks",
+            # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
+            "ai_hats.surfaces.claude.provider.ClaudeProvider.ensure_runtime_hooks",
             lambda self, p, r: calls.append("rt_wire"),
         )
         return calls
