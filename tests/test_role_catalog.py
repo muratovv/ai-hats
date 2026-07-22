@@ -144,7 +144,7 @@ _WT_LIBRARY_PATHS = [str(_WT_LIBRARY / "core"), str(_WT_LIBRARY / "usage")]
 def test_wizard_session_prompt_lists_live_roles(tmp_path):
     """The composed initial-wizard prompt carries the live catalog."""
     from ai_hats.assembler import Assembler
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project = tmp_path / "proj"
     project.mkdir()
@@ -172,7 +172,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
 def test_non_wizard_prompt_has_no_catalog(tmp_path):
     """A role without the placeholder is unaffected (no catalog injected)."""
     from ai_hats.assembler import Assembler
-    from ai_hats.providers import ClaudeProvider
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project = tmp_path / "proj"
     project.mkdir()

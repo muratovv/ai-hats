@@ -1,4 +1,4 @@
-"""Unit tests for ``ai_hats.sdk_runner`` (HATS-474 Phase 2).
+"""Unit tests for ``ai_hats.surfaces.claude.sdk_runner`` (HATS-474 Phase 2).
 
 Covers:
 
@@ -32,7 +32,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
-from ai_hats.sdk_runner import (
+from ai_hats.surfaces.claude.sdk_runner import (
     SDK_EXIT_ERROR,
     SDK_EXIT_SUCCESS,
     SDK_EXIT_TIMEOUT,

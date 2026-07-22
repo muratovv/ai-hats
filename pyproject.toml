@@ -48,11 +48,6 @@ dependencies = [
     # (0.8.1.dev105+g…), target a clean PyPI release — a stdlib tuple-parse
     # mis-orders dev<release, so packaging.version.Version is load-bearing.
     "packaging>=23.0",
-    # HATS-474: claude_agent_sdk powers the sub-agent / e2e path
-    # (replaces direct subprocess(`claude -p`)). Pinned to 0.2.x — the
-    # SDK stabilised its API at 0.2.0. Bundles the `claude` CLI binary
-    # per-architecture, so installing the SDK is sufficient.
-    "claude-agent-sdk>=0.2.0,<0.3",
 ]
 
 [project.optional-dependencies]

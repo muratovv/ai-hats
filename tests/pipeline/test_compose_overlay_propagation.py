@@ -32,7 +32,7 @@ from click.testing import CliRunner
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.materialize import compose_for_role
-from ai_hats.providers import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 
 # Non-built-in w.r.t. ``maintainer.composition.traits`` so the trait-body
@@ -218,16 +218,21 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     the runtime path doesn't depend on the pipeline funnel for
     correctness anymore.
     """
-    from ai_hats.sdk_options import _build_system_prompt
+    from ai_hats_agy.provider import AgyProvider
 
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)
-    from ai_hats.providers import ClaudeProvider
 
     result = compose_for_role(asm, "maintainer")
-    sdk_payload = _build_system_prompt(result, project, ClaudeProvider())
-    sdk_text = sdk_payload["append"]
+    provider = AgyProvider()
+    sdk_text = provider.build_meta_prompt(
+        result=result,
+        project_dir=project,
+        ticket_context="",
+        linked_context="",
+        task="test",
+    )
 
     missing = [m for m in markers.values() if m not in sdk_text]
     assert not missing, (

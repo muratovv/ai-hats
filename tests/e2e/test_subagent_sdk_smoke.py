@@ -145,6 +145,8 @@ def test_subagent_runner_via_sdk_smoke(
         f"timed_out={metrics.get('timed_out')!r}"
     )
     # SDK-specific telemetry — the whole point of Phase 2.
+    print("METRICS JSON:", metrics)
+
     assert metrics.get("claude_session_id"), (
         "claude_session_id absent from metrics.json — "
         "ResultMessage.session_id capture is broken"
