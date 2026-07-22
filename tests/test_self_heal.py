@@ -206,7 +206,8 @@ def test_get_surface_remediation(tmp_path) -> None:
     assert "packages/surfaces/cline" in rem_known
 
     rem_claude = self_heal.get_surface_remediation("claude")
-    assert rem_claude is None
+    assert rem_claude is not None
+    assert "ai-hats" in rem_claude
 
     rem_unknown = self_heal.get_surface_remediation("unknown_provider_foo")
     assert rem_unknown is None
@@ -217,11 +218,10 @@ def test_surfaces_registry() -> None:
 
     info_claude = get_surface_info("claude")
     assert info_claude is not None
-    assert info_claude.is_builtin is True
+    assert info_claude.package_name == "ai-hats"
 
     info_agy = get_surface_info("agy")
     assert info_agy is not None
     assert info_agy.package_name == "ai-hats-agy"
-    assert info_agy.is_builtin is False
 
 
