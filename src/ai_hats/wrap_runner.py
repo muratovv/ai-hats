@@ -521,7 +521,8 @@ class WrapRunner:
             # fail-open startup warning are readable before the TUI clobbers
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices)
-            exit_code = self._pty_spawn(cmd, env, tracer)
+            with provider.execution_context(self.project_dir):
+                exit_code = self._pty_spawn(cmd, env, tracer)
         except KeyboardInterrupt:
             exit_code = 130
         finally:

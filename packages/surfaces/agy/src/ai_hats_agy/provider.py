@@ -28,6 +28,7 @@ per session id, into gitignored per-session homes):
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,27 @@ class AgyProvider(Provider):
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
+
+    @contextlib.contextmanager
+    def execution_context(self, project_dir: Path):
+        """Bypass root GEMINI.md and AGENTS.md during agy execution.
+
+        agy automatically loads GEMINI.md / AGENTS.md in project_dir; hiding
+        them temporarily prevents root rules from leaking into role sessions.
+        """
+        targets = [project_dir / "GEMINI.md", project_dir / "AGENTS.md"]
+        stashed: list[tuple[Path, Path]] = []
+        try:
+            for target in targets:
+                if target.is_file():
+                    bak = target.parent / f".{target.name}.ai_hats_bak"
+                    target.rename(bak)
+                    stashed.append((target, bak))
+            yield
+        finally:
+            for original, bak in stashed:
+                if bak.is_file():
+                    bak.rename(original)
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # HATS-993: skills reach agy via the native .agy/skills/ registry
