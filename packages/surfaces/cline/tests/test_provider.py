@@ -407,3 +407,59 @@ def test_guard_bridge_allows_safe(tmp_path) -> None:
         ["bash", str(guard)], input=stdin, capture_output=True, text=True, timeout=10,
     )
     assert res.returncode == 0
+
+
+# -- resolve_transcript (HATS-1087) ------------------------------------------
+
+
+def test_resolve_transcript_returns_none_when_dir_absent(tmp_path, monkeypatch) -> None:
+    """No ~/.cline/data/sessions/ → None (cline not installed / never run)."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    provider = ClineProvider()
+    assert provider.resolve_transcript(tmp_path, "20260720-120000-1") is None
+
+
+def test_resolve_transcript_finds_recent_messages_json(
+    tmp_path, monkeypatch,
+) -> None:
+    """mtime-window: a .messages.json with mtime >= session start is found."""
+    import os
+
+    home = tmp_path / "home"
+    sessions_dir = home / ".cline" / "data" / "sessions"
+    sid_dir = sessions_dir / "abc123"
+    sid_dir.mkdir(parents=True)
+    msg = sid_dir / "abc123.messages.json"
+    msg.write_text('{"messages": []}')
+    # mtime = 2023-11-14 (epoch ~1700000000), well after session start 2026 is
+    # impossible; set it to a FIXED future-safe value newer than 2026-07-20.
+    future_ns = 1_900_000_000 * 1_000_000_000  # ~2030
+    os.utime(msg, ns=(future_ns, future_ns))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    provider = ClineProvider()
+    # session_id[:15] = "20260720-120000" → start 2026-07-20T12:00:00Z
+    found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
+    assert found == msg
+
+
+def test_resolve_transcript_skips_older_messages_json(
+    tmp_path, monkeypatch,
+) -> None:
+    """A .messages.json with mtime BEFORE session start is not picked."""
+    import os
+
+    home = tmp_path / "home"
+    sessions_dir = home / ".cline" / "data" / "sessions"
+    sid_dir = sessions_dir / "old"
+    sid_dir.mkdir(parents=True)
+    msg = sid_dir / "old.messages.json"
+    msg.write_text('{"messages": []}')
+    # mtime = 2020-01-01 (well before any ai-hats session_id)
+    old_ns = 1_577_836_800 * 1_000_000_000
+    os.utime(msg, ns=(old_ns, old_ns))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    provider = ClineProvider()
+    found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
+    assert found is None

@@ -17,8 +17,6 @@ from .runtime_common import (  # noqa: F401
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
-    _claude_jsonl_path,
-    _discover_claude_jsonl,
     _print_session_start,
     _fmt_duration,
     _collect_trace_stats,

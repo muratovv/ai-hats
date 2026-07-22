@@ -22,10 +22,6 @@ from ai_hats_observe.artifacts import (
     REASONING_LOG,
     TRANSCRIPT_TXT,
 )
-from .paths import (
-    claude_transcript_path,
-    claude_transcripts_dir,
-)
 from .pipeline.keys import (
     KEY_CLAUDE_SESSION_ID,
     KEY_ERRORS,
@@ -186,6 +182,7 @@ def _finalize_sub_agent(
     static_cost_analyzer=None,
     session_factory=None,
     audit_writer_factory=None,
+    transcript_resolver=None,
 ) -> None:
     """Save transcripts and finalize audit with structured metrics.
 
@@ -248,75 +245,25 @@ def _finalize_sub_agent(
 
     session.finalize_audit(metrics)
 
-    # HATS-535: opt-in structured audit.md via finalize-subagent
-    # sub-pipeline. Requires both work_dir (for JSONL project_key
-    # encoding) and a claude_session_id (no claude jsonl without it —
-    # e.g. Agy provider has neither).
+    # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
+    # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
     claude_session_id = None
     if extra_metrics:
         claude_session_id = extra_metrics.get("claude_session_id")
-    if work_dir is not None and claude_session_id:
+    if work_dir is not None and (claude_session_id or transcript_resolver):
         try:
             _run_finalize_subagent(
                 session,
-                claude_session_id=claude_session_id,
+                claude_session_id=claude_session_id or "",
                 project_dir=work_dir,
                 exit_code=exit_code,
                 static_cost_analyzer=static_cost_analyzer,
                 session_factory=session_factory,
                 audit_writer_factory=audit_writer_factory,
+                transcript_resolver=transcript_resolver,
             )
         except (Exception, KeyboardInterrupt):
             logger.warning("finalize-subagent pipeline failed", exc_info=True)
-
-
-def _claude_jsonl_path(project_dir: Path, claude_session_id: str) -> Path | None:
-    """Resolve path to Claude Code's JSONL conversation file."""
-    return claude_transcript_path(project_dir, claude_session_id)
-
-
-def _discover_claude_jsonl(project_dir: Path, session_id: str) -> Path | None:
-    """Best-effort JSONL discovery when ``--session-id`` was not injected.
-
-    HATS-272: in ``--resume``/``--continue`` mode the wrapper skips
-    ``--session-id`` to avoid Claude CLI rejecting it. Our generated uuid
-    therefore never reaches Claude, and the JSONL lives under Claude's
-    own (different) uuid. Without this fallback ``AuditWriter`` walks
-    the trace branch and emits zero-token metrics.
-
-    Strategy: pick the most-recently-modified ``*.jsonl`` in the project's
-    Claude dir whose mtime is at or after our session start. Single
-    interactive session per project is the common case — heuristic is
-    safe there. Concurrent wraps in the same project may misattribute;
-    accepted limitation, single-session case is the fix target.
-    """
-    from datetime import datetime, timezone
-
-    jsonl_dir = claude_transcripts_dir(project_dir)
-    if not jsonl_dir.is_dir():
-        return None
-    try:
-        start_ts = (
-            datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S")
-            .replace(
-                tzinfo=timezone.utc,
-            )
-            .timestamp()
-        )
-    except (ValueError, IndexError):
-        return None
-
-    best: tuple[float, Path] | None = None
-    for f in jsonl_dir.glob("*.jsonl"):
-        try:
-            mtime = f.stat().st_mtime
-        except OSError:
-            continue
-        if mtime < start_ts:
-            continue
-        if best is None or mtime > best[0]:
-            best = (mtime, f)
-    return best[1] if best else None
 
 
 def _highlight_hash(version: str) -> str:
@@ -558,6 +505,7 @@ def _run_finalize_hitl(
     static_cost_analyzer=None,
     session_factory=None,
     audit_writer_factory=None,
+    transcript_resolver=None,
 ) -> None:
     """Invoke the ``finalize-hitl`` sub-pipeline (HATS-535).
 
@@ -584,6 +532,8 @@ def _run_finalize_hitl(
         initial["session_factory"] = session_factory
     if audit_writer_factory is not None:
         initial["audit_writer_factory"] = audit_writer_factory
+    if transcript_resolver is not None:
+        initial["transcript_resolver"] = transcript_resolver
     pipeline = load_core_pipeline(PIPELINE_FINALIZE_HITL)
     final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors(PIPELINE_FINALIZE_HITL, final_state)
@@ -598,6 +548,7 @@ def _run_finalize_subagent(
     static_cost_analyzer=None,
     session_factory=None,
     audit_writer_factory=None,
+    transcript_resolver=None,
 ) -> None:
     """Invoke the ``finalize-subagent`` sub-pipeline (HATS-535).
 
@@ -622,6 +573,8 @@ def _run_finalize_subagent(
         initial["session_factory"] = session_factory
     if audit_writer_factory is not None:
         initial["audit_writer_factory"] = audit_writer_factory
+    if transcript_resolver is not None:
+        initial["transcript_resolver"] = transcript_resolver
     pipeline = load_core_pipeline(PIPELINE_FINALIZE_SUBAGENT)
     final_state = run_pipeline(pipeline, initial=initial)
     _log_pipeline_errors(PIPELINE_FINALIZE_SUBAGENT, final_state)

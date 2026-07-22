@@ -321,6 +321,7 @@ class SubAgentRunner:
                         static_cost_analyzer=self.payload.static_cost_analyzer,
                         session_factory=self.payload.session_factory,
                         audit_writer_factory=self.payload.audit_writer_factory,
+                        transcript_resolver=self.payload.transcript_resolver,
                     )
                 else:
                     # Legacy subprocess path (Agy and future non-SDK providers).
@@ -351,6 +352,10 @@ class SubAgentRunner:
                         tags=tags,
                         duration_s=time.monotonic() - t0,
                         work_dir=work_dir,
+                        static_cost_analyzer=self.payload.static_cost_analyzer,
+                        session_factory=self.payload.session_factory,
+                        audit_writer_factory=self.payload.audit_writer_factory,
+                        transcript_resolver=self.payload.transcript_resolver,
                     )
 
             except subprocess.TimeoutExpired as exc:
@@ -368,6 +373,7 @@ class SubAgentRunner:
                     tags=tags,
                     duration_s=time.monotonic() - t0,
                     work_dir=work_dir,
+                    transcript_resolver=self.payload.transcript_resolver,
                 )
             except Exception as e:
                 # Catches any unanticipated SDK-path exception too — defence
@@ -386,6 +392,7 @@ class SubAgentRunner:
                     tags=tags,
                     duration_s=time.monotonic() - t0,
                     work_dir=work_dir,
+                    transcript_resolver=self.payload.transcript_resolver,
                 )
             finally:
                 # HATS-1045: release-on-finish BEFORE the cache sweep, so a

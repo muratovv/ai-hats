@@ -13,8 +13,13 @@ import os
 from pathlib import Path
 
 
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.make_audit import MakeAudit
+
+# HATS-1087: discovery moved to the provider; the step no longer has a
+# Claude-specific fallback. Tests inject the real resolver.
+_claude_resolver = ClaudeProvider().resolve_transcript
 
 
 def make_session(tmp_path: Path) -> Session:
@@ -89,6 +94,7 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
         exit_code=0,
         session_factory=Session,
         audit_writer_factory=_CapturingAuditWriter,
@@ -129,6 +135,7 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
         session_dir=session.session_dir,
         claude_session_id="dead-uuid-never-passed-to-claude",
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
         exit_code=0,
         session_factory=Session,
         audit_writer_factory=_CapturingAuditWriter,

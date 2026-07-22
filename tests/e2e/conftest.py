@@ -210,6 +210,25 @@ def requires_claude_auth() -> None:
         pytest.skip(f"claude --version exit {cp.returncode}: {cp.stderr[:200]}")
 
 
+@pytest.fixture
+def requires_cline_auth() -> None:
+    """Skip if ``cline`` binary missing (HATS-1087).
+
+    Probe: ``cline --version`` exits 0. Mirrors ``requires_claude_auth``;
+    auth-gated paths surface their own detection inside the cline run envelope.
+    """
+    if not shutil.which("cline"):
+        pytest.skip("cline binary not found in PATH")
+    try:
+        cp = subprocess.run(
+            ["cline", "--version"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.skip(f"cline --version probe failed: {exc}")
+    if cp.returncode != 0:
+        pytest.skip(f"cline --version exit {cp.returncode}: {cp.stderr[:200]}")
+
+
 @pytest.fixture(scope="session")
 def ai_hats_shim(tmp_path_factory) -> Path:
     """A real ``ai-hats`` executable for e2e tests (HATS-790: no console script).
