@@ -14,6 +14,7 @@ never act in the turn that announces the action.
 | `git push` to a shared branch                    | hard (force-push usually blocked)                |
 | `git push --force` / `-f` / `--force-with-lease` | **irreversible** — rewrites history              |
 | `ai-hats wt merge` / `task transition done`      | commit on base branch — review-gated (HATS-1019) |
+| `task transition execute` (from `plan`)          | implementation start — plan-gated (HATS-1106)    |
 | `TaskCreate` (sub-agent fan-out)                 | reversible but costly to cancel mid-flight       |
 
 **Never chain** a shared-state write with other commands (no `&&`, `||`,
@@ -27,7 +28,7 @@ skip the pause, and their absence in a given session is not a signal to skip
 it. `AI_HATS_SHARED_STATE_ACK=1` is the consent flag; the agent MUST NOT
 self-grant it — set it only on a command the user explicitly approved in this
 conversation (the announce→wait handshake above). The same holds for
-`AI_HATS_MERGE_ACK=1` (worktree merge consent, HATS-1019), where approval
-means review actually passed: the supervisor saw the diff, review notes are
-resolved, and the go to merge is explicit — then merge yourself with the ack;
-anything less is a STOP at review, not a merge. Trace: PROP-052.
+`AI_HATS_MERGE_ACK=1` (worktree merge consent, HATS-1019) and
+`AI_HATS_PLAN_ACK=1` (plan execution consent, HATS-1106), where approval
+means the supervisor explicitly approved the plan — then execute with the ack;
+anything less is a STOP at plan mode, not execute. Trace: PROP-052.

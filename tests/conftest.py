@@ -153,6 +153,7 @@ def _grant_merge_consent(monkeypatch):
     Also propagates into subprocess-spawning e2e tests via env inheritance.
     """
     monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
+    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
     yield
 
 

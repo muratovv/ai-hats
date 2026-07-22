@@ -220,7 +220,10 @@ def test_packaged_default_declares_the_migrated_kit(tmp_path):
     # gate/stamp on entry, clear+skip on reopen, frozen-integrity ambient.
     b = load_backlog().bindings
     assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold", priority=30),)
-    assert b.state_on_enter["execute"] == (HandlerRef("plan-gate", priority=10),)
+    assert b.state_on_enter["execute"] == (
+        HandlerRef("plan-gate", priority=10),
+        HandlerRef("plan-consent", priority=11),
+    )
     assert b.state_on_enter["done"] == (HandlerRef("stamp-lifecycle", priority=12),)
     assert b.state_on_enter["cancelled"] == (HandlerRef("stamp-lifecycle", priority=12),)
     assert b.edge_handlers[("done", "execute")] == (HandlerRef("clear-lifecycle", priority=12),)
