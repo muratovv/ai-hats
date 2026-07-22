@@ -115,3 +115,77 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
     # Pure: the input dict is not mutated.
     assert base["PYTHONPATH"] == "/repo/src"
     assert base["AI_HATS_USER_HOME"] == "/dev/.config"
+
+
+def test_project_run_scrubs_ambient_env(monkeypatch, tmp_path):
+    """HATS-1129: Project.run must scrub ambient ENV_DENYLIST from os.environ."""
+    from _helpers.project import Project
+
+    monkeypatch.setenv(ENV_AI_HATS_DIR, "/leak/ambient/.agent")
+    monkeypatch.setenv("PYTHONPATH", "/leak/src")
+
+    captured_env = None
+
+    def fake_subprocess_run(cmd, cwd, env, capture_output, text, timeout):
+        nonlocal captured_env
+        captured_env = env
+        from types import SimpleNamespace
+
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    project = Project(path=tmp_path, ai_hats_binary=tmp_path / "bin" / "ai-hats")
+    project.run("self", "update")
+
+    assert captured_env is not None
+    assert ENV_AI_HATS_DIR not in captured_env
+    assert "PYTHONPATH" not in captured_env
+
+
+def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
+    """HATS-1129: build_launcher_venv must scrub ambient ENV_DENYLIST from os.environ."""
+    from _helpers.venv import build_launcher_venv
+
+    monkeypatch.setenv(ENV_AI_HATS_DIR, "/leak/ambient/.agent")
+    monkeypatch.setenv("PYTHONPATH", "/leak/src")
+
+    captured_envs = []
+
+    def fake_subprocess_run(cmd, cwd, env, capture_output, text, timeout, check):
+        captured_envs.append(env)
+        if "install-launcher.sh" in cmd[1]:
+            bin_path = tmp_path / "bin" / "ai-hats"
+            bin_path.parent.mkdir(parents=True, exist_ok=True)
+            bin_path.write_text("#!/bin/sh\n")
+            bin_path.chmod(0o755)
+        else:
+            py = (
+                tmp_path
+                / "bootstrap"
+                / ".agent"
+                / "ai-hats"
+                / ".venv"
+                / "bin"
+                / "python"
+            )
+            py.parent.mkdir(parents=True, exist_ok=True)
+            py.write_text("#!/bin/sh\n")
+            py.chmod(0o755)
+        from types import SimpleNamespace
+
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    script = tmp_path / "scripts" / "install-launcher.sh"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    build_launcher_venv(tmp_path, tmp_path)
+
+    assert captured_envs
+    for env in captured_envs:
+        assert ENV_AI_HATS_DIR not in env
+        assert "PYTHONPATH" not in env
+
