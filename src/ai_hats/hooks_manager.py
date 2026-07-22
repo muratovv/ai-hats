@@ -179,8 +179,12 @@ class HooksManager:
         HITL first-run compose seam can route them through the hold (HATS-970).
         """
         provider = self.resolve_provider(self.project_config.provider)
-        provider.ensure_runtime_hooks(self.project_dir, result)
+        # HATS-1123: scripts BEFORE wiring. Wiring-first leaves a window where a
+        # managed command points at a not-yet-written file; a crash or external
+        # revert inside it strands the wiring, and every Bash call in every live
+        # session then fails — settings.json is not re-read mid-session.
         self.materialize_runtime_hooks(result)
+        provider.ensure_runtime_hooks(self.project_dir, result)
         self.materialize_worktree_hooks(result)
         # HATS-1023: consumer lifecycle union — role-independent, so it does
         # not need ``result``; riding materialize() makes `self init` /
