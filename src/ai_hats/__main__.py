@@ -1,21 +1,32 @@
-"""``python -m ai_hats`` — the sole package entry point.
-
-HATS-790 (Alt 5): the ``[project.scripts] ai-hats`` console-script generator
-was removed, so no venv materialises a ``bin/ai-hats`` proxy that direnv could
-shadow ahead of the host launcher. The bash launcher and
-:func:`ai_hats._bootstrap.bootstrap_or_die` both re-exec via
-``<venv>/bin/python -m ai_hats``, which lands here.
-
-Routes through :func:`ai_hats.cli.main_entry` (NOT the bare ``main`` click
-group) so ``--tree`` / ``--tree <path>`` / ``--help --tree`` ordering behaves
-identically to the old console-script entry point — ``main_entry`` is the only
-thing that intercepts ``--tree`` before click's eager-flag parsing.
-"""
+"""``python -m ai_hats`` — the sole package entry point (HATS-790, HATS-1120)."""
 
 from __future__ import annotations
 
-from .cli import main_entry
+import sys
+from .constants import is_debug_mode
+
+
+def main() -> None:
+    try:
+        from .cli import main_entry
+
+        main_entry()
+    except (ImportError, AttributeError) as exc:
+        if is_debug_mode():
+            raise
+        try:
+            from .cli._helpers import _handle_broken_install_or_die
+
+            _handle_broken_install_or_die(exc)
+        except Exception:
+            sys.stderr.write(
+                f"Error: Inconsistent or broken ai-hats installation ({exc}).\n"
+                "Likely cause: package files are out of sync or corrupted.\n"
+                "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
+                "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v\n"
+            )
+            sys.exit(1)
 
 
 if __name__ == "__main__":
-    main_entry()
+    main()

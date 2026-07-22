@@ -461,19 +461,33 @@ def main_entry() -> None:
     (launcher → ``python -m ai_hats`` → ``__main__`` → ``main_entry``); the
     in-process ``CliRunner`` calls ``main`` directly and so bypasses the guard.
     """
-    _guard_self_location()
-    if "--tree" in sys.argv[1:]:
-        from ._tree import print_subtree
-
-        path = _extract_tree_path(sys.argv[1:])
-        print_subtree(main, path, console)
-        sys.exit(0)
-    # HATS-839: a write op resolved to a non-project root — render the library
-    # NotAnAiHatsProjectError as a friendly message instead of a traceback.
-    from ..paths import NotAnAiHatsProjectError
-
     try:
-        main()
-    except NotAnAiHatsProjectError as exc:
-        console.print(f"[red]Error:[/] {exc}")
-        sys.exit(2)
+        _guard_self_location()
+        if "--tree" in sys.argv[1:]:
+            from ._tree import print_subtree
+
+            path = _extract_tree_path(sys.argv[1:])
+            print_subtree(main, path, console)
+            sys.exit(0)
+        # HATS-839: a write op resolved to a non-project root — render the library
+        # NotAnAiHatsProjectError as a friendly message instead of a traceback.
+        from ..paths import NotAnAiHatsProjectError
+
+        try:
+            main()
+        except NotAnAiHatsProjectError as exc:
+            console.print(f"[red]Error:[/] {exc}")
+            sys.exit(2)
+    except (ImportError, AttributeError) as exc:
+        try:
+            from ._helpers import _handle_broken_install_or_die
+
+            _handle_broken_install_or_die(exc)
+        except Exception:
+            sys.stderr.write(
+                f"Error: Inconsistent or broken ai-hats installation ({exc}).\n"
+                "Likely cause: package files are out of sync or corrupted.\n"
+                "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
+                "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v\n"
+            )
+            sys.exit(1)
