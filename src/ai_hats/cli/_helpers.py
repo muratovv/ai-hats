@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, NoReturn
 import click
 from rich.console import Console
 
+from ..constants import is_debug_mode
 from ..paths import PROJECT_CONFIG
 
 if TYPE_CHECKING:
@@ -61,7 +63,8 @@ def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
     ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
     contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
     """
-    from ..self_heal import get_surface_remediation
+    with catch_broken_install():
+        from ..self_heal import get_surface_remediation
 
     click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
     remediation = get_surface_remediation(exc.name)
@@ -125,6 +128,42 @@ class DeadCwdError(click.ClickException):
         )
 
 
+class InconsistentInstallError(click.ClickException):
+    """Raised when an internal import fails due to a broken or inconsistent install (HATS-1120)."""
+
+    def __init__(self, exc: Exception) -> None:
+        msg = (
+            f"Inconsistent or broken ai-hats installation ({exc}).\n"
+            "Likely cause: package files are out of sync or corrupted.\n"
+            "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
+            "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
+        )
+        super().__init__(msg)
+
+
+def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
+    """Handle an ImportError/AttributeError at the CLI boundary and exit (HATS-1120).
+
+    If debug/verbose mode is enabled, re-raises the original exception so the
+    full traceback is displayed. Otherwise, renders InconsistentInstallError to
+    stderr and exits with status 1 without a raw traceback.
+    """
+    if is_debug_mode():
+        raise exc
+    err = InconsistentInstallError(exc)
+    err.show()
+    sys.exit(err.exit_code)
+
+
+@contextlib.contextmanager
+def catch_broken_install():
+    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120)."""
+    try:
+        yield
+    except (ImportError, AttributeError) as exc:
+        _handle_broken_install_or_die(exc)
+
+
 def _project_dir() -> Path:
     """Resolve the project root by walking up from CWD.
 
@@ -173,7 +212,8 @@ def _project_dir() -> Path:
             # Gitlink (linked worktree / submodule): for a linked worktree,
             # route to the main checkout's live tracker; otherwise fall back
             # to this dir (current behaviour, never worse).
-            from ai_hats_wt import WorktreeManager
+            with catch_broken_install():
+                from ai_hats_wt import WorktreeManager
 
             main_root = WorktreeManager.main_worktree_root(d)
             return main_root if main_root is not None else d
@@ -182,7 +222,8 @@ def _project_dir() -> Path:
 
 
 def _assembler(project_dir: Path | None = None):
-    from ..assembler import Assembler
+    with catch_broken_install():
+        from ..assembler import Assembler
 
     return Assembler(project_dir or _project_dir())
 
@@ -208,7 +249,8 @@ def _guard_not_inside_linked_worktree() -> None:
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
     when CWD is OK (main worktree or non-git path).
     """
-    from ai_hats_wt import WorktreeManager
+    with catch_broken_install():
+        from ai_hats_wt import WorktreeManager
 
     cwd = Path.cwd()
     if WorktreeManager.is_inside_linked_worktree(cwd):
@@ -231,10 +273,11 @@ def _task_manager(project_dir: Path | None = None):
     has existing task folders but no `task_prefix` in ai-hats.yaml — keeps
     legacy repos on their historical prefix without manual migration.
     """
-    from ..models import ProjectConfig
-    from ai_hats_tracker.state import TaskManager
-    from ..tracker_wiring import tracker_paths
-    from ..wt_effects import WtWorktreeEffects
+    with catch_broken_install():
+        from ..models import ProjectConfig
+        from ai_hats_tracker.state import TaskManager
+        from ..tracker_wiring import tracker_paths
+        from ..wt_effects import WtWorktreeEffects
 
     pdir = project_dir or _project_dir()
     config_path = pdir / PROJECT_CONFIG
