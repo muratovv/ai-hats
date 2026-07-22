@@ -45,6 +45,11 @@ if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
 
+AGY_FILE_MUTATION_MATCHER = (
+    "Create|Edit|Write|MultiEdit|write_to_file|replace_file_content|multi_replace_file_content"
+)
+
+
 class AgyProvider(Provider):
     """`agy` CLI adapter, registered via the `ai_hats.providers` entry point."""
 
@@ -134,6 +139,8 @@ class AgyProvider(Provider):
             event_list = hooks_map.setdefault(event, [])
             for skill_name, hook in entries:
                 matcher = getattr(hook, "matcher", "")
+                if "Edit" in matcher or "Write" in matcher:
+                    matcher = AGY_FILE_MUTATION_MATCHER
                 script = getattr(hook, "script", "")
                 command = str(agy_skills_dir(project_dir) / skill_name / script)
                 hook_item = {
