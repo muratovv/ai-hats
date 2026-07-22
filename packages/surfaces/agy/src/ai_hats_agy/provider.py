@@ -173,6 +173,7 @@ class AgyProvider(Provider):
         (rules_dir / GEMINI_MD_FILENAME).write_text(prompt_content)
 
         self.materialize_runtime_skills(project_dir, result, session_id)
+        self.ensure_runtime_hooks(project_dir, result)
 
         return ["--add-dir", str(rules_dir)], {}, prompt_content
 
