@@ -139,7 +139,7 @@ class AgyProvider(Provider):
             event_list = hooks_map.setdefault(event, [])
             for skill_name, hook in entries:
                 matcher = getattr(hook, "matcher", "")
-                if matcher == "Edit|Write|MultiEdit":
+                if "Edit" in matcher or "Write" in matcher:
                     matcher = AGY_FILE_MUTATION_MATCHER
                 script = getattr(hook, "script", "")
                 command = str(agy_skills_dir(project_dir) / skill_name / script)
