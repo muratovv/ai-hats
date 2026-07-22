@@ -176,8 +176,10 @@ def test_get_cli_command() -> None:
     assert provider.get_cli_command(["--foo", "bar"]) == ["agy", "--foo", "bar"]
 
 
-def test_get_run_command_with_model() -> None:
-    cmd = AgyProvider().get_run_command(["agy"], "task prompt", model="gemini-2.5-pro")
+def test_get_run_command_with_harness_flags() -> None:
+    provider = AgyProvider()
+    flags = provider.model_flags("gemini-2.5-pro")
+    cmd = provider.get_run_command(["agy"] + flags, "task prompt")
     assert cmd == ["agy", "--model", "gemini-2.5-pro", "-p", "task prompt"]
 
 
