@@ -206,7 +206,7 @@ def _sweep_settings_tags(
 
     # Same removal semantics as the live sweep — empty desired set drops
     # every ai-hats-tagged entry; user-authored entries survive.
-    from .providers import ClaudeProvider
+    from .surfaces.claude.provider import ClaudeProvider
 
     removed = ClaudeProvider._sweep_stale_managed_tags(hooks_root, set())
     if dry_run:

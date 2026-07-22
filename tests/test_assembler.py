@@ -1166,7 +1166,8 @@ def test_user_skill_dir_survives_bump(project_with_library):
 def test_tool_call_hygiene_is_always_on(tmp_path):
     """dev_rule_tool_call_hygiene must appear in system prompt (HATS-251)."""
     from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-    from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
+    from ai_hats.providers import ALWAYS_ON_RULES
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     assert "dev_rule_tool_call_hygiene" in ALWAYS_ON_RULES
 

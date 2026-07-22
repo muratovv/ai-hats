@@ -64,6 +64,10 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     # HATS-1023: consumer lifecycle union — enumerates ALL library skills by
     # design; a per-role CompositionPayload cannot express the union scope.
     "lifecycle_hooks",
+    # HATS-1130: ec85f43d moved ClaudeProvider out of `providers` into
+    # `surfaces/`. It subclasses Provider and reuses that module's markers, so
+    # it IS the provider layer at a new path — not a brick reaching into it.
+    "surfaces",
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)
