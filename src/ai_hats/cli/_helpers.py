@@ -61,7 +61,13 @@ def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
     ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
     contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
     """
+    from ..self_heal import get_surface_remediation
+
     click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
+    remediation = get_surface_remediation(exc.name)
+    if remediation:
+        click.echo(f"Surface provider {exc.name!r} is not installed.", err=True)
+        click.echo(f"Fix: {remediation}\n", err=True)
     click.echo("Available providers:", err=True)
     for name in exc.available:
         click.echo(f"  - {name}", err=True)

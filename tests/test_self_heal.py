@@ -141,19 +141,19 @@ def test_run_editable_heal_noop_when_not_editable(monkeypatch) -> None:
 
 
 def test_run_editable_heal_noop_when_no_surfaces_dir(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [_bp()])
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda *a, **kw: [_bp()])
     assert self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock") is None
 
 
 def test_run_editable_heal_noop_when_nothing_broken(monkeypatch, tmp_path) -> None:
     _with_surfaces(tmp_path)
-    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [])
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda *a, **kw: [])
     assert self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock") is None
 
 
 def test_run_editable_heal_heals_under_lock(monkeypatch, tmp_path) -> None:
     _with_surfaces(tmp_path)
-    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda: [_bp()])
+    monkeypatch.setattr(self_heal, "find_broken_surface_providers", lambda *a, **kw: [_bp()])
     sentinel = self_heal.HealResult(healed=[], warned=[])
     seen: dict = {}
 
@@ -171,3 +171,40 @@ def test_editable_install_root_none_for_unknown_dist() -> None:
     from ai_hats.paths import editable_install_root
 
     assert editable_install_root("no-such-dist-hats966") is None
+
+
+def test_find_uninstalled_surface_members(tmp_path, monkeypatch) -> None:
+    surfaces = tmp_path / "packages" / "surfaces"
+    (surfaces / "agy" / "src" / "ai_hats_agy").mkdir(parents=True)
+    (surfaces / "agy" / "src" / "ai_hats_agy" / "__init__.py").write_text("")
+    (surfaces / "cline" / "src" / "ai_hats_cline").mkdir(parents=True)
+    (surfaces / "cline" / "src" / "ai_hats_cline" / "__init__.py").write_text("")
+
+    # Only 'cline' is registered
+    eps = [EntryPoint(name="cline", value="ai_hats_cline:Provider", group=self_heal.PROVIDER_ENTRY_POINT_GROUP)]
+    monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: eps)
+    # mock _module_resolves so 'ai_hats_cline' resolves and 'ai_hats_agy' does not
+    monkeypatch.setattr(self_heal, "_module_resolves", lambda m: m == "ai_hats_cline")
+
+    missing = self_heal.find_uninstalled_surface_members(tmp_path)
+    assert len(missing) == 1
+    assert missing[0].ep_name == "agy"
+    assert missing[0].module == "ai_hats_agy"
+
+    broken = find_broken_surface_providers(repo_root=tmp_path)
+    assert [b.ep_name for b in broken] == ["agy"]
+
+
+def test_get_surface_remediation(tmp_path) -> None:
+    surfaces = tmp_path / "packages" / "surfaces"
+    (surfaces / "agy").mkdir(parents=True)
+
+    rem_in_tree = self_heal.get_surface_remediation("agy", repo_root=tmp_path)
+    assert rem_in_tree == "uv pip install -e packages/surfaces/agy"
+
+    rem_known = self_heal.get_surface_remediation("cline")
+    assert "packages/surfaces/cline" in rem_known
+
+    rem_unknown = self_heal.get_surface_remediation("unknown_provider_foo")
+    assert rem_unknown is None
+
