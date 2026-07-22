@@ -163,4 +163,4 @@ def test_standalone_kit_runs_guard_before_plan_gate(tmp_path):
     order = [
         s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
     ]
-    assert order == ["frozen-integrity", "plan-gate"]
+    assert order == ["frozen-integrity", "plan-consent", "plan-gate"]
