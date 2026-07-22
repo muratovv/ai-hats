@@ -295,6 +295,58 @@ def test_forced_execute_is_still_gated(kit, tasks_dir, cwd):
 
 
 # ---------------------------------------------------------------------------
+# PlanConsentExtension — supervisor approval gate (AI_HATS_PLAN_ACK=1)
+# ---------------------------------------------------------------------------
+
+
+def test_plan_consent_blocks_without_ack_env(kit, tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+    (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+
+    with pytest.raises(OperationAborted) as exc_info:
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert exc_info.value.subscriber == "plan-consent"
+    assert "supervisor approval" in exc_info.value.reason
+    assert "AI_HATS_PLAN_ACK=1" in exc_info.value.reason
+    assert kit.get("T-1").state == "plan"
+
+
+def test_plan_consent_passes_with_ack_env(kit, tasks_dir, cwd, monkeypatch):
+    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+    (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+
+    walk(kit, "T-1", "execute", cwd=cwd)
+    assert kit.get("T-1").state == "execute"
+
+
+def test_plan_consent_skipped_on_reopen_and_epic(kit, tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    _create(kit, cwd, task_id="T-1", title="Epic")
+    kit.create(actor="test", caller_cwd=cwd, task_id="T-2", title="Child", parent_task="T-1")
+
+    # Epic execute skips plan-consent
+    walk(kit, "T-1", "plan", "execute", cwd=cwd)
+    assert kit.get("T-1").state == "execute"
+
+
+def test_plan_consent_skipped_on_force(kit, tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+    (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+
+    kit.transition(
+        "T-1", "execute", actor="test", caller_cwd=cwd, force=True, reason="forced override"
+    )
+    assert kit.get("T-1").state == "execute"
+
+
+# ---------------------------------------------------------------------------
 # merge_sections — the consumer extension channel (HATS-1023)
 # ---------------------------------------------------------------------------
 

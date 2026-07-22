@@ -21,6 +21,7 @@ def _isolate_session_env(monkeypatch):
     """
     monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
     monkeypatch.delenv("AI_HATS_ROOT_PID", raising=False)
+    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
     yield
 
 

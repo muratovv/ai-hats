@@ -16,7 +16,7 @@ from .frozen import FrozenIntegrityExtension
 from .lifecycle import ClearLifecycleHandler, StampLifecycleHandler
 from .mirror import MirrorLinkHandler
 from .parent_context import ParentContextExtension
-from .plan import PlanGateExtension, PlanScaffoldExtension
+from .plan import PlanConsentExtension, PlanGateExtension, PlanScaffoldExtension
 from .quorum import (
     AUTO_SESSION_ID,
     AUTOCLOSE_ACTOR,
@@ -72,6 +72,7 @@ __all__ = [
     "HypVerdictsExtension",
     "MirrorLinkHandler",
     "ParentContextExtension",
+    "PlanConsentExtension",
     "PlanGateExtension",
     "PlanScaffoldExtension",
     "PropVotesExtension",
