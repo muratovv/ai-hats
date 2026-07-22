@@ -32,7 +32,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
-from ai_hats.paths import GEMINI_MD_FILENAME, agy_skills_dir, gemini_md
+from ai_hats.paths import (
+    GEMINI_MD_FILENAME,
+    agy_skills_dir,
+    gemini_md,
+    gemini_settings_dir,
+    gemini_settings_path,
+)
 from ai_hats.providers import Provider
 
 if TYPE_CHECKING:
@@ -99,6 +105,47 @@ class AgyProvider(Provider):
             gitignore_entry=".agy/skills/",
         )
         return []
+
+    def ensure_runtime_hooks(
+        self, project_dir: Path, result: CompositionResult | None = None
+    ) -> None:
+        """Install provider-specific runtime hooks into ``.gemini/settings.json``. Idempotent."""
+        import json
+        from ai_hats.providers import collect_runtime_hooks
+
+        if result is None:
+            return
+
+        settings_dir = gemini_settings_dir(project_dir)
+        settings_dir.mkdir(parents=True, exist_ok=True)
+        settings_path = gemini_settings_path(project_dir)
+
+        data: dict = {}
+        if settings_path.is_file():
+            try:
+                data = json.loads(settings_path.read_text())
+            except (OSError, ValueError):
+                data = {}
+
+        hooks_map = data.setdefault("hooks", {})
+        collected = collect_runtime_hooks(result)
+
+        for event, entries in collected.items():
+            event_list = hooks_map.setdefault(event, [])
+            for skill_name, hook in entries:
+                matcher = getattr(hook, "matcher", "")
+                script = getattr(hook, "script", "")
+                command = str(agy_skills_dir(project_dir) / skill_name / script)
+                hook_item = {
+                    "matcher": matcher,
+                    "command": command,
+                    "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
+                }
+                if not any(isinstance(h, dict) and h.get("tag") == hook_item["tag"] for h in event_list):
+                    event_list.append(hook_item)
+
+        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+
 
     def build_session_prompt(
         self,
