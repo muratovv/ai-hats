@@ -178,6 +178,13 @@ class HooksManager:
         ``warnings_sink`` collects git-hooks warnings instead of printing so the
         HITL first-run compose seam can route them through the hold (HATS-970).
         """
+        if self.binary_behind_source():
+            if warnings_sink is not None:
+                warnings_sink.append(
+                    "installed ai-hats is behind upstream — skipping hook materialization (run 'ai-hats self update')"
+                )
+            return
+
         provider = self.resolve_provider(self.project_config.provider)
         # HATS-1123: scripts BEFORE wiring. Wiring-first leaves a window where a
         # managed command points at a not-yet-written file; a crash or external
@@ -203,7 +210,7 @@ class HooksManager:
         bare-bump path, leaving only the guards. Idempotent; raises
         :class:`HookError` on a broken install (package data missing).
         """
-        source_root = _builtin_library_hooks()
+        source_root = _builtin_library_hooks(self.project_dir)
         if source_root is None:
             raise HookError("ai_hats.library.hooks not found in package data — broken install")
 
@@ -450,7 +457,7 @@ class HooksManager:
         """
         expected: dict[str, bytes] = {}
         try:
-            src_root = _builtin_library_hooks()  # worktree-aware builtin resolver (HATS-831)
+            src_root = _builtin_library_hooks(self.project_dir)  # worktree-aware builtin resolver (HATS-831 / HATS-1127)
             if src_root is not None and src_root.is_dir():
                 for src in src_root.iterdir():
                     if src.is_file() and src.suffix == ".sh":

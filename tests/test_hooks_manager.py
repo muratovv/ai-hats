@@ -84,3 +84,26 @@ def test_hooksyncresult_status_coerces_and_rejects_unknown():
     assert r.status == "in-sync"
     with pytest.raises(ValueError):
         HookSyncResult("weird")
+
+
+def test_materialize_skips_when_binary_behind_source(tmp_path, monkeypatch):
+    """HATS-1127: materialize() must refuse to write hooks if installed binary is behind upstream."""
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "home"))
+    ProjectConfig(provider="claude").save(tmp_path / PROJECT_CONFIG)
+    asm = Assembler(tmp_path)
+
+    called = False
+
+    def spy_materialize(*a, **kw):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(asm.hooks, "binary_behind_source", lambda: True)
+    monkeypatch.setattr(asm.hooks, "materialize_runtime_hooks", spy_materialize)
+
+    sink: list[str] = []
+    asm.hooks.materialize(None, warnings_sink=sink)
+
+    assert not called, "expected materialize to skip when binary_behind_source() is True"
+    assert any("behind upstream" in w for w in sink)
+

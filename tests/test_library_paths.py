@@ -185,3 +185,27 @@ def test_importlib_root_none_when_package_missing(monkeypatch):
         assert libmod._importlib_library_root() is None
     finally:
         libmod._importlib_library_root.cache_clear()
+
+
+# ---- project_dir / AI_HATS_PROJECT_DIR precedence over cwd (HATS-1127) -----
+
+
+def test_project_dir_parameter_wins_over_cwd(tmp_path, monkeypatch):
+    cwd_lib = _make_monorepo_lib(tmp_path / "cwd_repo")
+    proj_lib = _make_monorepo_lib(tmp_path / "proj_repo")
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(cwd_lib.parent)
+
+    assert builtin_library_root(tmp_path / "proj_repo") == proj_lib
+    assert builtin_library_layers(tmp_path / "proj_repo") == [proj_lib / "core", proj_lib / "usage"]
+
+
+def test_ai_hats_project_dir_env_wins_over_cwd(tmp_path, monkeypatch):
+    cwd_lib = _make_monorepo_lib(tmp_path / "cwd_repo")
+    proj_lib = _make_monorepo_lib(tmp_path / "proj_repo")
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(cwd_lib.parent)
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj_repo"))
+
+    assert builtin_library_root() == proj_lib
+
