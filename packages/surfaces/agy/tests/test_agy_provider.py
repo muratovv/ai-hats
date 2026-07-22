@@ -228,5 +228,24 @@ def test_ensure_runtime_hooks_writes_gemini_settings(tmp_path: Path) -> None:
     assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
 
 
+def test_build_session_prompt_materializes_runtime_hooks_and_settings(tmp_path: Path) -> None:
+    repo_root = Path(__file__).parent.parent.parent.parent.parent
+    asm = Assembler(repo_root)
+    result = asm.composer.compose("maintainer")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    provider = AgyProvider()
+
+    provider.build_session_prompt(project, result, "sid-sp-settings")
+
+    settings_file = project / ".gemini" / "settings.json"
+    assert settings_file.is_file(), ".gemini/settings.json must be created during build_session_prompt"
+    data = json.loads(settings_file.read_text())
+    pre_tool_hooks = data.get("hooks", {}).get("PreToolUse", [])
+    assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
+
+
+
 
 
