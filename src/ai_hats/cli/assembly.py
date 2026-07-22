@@ -19,6 +19,7 @@ import click
 from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
+from ..constants import ENV_INIT_UPDATED
 from ..paths import PROJECT_CONFIG
 from ..providers import provider_names
 from ._helpers import _assembler, _project_dir, console
@@ -155,7 +156,13 @@ def _run_self_update() -> bool:
         raise SystemExit(1)
 
     console.print("[green]✓[/] ai-hats updated")
-    return True
+
+    # HATS-1126: the install just replaced the tree this interpreter is running
+    # from. Modules already imported stay on the old code while anything imported
+    # later is read from the new one, so restart rather than run a split set.
+    os.environ[ENV_INIT_UPDATED] = "1"
+    console.print("[dim]Restarting on the updated ai-hats …[/]")
+    os.execv(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])
 
 
 def _launch_wizard_session() -> None:
@@ -267,20 +274,6 @@ def init(
         console.print("[red]Error[/]: --harness-path is only valid with --channel local.")
         raise SystemExit(2)
 
-    # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
-    # Greenfield init has nothing to back up — the project tree is
-    # empty from ai-hats's POV. Re-init reruns the v07 migration +
-    # registry, both of which can mutate user-managed state.
-    init_backup_path = None
-    if already:
-        from ..migration_backup import BackupError, snapshot_pre_bump
-
-        try:
-            init_backup_path = snapshot_pre_bump(project_dir, label="init")
-        except BackupError as be:
-            console.print(f"[red]Pre-init backup failed[/]: {be}")
-            raise SystemExit(1)
-
     # Wizard runs only when stdin is a TTY and the user did NOT supply
     # both -p and -r (which we treat as a fully-scripted invocation).
     use_wizard = (
@@ -307,8 +300,25 @@ def init(
     # Wizard path step 0: ensure the framework itself is up to date. The
     # subsequent `_launch_wizard_session()` os.execvp's into the freshly
     # installed binary, so the wizard session uses the new code.
-    if use_wizard and not no_update:
+    # HATS-1126: _run_self_update re-execs on success, so it sits above the
+    # pre-init backup below — nothing before this point has side effects that a
+    # second pass would repeat. The env marker keeps that pass from reinstalling.
+    if use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
         _run_self_update()
+
+    # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
+    # Greenfield init has nothing to back up — the project tree is
+    # empty from ai-hats's POV. Re-init reruns the v07 migration +
+    # registry, both of which can mutate user-managed state.
+    init_backup_path = None
+    if already:
+        from ..migration_backup import BackupError, snapshot_pre_bump
+
+        try:
+            init_backup_path = snapshot_pre_bump(project_dir, label="init")
+        except BackupError as be:
+            console.print(f"[red]Pre-init backup failed[/]: {be}")
+            raise SystemExit(1)
 
     if use_wizard and provider is None:
         detected = _detected_providers()
