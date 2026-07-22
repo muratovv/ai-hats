@@ -81,7 +81,8 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     plan_md.write_text(plan_md.read_text(encoding="utf-8") + _PLAN_SECTIONS, encoding="utf-8")
 
     # --- C1c: the wired kernel spins up a worktree on execute + prints the delta ---
-    executed = _rack(rack, "transition", "SBX-001", "execute", cwd=main, env=env)
+    env_ack = {**env, "AI_HATS_PLAN_ACK": "1"}
+    executed = _rack(rack, "transition", "SBX-001", "execute", cwd=main, env=env_ack)
     assert executed.returncode == 0, executed.stderr
     wt_lines = [ln for ln in executed.stdout.splitlines() if ln.strip().startswith("Worktree:")]
     assert wt_lines, f"wired `execute` must create + print a worktree (C1)\n{executed.stdout}"
