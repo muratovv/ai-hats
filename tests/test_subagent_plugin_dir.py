@@ -142,7 +142,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
 
     captured: dict = {}
 
-    def _fake_sdk(*, options, initial_message, timeout_s):
+    def _fake_sdk(options, initial_message, timeout_s=None, **kwargs):
         # Record the options' plugin entry plus snapshot the on-disk
         # contents BEFORE cleanup deletes the cache dir in the runner's
         # finally block (which happens after this stub returns).
@@ -169,10 +169,13 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
             error=None,
         )
 
+
+
     monkeypatch.setattr(runtime_mod, "_cleanup_session_cache", lambda *a, **kw: None)
     monkeypatch.setattr(
-        "ai_hats.surfaces.claude.provider.run_claude_sdk_blocking", _fake_sdk,
+        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking", _fake_sdk,
     )
+
 
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats_observe import SessionManager

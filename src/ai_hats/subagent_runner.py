@@ -280,6 +280,8 @@ class SubAgentRunner:
             try:
                 engine = provider.engine()
                 if engine is not None:
+
+
                     run_result = engine.run(
                         result=result,
                         project_dir=self.project_dir,
@@ -440,7 +442,8 @@ class SubAgentRunner:
         timeout) so the caller's finalize logic is uniform.
         """
         from .sdk_options import build_first_user_message, build_options
-        from .sdk_runner import run_claude_sdk_blocking
+        from ai_hats.surfaces.claude.sdk_runner import run_claude_sdk_blocking
+
 
         ticket_context = self._load_ticket(ticket_id)
         linked_context = self._load_linked_context(ticket_id)
