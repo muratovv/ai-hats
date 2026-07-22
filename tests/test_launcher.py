@@ -512,3 +512,68 @@ def test_pin_exports_resolved_versioned_venv(tmp_path):
     res = _run(["status"], cwd=tmp_path)
     assert res.returncode == 0, res.stderr
     assert f"PIN={versions / sha}" in res.stdout
+
+
+def test_self_update_reports_probe_reason(tmp_path):
+    """HATS-1119: probe failure reason is printed when recreating default venv."""
+    stub_dir = _fake_uv_with_venv_creator(tmp_path / "fake-bin")
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 0, res.stderr
+    assert "interpreter missing at" in res.stderr
+    assert "recreating" in res.stderr
+
+
+def test_self_update_fails_on_pip_install_error(tmp_path):
+    """HATS-1119: heal aborts if `uv pip install` fails."""
+    stub_dir = tmp_path / "fake-bin"
+    stub_dir.mkdir(parents=True, exist_ok=True)
+    uv = stub_dir / "uv"
+    uv.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [[ "${1:-}" == "venv" ]]; then\n'
+        '    target="${@: -1}"\n'
+        '    mkdir -p "$target/bin"\n'
+        '    touch "$target/bin/python"\n'
+        '    chmod +x "$target/bin/python"\n'
+        '    exit 0\n'
+        'fi\n'
+        'if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then\n'
+        '    exit 1\n'
+        'fi\n'
+        'exit 0\n'
+    )
+    _make_executable(uv)
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 1
+    assert "failed to install into recreated venv" in res.stderr
+
+
+def test_self_update_fails_if_post_recreate_probe_fails(tmp_path):
+    """HATS-1119: heal aborts if probe_imports fails post-recreate."""
+    stub_dir = tmp_path / "fake-bin"
+    stub_dir.mkdir(parents=True, exist_ok=True)
+    uv = stub_dir / "uv"
+    uv.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [[ "${1:-}" == "venv" ]]; then\n'
+        '    target="${@: -1}"\n'
+        '    mkdir -p "$target/bin"\n'
+        '    cat > "$target/bin/python" <<\'PY\'\n'
+        '#!/usr/bin/env bash\n'
+        'if [[ "${1:-}" == "-c" ]]; then echo "failed importing ai_hats.cli: module missing"; exit 1; fi\n'
+        'PY\n'
+        '    chmod +x "$target/bin/python"\n'
+        '    exit 0\n'
+        'fi\n'
+        'exit 0\n'
+    )
+    _make_executable(uv)
+    env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
+    res = _run(["self", "update"], cwd=tmp_path, env=env)
+    assert res.returncode == 1
+    assert "recreated venv" in res.stderr
+    assert "is still broken" in res.stderr
+    assert "failed importing ai_hats.cli: module missing" in res.stderr
+

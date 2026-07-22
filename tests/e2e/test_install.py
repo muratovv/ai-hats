@@ -186,7 +186,9 @@ def test_e2e_install_init_break_heal(tmp_path):
     # HATS-675: real-pip heal install — override the 180s helper default
     # to the 300s -n8 gate suite norm (see step 2).
     res = ai_hats("self", "update", timeout=300)
-    assert "venv missing or broken — recreating" in res.stderr
+    assert "venv missing or broken" in res.stderr
+    assert "interpreter missing at" in res.stderr
+    assert "recreating" in res.stderr
     assert (venv / "bin" / "python").is_file(), "heal did not recreate .venv python"
     # Full chain runs post-heal: rich UX from python self update + auto-bump.
     assert "Current version:" in res.stdout
