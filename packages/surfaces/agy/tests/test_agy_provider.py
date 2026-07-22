@@ -122,3 +122,27 @@ def test_get_run_command_headless_skips_trust() -> None:
 
     assert "-p" in cmd
     assert cmd[-1] == "do it"
+
+
+def test_execution_context_temporarily_hides_root_gemini_and_agents_md(tmp_path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    gemini = project / "GEMINI.md"
+    agents = project / "AGENTS.md"
+    gemini.write_text("root gemini rules")
+    agents.write_text("root agents rules")
+
+    provider = AgyProvider()
+    with provider.execution_context(project):
+        assert not gemini.exists()
+        assert not agents.exists()
+        assert (project / ".GEMINI.md.ai_hats_bak").is_file()
+        assert (project / ".AGENTS.md.ai_hats_bak").is_file()
+
+    assert gemini.is_file()
+    assert agents.is_file()
+    assert gemini.read_text() == "root gemini rules"
+    assert agents.read_text() == "root agents rules"
+    assert not (project / ".GEMINI.md.ai_hats_bak").exists()
+    assert not (project / ".AGENTS.md.ai_hats_bak").exists()
+

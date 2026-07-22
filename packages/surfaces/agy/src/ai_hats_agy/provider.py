@@ -82,7 +82,6 @@ class AgyProvider(Provider):
         # HATS-993: skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result, include_skills=False)
 
-
     def materialize_runtime_skills(
         self,
         project_dir: Path,
