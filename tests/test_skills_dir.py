@@ -180,3 +180,27 @@ def test_collect_skill_script_paths_and_inject_env(tmp_path: Path) -> None:
     inject_skill_paths_to_env(env, [alpha, beta], session_skills_dir=mat_dir)
     assert env["PATH"].count(str(alpha.source_path / "scripts")) == 1
 
+
+def test_collect_skill_script_paths_collision_warning(tmp_path: Path, caplog) -> None:
+    import logging
+    from ai_hats.skills_dir import collect_skill_script_paths
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    s1 = _make_skill("s1", skills_root)
+    (s1.source_path / "scripts").mkdir()
+    (s1.source_path / "scripts" / "tool.sh").write_text("#!/bin/bash\necho s1")
+
+    s2 = _make_skill("s2", skills_root)
+    (s2.source_path / "scripts").mkdir()
+    (s2.source_path / "scripts" / "tool.sh").write_text("#!/bin/bash\necho s2")
+
+    with caplog.at_level(logging.WARNING, logger="ai_hats.skills_dir"):
+        paths = collect_skill_script_paths([s1, s2])
+
+    assert s1.source_path / "scripts" in paths
+    assert s2.source_path / "scripts" in paths
+    assert "collision" in caplog.text.lower()
+    assert "tool.sh" in caplog.text
+
+

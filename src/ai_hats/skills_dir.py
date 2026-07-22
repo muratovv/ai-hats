@@ -10,9 +10,13 @@ each other's skills.  # HATS-993
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,21 +32,39 @@ def collect_skill_script_paths(
     skills: Iterable[ResolvedComponent],
     session_skills_dir: Path | None = None,
 ) -> list[Path]:
-    """Collect existing `scripts/` and `bin/` directory paths from composed skills."""
+    """Collect existing `scripts/` and `bin/` directory paths from composed skills.
+
+    If multiple skills declare scripts with identical filenames, PATH resolution
+    follows composition order: the skill appearing earlier in ``skills`` takes
+    precedence. Collisions are logged as warnings.
+    """
     paths: list[Path] = []
+    seen_scripts: dict[str, str] = {}  # script_filename -> skill_name
+
     for skill in skills:
+        dirs_to_check: list[Path] = []
         if session_skills_dir is not None:
-            mat_skill_dir = session_skills_dir / skill.name
-            for sub in ("scripts", "bin"):
-                p = mat_skill_dir / sub
-                if p.is_dir() and p not in paths:
-                    paths.append(p)
+            dirs_to_check.extend([session_skills_dir / skill.name / sub for sub in ("scripts", "bin")])
         if hasattr(skill, "source_path") and skill.source_path and skill.source_path.is_dir():
-            for sub in ("scripts", "bin"):
-                p = skill.source_path / sub
-                if p.is_dir() and p not in paths:
+            dirs_to_check.extend([skill.source_path / sub for sub in ("scripts", "bin")])
+
+        for p in dirs_to_check:
+            if p.is_dir():
+                if p not in paths:
                     paths.append(p)
+                for item in p.iterdir():
+                    if item.is_file() and not item.name.startswith("."):
+                        if item.name in seen_scripts and seen_scripts[item.name] != skill.name:
+                            logger.warning(
+                                "Script name collision: %r in skill %r is shadowed by skill %r earlier in PATH",
+                                item.name,
+                                skill.name,
+                                seen_scripts[item.name],
+                            )
+                        else:
+                            seen_scripts[item.name] = skill.name
     return paths
+
 
 
 def inject_skill_paths_to_env(

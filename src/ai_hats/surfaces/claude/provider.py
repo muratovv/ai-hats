@@ -15,9 +15,12 @@ from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
 from .sdk_options import build_first_user_message, build_options
-from .sdk_runner import run_claude_sdk_blocking
+from . import sdk_runner
+
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
+from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
+
     AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR,
     CLAUDE_PROJECT_DIR_VAR,
@@ -167,15 +170,20 @@ class ClaudeProvider(Provider):
         # the same cache dir so Claude Code's Skill tool can resolve them.
         skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
 
+        extra_env: dict[str, str] = {}
+        plugin_skills_dir = cache_dir / "plugin" / "skills"
+        inject_skill_paths_to_env(extra_env, result.skills, plugin_skills_dir)
+
         return (
             [
                 "--system-prompt-file",
                 str(override_file),
                 *skill_args,
             ],
-            {},
+            extra_env,
             full_content,
         )
+
 
     def supports_sdk_engine(self) -> bool:
         """Indicates this provider uses the Python SDK path."""
@@ -649,7 +657,10 @@ class ClaudeSubagentEngine(SubagentEngine):
             task=task,
             ticket_context=f"Ticket: {ticket_id}" if ticket_id else "",
         )
-        run_res = run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
+        run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
+
+
+
         return ProviderRunResult(
             exit_code=run_res.exit_code,
             stdout=run_res.stdout,

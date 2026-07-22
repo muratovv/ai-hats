@@ -263,8 +263,15 @@ class ClineProvider(Provider):
         session_plugins = session_cache_dir(project_dir, session_id) / "plugins"
         self._write_plugin_files(session_plugins)
 
+        from ai_hats.skills_dir import inject_skill_paths_to_env
+
+        extra_env: dict[str, str] = {}
+        skills_dir = project_dir / ".cline" / "skills"
+        inject_skill_paths_to_env(extra_env, result.skills, skills_dir)
+
         return (
             ["-i", "-s", prompt_content, "--hooks-dir", str(session_plugins)],
-            {},
+            extra_env,
             prompt_content,
         )
+
