@@ -43,13 +43,13 @@ def agy_project(tmp_path):
     return project, result
 
 
-def test_wrap_materializes_skills_into_agy_skills_dir(agy_project) -> None:
+def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
     project, result = agy_project
     provider = AgyProvider()
 
     provider.build_session_prompt(project, result, "sid-1")
 
-    skills_dir = project / ".agy" / "skills"
+    skills_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-1" / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
     refs = json.loads((skills_dir / MANAGED_MARKER).read_text())
     assert refs == {"sid-1": ["s"]}
@@ -62,7 +62,8 @@ def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
     args = provider.materialize_runtime_skills(project, result, "sid-2")
 
     assert args == []
-    assert (project / ".agy" / "skills" / "s" / "SKILL.md").is_file()
+    skills_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-2" / "rules" / ".agents" / "skills"
+    assert (skills_dir / "s" / "SKILL.md").is_file()
 
 
 def test_system_prompt_omits_skills_index(agy_project) -> None:
@@ -75,14 +76,7 @@ def test_system_prompt_omits_skills_index(agy_project) -> None:
     assert "## AVAILABLE SKILLS" not in prompt
 
 
-def test_agy_skills_dir_gitignored(agy_project) -> None:
-    project, result = agy_project
-    provider = AgyProvider()
 
-    provider.materialize_runtime_skills(project, result, "sid-3")
-
-    lines = (project / ".gitignore").read_text().splitlines()
-    assert ".agy/skills/" in lines
 
 
 def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
@@ -205,7 +199,7 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path) -> None:
     provider = AgyProvider()
     provider.materialize_runtime_skills(project, result, "sid-wt")
 
-    wt_skill_dir = project / ".agy" / "skills" / "worktree-isolation"
+    wt_skill_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-wt" / "rules" / ".agents" / "skills" / "worktree-isolation"
     assert (wt_skill_dir / "SKILL.md").is_file()
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
     assert (wt_skill_dir / "hooks" / "code_extensions.json").is_file()
@@ -219,7 +213,7 @@ def test_ensure_runtime_hooks_writes_gemini_settings(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     provider = AgyProvider()
-    provider.ensure_runtime_hooks(project, result)
+    provider.ensure_runtime_hooks(project, result, session_id="test-session")
 
     settings_file = project / ".gemini" / "settings.json"
     assert settings_file.is_file(), ".gemini/settings.json must be created by ensure_runtime_hooks"
