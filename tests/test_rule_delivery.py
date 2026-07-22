@@ -16,7 +16,8 @@ import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.composer import Composer
-from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
+from ai_hats.providers import ALWAYS_ON_RULES
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_agy.provider import AgyProvider
 from ai_hats.resolver import LibraryResolver
 from ai_hats.rule_delivery import (
