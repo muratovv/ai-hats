@@ -5,10 +5,12 @@ Universal post-run validation for reporting roles: zero-output guard
 surface safety guard (HATS-1105).
 """
 
-from .surface_guard import SurfaceGuard, SurfaceGuardError
+from .surface_guard import SurfaceGuard, SurfaceGuardError, SurfaceGuardResult
 
 __all__ = [
     "SurfaceGuard",
     "SurfaceGuardError",
+    "SurfaceGuardResult",
 ]
+
 

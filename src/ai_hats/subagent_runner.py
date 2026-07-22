@@ -268,8 +268,9 @@ class SubAgentRunner:
             state_dir=worktrees_dir(self.project_dir),
         ) as work_dir:
             session.log_sub(f"Working directory: {work_dir}")
-            SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode.value, provider_name)
+            SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode, provider_name).unwrap()
             t0 = time.monotonic()
+
 
             try:
                 if provider_name == PROVIDER_CLAUDE:
@@ -387,8 +388,9 @@ class SubAgentRunner:
                 _ctx.__exit__(None, None, None)
                 _cleanup_session_cache(self.project_dir, session.session_id)
 
-        SurfaceGuard.post_flight_guard(session, work_dir, provider_name)
+        SurfaceGuard.post_flight_guard(session, work_dir, provider_name).unwrap()
         return session
+
 
 
     def _release_ownership_on_finish(self, session: "Session") -> None:
