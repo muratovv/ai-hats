@@ -32,6 +32,40 @@ def test_default_hooks_manager_is_wired_when_not_injected(tmp_path, monkeypatch)
     assert isinstance(asm.hooks, HooksManager)
 
 
+def test_materialize_writes_scripts_before_wiring(tmp_path, monkeypatch):
+    """Script bytes land before the settings.json entry referencing them
+    (HATS-1123).
+
+    Wiring-first leaves a window where a managed PreToolUse command points at a
+    file that does not exist yet; Claude Code execs it and every Bash call in
+    the session fails with ENOENT until the next successful materialize.
+    """
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path / "home"))
+    ProjectConfig(provider="claude").save(tmp_path / PROJECT_CONFIG)
+    asm = Assembler(tmp_path)
+    order: list[str] = []
+
+    real_materialize = asm.hooks.materialize_runtime_hooks
+    real_provider = asm.hooks.resolve_provider(asm.project_config.provider)
+    real_ensure = real_provider.ensure_runtime_hooks
+
+    def spy_materialize(*a, **kw):
+        order.append("scripts")
+        return real_materialize(*a, **kw)
+
+    def spy_ensure(*a, **kw):
+        order.append("wiring")
+        return real_ensure(*a, **kw)
+
+    monkeypatch.setattr(asm.hooks, "materialize_runtime_hooks", spy_materialize)
+    monkeypatch.setattr(real_provider, "ensure_runtime_hooks", spy_ensure)
+    monkeypatch.setattr(asm.hooks, "resolve_provider", lambda _n: real_provider)
+
+    asm.hooks.materialize(None)
+
+    assert order == ["scripts", "wiring"]
+
+
 def test_hookchange_coerces_strings_and_rejects_unknown():
     """H1: string values coerce to enums; an unknown value raises (the guarantee)."""
     c = HookChange("runtime", "x.sh", "content")
