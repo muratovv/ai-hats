@@ -6,9 +6,10 @@ import abc
 import json
 import logging
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -130,6 +131,16 @@ class Provider(abc.ABC):
         settings chain for permission rules the CLI has deprecated.
         """
         return []
+
+    @contextmanager
+    def execution_context(self, project_dir: Path) -> Generator[None, None, None]:
+        """Context manager active around provider execution.
+
+        Base surfaces do nothing; surfaces requiring runtime isolation (e.g. Agy
+        bypassing root GEMINI.md during role execution) override this.
+        """
+        yield
+
 
     def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
         """Assemble the shared system-prompt sections.

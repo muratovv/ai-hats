@@ -182,6 +182,8 @@ class SubAgentRunner:
             result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
         provider_name = provider.name
+        _ctx = provider.execution_context(self.project_dir)
+        _ctx.__enter__()
 
         # HATS-474: for the Claude path the meta-prompt stored on disk is
         # a *forensic* artifact — it records what we actually sent to the
@@ -378,6 +380,7 @@ class SubAgentRunner:
                 # sibling sub-agent sharing this runner's pid can reclaim the
                 # task. Fail-open, so the sweep below always runs.
                 self._release_ownership_on_finish(session)
+                _ctx.__exit__(None, None, None)
                 _cleanup_session_cache(self.project_dir, session.session_id)
 
         return session

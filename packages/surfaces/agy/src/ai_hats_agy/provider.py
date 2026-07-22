@@ -28,8 +28,9 @@ per session id, into gitignored per-session homes):
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
 
 from ai_hats.paths import GEMINI_MD_FILENAME, agy_skills_dir, gemini_md
 from ai_hats.providers import Provider
@@ -51,9 +52,36 @@ class AgyProvider(Provider):
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
 
+    @contextmanager
+    def execution_context(self, project_dir: Path) -> Generator[None, None, None]:
+        """Temporarily move workspace root rule files (GEMINI.md, AGENTS.md) out of the way during agy execution.
+
+        agy automatically scans and merges root GEMINI.md / AGENTS.md files in addition to --add-dir rules.
+        Hiding them during execution prevents project-level rules from leaking into session roles.
+        """
+        targets = [
+            project_dir / GEMINI_MD_FILENAME,
+            project_dir / "AGENTS.md",
+        ]
+        moved: list[tuple[Path, Path]] = []
+        try:
+            for target in targets:
+                if target.exists() or target.is_symlink():
+                    tmp_path = target.with_name(f".{target.name}.ai_hats_bak_{id(self)}")
+                    target.rename(tmp_path)
+                    moved.append((target, tmp_path))
+            yield
+        finally:
+            for target, tmp_path in moved:
+                if tmp_path.exists() or tmp_path.is_symlink():
+                    if target.exists() or target.is_symlink():
+                        target.unlink()
+                    tmp_path.rename(target)
+
     def build_system_prompt(self, result: CompositionResult) -> str:
         # HATS-993: skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result, include_skills=False)
+
 
     def materialize_runtime_skills(
         self,
