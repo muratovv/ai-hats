@@ -50,6 +50,7 @@ class MakeAudit(Step):
                 "project_dir", "exit_code",
                 "session_factory", "audit_writer_factory",
             }),
+            optional=frozenset({"transcript_resolver"}),
             produces=frozenset({"audit_path"}),
         )
 
@@ -63,26 +64,23 @@ class MakeAudit(Step):
         exit_code: int,
         session_factory: Any,
         audit_writer_factory: Any,
+        transcript_resolver: Any = None,
         **_: Any,
     ) -> dict[str, Any]:
-        # Import inside run() to avoid steps→runtime circular at module
-        # load time. ``runtime`` already imports from ``observe`` which
-        # imports from ``pipeline`` indirectly via Session integration.
-        from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
-
         del exit_code  # contract-required key; AuditWriter reads metrics.json instead
 
         session = session_factory(session_id=session_id, session_dir=session_dir)
 
+        # HATS-1087: provider owns discovery; no resolver → trace.log fallback.
         try:
-            jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
-            if jsonl_path is None or not jsonl_path.exists():
-                discovered = _discover_claude_jsonl(project_dir, session_id)
-                if discovered is not None:
-                    session.log_sys(
-                        f"JSONL discovered via mtime fallback: {discovered.name}"
-                    )
-                    jsonl_path = discovered
+            jsonl_path = (
+                transcript_resolver(
+                    project_dir, session_id,
+                    provider_session_id=claude_session_id or None,
+                )
+                if transcript_resolver is not None
+                else None
+            )
             audit_writer_factory().build(session, jsonl_path=jsonl_path)
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
