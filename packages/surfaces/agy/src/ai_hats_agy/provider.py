@@ -28,6 +28,7 @@ per session id, into gitignored per-session homes):
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
@@ -47,6 +48,45 @@ if TYPE_CHECKING:
 AGY_FILE_MUTATION_MATCHER = (
     "Create|Edit|Write|MultiEdit|write_to_file|replace_file_content|multi_replace_file_content"
 )
+
+
+def _owner_alive(backup: Path) -> bool:
+    """Is the session that hid this file still running? Unknown owner reads as alive."""
+    try:
+        pid = int(backup.name.rsplit("_", 1)[-1])
+    except ValueError:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # PermissionError and friends: alive, just not ours
+    return True
+
+
+def _reclaim_abandoned_backups(targets: list[Path]) -> None:
+    """Put back what a killed session hid (HATS-1135).
+
+    ``execution_context`` restores in ``finally``, which never runs on SIGKILL or
+    ``os.execv`` — so recovery has to happen on the way IN. A live owner's backup
+    is left alone: that session is mid-run and still needs it.
+    """
+    for target in targets:
+        orphans = [
+            p for p in target.parent.glob(f".{target.name}.ai_hats_bak_*")
+            if not _owner_alive(p)
+        ]
+        if not orphans:
+            continue
+        orphans.sort(key=lambda p: p.stat().st_mtime)
+        newest = orphans.pop()
+        if target.exists() or target.is_symlink():
+            newest.unlink()  # the original is back; the hidden copy is stale
+        else:
+            newest.rename(target)
+        for stale in orphans:
+            stale.unlink()
 
 
 class AgyProvider(Provider):
@@ -73,11 +113,14 @@ class AgyProvider(Provider):
             project_dir / GEMINI_MD_FILENAME,
             project_dir / "AGENTS.md",
         ]
+        _reclaim_abandoned_backups(targets)
         moved: list[tuple[Path, Path]] = []
         try:
             for target in targets:
                 if target.exists() or target.is_symlink():
-                    tmp_path = target.with_name(f".{target.name}.ai_hats_bak_{id(self)}")
+                    # HATS-1135: the suffix names the OWNER, so a later session can
+                    # tell an abandoned backup from one a live session is holding.
+                    tmp_path = target.with_name(f".{target.name}.ai_hats_bak_{os.getpid()}")
                     target.rename(tmp_path)
                     moved.append((target, tmp_path))
             yield

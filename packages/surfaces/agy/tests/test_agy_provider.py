@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -163,6 +165,47 @@ def test_execution_context_cleans_up_recreated_target(tmp_path: Path) -> None:
 
     assert gemini.is_file()
     assert gemini.read_text() == "original"
+
+
+def _dead_pid() -> int:
+    """A pid that is certainly not running: spawn a trivial child and reap it."""
+    import subprocess
+
+    proc = subprocess.Popen([sys.executable, "-c", ""])
+    proc.wait()
+    return proc.pid
+
+
+def test_execution_context_reclaims_a_backup_left_by_a_dead_session(tmp_path: Path) -> None:
+    """HATS-1135: an abnormal exit (SIGKILL, os.execv) skips the restoring `finally`,
+    leaving the original hidden. The next session must put it back."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    orphan = project / f".GEMINI.md.ai_hats_bak_{_dead_pid()}"
+    orphan.write_text("abandoned by a killed run")
+
+    with AgyProvider().execution_context(project):
+        pass
+
+    gemini = project / "GEMINI.md"
+    assert gemini.is_file(), "orphan backup was not reclaimed"
+    assert gemini.read_text() == "abandoned by a killed run"
+    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
+
+
+def test_execution_context_leaves_a_live_sessions_backup_alone(tmp_path: Path) -> None:
+    """A concurrent session is mid-run — reclaiming its backup would eat its file."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    live = project / f".GEMINI.md.ai_hats_bak_{os.getpid()}"
+    live.write_text("held by a running session")
+
+    with AgyProvider().execution_context(project):
+        pass
+
+    assert live.is_file(), "a live session's backup must not be touched"
+    assert live.read_text() == "held by a running session"
+    assert not (project / "GEMINI.md").exists()
 
 
 def test_rules_dir(tmp_path: Path) -> None:
