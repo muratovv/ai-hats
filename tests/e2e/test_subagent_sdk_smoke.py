@@ -79,6 +79,11 @@ def minimal_claude_project(tmp_path: Path) -> Path:
     """
     project = tmp_path / "project"
     project.mkdir()
+    subprocess.run(["git", "init", "-b", "master"], cwd=str(project), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project), check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project), check=True)
+    subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project), check=True)
+
     lib = tmp_path / "lib"
 
     role_dir = lib / "roles" / "probe"
