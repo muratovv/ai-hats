@@ -1335,7 +1335,6 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     `<ai_hats_dir>` in result.merged_injection. Roles like session-reviewer
     (auto-spawned by reflect-session) carry the literal in their injection."""
     from ai_hats.providers import get_provider
-    from ai_hats.runtime import SubAgentRunner
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1343,13 +1342,6 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    from ai_hats_observe import SessionManager
-
-    runner = SubAgentRunner(
-        project,
-        _subagent_payload(result),
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
-    )
     meta_prompt = get_provider("claude").build_meta_prompt(
         result=result,
         project_dir=project,
@@ -1372,7 +1364,6 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
     reachable on-demand via the `ai-hats task` CLI."""
     from ai_hats.paths import state_md_path
     from ai_hats.providers import get_provider
-    from ai_hats.runtime import SubAgentRunner
 
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1385,13 +1376,6 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    from ai_hats_observe import SessionManager
-
-    runner = SubAgentRunner(
-        project,
-        _subagent_payload(result),
-        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
-    )
     meta_prompt = get_provider("claude").build_meta_prompt(
         result=result,
         project_dir=project,

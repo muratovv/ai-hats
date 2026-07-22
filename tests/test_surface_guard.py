@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_hats.harness.surface_guard import SurfaceGuard, SurfaceGuardError, SurfaceGuardResult
+from ai_hats.harness.surface_guard import SurfaceGuard, SurfaceGuardError
 from ai_hats_wt import IsolationMode
 
 
