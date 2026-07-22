@@ -9,11 +9,37 @@ read one section catalog (``sections.py``) so template and checklist cannot drif
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase
 from .epic import AUTOMATION_ACTOR
 from .sections import DEFAULT_PLAN_SECTIONS, Section, render_scaffold, unfilled_sections
+
+
+class PlanConsentExtension:
+    """Blocks ``plan → execute`` transition unless AI_HATS_PLAN_ACK=1 is set (in-lock)."""
+
+    name = "plan-consent"
+    PHASE = Phase.IN_LOCK
+
+    def requires_states(self) -> frozenset[str]:
+        return frozenset({"execute"})  # gates on entering execute
+
+    def on_event(self, ctx: DispatchContext) -> Delta | None:
+        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic or ctx.force:
+            return None  # epics, automation, and forced overrides skip consent check
+        from_state = getattr(ctx.event, "from_state", "")
+        if from_state == "plan" and os.environ.get("AI_HATS_PLAN_ACK") != "1":
+            raise AbortOperation(
+                f"Transition 'plan -> execute' for '{ctx.task.id}' requires supervisor approval. "
+                "AI_HATS_PLAN_ACK=1 is not set in environment.\n"
+                "1. Present plan.md to the supervisor in chat.\n"
+                "2. After receiving explicit approval, re-run with:\n"
+                f"   AI_HATS_PLAN_ACK=1 rack transition {ctx.task.id} execute"
+            )
+        return None
+
 
 
 class PlanScaffoldExtension:
