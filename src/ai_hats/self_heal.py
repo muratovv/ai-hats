@@ -98,24 +98,22 @@ def find_broken_surface_providers(repo_root: Path | None = None) -> list[BrokenP
     return broken
 
 
-KNOWN_SURFACES: dict[str, str] = {
-    "agy": "ai-hats-agy",
-    "cline": "ai-hats-cline",
-}
-
-
 def get_surface_remediation(provider_name: str, repo_root: Path | None = None) -> str | None:
     """Return a remediation string if provider_name is an in-tree or known surface plugin."""
     from .paths import editable_install_root
+    from .surfaces_registry import get_surface_info
+
+    info = get_surface_info(provider_name)
+    if info is not None and info.is_builtin:
+        return None
 
     root = repo_root or editable_install_root("ai-hats")
     if root is not None:
         member = root.joinpath(*SURFACES_SUBPATH, provider_name)
         if member.is_dir():
             return f"uv pip install -e packages/surfaces/{provider_name}"
-    if provider_name in KNOWN_SURFACES:
-        pkg = KNOWN_SURFACES[provider_name]
-        return f"pip install {pkg}  # (or: uv pip install -e packages/surfaces/{provider_name} in dev repo)"
+    if info is not None and info.package_name:
+        return f"pip install {info.package_name}  # (or: uv pip install -e packages/surfaces/{provider_name} in dev repo)"
     return None
 
 
