@@ -71,13 +71,10 @@ class ClineProvider(Provider):
         self,
         cmd: list[str],
         meta_prompt: str,
-        *,
-        model: str | None = None,
     ) -> list[str]:
         # Strip interactive flags so HITL -i never meets --yolo; other passthrough survives.
         kept = [a for a in (cmd or ["cline"]) if a not in ("-i", "--tui")]
-        extra = ["--model", model] if model else []
-        return [*kept, "--yolo", "--json", *extra, meta_prompt]
+        return [*kept, "--yolo", "--json", meta_prompt]
 
     @staticmethod
     def _plugins_dir(project_dir: Path) -> Path:
