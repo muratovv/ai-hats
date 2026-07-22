@@ -48,6 +48,20 @@ ENV_ROLE = "AI_HATS_ROLE"
 ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
 ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
+ENV_AI_HATS_DEBUG = "AI_HATS_DEBUG"
+ENV_AI_HATS_VERBOSE = "AI_HATS_VERBOSE"
+DEBUG_FLAGS = frozenset({"--debug", "--verbose", "-v"})
+
+
+def is_debug_mode(argv: list[str] | None = None) -> bool:
+    """Return True if debug or verbose mode is enabled via env or CLI flags (HATS-1120)."""
+    import os
+    import sys
+
+    if os.environ.get(ENV_AI_HATS_DEBUG) == "1" or os.environ.get(ENV_AI_HATS_VERBOSE) == "1":
+        return True
+    args = argv if argv is not None else sys.argv[1:]
+    return any(arg in DEBUG_FLAGS for arg in args)
 
 
 # Claude Code hook-event names (HATS-917). Engine vocabularies (HATS-915)

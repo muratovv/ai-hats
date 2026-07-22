@@ -480,9 +480,9 @@ def main_entry() -> None:
             sys.exit(2)
     except (ImportError, AttributeError) as exc:
         try:
-            from ._helpers import _handle_broken_install
+            from ._helpers import _handle_broken_install_or_die
 
-            _handle_broken_install(exc)
+            _handle_broken_install_or_die(exc)
         except Exception:
             sys.stderr.write(
                 f"Error: Inconsistent or broken ai-hats installation ({exc}).\n"
