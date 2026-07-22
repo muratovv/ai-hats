@@ -408,3 +408,37 @@ def test_extract_description_missing_falls_back_to_name(tmp_path):
         source_path=tmp_path / "absent",
     )
     assert _extract_frontmatter_description(skill) == "ghost"
+
+
+def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    skill_dir = tmp_path / "skills" / "with-script"
+    (skill_dir / "scripts").mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: with-script\n---\n")
+
+    skill = ResolvedComponent(
+        name="with-script",
+        component_type=ComponentKind.SKILL,
+        source_path=skill_dir,
+    )
+    result = CompositionResult(
+        name="role",
+        priorities=[],
+        rules=[],
+        skills=[skill],
+        injections=[],
+    )
+
+    # ClaudeProvider
+    claude_p = ClaudeProvider()
+    _, claude_env, _ = claude_p.build_session_prompt(project, result, "sid-claude")
+    assert "PATH" in claude_env
+    assert str(skill_dir / "scripts") in claude_env["PATH"]
+
+    # AgyProvider
+    agy_p = AgyProvider()
+    _, agy_env, _ = agy_p.build_session_prompt(project, result, "sid-agy")
+    assert "PATH" in agy_env
+    assert str(skill_dir / "scripts") in agy_env["PATH"]
+

@@ -177,8 +177,15 @@ def build_options(
         )
     if settings is not None:
         kwargs["settings"] = settings
-    if extra_env:
-        kwargs["env"] = dict(extra_env)
+    env_dict = dict(extra_env) if extra_env else {}
+    from .paths import session_cache_dir
+    from .skills_dir import inject_skill_paths_to_env
+
+    plugin_skills_dir = session_cache_dir(project_dir, session_id) / "plugin" / "skills"
+    inject_skill_paths_to_env(env_dict, composition_result.skills, plugin_skills_dir)
+    if env_dict:
+        kwargs["env"] = env_dict
+
     if max_budget_usd is not None:
         kwargs["max_budget_usd"] = max_budget_usd
     if max_turns is not None:

@@ -145,3 +145,38 @@ def test_corrupt_marker_starts_fresh(tmp_path: Path) -> None:
 
     refs = json.loads((target / MANAGED_MARKER).read_text())
     assert refs == {"sid-1": ["alpha"]}
+
+
+def test_collect_skill_script_paths_and_inject_env(tmp_path: Path) -> None:
+    from ai_hats.skills_dir import collect_skill_script_paths, inject_skill_paths_to_env
+
+    skills_root = tmp_path / "src"
+    skills_root.mkdir()
+    alpha = _make_skill("alpha", skills_root)
+    (alpha.source_path / "scripts").mkdir()
+    (alpha.source_path / "bin").mkdir()
+
+    beta = _make_skill("beta", skills_root)
+    # beta has no scripts or bin
+
+    mat_dir = tmp_path / "mat"
+    mat_dir.mkdir()
+    mat_beta = mat_dir / "beta"
+    (mat_beta / "scripts").mkdir(parents=True)
+
+    paths = collect_skill_script_paths([alpha, beta], session_skills_dir=mat_dir)
+    assert mat_beta / "scripts" in paths
+    assert alpha.source_path / "scripts" in paths
+    assert alpha.source_path / "bin" in paths
+
+    env = {"PATH": "/usr/bin:/bin"}
+    inject_skill_paths_to_env(env, [alpha, beta], session_skills_dir=mat_dir)
+    expected_prefix = f"{alpha.source_path / 'scripts'}:{alpha.source_path / 'bin'}:{mat_beta / 'scripts'}"
+    assert env["PATH"].startswith(expected_prefix)
+    assert env["PATH"].endswith(":/usr/bin:/bin")
+
+
+    # Repeat injection should deduplicate
+    inject_skill_paths_to_env(env, [alpha, beta], session_skills_dir=mat_dir)
+    assert env["PATH"].count(str(alpha.source_path / "scripts")) == 1
+

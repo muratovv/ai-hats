@@ -10,17 +10,59 @@ each other's skills.  # HATS-993
 from __future__ import annotations
 
 import json
+import os
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from pathlib import Path
 
     from ai_hats_core import ResolvedComponent
 
 MANAGED_MARKER = ".ai-hats-managed"
 _LOCK_TIMEOUT = 30.0
+
+
+def collect_skill_script_paths(
+    skills: Iterable[ResolvedComponent],
+    session_skills_dir: Path | None = None,
+) -> list[Path]:
+    """Collect existing `scripts/` and `bin/` directory paths from composed skills."""
+    paths: list[Path] = []
+    for skill in skills:
+        if session_skills_dir is not None:
+            mat_skill_dir = session_skills_dir / skill.name
+            for sub in ("scripts", "bin"):
+                p = mat_skill_dir / sub
+                if p.is_dir() and p not in paths:
+                    paths.append(p)
+        if hasattr(skill, "source_path") and skill.source_path and skill.source_path.is_dir():
+            for sub in ("scripts", "bin"):
+                p = skill.source_path / sub
+                if p.is_dir() and p not in paths:
+                    paths.append(p)
+    return paths
+
+
+def inject_skill_paths_to_env(
+    env: dict[str, str],
+    skills: Iterable[ResolvedComponent],
+    session_skills_dir: Path | None = None,
+) -> None:
+    """Prepend skill `scripts/` and `bin/` directories to env["PATH"] in place."""
+    script_paths = collect_skill_script_paths(skills, session_skills_dir)
+    if not script_paths:
+        return
+    current_path = env.get("PATH") or os.environ.get("PATH", "")
+    existing_parts = current_path.split(":") if current_path else []
+
+    new_parts = [str(p) for p in script_paths if str(p) not in existing_parts]
+    if not new_parts:
+        return
+
+    env["PATH"] = ":".join(new_parts + existing_parts)
+
 
 
 def materialize_skills_dir(

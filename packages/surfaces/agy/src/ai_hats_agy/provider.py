@@ -189,7 +189,14 @@ class AgyProvider(Provider):
         self.materialize_runtime_skills(project_dir, result, session_id)
         self.ensure_runtime_hooks(project_dir, result, session_id=session_id)
 
-        return ["--add-dir", str(rules_dir)], {}, prompt_content
+        extra_env: dict[str, str] = {}
+        from ai_hats.skills_dir import inject_skill_paths_to_env
+
+        skills_dir = self._session_skills_dir(project_dir, session_id)
+        inject_skill_paths_to_env(extra_env, result.skills, skills_dir)
+
+        return ["--add-dir", str(rules_dir)], extra_env, prompt_content
+
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["agy"]
