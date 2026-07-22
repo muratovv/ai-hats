@@ -87,17 +87,17 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
         console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(names)} or a provider name.")
 
 
-def _run_self_update() -> bool:
-    """Run the channel-appropriate ai-hats install inline. Returns True on success.
+def _run_self_update() -> None:
+    """Install the channel-appropriate ai-hats inline, then re-exec into it.
+
+    Returns ONLY when no install took effect (unresolvable channel, failed uv
+    run) — init then continues on the current version. Success never returns:
+    HATS-1126 re-execs, since the install just swapped this interpreter's tree.
 
     Used in the wizard bootstrap path to guarantee newly-onboarded users start
     on the latest framework version for their harness channel (HATS-764): local
     → editable working tree, edge → upstream git HEAD, stable → latest PyPI
     release. Skipped in flag-only (CI) mode and behind ``--no-update``.
-
-    HATS-764 (reviewer MAJOR): routed through the channel so a ``stable`` project
-    no longer silently pulls git master at first install. Wraps the uv subprocess
-    in a Rich spinner so users on slow links see continuous progress.
     """
     import subprocess
 
@@ -121,7 +121,7 @@ def _run_self_update() -> bool:
             version = fetch_latest_stable_version()
         except ChannelResolveError as exc:
             console.print(f"[yellow]Update skipped[/]: {exc}")
-            return False
+            return
         cmd = [
             "uv", "pip", "install", "--python", sys.executable,
             "--reinstall", f"ai-hats=={version}",
@@ -141,7 +141,7 @@ def _run_self_update() -> bool:
         msg = (result.stderr or result.stdout or "").strip().splitlines()
         tail = msg[-1] if msg else "see logs"
         console.print(f"[yellow]Update skipped[/]: {tail}")
-        return False
+        return
 
     # HATS-1116: the install landing is not the install working. An uv exit 0
     # that produced an unusable tree must never reach the success line — and
