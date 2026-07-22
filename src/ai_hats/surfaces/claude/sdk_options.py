@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
 
-    from .providers import Provider
+    from ai_hats.providers import Provider
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ def _build_system_prompt(
     plugin (HATS-701); see :func:`_build_plugins`. The ``<ai_hats_dir>``
     placeholder is expanded here so the agent never sees the literal token.
     """
-    from .placeholders import expand_path_placeholders
+    from ai_hats.placeholders import expand_path_placeholders
 
     text = provider.build_system_prompt(composition_result)
     text = expand_path_placeholders(text, project_dir)

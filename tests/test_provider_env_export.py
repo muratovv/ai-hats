@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats.paths import ai_hats_dir
-from ai_hats.providers import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 
 

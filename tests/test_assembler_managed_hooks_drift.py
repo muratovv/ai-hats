@@ -22,7 +22,7 @@ from ai_hats.paths import (
     wt_hooks_dir,
     PROJECT_CONFIG,
 )
-from ai_hats.providers import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 
 # ----- fixtures / helpers -----

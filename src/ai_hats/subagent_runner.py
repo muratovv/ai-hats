@@ -273,10 +273,11 @@ class SubAgentRunner:
 
 
             try:
-                if provider_name == PROVIDER_CLAUDE:
-                    # HATS-474 Phase 2: SDK engine.
-                    run_result = self._run_via_sdk(
+                engine = provider.engine()
+                if engine is not None:
+                    run_result = engine.run(
                         result=result,
+                        project_dir=self.project_dir,
                         work_dir=work_dir,
                         session_id=session.session_id,
                         task=task,
@@ -286,9 +287,9 @@ class SubAgentRunner:
                         timeout_s=timeout_s,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
-                    if run_result.claude_session_id:
+                    if run_result.session_id:
                         session.log_sub(
-                            f"Claude session_id: {run_result.claude_session_id}"
+                            f"Provider session_id: {run_result.session_id}"
                         )
                     _finalize_sub_agent(
                         session,
@@ -304,8 +305,7 @@ class SubAgentRunner:
                         tags=tags,
                         duration_s=time.monotonic() - t0,
                         extra_metrics={
-                            # metrics.json field vocabulary, not the funnel key
-                            "claude_session_id": run_result.claude_session_id,
+                            "claude_session_id": run_result.session_id,
                             "total_cost_usd": run_result.total_cost_usd,
                             "num_turns": run_result.num_turns,
                             "stop_reason": run_result.stop_reason,
@@ -479,7 +479,7 @@ class SubAgentRunner:
         SDK inputs: the appended part of ``system_prompt`` and the first
         user message.
         """
-        from .sdk_options import _build_system_prompt, build_first_user_message
+        from .surfaces.claude.sdk_options import _build_system_prompt, build_first_user_message
 
         sp = _build_system_prompt(result, self.project_dir, self.payload.provider)
         system_text = sp.get("append", "")

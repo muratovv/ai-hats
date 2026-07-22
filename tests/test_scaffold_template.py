@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats.providers import (
     INJECTION_END,
     INJECTION_START,
     PUBLISH_AGGREGATOR_END,
     PUBLISH_AGGREGATOR_START,
-    ClaudeProvider,
 )
 from ai_hats.paths import PROJECT_CONFIG
 

@@ -176,7 +176,7 @@ def test_load_linked_context_unknown_ticket_returns_empty(tmp_path: Path) -> Non
 
 def test_build_first_user_message_wires_linked_context_after_ticket() -> None:
     """Claude live channel: LINKED_CONTEXT sits after TICKET_CONTEXT."""
-    from ai_hats.sdk_options import build_first_user_message
+    from ai_hats.surfaces.claude.sdk_options import build_first_user_message
 
     msg = build_first_user_message(
         ticket_context="TICKET BODY",
