@@ -42,6 +42,9 @@ ENV_REPO_URL = "AI_HATS_REPO_URL"
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
 ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
 ENV_ROLE = "AI_HATS_ROLE"
+# HATS-1126: set across the re-exec `self init` performs after updating itself, so
+# the second pass does not install again (and loop).
+ENV_INIT_UPDATED = "AI_HATS_INIT_UPDATED"
 # HATS-955: this durable session process's pid, exported to the child so the
 # ephemeral `ai-hats task` subprocess can anchor ownership liveness on it.
 # Duplicated in ai_hats_tracker.constants (the consumer, across the boundary).
