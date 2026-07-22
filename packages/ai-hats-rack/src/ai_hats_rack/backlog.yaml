@@ -10,7 +10,7 @@ fsm:
   states:
     - { name: brainstorm }
     - { name: plan, on_enter: [{ name: plan-scaffold, priority: 30 }] }
-    - { name: execute, on_enter: [{ name: plan-consent, priority: 9 }, { name: plan-gate, priority: 10 }] }
+    - { name: execute, on_enter: [{ name: plan-gate, priority: 10 }, { name: plan-consent, priority: 11 }] }
     - { name: document }
     - { name: review }
     - { name: done, on_enter: [{ name: stamp-lifecycle, priority: 12 }] }

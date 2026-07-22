@@ -38,8 +38,8 @@ priorities:
   slots:
     single-slot: 5
     frozen-integrity: 8
-    plan-consent: 9
     plan-gate: 10
+    plan-consent: 11
     stamp-lifecycle: 12
     hook-runner: 15
     ownership-claim: 20
