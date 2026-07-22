@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-from ai_hats_core import CompositionResult, ResolvedComponent
+from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
 from .sdk_options import build_first_user_message, build_options
@@ -100,8 +100,6 @@ def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
     return findings
 
 class ClaudeProvider(Provider):
-    def supports_sdk_engine(self) -> bool:
-        return True
     @property
     def name(self) -> str:
         return PROVIDER_CLAUDE
