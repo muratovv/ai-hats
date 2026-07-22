@@ -89,7 +89,7 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
     """
     names: set[str] = set()
     try:
-        hooks = _builtin_library_hooks()
+        hooks = _builtin_library_hooks(project_dir)
         if hooks is not None:
             names |= {entry.name for entry in hooks.iterdir() if entry.is_file()}
     except OSError:
@@ -156,8 +156,8 @@ class Assembler:
 
         # Built-in: core + usage. Fail loud FIRST if the pinned library declares a
         # format-schema newer than this ai-hats understands (T18; built-in only).
-        check_library_schema(builtin_library_root())
-        for layer in _builtin_library_layers():
+        check_library_schema(builtin_library_root(self.project_dir))
+        for layer in _builtin_library_layers(self.project_dir):
             paths.append(layer)
 
         # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via
