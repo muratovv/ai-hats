@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,11 +33,19 @@ from ai_hats.paths import (
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
 from ai_hats.constants import HOOK_PRE_TOOL_USE, PROVIDER_CLAUDE
-from ai_hats.providers import INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
+from ai_hats.providers import (
+    INJECTION_START,
+    INJECTION_END,
+    PUBLISH_AGGREGATOR_START,
+    PUBLISH_AGGREGATOR_END,
+    _PERMISSION_ARRAYS,
+    DEPRECATED_RULE_TOOLS,
+)
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
+@dataclass(frozen=True)
 class SettingsFinding:
     """One deprecated permission rule: where it is and what replaces it."""
 

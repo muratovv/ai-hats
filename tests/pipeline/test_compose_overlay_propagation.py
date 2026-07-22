@@ -218,14 +218,15 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     the runtime path doesn't depend on the pipeline funnel for
     correctness anymore.
     """
-    from ai_hats_agy.provider import AgyProvider
-
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)
 
     result = compose_for_role(asm, "maintainer")
-    provider = AgyProvider()
+    # HATS-1130: the SDK path under test is Claude's — build_meta_prompt is a
+    # claude-surface method (it reaches into .sdk_options). ec85f43d swapped in
+    # AgyProvider, which does not have it.
+    provider = ClaudeProvider()
     sdk_text = provider.build_meta_prompt(
         result=result,
         project_dir=project,
