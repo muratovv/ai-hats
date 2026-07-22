@@ -366,11 +366,18 @@ class Assembler:
         # Local import avoids a top-level cycle with paths.py at module load.
         from .paths import last_backup_path as _last_backup_path
 
+        resolved_project = project_dir.resolve()
         for backup_ref in (
             project_dir / ".agent" / ".last_backup",  # pre-v4 location
             _last_backup_path(project_dir),  # v4 location
         ):
             if not backup_ref.exists():
+                continue
+            # HATS-1128: skip backup references outside project_dir
+            try:
+                if not backup_ref.resolve().is_relative_to(resolved_project):
+                    continue
+            except (OSError, ValueError):
                 continue
             # Pointer-file form: text content names a /tmp backup dir
             # created by the retired _backup() helper, which used

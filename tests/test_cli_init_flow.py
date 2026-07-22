@@ -574,6 +574,46 @@ def test_migrate_cleanup_ignores_non_tmp_pointer_target(tmp_path):
     assert (user_dir / "important.txt").exists()
 
 
+def test_migrate_cleanup_ignores_last_backup_outside_project_dir(tmp_path, monkeypatch):
+    """HATS-1128: if AI_HATS_DIR points outside project_dir,
+    _cleanup_obsolete_files must NOT sweep or delete foreign .last_backup
+    pointer files or referenced payload dirs."""
+    import tempfile
+    from pathlib import Path
+
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths.constants import ENV_AI_HATS_DIR
+
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    (project_dir / PROJECT_CONFIG).write_text(
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
+    )
+
+    foreign_dir = tmp_path / "foreign-ai-hats"
+    foreign_dir.mkdir()
+
+    backup_payload = Path(tempfile.mkdtemp(prefix="ai-hats-backup-"))
+    (backup_payload / "marker").write_text("foreign-payload")
+
+    foreign_pointer = foreign_dir / ".last_backup"
+    foreign_pointer.write_text(str(backup_payload))
+
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign_dir))
+
+    actions = Assembler._cleanup_obsolete_files(project_dir)
+
+    assert foreign_pointer.exists(), "foreign pointer file must NOT be swept"
+    assert backup_payload.exists(), "foreign referenced backup dir must NOT be removed"
+    assert actions == []
+
+    # Clean up temp payload created for test
+    if backup_payload.exists():
+        import shutil
+        shutil.rmtree(backup_payload, ignore_errors=True)
+
+
+
 def test_update_command_uses_uv_reinstall():
     """Update command must use `uv pip install --reinstall` and NOT disable cache.
 
