@@ -7,10 +7,9 @@ import contextlib
 import json
 import logging
 import warnings
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -141,14 +140,7 @@ class Provider(abc.ABC):
         """
         return []
 
-    @contextmanager
-    def execution_context(self, project_dir: Path) -> Generator[None, None, None]:
-        """Context manager active around provider execution.
 
-        Base surfaces do nothing; surfaces requiring runtime isolation (e.g. Agy
-        bypassing root GEMINI.md during role execution) override this.
-        """
-        yield
 
 
     def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
@@ -275,7 +267,7 @@ class Provider(abc.ABC):
         return None
 
     def ensure_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None = None
+        self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
         """Install provider-specific runtime hooks (e.g. Claude Code PreToolUse).
 
@@ -594,7 +586,7 @@ class ClaudeProvider(Provider):
     _LEAKED_PROJECT_HOOK_MARKER = "ai-hats/library/hooks/"
 
     def ensure_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None = None
+        self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
         """Install / refresh ai-hats-managed runtime-hook entries in
         ``.claude/settings.json``. Idempotent.
