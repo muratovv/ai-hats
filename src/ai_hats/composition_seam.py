@@ -169,6 +169,9 @@ def build_composition_payload(
         audit_writer_factory=partial(
             AuditWriter, parser=provider.transcript_parser()
         ),
+        # HATS-1087: the provider knows WHERE its transcript lives; the parser
+        # (above) knows HOW to read it. Both ride the payload to the finalize steps.
+        transcript_resolver=provider.resolve_transcript,
     )
 
 

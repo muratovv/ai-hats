@@ -25,3 +25,4 @@ from .claude import *  # noqa: F403
 from .agy import *  # noqa: F403
 from .validation import *  # noqa: F403
 from .library import *  # noqa: F403
+from ._discovery import *  # noqa: F403

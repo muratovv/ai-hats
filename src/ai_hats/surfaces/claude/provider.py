@@ -110,6 +110,17 @@ class ClaudeProvider(Provider):
         # HATS-948: Claude emits a structured JSONL session log → richer parse.
         return ClaudeParser()
 
+    def resolve_transcript(
+        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
+    ) -> Path | None:
+        from ai_hats.paths import claude_transcript_path, claude_transcripts_dir, resolve_transcript
+
+        return resolve_transcript(
+            claude_transcripts_dir(project_dir), "*.jsonl", session_id,
+            exact_path=claude_transcript_path(project_dir, provider_session_id)
+            if provider_session_id else None,
+        )
+
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)
 
