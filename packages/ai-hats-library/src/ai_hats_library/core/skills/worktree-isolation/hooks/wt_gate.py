@@ -165,7 +165,15 @@ def main() -> int:
     except Exception:
         return 0  # unparsable / empty -> fail-open allow
 
-    file_path = (payload.get("tool_input") or {}).get("file_path") or ""
+    tool_input = payload.get("tool_input") or {}
+    file_path = (
+        tool_input.get("file_path")
+        or tool_input.get("path")
+        or tool_input.get("target_file")
+        or tool_input.get("TargetFile")
+        or tool_input.get("AbsolutePath")
+        or ""
+    )
     if not file_path:
         return 0
 
