@@ -13,7 +13,10 @@ from types import SimpleNamespace
 import pytest
 
 from ai_hats import providers as prov
-from ai_hats.provider_entry_points import PROVIDER_ENTRY_POINT_GROUP
+from ai_hats.provider_entry_points import (
+    PROVIDER_ENTRY_POINT_GROUP,
+    _is_first_party_entry_point,
+)
 from ai_hats.providers import (
     Provider,
     get_provider,
@@ -139,17 +142,15 @@ def test_first_party_broken_entry_point_raises(monkeypatch):
 
 
 def test_is_first_party_entry_point_helper():
-    assert not prov._is_first_party_entry_point(SimpleNamespace())
-    assert not prov._is_first_party_entry_point(SimpleNamespace(dist=None))
-    assert not prov._is_first_party_entry_point(
-        SimpleNamespace(dist=SimpleNamespace(name="acme-hats"))
-    )
-    assert not prov._is_first_party_entry_point(
+    assert not _is_first_party_entry_point(SimpleNamespace())
+    assert not _is_first_party_entry_point(SimpleNamespace(dist=None))
+    assert not _is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="acme-hats")))
+    assert not _is_first_party_entry_point(
         SimpleNamespace(dist=SimpleNamespace(name="ai-hats-agy"))
     )
-    assert prov._is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai-hats")))
-    assert prov._is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai_hats")))
-    assert prov._is_first_party_entry_point(
+    assert _is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai-hats")))
+    assert _is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai_hats")))
+    assert _is_first_party_entry_point(
         SimpleNamespace(dist=SimpleNamespace(metadata={"Name": "ai-hats"}))
     )
 

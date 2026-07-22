@@ -10,9 +10,31 @@ from __future__ import annotations
 
 import importlib.metadata
 
+from typing import Any
+
 PROVIDER_ENTRY_POINT_GROUP = "ai_hats.providers"
 
 
 def _provider_entry_points():
     """Entry points advertised under the provider group (isolated for tests)."""
     return importlib.metadata.entry_points(group=PROVIDER_ENTRY_POINT_GROUP)
+
+
+def _is_first_party_entry_point(ep: Any) -> bool:
+    """Return True if entry point `ep` is shipped directly by first-party `ai-hats`.
+
+    Distinguishes first-party entry points (distribution name `ai-hats` or `ai_hats`)
+    from out-of-tree surface plugins (e.g. `ai-hats-agy`, `ai-hats-cline`) or
+    third-party plugins. Used by provider loading to ensure first-party entry
+    point load failures raise loudly (HATS-1121) rather than being swallowed as a
+    warning line.
+    """
+    dist = getattr(ep, "dist", None)
+    if dist is None:
+        return False
+    name = getattr(dist, "name", None)
+    if not name and hasattr(dist, "metadata"):
+        name = dist.metadata.get("Name")
+    if not name:
+        return False
+    return name.replace("_", "-").lower() == "ai-hats"

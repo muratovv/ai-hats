@@ -9,7 +9,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -35,7 +35,10 @@ from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
-from .provider_entry_points import _provider_entry_points
+from .provider_entry_points import (
+    _is_first_party_entry_point,
+    _provider_entry_points,
+)
 from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
 from . import owners
@@ -908,19 +911,6 @@ def register_provider(name: str, cls: type[Provider]) -> None:
     if name in _PROVIDER_REGISTRY:
         raise ProviderRegistryError(f"provider already registered: {name!r}")
     _PROVIDER_REGISTRY[name] = cls
-
-
-def _is_first_party_entry_point(ep: Any) -> bool:
-    """Return True if entry point `ep` is shipped directly by first-party `ai-hats`."""
-    dist = getattr(ep, "dist", None)
-    if dist is None:
-        return False
-    name = getattr(dist, "name", None)
-    if not name and hasattr(dist, "metadata"):
-        name = dist.metadata.get("Name")
-    if not name:
-        return False
-    return name.replace("_", "-").lower() == "ai-hats"
 
 
 def _load_provider_entry_points() -> None:
