@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING, Generator
 
 from ai_hats.paths import (
     GEMINI_MD_FILENAME,
-    agy_skills_dir,
     gemini_md,
     gemini_settings_dir,
     gemini_settings_path,
@@ -93,32 +92,37 @@ class AgyProvider(Provider):
         # HATS-993: skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result, include_skills=False)
 
+    def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
+        from ai_hats.paths import session_cache_dir
+        return session_cache_dir(project_dir, session_id) / "rules" / ".agents" / "skills"
+
     def materialize_runtime_skills(
         self,
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
     ) -> list[str]:
-        """Mirror the role's skills into ``.agy/skills/``."""
+        """Mirror the role's skills into the session's ``rules/.agents/skills/``."""
         from ai_hats.skills_dir import materialize_skills_dir
 
         materialize_skills_dir(
-            agy_skills_dir(project_dir),
+            self._session_skills_dir(project_dir, session_id),
             result.skills,
             project_dir,
             session_id,
-            gitignore_entry=".agy/skills/",
+            gitignore_entry=None,  # session dir is already gitignored
         )
         return []
 
     def ensure_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None = None
+        self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
         """Install provider-specific runtime hooks into ``.gemini/settings.json``. Idempotent."""
         import json
         from ai_hats.providers import collect_runtime_hooks
 
-        if result is None:
+        session_id = kwargs.get("session_id")
+        if result is None or session_id is None:
             return
 
         settings_dir = gemini_settings_dir(project_dir)
@@ -135,6 +139,8 @@ class AgyProvider(Provider):
         hooks_map = data.setdefault("hooks", {})
         collected = collect_runtime_hooks(result)
 
+        skills_dir = self._session_skills_dir(project_dir, session_id)
+
         for event, entries in collected.items():
             event_list = hooks_map.setdefault(event, [])
             for skill_name, hook in entries:
@@ -142,14 +148,15 @@ class AgyProvider(Provider):
                 if "Edit" in matcher or "Write" in matcher:
                     matcher = AGY_FILE_MUTATION_MATCHER
                 script = getattr(hook, "script", "")
-                command = str(agy_skills_dir(project_dir) / skill_name / script)
+                command = str(skills_dir / skill_name / script)
                 hook_item = {
                     "matcher": matcher,
                     "command": command,
                     "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
                 }
-                if not any(isinstance(h, dict) and h.get("tag") == hook_item["tag"] for h in event_list):
-                    event_list.append(hook_item)
+                # Overwrite existing hook with same tag (to update path to current session)
+                event_list[:] = [h for h in event_list if not (isinstance(h, dict) and h.get("tag") == hook_item["tag"])]
+                event_list.append(hook_item)
 
         settings_path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -180,7 +187,7 @@ class AgyProvider(Provider):
         (rules_dir / GEMINI_MD_FILENAME).write_text(prompt_content)
 
         self.materialize_runtime_skills(project_dir, result, session_id)
-        self.ensure_runtime_hooks(project_dir, result)
+        self.ensure_runtime_hooks(project_dir, result, session_id=session_id)
 
         return ["--add-dir", str(rules_dir)], {}, prompt_content
 
