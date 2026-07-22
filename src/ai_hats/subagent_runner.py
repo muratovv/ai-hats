@@ -231,6 +231,11 @@ class SubAgentRunner:
             ENV_ROLE: role_name,
             ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
+        from .skills_dir import inject_skill_paths_to_env
+
+        inject_skill_paths_to_env(env, result.skills)
+        inject_skill_paths_to_env(sdk_env_overlay, result.skills)
+
 
         # Legacy subprocess path still needs cmd / skill_args precomputed.
         # The Claude SDK path materializes skills internally via
