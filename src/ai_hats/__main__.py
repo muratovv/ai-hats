@@ -11,8 +11,10 @@ def main() -> None:
         from .cli import main_entry
 
         main_entry()
-    except (ImportError, AttributeError) as exc:
-        if is_debug_mode():
+    except Exception as exc:
+        from .cli._helpers import _is_broken_install_exception
+
+        if is_debug_mode() or not _is_broken_install_exception(exc):
             raise
         try:
             from .cli._helpers import _handle_broken_install_or_die
@@ -26,6 +28,7 @@ def main() -> None:
                 "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v\n"
             )
             sys.exit(1)
+
 
 
 if __name__ == "__main__":
