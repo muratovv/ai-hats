@@ -9,7 +9,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -139,9 +139,6 @@ class Provider(abc.ABC):
         settings chain for permission rules the CLI has deprecated.
         """
         return []
-
-
-
 
     def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
         """Assemble the shared system-prompt sections.
@@ -348,9 +345,6 @@ class Provider(abc.ABC):
             reason="system-prompt",
             project_dir=project_dir,
         )
-
-
-
 
 
 # ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
@@ -916,11 +910,25 @@ def register_provider(name: str, cls: type[Provider]) -> None:
     _PROVIDER_REGISTRY[name] = cls
 
 
+def _is_first_party_entry_point(ep: Any) -> bool:
+    """Return True if entry point `ep` is shipped directly by first-party `ai-hats`."""
+    dist = getattr(ep, "dist", None)
+    if dist is None:
+        return False
+    name = getattr(dist, "name", None)
+    if not name and hasattr(dist, "metadata"):
+        name = dist.metadata.get("Name")
+    if not name:
+        return False
+    return name.replace("_", "-").lower() == "ai-hats"
+
+
 def _load_provider_entry_points() -> None:
     """Discover + register out-of-tree providers via entry points (IoC).
 
     A built-in already self-registered wins (silent skip); a broken or duplicate
-    entry point is warned and skipped — discovery never breaks import.
+    third-party entry point is warned and skipped. First-party entry points
+    shipped by ai-hats itself must fail loudly on load failure (HATS-1121).
     """
     try:
         entry_points = list(_provider_entry_points())
@@ -934,10 +942,13 @@ def _load_provider_entry_points() -> None:
             cls = ep.load()
             register_provider(ep.name, cls)
         except Exception as exc:  # noqa: BLE001 - one bad plugin must not break the rest
+            if _is_first_party_entry_point(ep):
+                raise
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
 
 _ENTRY_POINTS_LOADED = False
+
 
 def _ensure_entry_points_loaded() -> None:
     global _ENTRY_POINTS_LOADED

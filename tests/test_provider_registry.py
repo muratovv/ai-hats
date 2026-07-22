@@ -8,6 +8,7 @@ at import and third parties register via ``register_provider`` (or the
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -75,17 +76,18 @@ def test_only_claude_selfregisters_as_builtin():
     prov._register_builtins()
     # claude is the sole in-tree builtin; agy/cline are out-of-tree entry-point
     # plugins discovered via ``ai_hats.providers`` (test_out_of_tree_… below).
-    assert provider_names() == [PROVIDER_CLAUDE]
+    assert list(prov._PROVIDER_REGISTRY) == [PROVIDER_CLAUDE]
     assert isinstance(get_provider(PROVIDER_CLAUDE), prov.ClaudeProvider)
 
 
 class _FakeEntryPoint:
     """Stand-in for importlib.metadata.EntryPoint (only .name / .load used)."""
 
-    def __init__(self, name: str, cls: type, *, boom: bool = False):
+    def __init__(self, name: str, cls: type, *, boom: bool = False, dist=None):
         self.name = name
         self._cls = cls
         self._boom = boom
+        self.dist = dist
         self.loaded = False
 
     def load(self):
@@ -123,6 +125,33 @@ def test_broken_entry_point_is_skipped_not_fatal(monkeypatch, caplog):
     assert "plugin" in provider_names()  # good one still registered
     assert {"claude"} <= set(provider_names())  # built-ins intact
     assert any("broken" in r.message for r in caplog.records)
+
+
+def test_first_party_broken_entry_point_raises(monkeypatch):
+    bad_dist = SimpleNamespace(name="ai-hats")
+    bad = _FakeEntryPoint("firstparty", _FakeProvider, boom=True, dist=bad_dist)
+    monkeypatch.setattr(prov, "_provider_entry_points", lambda: [bad])
+    prov._reset_for_tests()
+    prov._register_builtins()
+
+    with pytest.raises(RuntimeError, match="plugin import blew up"):
+        prov._load_provider_entry_points()
+
+
+def test_is_first_party_entry_point_helper():
+    assert not prov._is_first_party_entry_point(SimpleNamespace())
+    assert not prov._is_first_party_entry_point(SimpleNamespace(dist=None))
+    assert not prov._is_first_party_entry_point(
+        SimpleNamespace(dist=SimpleNamespace(name="acme-hats"))
+    )
+    assert not prov._is_first_party_entry_point(
+        SimpleNamespace(dist=SimpleNamespace(name="ai-hats-agy"))
+    )
+    assert prov._is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai-hats")))
+    assert prov._is_first_party_entry_point(SimpleNamespace(dist=SimpleNamespace(name="ai_hats")))
+    assert prov._is_first_party_entry_point(
+        SimpleNamespace(dist=SimpleNamespace(metadata={"Name": "ai-hats"}))
+    )
 
 
 def test_discovery_failure_is_non_fatal(monkeypatch):
