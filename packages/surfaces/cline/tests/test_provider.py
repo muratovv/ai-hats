@@ -57,8 +57,11 @@ def test_get_run_command_is_headless_yolo() -> None:
 
 
 def test_get_run_command_threads_model() -> None:
-    cmd = ClineProvider().get_run_command(["cline"], "task", model="glm-5.2")
-    assert cmd == ["cline", "--yolo", "--json", "--model", "glm-5.2", "task"]
+    provider = ClineProvider()
+    flags = provider.model_flags("glm-5.2")
+    cmd = provider.get_run_command(["cline"] + flags, "task")
+    # model flag gets sorted with the command prefix before the meta prompt
+    assert cmd == ["cline", "--model", "glm-5.2", "--yolo", "--json", "task"]
     # task prompt stays positional-last
     assert cmd[-1] == "task"
 

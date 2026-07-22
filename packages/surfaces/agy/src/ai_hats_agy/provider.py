@@ -201,11 +201,8 @@ class AgyProvider(Provider):
         self,
         cmd: list[str],
         meta_prompt: str,
-        *,
-        model: str | None = None,
     ) -> list[str]:
-        extra = ["--model", model] if model else []
-        return cmd + extra + ["-p", meta_prompt]
+        return cmd + ["-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR

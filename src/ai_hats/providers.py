@@ -192,19 +192,19 @@ class Provider(abc.ABC):
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         """Get the CLI command to launch this provider."""
 
+    def model_flags(self, model: str) -> list[str]:
+        """Convert a model name into provider-specific CLI flags."""
+        return ["--model", model]
+
     def get_run_command(
         self,
         cmd: list[str],
         meta_prompt: str,
-        *,
-        model: str | None = None,
     ) -> list[str]:
         """Build a non-interactive command that runs ``meta_prompt`` through this provider.
 
         Default: return ``cmd`` unchanged. Subclasses tailor the invocation
         to their CLI (e.g. Claude needs ``--print -p``, Agy needs ``-p``).
-        ``model`` is an optional explicit model name; when None, the provider
-        CLI's default applies (back-compat).
         """
         return cmd
 
@@ -552,11 +552,8 @@ class ClaudeProvider(Provider):
         self,
         cmd: list[str],
         meta_prompt: str,
-        *,
-        model: str | None = None,
     ) -> list[str]:
-        extra = ["--model", model] if model else []
-        return cmd + extra + ["--print", "-p", meta_prompt]
+        return cmd + ["--print", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         # HATS-819: hand every runtime hook a clean writable anchor so it need
