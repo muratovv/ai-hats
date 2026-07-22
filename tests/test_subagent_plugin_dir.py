@@ -182,7 +182,8 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     runner = runtime_mod.SubAgentRunner(
         project, payload, session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    runner.run(task="hi", isolation_mode="discard")
+    runner.run(task="hi", isolation_mode="none")
+
 
     assert len(captured["plugins"]) == 1, captured["plugins"]
     plugin = captured["plugins"][0]
