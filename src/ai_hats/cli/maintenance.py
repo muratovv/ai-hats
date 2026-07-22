@@ -389,6 +389,23 @@ def _build_install_cmd(python_exe: str, install_spec: str) -> list[str]:
     return ["uv", "pip", "install", "--python", python_exe, "--reinstall", install_spec]
 
 
+def _run_post_install_verify(python_exe: str) -> tuple[bool, str]:
+    """Prove the just-installed tree is usable; return ``(ok, detail)``.
+
+    A fresh interpreter is what makes this meaningful — the calling process
+    still holds the pre-install code in memory (HATS-213).
+    """
+    with console.status("[cyan]Verifying install …[/]", spinner="dots"):
+        verify = subprocess.run(
+            [python_exe, "-m", "ai_hats._bootstrap", "verify"],
+            capture_output=True,
+            text=True,
+        )
+    if verify.returncode == 0:
+        return True, ""
+    return False, (verify.stderr or verify.stdout or "").strip() or "see logs"
+
+
 def _flip_current(project_dir: Path, sha: str) -> None:
     """Atomically point ``versions/current`` at ``sha`` (tmp-write + replace).
 
@@ -1642,19 +1659,12 @@ def update(
             # it heals via cli.main() layer A on the next invocation.)
             sys.exit(1)
 
-        # 2b. HATS-213 stage-2 verify: run a fresh interpreter against the
-        # just-installed on-disk code, so any new declared runtime dep that
-        # somehow didn't land gets healed before the user's next invocation.
-        # Failures are non-fatal — layer A in cli.main() catches the rest.
-        with console.status("[cyan]Verifying install …[/]", spinner="dots"):
-            verify = subprocess.run(
-                [sys.executable, "-m", "ai_hats._bootstrap", "verify"],
-                capture_output=True,
-                text=True,
-            )
-        if verify.returncode != 0:
-            warning = (verify.stderr or verify.stdout or "").strip() or "see logs"
-            console.print(f"[yellow]Post-install verify warned[/]: {warning}")
+        # 2b. HATS-213 stage-2 verify. Non-fatal here by HATS-213's choice —
+        # NB its stated rationale (layer A heals it next run) covers missing
+        # deps only, not the integrity failures HATS-1116 added.
+        ok, detail = _run_post_install_verify(sys.executable)
+        if not ok:
+            console.print(f"[yellow]Post-install verify warned[/]: {detail}")
 
         # 3. Version diff
         new_version = _get_installed_version()

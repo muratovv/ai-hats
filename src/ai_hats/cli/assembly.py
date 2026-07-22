@@ -102,7 +102,12 @@ def _run_self_update() -> bool:
 
     from ..channel import ChannelResolveError, fetch_latest_stable_version
     from ..models import Channel
-    from .maintenance import _build_update_cmd, _read_harness, _require_uv
+    from .maintenance import (
+        _build_update_cmd,
+        _read_harness,
+        _require_uv,
+        _run_post_install_verify,
+    )
 
     _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
     channel, _repo, path = _read_harness(_project_dir())
@@ -136,6 +141,19 @@ def _run_self_update() -> bool:
         tail = msg[-1] if msg else "see logs"
         console.print(f"[yellow]Update skipped[/]: {tail}")
         return False
+
+    # HATS-1116: the install landing is not the install working. An uv exit 0
+    # that produced an unusable tree must never reach the success line — and
+    # unlike an offline skip, there is no old version left to continue on.
+    ok, detail = _run_post_install_verify(sys.executable)
+    if not ok:
+        console.print(
+            f"[red]Install verify failed[/] — ai-hats was installed but cannot run:\n{detail}\n"
+            "The venv is inconsistent; re-run once more, and if it persists rebuild it:\n"
+            "  ai-hats self update --revision master",
+        )
+        raise SystemExit(1)
+
     console.print("[green]✓[/] ai-hats updated")
     return True
 
