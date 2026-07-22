@@ -1,6 +1,6 @@
 """Tests for ``_format_tokens`` (HATS-057), ``_finalize_session_basic``
-(HATS-086 cleanup invariants), and ``_discover_claude_jsonl`` (HATS-272
-resume-mode JSONL discovery).
+(HATS-086 cleanup invariants), and transcript mtime-discovery (HATS-272
+resume-mode JSONL discovery, HATS-1087 generalized to ``discover_recent_by_mtime``).
 
 HATS-535: the legacy ``_finalize_session`` megafunction was split into
 ``_finalize_session_basic`` (this file) + the ``finalize-hitl``
@@ -21,9 +21,9 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe import Session
-from ai_hats.paths import runs_dir
+from ai_hats.paths import discover_recent_by_mtime, runs_dir
+from ai_hats.paths import claude_transcripts_dir
 from ai_hats.runtime import (
-    _discover_claude_jsonl,
     _finalize_session_basic,
     _format_tokens,
     _print_session_end,
@@ -283,7 +283,7 @@ def test_discover_claude_jsonl_picks_most_recent_after_session_start(
     active.write_text("{}")
     _set_mtime(active, calendar.timegm((2026, 5, 7, 16, 0, 0, 0, 0, 0)))
 
-    found = _discover_claude_jsonl(project_dir, session_id)
+    found = discover_recent_by_mtime(claude_transcripts_dir(project_dir), "*.jsonl", session_id)
     assert found is not None
     assert found.name == "active.jsonl"
 
@@ -299,7 +299,7 @@ def test_discover_claude_jsonl_returns_none_when_no_match(tmp_path, monkeypatch)
     old.write_text("{}")
     _set_mtime(old, calendar.timegm((2026, 5, 7, 10, 0, 0, 0, 0, 0)))
 
-    found = _discover_claude_jsonl(project_dir, "20260507-154102-1")
+    found = discover_recent_by_mtime(claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1")
     assert found is None
 
 
@@ -309,7 +309,7 @@ def test_discover_claude_jsonl_returns_none_when_dir_missing(tmp_path, monkeypat
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
 
-    found = _discover_claude_jsonl(project_dir, "20260507-154102-1")
+    found = discover_recent_by_mtime(claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1")
     assert found is None
 
 

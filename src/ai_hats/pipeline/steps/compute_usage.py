@@ -53,6 +53,7 @@ class ComputeUsage(Step):
             # audit_writer_factory (HATS-953) carries the surface parser (.parser).
             optional=frozenset({
                 "role", "static_cost_analyzer", "audit_writer_factory",
+                "transcript_resolver",
             }),
             produces=frozenset({"usage_path"}),
         )
@@ -67,11 +68,10 @@ class ComputeUsage(Step):
         role: str | None = None,
         static_cost_analyzer=None,
         audit_writer_factory=None,
+        transcript_resolver=None,
         **_: Any,
     ) -> dict[str, Any]:
         from ai_hats_observe.parsers.claude import ClaudeParser
-
-        from ...runtime import _claude_jsonl_path, _discover_claude_jsonl
 
         # usage/v1 rides the surface's transcript parser (HATS-953); the seam
         # injects it via audit_writer_factory, standalone defaults to Claude.
@@ -83,18 +83,17 @@ class ComputeUsage(Step):
 
         usage_path = session_dir / USAGE_JSON
         try:
-            jsonl_path = _claude_jsonl_path(project_dir, claude_session_id)
+            # HATS-1087: provider owns discovery; no resolver → empty.
+            jsonl_path = (
+                transcript_resolver(
+                    project_dir, session_id,
+                    provider_session_id=claude_session_id or None,
+                )
+                if transcript_resolver is not None
+                else None
+            )
             if jsonl_path is None or not jsonl_path.exists():
-                # HATS-734: discovery keys off the ai-hats ``session_id``
-                # (``YYYYMMDD-HHMMSS-N``), NOT ``claude_session_id``. In
-                # resume/continue mode the uuid never reached Claude, so its
-                # path is missing AND it cannot drive the mtime-window start —
-                # ``_discover_claude_jsonl`` parses ``session_id[:15]`` with
-                # strptime, which a uuid fails → None. Sibling ``make_audit``
-                # already passes ``session_id``; converge on that.
-                jsonl_path = _discover_claude_jsonl(project_dir, session_id)
-            if jsonl_path is None or not jsonl_path.exists():
-                logger.debug("compute_usage: no JSONL for %s", claude_session_id)
+                logger.debug("compute_usage: no transcript for %s", claude_session_id)
                 return {}
 
             report = parser.parse_usage(jsonl_path, session_dir / TRACE_LOG)

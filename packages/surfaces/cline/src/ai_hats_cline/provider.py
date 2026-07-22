@@ -46,6 +46,20 @@ class ClineProvider(Provider):
 
         return ClineParser()
 
+    def resolve_transcript(
+        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
+    ) -> Path | None:
+        from ai_hats.paths import resolve_transcript, tool_home
+
+        sessions_dir = tool_home("cline", "CLINE_DATA_DIR") / "data" / "sessions"
+        exact = (
+            sessions_dir / provider_session_id / f"{provider_session_id}.messages.json"
+            if provider_session_id else None
+        )
+        return resolve_transcript(
+            sessions_dir, "*/*.messages.json", session_id, exact_path=exact,
+        )
+
     def system_prompt_path(self, project_dir: Path) -> Path:
         # Vestigial — the role goes inline via -s (never read/written); ABC requires it.
         return project_dir / "CLINE.md"

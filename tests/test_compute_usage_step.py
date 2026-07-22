@@ -15,11 +15,17 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
 from ai_hats_observe.artifacts import METRICS_JSON, USAGE_JSON
 
 TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
+
+# HATS-1087: discovery moved to the provider; the step no longer has a
+# Claude-specific fallback. Tests inject the real resolver, mirroring the
+# production path (composition_seam threads provider.resolve_transcript).
+_claude_resolver = ClaudeProvider().resolve_transcript
 
 
 def make_session(tmp_path: Path) -> Session:
@@ -52,6 +58,7 @@ def test_io_contract():
     })
     assert io.optional == frozenset({
         "role", "static_cost_analyzer", "audit_writer_factory",
+        "transcript_resolver",
     })
     assert io.produces == frozenset({"usage_path"})
 
@@ -82,6 +89,7 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
 
     usage_path = session.session_dir / USAGE_JSON
@@ -128,6 +136,7 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
         session_dir=session.session_dir,
         claude_session_id="dead-uuid-never-passed-to-claude",
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
 
     usage_path = session.session_dir / USAGE_JSON
@@ -160,6 +169,7 @@ def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
 
     report = json.loads((session.session_dir / USAGE_JSON).read_text())
@@ -188,6 +198,7 @@ def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
         role="live-role",
     )
 
@@ -212,6 +223,7 @@ def test_session_meta_null_when_no_metrics(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
 
     report = json.loads((session.session_dir / USAGE_JSON).read_text())
@@ -232,6 +244,7 @@ def test_missing_jsonl_returns_empty_delta_no_crash(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id="nonexistent-uuid",
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
 
     assert delta == {}
@@ -260,6 +273,7 @@ def test_parser_exception_is_swallowed(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
     )
     assert delta == {}
 
@@ -289,6 +303,7 @@ def test_routes_through_injected_parser(tmp_path, monkeypatch):
         session_dir=session.session_dir,
         claude_session_id=csid,
         project_dir=project_dir,
+        transcript_resolver=_claude_resolver,
         audit_writer_factory=lambda: SimpleNamespace(parser=_FakeParser()),
     )
 
