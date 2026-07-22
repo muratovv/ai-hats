@@ -9,7 +9,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.paths import PROJECT_CONFIG, gemini_md
 from ai_hats.skills_dir import MANAGED_MARKER
 from ai_hats_agy.provider import AgyProvider
 
@@ -145,4 +145,53 @@ def test_execution_context_temporarily_hides_root_gemini_and_agents_md(tmp_path)
     assert agents.read_text() == "root agents rules"
     assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
     assert not any(p.name.startswith(".AGENTS.md.ai_hats_bak_") for p in project.iterdir())
+
+
+def test_provider_name() -> None:
+    assert AgyProvider().name == "agy"
+
+
+def test_system_prompt_path(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    assert AgyProvider().system_prompt_path(project) == gemini_md(project)
+
+
+def test_execution_context_cleans_up_recreated_target(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    gemini = project / "GEMINI.md"
+    gemini.write_text("original")
+
+    provider = AgyProvider()
+    with provider.execution_context(project):
+        # Target gets re-created while context is active
+        gemini.write_text("recreated")
+
+    assert gemini.is_file()
+    assert gemini.read_text() == "original"
+
+
+def test_rules_dir(tmp_path: Path) -> None:
+    session_dir = tmp_path / "session"
+    assert AgyProvider().rules_dir(session_dir) == session_dir / "rules"
+
+
+def test_get_cli_command() -> None:
+    provider = AgyProvider()
+    assert provider.get_cli_command() == ["agy"]
+    assert provider.get_cli_command(["--foo", "bar"]) == ["agy", "--foo", "bar"]
+
+
+def test_get_run_command_with_model() -> None:
+    cmd = AgyProvider().get_run_command(["agy"], "task prompt", model="gemini-2.5-pro")
+    assert cmd == ["agy", "--model", "gemini-2.5-pro", "-p", "task prompt"]
+
+
+def test_get_env(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    session_dir = tmp_path / "session"
+    env = AgyProvider().get_env(session_dir, project)
+    assert env["AI_HATS_PROJECT_DIR"] == str(project)
+    assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
+
 
