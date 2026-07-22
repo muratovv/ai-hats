@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, NoReturn
 import click
 from rich.console import Console
 
+from ..constants import is_debug_mode
 from ..paths import PROJECT_CONFIG
 
 if TYPE_CHECKING:
@@ -61,7 +63,8 @@ def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
     ``ai-hats list providers``. No ``Traceback`` reaches the user. Output
     contract asserted by ``tests/e2e/test_unknown_provider_friendly_error.py``.
     """
-    from ..self_heal import get_surface_remediation
+    with catch_broken_install():
+        from ..self_heal import get_surface_remediation
 
     click.echo(f"Error: Provider {exc.name!r} not found.\n", err=True)
     remediation = get_surface_remediation(exc.name)
@@ -138,26 +141,27 @@ class InconsistentInstallError(click.ClickException):
         super().__init__(msg)
 
 
-def _is_debug_mode() -> bool:
-    """Return True if debug or verbose mode is enabled via flags or env vars."""
-    if os.environ.get("AI_HATS_DEBUG") == "1" or os.environ.get("AI_HATS_VERBOSE") == "1":
-        return True
-    debug_flags = {"--debug", "--verbose", "-v"}
-    return any(arg in debug_flags for arg in sys.argv[1:])
-
-
-def _handle_broken_install(exc: Exception) -> NoReturn:
-    """Handle an ImportError/AttributeError at the CLI boundary (HATS-1120).
+def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
+    """Handle an ImportError/AttributeError at the CLI boundary and exit (HATS-1120).
 
     If debug/verbose mode is enabled, re-raises the original exception so the
     full traceback is displayed. Otherwise, renders InconsistentInstallError to
     stderr and exits with status 1 without a raw traceback.
     """
-    if _is_debug_mode():
+    if is_debug_mode():
         raise exc
     err = InconsistentInstallError(exc)
     err.show()
     sys.exit(err.exit_code)
+
+
+@contextlib.contextmanager
+def catch_broken_install():
+    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120)."""
+    try:
+        yield
+    except (ImportError, AttributeError) as exc:
+        _handle_broken_install_or_die(exc)
 
 
 def _project_dir() -> Path:
@@ -208,10 +212,8 @@ def _project_dir() -> Path:
             # Gitlink (linked worktree / submodule): for a linked worktree,
             # route to the main checkout's live tracker; otherwise fall back
             # to this dir (current behaviour, never worse).
-            try:
+            with catch_broken_install():
                 from ai_hats_wt import WorktreeManager
-            except (ImportError, AttributeError) as exc:
-                _handle_broken_install(exc)
 
             main_root = WorktreeManager.main_worktree_root(d)
             return main_root if main_root is not None else d
@@ -220,10 +222,8 @@ def _project_dir() -> Path:
 
 
 def _assembler(project_dir: Path | None = None):
-    try:
+    with catch_broken_install():
         from ..assembler import Assembler
-    except (ImportError, AttributeError) as exc:
-        _handle_broken_install(exc)
 
     return Assembler(project_dir or _project_dir())
 
@@ -249,10 +249,8 @@ def _guard_not_inside_linked_worktree() -> None:
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
     when CWD is OK (main worktree or non-git path).
     """
-    try:
+    with catch_broken_install():
         from ai_hats_wt import WorktreeManager
-    except (ImportError, AttributeError) as exc:
-        _handle_broken_install(exc)
 
     cwd = Path.cwd()
     if WorktreeManager.is_inside_linked_worktree(cwd):
@@ -275,13 +273,11 @@ def _task_manager(project_dir: Path | None = None):
     has existing task folders but no `task_prefix` in ai-hats.yaml — keeps
     legacy repos on their historical prefix without manual migration.
     """
-    try:
+    with catch_broken_install():
         from ..models import ProjectConfig
         from ai_hats_tracker.state import TaskManager
         from ..tracker_wiring import tracker_paths
         from ..wt_effects import WtWorktreeEffects
-    except (ImportError, AttributeError) as exc:
-        _handle_broken_install(exc)
 
     pdir = project_dir or _project_dir()
     config_path = pdir / PROJECT_CONFIG

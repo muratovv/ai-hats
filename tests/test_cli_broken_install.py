@@ -8,42 +8,43 @@ from unittest.mock import patch
 import pytest
 from ai_hats.cli import main_entry
 from ai_hats.cli._helpers import (
-    _handle_broken_install,
-    _is_debug_mode,
+    _handle_broken_install_or_die,
+    catch_broken_install,
 )
+from ai_hats.constants import is_debug_mode
 
 
 def test_is_debug_mode_detects_env_and_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-    """_is_debug_mode returns True when env vars or debug flags are present."""
+    """is_debug_mode returns True when env vars or debug flags are present."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
     monkeypatch.setattr(sys, "argv", ["ai-hats", "self", "init"])
-    assert not _is_debug_mode()
+    assert not is_debug_mode()
 
     # Env var triggers
     monkeypatch.setenv("AI_HATS_DEBUG", "1")
-    assert _is_debug_mode()
+    assert is_debug_mode()
     monkeypatch.delenv("AI_HATS_DEBUG")
 
     monkeypatch.setenv("AI_HATS_VERBOSE", "1")
-    assert _is_debug_mode()
+    assert is_debug_mode()
     monkeypatch.delenv("AI_HATS_VERBOSE")
 
     # Flag triggers
     for flag in ("--debug", "--verbose", "-v"):
         monkeypatch.setattr(sys, "argv", ["ai-hats", flag, "self", "init"])
-        assert _is_debug_mode()
+        assert is_debug_mode()
 
 
 def test_handle_broken_install_normal_mode(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """_handle_broken_install in normal mode prints friendly error and exits 1 without traceback."""
+    """_handle_broken_install_or_die in normal mode prints friendly error and exits 1 without traceback."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
     monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "ls"])
 
     exc = ImportError("cannot import name PROVIDER_GEMINI from 'ai_hats.constants'")
     with pytest.raises(SystemExit) as exc_info:
-        _handle_broken_install(exc)
+        _handle_broken_install_or_die(exc)
 
     assert exc_info.value.code == 1
 
@@ -56,14 +57,30 @@ def test_handle_broken_install_normal_mode(capsys: pytest.CaptureFixture[str], m
     assert "Traceback" not in captured.err
 
 
+def test_catch_broken_install_context_manager(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """catch_broken_install context manager catches ImportError and exits cleanly."""
+    monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
+    monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "ls"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        with catch_broken_install():
+            raise AttributeError("module 'ai_hats.constants' has no attribute 'PROVIDER_GEMINI'")
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Inconsistent or broken ai-hats installation" in captured.err
+    assert "module 'ai_hats.constants' has no attribute 'PROVIDER_GEMINI'" in captured.err
+
+
 def test_handle_broken_install_debug_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    """_handle_broken_install in debug mode re-raises the original exception."""
+    """_handle_broken_install_or_die in debug mode re-raises the original exception."""
     monkeypatch.setenv("AI_HATS_DEBUG", "1")
     monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "ls"])
 
     exc = ImportError("cannot import name PROVIDER_GEMINI from 'ai_hats.constants'")
     with pytest.raises(ImportError) as exc_info:
-        _handle_broken_install(exc)
+        _handle_broken_install_or_die(exc)
 
     assert exc_info.value is exc
 
