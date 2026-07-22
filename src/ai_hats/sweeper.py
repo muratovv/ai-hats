@@ -206,7 +206,7 @@ def _sweep_settings_tags(
 
     # Same removal semantics as the live sweep — empty desired set drops
     # every ai-hats-tagged entry; user-authored entries survive.
-    from .surfaces.claude.provider import ClaudeProvider  # HATS-1130: relocated by ec85f43d
+    from .surfaces.claude.provider import ClaudeProvider
 
     removed = ClaudeProvider._sweep_stale_managed_tags(hooks_root, set())
     if dry_run:
