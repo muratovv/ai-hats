@@ -5,7 +5,8 @@ composition:
     - global_rule_resource_hygiene
     - global_rule_destructive_actions
     - rule_harness_reminder_hygiene
-  skills: []
+  skills:
+    - safety-guard
 injection: |
   ## BASE BEHAVIOR
 

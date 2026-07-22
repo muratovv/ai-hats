@@ -165,7 +165,11 @@ def main() -> int:
     except Exception:
         return 0  # unparsable / empty -> fail-open allow
 
-    tool_input = payload.get("tool_input") or {}
+    tool_input = payload.get("tool_input")
+    if not tool_input:
+        tool_call = payload.get("toolCall") or {}
+        tool_input = tool_call.get("args") or {}
+    
     file_path = (
         tool_input.get("file_path")
         or tool_input.get("path")
