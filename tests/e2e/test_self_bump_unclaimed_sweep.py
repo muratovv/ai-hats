@@ -174,13 +174,19 @@ def test_e2e_bump_sweeps_dead_owner_marker(swept_env, repo_root, tmp_path):
 
 
 @pytest.mark.integration
-def test_e2e_second_bump_repeats_warn_for_contested_entry(swept_env, tmp_path):
+def test_e2e_second_bump_repeats_warn_for_contested_entry(swept_env, tmp_path, repo_root):
     """Q6 (HATS-905): an unresolved ownership conflict re-WARNs on every
     bump — deliberately, until the user resolves it. State stays stable."""
     env, _trash = swept_env
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_project(project, env)
+
+    subprocess.run(
+        ["uv", "pip", "install", "--python", f"{env[ENV_AI_HATS_VENV]}/bin/python",
+         "-e", str(repo_root / "packages" / "surfaces" / "agy")],
+        check=True, capture_output=True, text=True,
+    )
 
     _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
