@@ -165,6 +165,10 @@ def main() -> int:
     except Exception:
         return 0  # unparsable / empty -> fail-open allow
 
+    # Dual-payload parsing:
+    # Claude Code sends arguments in `tool_input`.
+    # Agy (Antigravity CLI) sends arguments in `toolCall.args`.
+    # We check both to ensure the hook works across both surfaces.
     tool_input = payload.get("tool_input")
     if not tool_input:
         tool_call = payload.get("toolCall") or {}
