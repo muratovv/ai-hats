@@ -1,6 +1,74 @@
 #!/usr/bin/env python3
 import json
 import sys
+import re
+
+def parse_commands(cmd_string: str):
+    # Split by ;, &&, ||, |
+    parts = re.split(r';|&&|\|\||\|', cmd_string)
+    return [p.strip() for p in parts if p.strip()]
+
+def get_bin(cmd: str):
+    tokens = cmd.split()
+    for token in tokens:
+        if "=" in token:
+            continue
+        if token in ("sudo", "env", "nohup", "xargs", "time"):
+            continue
+        return token
+    return ""
+
+def check_sed(cmd: str) -> str:
+    if " -i" in cmd:
+        return "Stopped: sed with -i flag modifies files. Explicit permission required."
+    return ""
+
+def check_git(cmd: str) -> str:
+    tokens = cmd.split()
+    if "push" in tokens:
+        return "Stopped: git push requires explicit permission."
+    return ""
+
+def check_dangerous_bin(cmd_bin: str) -> str:
+    if cmd_bin in ("rm", "mkfs", "truncate", "chown", "dd"):
+        return f"Stopped: potentially destructive binary detected ({cmd_bin})."
+    return ""
+
+def check_dangerous_substrings(cmd_string: str) -> str:
+    cmd_lower = cmd_string.lower()
+    dangerous = ["drop table", "drop database"]
+    for sub in dangerous:
+        if sub in cmd_lower:
+            return f"Stopped: dangerous substring detected ({sub})."
+    return ""
+
+def check_command(cmd_string: str) -> str:
+    reason = check_dangerous_substrings(cmd_string)
+    if reason:
+        return reason
+
+    subcommands = parse_commands(cmd_string)
+    handlers = {
+        "sed": check_sed,
+        "git": check_git
+    }
+
+    for subcmd in subcommands:
+        cmd_bin = get_bin(subcmd)
+        if not cmd_bin:
+            continue
+        
+        reason = check_dangerous_bin(cmd_bin)
+        if reason:
+            return reason
+            
+        handler = handlers.get(cmd_bin)
+        if handler:
+            reason = handler(subcmd)
+            if reason:
+                return reason
+
+    return ""
 
 def main() -> int:
     try:
@@ -21,38 +89,7 @@ def main() -> int:
     if not cmd:
         return 0
 
-    # Tokenize cmd
-    tokens = cmd.split()
-    cmd_bin = ""
-    for token in tokens:
-        if "=" in token:
-            continue
-        if token in ("sudo", "env", "nohup", "xargs", "time"):
-            continue
-        cmd_bin = token
-        break
-
-    reason = ""
-
-    # Exception 1: sed with -i flag
-    if cmd_bin == "sed" and " -i" in cmd:
-        reason = "Остановлено: sed с флагом -i модифицирует файлы. Требуется разрешение."
-    
-    # Exception 2: git push
-    if cmd_bin == "git" and " push" in cmd:
-        reason = "Остановлено: подкоманда git push требует разрешения."
-    
-    # Dangerous binaries
-    if cmd_bin in ("rm", "mkfs", "truncate", "chown", "dd"):
-        reason = f"Остановлено: вызов потенциально деструктивной утилиты ({cmd_bin})."
-    
-    # Dangerous substrings
-    cmd_lower = cmd.lower()
-    dangerous_substrings = ["drop table", "drop database"]
-    for sub in dangerous_substrings:
-        if sub in cmd_lower:
-            reason = f"Остановлено: обнаружена опасная подстрока ({sub})."
-            break
+    reason = check_command(cmd)
 
     if reason:
         print(
