@@ -44,6 +44,7 @@ from .startup_notices import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ai_hats_core import CompositionResult
     from ai_hats_observe import Session, SessionManager, SidecarTracer
 
 logger = logging.getLogger(__name__)
@@ -317,8 +318,8 @@ class WrapRunner:
             session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
 
-    def _check_skill_collisions(
-        self, session: "Session", result: CompositionResult
+    def _check_skill_script_collisions(
+        self, session: "Session", result: "CompositionResult"
     ) -> list[StartupNotice]:
         """HATS-1114: WARN when composed skills contain script filename collisions.
         Returns startup warnings so the hold banner surfaces them to the human before
@@ -474,6 +475,7 @@ class WrapRunner:
         startup_notices: list[StartupNotice] = []
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
+        startup_notices.extend(self._check_skill_script_collisions(session, result))
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))

@@ -26,6 +26,7 @@ from importlib.resources import as_file, files
 from pathlib import Path
 
 from .constants import (
+    AI_HATS_PROJECT_DIR_ENV,
     ENV_LIBRARY_ROOT,
     HOOKS_DIRNAME,
     LIBRARY_LAYERS,
@@ -87,24 +88,36 @@ def _importlib_library_root() -> Path | None:
     return root if root.is_dir() else None
 
 
-def builtin_library_root() -> Path | None:
+def builtin_library_root(project_dir: Path | None = None) -> Path | None:
     """Resolve the builtin ``library/`` source root (worktree-aware).
 
-    Resolution order (HATS-826), highest precedence first:
+    Resolution order (HATS-826 / HATS-1127), highest precedence first:
 
     1. ``AI_HATS_LIBRARY_ROOT`` env override — explicit, greppable seam
        (tests, power users), validated both-``core``-and-``usage`` or rejected.
-    2. **cwd auto-detection** of an ai-hats source checkout — keys off
-       ``Path.cwd()`` so a command run *inside* a worktree resolves THAT
-       worktree's ``library/`` (``importlib`` would hard-pin MAIN).
-    3. ``importlib.resources`` — the installed package (downstream / default).
+    2. **project_dir or AI_HATS_PROJECT_DIR source auto-detection** — keys off
+       ``project_dir`` if passed, or ``AI_HATS_PROJECT_DIR`` env if set.
+    3. **cwd auto-detection** of an ai-hats source checkout (only when no
+       project_dir is provided) — keys off ``Path.cwd()`` so a command run
+       *inside* a worktree resolves THAT worktree's ``library/``.
+    4. ``importlib.resources`` — the installed package (downstream / default).
 
     Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
     ``None`` on a broken install. All builtin-library subpaths derive from here.
     """
     root = _validated_library_root(os.environ.get(ENV_LIBRARY_ROOT))
-    if root is None:
-        root = _detect_source_library_root(Path.cwd())
+    if root is not None:
+        return root
+
+    if project_dir is not None:
+        root = _detect_source_library_root(project_dir)
+    else:
+        env_proj = os.environ.get(AI_HATS_PROJECT_DIR_ENV)
+        if env_proj:
+            root = _detect_source_library_root(Path(env_proj))
+        if root is None:
+            root = _detect_source_library_root(Path.cwd())
+
     if root is not None and all((root / layer).is_dir() for layer in LIBRARY_LAYERS):
         return root
     return _importlib_library_root()
@@ -122,14 +135,14 @@ def _importlib_library_layers() -> list[Path]:
     return [root / layer for layer in LIBRARY_LAYERS if (root / layer).is_dir()]
 
 
-def builtin_library_layers() -> list[Path]:
+def builtin_library_layers(project_dir: Path | None = None) -> list[Path]:
     """The builtin ``[core, usage]`` layers (core first = lowest priority).
 
     Derived from :func:`builtin_library_root`; both layers must exist under the
     resolved root, else we fall through to the installed package (never a
     partial builtin).
     """
-    root = builtin_library_root()
+    root = builtin_library_root(project_dir) if project_dir is not None else builtin_library_root()
     if root is None:
         return []
     layers = [root / layer for layer in LIBRARY_LAYERS]
@@ -138,26 +151,26 @@ def builtin_library_layers() -> list[Path]:
     return _importlib_library_layers()
 
 
-def builtin_library_hooks() -> Path | None:
+def builtin_library_hooks(project_dir: Path | None = None) -> Path | None:
     """The builtin ``library/hooks/`` source dir, or ``None`` if unresolved.
 
     Callers decide on ``None``: the managed-hook whitelist degrades to empty;
     materialization raises (a broken install is not a state to paper over).
     """
-    root = builtin_library_root()
+    root = builtin_library_root(project_dir) if project_dir is not None else builtin_library_root()
     if root is None:
         return None
     hooks = root / HOOKS_DIRNAME
     return hooks if hooks.is_dir() else None
 
 
-def core_pipeline_path(name: str) -> Path | None:
+def core_pipeline_path(name: str, project_dir: Path | None = None) -> Path | None:
     """Filesystem path to a builtin core pipeline YAML, or ``None`` if unresolved.
 
     Returns a plain ``Path`` — the root is already materialised to a real dir by
     the :func:`_importlib_library_root` ``as_file`` seam, so no per-call wrapper.
     """
-    root = builtin_library_root()
+    root = builtin_library_root(project_dir) if project_dir is not None else builtin_library_root()
     if root is None:
         return None
     return root.joinpath(*PIPELINES_SUBPATH, f"{name}.yaml")
