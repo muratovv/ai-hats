@@ -317,7 +317,27 @@ class WrapRunner:
             session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
 
+    def _check_skill_collisions(
+        self, session: "Session", result: CompositionResult
+    ) -> list[StartupNotice]:
+        """HATS-1114: WARN when composed skills contain script filename collisions.
+        Returns startup warnings so the hold banner surfaces them to the human before
+        the TUI launch.
+        """
+        try:
+            from .skills_dir import find_skill_script_collisions
+
+            collisions = find_skill_script_collisions(result.skills)
+        except Exception as exc:
+            logger.warning("skill script collision check at session start failed", exc_info=True)
+            session.log_sys(f"skill collision check FAILED — {type(exc).__name__}: {exc}")
+            return []
+        if collisions:
+            session.log_sys(f"skill script collisions: {len(collisions)} finding(s)")
+        return [StartupNotice("warn", text) for text in collisions]
+
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
+
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
         :func:`show_and_hold_startup_notices`; supplies a Ctrl-C-aware countdown
