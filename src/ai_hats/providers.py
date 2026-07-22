@@ -927,43 +927,6 @@ def register_provider(name: str, cls: type[Provider]) -> None:
     _PROVIDER_REGISTRY[name] = cls
 
 
-def provider_names() -> list[str]:
-    """Registered provider names in registration order (deterministic)."""
-    return list(_PROVIDER_REGISTRY)
-
-
-class UnknownProviderError(ValueError):
-    """Unknown provider name at ``get_provider``. Subclasses ``ValueError`` so
-    existing ``except ValueError`` catchers keep working; carries ``name`` +
-    ``available`` for the friendly CLI launch handler (mirrors
-    ``RoleNotFoundError`` — HATS-965)."""
-
-    def __init__(self, name: str, available: list[str]) -> None:
-        self.name = name
-        self.available = available
-        super().__init__(f"Unknown provider: {name}. Available: {available}")
-
-
-def get_provider(name: str) -> Provider:
-    """Get a provider instance by name."""
-    cls = _PROVIDER_REGISTRY.get(name)
-    if cls is None:
-        raise UnknownProviderError(name, provider_names())
-    return cls()
-
-
-def _register_builtins() -> None:
-    for name, cls in ((PROVIDER_CLAUDE, ClaudeProvider),):
-        if name in _PROVIDER_REGISTRY:
-            continue
-        register_provider(name, cls)
-
-
-def _reset_for_tests() -> None:
-    """Clear the registry. Tests snapshot/restore around this."""
-    _PROVIDER_REGISTRY.clear()
-
-
 def _load_provider_entry_points() -> None:
     """Discover + register out-of-tree providers via entry points (IoC).
 
@@ -985,5 +948,54 @@ def _load_provider_entry_points() -> None:
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
 
+_ENTRY_POINTS_LOADED = False
+
+def _ensure_entry_points_loaded() -> None:
+    global _ENTRY_POINTS_LOADED
+    if not _ENTRY_POINTS_LOADED:
+        _ENTRY_POINTS_LOADED = True
+        _load_provider_entry_points()
+
+
+def provider_names() -> list[str]:
+    """Registered provider names in registration order (deterministic)."""
+    _ensure_entry_points_loaded()
+    return list(_PROVIDER_REGISTRY)
+
+
+class UnknownProviderError(ValueError):
+    """Unknown provider name at ``get_provider``. Subclasses ``ValueError`` so
+    existing ``except ValueError`` catchers keep working; carries ``name`` +
+    ``available`` for the friendly CLI launch handler (mirrors
+    ``RoleNotFoundError`` — HATS-965)."""
+
+    def __init__(self, name: str, available: list[str]) -> None:
+        self.name = name
+        self.available = available
+        super().__init__(f"Unknown provider: {name}. Available: {available}")
+
+
+def get_provider(name: str) -> Provider:
+    """Get a provider instance by name."""
+    _ensure_entry_points_loaded()
+    cls = _PROVIDER_REGISTRY.get(name)
+    if cls is None:
+        raise UnknownProviderError(name, provider_names())
+    return cls()
+
+
+def _register_builtins() -> None:
+    for name, cls in ((PROVIDER_CLAUDE, ClaudeProvider),):
+        if name in _PROVIDER_REGISTRY:
+            continue
+        register_provider(name, cls)
+
+
+def _reset_for_tests() -> None:
+    """Clear the registry. Tests snapshot/restore around this."""
+    _PROVIDER_REGISTRY.clear()
+    global _ENTRY_POINTS_LOADED
+    _ENTRY_POINTS_LOADED = False
+
+
 _register_builtins()
-_load_provider_entry_points()
