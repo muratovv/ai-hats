@@ -66,12 +66,22 @@ fi
 # the wrong venv. Ignore + warn, then re-resolve below. A bare AI_HATS_VENV with
 # no pair keeps historical env-wins semantics (explicit user override).
 inherited_venv="${AI_HATS_VENV:-}"
-if [[ -n "$inherited_venv" && -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
+if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
     pin_proj="${AI_HATS_PROJECT_DIR/#\~/$HOME}"
     pin_real="$(cd "$pin_proj" 2>/dev/null && pwd -P || echo "$pin_proj")"
     if [[ "$pin_real" != "$(pwd -P)" ]]; then
-        echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin (HATS-944)." >&2
-        inherited_venv=""
+        if [[ -n "$inherited_venv" ]]; then
+            echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin (HATS-944)." >&2
+            inherited_venv=""
+        fi
+        # HATS-1123: AI_HATS_DIR and AI_HATS_PROJECT_DIR must move together. We
+        # re-pin AI_HATS_PROJECT_DIR to $PROJECT below; keeping an inherited
+        # AI_HATS_DIR aimed at the previous project would make this project's
+        # commands (migrations, hook materialization) write into THAT one.
+        if [[ -n "${AI_HATS_DIR:-}" ]]; then
+            echo "ai-hats: AI_HATS_DIR=$AI_HATS_DIR is pinned to project $pin_proj — foreign to $PROJECT; dropping it (HATS-1123)." >&2
+            unset AI_HATS_DIR
+        fi
     fi
 fi
 
