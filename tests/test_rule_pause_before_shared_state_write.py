@@ -16,7 +16,8 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentConfig
-from ai_hats.providers import ALWAYS_ON_RULES, ClaudeProvider
+from ai_hats.providers import ALWAYS_ON_RULES
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
