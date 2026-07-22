@@ -73,38 +73,35 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _ai_hats_owned_hook_basenames() -> frozenset[str]:
-    """Return basenames of hooks shipped inside the ai-hats package.
+def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozenset[str]:
+    """Return basenames of hooks the framework owns in ``library/hooks/``.
 
-    Sourced from :func:`paths.builtin_library_hooks` (the worktree-aware
-    builtin ``library/hooks/`` resolver) so the whitelist tracks package
-    contents automatically when new managed hooks are added. Re-walked on
-    every call (functools
-    not used to keep import-time imports minimal — re-walking the
-    package data is cheap on every call).
+    Union of the project's ``library/hooks/.manifest`` (the only source that
+    knows skill-declared hooks — HATS-597) and the shipped package-data
+    guards, so neither a stale manifest nor a broken install can evict what
+    the other still vouches for. ``project_dir=None`` / no manifest yields
+    package data alone — the pre-v4 project the v4 partition exists for.
 
-    Used by:
-
-    - :meth:`Assembler._migrate_layout_v4_hooks_partition` — entries
-      in this set move to ``library/hooks/``; everything else goes
-      to ``user-hooks/``.
-    - :mod:`ai_hats.migration_healer` — Stage A1 disable-vs-rewrite
-      decision: user-owned hooks (basename NOT in whitelist) have
-      their settings.json entry removed (HATS-549 Phase 4); managed
-      hooks pass through to the normal rewrite path.
-
-    On a broken install (package data missing) returns an empty set —
-    callers degrade gracefully, treating every legacy hook as
-    user-owned (worst case: a managed file ends up under user-hooks/,
-    which the next clean install can re-materialize under library/hooks/).
+    Consumers treat everything NOT in this set as user-owned: the v4
+    partition moves it to ``user-hooks/``, the healer drops its
+    settings.json entry. Sourcing it from package data alone evicted every
+    skill-declared hook while its wiring stayed — HATS-1123.
     """
+    names: set[str] = set()
     try:
         hooks = _builtin_library_hooks()
-        if hooks is None:
-            return frozenset()
-        return frozenset(entry.name for entry in hooks.iterdir() if entry.is_file())
+        if hooks is not None:
+            names |= {entry.name for entry in hooks.iterdir() if entry.is_file()}
     except OSError:
-        return frozenset()
+        pass
+    if project_dir is not None:
+        from .sweeper import read_marker_names
+
+        try:
+            names |= read_marker_names(_lib_hooks_dir(project_dir) / ".manifest")
+        except OSError:
+            pass
+    return frozenset(names)
 
 
 class Assembler:
@@ -1046,20 +1043,13 @@ class Assembler:
                 file=sys.stderr,
             )
 
-    @staticmethod
-    def _ai_hats_owned_hook_basenames() -> frozenset[str]:
-        """Set of hook basenames the framework itself ships.
+    def _ai_hats_owned_hook_basenames(self) -> frozenset[str]:
+        """Hook basenames the framework owns in THIS project's ``library/hooks/``.
 
-        Sourced from :func:`paths.builtin_library_hooks` — same surface as
-        :meth:`HooksManager.materialize_runtime_hooks`. Anything not in this set
-        is treated as user-owned content by the v4 hooks-partition step
-        (HATS-549 Phase 4).
-
-        Exposed as a public-ish static so :mod:`ai_hats.migration_healer`
-        can read the same whitelist when deciding whether to auto-disable
-        vs. heal a settings.json hook entry.
+        Project-scoped since HATS-1123 (was a static reading package data
+        only, which classified every skill-declared hook as user-owned).
         """
-        return _ai_hats_owned_hook_basenames()
+        return _ai_hats_owned_hook_basenames(self.project_dir)
 
     def _migrate_layout_v4_tracker(self) -> None:
         """v4-layout migration step (logic in migrations.py, HATS-715)."""

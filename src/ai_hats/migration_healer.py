@@ -837,7 +837,7 @@ def _disable_user_hooks_in_settings(
     return removed
 
 
-def _owned_hook_basenames() -> frozenset[str]:
+def _owned_hook_basenames(project_dir: Path | None = None) -> frozenset[str]:
     """Resolve the ai-hats-owned hook whitelist via a lazy import.
 
     Lazy to keep ``migration_healer`` free of a module-load cycle
@@ -846,7 +846,7 @@ def _owned_hook_basenames() -> frozenset[str]:
     """
     try:
         from .assembler import _ai_hats_owned_hook_basenames
-        return _ai_hats_owned_hook_basenames()
+        return _ai_hats_owned_hook_basenames(project_dir)
     except (ImportError, AttributeError):
         return frozenset()
 
@@ -874,7 +874,7 @@ def heal_external_refs(project_dir: Path, *, verbose: bool = True) -> HealReport
     # by the regex-substitution heal that follows — the explicit
     # disable is the load-bearing behaviour per the HATS-549 user
     # contract ("user must re-enable manually").
-    owned = _owned_hook_basenames()
+    owned = _owned_hook_basenames(project_dir)
     for json_rel in JSON_TARGETS:
         path = project_dir / json_rel
         if not path.is_file():
