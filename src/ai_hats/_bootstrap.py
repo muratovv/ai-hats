@@ -45,6 +45,10 @@ _IMPORT_NAME_OVERRIDES: dict[str, str] = {
 # environment marker, or extras bracket to get the bare distribution name.
 _PEP508_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
+# Importing these proves the installed tree agrees with itself: the CLI entry
+# the launcher exec's into, and the assembler it reaches for first (HATS-1116).
+_INTEGRITY_MODULES = ("ai_hats.cli", "ai_hats.assembler")
+
 
 def _normalise(dist: str) -> str:
     """PEP 503 — lowercase, runs of [-_.] collapsed to a single hyphen."""
@@ -160,33 +164,91 @@ def bootstrap_or_die() -> None:
     os.execv(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])
 
 
+def _is_first_party(ep: importlib.metadata.EntryPoint) -> bool:
+    """True when ai-hats itself ships this entry point."""
+    dist = getattr(ep, "dist", None)
+    name = getattr(dist, "name", None)
+    return bool(name) and _normalise(name) == "ai-hats"
+
+
+def _first_party_provider_failures() -> list[str]:
+    """Load every ai-hats-owned ``ai_hats.providers`` entry point; report failures.
+
+    Out-of-tree provider plugins are skipped on purpose: a third-party plugin
+    must not fail the install verify, matching the runtime policy in providers.
+    """
+    try:
+        eps = list(importlib.metadata.entry_points(group="ai_hats.providers"))
+    except Exception as exc:  # noqa: BLE001 - verify must report, never crash
+        return [f"entry_points(ai_hats.providers): {exc.__class__.__name__}: {exc}"]
+
+    failures: list[str] = []
+    for ep in eps:
+        if not _is_first_party(ep):
+            continue
+        try:
+            # ep.load() resolves the ATTRIBUTE; find_spec would only prove the
+            # module exists and would pass on a retired provider (HATS-1116).
+            ep.load()
+        except Exception as exc:  # noqa: BLE001 - collect, don't abort the sweep
+            failures.append(
+                f"entry point {ep.name!r} ({ep.value}): {exc.__class__.__name__}: {exc}"
+            )
+    return failures
+
+
+def find_integrity_failures() -> list[str]:
+    """Report why the installed ai-hats tree is unusable, one line per failure.
+
+    HATS-1116: :func:`find_missing_runtime_deps` only sees third-party
+    distributions, so it cannot notice an ai_hats tree whose own modules
+    disagree with each other — the exact state that shipped a green install.
+    """
+    importlib.invalidate_caches()  # deps may have just been healed in-process
+    failures: list[str] = []
+    for mod in _INTEGRITY_MODULES:
+        try:
+            importlib.import_module(mod)
+        except Exception as exc:  # noqa: BLE001 - report the reason, don't raise
+            failures.append(f"import {mod}: {exc.__class__.__name__}: {exc}")
+    failures.extend(_first_party_provider_failures())
+    return failures
+
+
 def verify_after_install() -> int:
-    """Stage-2 verify after `ai-hats self update`. No re-exec; returns exit code.
+    """Stage-2 verify after an ai-hats install. No re-exec; returns exit code.
 
     Designed to be run via ``python -m ai_hats._bootstrap verify`` in a
-    fresh subprocess from :func:`ai_hats.cli.maintenance.update`. Because
-    it's a fresh process, it reads the just-installed on-disk code, so any
-    new ``EXPECTED_DEPS`` in this file are honoured immediately.
+    fresh subprocess from :func:`ai_hats.cli.maintenance.update` and from
+    ``self init``'s embedded update. Because it's a fresh process, it reads
+    the just-installed on-disk code.
     """
     missing = find_missing_runtime_deps()
-    if not missing:
-        return 0
-    sys.stderr.write(
-        f"ai-hats: post-install verify found missing deps {missing}; healing…\n"
-    )
-    if attempt_self_heal(missing):
-        # Re-check — uv can succeed but install nothing useful in pathological
-        # cases (e.g. wheel for wrong platform). Trust but verify.
-        still_missing = find_missing_runtime_deps()
-        if not still_missing:
-            return 0
+    if missing:
         sys.stderr.write(
-            f"ai-hats: deps still missing after uv install: {still_missing}\n"
+            f"ai-hats: post-install verify found missing deps {missing}; healing…\n"
         )
-    sys.stderr.write(
-        f"  manual command: {_rescue_command(missing)}\n"
-    )
-    return 1
+        if attempt_self_heal(missing):
+            # Re-check — uv can succeed but install nothing useful in pathological
+            # cases (e.g. wheel for wrong platform). Trust but verify.
+            still_missing = find_missing_runtime_deps()
+            if still_missing:
+                sys.stderr.write(
+                    f"ai-hats: deps still missing after uv install: {still_missing}\n"
+                )
+                sys.stderr.write(f"  manual command: {_rescue_command(missing)}\n")
+                return 1
+        else:
+            sys.stderr.write(f"  manual command: {_rescue_command(missing)}\n")
+            return 1
+
+    failures = find_integrity_failures()
+    if failures:
+        sys.stderr.write("ai-hats: post-install verify found a broken install:\n")
+        for line in failures:
+            sys.stderr.write(f"  - {line}\n")
+        return 1
+    return 0
 
 
 def _main(argv: list[str]) -> int:
