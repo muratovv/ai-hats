@@ -29,6 +29,27 @@ def test_agy_get_run_command() -> None:
     ]
 
 
+def test_non_claude_provider_has_launch_args_default() -> None:
+    """Every provider answers get_cli_launch_args (HATS-1130).
+
+    wrap_runner calls it unconditionally; before ec85f43d the --session-id
+    injection was gated on ``provider_name == PROVIDER_CLAUDE``, so a base
+    default returning the command unchanged restores those semantics exactly.
+    Without it ``ai-hats -p agy`` dies with AttributeError before launch.
+    """
+    p = AgyProvider()
+    assert p.get_cli_launch_args(["agy"], "sid-123", False) == ["agy"]
+    assert p.get_cli_launch_args(["agy"], "sid-123", True) == ["agy"]
+
+
+def test_claude_still_injects_session_id() -> None:
+    p = ClaudeProvider()
+    assert p.get_cli_launch_args(["claude"], "sid-123", False) == [
+        "claude", "--session-id", "sid-123",
+    ]
+    assert p.get_cli_launch_args(["claude"], "sid-123", True) == ["claude"]
+
+
 def test_base_provider_model_flags() -> None:
     """Abstract base provides the default mapping."""
     flags = Provider.model_flags(None, "some-model")
