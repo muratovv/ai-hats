@@ -253,7 +253,7 @@ def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     project_path = tmp_path / "project"
     project_path.mkdir()
     import subprocess
-    subprocess.run(["git", "init", "-b", "main"], cwd=str(project_path), check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
     subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True)
@@ -376,7 +376,7 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     project_path = tmp_path / "project"
     project_path.mkdir()
     import subprocess
-    subprocess.run(["git", "init", "-b", "main"], cwd=str(project_path), check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
     subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True)

@@ -68,7 +68,7 @@ def _setup_fork_repo(project: Path) -> None:
     from ai_hats.models import ProjectConfig, WorktreeConfig
     from ai_hats.paths import PROJECT_CONFIG
 
-    _git(project, "init", "-b", "main")
+    _git(project, "checkout", "-b", "main")
     _git(project, "config", "user.email", "test@test.com")
     _git(project, "config", "user.name", "Test")
     (project / "README.md").write_text("# Test\n")
