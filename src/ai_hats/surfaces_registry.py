@@ -1,39 +1,25 @@
-"""Single source of truth for known provider surfaces (built-in + plugins).
+"""Single source of truth for surface plugins (HATS-1095).
 
-Decoupled leaf module so `self_heal`, `providers`, and `cli` can import the
-canonical surface registry without importing heavy composition layers (HATS-1095).
+Every provider surface (claude, agy, cline) is a symmetric entry point under the
+`ai_hats.providers` entry-point group (HATS-870). No special built-in vs plugin
+distinction — all surfaces are uniform entries in this registry.
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
 
-from .constants import PROVIDER_CLAUDE
-
 
 class SurfaceInfo(NamedTuple):
     ep_name: str  # entry-point provider name, e.g. "claude", "agy", "cline"
-    package_name: str | None  # PyPI package name (e.g. "ai-hats-agy"), or None if built-in
-    is_builtin: bool = False  # True for in-tree built-in providers
+    package_name: str  # package name: "ai-hats", "ai-hats-agy", "ai-hats-cline"
 
 
-# Canonical registry of known surfaces (state as is).
+# Canonical registry of surfaces (state as is).
 KNOWN_SURFACES: dict[str, SurfaceInfo] = {
-    PROVIDER_CLAUDE: SurfaceInfo(
-        ep_name=PROVIDER_CLAUDE,
-        package_name=None,
-        is_builtin=True,
-    ),
-    "agy": SurfaceInfo(
-        ep_name="agy",
-        package_name="ai-hats-agy",
-        is_builtin=False,
-    ),
-    "cline": SurfaceInfo(
-        ep_name="cline",
-        package_name="ai-hats-cline",
-        is_builtin=False,
-    ),
+    "claude": SurfaceInfo(ep_name="claude", package_name="ai-hats"),
+    "agy": SurfaceInfo(ep_name="agy", package_name="ai-hats-agy"),
+    "cline": SurfaceInfo(ep_name="cline", package_name="ai-hats-cline"),
 }
 
 

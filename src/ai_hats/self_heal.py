@@ -104,9 +104,6 @@ def get_surface_remediation(provider_name: str, repo_root: Path | None = None) -
     from .surfaces_registry import get_surface_info
 
     info = get_surface_info(provider_name)
-    if info is not None and info.is_builtin:
-        return None
-
     root = repo_root or editable_install_root("ai-hats")
     if root is not None:
         member = root.joinpath(*SURFACES_SUBPATH, provider_name)
