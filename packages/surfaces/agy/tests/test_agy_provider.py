@@ -195,3 +195,38 @@ def test_get_env(tmp_path: Path) -> None:
     assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
 
 
+def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path) -> None:
+    repo_root = Path(__file__).parent.parent.parent.parent.parent
+    asm = Assembler(repo_root)
+    result = asm.composer.compose("maintainer")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    provider = AgyProvider()
+    provider.materialize_runtime_skills(project, result, "sid-wt")
+
+    wt_skill_dir = project / ".agy" / "skills" / "worktree-isolation"
+    assert (wt_skill_dir / "SKILL.md").is_file()
+    assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
+    assert (wt_skill_dir / "hooks" / "code_extensions.json").is_file()
+
+
+def test_ensure_runtime_hooks_writes_gemini_settings(tmp_path: Path) -> None:
+    repo_root = Path(__file__).parent.parent.parent.parent.parent
+    asm = Assembler(repo_root)
+    result = asm.composer.compose("maintainer")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    provider = AgyProvider()
+    provider.ensure_runtime_hooks(project, result)
+
+    settings_file = project / ".gemini" / "settings.json"
+    assert settings_file.is_file(), ".gemini/settings.json must be created by ensure_runtime_hooks"
+    data = json.loads(settings_file.read_text())
+    pre_tool_hooks = data.get("hooks", {}).get("PreToolUse", [])
+    assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
+
+
+
+

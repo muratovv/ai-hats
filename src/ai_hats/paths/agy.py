@@ -24,8 +24,20 @@ def agy_skills_dir(project_dir: Path) -> Path:
     return project_dir / ".agy" / "skills"
 
 
+def gemini_settings_dir(project_dir: Path) -> Path:
+    """Agy CLI's project configuration directory: ``./.gemini/``."""
+    return project_dir / ".gemini"
+
+
+def gemini_settings_path(project_dir: Path) -> Path:
+    """Agy CLI's project settings file: ``./.gemini/settings.json``."""
+    return gemini_settings_dir(project_dir) / "settings.json"
+
+
 __all__ = [
     "GEMINI_MD_FILENAME",
     "gemini_md",
     "agy_skills_dir",
+    "gemini_settings_dir",
+    "gemini_settings_path",
 ]
