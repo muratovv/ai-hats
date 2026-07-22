@@ -13,7 +13,9 @@ import json
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +57,15 @@ def collect_skill_script_paths(
                 for item in p.iterdir():
                     if item.is_file() and not item.name.startswith("."):
                         if item.name in seen_scripts and seen_scripts[item.name] != skill.name:
-                            logger.warning(
-                                "Script name collision: %r in skill %r is shadowed by skill %r earlier in PATH",
-                                item.name,
-                                skill.name,
-                                seen_scripts[item.name],
+                            msg = (
+                                f"WARN: script name collision: {item.name!r} in skill {skill.name!r} "
+                                f"is shadowed by skill {seen_scripts[item.name]!r} earlier in PATH"
                             )
+                            logger.warning(msg)
+                            print(f"[ai-hats] {msg}", file=sys.stderr)
                         else:
                             seen_scripts[item.name] = skill.name
+
     return paths
 
 
