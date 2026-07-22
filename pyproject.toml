@@ -70,7 +70,7 @@ aggregation = [
 # Provider under this group is discovered + registered without ai-hats importing
 # it (built-ins are listed too — they self-register first, discovery no-ops them).
 [project.entry-points."ai_hats.providers"]
-claude = "ai_hats.providers:ClaudeProvider"
+claude = "ai_hats.surfaces.claude.provider:ClaudeProvider"
 
 # HATS-1038 C1: the rack CLI discovers this factory by metadata (never imports
 # the integrator — import-hygiene pin) and builds the fully-wired production
