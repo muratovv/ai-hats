@@ -65,14 +65,53 @@ def _module_resolves(module: str) -> bool:
         return False
 
 
-def find_broken_surface_providers() -> list[BrokenProvider]:
-    """Provider entry points whose module can't be located in the active venv."""
+def find_uninstalled_surface_members(repo_root: Path) -> list[BrokenProvider]:
+    """In-tree packages/surfaces/* members whose provider entry point is missing in venv."""
+    surfaces_dir = repo_root.joinpath(*SURFACES_SUBPATH)
+    if not surfaces_dir.is_dir():
+        return []
+    installed_ep_names = {ep.name for ep in _provider_entry_points()}
+    missing: list[BrokenProvider] = []
+    for member in sorted(p for p in surfaces_dir.iterdir() if p.is_dir()):
+        ep_name = member.name
+        inits = sorted(member.glob("src/*/__init__.py"))
+        module = inits[0].parent.name if inits else f"ai_hats_{member.name}"
+        if ep_name not in installed_ep_names or not _module_resolves(module):
+            missing.append(BrokenProvider(ep_name=ep_name, module=module))
+    return missing
+
+
+def find_broken_surface_providers(repo_root: Path | None = None) -> list[BrokenProvider]:
+    """Provider entry points whose module can't be located, plus uninstalled in-tree surfaces."""
     broken: list[BrokenProvider] = []
+    seen: set[str] = set()
     for ep in _provider_entry_points():
         module = _ep_module(ep.value)
         if not _module_resolves(module):
             broken.append(BrokenProvider(ep_name=ep.name, module=module))
+            seen.add(ep.name)
+    if repo_root is not None:
+        for missing in find_uninstalled_surface_members(repo_root):
+            if missing.ep_name not in seen:
+                broken.append(missing)
+                seen.add(missing.ep_name)
     return broken
+
+
+def get_surface_remediation(provider_name: str, repo_root: Path | None = None) -> str | None:
+    """Return a remediation string if provider_name is an in-tree or known surface plugin."""
+    from .paths import editable_install_root
+    from .surfaces_registry import get_surface_info
+
+    info = get_surface_info(provider_name)
+    root = repo_root or editable_install_root("ai-hats")
+    if root is not None:
+        member = root.joinpath(*SURFACES_SUBPATH, provider_name)
+        if member.is_dir():
+            return f"uv pip install -e packages/surfaces/{provider_name}"
+    if info is not None and info.package_name:
+        return f"pip install {info.package_name}  # (or: uv pip install -e packages/surfaces/{provider_name} in dev repo)"
+    return None
 
 
 def surface_editable_map(repo_root: Path) -> dict[str, Path]:
@@ -136,7 +175,7 @@ def heal_surface_editables(
     then verified; an unmapped one (arbitrary out-of-tree ``-e``) is warned, never
     touched (HATS-966 R3). Idempotent: no broken providers -> empty result.
     """
-    broken = find_broken_surface_providers() if broken is None else broken
+    broken = find_broken_surface_providers(repo_root=repo_root) if broken is None else broken
     mapping = surface_editable_map(repo_root) if mapping is None else mapping
     healed: list[Healed] = []
     warned: list[Warned] = []
@@ -196,7 +235,7 @@ def run_editable_heal(
         repo_root = editable_install_root("ai-hats")
     if repo_root is None or not repo_root.joinpath(*SURFACES_SUBPATH).is_dir():
         return None
-    if not find_broken_surface_providers():
+    if not find_broken_surface_providers(repo_root=repo_root):
         return None
     try:
         with FileLock(str(lock_path or _default_lock_path()), timeout=lock_timeout):
@@ -213,6 +252,8 @@ __all__ = [
     "Healed",
     "Warned",
     "find_broken_surface_providers",
+    "find_uninstalled_surface_members",
+    "get_surface_remediation",
     "heal_surface_editables",
     "run_editable_heal",
     "surface_editable_map",

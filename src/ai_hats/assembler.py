@@ -1134,8 +1134,12 @@ class Assembler:
         """Raise ValueError if `provider_name` is not a registered provider."""
         if provider_name in provider_names():
             return
+        from .self_heal import get_surface_remediation
+
+        remediation = get_surface_remediation(provider_name)
+        hint = f"\nFix: {remediation}" if remediation else ""
         raise ValueError(
-            f"Unknown provider: {provider_name}. Available: {sorted(provider_names())}"
+            f"Unknown provider: {provider_name}. Available: {sorted(provider_names())}.{hint}"
         )
 
     def _build_tree(self, result: CompositionResult) -> dict:
