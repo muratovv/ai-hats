@@ -25,5 +25,5 @@ hook block the irreversible subset as a **backstop** — not permission to
 skip the pause, and their absence in a given session is not a signal to skip
 it. `AI_HATS_SHARED_STATE_ACK=1` is the consent flag; the agent MUST NOT
 self-grant it — set it only on a command the user explicitly approved in this
-conversation (the announce→wait handshake above). Trace: PROP-052.
+conversation (the announce→wait handshake above).
 
