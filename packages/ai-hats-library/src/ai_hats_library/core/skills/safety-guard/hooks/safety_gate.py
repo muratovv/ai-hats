@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+Enforces `global_rule_destructive_actions` by blocking dangerous commands 
+(e.g., `rm`, `sed -i`, `drop table`).
+
+Note: This script strictly focuses on blocking dangerous/destructive actions.
+It does NOT handle git repository hygiene (like blocking direct edits on master) —
+that logic is intentionally kept separate in `wt_gate.py` (worktree-isolation) 
+so that data protection rules remain universally enforced regardless of worktree usage.
+"""
 import json
 import sys
 import re
