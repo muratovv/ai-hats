@@ -136,13 +136,13 @@ def test_execution_context_temporarily_hides_root_gemini_and_agents_md(tmp_path)
     with provider.execution_context(project):
         assert not gemini.exists()
         assert not agents.exists()
-        assert (project / ".GEMINI.md.ai_hats_bak").is_file()
-        assert (project / ".AGENTS.md.ai_hats_bak").is_file()
+        assert any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
+        assert any(p.name.startswith(".AGENTS.md.ai_hats_bak_") for p in project.iterdir())
 
     assert gemini.is_file()
     assert agents.is_file()
     assert gemini.read_text() == "root gemini rules"
     assert agents.read_text() == "root agents rules"
-    assert not (project / ".GEMINI.md.ai_hats_bak").exists()
-    assert not (project / ".AGENTS.md.ai_hats_bak").exists()
+    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
+    assert not any(p.name.startswith(".AGENTS.md.ai_hats_bak_") for p in project.iterdir())
 
