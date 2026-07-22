@@ -1537,6 +1537,92 @@ def test_owned_basenames_includes_shared_state_guard():
         assert "pre_bash_shared_state_guard.sh" in owned
 
 
+def test_v4_partition_keeps_manifested_skill_hook(project_with_library):
+    """A skill-materialized hook recorded in .manifest stays in library/hooks/
+    (HATS-1123).
+
+    It used to be evicted to user-hooks/ while .claude/settings.json kept
+    pointing at the vacated path — every Bash call in every live session then
+    failed with ENOENT until the next successful materialize.
+    """
+    from ai_hats.assembler import Assembler
+
+    project_dir, _ = project_with_library
+    hooks = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "safety-guard-safety_gate.py").write_text("#!/usr/bin/env python3\n")
+    (hooks / ".manifest").write_text(
+        "# ai-hats managed — do not edit\nsafety-guard-safety_gate.py\n"
+    )
+
+    Assembler(project_dir)._migrate_layout_v4_hooks_partition()
+
+    assert (hooks / "safety-guard-safety_gate.py").exists()
+    assert not (
+        project_dir / ".agent" / "ai-hats" / "user-hooks" / "safety-guard-safety_gate.py"
+    ).exists()
+
+
+def test_v4_partition_skips_hooks_dir_outside_project(project_with_library, monkeypatch):
+    """Pass 2 refuses when AI_HATS_DIR points the managed hooks dir outside
+    project_dir (HATS-1123).
+
+    Every other migration is project_dir-keyed and inert from a worktree; this
+    one resolves through ai_hats_dir(), which honours the env override — so a
+    worktree-launched replay reached into the main checkout and evicted its
+    hooks.
+    """
+    from ai_hats.assembler import Assembler
+
+    project_dir, _ = project_with_library
+    foreign = project_dir.parent / "main-checkout" / ".agent" / "ai-hats"
+    foreign_hooks = foreign / "library" / "hooks"
+    foreign_hooks.mkdir(parents=True)
+    (foreign_hooks / "user_authored.sh").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("AI_HATS_DIR", str(foreign))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project_dir))
+
+    Assembler(project_dir)._migrate_layout_v4_hooks_partition()
+
+    assert (foreign_hooks / "user_authored.sh").exists()
+    assert not (foreign / "user-hooks" / "user_authored.sh").exists()
+
+
+def test_owned_basenames_includes_skill_hooks_from_manifest(tmp_path):
+    """Skill-materialized hooks recorded in library/hooks/.manifest are
+    framework-owned (HATS-1123).
+
+    Package data ships only the two ``.sh`` guards, so a package-only
+    predicate classifies every HATS-597 ``<skill>-<script>`` hook as
+    user-owned and the v4 partition evicts it to user-hooks/, leaving
+    settings.json wiring pointing at a deleted file.
+    """
+    from ai_hats.assembler import _ai_hats_owned_hook_basenames
+
+    hooks = tmp_path / ".agent" / "ai-hats" / "library" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / ".manifest").write_text(
+        "# ai-hats managed — do not edit\n"
+        "pre_bash_shared_state_guard.sh\n"
+        "safety-guard-safety_gate.py\n"
+    )
+
+    owned = _ai_hats_owned_hook_basenames(tmp_path)
+
+    assert "safety-guard-safety_gate.py" in owned
+
+
+def test_owned_basenames_falls_back_to_package_data_without_manifest(tmp_path):
+    """No manifest (a genuine pre-v4 project — the case the migration was
+    written for) → package data still answers (HATS-1123)."""
+    from ai_hats.assembler import _ai_hats_owned_hook_basenames
+
+    owned = _ai_hats_owned_hook_basenames(tmp_path)
+
+    if _ai_hats_owned_hook_basenames():  # package data resolvable in this env
+        assert "pre_bash_shared_state_guard.sh" in owned
+
+
 def test_v4_partition_reconciles_stuck_state_in_managed_namespace(project_with_library):
     """HATS-549 review fix: a user-owned hook that landed in
     library/hooks/ via a pre-Phase-4 auto-heal must be moved out to
