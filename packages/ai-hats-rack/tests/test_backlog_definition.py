@@ -221,8 +221,8 @@ def test_packaged_default_declares_the_migrated_kit(tmp_path):
     b = load_backlog().bindings
     assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold", priority=30),)
     assert b.state_on_enter["execute"] == (
-        HandlerRef("plan-consent", priority=9),
         HandlerRef("plan-gate", priority=10),
+        HandlerRef("plan-consent", priority=11),
     )
     assert b.state_on_enter["done"] == (HandlerRef("stamp-lifecycle", priority=12),)
     assert b.state_on_enter["cancelled"] == (HandlerRef("stamp-lifecycle", priority=12),)
