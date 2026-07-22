@@ -36,6 +36,11 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
   - the role's skills are materialized into `.cline/skills/` (cline's native
     discovery path) so `/skills` shows them and `/skill-name` loads bodies
     (HATS-963). User-authored skills in `.cline/skills/` are preserved.
+- **`ClineParser` + `resolve_transcript`** — cline's
+  `~/.cline/data/sessions/<id>/<id>.messages.json` is discovered by the
+  provider and parsed into a real `audit.md` (👤/👾 turn markers) and
+  `usage.json` (token metrics), so `reflect` gets a factual layer for cline
+  sessions (HATS-960, HATS-1087).
 
 ## Requirements
 
@@ -45,7 +50,4 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
 
 ## Not yet here
 
-- **`ClineParser`** — a structured `.messages.json` → audit + usage adapter
-  (follow-up); until it lands the provider rides ai-hats-observe's default
-  trace parser.
 - `--hooks-dir` runtime-hook wiring, cline `teams`/`spawn`, and PyPI publish.
