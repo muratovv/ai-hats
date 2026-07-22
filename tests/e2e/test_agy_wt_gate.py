@@ -43,7 +43,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     result = asm.composer.compose("maintainer")
     provider = AgyProvider()
     provider.materialize_runtime_skills(main, result, "sid-agy-gate")
-    provider.ensure_runtime_hooks(main, result)
+    provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate")
 
     settings_file = main / ".gemini" / "settings.json"
     assert settings_file.is_file(), ".gemini/settings.json must be created"
@@ -55,8 +55,8 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
         if isinstance(h, dict)
     ), "wt_gate.py PreToolUse matcher in agy settings.json must include Create"
 
-    hook_script = main / ".agy" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
-    assert hook_script.is_file(), "wt_gate.py must be materialized in .agy/skills/"
+    hook_script = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate" / "rules" / ".agents" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
+    assert hook_script.is_file(), "wt_gate.py must be materialized in session cache dir"
 
     # Test payload targeting code file in MAIN checkout
     payload = json.dumps({
@@ -99,9 +99,9 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     result = asm.composer.compose("maintainer")
     provider = AgyProvider()
     provider.materialize_runtime_skills(main, result, "sid-agy-gate-create")
-    provider.ensure_runtime_hooks(main, result)
+    provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate-create")
 
-    hook_script = main / ".agy" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
+    hook_script = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate-create" / "rules" / ".agents" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
 
     # Test AGY tool 'Create' with TargetFile payload key
     payload = json.dumps({
