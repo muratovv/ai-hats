@@ -11,6 +11,7 @@ so that data protection rules remain universally enforced regardless of worktree
 import json
 import sys
 import re
+import os
 
 def parse_commands(cmd_string: str):
     # Split by ;, &&, ||, |
@@ -45,7 +46,7 @@ def check_dangerous_bin(cmd_bin: str) -> str:
 
 def check_dangerous_substrings(cmd_string: str) -> str:
     cmd_lower = cmd_string.lower()
-    dangerous = ["drop table", "drop database"]
+    dangerous = ["drop table", "drop database", "ai_hats_yolo"]
     for sub in dangerous:
         if sub in cmd_lower:
             return f"Stopped: dangerous substring detected ({sub})."
@@ -80,6 +81,9 @@ def check_command(cmd_string: str) -> str:
     return ""
 
 def main() -> int:
+    if os.environ.get("AI_HATS_YOLO") == "1":
+        return 0
+
     try:
         payload = json.loads(sys.stdin.read())
     except Exception:
