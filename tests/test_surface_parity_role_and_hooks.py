@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.providers import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_agy.provider import AgyProvider
 from ai_hats_cline import ClineProvider
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent

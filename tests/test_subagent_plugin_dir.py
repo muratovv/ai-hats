@@ -20,7 +20,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.providers import ClaudeProvider
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_agy.provider import AgyProvider
 from ai_hats.paths import PROJECT_CONFIG
 
@@ -132,7 +132,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     """
     # HATS-715: SubAgentRunner moved to subagent_runner — patch there (where .run looks).
     from ai_hats import subagent_runner as runtime_mod
-    from ai_hats.sdk_runner import SdkRunResult
+    from ai_hats.surfaces.claude.sdk_runner import SdkRunResult
 
     project, _lib = project_with_two_roles
     # Initialise project on host (active_role mirrors host's skills = empty).
@@ -171,7 +171,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
 
     monkeypatch.setattr(runtime_mod, "_cleanup_session_cache", lambda *a, **kw: None)
     monkeypatch.setattr(
-        "ai_hats.sdk_runner.run_claude_sdk_blocking", _fake_sdk,
+        "ai_hats.surfaces.claude.provider.run_claude_sdk_blocking", _fake_sdk,
     )
 
     from ai_hats.composition_seam import build_composition_payload

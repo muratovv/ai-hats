@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ai_hats.providers import ClaudeProvider, Provider
+from ai_hats.surfaces.claude.provider import ClaudeProvider, Provider
 from ai_hats_agy.provider import AgyProvider
 
 
