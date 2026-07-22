@@ -317,10 +317,10 @@ class SubAgentRunner:
                     )
                 else:
                     # Legacy subprocess path (Agy and future non-SDK providers).
+                    flags = provider.model_flags(model) if model else []
                     full_cmd = provider.get_run_command(
-                        cmd,
+                        cmd + flags,
                         meta_prompt,
-                        model=model or None,
                     )
                     with provider.execution_context(self.project_dir):
                         proc = subprocess.run(

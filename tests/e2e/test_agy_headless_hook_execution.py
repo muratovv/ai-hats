@@ -84,7 +84,7 @@ print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PreToolUse"}}}}))
     provider = AgyProvider()
 
     # Run agy -p headless command
-    cmd = provider.get_run_command(["agy"], "Use Bash to run echo test_execution", model=None)
+    cmd = provider.get_run_command(["agy"], "Use Bash to run echo test_execution")
 
     env = os.environ.copy()
     env.update(provider.get_env(tmp_path / "session", project))
