@@ -50,9 +50,22 @@ from ai_hats_core.migrations import (
 from ai_hats_core.safe_delete import discard as _safe_discard
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .assembler import Assembler
 
 logger = logging.getLogger(__name__)
+
+
+def _recorded_move(src: "Path", dst: "Path", *, reason: str, project_dir: "Path") -> None:
+    """Move ``src`` to ``dst`` leaving a safe_delete trash record.
+
+    A bare ``shutil.move`` out of the managed namespace left no snapshot and
+    no audit line, so an eviction was only reconstructable from inode ctime
+    (HATS-1123). Copy-then-discard so the source is recorded before it goes.
+    """
+    shutil.copy2(str(src), str(dst))
+    _safe_discard(src, reason=reason, project_dir=project_dir)
 
 # Stable banner format — the E2E gate test (HATS-471) greps stderr for
 # this prefix to assert the registry actually advanced (or didn't).
@@ -220,7 +233,17 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
     # any future framework-side sweep could mistake it for managed
     # content and discard it. Move it out NOW, while we're already
     # in a "rearrange hooks" frame.
-    if managed_dst.is_dir():
+    # HATS-1123: this pass is the ONLY one keyed on ai_hats_dir rather than
+    # project_dir, so an AI_HATS_DIR override aimed at another checkout made it
+    # evict THAT project's hooks. providers.py computes the same containment
+    # predicate but only warns; here it must skip.
+    if not managed_dst.resolve().is_relative_to(a.project_dir.resolve()):
+        print(
+            f"[ai-hats] WARN: hooks-reconcile: {managed_dst} is outside "
+            f"{a.project_dir} (AI_HATS_DIR override) — skipping (HATS-1123).",
+            file=sys.stderr,
+        )
+    elif managed_dst.is_dir():
         try:
             managed_entries = list(managed_dst.iterdir())
         except OSError:
@@ -239,7 +262,7 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
                     reason="hooks-reconcile-collision",
                 )
                 continue
-            shutil.move(str(entry), str(target))
+            _recorded_move(entry, target, reason="hooks-reconcile", project_dir=a.project_dir)
 
 
 def migrate_layout_v4_tracker(a: "Assembler") -> None:
@@ -356,7 +379,16 @@ def run_pending(assembler: "Assembler") -> int:
     entry so a partial failure resumes from the last good step on the next
     ``bump``; exceptions propagate with their stack. Returns the number of
     entries executed (0 when already at ``latest_step``).
+
+    Refuses outright on a dir with no ``ai-hats.yaml`` (HATS-1123): the config
+    loader returns defaults for a missing file and ``migration_step`` defaults
+    to 0, so an uninitialised dir — a git worktree, since ai-hats.yaml is
+    gitignored — replayed the entire registry. ``init`` seeds the counter for
+    greenfield before refreshing; every other caller has no such guard.
     """
+    if not assembler.config_path.exists():
+        logger.debug("migrations: no %s — registry skipped", assembler.config_path)
+        return 0
     return _run_pending(
         assembler,
         MIGRATIONS,

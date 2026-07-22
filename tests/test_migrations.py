@@ -72,6 +72,33 @@ def _bootstrap_project(tmp_path, migration_step: int) -> Assembler:
     return Assembler(project)
 
 
+def test_run_pending_refuses_without_project_config(tmp_path, monkeypatch):
+    """No ai-hats.yaml → zero migrations, whatever the counter defaults to
+    (HATS-1123).
+
+    ``ProjectConfig.from_yaml`` returns defaults for a missing file and
+    ``migration_step`` defaults to 0, so an uninitialised dir (a git worktree —
+    ai-hats.yaml is gitignored) replayed the whole registry. With AI_HATS_DIR
+    inherited from a parent session those replays wrote into ANOTHER project.
+    """
+    project = tmp_path / "bare"
+    project.mkdir()
+    asm = Assembler(project)
+    ran_steps: list[int] = []
+    monkeypatch.setattr(
+        "ai_hats.migrations.MIGRATIONS",
+        [
+            Migration(step=m.step, run=lambda _a, s=m.step: ran_steps.append(s), label=m.label)
+            for m in MIGRATIONS
+        ],
+    )
+
+    ran = run_pending(asm)
+
+    assert ran == 0
+    assert ran_steps == []
+
+
 def test_run_pending_skips_when_already_at_latest(tmp_path):
     asm = _bootstrap_project(tmp_path, migration_step=latest_step())
     ran = run_pending(asm)
