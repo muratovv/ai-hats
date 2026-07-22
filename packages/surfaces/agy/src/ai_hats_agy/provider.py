@@ -32,7 +32,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
-from ai_hats.paths import GEMINI_MD_FILENAME, agy_skills_dir, gemini_md
+from ai_hats.paths import (
+    GEMINI_MD_FILENAME,
+    agy_skills_dir,
+    gemini_md,
+    gemini_settings_dir,
+    gemini_settings_path,
+)
 from ai_hats.providers import Provider
 
 if TYPE_CHECKING:
@@ -110,9 +116,9 @@ class AgyProvider(Provider):
         if result is None:
             return
 
-        settings_dir = project_dir / ".gemini"
+        settings_dir = gemini_settings_dir(project_dir)
         settings_dir.mkdir(parents=True, exist_ok=True)
-        settings_path = settings_dir / "settings.json"
+        settings_path = gemini_settings_path(project_dir)
 
         data: dict = {}
         if settings_path.is_file():
