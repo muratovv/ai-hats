@@ -7,8 +7,10 @@ import logging
 import os
 import shutil
 import sys
+import types
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
+
 
 import click
 from rich.console import Console
@@ -141,14 +143,28 @@ class InconsistentInstallError(click.ClickException):
         super().__init__(msg)
 
 
-def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
-    """Handle an ImportError/AttributeError at the CLI boundary and exit (HATS-1120).
+def _is_broken_install_exception(exc: Exception) -> bool:
+    """Return True if exc represents a broken install (ImportError or module AttributeError)."""
+    if isinstance(exc, ImportError):
+        return True
+    if isinstance(exc, AttributeError):
+        obj = getattr(exc, "obj", None)
+        if isinstance(obj, types.ModuleType):
+            return True
+        msg = str(exc)
+        if msg.startswith("module ") or msg.startswith("partially initialized module "):
+            return True
+    return False
 
-    If debug/verbose mode is enabled, re-raises the original exception so the
-    full traceback is displayed. Otherwise, renders InconsistentInstallError to
-    stderr and exits with status 1 without a raw traceback.
+
+def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
+    """Handle an ImportError/module AttributeError at the CLI boundary and exit (HATS-1120).
+
+    If debug/verbose mode is enabled or the exception is not a broken install symptom (HATS-1132),
+    re-raises the original exception so the full traceback is displayed.
+    Otherwise, renders InconsistentInstallError to stderr and exits with status 1 without a raw traceback.
     """
-    if is_debug_mode():
+    if is_debug_mode() or not _is_broken_install_exception(exc):
         raise exc
     err = InconsistentInstallError(exc)
     err.show()
@@ -157,11 +173,14 @@ def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
 
 @contextlib.contextmanager
 def catch_broken_install():
-    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120)."""
+    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120, HATS-1132)."""
     try:
         yield
-    except (ImportError, AttributeError) as exc:
-        _handle_broken_install_or_die(exc)
+    except Exception as exc:
+        if _is_broken_install_exception(exc):
+            _handle_broken_install_or_die(exc)
+        raise
+
 
 
 def _project_dir() -> Path:
