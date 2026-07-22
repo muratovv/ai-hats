@@ -148,8 +148,15 @@ is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
 # means ONLY "is the core importable" — a stale plugin never trips the core
 # venv-nuke / refuse paths (surfaces aren't in $mods; review B2). Zero extra
 # interpreter startups on a healthy launch.
+PROBE_REASON=""
 PROBE_BROKEN_PLUGINS=""
 probe_imports() {
+    PROBE_REASON=""
+    PROBE_BROKEN_PLUGINS=""
+    if [[ ! -x "$VENV/bin/python" ]]; then
+        PROBE_REASON="interpreter missing at $VENV/bin/python"
+        return 1
+    fi
     local mods="ai_hats.cli" init out rc
     if [[ -n "$LOCAL_SRC" ]]; then
         for init in "$LOCAL_SRC"/packages/*/src/*/__init__.py; do
@@ -158,7 +165,14 @@ probe_imports() {
         done
     fi
     out="$("$VENV/bin/python" -c "
-import $mods
+import sys
+mods_str = '$mods'
+for m in [x.strip() for x in mods_str.split(',') if x.strip()]:
+    try:
+        __import__(m)
+    except Exception as e:
+        sys.stderr.write(f'failed importing {m}: {e}\n')
+        sys.exit(1)
 try:
     import importlib.util
     from importlib.metadata import entry_points
@@ -175,10 +189,16 @@ try:
         print(' '.join(sorted(set(_b))))
 except Exception:
     pass
-" 2>/dev/null)"
+" 2>&1)"
     rc=$?
+    if [[ $rc -ne 0 ]]; then
+        local err_line
+        err_line="$(echo "$out" | tail -n 1)"
+        PROBE_REASON="${err_line:-python import probe failed}"
+        return $rc
+    fi
     PROBE_BROKEN_PLUGINS="$out"
-    return $rc
+    return 0
 }
 
 # --- HATS-938: editable host source for `self init`. Printed to stdout (empty
@@ -217,11 +237,11 @@ print(u[7:] if (info.get("dir_info") or {}).get("editable") and u.startswith("fi
 heal_if_needed() {
     # HATS-790: no console script to test — a runnable interpreter passing the
     # deep import probe (HATS-895) is the signal the venv can actually run.
-    if [[ -x "$VENV/bin/python" ]] && probe_imports; then
+    if probe_imports; then
         return 0
     fi
     if ! is_default_venv; then
-        echo "ai-hats: override venv $VENV is missing or broken." >&2
+        echo "ai-hats: override venv $VENV is missing or broken ($PROBE_REASON)." >&2
         echo "  Override venv is user-owned; ai-hats will not auto-recreate it." >&2
         if [[ "$HARNESS_CHANNEL" == "local" ]]; then
             echo "  Fix manually:  uv venv --python 3.11 $VENV && uv pip install --python $VENV/bin/python -e '$LOCAL_SRC'" >&2
@@ -230,7 +250,7 @@ heal_if_needed() {
         fi
         exit 1
     fi
-    echo "  · ai-hats venv missing or broken — recreating $VENV" >&2
+    echo "  · ai-hats venv missing or broken ($PROBE_REASON) — recreating $VENV" >&2
     # Host-global launcher never auto-installs uv (that's bootstrap.sh's job) — fail loud.
     if ! command -v uv >/dev/null 2>&1; then
         echo "ai-hats: uv is required but not found on PATH." >&2
@@ -239,15 +259,27 @@ heal_if_needed() {
         exit 1
     fi
     rm -rf "$VENV"
-    uv venv --python 3.11 "$VENV"
+    if ! uv venv --python 3.11 "$VENV"; then
+        echo "ai-hats: failed to create venv at $VENV" >&2
+        exit 1
+    fi
     # Bare install so the subsequent exec into `bin/python -m ai_hats` succeeds.
     # The python self update (called next via delegate) will then re-install
     # with --reinstall and render the rich diff + auto-bump.
     # HATS-766: channel:local heals EDITABLE (-e), else the PIP_TARGET rebuild.
+    local install_rc=0
     if [[ "$HARNESS_CHANNEL" == "local" ]]; then
-        uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC"
+        uv pip install --quiet --python "$VENV/bin/python" -e "$LOCAL_SRC" || install_rc=$?
     else
-        uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET"
+        uv pip install --quiet --python "$VENV/bin/python" "$PIP_TARGET" || install_rc=$?
+    fi
+    if [[ $install_rc -ne 0 ]]; then
+        echo "ai-hats: failed to install into recreated venv $VENV (exit code $install_rc)." >&2
+        exit 1
+    fi
+    if ! probe_imports; then
+        echo "ai-hats: recreated venv $VENV is still broken ($PROBE_REASON)." >&2
+        exit 1
     fi
 }
 
@@ -290,7 +322,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
     exit 1
 fi
 if ! probe_imports; then
-    echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable." >&2
+    echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable ($PROBE_REASON)." >&2
     echo "  (a workspace package may be missing — HATS-895)" >&2
     missing_venv_hint
     exit 1
