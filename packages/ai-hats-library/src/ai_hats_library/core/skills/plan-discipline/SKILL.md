@@ -35,7 +35,7 @@ When you control the flow, skip Claude Code plan mode and author straight into t
 tracker — zero round-trip, no `.claude/plans` file.
 
 1. **Make the task** (if none): `rack create "<title>" --description "<intent>" [--priority high|medium|low] [--id PROJ-NNN]` — starts in `brainstorm`; clarify scope there if fuzzy.
-2. **Scaffold:** `rack transition <ID> plan` → empty `tasks/<ID>/plan.md`.
+2. **Scaffold:** `rack transition <ID> plan` → empty `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md`.
 3. **Author into it** (Write/Edit), filling the required sections (route each via
    `plan-gate`). `rack transition <ID> execute` stays blocked until they're non-empty.
 
@@ -51,12 +51,12 @@ That's expected — don't fight it, and don't apologise for the draft.
 - **Phase 2 — immediately on approval / exit:** your **first** action, before any
   other execute work, is to persist into the tracker — `task create` (if needed)
   → `transition <ID> plan` → Read the `.claude/plans` draft → Write it into
-  `tasks/<ID>/plan.md` → fill/confirm sections → `transition <ID> execute`. There
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` → fill/confirm sections → `transition <ID> execute`. There
   is no auto-sync (HATS-637); the `.claude/plans` file is now inert, leave or delete.
 
 ## Completion
 
-- `tasks/<ID>/plan.md` holds the real plan; no task-bearing file remains in
+- `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` holds the real plan; no task-bearing file remains in
   `.claude/plans`; `transition <ID> execute` passes the gate.
 - Handoff: plan in tracker → `plan-gate` (section quality) → engine gate → execute.
 
