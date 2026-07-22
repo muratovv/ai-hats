@@ -43,6 +43,13 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     result = asm.composer.compose("maintainer")
     provider = AgyProvider()
     provider.materialize_runtime_skills(main, result, "sid-agy-gate")
+    provider.ensure_runtime_hooks(main, result)
+
+    settings_file = main / ".gemini" / "settings.json"
+    assert settings_file.is_file(), ".gemini/settings.json must be created"
+    settings_data = json.loads(settings_file.read_text())
+    pre_tool_hooks = settings_data.get("hooks", {}).get("PreToolUse", [])
+    assert any("wt_gate.py" in h.get("command", "") for h in pre_tool_hooks if isinstance(h, dict))
 
     hook_script = main / ".agy" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
     assert hook_script.is_file(), "wt_gate.py must be materialized in .agy/skills/"
