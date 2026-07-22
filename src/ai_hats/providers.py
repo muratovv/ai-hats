@@ -35,7 +35,10 @@ from .paths import hooks_dir as _lib_hooks_dir
 from .paths import managed_runtime_hook_filename
 from .paths import session_cache_dir
 from .placeholders import expand_path_placeholders
-from .provider_entry_points import _provider_entry_points
+from .provider_entry_points import (
+    _is_first_party_entry_point,
+    _provider_entry_points,
+)
 from .resolver import read_rule_body
 from .role_catalog import expand_role_catalog
 from . import owners
@@ -139,9 +142,6 @@ class Provider(abc.ABC):
         settings chain for permission rules the CLI has deprecated.
         """
         return []
-
-
-
 
     def _compose_sections(self, result: CompositionResult, *, include_skills: bool) -> str:
         """Assemble the shared system-prompt sections.
@@ -348,9 +348,6 @@ class Provider(abc.ABC):
             reason="system-prompt",
             project_dir=project_dir,
         )
-
-
-
 
 
 # ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
@@ -920,7 +917,8 @@ def _load_provider_entry_points() -> None:
     """Discover + register out-of-tree providers via entry points (IoC).
 
     A built-in already self-registered wins (silent skip); a broken or duplicate
-    entry point is warned and skipped — discovery never breaks import.
+    third-party entry point is warned and skipped. First-party entry points
+    shipped by ai-hats itself must fail loudly on load failure (HATS-1121).
     """
     try:
         entry_points = list(_provider_entry_points())
@@ -934,10 +932,13 @@ def _load_provider_entry_points() -> None:
             cls = ep.load()
             register_provider(ep.name, cls)
         except Exception as exc:  # noqa: BLE001 - one bad plugin must not break the rest
+            if _is_first_party_entry_point(ep):
+                raise
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
 
 _ENTRY_POINTS_LOADED = False
+
 
 def _ensure_entry_points_loaded() -> None:
     global _ENTRY_POINTS_LOADED
