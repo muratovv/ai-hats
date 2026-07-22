@@ -9,6 +9,9 @@ T6  verify_after_install success: heals; no re-exec.
 T7  verify_after_install failure: pip fails → exit 1.
 T8  transitional wave: missing dep → bootstrap_or_die → execv (one user-visible action).
 T9  future-dep cycle: new dep declared → verify_after_install installs it.
+T10 integrity: stale first-party provider entry point fails the verify.
+T11 integrity: a failing out-of-tree provider plugin does NOT fail the verify.
+T12 integrity: an ai_hats module that no longer imports fails the verify.
 """
 
 from __future__ import annotations
@@ -261,3 +264,78 @@ def test_t9_future_dep_cycle(monkeypatch):
     rc = _bootstrap.verify_after_install()
     assert rc == 0
     assert any("futuredep" in c for c in pip_calls)
+
+
+# ---------- T10-T12: install integrity (HATS-1116) ----------
+
+
+class _StubEP:
+    """Minimal EntryPoint stand-in — only what _is_first_party / load() touch."""
+
+    def __init__(self, name: str, value: str, dist_name: str, exc: Exception | None = None):
+        self.name = name
+        self.value = value
+        self.dist = type("_Dist", (), {"name": dist_name})()
+        self._exc = exc
+
+    def load(self):
+        if self._exc is not None:
+            raise self._exc
+        return object
+
+
+def _stub_entry_points(monkeypatch, eps: list[_StubEP]) -> None:
+    monkeypatch.setattr(
+        _bootstrap.importlib.metadata, "entry_points", lambda **kw: list(eps)
+    )
+
+
+def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
+    """A retired provider left in entry_points.txt is caught (the HATS-1115 gemini case)."""
+    _stub_entry_points(
+        monkeypatch,
+        [
+            _StubEP(
+                "gemini",
+                "ai_hats.providers:GeminiProvider",
+                "ai-hats",
+                exc=AttributeError(
+                    "module 'ai_hats.providers' has no attribute 'GeminiProvider'"
+                ),
+            )
+        ],
+    )
+
+    failures = _bootstrap.find_integrity_failures()
+    assert any("gemini" in f for f in failures), failures
+    assert _bootstrap.verify_after_install() == 1
+
+
+def test_t11_out_of_tree_provider_plugin_does_not_fail_verify(monkeypatch):
+    """A third-party plugin must not fail the install verify (mirrors providers policy)."""
+    _stub_entry_points(
+        monkeypatch,
+        [_StubEP("agy", "ai_hats_agy:AgyProvider", "ai-hats-agy", exc=ImportError("boom"))],
+    )
+
+    assert _bootstrap.find_integrity_failures() == []
+    assert _bootstrap.verify_after_install() == 0
+
+
+def test_t12_incoherent_own_module_fails_verify(monkeypatch):
+    """An ai_hats module importing a symbol its sibling no longer exports."""
+    _stub_entry_points(monkeypatch, [])
+    real_import = _bootstrap.importlib.import_module
+
+    def fake_import(name, *a, **kw):
+        if name == "ai_hats.assembler":
+            raise ImportError(
+                "cannot import name 'PROVIDER_GEMINI' from 'ai_hats.constants'"
+            )
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(_bootstrap.importlib, "import_module", fake_import)
+
+    failures = _bootstrap.find_integrity_failures()
+    assert any("PROVIDER_GEMINI" in f for f in failures), failures
+    assert _bootstrap.verify_after_install() == 1
