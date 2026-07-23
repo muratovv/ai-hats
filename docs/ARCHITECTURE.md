@@ -322,8 +322,7 @@ data *into* a fresh worktree (warn-and-continue); `wt_out` drains it *out* befor
 any teardown route and is **fail-closed** — a failing drain aborts the teardown so
 gitignored data is never silently destroyed, with `--skip-hooks` as the conscious
 escape. Credentials are copied *in* freely (same-user co-location) but **never
-harvested out** into a persistent backup by construction (creds boundary: ADR-0012
-D5). Author-facing contract: [how-to-extend.md](how-to-extend.md#worktree-lifecycle-hooks).
+harvested out** into a persistent backup by construction (creds boundary: ADR-0012 D5). Author-facing contract: [how-to-extend.md](how-to-extend.md#worktree-lifecycle-hooks). Engine architecture & overview: [docs/wt/](wt/README.md).
 
 ```mermaid
 flowchart TD

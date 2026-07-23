@@ -190,37 +190,10 @@ Two visually similar blocks fire at the end of a [Session](#session). Use these 
 - **Retro reminder banner** — cyan "Reflect through N sessions" lines + optional wrap-up nudge. Pre-HATS-535 inline inside `_print_session_end`; post-HATS-535 emitted by `RunSessionEnd._print_retro_banner` at the tail of `finalize-hitl`. Visually trails the Session summary block.
 - **Update banner** — a separate three-line block surfaced only when the installed `ai-hats` SHA lags upstream `master`. Format: yellow lead line with `current → latest` short SHAs, cyan `ai-hats self update` command, dim `silence: export AI_HATS_NO_UPDATE_CHECK=1` hint. Produced by the `render_update_banner` pipeline step (`execute.yaml` / `human.yaml`); reads `<ai_hats_dir>/.cache/update-check.json` written by the `check_update_async` step's background probe (24h TTL, stale-while-revalidate).
 
-## Canonical base branch
+## Worktree (wt) concepts
 
-The name (or names) of the branch that worktrees are expected to be created from and merged back into. Defaults to `master` and `main`, in that priority order (HATS-518); the first one that actually exists in the repo is the comparison target. A project can override the split (base ≠ merge-target) via the `worktree` block in `ai-hats.yaml` — see [How to configure › the `worktree` block](how-to-configure.md#1a-the-worktree-block--fork-workflows-base--merge-target) (HATS-942).
+All git-worktree engine terms (`Canonical base branch`, `Worktree data-transfer`, `Worktree core boundary`, `needs_worktree effect`, `Layered file-locking`, `IsolationMode`) have been extracted to the dedicated [Worktree (wt) Glossary](wt/glossary.md).
 
-- **Why it matters.** `WorktreeManager.create()` captures whatever branch the main repo's HEAD currently points at as the worktree's `_original_branch` — and that is the branch `ai-hats wt merge` later lands commits on. Two silent-wrong-branch failure modes:
-  - *Create-time.* Operator parks the main repo on a feature branch before `wt create` / `task transition <ID> execute`. The worktree quietly inherits that branch as its merge target; CLI reports "merged" while master never sees the work.
-  - *Merge-time.* Even when create-time HEAD was on a canonical base, the main-repo HEAD can wander off `_original_branch` between create and merge — manual `git checkout`, IDE branch-switch, a peer agent operating directly in the main repo without a linked worktree. `_fast_forward_merge` / `_squash_merge` run `git merge` in the main-repo cwd, so the merge lands on whatever branch is currently checked out — not on `_original_branch`.
-- **Create-time guard.** `assert_head_is_canonical_base()` in `ai_hats_wt` refuses both `wt create` and `task transition execute` when HEAD is not on a canonical base (HATS-518) — raises `WorktreeBaseBranchError`. Detached HEAD, non-git directories, and exotic repos that have neither `master` nor `main` are passed through (no canon to compare against).
-- **Merge-time guard.** `WorktreeManager.merge()` refuses when `git rev-parse --abbrev-ref HEAD != self._original_branch` (HATS-533) — raises `WorktreeBaseBranchMismatchError` BEFORE any mutation. Positioned ahead of `_check_clean` / `_check_drift`: with HEAD wrong, drift is asking the wrong question. No-op for legacy states where `_original_branch is None`.
-- **Recovery (both guards).** `git checkout <expected>` in the main repo, then retry. No work lost in either case, but the surfaces differ:
-  - *Create-time refusal* (HATS-518) — no worktree exists yet; the refusal aborts before `git worktree add` runs. Retry creates the worktree fresh once HEAD is on a canonical base.
-  - *Merge-time refusal* (HATS-533) — the worktree dir and worktree branch are preserved untouched; the refusal happens before `_check_clean` / `_check_drift` / the actual `git merge`. Retry from the corrected HEAD finishes the merge as if the refusal hadn't happened.
-    Both CLI surfaces (direct `wt merge` and `task transition done`) emit a copy-pasteable recipe.
-- **`--force` / `--accept-drift` do NOT bypass either guard.** `--force` is the dirty-worktree consent; `--accept-drift` is the moved-base consent. Neither addresses wrong-branch protection — three independent safety contracts, three independent flags.
-- **Configurable per project (HATS-942).** The default is the `master`/`main` two-name set, but a fork/dogfood repo can point the split (base ≠ merge-target) at its own branches via the `worktree` block — full contract in [How to configure](how-to-configure.md#1a-the-worktree-block--fork-workflows-base--merge-target). When unset, behavior is byte-identical to the historical hardcoded set.
-
-## Worktree data-transfer
-
-The mechanism by which **gitignored** data crosses the `ai-hats wt` boundary in either direction — **carry-in** (seeded *into* a worktree at `wt create`) or **carry-out** (harvested *out of* a worktree before `wt merge` / `wt discard` teardown). The primitive is a **worktree lifecycle hook** — a component-declared script run at `wt_in` (after create) or `wt_out` (before every teardown route, fail-closed). Shipped today is the `wt_in` / `wt_out` hook form (HATS-823); the declarative `seed_in` / `harvest_out` path-list sugar (designed in ADR-0012) is **shelved** — HATS-775 cancelled, no confirmed consumer the primitive does not already serve.
-
-See [how-to-extend → Worktree lifecycle hooks](how-to-extend.md#worktree-lifecycle-hooks) for the author contract (declaration, lifecycle, `.env` / secrets) and [ADR-0012](adr/0012-worktree-data-transfer.md) for the design (hooks-first, resolution map, creds boundary D5).
-
-## Worktree core (`wt/`) boundary
-
-The in-tree module boundary that splits the git-worktree **engine** (create / merge / discard / cleanup, the L1–L4 locks, drift / base-branch guards, git plumbing) from the **ai-hats accretions** layered on top (composition, the lifecycle-hook layer, FSM auto-create/auto-merge, the tracker redirect, error-recipe translation). The engine is **hook-agnostic**: it owns *where* the lifecycle points fire and *that a callback raising aborts teardown* (fail-closed); it does **not** know what runs there. ai-hats plugs behavior in through a **lifecycle extension-point** — a callback bundle (`on_created` / `before_teardown(event, ctx)`, default no-op) injected at construction, so the whole worktree-data-transfer hook layer (ADR-0012) stays an accretion. The boundary is **one-directional**: `ai_hats → ai_hats_wt`, never back, enforced by the package-boundary import-lint (`packages/ai-hats-wt/tests/test_boundary.py`, HATS-882).
-
-This is **Option B** (decouple in-place into a sub-package), not Option A (a separate repo) — chosen because the coupling is concentrated in one collection function plus a path convention, there is no external consumer, and B is the correct first phase of A if one ever appears. **Status: realized** — designed in [ADR-0013](adr/0013-wt-core-extraction-boundary.md) (HATS-841), decoupled in place by child impl tasks P1–P4 (HATS-849/850/851/852): the hook layer lifted (P1), `state_dir` injected + the import-lint shipped (P2), and the engine moved into its `wt/` sub-package (P3); then extracted into the standalone `ai-hats-wt` workspace package (`packages/ai-hats-wt/`, module `ai_hats_wt` — `manager` + `locks`) with a package-boundary import-lint (HATS-880/882).
-
-## needs_worktree effect
-
-The seam that keeps the task FSM (tracker) free of any worktree dependency (ADR-0014 P0 #3, HATS-866). `TaskManager` never imports `ai_hats_wt`; instead it emits worktree side-effects through an injected handler typed by the **`WorktreeEffects`** protocol (`state.py`, primitives-only signatures): `setup` on `→ execute` (returns the worktree path; logged to the card's work_log as `Worktree: <path>`), `teardown` on `→ done` / `failed` / `cancelled` (returns a past-tense outcome — `merged` / `discarded` — logged as `Worktree <outcome>`), and `assert_canonical_base` for the forced-execute guard. The wt-backed implementation is **`WtWorktreeEffects`** (`wt_effects.py`, integrator-side); the CLI injects it at its `_task_manager` chokepoint. No handler → pure FSM: transitions work, no worktree is created or torn down. Handler exceptions propagate inside the transition's lock window, so a failed merge still aborts before the DONE state persists (HATS-481).
 
 ## Git-hook surface
 
@@ -262,6 +235,7 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 
 **[9]** — [`docs/session-start-notices.md`](session-start-notices.md) — startup-notice model, read-hold policy, producer list, provider settings lint.
 
-**[9]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
+**[10]** — [`docs/how-to-extend.md`](how-to-extend.md) — shipped library layout (`library/core/` vs `library/usage/`), override precedence, recipes for adding your own roles / traits / rules / skills.
 
-**[10]** — [`docs/how-to-experiments.md`](how-to-experiments.md) — authoring and running behavior A/B experiments (HATS-1053).
+**[11]** — [`docs/how-to-experiments.md`](how-to-experiments.md) — authoring and running behavior A/B experiments (HATS-1053).
+
