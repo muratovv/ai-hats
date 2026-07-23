@@ -108,6 +108,7 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
+        "plan-consent",
         "ownership",
         "worktree",
     ]
@@ -161,6 +162,7 @@ def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
         "frozen-integrity",
         "plan-scaffold",
         "plan-gate",
+        "plan-consent",
         "stamp-lifecycle",
         "clear-lifecycle",
     }

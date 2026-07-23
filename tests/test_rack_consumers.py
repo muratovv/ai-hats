@@ -256,6 +256,7 @@ def test_runner_sits_between_gate_and_claim(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
+        "plan-consent",
         "hook-runner",
         "ownership",
         "worktree",

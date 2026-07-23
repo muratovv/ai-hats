@@ -75,6 +75,7 @@ def test_unknown_provider_raises_valueerror():
 
 def test_only_claude_selfregisters_as_builtin():
     from ai_hats.constants import PROVIDER_CLAUDE
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     prov._register_builtins()
     # claude is the sole in-tree builtin; agy/cline are out-of-tree entry-point
