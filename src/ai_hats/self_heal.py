@@ -10,6 +10,7 @@ repo dir. Signal = the entry-point module fails ``find_spec`` (not the
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import types
