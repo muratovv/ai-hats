@@ -11,9 +11,12 @@ setup; a clean start holds for nothing. Extracted from ``runtime_common``
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
+from typing import NoReturn
 
 STARTUP_WARN_HOLD_SECONDS = 10.0
+
 
 
 def _startup_hold_seconds(
@@ -82,13 +85,13 @@ class StartupNotice:
 
 
 def _print_startup_notices(notices: list[StartupNotice]) -> None:
-    """Render startup notices before the hold: ✓ notes (green) then ⚠ warns
-    (yellow), each as a titled bullet block. Generalizes the warnings-only
-    channel (HATS-825 → HATS-833) so a heal note shares the same visible,
-    non-blocking surface as a warning."""
+    """Render startup notices before the hold: ✓ notes (green), ⚠ warns (yellow), ✕ fatals (red).
+    Generalizes the warnings-only channel (HATS-825 → HATS-833).
+    """
     notes = [n for n in notices if n.level == "note"]
-    warns = [n for n in notices if n.level != "note"]
-    g, y, rst = "\033[1;32m", "\033[1;33m", "\033[0m"
+    fatals = [n for n in notices if n.level in ("fatal", "error")]
+    warns = [n for n in notices if n.level not in ("note", "fatal", "error")]
+    g, y, r, rst = "\033[1;32m", "\033[1;33m", "\033[1;31m", "\033[0m"
     if notes:
         print(f"{g}✓ {len(notes)} startup note(s):{rst}")
         for n in notes:
@@ -97,6 +100,9 @@ def _print_startup_notices(notices: list[StartupNotice]) -> None:
         print(f"{y}⚠ {len(warns)} startup warning(s):{rst}")
         for n in warns:
             print(f"{y}  • {n.text}{rst}")
+    if fatals:
+        for n in fatals:
+            sys.stderr.write(f"{r}Error:{rst} {n.text}\n")
 
 
 def _print_startup_warnings(warnings: list[str]) -> None:
@@ -119,3 +125,10 @@ def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
         return
     _print_startup_notices(notices)
     sleep(delay)
+
+
+def show_fatal_notice_and_exit(text: str, *, exit_code: int = 1) -> NoReturn:
+    """Render a fatal notice via the banner channel and terminate the session immediately."""
+    _print_startup_notices([StartupNotice("fatal", text)])
+    sys.exit(exit_code)
+

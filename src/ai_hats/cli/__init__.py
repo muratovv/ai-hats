@@ -479,9 +479,9 @@ def main_entry() -> None:
             console.print(f"[red]Error:[/] {exc}")
             sys.exit(2)
     except Exception as exc:
-        from ._helpers import _is_broken_install_exception
+        from ..self_heal import is_broken_install_exception
 
-        if _is_broken_install_exception(exc):
+        if is_broken_install_exception(exc):
             try:
                 from ._helpers import _handle_broken_install_or_die
 
@@ -489,12 +489,14 @@ def main_entry() -> None:
             except Exception as fallback_exc:
                 if fallback_exc is exc:
                     raise
-                sys.stderr.write(
-                    f"Error: Inconsistent or broken ai-hats installation ({exc}).\n"
+                from ..startup_notices import show_fatal_notice_and_exit
+
+                show_fatal_notice_and_exit(
+                    f"Inconsistent or broken ai-hats installation ({exc}).\n"
                     "Likely cause: package files are out of sync or corrupted.\n"
                     "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
-                    "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v\n"
+                    "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
                 )
-                sys.exit(1)
         raise
+
 
