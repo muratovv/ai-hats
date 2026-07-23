@@ -208,6 +208,22 @@ def test_execution_context_leaves_a_live_sessions_backup_alone(tmp_path: Path) -
     assert not (project / "GEMINI.md").exists()
 
 
+def test_execution_context_reclaims_backup_with_large_or_overflow_pid(tmp_path: Path) -> None:
+    """A backup file with a PID > INT_MAX (or causing OverflowError) must be treated as orphaned and reclaimed."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    orphan = project / ".GEMINI.md.ai_hats_bak_4425096656"
+    orphan.write_text("abandoned with overflow pid")
+
+    with AgyProvider().execution_context(project):
+        pass
+
+    gemini = project / "GEMINI.md"
+    assert gemini.is_file(), "overflow pid backup was not reclaimed"
+    assert gemini.read_text() == "abandoned with overflow pid"
+    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
+
+
 def test_rules_dir(tmp_path: Path) -> None:
     session_dir = tmp_path / "session"
     assert AgyProvider().rules_dir(session_dir) == session_dir / "rules"
