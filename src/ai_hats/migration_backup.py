@@ -38,6 +38,7 @@ from .paths import (
 
 __all__ = [
     "snapshot_pre_bump",
+    "latest_snapshot",
     "BackupError",
     "ENV_BACKUP_DIR",
     "HARD_DISABLE_SENTINEL",
@@ -284,3 +285,21 @@ def snapshot_pre_bump(
         file=sys.stderr,
     )
     return target
+
+
+def latest_snapshot(project_dir: Path) -> Path | None:
+    """Newest snapshot tarball for ``project_dir``, or ``None`` when there is none.
+
+    Read-only counterpart to :func:`snapshot_pre_bump`, for callers that need the
+    recovery handle without writing one (HATS-595 DATA remediation).
+    """
+    base, hard_disabled = _resolve_base()
+    if hard_disabled or base is None or not base.is_dir():
+        return None
+    slug = _project_slug(project_dir.resolve())
+    # Names are ``<utc_ts>-<slug>-<label>.tar.gz`` — lexicographic max is the
+    # chronological newest (same ordering _sweep_retention relies on).
+    return max(
+        (p for p in base.iterdir() if p.is_file() and f"-{slug}-" in p.name),
+        default=None,
+    )
