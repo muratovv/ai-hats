@@ -166,7 +166,7 @@ class WtWorktreeEffects:
                     )
                     logger.info(
                         "Task %s branch '%s' already merged into '%s' — "
-                        "finalizing without re-merge (HATS-697)",
+                        "finalizing without re-merge",
                         task_id,
                         branch_name,
                         base,

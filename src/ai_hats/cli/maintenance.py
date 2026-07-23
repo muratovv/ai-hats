@@ -664,7 +664,7 @@ def _run_managed_versioned_update(
             # No-silent-caps: prior version dirs are retained until R2 GC.
             console.print(
                 "[dim]Note: previous version(s) kept under versions/; "
-                "reclaimed automatically by GC (R2 / HATS-649).[/]"
+                "reclaimed automatically by GC.[/]"
             )
 
     # Bump / re-assemble with the NEW code (fresh interpreter in the target
@@ -1388,7 +1388,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
 @click.option(
     "--force-downgrade",
     is_flag=True,
-    help="Bypass the ahead/diverged guard (HATS-441). Replaces the local "
+    help="Bypass the ahead/diverged guard. Replaces the local "
     "install with the remote master state — destroys unpushed work in "
     "editable installs.",
 )
@@ -1398,7 +1398,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     default=None,
     metavar="REF",
     help="Install ai-hats at an explicit tag, branch, or commit SHA "
-    "instead of remote master (HATS-496). Bypasses the ahead/diverged "
+    "instead of remote master. Bypasses the ahead/diverged "
     "guard; pre-flight 'git ls-remote' validates the ref before any pip "
     "call. Editable target venv requires --force.",
 )
@@ -1407,7 +1407,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     "force",
     is_flag=True,
     help="With --revision: overwrite the editable install in the target "
-    "venv (HATS-496 D2). No effect without --revision. Distinct from "
+    "venv. No effect without --revision. Distinct from "
     "--force-downgrade, which only applies to plain master-targeted "
     "updates.",
 )
@@ -1415,7 +1415,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     "--check",
     "check",
     is_flag=True,
-    help="Diagnose only (HATS-595): print the per-layer triage and exit "
+    help="Diagnose only: print the per-layer triage and exit "
     "without writing anything. Exit 1 when a layer is broken, 0 when healthy "
     "or warn-only. Refuses the mutating flags.",
 )
@@ -1429,7 +1429,7 @@ def update(
 ):
     """Update ai-hats from GitHub.
 
-    Auto-bumps after install. HATS-415: ``bump`` now self-heals v0.6 →
+    Auto-bumps after install. ``bump`` now self-heals v0.6 →
     v0.7 layouts transparently for the common case (no user edits). If
     user edits are detected on the v0.6 canonical files, the bump
     refuses with per-file guidance — re-run with ``--migrate-force``
@@ -1437,7 +1437,7 @@ def update(
     surfaces a warning when local branches modify the paths slated for
     deletion.
 
-    HATS-496: ``--revision <REF>`` pins the install to an explicit tag,
+    ``--revision <REF>`` pins the install to an explicit tag,
     branch, or commit SHA. Skips the downgrade probe / guard (D1). On an
     editable target venv, refuses unless ``--force`` is passed (D2). A
     pre-flight ``git ls-remote`` validates the ref before any pip call.

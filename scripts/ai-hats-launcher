@@ -71,7 +71,7 @@ if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
     pin_real="$(cd "$pin_proj" 2>/dev/null && pwd -P || echo "$pin_proj")"
     if [[ "$pin_real" != "$(pwd -P)" ]]; then
         if [[ -n "$inherited_venv" ]]; then
-            echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin (HATS-944)." >&2
+            echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin." >&2
             inherited_venv=""
         fi
         # HATS-1123: AI_HATS_DIR and AI_HATS_PROJECT_DIR must move together. We
@@ -79,7 +79,7 @@ if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
         # AI_HATS_DIR aimed at the previous project would make this project's
         # commands (migrations, hook materialization) write into THAT one.
         if [[ -n "${AI_HATS_DIR:-}" ]]; then
-            echo "ai-hats: AI_HATS_DIR=$AI_HATS_DIR is pinned to project $pin_proj — foreign to $PROJECT; dropping it (HATS-1123)." >&2
+            echo "ai-hats: AI_HATS_DIR=$AI_HATS_DIR is pinned to project $pin_proj — foreign to $PROJECT; dropping it." >&2
             unset AI_HATS_DIR
         fi
     fi
@@ -278,7 +278,7 @@ heal_if_needed() {
     if ! command -v uv >/dev/null 2>&1; then
         echo "ai-hats: uv is required but not found on PATH." >&2
         echo "  Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-        echo "  then re-run. (uv is the single host prerequisite — HATS-763.)" >&2
+        echo "  then re-run. (uv is the single host prerequisite.)" >&2
         exit 1
     fi
     rm -rf "$VENV"
@@ -346,7 +346,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
 fi
 if ! probe_imports; then
     echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable ($PROBE_REASON)." >&2
-    echo "  (a workspace package may be missing — HATS-895)" >&2
+    echo "  (a workspace package may be missing)" >&2
     missing_venv_hint
     exit 1
 fi

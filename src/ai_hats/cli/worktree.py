@@ -218,14 +218,14 @@ def wt_create(branch: str):
     "--accept-drift",
     is_flag=True,
     default=False,
-    help="Proceed even if the base branch moved since worktree create (HATS-457)",
+    help="Proceed even if the base branch moved since worktree create",
 )
 @click.option(
     "--skip-hooks",
     is_flag=True,
     default=False,
     help="Force teardown even if a wt_out hook fails — accepts losing "
-    "unharvested gitignored data (HATS-823).",
+    "unharvested gitignored data.",
 )
 def wt_merge(
     branch: str | None,
@@ -405,7 +405,7 @@ def wt_merge(
     is_flag=True,
     default=False,
     help="If `git worktree remove --force` fails (e.g. held-open files), "
-    "fall back to rm -rf. HATS-488 / B-03: opt-in only — default refuses "
+    "fall back to rm -rf. Opt-in only — default refuses "
     "to silently nuke residual data.",
 )
 @click.option(
@@ -413,7 +413,7 @@ def wt_merge(
     is_flag=True,
     default=False,
     help="Force teardown even if a wt_out hook fails — accepts losing "
-    "unharvested gitignored data (HATS-823).",
+    "unharvested gitignored data.",
 )
 def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: bool):
     """Discard worktree changes and clean up.
