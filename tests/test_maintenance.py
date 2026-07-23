@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError
@@ -1445,3 +1446,121 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
         result = CliRunner().invoke(update, [])
     assert result.exit_code == 0, result.output
     assert not cache_file.exists()
+
+
+# ---------- HATS-595: --check layer triage ----------
+
+
+def _seed_healthy_layers(project: Path) -> None:
+    """Materialize every layer path ``triage`` checks."""
+    ai_hats = project / ".agent" / "ai-hats"
+    (ai_hats / "tracker" / "backlog").mkdir(parents=True)
+    (ai_hats / "user-rules").mkdir()
+    (ai_hats / "library" / "hooks").mkdir(parents=True)
+    (ai_hats / "imports.md").write_text("", encoding="utf-8")
+
+
+def test_check_exits_zero_on_healthy_install(tmp_path: Path) -> None:
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 0, result.output
+    assert "MANAGED" in result.output
+
+
+def test_check_exits_one_and_names_remediation_when_library_missing(tmp_path: Path) -> None:
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    shutil.rmtree(project / ".agent" / "ai-hats" / "library")
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 1, result.output
+    assert "ai-hats self init" in result.output
+
+
+def test_check_stays_zero_on_warn_only_drift(tmp_path: Path) -> None:
+    """A venv behind upstream is a warning, not a broken layer (HATS-595)."""
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    _seed_update_cache(project)
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_check_writes_nothing(tmp_path: Path) -> None:
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    before = {p: p.stat().st_mtime_ns for p in project.rglob("*") if p.is_file()}
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        CliRunner().invoke(update, ["--check"])
+
+    after = {p: p.stat().st_mtime_ns for p in project.rglob("*") if p.is_file()}
+    assert after == before
+
+
+@pytest.mark.parametrize("flag", ["--revision", "--force-downgrade", "--force"])
+def test_check_refuses_mutating_flags(tmp_path: Path, flag: str) -> None:
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    args = ["--check", flag] + (["v1.0.0"] if flag == "--revision" else [])
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, args)
+
+    assert result.exit_code == 2, result.output
+
+
+def test_update_reverifies_and_reports_layers_still_broken(tmp_path: Path, monkeypatch) -> None:
+    """A layer the bump did not restore is named after the update (HATS-595).
+
+    No separate heal step exists: ``do_bump`` → ``_refresh`` already rebuilds
+    the MANAGED layer. The update only re-verifies and reports.
+    """
+    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    _seed_healthy_layers(project)
+    shutil.rmtree(project / ".agent" / "ai-hats" / "library")
+
+    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
+    with (
+        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch(
+            "subprocess.run",
+            side_effect=lambda args, **kw: _make_completed(list(args), returncode=0),
+        ),
+    ):
+        result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 0, result.output
+    assert "Still broken:" in result.output
+    assert "library" in result.output
+
+
+def test_update_reports_layers_restored_by_the_bump(tmp_path: Path, monkeypatch) -> None:
+    project = _setup_channel_env(tmp_path, "local", extra="  path: .\n")
+    _seed_healthy_layers(project)
+    library = project / ".agent" / "ai-hats" / "library"
+    shutil.rmtree(library)
+
+    def fake_run(args, **kw):
+        (library / "hooks").mkdir(parents=True, exist_ok=True)  # stand-in for the bump
+        return _make_completed(list(args), returncode=0)
+
+    monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
+    with (
+        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        result = CliRunner().invoke(update, [])
+
+    assert result.exit_code == 0, result.output
+    assert "Layers restored:" in result.output
+    assert "Still broken:" not in result.output
