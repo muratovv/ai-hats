@@ -16,11 +16,6 @@ if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
 from .frontmatter import FrontmatterError, read_frontmatter
-
-# Re-exported, not used here: out-of-tree surface plugins import it from this
-# module (packages/surfaces/agy). Removing it breaks them at runtime.
-from .hook_collection import collect_runtime_hooks  # noqa: F401
-
 from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,

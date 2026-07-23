@@ -119,7 +119,7 @@ class AgyProvider(Provider):
     ) -> None:
         """Install provider-specific runtime hooks into ``.gemini/settings.json``. Idempotent."""
         import json
-        from ai_hats.providers import collect_runtime_hooks
+        from ai_hats.hook_collection import collect_runtime_hooks
 
         session_id = kwargs.get("session_id")
         if result is None or session_id is None:
