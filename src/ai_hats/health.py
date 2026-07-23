@@ -54,15 +54,24 @@ _INIT = "ai-hats self init"
 _UPDATE = "ai-hats self update"
 
 
+def _rel(path: Path, project_dir: Path) -> str:
+    try:
+        return str(path.relative_to(project_dir))
+    except ValueError:
+        return str(path)
+
+
 def _presence(
     layer: Layer,
     name: str,
     path: Path,
     remediation: str,
+    project_dir: Path,
 ) -> LayerReport:
+    shown = _rel(path, project_dir)
     if path.is_dir() or path.is_file():
-        return LayerReport(layer, name, Status.OK, str(path))
-    return LayerReport(layer, name, Status.BROKEN, f"missing: {path}", remediation)
+        return LayerReport(layer, name, Status.OK, shown)
+    return LayerReport(layer, name, Status.BROKEN, f"missing: {shown}", remediation)
 
 
 def _data_remediation(project_dir: Path) -> str:
@@ -76,8 +85,8 @@ def _data_remediation(project_dir: Path) -> str:
 def _data_reports(project_dir: Path) -> list[LayerReport]:
     base = ai_hats_dir(project_dir)
     rows = [
-        _presence(Layer.DATA, "tracker", tracker_dir(project_dir), ""),
-        _presence(Layer.DATA, "user-rules", base / USER_RULES_SUBDIR, ""),
+        _presence(Layer.DATA, "tracker", tracker_dir(project_dir), "", project_dir),
+        _presence(Layer.DATA, "user-rules", base / USER_RULES_SUBDIR, "", project_dir),
     ]
     # Resolve the snapshot only when something is actually broken.
     if all(r.status is Status.OK for r in rows):
@@ -97,9 +106,9 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
 def _managed_reports(project_dir: Path) -> list[LayerReport]:
     base = ai_hats_dir(project_dir)
     return [
-        _presence(Layer.MANAGED, "imports.md", base / "imports.md", _INIT),
-        _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT),
-        _presence(Layer.MANAGED, "library/hooks", hooks_dir(project_dir), _INIT),
+        _presence(Layer.MANAGED, "imports.md", base / "imports.md", _INIT, project_dir),
+        _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
+        _presence(Layer.MANAGED, "library/hooks", hooks_dir(project_dir), _INIT, project_dir),
         _hook_refs_report(project_dir),
     ]
 

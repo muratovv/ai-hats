@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import click
 
 from ai_hats_core import scrubbed_git_env
+from .. import health
 from ..paths import PROJECT_CONFIG, ENV_AI_HATS_VENV
 from ..constants import ENV_REPO_URL, ENV_LAUNCHER_DEST
 from ._helpers import _assembler, _project_dir, console, logger
@@ -1309,6 +1310,47 @@ def _run_editable_update(
             )
 
 
+_TRIAGE_STYLE = {
+    health.Status.OK: ("green", "OK"),
+    health.Status.WARN: ("yellow", "WARN"),
+    health.Status.BROKEN: ("red", "BROKEN"),
+}
+
+
+def _render_triage(reports: list[health.LayerReport]) -> None:
+    """Print the per-layer triage, grouped by layer (HATS-595)."""
+    console.print("\n[bold]Layer triage[/]")
+    for layer in health.Layer:
+        rows = [r for r in reports if r.layer is layer]
+        if not rows:
+            continue
+        console.print(f"[dim]{layer.value}[/]")
+        for r in rows:
+            color, label = _TRIAGE_STYLE[r.status]
+            console.print(f"  [{color}]{label:<6}[/] {r.name:<14} {r.detail}")
+            if r.remediation:
+                console.print(f"         [dim]→ {r.remediation}[/]")
+    console.print()
+
+
+def _reverify_layers(project_dir: Path, before: list[health.LayerReport]) -> None:
+    """Re-run the triage after the update and report what the bump did NOT fix.
+
+    The bump's ``_refresh`` already rebuilds the MANAGED layer, so this only
+    confirms it — there is no separate heal step to run (HATS-595).
+    """
+    was_broken = {r.name for r in before if r.status is health.Status.BROKEN}
+    if not was_broken:
+        return
+    still = {r.name for r in health.triage(project_dir) if r.status is health.Status.BROKEN}
+    healed = was_broken - still
+    if healed:
+        console.print(f"[green]Layers restored:[/] {', '.join(sorted(healed))}")
+    remaining = was_broken & still
+    if remaining:
+        console.print(f"[red]Still broken:[/] {', '.join(sorted(remaining))}")
+
+
 def _invalidate_update_cache(project_dir: Path) -> None:
     """Drop the update-check cache after a self update (HATS-781).
 
@@ -1365,12 +1407,21 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     "--force-downgrade, which only applies to plain master-targeted "
     "updates.",
 )
+@click.option(
+    "--check",
+    "check",
+    is_flag=True,
+    help="Diagnose only (HATS-595): print the per-layer triage and exit "
+    "without writing anything. Exit 1 when a layer is broken, 0 when healthy "
+    "or warn-only. Refuses the mutating flags.",
+)
 def update(
     migrate_force: bool,
     check_branches: bool,
     force_downgrade: bool,
     revision: str | None,
     force: bool,
+    check: bool,
 ):
     """Update ai-hats from GitHub.
 
@@ -1392,6 +1443,10 @@ def update(
     from ..channel import ChannelResolveError, fetch_latest_stable_version
     from ..models import Channel, ProjectConfigError
 
+    if check and (revision or force_downgrade or force):
+        console.print("[red]--check is diagnose-only[/] and cannot combine with mutating flags.")
+        sys.exit(2)
+
     console.print(f"Current version: [bold]{old_version}[/]")
     # HATS-318: surface which interpreter we're updating. When the wrapper has
     # already re-exec'd into <ai_hats_dir>/.venv, the install goes to that env
@@ -1400,6 +1455,12 @@ def update(
         console.print(f"[dim]Target venv:[/] {sys.executable}")
 
     project_dir = _project_dir()
+
+    # HATS-595: triage before any write, so --check can short-circuit here.
+    reports = health.triage(project_dir)
+    _render_triage(reports)
+    if check:
+        sys.exit(1 if health.worst_status(reports) is health.Status.BROKEN else 0)
 
     # HATS-966: repair a stale surface-plugin editable (e.g. a `cline` `.pth` left
     # dangling by a torn-down worktree) as part of the canonical "fix my env" run.
@@ -1570,6 +1631,7 @@ def update(
             check_branches=check_branches,
         )
         _invalidate_update_cache(project_dir)  # HATS-781
+        _reverify_layers(project_dir, reports)
         return
 
     # HATS-647/764: edge/stable on the managed default venv → blue-green
@@ -1603,6 +1665,7 @@ def update(
             console.print(f"[red]Update failed[/] (another update in progress):\n{exc}")
             sys.exit(2)
         _invalidate_update_cache(project_dir)  # HATS-781
+        _reverify_layers(project_dir, reports)
         return
 
     # 2. Install — short-circuited when the probe confirms the installed SHA
@@ -1851,6 +1914,8 @@ def update(
         # natively via the AssemblyError-return-1 branch).
         if bump_in_process_failed:
             sys.exit(1)
+
+    _reverify_layers(project_dir, reports)
 
 
 # HATS-285: `ai-hats self migrate` removed. Migration is transparent inside
