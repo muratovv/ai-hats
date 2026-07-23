@@ -69,11 +69,13 @@ def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
     env.pop(ENV_AI_HATS_VENV, None)
     env.pop(ENV_AI_HATS_INIT_SRC, None)
     env.pop("PYTHONPATH", None)
+    env.pop("PYTEST_CURRENT_TEST", None)
+
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # Flag-only `self init` with explicit --channel local
-    _run(
+    res_init = _run(
         [
             str(launcher_dest),
             "self",
@@ -91,6 +93,8 @@ def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
         env=env,
         timeout=300,
     )
+
+
 
     cfg = project / PROJECT_CONFIG
     assert cfg.exists(), "self init did not write ai-hats.yaml"

@@ -18,7 +18,8 @@ from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
 from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir, wt_hooks_dir
 from .sweeper import read_marker_names
-from .update_check import read_cache
+
+
 
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status"]
 
@@ -161,10 +162,24 @@ def _drift_report(project_dir: Path) -> LayerReport:
     Absent or inconclusive cache is reported OK: an unknown drift is not a
     broken install, and `--check` must stay useful offline.
     """
-    entry = read_cache(project_dir)
-    if entry is None or entry.behind is None:
-        return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "unknown (no cached probe)")
-    if not entry.has_update:
+    try:
+        from .update_check import read_cache, upstream_update
+    except ImportError:
+        return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "unknown (no update_check)")
+
+    entry = upstream_update(project_dir)
+    if entry is None:
+        raw_entry = read_cache(project_dir)
+        if raw_entry is None or raw_entry.behind is None:
+            return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "unknown (no cached probe)")
+        if raw_entry.behind > 0:
+            return LayerReport(
+                Layer.RUNTIME,
+                "version drift",
+                Status.WARN,
+                f"{raw_entry.behind} commit(s) behind upstream",
+                _UPDATE,
+            )
         return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "up to date")
     return LayerReport(
         Layer.RUNTIME,
@@ -173,6 +188,8 @@ def _drift_report(project_dir: Path) -> LayerReport:
         f"{entry.behind} commit(s) behind upstream",
         _UPDATE,
     )
+
+
 
 
 @contextmanager

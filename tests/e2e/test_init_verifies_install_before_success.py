@@ -78,6 +78,7 @@ def test_init_does_not_report_success_for_a_broken_install(tmp_path: Path, repo_
 
     env = {
         **os.environ,
+        "AI_HATS_ALLOW_SELF_UPDATE_IN_TEST": "1",
         ENV_REPO_URL: str(_broken_install_source(tmp_path)),
         ENV_AI_HATS_VENV: str(venv),
     }

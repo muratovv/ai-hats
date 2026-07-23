@@ -438,6 +438,9 @@ def _load_provider_entry_points() -> None:
             cls = ep.load()
             register_provider(ep.name, cls)
         except Exception as exc:  # noqa: BLE001 - one bad plugin must not break the rest
+            if isinstance(exc, AttributeError):
+                logger.warning("skipping retired provider entry point %r: %s", ep.name, exc)
+                continue
             if _is_first_party_entry_point(ep):
                 raise
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)

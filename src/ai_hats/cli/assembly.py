@@ -87,12 +87,13 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
         console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(names)} or a provider name.")
 
 
-def _run_self_update() -> None:
+def _run_self_update(target_python: str | Path | None = None) -> None:
     """Install the channel-appropriate ai-hats inline, then re-exec into it.
 
     Returns ONLY when no install took effect (unresolvable channel, failed uv
-    run) — init then continues on the current version. Success never returns:
-    HATS-1126 re-execs, since the install just swapped this interpreter's tree.
+    run, or running under test runner) — init then continues on the current version.
+    Success never returns: HATS-1126 re-execs, since the install just swapped this
+    interpreter's tree.
 
     Used in the wizard bootstrap path to guarantee newly-onboarded users start
     on the latest framework version for their harness channel (HATS-764): local
@@ -111,9 +112,43 @@ def _run_self_update() -> None:
     )
 
     _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
+
+    from ..self_location import _under_managed_namespace
+
+    is_test_env = "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
+    if is_test_env and target_python is None and not os.environ.get("AI_HATS_ALLOW_SELF_UPDATE_IN_TEST"):
+        console.print("[yellow]Update skipped[/]: running inside test runner environment")
+        return
+
+    if target_python is None:
+        try:
+            from ..paths import venv_path as _venv_path
+            p_venv = _venv_path(_project_dir())
+            p_py = p_venv / "bin" / "python"
+            if p_py.exists():
+                target_python = p_py
+        except Exception:
+            pass
+
+    python_target = str(target_python) if target_python is not None else sys.executable
+    resolved_target = str(Path(python_target).resolve())
+
+    is_sandbox = (
+        target_python is not None
+        or "/tmp/" in resolved_target
+        or "pytest-of-" in resolved_target
+        or _under_managed_namespace(Path(resolved_target))
+    )
+    if not is_sandbox and not os.environ.get("AI_HATS_ALLOW_SELF_UPDATE_IN_TEST"):
+        console.print("[yellow]Update skipped[/]: target interpreter is unmanaged host environment")
+        return
+
+    _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
+
+
     channel, _repo, path = _read_harness(_project_dir())
     if channel is Channel.LOCAL:
-        cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path or "."]
+        cmd = ["uv", "pip", "install", "--python", python_target, "-e", path or "."]
     elif channel is Channel.STABLE:
         try:
             version = fetch_latest_stable_version()
@@ -125,17 +160,20 @@ def _run_self_update() -> None:
             "pip",
             "install",
             "--python",
-            sys.executable,
+            python_target,
             "--reinstall",
             f"ai-hats=={version}",
         ]
     else:  # edge
-        cmd = _build_update_cmd()
+        cmd = _build_update_cmd(target_python=python_target)
+    run_env = os.environ.copy()
+    run_env["PYTHONDONTWRITEBYTECODE"] = "1"
     with console.status(
         "[cyan]Downloading ai-hats …[/] [dim](first run can take a minute on slow links)[/]",
         spinner="dots",
     ):
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
+
     if result.returncode != 0:
         # Don't abort init on update failure — surface and continue with
         # the currently-installed version. Common cause: offline / no
@@ -148,7 +186,7 @@ def _run_self_update() -> None:
     # HATS-1116: the install landing is not the install working. An uv exit 0
     # that produced an unusable tree must never reach the success line — and
     # unlike an offline skip, there is no old version left to continue on.
-    ok, detail = _run_post_install_verify(sys.executable)
+    ok, detail = _run_post_install_verify(python_target)
     if not ok:
         console.print(
             f"[red]Install verify failed[/] — ai-hats was installed but cannot run:\n{detail}\n"
@@ -159,12 +197,20 @@ def _run_self_update() -> None:
 
     console.print("[green]✓[/] ai-hats updated")
 
+    # HATS-1162: under pytest/test environment, do NOT os.execv because it re-executes
+    # pytest arguments via python -m ai_hats, killing the runner.
+    if is_test_env:
+        return
+
     # HATS-1126: the install just replaced the tree this interpreter is running
     # from. Modules already imported stay on the old code while anything imported
     # later is read from the new one, so restart rather than run a split set.
     os.environ[ENV_INIT_UPDATED] = "1"
     console.print("[dim]Restarting on the updated ai-hats …[/]")
-    os.execv(sys.executable, [sys.executable, "-m", "ai_hats", *sys.argv[1:]])
+    os.execv(python_target, [python_target, "-m", "ai_hats", *sys.argv[1:]])
+
+
+
 
 
 def _launch_wizard_session() -> None:
@@ -306,6 +352,7 @@ def init(
     if use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
         _run_self_update()
 
+
     # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
     # Greenfield init has nothing to back up — the project tree is
     # empty from ai-hats's POV. Re-init reruns the v07 migration +
@@ -359,8 +406,9 @@ def init(
     # channel in ai-hats.yaml above, but the venv still holds the launcher's edge
     # scaffold. Reconcile the venv with the channel just written if self update
     # hasn't already run in this process chain.
-    if not no_update and not os.environ.get(ENV_INIT_UPDATED):
+    if not use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
         _run_self_update()
+
 
     # HATS-549 Phase 3: end-of-init smoke-assert. Mirrors do_bump's
     # final step — every hook command path in .claude/settings.json

@@ -154,12 +154,14 @@ def _uv_reinstall_editable(package_dir: Path) -> None:
     nearest cwd venv, not this interpreter (mirrors ``maintenance._build_install_cmd``).
     ``--no-deps`` — only the ``.pth`` is stale; deps are unchanged.
     """
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     subprocess.run(
         [
             "uv", "pip", "install", "--no-deps",
             "--python", sys.executable, "-e", str(package_dir),
         ],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, env=env,
     )
 
 
