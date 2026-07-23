@@ -37,8 +37,14 @@ from ai_hats.paths import (
 )
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
-from ai_hats.constants import HOOK_PRE_TOOL_USE, PROVIDER_CLAUDE
-from ai_hats.constants import INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
+from ai_hats.constants import (
+    HOOK_PRE_TOOL_USE,
+    INJECTION_START,
+    INJECTION_END,
+    PROVIDER_CLAUDE,
+    PUBLISH_AGGREGATOR_START,
+    PUBLISH_AGGREGATOR_END,
+)
 
 
 @dataclass(frozen=True)
@@ -212,6 +218,7 @@ class ClaudeProvider(Provider):
     def supports_sdk_engine(self) -> bool:
         """Indicates this provider uses the Python SDK path."""
         return True
+
     def engine(self) -> "SubagentEngine | None":
         return ClaudeSubagentEngine(self)
 
