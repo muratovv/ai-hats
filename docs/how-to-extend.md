@@ -655,3 +655,6 @@ This pattern works for any removed trait / skill / rule: re-create under
 **[3]** — [`docs/adr/0002-pipeline-subsystem-cli.md`](adr/0002-pipeline-subsystem-cli.md) — ADR-0002, step contract: inputs, outputs, failure policy.
 
 **[4]** — [`docs/adr/0012-worktree-data-transfer.md`](adr/0012-worktree-data-transfer.md) — ADR-0012, worktree data-transfer: the `wt_in` / `wt_out` hook contract (D2/D7) and the never-harvest-secrets creds boundary (D5).
+
+**[5]** — [`docs/wt/`](wt/README.md) — Worktree (wt) documentation hub, architecture overview, and L1–L4 concurrency lock model.
+
