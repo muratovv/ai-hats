@@ -420,7 +420,7 @@ class Assembler:
                     )
                 except OSError:
                     pass
-            actions.append(f"swept stale {backup_ref.relative_to(project_dir)} (HATS-407)")
+            actions.append(f"swept stale {backup_ref.relative_to(project_dir)}")
         return actions
 
     def init(
