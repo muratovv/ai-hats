@@ -164,17 +164,6 @@ def heal_editables() -> None:
     _render_heal_result(run_editable_heal())
 
 
-@click.command("check")
-def check() -> None:
-    """Run install coherence check (verify dependencies and integrity)."""
-    from .._bootstrap import verify_after_install
-
-    code = verify_after_install()
-    if code != 0:
-        sys.exit(code)
-    console.print("[green]Install coherence check passed.[/]")
-
-
 def _resolve_ref(repo_url: str, ref: str) -> str | None:
     """Validate ``ref`` against ``repo_url`` via ``git ls-remote``.
 
