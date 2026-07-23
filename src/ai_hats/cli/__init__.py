@@ -52,6 +52,54 @@ class _PassthroughGroup(click.Group):
             ctx._protected_args = []
         return result
 
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        super().format_help(ctx, formatter)
+        
+        # HATS-1112: append provider-specific hints if a provider or role is resolvable.
+        # Since --help is eager, ctx.params might not have parsed trailing flags, so we
+        # fallback to a naive sys.argv scan to provide contextual help even for `ai-hats --help -p agy`.
+        import sys
+        from rich.console import Console
+        from rich.table import Table
+        from ..composition_seam import resolve_provider_for_help
+                
+        provider_name = ctx.params.get("provider")
+        role_name = ctx.params.get("role")
+        
+        if not provider_name and not role_name:
+            for i, arg in enumerate(sys.argv):
+                if arg in ("-p", "--provider") and i + 1 < len(sys.argv):
+                    provider_name = sys.argv[i + 1]
+                elif arg in ("-r", "--role") and i + 1 < len(sys.argv):
+                    role_name = sys.argv[i + 1]
+        
+        if not provider_name and not role_name:
+            return
+
+        provider = resolve_provider_for_help(provider_name, role_name)
+        if not provider:
+            return
+            
+        hints = provider.provider_hints()
+        if not hints:
+            return
+        table = Table(title=f"Provider Hints ({provider.name})", show_header=True, header_style="bold magenta")
+        table.add_column("Name", style="cyan")
+        table.add_column("Values", style="green")
+        table.add_column("Comment", style="yellow")
+        
+        for hint in hints:
+            table.add_row(hint.name, hint.values, hint.description)
+            
+        # Capture rich output to string
+        import io
+        buf = io.StringIO()
+        capture_console = Console(file=buf, force_terminal=True, color_system="256")
+        capture_console.print(table)
+        
+        formatter.write("\n")
+        formatter.write(buf.getvalue())
+
 
 def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
     """Render the full command tree and exit. Eager — fires before group body."""

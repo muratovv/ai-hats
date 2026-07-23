@@ -311,3 +311,25 @@ def _static_cost_analyzer(project_dir: Path):
         }
 
     return analyze
+
+def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
+    """Best-effort provider resolution for CLI help (e.g., ai-hats --help)."""
+    from .providers import get_provider
+    from .cli._helpers import _project_dir
+
+    if provider_name:
+        try:
+            return get_provider(provider_name)
+        except Exception:
+            return None
+
+    if role_name:
+        try:
+            asm, cfg, effective_role = _project_context(_project_dir(), role_name)
+            eff = cfg.provider
+            if eff:
+                return get_provider(eff)
+        except Exception:
+            pass
+
+    return None

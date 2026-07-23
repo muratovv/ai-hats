@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from ai_hats.providers import ProviderHint
+    from ai_hats_observe.parsers.base import TranscriptParser
 
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
@@ -36,17 +38,8 @@ from ai_hats.paths import (
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
 from ai_hats.constants import HOOK_PRE_TOOL_USE, PROVIDER_CLAUDE
-from ai_hats.providers import (
-    INJECTION_START,
-    INJECTION_END,
-    PUBLISH_AGGREGATOR_START,
-    PUBLISH_AGGREGATOR_END,
-    _PERMISSION_ARRAYS,
-    DEPRECATED_RULE_TOOLS,
-)
+from ai_hats.constants import INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
 
-if TYPE_CHECKING:
-    from ai_hats_observe.parsers.base import TranscriptParser
 
 @dataclass(frozen=True)
 class SettingsFinding:
@@ -56,6 +49,19 @@ class SettingsFinding:
     array: str
     rule: str
     replacement: str
+
+
+# ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
+
+# Claude Code >=2.1.210: file-permission checks match only Edit()/Read() rules.
+DEPRECATED_RULE_TOOLS: tuple[tuple[str, str], ...] = (
+    ("Write", "Edit"),
+    ("NotebookEdit", "Edit"),
+    ("Glob", "Read"),
+)
+
+_PERMISSION_ARRAYS = ("allow", "deny", "ask")
+
 
 def lint_permission_rules(settings: object, *, source: Path) -> list[SettingsFinding]:
     """Findings for every deprecated permission rule in one parsed settings doc.
@@ -103,6 +109,16 @@ class ClaudeProvider(Provider):
     @property
     def name(self) -> str:
         return PROVIDER_CLAUDE
+
+    def provider_hints(self) -> list["ProviderHint"]:
+        from ai_hats.providers import ProviderHint
+        return [
+            ProviderHint(
+                name="--model",
+                values="claude-3-5-sonnet-20241022, ...",
+                description="Overrides the model to use for the session.",
+            ),
+        ]
 
     def transcript_parser(self) -> TranscriptParser:
         # HATS-948: Claude emits a structured JSONL session log → richer parse.
@@ -193,11 +209,9 @@ class ClaudeProvider(Provider):
             full_content,
         )
 
-
     def supports_sdk_engine(self) -> bool:
         """Indicates this provider uses the Python SDK path."""
         return True
-
     def engine(self) -> "SubagentEngine | None":
         return ClaudeSubagentEngine(self)
 

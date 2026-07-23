@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
 
@@ -29,17 +30,7 @@ logger = logging.getLogger(__name__)
 # HATS-905: retiring the managed settings.json hooks mechanism = dropping this
 # line; the unclaimed-marker sweeper then strips ai-hats:* tagged entries.
 owners.register_owner("runtime-hooks", module=__name__)
-
-INJECTION_START = "<!-- AI-HATS:START -->"
-INJECTION_END = "<!-- AI-HATS:END -->"
-
-# HATS-284: lowercase scaffold markers — used in `./CLAUDE.md` to delimit the
-# user-owned ai-hats block. PUBLISH_AGGREGATOR_* names kept for backwards
-# compatibility of imports across the codebase; functionally these are the
-# scaffold markers.
-PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
-PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
-
+from .constants import INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
 # HATS-865: definition moved to the constants leaf; re-exported here for the
 # existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
 from .constants import (  # noqa: E402
@@ -68,6 +59,7 @@ def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
     return desc if isinstance(desc, str) and desc else skill.name
 
 
+
 @dataclass
 class ProviderRunResult:
     exit_code: int
@@ -79,6 +71,15 @@ class ProviderRunResult:
     stderr: str
     timed_out: bool
     error: str | None
+
+
+@dataclass
+class ProviderHint:
+    """A CLI hint describing a parameter or state supported by the provider."""
+
+    name: str
+    values: str
+    description: str
 
 
 class SubagentEngine(abc.ABC):
@@ -107,6 +108,13 @@ class Provider(abc.ABC):
     @property
     @abc.abstractmethod
     def name(self) -> str: ...
+
+    def provider_hints(self) -> list[ProviderHint]:
+        """A list of hints for the user about supported parameters and states.
+        
+        Returned by CLI (e.g. `ai-hats --help`) when this provider is active.
+        """
+        return []
 
     @abc.abstractmethod
     def system_prompt_path(self, project_dir: Path) -> Path:
@@ -394,16 +402,7 @@ class Provider(abc.ABC):
         )
 
 
-# ----- HATS-1006 Claude settings lint (docs/session-start-notices.md) -----
-
-# Claude Code >=2.1.210: file-permission checks match only Edit()/Read() rules.
-DEPRECATED_RULE_TOOLS: tuple[tuple[str, str], ...] = (
-    ("Write", "Edit"),
-    ("NotebookEdit", "Edit"),
-    ("Glob", "Read"),
-)
-
-_PERMISSION_ARRAYS = ("allow", "deny", "ask")
+# Constants moved to claude/provider.py
 
 
 
