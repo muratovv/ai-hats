@@ -9,21 +9,23 @@ import pytest
 from ai_hats.cli import main_entry
 from ai_hats.cli._helpers import (
     _handle_broken_install_or_die,
-    _is_broken_install_exception,
     catch_broken_install,
 )
 from ai_hats.constants import is_debug_mode
+from ai_hats.self_heal import is_broken_install_exception
+
 
 
 def test_is_broken_install_exception() -> None:
-    """_is_broken_install_exception identifies import/module errors vs object errors (HATS-1132)."""
-    assert _is_broken_install_exception(ImportError("cannot import name foo"))
-    assert _is_broken_install_exception(AttributeError("module 'ai_hats.constants' has no attribute 'FOO'"))
-    assert _is_broken_install_exception(AttributeError("partially initialized module 'ai_hats' has no attribute 'bar'"))
+    """is_broken_install_exception identifies import/module errors vs object errors (HATS-1132)."""
+    assert is_broken_install_exception(ImportError("cannot import name foo"))
+    assert is_broken_install_exception(AttributeError("module 'ai_hats.constants' has no attribute 'FOO'"))
+    assert is_broken_install_exception(AttributeError("partially initialized module 'ai_hats' has no attribute 'bar'"))
 
     # Object-level AttributeError must NOT be classified as broken install
-    assert not _is_broken_install_exception(AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'"))
-    assert not _is_broken_install_exception(AttributeError("'dict' object has no attribute 'foo'"))
+    assert not is_broken_install_exception(AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'"))
+    assert not is_broken_install_exception(AttributeError("'dict' object has no attribute 'foo'"))
+
 
 
 def test_catch_broken_install_ignores_non_module_attribute_error(monkeypatch: pytest.MonkeyPatch) -> None:

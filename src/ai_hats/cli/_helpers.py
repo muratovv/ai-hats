@@ -7,9 +7,9 @@ import logging
 import os
 import shutil
 import sys
-import types
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
+
 
 
 import click
@@ -142,19 +142,10 @@ class InconsistentInstallError(click.ClickException):
         )
         super().__init__(msg)
 
+    def show(self, file=None) -> None:
+        from ..startup_notices import show_fatal_notice_and_exit
 
-def _is_broken_install_exception(exc: Exception) -> bool:
-    """Return True if exc represents a broken install (ImportError or module AttributeError)."""
-    if isinstance(exc, ImportError):
-        return True
-    if isinstance(exc, AttributeError):
-        obj = getattr(exc, "obj", None)
-        if isinstance(obj, types.ModuleType):
-            return True
-        msg = str(exc)
-        if msg.startswith("module ") or msg.startswith("partially initialized module "):
-            return True
-    return False
+        show_fatal_notice_and_exit(self.format_message(), exit_code=self.exit_code)
 
 
 def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
@@ -164,7 +155,9 @@ def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
     re-raises the original exception so the full traceback is displayed.
     Otherwise, renders InconsistentInstallError to stderr and exits with status 1 without a raw traceback.
     """
-    if is_debug_mode() or not _is_broken_install_exception(exc):
+    from ..self_heal import is_broken_install_exception
+
+    if is_debug_mode() or not is_broken_install_exception(exc):
         raise exc
     err = InconsistentInstallError(exc)
     err.show()
@@ -174,12 +167,15 @@ def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
 @contextlib.contextmanager
 def catch_broken_install():
     """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120, HATS-1132)."""
+    from ..self_heal import is_broken_install_exception
+
     try:
         yield
     except Exception as exc:
-        if _is_broken_install_exception(exc):
+        if is_broken_install_exception(exc):
             _handle_broken_install_or_die(exc)
         raise
+
 
 
 
