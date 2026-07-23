@@ -81,8 +81,6 @@ def test_only_claude_selfregisters_as_builtin():
     # claude is the sole in-tree builtin; agy/cline are out-of-tree entry-point
     # plugins discovered via ``ai_hats.providers`` (test_out_of_tree_… below).
     # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
-    from ai_hats.surfaces.claude.provider import ClaudeProvider
-
     assert list(prov._PROVIDER_REGISTRY) == [PROVIDER_CLAUDE]
     assert isinstance(get_provider(PROVIDER_CLAUDE), ClaudeProvider)
 
