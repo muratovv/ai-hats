@@ -315,8 +315,11 @@ Moved to the narrative walkthrough — see [2] §6 for default vs override, owne
 
 > **ai-hats is a host tool, not a project dependency.** It runs via the host launcher (`~/.local/bin/ai-hats`) and `python -m ai_hats` — never as a dependency of your project's own application venv. There is **no `<venv>/bin/ai-hats` console script** (removed in HATS-790; terms — [6]); the only `bin/ai-hats` worth invoking is the host launcher. If a stale `ai-hats` shadow on `$PATH` (e.g. one a `pip install ai-hats` once dropped into a project app-venv) runs ahead of the launcher, ai-hats refuses-and-instructs (the **self-location guard**, exit 3 — see [6]) rather than running mis-resolved.
 
+**Start with the triage.** `ai-hats self update --check` sorts the install into DATA / MANAGED / RUNTIME layers and prints the exact remediation for each broken one — read-only, offline, exit 1 when a layer is broken and 0 when healthy or merely behind. It answers "is this recoverable by a command, or does it need a snapshot?" before you pick a row below; terms — [6].
+
 | Symptom | Command |
 |---|---|
+| Not sure which layer is broken | `ai-hats self update --check` |
 | `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (or clone the public repo and run `bash scripts/install-launcher.sh`) |
 | `ai-hats: venv missing at ...` (no venv) | `ai-hats self update` |
 | `ai-hats: venv exists at ... but ai_hats is not importable` | `ai-hats self update` |
@@ -347,6 +350,6 @@ For deeper dives — first-time setup walkthrough [2], the reflect-session / ref
 
 **[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
 
-**[6]** — [`docs/glossary.md`](glossary.md) — **Managed venv / managed-venv invariant**, **self-location guard**, **stray shadow**, **out-of-band recovery**.
+**[6]** — [`docs/glossary.md`](glossary.md) — **Managed venv / managed-venv invariant**, **self-location guard**, **stray shadow**, **out-of-band recovery**, **Install layers (DATA / MANAGED / RUNTIME)**.
 
 **[7]** — [`docs/adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md`](adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md) — ADR for the bootstrap paradox, the layered fix, and the absolute-path-immunity insight.
