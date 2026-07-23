@@ -1,13 +1,15 @@
-"""Layer triage (HATS-595).
+"""Layer triage (HATS-595, HATS-1163).
 
 Fail-under-revert: drop the DATA rows from ``triage`` and
-``test_data_layer_broken_when_tracker_missing`` goes red.
+``test_data_layer_broken_when_tracker_missing`` goes red; drop the wt-hooks row
+and ``test_wt_hooks_broken_when_manifest_entry_has_no_file`` goes red.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,6 +17,7 @@ import pytest
 
 from ai_hats.health import Layer, Status, triage
 from ai_hats.migration_backup import ENV_BACKUP_DIR, snapshot_pre_bump
+from ai_hats.paths._dirs import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
 from ai_hats.update_check import CacheEntry, write_cache
 
 
@@ -170,3 +173,92 @@ def _write_update_cache(project: Path, *, behind: int, ahead: int) -> None:
             ahead=ahead,
         ),
     )
+
+
+# ----- managed-dir completeness vs its own .manifest (HATS-1163) -----
+
+
+def _seed_hook(project: Path, subdir: str, name: str, *, write_script: bool = True) -> Path:
+    """Materialize a managed hook dir the way HooksManager does: manifest + script."""
+    d = project / ".agent" / "ai-hats" / "library" / subdir
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".manifest").write_text(f"# ai-hats managed — do not edit\n{name}\n", encoding="utf-8")
+    script = d / name
+    if write_script:
+        script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    return script
+
+
+def test_wt_hooks_broken_when_manifest_entry_has_no_file(project: Path) -> None:
+    """The HATS-595 incident: manifest claims a script the merge needs, file is gone."""
+    _seed_hook(project, "wt-hooks", "hunk-review-comments-drain-review.sh", write_script=False)
+
+    row = _row(triage(project), "library/wt-hooks")
+
+    assert row.layer is Layer.MANAGED
+    assert row.status is Status.BROKEN
+    assert "hunk-review-comments-drain-review.sh" in row.detail
+    assert "self init" in row.remediation
+
+
+def test_wt_hooks_ok_when_manifest_is_satisfied(project: Path) -> None:
+    _seed_hook(project, "wt-hooks", "hunk-review-comments-drain-review.sh")
+
+    assert _row(triage(project), "library/wt-hooks").status is Status.OK
+
+
+def test_wt_hooks_ok_when_nothing_is_declared(project: Path) -> None:
+    """No manifest and no dir is the healthy 'no worktree hooks declared' state.
+
+    ``materialize_worktree_hooks`` returns early without creating either, so
+    treating an absent wt-hooks dir as broken would fire on every project that
+    composes no wt_out hook.
+    """
+    assert not (project / ".agent" / "ai-hats" / "library" / "wt-hooks").exists()
+
+    assert _row(triage(project), "library/wt-hooks").status is Status.OK
+
+
+def test_runtime_hooks_broken_when_manifest_entry_has_no_file(project: Path) -> None:
+    _seed_hook(project, "hooks", "safety-guard-safety_gate.py", write_script=False)
+
+    row = _row(triage(project), "library/hooks")
+
+    assert row.status is Status.BROKEN
+    assert "safety-guard-safety_gate.py" in row.detail
+
+
+def test_hook_dirs_ok_without_a_manifest(project: Path) -> None:
+    """An unmanifested dir declares nothing — presence alone stays the verdict."""
+    assert _row(triage(project), "library/hooks").status is Status.OK
+
+
+def test_manifest_check_tolerates_the_hashed_marker_format(project: Path) -> None:
+    """HATS-911 hashed manifests are read by the shared reader, not parsed here."""
+    d = project / ".agent" / "ai-hats" / "library" / "wt-hooks"
+    d.mkdir(parents=True)
+    (d / ".manifest").write_text(
+        "# ai-hats-owner: hooks\nkept-hook.sh  deadbeef\n", encoding="utf-8"
+    )
+
+    row = _row(triage(project), "library/wt-hooks")
+
+    assert row.status is Status.BROKEN
+    assert "kept-hook.sh" in row.detail
+
+
+def test_triage_warns_at_most_once_about_a_leaked_dir_pin(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One resolution of ai_hats_dir, so the HATS-897 notice cannot spam the table."""
+    # HATS-897 warns only when both vars are set and the pin names another project.
+    foreign = project.parent / "other-project"
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign / ".agent" / "ai-hats"))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(foreign))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        triage(project)
+
+    leaked = [w for w in caught if "pinned to project" in str(w.message)]
+    assert len(leaked) <= 1, [str(w.message) for w in leaked]
