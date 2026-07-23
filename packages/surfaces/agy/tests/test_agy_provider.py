@@ -299,3 +299,9 @@ def test_build_session_prompt_materializes_runtime_hooks_and_settings(tmp_path: 
     data = json.loads(settings_file.read_text())
     pre_tool_hooks = data.get("hooks", {}).get("PreToolUse", [])
     assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
+
+
+def test_agy_provider_detected_home_dirs() -> None:
+    provider = AgyProvider()
+    assert ".gemini" in provider.detected_home_dirs()
+    assert ".agy" in provider.detected_home_dirs()

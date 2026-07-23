@@ -47,7 +47,7 @@ ${BOLD}Usage:${RESET} bootstrap.sh [OPTIONS]
 
 ${BOLD}Options:${RESET}
   -r, --role <name>        Role (assistant, go-dev, sre, architect, ...)
-  -p, --provider <name>    Provider (claude or gemini)
+  -p, --provider <name>    Provider (claude, agy, ...)
   --repo <git-url>         Custom git install URL (overrides default)
   --local <path>           Install from local clone instead of GitHub
   --repair                 Force-reinstall launcher + managed venv (out-of-band recovery)

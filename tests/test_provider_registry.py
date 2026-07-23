@@ -179,3 +179,9 @@ def test_pyproject_declares_provider_entry_point_group():
         # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
         "claude": "ai_hats.surfaces.claude.provider:ClaudeProvider",
     }
+
+
+def test_legacy_gemini_alias_resolves_to_agy():
+    register_provider("agy", _FakeProvider)
+    provider = get_provider("gemini")
+    assert isinstance(provider, _FakeProvider)

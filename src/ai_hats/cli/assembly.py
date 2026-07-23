@@ -42,30 +42,52 @@ def _stdin_is_tty() -> bool:
 
 
 def _detected_providers() -> list[str]:
-    """Providers whose home-config directory (``~/.<provider>``) exists.
+    """Providers whose home-config directory exists.
 
     Returns EVERY match in provider registration order (deterministic), not
     just the first — the wizard marks each as ``detected`` and refuses to
     silently prefer one when several are present (HATS-613). Empty list
     when no provider home directory is found.
     """
+    from ..providers import get_provider
+
     home = Path.home()
-    return [name for name in provider_names() if (home / f".{name}").is_dir()]
+    detected: list[str] = []
+    for name in provider_names():
+        try:
+            p = get_provider(name)
+            dirs = p.detected_home_dirs()
+        except Exception:
+            dirs = [f".{name}"]
+        if any((home / d).is_dir() for d in dirs):
+            detected.append(name)
+    return detected
 
 
 def _wizard_provider_prompt(detected: list[str]) -> str:
     """Interactive numbered menu for provider selection.
 
-    Every provider whose ``~/.<name>`` config dir exists is marked
-    ``detected``. A click default is pre-selected ONLY when exactly one
-    provider is detected — when zero or several are present the choice is
-    ambiguous, so the user picks explicitly rather than silently inheriting
-    the dict-first provider (HATS-613).
+    Every provider whose config dir exists is marked ``detected``. A click
+    default is pre-selected ONLY when exactly one provider is detected — when
+    zero or several are present the choice is ambiguous, so the user picks
+    explicitly rather than silently inheriting the dict-first provider (HATS-613).
     """
+    from ..providers import get_provider
+
+    home = Path.home()
     names = provider_names()
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
-        marker = f" [dim](detected — found ~/.{name})[/]" if name in detected else ""
+        if name in detected:
+            try:
+                p = get_provider(name)
+                dirs = p.detected_home_dirs()
+            except Exception:
+                dirs = [f".{name}"]
+            found_dir = next((d for d in dirs if (home / d).is_dir()), f".{name}")
+            marker = f" [dim](detected — found ~/{found_dir})[/]"
+        else:
+            marker = ""
         console.print(f"  {idx}) {name}{marker}")
     # Pre-select a default only when detection is unambiguous (exactly one).
     default_name = detected[0] if len(detected) == 1 else None
