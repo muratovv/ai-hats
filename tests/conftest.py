@@ -17,9 +17,13 @@ sandbox and sweeps it on a green run.
 from __future__ import annotations
 
 import shutil
+import sys
 import tempfile
 
 import pytest
+
+sys.dont_write_bytecode = True
+
 
 # HATS-570: enable the ``pytester`` fixture (not on by default) so
 # tests/test_tmp_hygiene.py can drive isolated inner pytest sessions to
@@ -100,6 +104,61 @@ def _real_repo_integrity_tripwire():
             f"[repo-integrity] a test mutated the real repo at {root}: {delta}",
             pytrace=False,
         )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _dev_environment_integrity_tripwire():
+    """Fail the session loud if any test mutated the developer's python environment (HATS-1164).
+
+    Snapshots ai_hats.__file__, __version__, provider entry points, and src/ pyc count at session start,
+    and asserts them unchanged at session end. Prevents test runs from replacing the editable
+    dev install with PyPI releases or resurrecting stale entry points.
+    """
+    import os
+
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    import importlib.metadata
+    from pathlib import Path
+
+    import ai_hats
+
+    src_root = Path(__file__).resolve().parent.parent / "src"
+
+    before_file = getattr(ai_hats, "__file__", None)
+    before_ver = getattr(ai_hats, "__version__", None)
+    try:
+        before_eps = sorted([ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")])
+    except Exception:
+        before_eps = []
+    before_pyc = len(list(src_root.glob("**/*.pyc")))
+
+    yield
+
+    after_file = getattr(ai_hats, "__file__", None)
+    after_ver = getattr(ai_hats, "__version__", None)
+    try:
+        after_eps = sorted([ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")])
+    except Exception:
+        after_eps = []
+    after_pyc = len(list(src_root.glob("**/*.pyc")))
+
+    deltas = []
+    if before_file != after_file:
+        deltas.append(f"ai_hats.__file__: {before_file} -> {after_file}")
+    if before_ver != after_ver:
+        deltas.append(f"version: {before_ver} -> {after_ver}")
+    if before_eps != after_eps:
+        deltas.append(f"providers entry-points: {before_eps} -> {after_eps}")
+    if after_pyc > before_pyc:
+        deltas.append(f"*.pyc count under src/: {before_pyc} -> {after_pyc}")
+
+    if deltas:
+        pytest.fail(
+            "[dev-env-integrity] a test mutated the developer's environment (HATS-1164):\n  "
+            + "\n  ".join(deltas),
+            pytrace=False,
+        )
+
 
 
 @pytest.fixture(autouse=True)
@@ -209,4 +268,6 @@ def _isolate_session_env(monkeypatch):
     """
     monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
     monkeypatch.delenv("AI_HATS_ROOT_PID", raising=False)
+    monkeypatch.delenv("AI_HATS_INIT_UPDATED", raising=False)
     yield
+

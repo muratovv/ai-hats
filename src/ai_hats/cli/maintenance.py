@@ -59,7 +59,7 @@ def _git_install_url() -> str:
     return os.environ.get(ENV_REPO_URL, "git+https://github.com/muratovv/ai-hats.git")
 
 
-def _build_update_cmd(ref: str | None = None) -> list[str]:
+def _build_update_cmd(ref: str | None = None, target_python: str | Path | None = None) -> list[str]:
     """Build the pip command for updating ai-hats from GitHub.
 
     NOTE: we intentionally do NOT pass --no-deps. Dropping it means new
@@ -88,15 +88,17 @@ def _build_update_cmd(ref: str | None = None) -> list[str]:
         target = f"ai-hats @ {url}" if "://" in url else url
     # B1 (HATS-763): pin --python or `uv pip install` targets the nearest cwd
     # venv, not this interpreter. `--reinstall` == pip's `--force-reinstall`.
+    python_bin = str(target_python) if target_python is not None else sys.executable
     return [
         "uv",
         "pip",
         "install",
         "--python",
-        sys.executable,
+        python_bin,
         "--reinstall",
         target,
     ]
+
 
 
 def _read_direct_url() -> dict | None:
@@ -1285,11 +1287,13 @@ def _run_editable_update(
     """
     _require_uv()
     cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path]
+    run_env = os.environ.copy()
+    run_env["PYTHONDONTWRITEBYTECODE"] = "1"
     with console.status(
         f"[cyan]Editable reinstall[/] [dim](uv pip install -e {path})[/]",
         spinner="dots",
     ):
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
     if result.returncode != 0:
         console.print(f"[red]Update failed[/]: {result.stderr}")
         sys.exit(1)  # HATS-718: failed install must be machine-detectable
@@ -1698,11 +1702,13 @@ def update(
             cmd = _build_update_cmd(ref=revision)
         # Wrapped in a Rich spinner so the terminal isn't silent while uv
         # downloads (can take 30s+ on slow links).
+        run_env = os.environ.copy()
+        run_env["PYTHONDONTWRITEBYTECODE"] = "1"
         with console.status(
             "[cyan]Downloading ai-hats from GitHub …[/] [dim](uv install — may take a minute)[/]",
             spinner="dots",
         ):
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
         if result.returncode != 0:
             console.print(f"[red]Update failed[/]: {result.stderr}")
             # HATS-718: legacy in-place install failed → exit non-zero so
