@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
-from ai_hats_core import CompositionResult
 from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
 
 
