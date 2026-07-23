@@ -75,7 +75,7 @@ def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # Flag-only `self init` with explicit --channel local
-    res_init = _run(
+    _run(
         [
             str(launcher_dest),
             "self",
