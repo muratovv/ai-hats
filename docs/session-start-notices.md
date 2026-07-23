@@ -56,8 +56,9 @@ checks the settings chain
 3. project `.claude/settings.local.json`
 
 against a data-driven table of deprecated rule kinds
-(`DEPRECATED_RULE_TOOLS` in `src/ai_hats/providers.py`; a new upstream pitfall
-is one row). Every finding names the file, the rule, and the exact replacement:
+(`DEPRECATED_RULE_TOOLS` in `src/ai_hats/surfaces/claude/provider.py`; a new
+upstream pitfall is one row). Every finding names the file, the rule, and the
+exact replacement:
 
 ```
 ⚠ 1 startup warning(s):

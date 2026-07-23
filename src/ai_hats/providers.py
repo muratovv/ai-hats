@@ -405,10 +405,6 @@ class Provider(abc.ABC):
         )
 
 
-# Constants moved to claude/provider.py
-
-
-
 _PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
 
 
