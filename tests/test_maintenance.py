@@ -1451,6 +1451,9 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
 # ---------- HATS-595: --check layer triage ----------
 
 
+WT_HOOK_NAME = "hunk-review-comments-drain-review.sh"
+
+
 def _seed_healthy_layers(project: Path) -> None:
     """Materialize every layer path ``triage`` checks."""
     ai_hats = project / ".agent" / "ai-hats"
@@ -1458,6 +1461,13 @@ def _seed_healthy_layers(project: Path) -> None:
     (ai_hats / "user-rules").mkdir()
     (ai_hats / "library" / "hooks").mkdir(parents=True)
     (ai_hats / "imports.md").write_text("", encoding="utf-8")
+    # HATS-1163: a composed wt_out hook, as HooksManager materializes it.
+    wt = ai_hats / "library" / "wt-hooks"
+    wt.mkdir(parents=True)
+    (wt / ".manifest").write_text(
+        f"# ai-hats managed — do not edit\n{WT_HOOK_NAME}\n", encoding="utf-8"
+    )
+    (wt / WT_HOOK_NAME).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
 
 def test_check_exits_zero_on_healthy_install(tmp_path: Path) -> None:
@@ -1564,3 +1574,33 @@ def test_update_reports_layers_restored_by_the_bump(tmp_path: Path, monkeypatch)
     assert result.exit_code == 0, result.output
     assert "Layers restored:" in result.output
     assert "Still broken:" not in result.output
+
+
+def test_check_exits_one_when_a_declared_wt_hook_is_missing(tmp_path: Path) -> None:
+    """The HATS-595 merge blocker, as a test (HATS-1163).
+
+    A wt_out script listed in the wt-hooks manifest but absent on disk aborts the
+    worktree teardown at merge time. Before this check the triage reported all-OK.
+    """
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    (project / ".agent" / "ai-hats" / "library" / "wt-hooks" / WT_HOOK_NAME).unlink()
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 1, result.output
+    assert WT_HOOK_NAME in result.output
+    assert "ai-hats self init" in result.output
+
+
+def test_check_stays_zero_when_no_wt_hooks_are_declared(tmp_path: Path) -> None:
+    """An absent wt-hooks dir is the healthy 'nothing composed' state, not a defect."""
+    project = _setup_update_test_env(tmp_path)
+    _seed_healthy_layers(project)
+    shutil.rmtree(project / ".agent" / "ai-hats" / "library" / "wt-hooks")
+
+    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
+        result = CliRunner().invoke(update, ["--check"])
+
+    assert result.exit_code == 0, result.output
