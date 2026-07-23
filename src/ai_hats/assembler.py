@@ -420,7 +420,7 @@ class Assembler:
                     )
                 except OSError:
                     pass
-            actions.append(f"swept stale {backup_ref.relative_to(project_dir)} (HATS-407)")
+            actions.append(f"swept stale {backup_ref.relative_to(project_dir)}")
         return actions
 
     def init(
@@ -1658,8 +1658,7 @@ class Assembler:
             "[Warning] ⚠️  Orphan ai-hats marker detected: "
             "~/.claude/skills/.ai-hats-managed\n"
             "  ai-hats does not manage user-level Claude skills — they "
-            "are session-scoped via per-session plugin-dir since v0.7 "
-            "(HATS-294).\n"
+            "are session-scoped via per-session plugin-dir since v0.7.\n"
             "  The marker was likely created by a manual "
             "`cp -r .claude/skills/ ~/.claude/skills/`; the directory "
             "will drift from source-of-truth.\n"

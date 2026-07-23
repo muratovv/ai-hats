@@ -303,7 +303,7 @@ def _launch_wizard_session() -> None:
     "channel",
     type=click.Choice(["local", "edge", "stable"]),
     default=None,
-    help="Harness source channel (HATS-938): overrides the auto-default "
+    help="Harness source channel: overrides the auto-default "
     "(local when the host ai-hats is an editable dev clone, else stable).",
 )
 @click.option(
@@ -544,7 +544,7 @@ def init(
     "channel",
     type=click.Choice(["local", "edge", "stable"]),
     default=None,
-    help="Harness source channel (HATS-764): local (editable working tree), "
+    help="Harness source channel: local (editable working tree), "
     "edge (repo HEAD), stable (latest PyPI release). Pure yaml, like --venv.",
 )
 @click.option(
@@ -819,7 +819,7 @@ def _print_overlay(layer_label: str, role: str, overlay) -> None:
     is_flag=True,
     help="Target the user-level customizations (~/.ai-hats/customizations.yaml) "
     "instead of the project. Symmetric in syntax; writes go to your home so they "
-    "apply to every project you open (HATS-421).",
+    "apply to every project you open.",
 )
 @click.option(
     "--project",
@@ -863,7 +863,7 @@ def customize(
       ai-hats config customize <role> --reset --global         # clear global
 
     Compose order is built-in → global → project, so project edits override
-    user-wide defaults for the current project (HATS-421).
+    user-wide defaults for the current project.
     """
     from ..models import OverlayConfig, ProjectConfig, UserConfig
 
@@ -1096,7 +1096,7 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
     Pure read — composes the role and renders through the provider's
     build_system_prompt, no session/file/spawn. Runs through the same
     ``materialize_system_prompt`` pipeline step that future runtime
-    consumers will share (HATS-452 Phase 1).
+    consumers will share.
 
     Examples
     --------
