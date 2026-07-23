@@ -107,8 +107,9 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
         patch("ai_hats.cli.assembly._launch_wizard_session"),
         patch("ai_hats.cli.assembly._run_self_update"),
     ):
-        result = runner.invoke(main, ["self", "init", "--no-update"], input="claude\n")
+        result = runner.invoke(main, ["self", "init", "--no-update"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
+    assert "Choose harness channel" in result.output
     assert "detected — found ~/.agy" in result.output
     assert "detected — found ~/.claude" in result.output
     assert "recommended" not in result.output
@@ -152,41 +153,54 @@ def test_init_no_tty_no_flags_fails_with_hint(fresh_project):
 
 
 def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeypatch):
-    """TTY + no flags → prompts for provider → minimal config → launches wizard."""
+    """TTY + no flags → prompts for harness & provider → minimal config → launches wizard."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with (
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
         patch("ai_hats.cli.assembly._run_self_update") as upd,
     ):
-        # --no-update keeps the test offline-safe; the update path is
-        # exercised separately below.
-        # HATS-366: the CLI advanced-setup gate is gone; provider is the
-        # only prompt before launching the LLM wizard session.
         result = runner.invoke(
-            main, ["self", "init", "--no-update"], input="claude\n",
+            main, ["self", "init", "--no-update"], input="1\nclaude\n",
         )
     assert result.exit_code == 0, result.output
+    assert "Choose harness channel" in result.output
     assert (fresh_project / PROJECT_CONFIG).exists()
     launch.assert_called_once()
     upd.assert_not_called()
 
 
-def test_init_wizard_with_provider_flag_skips_provider_prompt(fresh_project, monkeypatch):
-    """TTY + only -p (no -r) → no provider prompt, but wizard still launches."""
+def test_init_wizard_with_provider_flag_prompts_harness(fresh_project, monkeypatch):
+    """TTY + only -p (no -r, no channel) → harness prompt runs, wizard launches."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with (
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
         patch("ai_hats.cli.assembly._run_self_update"),
     ):
-        # Provider via flag — no remaining CLI prompts (HATS-366 removed
-        # the advanced-setup gate). LLM wizard handles paths/venv/gitignore.
         result = runner.invoke(
-            main, ["self", "init", "-p", "agy", "--no-update"],
+            main, ["self", "init", "-p", "agy", "--no-update"], input="1\n",
         )
     assert result.exit_code == 0, result.output
+    assert "Choose harness channel" in result.output
     assert "Choose provider" not in result.output
+    launch.assert_called_once()
+
+
+def test_init_wizard_launches_on_reinit(fresh_project, monkeypatch):
+    """Re-init in interactive TTY mode launches wizard and prompts harness+provider."""
+    runner = CliRunner()
+    # First initialize non-interactively
+    runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"])
+
+    monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
+    with (
+        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
+        patch("ai_hats.cli.assembly._run_self_update"),
+    ):
+        result = runner.invoke(main, ["self", "init", "--no-update"], input="1\nclaude\n")
+    assert result.exit_code == 0, result.output
+    assert "Choose harness channel" in result.output
     launch.assert_called_once()
 
 
@@ -198,7 +212,7 @@ def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
         patch("ai_hats.cli.assembly._launch_wizard_session"),
         patch("ai_hats.cli.assembly._run_self_update", return_value=True) as upd,
     ):
-        result = runner.invoke(main, ["self", "init"], input="claude\n")
+        result = runner.invoke(main, ["self", "init"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
     upd.assert_called_once()
 

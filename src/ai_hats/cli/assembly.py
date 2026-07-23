@@ -109,6 +109,37 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
         console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(names)} or a provider name.")
 
 
+def _wizard_harness_prompt(current_channel: str | None = None) -> str:
+    """Interactive numbered menu for harness channel selection (stable, edge, local)."""
+    channels = ["stable", "edge", "local"]
+    default_ch = current_channel or "stable"
+    default_idx = channels.index(default_ch) + 1 if default_ch in channels else 1
+
+    console.print("[bold]Choose harness channel:[/]")
+    for idx, ch in enumerate(channels, start=1):
+        marker = " [dim](current)[/]" if ch == current_channel else ""
+        console.print(f"  {idx}) {ch}{marker}")
+
+    while True:
+        raw = click.prompt(
+            f"Harness channel [1-{len(channels)}]",
+            default=str(default_idx),
+            show_default=True,
+        )
+        if raw in channels:
+            return raw
+        try:
+            idx = int(raw)
+            if 1 <= idx <= len(channels):
+                return channels[idx - 1]
+        except ValueError:
+            pass
+        console.print(
+            f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(channels)} or channel name."
+        )
+
+
+
 def _run_self_update(target_python: str | Path | None = None) -> None:
     """Install the channel-appropriate ai-hats inline, then re-exec into it.
 
@@ -350,14 +381,7 @@ def init(
     # both -p and -r (which we treat as a fully-scripted invocation).
     use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
 
-    # HATS-470 review A2: when the project is already initialized AND no
-    # provider/role flags were passed, treat this as "re-apply config"
-    # (the replacement for the removed `self bump` CLI). Skip the wizard
-    # and let the post-init bump path handle the refresh — never raise
-    # the no-TTY-no-flags error in this case.
-    if already and provider is None and role is None:
-        use_wizard = False
-    elif not use_wizard and provider is None and role is None and not no_wizard:
+    if not use_wizard and not already and provider is None and role is None and not no_wizard:
         console.print(
             "[red]No TTY and no flags[/]: cannot run interactive wizard.\n"
             "Pass --provider/-p (and optionally --role/-r), or run with "
@@ -389,9 +413,19 @@ def init(
             console.print(f"[red]Pre-init backup failed[/]: {be}")
             raise SystemExit(1)
 
-    if use_wizard and provider is None:
-        detected = _detected_providers()
-        provider = _wizard_provider_prompt(detected)
+    if use_wizard:
+        if channel is None:
+            cur_ch = None
+            if already:
+                try:
+                    cur_ch = _assembler(project_dir).project_config.harness.channel.value
+                except Exception:
+                    pass
+            channel = _wizard_harness_prompt(cur_ch)
+
+        if provider is None:
+            detected = _detected_providers()
+            provider = _wizard_provider_prompt(detected)
 
     # HATS-366: the wizard no longer asks for ai_hats_dir / venv / gitignore
     # at the CLI prompt — initial-wizard handles those inside the LLM session
