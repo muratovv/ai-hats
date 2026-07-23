@@ -112,6 +112,10 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def name(self) -> str: ...
 
+    def detected_home_dirs(self) -> list[str]:
+        """Directory names under $HOME to check for provider presence (e.g. ['.agy', '.gemini'])."""
+        return [f".{self.name}"]
+
     def provider_hints(self) -> list[ProviderHint]:
         """A list of hints for the user about supported parameters and states.
         
@@ -457,6 +461,11 @@ def _ensure_entry_points_loaded() -> None:
         _load_provider_entry_points()
 
 
+PROVIDER_ALIASES: dict[str, str] = {
+    "gemini": "agy",
+}
+
+
 def provider_names() -> list[str]:
     """Registered provider names in registration order (deterministic)."""
     _ensure_entry_points_loaded()
@@ -478,7 +487,8 @@ class UnknownProviderError(ValueError):
 def get_provider(name: str) -> Provider:
     """Get a provider instance by name."""
     _ensure_entry_points_loaded()
-    cls = _PROVIDER_REGISTRY.get(name)
+    canonical_name = PROVIDER_ALIASES.get(name, name)
+    cls = _PROVIDER_REGISTRY.get(canonical_name)
     if cls is None:
         raise UnknownProviderError(name, provider_names())
     return cls()

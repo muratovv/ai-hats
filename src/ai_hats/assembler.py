@@ -453,6 +453,9 @@ class Assembler:
         """
         # Validate inputs BEFORE creating any filesystem artifacts.
         if provider is not None:
+            from .providers import PROVIDER_ALIASES
+
+            provider = PROVIDER_ALIASES.get(provider, provider)
             self._validate_provider(provider)
         if role is not None:
             self._validate_role(role)
@@ -1129,7 +1132,9 @@ class Assembler:
     @staticmethod
     def _validate_provider(provider_name: str) -> None:
         """Raise ValueError if `provider_name` is not a registered provider."""
-        if provider_name in provider_names():
+        from .providers import PROVIDER_ALIASES
+        canonical = PROVIDER_ALIASES.get(provider_name, provider_name)
+        if canonical in provider_names():
             return
         from .self_heal import get_surface_remediation
 

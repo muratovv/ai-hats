@@ -59,6 +59,9 @@ class AgyProvider(Provider):
     def name(self) -> str:
         return "agy"
 
+    def detected_home_dirs(self) -> list[str]:
+        return [".gemini", ".agy"]
+
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
         return [
