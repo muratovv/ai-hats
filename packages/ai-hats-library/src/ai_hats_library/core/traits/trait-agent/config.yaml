@@ -32,6 +32,8 @@ injection: |
 
   ### Agent Protocol
   - Task cards follow the state machine `brainstorm → plan → execute → document → review → done`; never skip states.
+  - **Stop at `review`**: Upon completing execution and docs, transition task to `review` and STOP. The reviewer/user drives `review → done`; never self-advance to `done`.
+  - **Explicit Task IDs**: Always reference tasks by their full ID (e.g., `HATS-1176`) and full path to card (`.../tasks/HATS-1176/task.yaml`), never generic names like "task.yaml".
   - All backlog ops (tasks, HYP, PROP) go through your composed backlog manager (skill + CLI) — see rule `rule_backlog_discipline`; never edit tracker YAML by hand.
   - Write retrospectives for completed work.
 
