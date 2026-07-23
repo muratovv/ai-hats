@@ -67,7 +67,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-core to PyPI
@@ -86,7 +86,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-wt to PyPI
@@ -105,7 +105,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-tracker to PyPI
@@ -124,7 +124,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-observe to PyPI
@@ -143,7 +143,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-library to PyPI
@@ -163,7 +163,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-rack to PyPI
@@ -183,7 +183,7 @@ jobs:
       id-token: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: packages-dist
       - name: Publish ai-hats-cline to PyPI
