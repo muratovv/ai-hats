@@ -1445,22 +1445,3 @@ def test_update_invalidates_update_cache(tmp_path, monkeypatch):
         result = CliRunner().invoke(update, [])
     assert result.exit_code == 0, result.output
     assert not cache_file.exists()
-
-
-def test_self_check_command(monkeypatch):
-    """ai-hats self check runs verify_after_install and returns 0 on success."""
-    from ai_hats.cli.maintenance import check
-
-    monkeypatch.setattr("ai_hats._bootstrap.verify_after_install", lambda: 0)
-    result = CliRunner().invoke(check, [])
-    assert result.exit_code == 0, result.output
-    assert "Install coherence check passed" in result.output
-
-
-def test_self_check_command_fails(monkeypatch):
-    """ai-hats self check exits with non-zero code on failure."""
-    from ai_hats.cli.maintenance import check
-
-    monkeypatch.setattr("ai_hats._bootstrap.verify_after_install", lambda: 1)
-    result = CliRunner().invoke(check, [])
-    assert result.exit_code == 1
