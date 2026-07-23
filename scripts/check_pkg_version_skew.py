@@ -49,7 +49,7 @@ def evaluate(
         False,
         f"src changed but v{src_ver} <= published v{pypi_ver} — bump "
         f"packages/{package.replace('_', '-')}/pyproject.toml above {pypi_ver} "
-        f"(then publish), else the remote channel resolves a stale wheel (HATS-937)",
+        f"(then publish), else the remote channel resolves a stale wheel",
     )
 
 

@@ -213,7 +213,7 @@ def reflect_all_cmd(dry_run: bool):
     help="Build pre-flight handoff but do not exec.",
 )
 def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
-    """Two-phase HYP closure + PROP triage (HATS-513 / ADR-0007).
+    """Two-phase HYP closure + PROP triage.
 
     Phase 1 (`judge-auditor`, headless, read-only via SubAgentRunner)
     produces a draft with proposed verdicts and proposed CLI mutations.
@@ -727,7 +727,7 @@ def _spawn_intake_detached(
 )
 @click.option(
     "--task", "task_id", default=None,
-    help="Originating task id (e.g., HATS-NNN); defaults to 'supervisor-observation'.",
+    help="Originating task id; defaults to 'supervisor-observation'.",
 )
 def reflect_issue_cmd(
     text: str,
