@@ -70,3 +70,28 @@ def test_e2e_broken_install_friendly_error(tmp_project, tmp_path: Path) -> None:
     assert debug_result.exit_code != 0, f"expected non-zero exit in debug mode, got {debug_result.exit_code}"
     debug_combined = debug_result.stdout + debug_result.stderr
     assert "Traceback" in debug_combined, f"Traceback missing in debug mode:\n{debug_combined}"
+
+
+def test_e2e_runtime_attribute_error_not_misreported(tmp_project, tmp_path: Path) -> None:
+    """Runtime AttributeError on an object is NOT misreported as a broken install (HATS-1132)."""
+    broken_dir = tmp_path / "broken_site"
+    pkg_dir = broken_dir / "ai_hats_tracker"
+    pkg_dir.mkdir(parents=True)
+
+    # Object-level AttributeError (not a module-level AttributeError)
+    (pkg_dir / "__init__.py").write_text(
+        "raise AttributeError(\"'AgyProvider' object has no attribute 'get_cli_launch_args'\")\n"
+    )
+
+    cur_pythonpath = os.environ.get("PYTHONPATH", "")
+    src_dir = REPO_ROOT / "src"
+    pythonpath = f"{broken_dir}:{src_dir}:{cur_pythonpath}"
+    extra_env = {"PYTHONPATH": pythonpath}
+
+    result = tmp_project.run("task", "list", extra_env=extra_env, timeout=10.0)
+
+    assert result.exit_code != 0
+    combined = result.stdout + result.stderr
+    assert "Inconsistent or broken ai-hats installation" not in combined, combined
+    assert "python -m ai_hats self update" not in combined, combined
+

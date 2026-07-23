@@ -31,6 +31,19 @@ class TestPrintStartupNotices:
         assert "startup warning(s)" in out and "boom" in out
         assert "note(s)" not in out
 
+    def test_show_fatal_notice_and_exit_prints_stderr_and_exits(self, capsys):
+        import pytest
+        from ai_hats.startup_notices import show_fatal_notice_and_exit
+
+        with pytest.raises(SystemExit) as exc_info:
+            show_fatal_notice_and_exit("critical failure", exit_code=1)
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "Error:" in err and "critical failure" in err
+
+
+
 
 class TestFormatHookHeal:
     def test_groups_by_surface_and_names_kinds(self):
