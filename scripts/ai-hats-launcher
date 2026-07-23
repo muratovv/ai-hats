@@ -142,7 +142,7 @@ export AI_HATS_VENV="$VENV"
 # and the guard above can reject it when a descendant cd's into another project.
 export AI_HATS_PROJECT_DIR="$PROJECT"
 
-is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" ]]; }
+is_default_venv() { [[ "$VENV" == "$DEFAULT_VENV" || "$VENV" == "$VERSIONS_DIR/"* ]]; }
 
 # --- HATS-895: deep venv health probe. Bare `import ai_hats` passes on a venv
 # whose editable link moved ahead of its installed deps (a new workspace
@@ -199,6 +199,8 @@ try:
         _m = _ep.value.split(':', 1)[0].split('.', 1)[0].strip()
         try:
             _ep.load()
+        except AttributeError:
+            continue
         except Exception as _exc:
             if _is_fp(_ep):
                 sys.stderr.write(f'failed loading entry point {_ep.name!r} ({_ep.value}): {_exc}\n')

@@ -49,6 +49,7 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         # Tests that exercise ownership set them explicitly after copying env.
         "AI_HATS_SESSION_ID",
         "AI_HATS_ROOT_PID",
+        "AI_HATS_INIT_UPDATED",
     }
 )
 

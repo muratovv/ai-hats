@@ -204,16 +204,17 @@ def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
 
 
 def test_init_flag_only_path_does_not_self_update(fresh_project):
-    """Flag-only (CI) path must NOT trigger pip install."""
+    """Flag-only (CI) path with --no-update must NOT trigger pip install."""
     runner = CliRunner()
     with (
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
         patch("ai_hats.cli.assembly._run_self_update") as upd,
     ):
-        result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant"])
+        result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-update"])
     assert result.exit_code == 0, result.output
     upd.assert_not_called()
     launch.assert_not_called()
+
 
 
 def test_init_flag_only_persists_paths(fresh_project):
