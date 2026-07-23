@@ -285,9 +285,7 @@ class _StubEP:
 
 
 def _stub_entry_points(monkeypatch, eps: list[_StubEP]) -> None:
-    monkeypatch.setattr(
-        _bootstrap.importlib.metadata, "entry_points", lambda **kw: list(eps)
-    )
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "entry_points", lambda **kw: list(eps))
 
 
 def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
@@ -299,9 +297,7 @@ def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
                 "gemini",
                 "ai_hats.providers:GeminiProvider",
                 "ai-hats",
-                exc=AttributeError(
-                    "module 'ai_hats.providers' has no attribute 'GeminiProvider'"
-                ),
+                exc=AttributeError("module 'ai_hats.providers' has no attribute 'GeminiProvider'"),
             )
         ],
     )
@@ -329,9 +325,7 @@ def test_t12_incoherent_own_module_fails_verify(monkeypatch):
 
     def fake_import(name, *a, **kw):
         if name == "ai_hats.assembler":
-            raise ImportError(
-                "cannot import name 'PROVIDER_GEMINI' from 'ai_hats.constants'"
-            )
+            raise ImportError("cannot import name 'PROVIDER_GEMINI' from 'ai_hats.constants'")
         return real_import(name, *a, **kw)
 
     monkeypatch.setattr(_bootstrap.importlib, "import_module", fake_import)
@@ -339,3 +333,54 @@ def test_t12_incoherent_own_module_fails_verify(monkeypatch):
     failures = _bootstrap.find_integrity_failures()
     assert any("PROVIDER_GEMINI" in f for f in failures), failures
     assert _bootstrap.verify_after_install() == 1
+
+
+def test_is_first_party_dist_metadata_fallback():
+    """HATS-1118: _is_first_party falls back to dist.metadata.get('Name') when dist.name is missing."""
+
+    class DummyMetadata:
+        def get(self, key):
+            return "ai-hats" if key == "Name" else None
+
+    class DummyDist:
+        name = None
+        metadata = DummyMetadata()
+
+    class DummyEP:
+        dist = DummyDist()
+
+    assert _bootstrap._is_first_party(DummyEP()) is True
+
+
+def test_check_pycache_coherence_flags_stale_bytecode(tmp_path, monkeypatch):
+    """HATS-1118: _check_pycache_coherence flags .pyc files with recorded mtime/size mismatch."""
+    pkg_dir = tmp_path / "ai_hats"
+    pkg_dir.mkdir()
+    pycache_dir = pkg_dir / "__pycache__"
+    pycache_dir.mkdir()
+
+    source_py = pkg_dir / "sample.py"
+    source_py.write_text("print('hello')\n")
+    st = source_py.stat()
+    real_mtime = int(st.st_mtime) & 0xFFFFFFFF
+    real_size = st.st_size & 0xFFFFFFFF
+
+    import struct
+
+    # Create pyc with wrong recorded mtime
+    wrong_header = struct.pack("<IIII", 0x0A0D0D03, 0, real_mtime - 10, real_size)
+    pyc_file = pycache_dir / "sample.cpython-311.pyc"
+    pyc_file.write_bytes(wrong_header + b"fakebytecode")
+
+    class DummySpec:
+        submodule_search_locations = [str(pkg_dir)]
+
+    monkeypatch.setattr(
+        _bootstrap.importlib.util,
+        "find_spec",
+        lambda name: DummySpec() if name == "ai_hats" else None,
+    )
+
+    failures = _bootstrap._check_pycache_coherence()
+    assert len(failures) == 1
+    assert "stale __pycache__" in failures[0]

@@ -50,9 +50,9 @@ def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
         "#!/usr/bin/env bash\n"
         '# -c "import ai_hats" → importability probe (healthy venv)\n'
         'if [[ "${1:-}" == "-c" ]]; then exit 0; fi\n'
-        '# -m ai_hats <argv> → the package dispatch (echo label + argv)\n'
+        "# -m ai_hats <argv> → the package dispatch (echo label + argv)\n"
         'if [[ "${1:-}" == "-m" && "${2:-}" == "ai_hats" ]]; then\n'
-        '    shift 2\n'
+        "    shift 2\n"
         f'    echo "{ai_hats_echo}: $*"\n'
         "    exit 0\n"
         "fi\n"
@@ -83,31 +83,31 @@ def _fake_uv_with_venv_creator(stub_dir: Path) -> Path:
     stub_dir.mkdir(parents=True, exist_ok=True)
     uv = stub_dir / "uv"
     uv.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "venv" ]]; then\n'
         '    target="${@: -1}"\n'  # last arg is the venv dir
         '    mkdir -p "$target/bin"\n'
-        '    cat > "$target/bin/python" <<\'PY\'\n'
-        '#!/usr/bin/env bash\n'
+        "    cat > \"$target/bin/python\" <<'PY'\n"
+        "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "-c" ]]; then exit 0; fi\n'
         'if [[ "${1:-}" == "-m" && "${2:-}" == "ai_hats" ]]; then\n'
-        '    shift 2\n'
+        "    shift 2\n"
         '    echo "venv-ai-hats: $*"\n'
-        '    exit 0\n'
-        'fi\n'
-        'exit 0\n'
-        'PY\n'
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n"
+        "PY\n"
         '    chmod +x "$target/bin/python"\n'
-        '    exit 0\n'
-        'fi\n'
+        "    exit 0\n"
+        "fi\n"
         'if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then\n'
         '    pyexe=""; prev=""\n'
         '    for a in "$@"; do [[ "$prev" == "--python" ]] && pyexe="$a"; prev="$a"; done\n'
         '    venv="$(dirname "$(dirname "$pyexe")")"\n'
         '    printf "%s\\n" "$@" > "$venv/pip_called"\n'
-        '    exit 0\n'
-        'fi\n'
-        'exit 0\n'
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n"
     )
     _make_executable(uv)
     return stub_dir
@@ -170,8 +170,7 @@ def test_resolve_yaml_relative_venv_path(tmp_path):
     venv = tmp_path / "myvenv"
     _fake_venv(venv, ai_hats_echo="rel-stub")
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        "venv_path: myvenv\nprovider: claude\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: myvenv\nprovider: claude\n"
     )
     res = _run(["whoami"], cwd=tmp_path)
     assert res.returncode == 0, res.stderr
@@ -183,8 +182,7 @@ def test_resolve_yaml_absolute_venv_path(tmp_path):
     venv = tmp_path / "abs-venv"
     _fake_venv(venv, ai_hats_echo="abs-stub")
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        f"venv_path: {venv}\nprovider: claude\n"
+        f"schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: {venv}\nprovider: claude\n"
     )
     res = _run(["xx"], cwd=tmp_path)
     assert res.returncode == 0, res.stderr
@@ -211,8 +209,7 @@ def test_env_overrides_yaml(tmp_path):
     _fake_venv(yaml_venv, ai_hats_echo="yaml-stub")
     _fake_venv(env_venv, ai_hats_echo="env-stub")
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        "venv_path: from-yaml\nprovider: claude\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: from-yaml\nprovider: claude\n"
     )
     res = _run(["whoami"], cwd=tmp_path, env={ENV_AI_HATS_VENV: str(env_venv)})
     assert res.returncode == 0, res.stderr
@@ -284,8 +281,7 @@ def test_self_update_refuses_recreate_override(tmp_path):
     override = tmp_path / "user-venv"
     override.mkdir()  # exists but no bin/python — broken
     (tmp_path / PROJECT_CONFIG).write_text(
-        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-        f"venv_path: {override}\nprovider: claude\n"
+        f"schema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: {override}\nprovider: claude\n"
     )
     res = _run(["self", "update"], cwd=tmp_path)
     assert res.returncode == 1
@@ -397,9 +393,7 @@ def test_exec_fails_when_ai_hats_not_importable(tmp_path):
     python_stub = venv / "bin" / "python"
     # `-c "import ai_hats"` → exit 1 (NOT importable); everything else exit 0.
     python_stub.write_text(
-        "#!/usr/bin/env bash\n"
-        'if [[ "${1:-}" == "-c" ]]; then exit 1; fi\n'
-        "exit 0\n"
+        '#!/usr/bin/env bash\nif [[ "${1:-}" == "-c" ]]; then exit 1; fi\nexit 0\n'
     )
     _make_executable(python_stub)
     res = _run(["status"], cwd=tmp_path)
@@ -530,18 +524,18 @@ def test_self_update_fails_on_pip_install_error(tmp_path):
     stub_dir.mkdir(parents=True, exist_ok=True)
     uv = stub_dir / "uv"
     uv.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "venv" ]]; then\n'
         '    target="${@: -1}"\n'
         '    mkdir -p "$target/bin"\n'
         '    touch "$target/bin/python"\n'
         '    chmod +x "$target/bin/python"\n'
-        '    exit 0\n'
-        'fi\n'
+        "    exit 0\n"
+        "fi\n"
         'if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then\n'
-        '    exit 1\n'
-        'fi\n'
-        'exit 0\n'
+        "    exit 1\n"
+        "fi\n"
+        "exit 0\n"
     )
     _make_executable(uv)
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
@@ -556,18 +550,18 @@ def test_self_update_fails_if_post_recreate_probe_fails(tmp_path):
     stub_dir.mkdir(parents=True, exist_ok=True)
     uv = stub_dir / "uv"
     uv.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "venv" ]]; then\n'
         '    target="${@: -1}"\n'
         '    mkdir -p "$target/bin"\n'
-        '    cat > "$target/bin/python" <<\'PY\'\n'
-        '#!/usr/bin/env bash\n'
+        "    cat > \"$target/bin/python\" <<'PY'\n"
+        "#!/usr/bin/env bash\n"
         'if [[ "${1:-}" == "-c" ]]; then echo "failed importing ai_hats.cli: module missing"; exit 1; fi\n'
-        'PY\n'
+        "PY\n"
         '    chmod +x "$target/bin/python"\n'
-        '    exit 0\n'
-        'fi\n'
-        'exit 0\n'
+        "    exit 0\n"
+        "fi\n"
+        "exit 0\n"
     )
     _make_executable(uv)
     env = {"PATH": f"{stub_dir}:{os.environ['PATH']}"}
@@ -577,3 +571,29 @@ def test_self_update_fails_if_post_recreate_probe_fails(tmp_path):
     assert "is still broken" in res.stderr
     assert "failed importing ai_hats.cli: module missing" in res.stderr
 
+
+def test_launcher_probe_fails_on_missing_first_party_entry_point_attribute(tmp_path):
+    """HATS-1118: launcher probe_imports fails fast when ep.load() raises an AttributeError for a first-party entry point."""
+    venv = tmp_path / "venv"
+    bindir = venv / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+
+    python_stub = bindir / "python"
+    python_stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "-c" ]]; then\n'
+        "    echo \"failed loading entry point 'gemini' (ai_hats.providers:GeminiProvider): AttributeError\" >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    _make_executable(python_stub)
+
+    env = {
+        **os.environ,
+        ENV_AI_HATS_VENV: str(venv),
+    }
+
+    res = _run(["status"], cwd=tmp_path, env=env)
+    assert res.returncode == 1
+    assert "failed loading entry point" in res.stderr
