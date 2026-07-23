@@ -187,12 +187,14 @@ try:
     import importlib.util
     from importlib.metadata import entry_points
     _b = []
+    # Single quotes only — this whole program is a bash double-quoted string,
+    # so any double quote here is eaten before python sees it (HATS-595).
     def _is_fp(_ep):
-        _d = getattr(_ep, "dist", None)
-        _n = getattr(_d, "name", None) if _d else None
-        if not _n and hasattr(_d, "metadata") and _d.metadata:
-            _n = _d.metadata.get("Name")
-        return bool(_n) and _n.replace("_", "-").lower() == "ai-hats"
+        _d = getattr(_ep, 'dist', None)
+        _n = getattr(_d, 'name', None) if _d else None
+        if not _n and hasattr(_d, 'metadata') and _d.metadata:
+            _n = _d.metadata.get('Name')
+        return bool(_n) and _n.replace('_', '-').lower() == 'ai-hats'
     for _ep in entry_points(group='ai_hats.providers'):
         _m = _ep.value.split(':', 1)[0].split('.', 1)[0].strip()
         try:
