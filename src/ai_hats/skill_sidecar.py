@@ -50,7 +50,7 @@ def leftover_sidecar_remedy(name: str, keys: Iterable[str]) -> str:
         f"skill {name!r}: metadata.yaml still carries "
         f"hook key(s) {list(keys)} — move them to SKILL.md frontmatter "
         f"under the top-level 'ai_hats:' key and delete "
-        f"metadata.yaml (HATS-814 cutover)"
+        f"metadata.yaml"
     )
 
 

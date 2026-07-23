@@ -707,8 +707,7 @@ def _run_managed_versioned_update(
         )
         console.print(
             f"  [dim]versions/{sha[:12]} is active, but this run came from the "
-            f"legacy .venv — {launcher} predates versioned-layout resolution "
-            f"(HATS-647).[/]"
+            f"legacy .venv — {launcher} predates versioned-layout resolution.[/]"
         )
         console.print(
             "  [dim]Inactive: crash-safe blue-green updates, orphan-version GC, "
