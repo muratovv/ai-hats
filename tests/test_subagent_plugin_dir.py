@@ -139,6 +139,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
     asm = Assembler(project)
     asm.init()
     asm.set_role("host", provider_name="claude")
+    asm.set_role("guest", provider_name="claude")
 
     captured: dict = {}
 

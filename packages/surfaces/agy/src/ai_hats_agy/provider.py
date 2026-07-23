@@ -44,6 +44,7 @@ from ai_hats.providers import Provider
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
+    from ai_hats.providers import ProviderHint
 
 
 AGY_FILE_MUTATION_MATCHER = (
@@ -57,6 +58,21 @@ class AgyProvider(Provider):
     @property
     def name(self) -> str:
         return "agy"
+
+    def provider_hints(self) -> list["ProviderHint"]:
+        from ai_hats.providers import ProviderHint
+        return [
+            ProviderHint(
+                name="--model",
+                values="gemini-2.5-pro, ...",
+                description="Overrides the model to use for the session.",
+            ),
+            ProviderHint(
+                name="--headless",
+                values="N/A",
+                description="Run agy in headless mode without TUI.",
+            ),
+        ]
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return gemini_md(project_dir)
