@@ -4,43 +4,23 @@ from __future__ import annotations
 
 import abc
 import contextlib
-import json
 import logging
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
 from ai_hats_core import CompositionResult, ResolvedComponent
-from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
-from .hook_collection import (
-    collect_runtime_hooks,
-    resolve_skill_script,
-)
 from .frontmatter import FrontmatterError, read_frontmatter
-from .paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
-from .paths import CLAUDE_PROJECT_DIR_VAR
-from .paths import ai_hats_dir
-from .paths import claude_md, claude_settings_json, claude_settings_local_json
-from .paths import claude_user_settings_json
-from .paths import hooks_dir as _lib_hooks_dir
-from .paths import managed_runtime_hook_filename
-from .paths import session_cache_dir
-from .placeholders import expand_path_placeholders
 from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
 )
 from .resolver import read_rule_body
-from .role_catalog import expand_role_catalog
 from . import owners
 
 
@@ -64,7 +44,6 @@ PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
 # existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
 from .constants import (  # noqa: E402
     ALWAYS_ON_RULES,
-    HOOK_PRE_TOOL_USE,
     PROVIDER_CLAUDE,
 )
 
@@ -87,16 +66,6 @@ def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
         return skill.name
     desc = data.get("description")
     return desc if isinstance(desc, str) and desc else skill.name
-
-
-
-import abc
-from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .composition_types import CompositionResult
 
 
 @dataclass

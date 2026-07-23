@@ -13,18 +13,16 @@ import json
 import logging
 import os
 import shutil
-import sys
 from pathlib import Path
-
-
-logger = logging.getLogger(__name__)
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from ai_hats_core import ResolvedComponent
+
+
+logger = logging.getLogger(__name__)
 
 MANAGED_MARKER = ".ai-hats-managed"
 _LOCK_TIMEOUT = 30.0

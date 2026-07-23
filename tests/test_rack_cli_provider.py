@@ -5,7 +5,6 @@ and the post-create STATE.md refresh."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from ai_hats_wt import WorktreeMergeConsentError, WorktreeStateLostError
 
