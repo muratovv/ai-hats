@@ -115,22 +115,24 @@ def _run_self_update() -> None:
     if channel is Channel.LOCAL:
         cmd = ["uv", "pip", "install", "--python", sys.executable, "-e", path or "."]
     elif channel is Channel.STABLE:
-        # 764 reality: the ai-hats PyPI name may be unpublished → skip gracefully
-        # rather than silently pulling git master. Live stable path is HATS-765.
         try:
             version = fetch_latest_stable_version()
         except ChannelResolveError as exc:
             console.print(f"[yellow]Update skipped[/]: {exc}")
             return
         cmd = [
-            "uv", "pip", "install", "--python", sys.executable,
-            "--reinstall", f"ai-hats=={version}",
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            "--reinstall",
+            f"ai-hats=={version}",
         ]
     else:  # edge
         cmd = _build_update_cmd()
     with console.status(
-        "[cyan]Downloading ai-hats …[/] "
-        "[dim](first run can take a minute on slow links)[/]",
+        "[cyan]Downloading ai-hats …[/] [dim](first run can take a minute on slow links)[/]",
         spinner="dots",
     ):
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -189,7 +191,9 @@ def _launch_wizard_session() -> None:
 @click.option("--provider", "-p", default=None, help="Provider (agy/claude)")
 @click.option("--role", "-r", default=None, help="Role to apply after init")
 @click.option(
-    "--task-prefix", "task_prefix", default=None,
+    "--task-prefix",
+    "task_prefix",
+    default=None,
     help="Task-id prefix for `ai-hats task create` (e.g. ACME). "
     "Default: TASK for new projects; auto-detected for legacy repos.",
 )
@@ -276,11 +280,7 @@ def init(
 
     # Wizard runs only when stdin is a TTY and the user did NOT supply
     # both -p and -r (which we treat as a fully-scripted invocation).
-    use_wizard = (
-        not no_wizard
-        and _stdin_is_tty()
-        and not (provider and role)
-    )
+    use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
 
     # HATS-470 review A2: when the project is already initialized AND no
     # provider/role flags were passed, treat this as "re-apply config"
@@ -353,9 +353,14 @@ def init(
     seeded = asm.project_config.harness
     if seeded.channel is not _Channel.STABLE:
         loc = f" → {seeded.path}" if seeded.path else ""
-        console.print(
-            f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}"
-        )
+        console.print(f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}")
+
+    # HATS-1125: non-wizard init (flag-only / --no-wizard / non-TTY) seeds harness
+    # channel in ai-hats.yaml above, but the venv still holds the launcher's edge
+    # scaffold. Reconcile the venv with the channel just written if self update
+    # hasn't already run in this process chain.
+    if not no_update and not os.environ.get(ENV_INIT_UPDATED):
+        _run_self_update()
 
     # HATS-549 Phase 3: end-of-init smoke-assert. Mirrors do_bump's
     # final step — every hook command path in .claude/settings.json
@@ -367,7 +372,8 @@ def init(
 
         try:
             assert_runtime_hooks_resolve(
-                project_dir, backup_path=init_backup_path,
+                project_dir,
+                backup_path=init_backup_path,
             )
         except _AssemblyError as e:
             console.print(f"[red]Init refused[/]:\n{e}")
@@ -503,11 +509,16 @@ def set_role(
         raise SystemExit(1)
 
     any_change = (
-        provider or role or task_prefix is not None
-        or venv_path is not None or no_venv
+        provider
+        or role
+        or task_prefix is not None
+        or venv_path is not None
+        or no_venv
         or manage_gitignore is not None
         or ai_hats_dir is not None
-        or channel is not None or repo is not None or harness_path is not None
+        or channel is not None
+        or repo is not None
+        or harness_path is not None
     )
     if not any_change:
         console.print(
@@ -605,9 +616,7 @@ def set_role(
             console.print("[dim]manage_gitignore unchanged[/]")
         else:
             asm.save_config(manage_gitignore=manage_gitignore)
-            console.print(
-                f"[green]Updated[/]: manage_gitignore = [bold]{manage_gitignore}[/]"
-            )
+            console.print(f"[green]Updated[/]: manage_gitignore = [bold]{manage_gitignore}[/]")
 
     # --ai-hats-dir — relocate framework directory (heavy operation).
     if ai_hats_dir is not None:
@@ -620,22 +629,19 @@ def set_role(
             console.print("[dim]ai_hats_dir unchanged[/]")
         else:
             console.print(
-                f"[green]Relocated[/]: ai_hats_dir = [bold]{reloc.new}[/] "
-                f"(was {reloc.old})"
+                f"[green]Relocated[/]: ai_hats_dir = [bold]{reloc.new}[/] (was {reloc.old})"
             )
             if reloc.moved:
                 console.print(f"  moved: {', '.join(reloc.moved)}")
             if reloc.venv_removed:
                 console.print(
-                    "  [yellow]managed venv removed[/] — will be recreated "
-                    "on next session"
+                    "  [yellow]managed venv removed[/] — will be recreated on next session"
                 )
             if reloc.gitignore_updated:
                 console.print("  .gitignore entry updated")
             elif not asm.project_config.manage_gitignore:
                 console.print(
-                    "  [yellow]warning[/]: .gitignore not auto-managed — "
-                    "update it manually"
+                    "  [yellow]warning[/]: .gitignore not auto-managed — update it manually"
                 )
 
     if role:
@@ -818,9 +824,7 @@ def customize(
         _print_overlay("global", role, user_cfg.customizations.get(role, OverlayConfig()))
         if project_path.exists():
             proj_cfg = ProjectConfig.from_yaml(project_path)
-            _print_overlay(
-                "project", role, proj_cfg.customizations.get(role, OverlayConfig())
-            )
+            _print_overlay("project", role, proj_cfg.customizations.get(role, OverlayConfig()))
         else:
             console.print("[dim]No project ai-hats.yaml — only the global layer is in effect.[/]")
         return
@@ -833,8 +837,7 @@ def customize(
                 user_cfg.customizations.pop(role, None)
                 user_cfg.save(user_path)
             console.print(
-                f"[green]Reset[/] (global) customizations for [bold]{role}[/] "
-                f"([dim]{user_path}[/])"
+                f"[green]Reset[/] (global) customizations for [bold]{role}[/] ([dim]{user_path}[/])"
             )
             return
         if not project_path.exists():
@@ -872,8 +875,7 @@ def customize(
             user_cfg.customizations[role] = overlay
             user_cfg.save(user_path)
         console.print(
-            f"[green]Updated[/] (global) customizations for [bold]{role}[/] "
-            f"([dim]{user_path}[/])"
+            f"[green]Updated[/] (global) customizations for [bold]{role}[/] ([dim]{user_path}[/])"
         )
         _print_overlay("global", role, overlay)
         return
@@ -1002,11 +1004,15 @@ def status():
 
 @click.command("show-prompt")
 @click.option(
-    "--role", "-r", default=None,
+    "--role",
+    "-r",
+    default=None,
     help="Role to materialize (default: active_role from ai-hats.yaml).",
 )
 @click.option(
-    "--provider", "-p", default=None,
+    "--provider",
+    "-p",
+    default=None,
     help="Provider for build_system_prompt formatting (default: configured).",
 )
 @click.option(
@@ -1056,7 +1062,9 @@ def show_prompt(role: str | None, provider: str | None, stats: bool):
         # HATS-865: compose at the seam, seed the payload into the pipeline.
         pipeline.run(
             composition=build_preview_payload(
-                project_dir, role=role, provider=provider,
+                project_dir,
+                role=role,
+                provider=provider,
             ),
         )
     except RuntimeError as e:
@@ -1149,9 +1157,8 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     # HATS-470: surface the trash-bin banner so the user knows where
     # snapshots from this bump live (if any).
     from ai_hats_core.safe_delete import session_summary as _trash_summary
+
     banner = _trash_summary()
     if banner:
         console.print(f"  [dim]{banner}[/]")
     return 0
-
-
