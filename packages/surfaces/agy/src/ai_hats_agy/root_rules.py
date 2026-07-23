@@ -30,9 +30,11 @@ def _owner_alive(backup: Path) -> bool:
         pid = int(backup.name.rsplit("_", 1)[-1])
     except ValueError:
         return True
+    if pid <= 0 or pid > 2147483647:
+        return False
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, OverflowError):
         return False
     except OSError:
         return True  # PermissionError and friends: alive, just not ours
