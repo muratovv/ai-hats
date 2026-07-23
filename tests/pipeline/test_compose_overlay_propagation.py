@@ -218,6 +218,7 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     the runtime path doesn't depend on the pipeline funnel for
     correctness anymore.
     """
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)

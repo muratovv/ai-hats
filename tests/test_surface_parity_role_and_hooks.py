@@ -71,7 +71,6 @@ def test_role_propagation_and_hook_materialization_parity(
         skills_root = provider._session_skills_dir(project, sid)
         skill_mat = skills_root / "my-skill" / "SKILL.md"
         hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
-
     elif provider.name == "cline":
         skill_mat = project / ".cline" / "skills" / "my-skill" / "SKILL.md"
         hook_mat = project / ".cline" / "skills" / "my-skill" / "hooks" / "pre_tool.sh"

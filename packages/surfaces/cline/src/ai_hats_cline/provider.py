@@ -11,7 +11,7 @@ from ai_hats.providers import Provider
 
 if TYPE_CHECKING:
     # Workspace-boundary Rule 1 (HATS-869): only first-party root is `ai_hats`.
-    from ai_hats.providers import CompositionResult
+    from ai_hats.providers import CompositionResult, ProviderHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
 # Marks ai-hats-owned skill dirs so user-authored ones survive re-materialization.
@@ -39,6 +39,16 @@ class ClineProvider(Provider):
     @property
     def name(self) -> str:
         return "cline"
+
+    def provider_hints(self) -> list["ProviderHint"]:
+        from ai_hats.providers import ProviderHint
+        return [
+            ProviderHint(
+                name="--yolo",
+                values="N/A",
+                description="Run cline in fully autonomous mode without asking for permission.",
+            ),
+        ]
 
     def transcript_parser(self) -> TranscriptParser:
         # Lazy import: provider discovery must not eager-load observe parsers.

@@ -82,3 +82,13 @@ HOOK_NOTIFICATION = "Notification"
 # Provider registry names (HATS-917) — leaf home: runners must not import providers.
 # Only the builtin lives here; agy/cline are out-of-tree surfaces (own their names).
 PROVIDER_CLAUDE = "claude"
+
+INJECTION_START = "<!-- AI-HATS:START -->"
+INJECTION_END = "<!-- AI-HATS:END -->"
+
+# HATS-284: lowercase scaffold markers — used in `./CLAUDE.md` to delimit the
+# user-owned ai-hats block. PUBLISH_AGGREGATOR_* names kept for backwards
+# compatibility of imports across the codebase; functionally these are the
+# scaffold markers.
+PUBLISH_AGGREGATOR_START = "<!-- ai-hats:start -->"
+PUBLISH_AGGREGATOR_END = "<!-- ai-hats:end -->"
