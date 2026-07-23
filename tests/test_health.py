@@ -182,9 +182,7 @@ def _seed_hook(project: Path, subdir: str, name: str, *, write_script: bool = Tr
     """Materialize a managed hook dir the way HooksManager does: manifest + script."""
     d = project / ".agent" / "ai-hats" / "library" / subdir
     d.mkdir(parents=True, exist_ok=True)
-    (d / ".manifest").write_text(
-        f"# ai-hats managed — do not edit\n{name}\n", encoding="utf-8"
-    )
+    (d / ".manifest").write_text(f"# ai-hats managed — do not edit\n{name}\n", encoding="utf-8")
     script = d / name
     if write_script:
         script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
