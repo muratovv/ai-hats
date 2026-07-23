@@ -153,9 +153,7 @@ def bootstrap_or_die() -> None:
     sys.stderr.flush()
 
     if not attempt_self_heal(missing):
-        sys.stderr.write(
-            "ai-hats: self-heal failed. Run the manual command above, then retry.\n"
-        )
+        sys.stderr.write("ai-hats: self-heal failed. Run the manual command above, then retry.\n")
         sys.exit(1)
 
     # Re-exec a fresh interpreter so that freshly-installed modules can be
@@ -165,10 +163,21 @@ def bootstrap_or_die() -> None:
 
 
 def _is_first_party(ep: importlib.metadata.EntryPoint) -> bool:
-    """True when ai-hats itself ships this entry point."""
+    """True when ai-hats itself ships this entry point.
+
+    Duplicates provider_entry_points._is_first_party_entry_point (HATS-1121).
+    _bootstrap is contractually stdlib-only and must not depend on project modules
+    it may be verifying.
+    """
     dist = getattr(ep, "dist", None)
+    if dist is None:
+        return False
     name = getattr(dist, "name", None)
-    return bool(name) and _normalise(name) == "ai-hats"
+    if not name and hasattr(dist, "metadata"):
+        name = dist.metadata.get("Name")
+    if not name:
+        return False
+    return _normalise(name) == "ai-hats"
 
 
 def _first_party_provider_failures() -> list[str]:
@@ -197,6 +206,72 @@ def _first_party_provider_failures() -> list[str]:
     return failures
 
 
+def _check_pycache_coherence() -> list[str]:
+    """Check __pycache__ bytecode headers against source .py files in ai_hats package.
+
+    Detects stale .pyc files whose recorded source mtime or size no longer matches
+    the on-disk .py file (PEP 552 mtime-based bytecode validation).
+    """
+    failures: list[str] = []
+    try:
+        spec = importlib.util.find_spec("ai_hats")
+    except Exception:  # noqa: BLE001
+        return failures
+
+    if not spec or not spec.submodule_search_locations:
+        return failures
+
+    import struct
+
+    for search_dir in spec.submodule_search_locations:
+        pycache_dir = os.path.join(search_dir, "__pycache__")
+        if not os.path.isdir(pycache_dir):
+            continue
+
+        try:
+            entries = os.listdir(pycache_dir)
+        except OSError:
+            continue
+
+        for pyc_name in entries:
+            if not pyc_name.endswith(".pyc"):
+                continue
+            pyc_path = os.path.join(pycache_dir, pyc_name)
+            try:
+                with open(pyc_path, "rb") as f:
+                    header = f.read(16)
+            except OSError:
+                continue
+
+            if len(header) < 16:
+                continue
+
+            magic, flags, recorded_mtime, recorded_size = struct.unpack("<IIII", header)
+            if flags != 0:
+                continue
+
+            stem = pyc_name.split(".", 1)[0]
+            source_path = os.path.join(search_dir, f"{stem}.py")
+            if not os.path.isfile(source_path):
+                continue
+
+            try:
+                st = os.stat(source_path)
+            except OSError:
+                continue
+
+            py_mtime = int(st.st_mtime) & 0xFFFFFFFF
+            py_size = st.st_size & 0xFFFFFFFF
+
+            if recorded_mtime != py_mtime or recorded_size != py_size:
+                failures.append(
+                    f"stale __pycache__: {pyc_path} recorded mtime/size ({recorded_mtime}/{recorded_size}) "
+                    f"does not match {source_path} ({py_mtime}/{py_size})"
+                )
+
+    return failures
+
+
 def find_integrity_failures() -> list[str]:
     """Report why the installed ai-hats tree is unusable, one line per failure.
 
@@ -212,6 +287,7 @@ def find_integrity_failures() -> list[str]:
         except Exception as exc:  # noqa: BLE001 - report the reason, don't raise
             failures.append(f"import {mod}: {exc.__class__.__name__}: {exc}")
     failures.extend(_first_party_provider_failures())
+    failures.extend(_check_pycache_coherence())
     return failures
 
 
@@ -225,17 +301,13 @@ def verify_after_install() -> int:
     """
     missing = find_missing_runtime_deps()
     if missing:
-        sys.stderr.write(
-            f"ai-hats: post-install verify found missing deps {missing}; healing…\n"
-        )
+        sys.stderr.write(f"ai-hats: post-install verify found missing deps {missing}; healing…\n")
         if attempt_self_heal(missing):
             # Re-check — uv can succeed but install nothing useful in pathological
             # cases (e.g. wheel for wrong platform). Trust but verify.
             still_missing = find_missing_runtime_deps()
             if still_missing:
-                sys.stderr.write(
-                    f"ai-hats: deps still missing after uv install: {still_missing}\n"
-                )
+                sys.stderr.write(f"ai-hats: deps still missing after uv install: {still_missing}\n")
                 sys.stderr.write(f"  manual command: {_rescue_command(missing)}\n")
                 return 1
         else:
