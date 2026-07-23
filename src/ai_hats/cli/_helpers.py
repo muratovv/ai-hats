@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
+
+
 import click
 from rich.console import Console
 
@@ -140,15 +142,22 @@ class InconsistentInstallError(click.ClickException):
         )
         super().__init__(msg)
 
+    def show(self, file=None) -> None:
+        from ..startup_notices import show_fatal_notice_and_exit
+
+        show_fatal_notice_and_exit(self.format_message(), exit_code=self.exit_code)
+
 
 def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
-    """Handle an ImportError/AttributeError at the CLI boundary and exit (HATS-1120).
+    """Handle an ImportError/module AttributeError at the CLI boundary and exit (HATS-1120).
 
-    If debug/verbose mode is enabled, re-raises the original exception so the
-    full traceback is displayed. Otherwise, renders InconsistentInstallError to
-    stderr and exits with status 1 without a raw traceback.
+    If debug/verbose mode is enabled or the exception is not a broken install symptom (HATS-1132),
+    re-raises the original exception so the full traceback is displayed.
+    Otherwise, renders InconsistentInstallError to stderr and exits with status 1 without a raw traceback.
     """
-    if is_debug_mode():
+    from ..self_heal import is_broken_install_exception
+
+    if is_debug_mode() or not is_broken_install_exception(exc):
         raise exc
     err = InconsistentInstallError(exc)
     err.show()
@@ -157,11 +166,17 @@ def _handle_broken_install_or_die(exc: Exception) -> NoReturn:
 
 @contextlib.contextmanager
 def catch_broken_install():
-    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120)."""
+    """Context manager wrapping CLI lazy imports to catch broken install errors (HATS-1120, HATS-1132)."""
+    from ..self_heal import is_broken_install_exception
+
     try:
         yield
-    except (ImportError, AttributeError) as exc:
-        _handle_broken_install_or_die(exc)
+    except Exception as exc:
+        if is_broken_install_exception(exc):
+            _handle_broken_install_or_die(exc)
+        raise
+
+
 
 
 def _project_dir() -> Path:

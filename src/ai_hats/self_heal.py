@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,21 @@ from .provider_entry_points import PROVIDER_ENTRY_POINT_GROUP, _provider_entry_p
 
 # Repo layout: surface-plugin members live at ``<repo>/packages/surfaces/<name>``.
 SURFACES_SUBPATH = ("packages", "surfaces")
+
+
+def is_broken_install_exception(exc: Exception) -> bool:
+    """Return True if exc represents a broken install (ImportError or module AttributeError)."""
+    if isinstance(exc, ImportError):
+        return True
+    if isinstance(exc, AttributeError):
+        obj = getattr(exc, "obj", None)
+        if isinstance(obj, types.ModuleType):
+            return True
+        msg = str(exc)
+        if msg.startswith("module ") or msg.startswith("partially initialized module "):
+            return True
+    return False
+
 
 
 @dataclass(frozen=True)
@@ -255,6 +271,8 @@ __all__ = [
     "find_uninstalled_surface_members",
     "get_surface_remediation",
     "heal_surface_editables",
+    "is_broken_install_exception",
     "run_editable_heal",
+
     "surface_editable_map",
 ]
