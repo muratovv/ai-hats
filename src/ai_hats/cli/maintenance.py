@@ -55,9 +55,7 @@ def _require_uv() -> None:
 # end-to-end (CI, airgapped mirrors, custom forks).
 # HATS-766: public default is anonymous git+https (override still accepts ssh/local).
 def _git_install_url() -> str:
-    return os.environ.get(
-        ENV_REPO_URL, "git+https://github.com/muratovv/ai-hats.git"
-    )
+    return os.environ.get(ENV_REPO_URL, "git+https://github.com/muratovv/ai-hats.git")
 
 
 def _build_update_cmd(ref: str | None = None) -> list[str]:
@@ -155,9 +153,7 @@ def _render_heal_result(result: "HealResult | None") -> None:
             f"[green]· self-heal[/] re-pointed [bold]{h.provider.module}[/] → {h.canonical}"
         )
     for w in result.warned:
-        console.print(
-            f"[yellow]· self-heal[/] {w.provider.module}: {w.reason}\n    fix: {w.fix}"
-        )
+        console.print(f"[yellow]· self-heal[/] {w.provider.module}: {w.reason}\n    fix: {w.fix}")
 
 
 @click.command("heal-editables", hidden=True)
@@ -242,9 +238,7 @@ def _is_managed_install(project_dir: Path) -> bool:
     return venv_root == default_venv or venv_root.parent == vroot
 
 
-def _versioned_layout_dormant(
-    project_dir: Path, *, pre_existing_versioned: bool
-) -> bool:
+def _versioned_layout_dormant(project_dir: Path, *, pre_existing_versioned: bool) -> bool:
     """True iff a usable versioned install is being ignored by a stale launcher.
 
     The runtime symptom (HATS-655): a complete ``versions/<sha>/`` install already
@@ -327,7 +321,7 @@ def find_stray_launchers(
     stray paths in PATH order; callers WARN + instruct.
     """
     raw = path_env if path_env is not None else os.environ.get("PATH", "")
-    target = (sanctioned if sanctioned is not None else _sanctioned_launcher_dest())
+    target = sanctioned if sanctioned is not None else _sanctioned_launcher_dest()
     try:
         target_resolved = target.expanduser().resolve(strict=False)
     except (OSError, RuntimeError, ValueError):
@@ -537,9 +531,7 @@ def _run_managed_versioned_update(
         # the create_session chokepoint (a *recent* incomplete dir may be a
         # concurrent update in flight, so it is kept). No-silent-caps.
         for _residue in sweep_incomplete_versions(project_dir):
-            console.print(
-                f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]"
-            )
+            console.print(f"[dim]Reclaimed incomplete residue: versions/{_residue.name}[/]")
 
         # HATS-649 (R2): reclaim complete versions orphaned by earlier runs —
         # `self update` is the canonical "next invocation" that converges crash
@@ -549,9 +541,7 @@ def _run_managed_versioned_update(
         # `target_sha` (the about-to-be-installed/reused dir, not yet `current`)
         # is protected explicitly via keep.
         for _orphan in reclaim_orphan_versions(project_dir, keep_shas={target_sha}):
-            console.print(
-                f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]"
-            )
+            console.print(f"[dim]Reclaimed orphaned version: versions/{_orphan.name}[/]")
 
         # HATS-653 (Phase B): once this updater itself runs from a complete
         # versioned venv (current_run_sha not None), the orphaned pre-versioning
@@ -597,7 +587,9 @@ def _run_managed_versioned_update(
             # trust it; rebuild fresh (HATS-648 build-in-place + sentinel).
             _require_uv()  # only here — reuse/no-op above needs no uv
             if vdir.exists():
-                shutil.rmtree(vdir, ignore_errors=True)  # safe-delete: ok incomplete-venv (crash residue, rebuilt fresh)
+                shutil.rmtree(
+                    vdir, ignore_errors=True
+                )  # safe-delete: ok incomplete-venv (crash residue, rebuilt fresh)
             vdir.parent.mkdir(parents=True, exist_ok=True)
             with console.status(
                 f"[cyan]Creating versioned venv[/] versions/{target_sha[:12]} …",
@@ -610,9 +602,7 @@ def _run_managed_versioned_update(
                     text=True,
                 )
             if venv_proc.returncode != 0:
-                console.print(
-                    f"[red]Update failed[/] (venv create): {venv_proc.stderr}"
-                )
+                console.print(f"[red]Update failed[/] (venv create): {venv_proc.stderr}")
                 # HATS-718: non-zero exit so scripted chains
                 # (`self update && self init`), CI, and agents reading exit
                 # codes detect the install never completed — mirrors the
@@ -651,9 +641,7 @@ def _run_managed_versioned_update(
             # — the authoritative completeness marker (HATS-648). Only then is
             # the atomic flip allowed; current never points at a dir lacking
             # .complete.
-            complete_sentinel(project_dir, target_sha).write_text(
-                "", encoding="utf-8"
-            )
+            complete_sentinel(project_dir, target_sha).write_text("", encoding="utf-8")
             # HATS-650 e2e seam — no-op unless AI_HATS_TEST_PAUSE_AFTER_COMPLETE
             # is set. Lets a test freeze the install here (lock held, .complete
             # written, current not yet flipped) to exercise the corruption window
@@ -691,7 +679,10 @@ def _run_managed_versioned_update(
         # venv_path() resolution inside the bump agrees with sys.prefix.
         bump_env = {**os.environ, ENV_AI_HATS_VENV: str(vdir)}
         proc = subprocess.run(
-            bump_cmd, cwd=str(project_dir), env=bump_env, check=False,
+            bump_cmd,
+            cwd=str(project_dir),
+            env=bump_env,
+            check=False,
         )
         if proc.returncode != 0:
             console.print(
@@ -705,14 +696,11 @@ def _run_managed_versioned_update(
     # what's off and advise the one-time host-level launcher refresh. NEVER auto-
     # write the launcher: it is host-global (one entry point for ALL projects); a
     # per-project write risks cross-project breakage and a bootstrap-brick.
-    if _versioned_layout_dormant(
-        project_dir, pre_existing_versioned=pre_existing_versioned
-    ):
+    if _versioned_layout_dormant(project_dir, pre_existing_versioned=pre_existing_versioned):
         launcher = _installed_launcher_path()
         sha = read_current_sha(project_dir) or target_sha
         console.print(
-            "\n[yellow]Heads up:[/] your host launcher is not using the versioned "
-            "install."
+            "\n[yellow]Heads up:[/] your host launcher is not using the versioned install."
         )
         console.print(
             f"  [dim]versions/{sha[:12]} is active, but this run came from the "
@@ -829,9 +817,7 @@ def _resolved_via_heuristic(venv: Path) -> str:
                 if line.startswith("venv_path:"):
                     candidate = line.split(":", 1)[1].strip().strip("'\"")
                     if candidate:
-                        candidate_path = Path(
-                            candidate.replace("~", str(Path.home()))
-                        )
+                        candidate_path = Path(candidate.replace("~", str(Path.home())))
                         if not candidate_path.is_absolute():
                             candidate_path = project_dir / candidate_path
                         if candidate_path.resolve() == venv_real:
@@ -861,19 +847,28 @@ def _repo_head_for_editable() -> str | None:
     try:
         sha = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
             env=scrubbed_git_env(),
         )
         if sha.returncode != 0:
             return None
         branch = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
             env=scrubbed_git_env(),
         )
         porcelain = subprocess.run(
             ["git", "-C", str(repo), "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
             env=scrubbed_git_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -1326,7 +1321,9 @@ def _invalidate_update_cache(project_dir: Path) -> None:
     try:
         from ..update_check.cache import cache_path
 
-        cache_path(project_dir).unlink(missing_ok=True)  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
+        cache_path(project_dir).unlink(
+            missing_ok=True
+        )  # safe-delete: ok update-check cache (ephemeral, re-probed next session)
     except (ImportError, OSError):
         pass  # ImportError: update_check missing → nothing to invalidate (HATS-987)
 
@@ -1335,8 +1332,7 @@ def _invalidate_update_cache(project_dir: Path) -> None:
 @click.option(
     "--migrate-force",
     is_flag=True,
-    help="Bypass v0.6 → v0.7 user-edit refusal during auto-bump "
-    "(logs WARN per overwritten file).",
+    help="Bypass v0.6 → v0.7 user-edit refusal during auto-bump (logs WARN per overwritten file).",
 )
 @click.option(
     "--check-branches",
@@ -1453,9 +1449,7 @@ def update(
         ):
             revision_sha = _resolve_ref(revision_url, revision)
         if revision_sha is None:
-            console.print(
-                f"[red]error:[/] ref '{revision}' not found on remote {revision_url}"
-            )
+            console.print(f"[red]error:[/] ref '{revision}' not found on remote {revision_url}")
             sys.exit(2)
 
         console.print(
@@ -1483,8 +1477,7 @@ def update(
             sys.exit(2)
         if force_downgrade:
             console.print(
-                "[yellow]Warning:[/] --force-downgrade bypasses the "
-                "semver-monotonic guard."
+                "[yellow]Warning:[/] --force-downgrade bypasses the semver-monotonic guard."
             )
         elif _classify_semver_downgrade(old_version, latest_stable):
             _render_semver_downgrade_refusal(old_version, latest_stable)
@@ -1630,10 +1623,7 @@ def update(
         and probe.behind == 0
     )
     if skip_install:
-        console.print(
-            f"[green]Already up to date[/] ({old_version}) "
-            "[dim]— skipping reinstall[/]"
-        )
+        console.print(f"[green]Already up to date[/] ({old_version}) [dim]— skipping reinstall[/]")
         new_version = old_version
     else:
         _require_uv()  # HATS-763: legacy in-place path also runs uv
@@ -1646,8 +1636,7 @@ def update(
         # Wrapped in a Rich spinner so the terminal isn't silent while uv
         # downloads (can take 30s+ on slow links).
         with console.status(
-            "[cyan]Downloading ai-hats from GitHub …[/] "
-            "[dim](uv install — may take a minute)[/]",
+            "[cyan]Downloading ai-hats from GitHub …[/] [dim](uv install — may take a minute)[/]",
             spinner="dots",
         ):
             result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1802,13 +1791,12 @@ def update(
                     spinner="dots",
                 ):
                     asm._run_v07_migration(
-                        force=migrate_force, check_branches=check_branches,
+                        force=migrate_force,
+                        check_branches=check_branches,
                     )
                     cfg = asm.project_config
                     role_name = cfg.active_role or cfg.default_role
-                    bump_result = (
-                        compose_for_role(asm, role_name) if role_name else None
-                    )
+                    bump_result = compose_for_role(asm, role_name) if role_name else None
                     asm._refresh(install_time=True, result=bump_result)
                     asm._run_diagnostics()
                     # HATS-549 Phase 3: end-of-bump smoke-assert.
@@ -1817,7 +1805,8 @@ def update(
                     # which renders "Bump failed:" — composition diff
                     # below shows no changes.
                     assert_runtime_hooks_resolve(
-                        project_dir, backup_path=inproc_backup,
+                        project_dir,
+                        backup_path=inproc_backup,
                     )
                 if bump_result:
                     after_rules = {r.name for r in bump_result.rules}
