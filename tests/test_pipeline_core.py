@@ -231,3 +231,47 @@ def test_pipeline_is_a_step_instance() -> None:
     pipe = build(_FakeStep("a"))
     assert isinstance(pipe, Step)
     assert isinstance(pipe, Pipeline)
+
+
+# ---------- Homogenized Pipeline.run & Naming ----------
+
+
+def test_pipeline_run_direct_call_validates_and_executes() -> None:
+    a = _FakeStep("a", requires=frozenset({"req1"}), produces=frozenset({"out1"}), delta={"out1": "val1"})
+    pipe = build(a, name="my_pipe")
+    # Pre-flight check fails if required key missing
+    with pytest.raises(BuildError, match="req1"):
+        pipe.run()
+
+    # Direct call with kwargs works
+    res = pipe.run(req1="hello")
+    assert res["out1"] == "val1"
+
+
+def test_pipeline_run_accepts_initial_dict_and_kwargs() -> None:
+    a = _FakeStep("a", requires=frozenset({"k1", "k2"}), produces=frozenset({"out"}), delta={"out": "ok"})
+    pipe = build(a)
+    res = pipe.run(initial={"k1": "v1"}, k2="v2")
+    assert res["out"] == "ok"
+
+
+def test_pipeline_name_backwards_compatibility_property_and_alias() -> None:
+    pipe1 = Pipeline(steps=(), name="custom_name")
+    assert pipe1.name == "custom_name"
+    assert pipe1.pipeline_name == "custom_name"
+
+    # Legacy constructor keyword
+    pipe2 = Pipeline(steps=(), pipeline_name="legacy_name")  # type: ignore[call-arg]
+    assert pipe2.name == "legacy_name"
+    assert pipe2.pipeline_name == "legacy_name"
+
+
+def test_pipeline_run_supports_on_step_and_cancel_token() -> None:
+    events = []
+    a = _FakeStep("a", produces=frozenset({"x"}), delta={"x": 10})
+    pipe = build(a)
+    res = pipe.run(on_step=lambda e: events.append(e))
+    assert res["x"] == 10
+    assert len(events) == 1
+    assert events[0].step == "a"
+

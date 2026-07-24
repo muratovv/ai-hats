@@ -33,18 +33,17 @@ class StepError(RuntimeError):
 class Step(ABC):
     failure_policy: FailurePolicy = "halt"
 
-    # HATS-378: opt-in harness reliability policy attached by the YAML
-    # loader. Default None means no zero-output guard and no timeout
-    # retry — current behaviour. Steps that spawn sub-agents read this
-    # attribute and propagate it into their inner runner.
+    # Opt-in harness reliability policy attached by the YAML loader.
+    # Default None means no zero-output guard and no timeout retry — current
+    # behaviour. Steps that spawn sub-agents read this attribute and propagate
+    # it into their inner runner.
     harness_policy: HarnessPolicy | None = None
 
-    # HATS-584: optional per-step wall-clock timeout in seconds. ``None``
-    # (default) keeps current behaviour — no bound. When set, ``run`` bounds
-    # the step in a worker thread and raises ``PipelineCancelled`` on the
-    # deadline. This is the OUTER pipeline-level net; it is orthogonal to the
-    # harness-level subprocess timeout (HATS-378), which stays authoritative
-    # for sub-agent subprocesses.
+    # Optional per-step wall-clock timeout in seconds. ``None`` (default) keeps
+    # current behaviour — no bound. When set, ``run`` bounds the step in a
+    # worker thread and raises ``PipelineCancelled`` on the deadline. This is
+    # the OUTER pipeline-level net; it is orthogonal to the harness-level
+    # subprocess timeout, which stays authoritative for sub-agent subprocesses.
     timeout: float | None = None
 
     @property
@@ -56,7 +55,7 @@ class Step(ABC):
         """Returns a dict whose keys are a subset of ``self.io.produces``."""
 
     def on_cancel(self, **inputs: Any) -> dict[str, Any] | None:
-        """HATS-584: cleanup hook the runner invokes on timeout/cancel.
+        """Cleanup hook the runner invokes on timeout or external cancellation.
 
         Default is a no-op. A step that owns a cancellable resource (e.g. a
         live subprocess) overrides this to release it — typically a
