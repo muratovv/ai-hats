@@ -59,6 +59,9 @@ class Provider(Step):
             optional=frozenset({
                 "prompt_text", "model", "isolation", "ticket", "tags",
                 "extra_args",
+                # HATS-1192: an optional PtyTap factory seeded upstream (the
+                # pty_tee step, HATS-1197); forwarded to the HITL PTY seam.
+                "pty_tap_factory",
             }),
             produces=frozenset({
                 "session_id", "session_dir", "transcript_path", "exit_code",
@@ -79,6 +82,7 @@ class Provider(Step):
         ticket: str = "",
         tags: dict[str, str] | None = None,
         extra_args: list[str] | None = None,
+        pty_tap_factory: Any = None,
         **_: Any,
     ) -> dict[str, Any]:
         from ...harness.guard import apply_post_run_guard
@@ -95,7 +99,9 @@ class Provider(Step):
                 project_dir, composition,
                 session_mgr=session_mgr, tracer_factory=tracer_factory,
             )
-            exit_code, session = runner.run(extra_args=eff_extra, tags=tags)
+            exit_code, session = runner.run(
+                extra_args=eff_extra, tags=tags, pty_tap_factory=pty_tap_factory,
+            )
             # HATS-378: universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
             # the time WrapRunner returns, so the token/tool_calls
