@@ -414,7 +414,7 @@ def init(
             raise SystemExit(1)
 
     if use_wizard:
-        if channel is None:
+        if channel is None and provider is None:
             cur_ch = None
             if already:
                 try:
