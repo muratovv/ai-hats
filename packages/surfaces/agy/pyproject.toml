@@ -33,6 +33,9 @@ dependencies = [
 [project.entry-points."ai_hats.providers"]
 agy = "ai_hats_agy:AgyProvider"
 
+[project.scripts]
+ai-hats-hook-dispatcher = "ai_hats_agy.hook_dispatcher:main"
+
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"
 Repository = "https://github.com/muratovv/ai-hats"

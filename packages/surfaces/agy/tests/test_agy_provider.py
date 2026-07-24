@@ -1,10 +1,9 @@
-"""AgyProvider skills + prompt-channel tests (HATS-993)."""
+"""AgyProvider skills + prompt-channel tests (HATS-993, HATS-1166)."""
 
 from __future__ import annotations
 
 import json
-import os
-import sys
+
 from pathlib import Path
 
 import pytest
@@ -73,12 +72,7 @@ def test_system_prompt_omits_skills_index(agy_project) -> None:
 
     prompt = AgyProvider().build_system_prompt(result)
 
-    # HATS-993: skills reach agy via the native .agy/skills/ registry;
-    # the HATS-701 text-index is retired.
     assert "## AVAILABLE SKILLS" not in prompt
-
-
-
 
 
 def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
@@ -86,8 +80,6 @@ def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
 
     args, env, prompt = AgyProvider().build_session_prompt(project, result, "sid-4")
 
-    # HATS-993: GEMINI_CLI_PROJECT_RULES_PATH is dead in gemini-cli >=0.45;
-    # the session role rides a GEMINI.md inside an --add-dir dir for agy.
     assert args[0] == "--add-dir"
     session_md = Path(args[1]) / "GEMINI.md"
     assert session_md.read_text() == prompt
@@ -113,14 +105,13 @@ def test_get_env_carries_no_dead_rules_path(agy_project, tmp_path) -> None:
 
 
 def test_get_run_command_headless_skips_trust() -> None:
-    # Headless agy doesn't need --skip-trust.
     cmd = AgyProvider().get_run_command(["agy"], "do it")
 
     assert "-p" in cmd
     assert cmd[-1] == "do it"
 
 
-def test_execution_context_temporarily_hides_root_gemini_and_agents_md(tmp_path) -> None:
+def test_execution_context_is_clean_no_op_native_by_default(tmp_path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     gemini = project / "GEMINI.md"
@@ -130,17 +121,12 @@ def test_execution_context_temporarily_hides_root_gemini_and_agents_md(tmp_path)
 
     provider = AgyProvider()
     with provider.execution_context(project):
-        assert not gemini.exists()
-        assert not agents.exists()
-        assert any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
-        assert any(p.name.startswith(".AGENTS.md.ai_hats_bak_") for p in project.iterdir())
+        assert gemini.exists()
+        assert agents.exists()
+        assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
 
     assert gemini.is_file()
     assert agents.is_file()
-    assert gemini.read_text() == "root gemini rules"
-    assert agents.read_text() == "root agents rules"
-    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
-    assert not any(p.name.startswith(".AGENTS.md.ai_hats_bak_") for p in project.iterdir())
 
 
 def test_provider_name() -> None:
@@ -150,78 +136,6 @@ def test_provider_name() -> None:
 def test_system_prompt_path(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     assert AgyProvider().system_prompt_path(project) == gemini_md(project)
-
-
-def test_execution_context_cleans_up_recreated_target(tmp_path: Path) -> None:
-    project = tmp_path / "proj"
-    project.mkdir()
-    gemini = project / "GEMINI.md"
-    gemini.write_text("original")
-
-    provider = AgyProvider()
-    with provider.execution_context(project):
-        # Target gets re-created while context is active
-        gemini.write_text("recreated")
-
-    assert gemini.is_file()
-    assert gemini.read_text() == "original"
-
-
-def _dead_pid() -> int:
-    """A pid that is certainly not running: spawn a trivial child and reap it."""
-    import subprocess
-
-    proc = subprocess.Popen([sys.executable, "-c", ""])
-    proc.wait()
-    return proc.pid
-
-
-def test_execution_context_reclaims_a_backup_left_by_a_dead_session(tmp_path: Path) -> None:
-    """HATS-1135: an abnormal exit (SIGKILL, os.execv) skips the restoring `finally`,
-    leaving the original hidden. The next session must put it back."""
-    project = tmp_path / "proj"
-    project.mkdir()
-    orphan = project / f".GEMINI.md.ai_hats_bak_{_dead_pid()}"
-    orphan.write_text("abandoned by a killed run")
-
-    with AgyProvider().execution_context(project):
-        pass
-
-    gemini = project / "GEMINI.md"
-    assert gemini.is_file(), "orphan backup was not reclaimed"
-    assert gemini.read_text() == "abandoned by a killed run"
-    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
-
-
-def test_execution_context_leaves_a_live_sessions_backup_alone(tmp_path: Path) -> None:
-    """A concurrent session is mid-run — reclaiming its backup would eat its file."""
-    project = tmp_path / "proj"
-    project.mkdir()
-    live = project / f".GEMINI.md.ai_hats_bak_{os.getpid()}"
-    live.write_text("held by a running session")
-
-    with AgyProvider().execution_context(project):
-        pass
-
-    assert live.is_file(), "a live session's backup must not be touched"
-    assert live.read_text() == "held by a running session"
-    assert not (project / "GEMINI.md").exists()
-
-
-def test_execution_context_reclaims_backup_with_large_or_overflow_pid(tmp_path: Path) -> None:
-    """A backup file with a PID > INT_MAX (or causing OverflowError) must be treated as orphaned and reclaimed."""
-    project = tmp_path / "proj"
-    project.mkdir()
-    orphan = project / ".GEMINI.md.ai_hats_bak_4425096656"
-    orphan.write_text("abandoned with overflow pid")
-
-    with AgyProvider().execution_context(project):
-        pass
-
-    gemini = project / "GEMINI.md"
-    assert gemini.is_file(), "overflow pid backup was not reclaimed"
-    assert gemini.read_text() == "abandoned with overflow pid"
-    assert not any(p.name.startswith(".GEMINI.md.ai_hats_bak_") for p in project.iterdir())
 
 
 def test_rules_dir(tmp_path: Path) -> None:
@@ -263,27 +177,9 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path) -> None:
     wt_skill_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-wt" / "rules" / ".agents" / "skills" / "worktree-isolation"
     assert (wt_skill_dir / "SKILL.md").is_file()
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
-    assert (wt_skill_dir / "hooks" / "code_extensions.json").is_file()
 
 
-def test_ensure_runtime_hooks_writes_gemini_settings(tmp_path: Path) -> None:
-    repo_root = Path(__file__).parent.parent.parent.parent.parent
-    asm = Assembler(repo_root)
-    result = asm.composer.compose("maintainer")
-
-    project = tmp_path / "project"
-    project.mkdir()
-    provider = AgyProvider()
-    provider.ensure_runtime_hooks(project, result, session_id="test-session")
-
-    settings_file = project / ".gemini" / "settings.json"
-    assert settings_file.is_file(), ".gemini/settings.json must be created by ensure_runtime_hooks"
-    data = json.loads(settings_file.read_text())
-    pre_tool_hooks = data.get("hooks", {}).get("PreToolUse", [])
-    assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
-
-
-def test_build_session_prompt_materializes_runtime_hooks_and_settings(tmp_path: Path) -> None:
+def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(tmp_path: Path) -> None:
     repo_root = Path(__file__).parent.parent.parent.parent.parent
     asm = Assembler(repo_root)
     result = asm.composer.compose("maintainer")
@@ -294,11 +190,16 @@ def test_build_session_prompt_materializes_runtime_hooks_and_settings(tmp_path: 
 
     provider.build_session_prompt(project, result, "sid-sp-settings")
 
-    settings_file = project / ".gemini" / "settings.json"
-    assert settings_file.is_file(), ".gemini/settings.json must be created during build_session_prompt"
-    data = json.loads(settings_file.read_text())
-    pre_tool_hooks = data.get("hooks", {}).get("PreToolUse", [])
-    assert any("wt_gate.py" in str(h) for h in pre_tool_hooks)
+    # Clean-Root Invariant: project root .gemini/settings.json must NOT be written
+    root_settings = project / ".gemini" / "settings.json"
+    assert not root_settings.exists(), "Clean-Root Invariant: .gemini/settings.json must not be created in project root"
+
+    # Session hooks manifest must be in session cache
+    cache_hooks = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-sp-settings" / "hooks.json"
+    assert cache_hooks.is_file()
+    data = json.loads(cache_hooks.read_text())
+    pre_tool_hooks = data.get("PreToolUse", [])
+    assert any("wt_gate.py" in str(h.get("command")) for h in pre_tool_hooks)
 
 
 def test_agy_provider_detected_home_dirs() -> None:

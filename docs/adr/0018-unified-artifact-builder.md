@@ -101,8 +101,18 @@ Claude is established as the primary reference surface:
 
 Verification in S4 confirmed tool-hook behavior in headless environments. Where underlying CLI execution skips tool-hook invocation in headless `-p` mode, `SurfaceGuard` (HATS-1105) serves as the harness-level enforcement boundary.
 
+### 5. AGY Surface Architecture & Global Hook Dispatcher (HATS-1190)
+
+Spike HATS-1190 established that the third-party binary `agy` (v1.1.6) hardcodes relative `.gemini` directory resolution within the active workspace root (`google3/third_party/jetski/fs/local/local.GeminiDir`), and exposes no `--settings` or `--config` CLI flags for settings path relocation. Overriding `$HOME` invalidates user OAuth credentials (`~/.gemini/antigravity-cli/mcp_oauth_tokens.json`).
+
+To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemini/settings.json`, AGY adopts the **Global Hook Dispatcher** pattern:
+1. **Global Hook Registration**: `ai-hats self init` registers a single, static dispatcher script (`ai-hats-hook-dispatcher`) in global `~/.gemini/antigravity-cli/settings.json`.
+2. **Session-Scoped Routing**: `ai-hats-hook-dispatcher` inspects `AI_HATS_SESSION_ID`. If absent (standalone `agy` run by user), it immediately exits 0 (no-op). If present (`ai-hats` runner), it loads session hooks from `<cache>/sessions/<sid>/hooks.json`.
+3. **Context Delivery**: Rules and prompt context are delivered cleanly via `--add-dir <cache>/rules` without polluting the project root.
+
 ## Consequences
 
 - **Pristine Project Trees**: Running ai-hats sessions leaves zero residual framework files in `git status`.
 - **Architectural Uniformity**: Both HITL interactive sessions and Automate SDK sub-agents rely on identical artifact assembly logic.
 - **Foundation for Multi-Surface Expansion**: Unblocks remaining surfaces (Agy in HATS-1166, Cline in HATS-1171) and schema filtering (HATS-1167).
+
