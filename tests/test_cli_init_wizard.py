@@ -170,8 +170,8 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
     upd.assert_not_called()
 
 
-def test_init_wizard_with_provider_flag_prompts_harness(fresh_project, monkeypatch):
-    """TTY + only -p (no -r, no channel) → harness prompt runs, wizard launches."""
+def test_init_wizard_with_provider_flag_skips_cli_prompts(fresh_project, monkeypatch):
+    """TTY + only -p (no -r) → skips CLI prompts, but wizard still launches."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with (
@@ -179,10 +179,10 @@ def test_init_wizard_with_provider_flag_prompts_harness(fresh_project, monkeypat
         patch("ai_hats.cli.assembly._run_self_update"),
     ):
         result = runner.invoke(
-            main, ["self", "init", "-p", "agy", "--no-update"], input="1\n",
+            main, ["self", "init", "-p", "agy", "--no-update"],
         )
     assert result.exit_code == 0, result.output
-    assert "Choose harness channel" in result.output
+    assert "Choose harness channel" not in result.output
     assert "Choose provider" not in result.output
     launch.assert_called_once()
 
