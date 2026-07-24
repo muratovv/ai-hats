@@ -1,8 +1,11 @@
-"""Contract tests for ``ClineProvider`` (HATS-956, HATS-963).
+"""Contract tests for ``ClineProvider`` (HATS-956, HATS-963, HATS-1171).
 
 Pure-method assertions (no real cline, no auth): the CLI-shape, env, inline
-`-s` role delivery, and `.cline/skills/` materialization the ai-hats runners
-depend on.
+`-s` role delivery, and the per-session-cache skill materialization the ai-hats
+runners depend on. HATS-1171: cline runs through the unified artifact-builder
+(ADR-0018) on the clean-root invariant — skills land in
+``<ai_hats_dir>/.cache/sessions/<sid>/skills`` (delivered via ``--config``),
+never in the project root; the dead TS hook plugin is gone.
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from ai_hats.paths import session_cache_dir
+from ai_hats.session_artifacts import RunMode, SessionPolicy
 from ai_hats_cline import ClineProvider
 
 
@@ -73,23 +78,28 @@ def test_get_run_command_drops_stale_interactive_base() -> None:
 
 
 def test_get_run_command_preserves_passthrough_args() -> None:
-    # Non-interactive passthrough (e.g. future skill args) survives the rebuild.
-    cmd = ClineProvider().get_run_command(["cline", "--plugin-dir", "/x"], "task")
-    assert cmd == ["cline", "--plugin-dir", "/x", "--yolo", "--json", "task"]
+    # Non-interactive passthrough (e.g. the automate --config) survives the rebuild.
+    cmd = ClineProvider().get_run_command(["cline", "--config", "/x"], "task")
+    assert cmd == ["cline", "--config", "/x", "--yolo", "--json", "task"]
 
 
-def test_get_env_does_not_isolate_data_dir(tmp_path) -> None:
-    # R10: isolating CLINE_DATA_DIR would cut off the machine's cline auth.
-    # R7 (HATS-964): AI_HATS_DIR is needed so the TS plugin can find guard scripts.
+# ---- get_env (HATS-1171) ---------------------------------------------------
+
+
+def test_get_env_pins_cline_data_dir(tmp_path, monkeypatch) -> None:
+    # HATS-1171: --config relocates cline's base dir → data (auth/sessions/db)
+    # must be pinned back to the real cline home, else auth is lost.
+    monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     env = ClineProvider().get_env(tmp_path / "session", tmp_path)
-    assert "CLINE_DATA_DIR" not in env
+    assert env["CLINE_DATA_DIR"] == str(tmp_path / "home" / ".cline" / "data")
+    # R7 (HATS-964): AI_HATS_DIR is needed by runtime hooks / skills.
     assert env["AI_HATS_DIR"]
     assert env["AI_HATS_PROJECT_DIR"] == str(tmp_path)
     # HATS-973: per-session hub port to avoid EADDRINUSE on parallel sessions.
     assert env["CLINE_HUB_PORT"]
-    # HATS-964: point cline at the materialized plugins directory so the
-    # shared-state guard loads (auto-discovery of .cline/plugins/ is unreliable).
-    assert env["CLINE_HOOKS_DIR"] == str(ClineProvider._plugins_dir(tmp_path))
+    # HATS-1171: the dead TS plugin is dropped — no root plugins dir to point at.
+    assert "CLINE_HOOKS_DIR" not in env
 
 
 def test_get_env_sets_cline_hub_port(tmp_path) -> None:
@@ -120,6 +130,17 @@ def test_build_system_prompt_composes_sections() -> None:
     assert "## ROLE" in out
 
 
+def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
+    # HATS-963: skills delivered via the native <cache>/skills registry. The
+    # text index is suppressed — Claude precedent (include_skills=False).
+    skill_path = _make_skill(tmp_path, "my-skill")
+    out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
+    assert "## AVAILABLE SKILLS" not in out
+
+
+# ---- HITL build_session_prompt through the builder (HATS-1171) --------------
+
+
 def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     args, env, meta_prompt = ClineProvider().build_session_prompt(
         tmp_path, _fake_result(), "sid-1"
@@ -131,253 +152,108 @@ def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     assert args[2] == meta_prompt
     assert "## PRIORITIES" in meta_prompt
     assert env == {}
-    # HATS-964 + HATS-981: --hooks-dir points at session-scoped plugins dir
-    assert "--hooks-dir" in args
-    idx = args.index("--hooks-dir")
-    hooks_path = args[idx + 1]
-    assert "sid-1" in hooks_path
+    # HATS-1171: skills reach cline via --config <cache> (not a root .cline dir)
+    assert "--config" in args
+    cache_arg = args[args.index("--config") + 1]
+    assert cache_arg == str(session_cache_dir(tmp_path, "sid-1"))
+    # the dead plugin is gone — no --hooks-dir
+    assert "--hooks-dir" not in args
 
 
-# ---- HATS-963: .cline/skills/ materialization ----
+def test_build_session_prompt_config_is_session_scoped(tmp_path) -> None:
+    args_a, _, _ = ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-a")
+    args_b, _, _ = ClineProvider().build_session_prompt(tmp_path, _fake_result(), "sid-b")
+    cfg_a = args_a[args_a.index("--config") + 1]
+    cfg_b = args_b[args_b.index("--config") + 1]
+    assert cfg_a != cfg_b
+    assert "sid-a" in cfg_a and "sid-b" in cfg_b
 
 
-def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
-    # HATS-963: skills delivered via .cline/skills/ native registry (confirmed
-    # by live smoke). The text index is suppressed — Claude precedent
-    # (providers.py:420-424, include_skills=False).
-    skill_path = _make_skill(tmp_path, "my-skill")
-    out = ClineProvider().build_system_prompt(_fake_result(skills=[skill_path]))
-    assert "## AVAILABLE SKILLS" not in out
+def test_build_session_prompt_materializes_skills_to_cache(tmp_path) -> None:
+    skill = _make_skill(tmp_path, "deploy-skill")
+    ClineProvider().build_session_prompt(tmp_path, _fake_result(skills=[skill]), "sid-1")
+    cache_skills = session_cache_dir(tmp_path, "sid-1") / "skills"
+    assert (cache_skills / "deploy-skill" / "SKILL.md").exists()
 
 
-def test_materialize_writes_skills_to_cline_dir(tmp_path) -> None:
+def test_build_session_prompt_leaves_project_root_clean(tmp_path) -> None:
+    # HATS-1171 clean-root: no .cline/ and no .gitignore mutation in the root.
+    skill = _make_skill(tmp_path, "my-skill")
+    ClineProvider().build_session_prompt(tmp_path, _fake_result(skills=[skill]), "sid-1")
+    assert not (tmp_path / ".cline").exists()
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
+    # Only-seam filtering (supervisor): policy.context=False → no -s role delivery.
+    provider = ClineProvider()
+    artifacts = provider.build_session_artifacts(
+        tmp_path, _fake_result(), "sid-1",
+        run_mode=RunMode.HITL, policy=SessionPolicy(context=False),
+    )
+    assert "-s" not in artifacts.cli_args
+    # skills category is unaffected by policy
+    assert "--config" in artifacts.cli_args
+
+
+def test_hooks_and_settings_categories_are_noop(tmp_path) -> None:
+    # HATS-1171: plugin dropped → HOOKS/SETTINGS write nothing, add no args.
+    artifacts = ClineProvider().build_session_artifacts(
+        tmp_path, _fake_result(), "sid-1", run_mode=RunMode.HITL
+    )
+    assert "--settings" not in artifacts.cli_args
+    assert "--hooks-dir" not in artifacts.cli_args
+    assert not (tmp_path / ".cline").exists()
+
+
+# ---- Automate materialize_runtime_skills through the builder (HATS-1171) -----
+
+
+def test_materialize_returns_config_flag_and_writes_cache(tmp_path) -> None:
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
-    ClineProvider().materialize_runtime_skills(
+    args = ClineProvider().materialize_runtime_skills(
         tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
     )
-    skills_dir = tmp_path / ".cline" / "skills"
-    assert (skills_dir / "skill-a" / "SKILL.md").exists()
-    assert (skills_dir / "skill-b" / "SKILL.md").exists()
+    cache_dir = session_cache_dir(tmp_path, "sid-1")
+    # Automate threads --config <cache> (no -s: role rides the meta_prompt).
+    assert args == ["--config", str(cache_dir)]
+    assert (cache_dir / "skills" / "skill-a" / "SKILL.md").exists()
+    assert (cache_dir / "skills" / "skill-b" / "SKILL.md").exists()
+    # clean root
+    assert not (tmp_path / ".cline").exists()
 
 
 def test_materialize_is_idempotent(tmp_path) -> None:
     skill = _make_skill(tmp_path, "my-skill")
     result = _fake_result(skills=[skill])
-    ClineProvider().materialize_runtime_skills(tmp_path, result, "sid-1")
-    first = sorted(p.name for p in (tmp_path / ".cline" / "skills").iterdir())
-    ClineProvider().materialize_runtime_skills(tmp_path, result, "sid-2")
-    second = sorted(p.name for p in (tmp_path / ".cline" / "skills").iterdir())
-    assert first == second
+    provider = ClineProvider()
+    provider.materialize_runtime_skills(tmp_path, result, "sid-1")
+    cache_skills = session_cache_dir(tmp_path, "sid-1") / "skills"
+    first = sorted(p.name for p in cache_skills.iterdir())
+    provider.materialize_runtime_skills(tmp_path, result, "sid-1")
+    second = sorted(p.name for p in cache_skills.iterdir())
+    assert first == second == ["my-skill"]
 
 
-def test_materialize_preserves_user_skills(tmp_path) -> None:
-    user_skill = tmp_path / ".cline" / "skills" / "user-skill"
-    user_skill.mkdir(parents=True)
-    (user_skill / "SKILL.md").write_text("---\nname: user-skill\n---\nmine\n")
-    ai_skill = _make_skill(tmp_path, "ai-skill")
-    ClineProvider().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[ai_skill]), "sid-1"
-    )
-    assert (user_skill / "SKILL.md").read_text() == "---\nname: user-skill\n---\nmine\n"
-    assert (tmp_path / ".cline" / "skills" / "ai-skill" / "SKILL.md").exists()
-
-
-def test_materialize_same_session_sweeps_stale(tmp_path) -> None:
-    # HATS-981: a single session changing its skills sweeps stale ones.
+def test_materialize_sessions_are_isolated(tmp_path) -> None:
+    # HATS-1171: each session owns its own cache skills dir — no cross-session
+    # sharing, so no refcount/lock dance is needed.
     skill_a = _make_skill(tmp_path, "skill-a")
     skill_b = _make_skill(tmp_path, "skill-b")
     provider = ClineProvider()
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
-    )
-    # SAME session_id — role dropped skill-b.
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a]), "sid-1"
-    )
-    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
-    assert not (tmp_path / ".cline" / "skills" / "skill-b").exists()
+    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill_a]), "sid-1")
+    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill_b]), "sid-2")
+    assert (session_cache_dir(tmp_path, "sid-1") / "skills" / "skill-a").exists()
+    assert not (session_cache_dir(tmp_path, "sid-1") / "skills" / "skill-b").exists()
+    assert (session_cache_dir(tmp_path, "sid-2") / "skills" / "skill-b").exists()
 
 
-def test_materialize_different_sessions_preserve_each_other(tmp_path) -> None:
-    # HATS-981 R2: different sessions must NOT wipe each other's skills.
-    skill_a = _make_skill(tmp_path, "skill-a")
-    skill_b = _make_skill(tmp_path, "skill-b")
-    provider = ClineProvider()
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
-    )
-    # DIFFERENT session_id — sid-2 doesn't want skill-b, but sid-1 still does.
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a]), "sid-2"
-    )
-    assert (tmp_path / ".cline" / "skills" / "skill-a").exists()
-    assert (tmp_path / ".cline" / "skills" / "skill-b").exists()
+# ---- guard script sanity (SurfaceGuard's bash guard, HATS-1105) -------------
 
 
-def test_materialize_parallel_threads_both_skills_present(tmp_path) -> None:
-    # HATS-981 R2 key test: two threads, different roles, both skills survive.
-    import threading
-
-    skill_a = _make_skill(tmp_path, "skill-a")
-    skill_b = _make_skill(tmp_path, "skill-b")
-    provider = ClineProvider()
-    errors: list[Exception] = []
-
-    def _materialize(skills, sid):
-        try:
-            provider.materialize_runtime_skills(
-                tmp_path, _fake_result(skills=skills), sid
-            )
-        except Exception as exc:
-            errors.append(exc)
-
-    t1 = threading.Thread(target=_materialize, args=([skill_a], "sid-1"))
-    t2 = threading.Thread(target=_materialize, args=([skill_b], "sid-2"))
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
-
-    assert not errors, errors
-    skills_dir = tmp_path / ".cline" / "skills"
-    assert (skills_dir / "skill-a" / "SKILL.md").exists()
-    assert (skills_dir / "skill-b" / "SKILL.md").exists()
-
-
-def test_materialize_marker_is_session_refcounted(tmp_path) -> None:
-    import json
-
-    skill_a = _make_skill(tmp_path, "skill-a")
-    skill_b = _make_skill(tmp_path, "skill-b")
-    provider = ClineProvider()
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a, skill_b]), "sid-1"
-    )
-    provider.materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill_a]), "sid-2"
-    )
-    marker = json.loads(
-        (tmp_path / ".cline" / "skills" / ".ai-hats-managed").read_text()
-    )
-    assert marker["sid-1"] == ["skill-a", "skill-b"]
-    assert marker["sid-2"] == ["skill-a"]
-
-
-def test_materialize_returns_no_cli_args(tmp_path) -> None:
-    skill = _make_skill(tmp_path, "my-skill")
-    args = ClineProvider().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill]), "sid-1"
-    )
-    assert args == []
-
-
-def test_build_session_prompt_materializes_skills(tmp_path) -> None:
-    skill = _make_skill(tmp_path, "deploy-skill")
-    ClineProvider().build_session_prompt(
-        tmp_path, _fake_result(skills=[skill]), "sid-1"
-    )
-    assert (tmp_path / ".cline" / "skills" / "deploy-skill" / "SKILL.md").exists()
-
-
-def test_materialize_gitignores_cline_skills(tmp_path) -> None:
-    # R4c: the materialized mirror must not surface as untracked.
-    skill = _make_skill(tmp_path, "my-skill")
-    ClineProvider().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill]), "sid-1"
-    )
-    gitignore = (tmp_path / ".gitignore").read_text()
-    assert ".cline/skills/" in gitignore
-
-
-def test_materialize_gitignore_is_idempotent(tmp_path) -> None:
-    # Re-materialization must not duplicate the .gitignore entry.
-    skill = _make_skill(tmp_path, "my-skill")
-    provider = ClineProvider()
-    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "s1")
-    provider.materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "s2")
-    gitignore = (tmp_path / ".gitignore").read_text()
-    assert gitignore.count(".cline/skills/") == 1
-
-
-# ---- HATS-964: .cline/plugins/ hooks materialization ----
-
-
-def test_ensure_runtime_hooks_writes_plugin(tmp_path) -> None:
-    ClineProvider().ensure_runtime_hooks(tmp_path)
-    plugin = tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts"
-    assert plugin.exists()
-    # the plugin must export a default AgentPlugin with hooks
-    ts = plugin.read_text()
-    assert "export default plugin" in ts
-    assert "beforeTool" in ts
-
-
-def test_ensure_runtime_hooks_writes_index(tmp_path) -> None:
-    import json
-
-    ClineProvider().ensure_runtime_hooks(tmp_path)
-    index = json.loads(
-        (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.json").read_text()
-    )
-    # guard entry is unconditional
-    assert len(index) >= 1
-    guard = index[0]
-    assert guard["event"] == "PreToolUse"
-    assert guard["cline_tool"] == "bash"
-    assert guard["script"] == "pre_bash_shared_state_guard.sh"
-
-
-def test_ensure_runtime_hooks_gitignores_plugins(tmp_path) -> None:
-    ClineProvider().ensure_runtime_hooks(tmp_path)
-    gitignore = (tmp_path / ".gitignore").read_text()
-    assert ".cline/plugins/" in gitignore
-
-
-def test_ensure_runtime_hooks_is_idempotent(tmp_path) -> None:
-    provider = ClineProvider()
-    provider.ensure_runtime_hooks(tmp_path)
-    first = (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").read_text()
-    provider.ensure_runtime_hooks(tmp_path)
-    second = (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").read_text()
-    assert first == second
-    # no duplicate gitignore entries
-    gitignore = (tmp_path / ".gitignore").read_text()
-    assert gitignore.count(".cline/plugins/") == 1
-
-
-def test_build_session_prompt_materializes_hooks(tmp_path) -> None:
-    args, _, _ = ClineProvider().build_session_prompt(
-        tmp_path, _fake_result(), "sid-1"
-    )
-    # project-scoped pre-warm (ensure_runtime_hooks)
-    assert (tmp_path / ".cline" / "plugins" / "ai-hats-hooks.ts").exists()
-    # session-scoped copy (--hooks-dir target)
-    assert "--hooks-dir" in args
-    hooks_idx = args.index("--hooks-dir")
-    session_plugins = Path(args[hooks_idx + 1])
-    assert (session_plugins / "ai-hats-hooks.ts").exists()
-    assert (session_plugins / "ai-hats-hooks.json").exists()
-    assert "sid-1" in str(session_plugins)
-
-
-def test_build_session_prompt_hooks_dir_is_session_scoped(tmp_path) -> None:
-    # HATS-981 R1: different session_ids → different --hooks-dir paths.
-    args_a, _, _ = ClineProvider().build_session_prompt(
-        tmp_path, _fake_result(), "sid-a"
-    )
-    args_b, _, _ = ClineProvider().build_session_prompt(
-        tmp_path, _fake_result(), "sid-b"
-    )
-    hooks_a = args_a[args_a.index("--hooks-dir") + 1]
-    hooks_b = args_b[args_b.index("--hooks-dir") + 1]
-    assert hooks_a != hooks_b
-    assert "sid-a" in hooks_a
-    assert "sid-b" in hooks_b
-
-
-def test_guard_bridge_blocks_irreversible(tmp_path) -> None:
-    """R1: stdin the plugin produces → real guard → blocks force-push (exit 2)."""
+def test_guard_script_blocks_irreversible() -> None:
+    """The shared-state guard script blocks force-push (exit 2)."""
     import json
     import subprocess
 
@@ -393,8 +269,8 @@ def test_guard_bridge_blocks_irreversible(tmp_path) -> None:
     assert "BLOCKED" in res.stderr
 
 
-def test_guard_bridge_allows_safe(tmp_path) -> None:
-    """R1: safe commands pass through the guard (exit 0)."""
+def test_guard_script_allows_safe() -> None:
+    """Safe commands pass through the guard (exit 0)."""
     import json
     import subprocess
 
@@ -414,49 +290,44 @@ def test_guard_bridge_allows_safe(tmp_path) -> None:
 
 def test_resolve_transcript_returns_none_when_dir_absent(tmp_path, monkeypatch) -> None:
     """No ~/.cline/data/sessions/ → None (cline not installed / never run)."""
+    monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     provider = ClineProvider()
     assert provider.resolve_transcript(tmp_path, "20260720-120000-1") is None
 
 
-def test_resolve_transcript_finds_recent_messages_json(
-    tmp_path, monkeypatch,
-) -> None:
+def test_resolve_transcript_finds_recent_messages_json(tmp_path, monkeypatch) -> None:
     """mtime-window: a .messages.json with mtime >= session start is found."""
     import os
 
+    monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     home = tmp_path / "home"
     sessions_dir = home / ".cline" / "data" / "sessions"
     sid_dir = sessions_dir / "abc123"
     sid_dir.mkdir(parents=True)
     msg = sid_dir / "abc123.messages.json"
     msg.write_text('{"messages": []}')
-    # mtime = 2023-11-14 (epoch ~1700000000), well after session start 2026 is
-    # impossible; set it to a FIXED future-safe value newer than 2026-07-20.
     future_ns = 1_900_000_000 * 1_000_000_000  # ~2030
     os.utime(msg, ns=(future_ns, future_ns))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
     provider = ClineProvider()
-    # session_id[:15] = "20260720-120000" → start 2026-07-20T12:00:00Z
     found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
     assert found == msg
 
 
-def test_resolve_transcript_skips_older_messages_json(
-    tmp_path, monkeypatch,
-) -> None:
+def test_resolve_transcript_skips_older_messages_json(tmp_path, monkeypatch) -> None:
     """A .messages.json with mtime BEFORE session start is not picked."""
     import os
 
+    monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     home = tmp_path / "home"
     sessions_dir = home / ".cline" / "data" / "sessions"
     sid_dir = sessions_dir / "old"
     sid_dir.mkdir(parents=True)
     msg = sid_dir / "old.messages.json"
     msg.write_text('{"messages": []}')
-    # mtime = 2020-01-01 (well before any ai-hats session_id)
-    old_ns = 1_577_836_800 * 1_000_000_000
+    old_ns = 1_577_836_800 * 1_000_000_000  # 2020-01-01
     os.utime(msg, ns=(old_ns, old_ns))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 

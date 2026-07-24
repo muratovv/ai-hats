@@ -72,8 +72,14 @@ def test_role_propagation_and_hook_materialization_parity(
         skill_mat = skills_root / "my-skill" / "SKILL.md"
         hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
     elif provider.name == "cline":
-        skill_mat = project / ".cline" / "skills" / "my-skill" / "SKILL.md"
-        hook_mat = project / ".cline" / "skills" / "my-skill" / "hooks" / "pre_tool.sh"
+        # HATS-1171: cline skills materialize into the per-session cache, not the
+        # project root (clean-root invariant); delivered to cline via --config.
+        from ai_hats.paths import session_cache_dir
+
+        skills_root = session_cache_dir(project, sid) / "skills"
+        skill_mat = skills_root / "my-skill" / "SKILL.md"
+        hook_mat = skills_root / "my-skill" / "hooks" / "pre_tool.sh"
+        assert not (project / ".cline").exists()  # clean root
 
     assert skill_mat.is_file(), f"Skill not materialized for provider {provider.name}"
     assert hook_mat.is_file(), f"Hook script not materialized for provider {provider.name}"

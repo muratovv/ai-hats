@@ -31,11 +31,12 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
     `CLINE.md` — `update_system_prompt` is a no-op);
   - HITL launches the interactive TUI (`cline -i`); the automate path runs
     headless (`cline --yolo --json "<prompt>"`);
-  - `--worktree` is never passed (ai-hats-wt owns isolation), and
-    `CLINE_DATA_DIR` is left ambient so cline keeps the machine's auth;
-  - the role's skills are materialized into `.cline/skills/` (cline's native
-    discovery path) so `/skills` shows them and `/skill-name` loads bodies
-    (HATS-963). User-authored skills in `.cline/skills/` are preserved.
+  - `--worktree` is never passed (ai-hats-wt owns isolation);
+  - the role's skills are materialized into the **per-session cache**
+    (`<ai_hats_dir>/.cache/sessions/<sid>/skills`) and delivered to cline via
+    `--config <cache>` (cline scans `<base>/skills`) — nothing lands in the
+    project root (clean-root invariant, HATS-1171). `CLINE_DATA_DIR` is pinned
+    to the real cline home so `--config` keeps the machine's auth.
 - **`ClineParser` + `resolve_transcript`** — cline's
   `~/.cline/data/sessions/<id>/<id>.messages.json` is discovered by the
   provider and parsed into a real `audit.md` (👤/👾 turn markers) and
@@ -50,4 +51,7 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
 
 ## Not yet here
 
-- `--hooks-dir` runtime-hook wiring, cline `teams`/`spawn`, and PyPI publish.
+- Runtime bash-tool hooks: cline's TS plugin sandbox needs `jiti` (unbundled),
+  so ai-hats ships no plugin — guarding falls to `SurfaceGuard`. A native
+  `hooks.json` guard (no jiti) is tracked in HATS-1083.
+- cline `teams`/`spawn`, and PyPI publish.
