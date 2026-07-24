@@ -144,10 +144,16 @@ class TestWtBytesDrift:
         assert assembler.hooks._wt_hooks_changes(_result([])) == []
 
 
-# ----- runtime-hook WIRING drift (.claude/settings.json) -----
+# ----- runtime-hook WIRING drift (retired with root .claude/settings.json) -----
 
 
-class TestRuntimeWiringDrift:
+class TestRuntimeWiringRetired:
+    """HATS-1170 moved managed hooks to ``<cache>/settings.json`` (ADR-0018), so
+    root wiring is neither written nor tracked and there is nothing to drift
+    from. Entry *content* is covered in ``tests/test_provider_pretool_hook.py``
+    against the cache file; these pin the root staying out of it (HATS-1201).
+    """
+
     def _claude_project(self, tmp_path: Path) -> Assembler:
         project = tmp_path / "proj"
         project.mkdir()
@@ -155,48 +161,32 @@ class TestRuntimeWiringDrift:
         ProjectConfig(provider="claude").save(project / PROJECT_CONFIG)
         return Assembler(project_dir=project)
 
-    def test_in_sync_after_ensure(self, tmp_path):
+    def test_ensure_writes_no_root_settings(self, tmp_path):
         asm = self._claude_project(tmp_path)
         s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
         prov = ClaudeProvider()
+
         prov.ensure_runtime_hooks(asm.project_dir, res)
+
+        assert not (asm.project_dir / ".claude" / "settings.json").exists()
         assert prov.runtime_wiring_changes(asm.project_dir, res) == []
 
-    def test_unwired_managed_entry_reported(self, tmp_path):
+    def test_user_owned_root_settings_are_not_tracked(self, tmp_path):
+        """A user's own root settings.json is untouched and never reported as
+        drift — ai-hats has no claim on the file any more."""
         asm = self._claude_project(tmp_path)
         s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
         res = _result([s])
+        sp = asm.project_dir / ".claude" / "settings.json"
+        sp.parent.mkdir(parents=True)
+        user_settings = json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}})
+        sp.write_text(user_settings)
+
         prov = ClaudeProvider()
         prov.ensure_runtime_hooks(asm.project_dir, res)
-        # Strip the skill's managed PostToolUse entry → wiring drift.
-        sp = asm.project_dir / ".claude" / "settings.json"
-        data = json.loads(sp.read_text())
-        data["hooks"][HOOK_POST_TOOL_USE] = []
-        sp.write_text(json.dumps(data))
-        names = [n for n, kind in prov.runtime_wiring_changes(asm.project_dir, res)]
-        assert any("mf" in n for n in names)
 
-    def test_user_entry_wiring_same_script_is_not_drift(self, tmp_path):
-        """Review pt-1: a user-authored entry already wiring the same script
-        basename suppresses the managed entry — the detector must inherit that
-        and NOT report perpetual drift."""
-        asm = self._claude_project(tmp_path)
-        s = _skill_runtime(tmp_path / "sk", "mf", HOOK_POST_TOOL_USE, "Write", "h/f.sh")
-        res = _result([s])
-        prov = ClaudeProvider()
-        prov.ensure_runtime_hooks(asm.project_dir, res)  # writes guard + skill entry
-        sp = asm.project_dir / ".claude" / "settings.json"
-        data = json.loads(sp.read_text())
-        # Replace the skill's MANAGED PostToolUse entry with a USER entry wiring
-        # the same script basename (no _ai_hats_managed tag).
-        basename = managed_runtime_hook_filename("mf", "h/f.sh")
-        data["hooks"][HOOK_POST_TOOL_USE] = [
-            {"matcher": "Write", "hooks": [{"type": "command", "command": f"./{basename}"}]}
-        ]
-        sp.write_text(json.dumps(data))
-        # Guard (PreToolUse) is untouched → only the skill hook is at stake, and
-        # the user covers it → NO wiring drift at all.
+        assert sp.read_text() == user_settings
         assert prov.runtime_wiring_changes(asm.project_dir, res) == []
 
 
