@@ -112,6 +112,7 @@ def build_options(
     model: str = "",
     mcp_config: str | Path | None = None,
     settings: str | None = None,
+    setting_sources: list[str] | None = None,
     extra_env: dict[str, str] | None = None,
     max_budget_usd: float | None = None,
     max_turns: int | None = None,
@@ -177,6 +178,8 @@ def build_options(
         )
     if settings is not None:
         kwargs["settings"] = settings
+    if setting_sources is not None:
+        kwargs["setting_sources"] = setting_sources
     env_dict = dict(extra_env) if extra_env else {}
     from ai_hats.paths import session_cache_dir
 

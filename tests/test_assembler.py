@@ -151,11 +151,8 @@ def test_set_role_with_claude(project_with_library):
     asm.init()
 
     asm.set_role("test-role", provider_name="claude")
-    # HATS-294: ./CLAUDE.md is a thin scaffold importing only user-rules via
-    # imports.md. Role injection is composed per-session by the provider, not
-    # materialized to disk.
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    # HATS-1170: Root CLAUDE.md scaffold is no longer written (native-by-default clean-root invariant).
+    assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
@@ -494,11 +491,9 @@ def test_set_role_then_switch_provider(project_with_library):
     assert (project / "GEMINI.md").exists()
     assert "Role injection" in (project / "GEMINI.md").read_text()
 
-    # Now switch to claude — scaffold + .claude/CLAUDE.md aggregator carry
-    # the role content (HATS-284/285).
+    # Now switch to claude — clean-root invariant (HATS-1170)
     asm.set_role("test-role", provider_name="claude")
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # Profile must track the new provider
@@ -510,11 +505,7 @@ def test_set_role_then_switch_provider(project_with_library):
 
 
 def test_wrap_reassembles_on_provider_mismatch(project_with_library):
-    """WrapRunner must auto-reassemble when provider differs from profile.
-
-    Scenario: role set with agy, then `ai-hats wrap claude` — should
-    automatically rebuild CLAUDE.md before launching.
-    """
+    """WrapRunner must auto-reassemble when provider differs from profile."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -530,10 +521,7 @@ def test_wrap_reassembles_on_provider_mismatch(project_with_library):
     if profile.active_role and profile.provider != target_provider:
         asm.set_role(profile.active_role, provider_name=target_provider)
 
-    # CLAUDE.md is the scaffold; role content is in .agent/ai-hats/role.md
-    # and surfaced via the .claude/CLAUDE.md aggregator (HATS-284/285).
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
     # Profile updated
@@ -566,8 +554,7 @@ def test_wrap_uses_default_role_when_no_active_role(project_with_library):
 
     # Apply it (as WrapRunner would)
     asm.set_role(effective_role, provider_name="claude")
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert not (project / "CLAUDE.md").exists()
     assert "Role injection" in asm.composer.compose("test-role").role_injection
 
 
@@ -603,12 +590,8 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     asm = Assembler(project, library_paths=[lib])
     asm.init()
 
-    # Set base role so CLAUDE.md exists with project content
+    # Set base role
     asm.set_role("test-role", provider_name="claude")
-    # Add project-local content after markers
-    claude_md = project / "CLAUDE.md"
-    existing = claude_md.read_text()
-    claude_md.write_text(existing + "\n# My Project Rules\nDo stuff.\n")
 
     # Build override for other-role
     provider = ClaudeProvider()
@@ -626,8 +609,6 @@ def test_claude_build_session_prompt_creates_temp_file(project_with_library):
     content = override_path.read_text()
     # Override prompt is injected
     assert "Other role injection" in content
-    # Project-local content is preserved
-    assert "My Project Rules" in content
     # Original role injection is NOT present
     assert "Role injection." not in content
 
@@ -665,7 +646,7 @@ def test_claude_build_session_prompt_materializes_role_skills_in_plugin_dir(proj
 
 
 def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_with_library):
-    """build_session_prompt() must never modify the project CLAUDE.md."""
+    """build_session_prompt() must never modify the project CLAUDE.md if user authored one."""
     from ai_hats.surfaces.claude.provider import ClaudeProvider
 
     project, lib = project_with_library
@@ -673,7 +654,9 @@ def test_claude_build_session_prompt_does_not_modify_project_claude_md(project_w
     asm.init()
     asm.set_role("test-role", provider_name="claude")
 
-    original_content = (project / "CLAUDE.md").read_text()
+    user_claude = project / "CLAUDE.md"
+    user_claude.write_text("# User hand-written CLAUDE.md\nRules here.\n")
+    original_content = user_claude.read_text()
 
     provider = ClaudeProvider()
     result = asm.composer.compose("other-role")

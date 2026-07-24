@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -142,6 +143,47 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def build_system_prompt(self, result: CompositionResult) -> str:
         """Build the complete system prompt from composition result."""
+
+    def build_category_artifact(
+        self,
+        category: ArtifactCategory,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Build and materialize a single category of session artifacts for this provider.
+
+        Default is a no-op; provider surfaces override for supported categories.
+        """
+        logger.debug("Provider %s does not handle artifact category %s", self.name, category)
+
+    def build_session_artifacts(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: RunMode | str = RunMode.HITL,
+        policy: SessionPolicy | None = None,
+    ) -> BuiltArtifacts:
+        """Build and materialize session artifacts per category and provider delivery mode."""
+        mode = RunMode(run_mode)
+        policy = policy or SessionPolicy()
+        artifacts = BuiltArtifacts()
+        for category in ArtifactCategory:
+            if policy.is_enabled(category):
+                self.build_category_artifact(
+                    category,
+                    project_dir,
+                    result,
+                    session_id,
+                    run_mode=mode,
+                    artifacts=artifacts,
+                )
+        return artifacts
 
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.
