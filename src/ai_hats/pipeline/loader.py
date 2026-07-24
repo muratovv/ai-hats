@@ -6,7 +6,7 @@ YAML schema:
     steps:
       - id: <step_name>          # FQN from registry
         params: {<key>: <val>}   # optional, step-specific
-        harness:                 # optional, HATS-378 reliability policy
+        harness:                 # optional, reliability policy
           reporting: <bool>
           on_zero_output: harness_incident | ignore
           on_timeout:
@@ -41,17 +41,13 @@ class PipelineYamlError(ValueError):
     """Malformed pipeline YAML or unresolvable step reference."""
 
 
-# HATS-566: memoize core pipelines to guard against editable-install
-# YAML drift. When the ai-hats source tree is updated mid-session
-# (``git pull`` / merge during a long-running ``WrapRunner`` PTY
-# session), ``paths.core_pipeline_path`` resolves to the live working
-# tree (cwd/worktree-aware, HATS-831) — so a fresh ``load_core_pipeline`` call at
-# session-end reads the *new* YAML against the *old* step registry
-# that was imported at process start. Memoizing the parsed Pipeline at
-# first access (combined with eager preload from ``WrapRunner.run``
-# before PTY spawn) freezes the YAML against the matching registry
-# snapshot. Wheel/site-packages installs are immutable so unaffected;
-# the cache is harmless there.
+# Memoize core pipelines to guard against editable-install YAML drift.
+# When the ai-hats source tree is updated mid-session (git pull / merge during
+# a long-running PTY session), core_pipeline_path resolves to the live working
+# tree — so a fresh load_core_pipeline call at session-end reads the *new*
+# YAML against the *old* step registry that was imported at process start.
+# Memoizing the parsed Pipeline at first access freezes the YAML against the
+# matching registry snapshot.
 _CORE_PIPELINE_CACHE: dict[str, Pipeline] = {}
 
 
@@ -65,8 +61,8 @@ def load_core_pipeline(name: str, *, use_cache: bool = True) -> Pipeline:
     :class:`PipelineHarness` (which creates a per-session namespace dir
     + retention sweep — overkill for an inline sub-pipeline).
 
-    Memoized by default (HATS-566); pass ``use_cache=False`` for tests
-    that rebuild the registry between calls.
+    Memoized by default; pass ``use_cache=False`` for tests that rebuild the
+    registry between calls.
     """
     if use_cache and name in _CORE_PIPELINE_CACHE:
         return _CORE_PIPELINE_CACHE[name]
@@ -85,7 +81,7 @@ def load_core_pipeline(name: str, *, use_cache: bool = True) -> Pipeline:
 
 
 def clear_core_pipeline_cache() -> None:
-    """Drop the memoized core-pipeline cache (HATS-566).
+    """Drop the memoized core-pipeline cache.
 
     Intended for tests that swap the step registry or monkey-patch
     pipeline YAMLs between cases; production code never needs this.
@@ -142,8 +138,8 @@ def load_pipeline(yaml_path: Path) -> Pipeline:
             raise PipelineYamlError(
                 f"{yaml_path}: steps[{i}] ({step_id}): {e}"
             ) from e
-        # HATS-378: optional harness reliability policy. Additive —
-        # steps without `harness:` keep the base-class default (None).
+        # Optional harness reliability policy. Additive — steps without `harness:`
+        # keep the base-class default (None).
         harness_raw = item.get("harness")
         if harness_raw is not None:
             try:

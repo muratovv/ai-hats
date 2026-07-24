@@ -8,7 +8,47 @@ composition; ``_pty_spawn`` calls it. No factory seeded → the seam is inert
 
 from __future__ import annotations
 
+import importlib.metadata
+import logging
 from typing import Callable, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
+
+PTY_TAP_ENTRY_POINT_GROUP = "ai_hats.pty_tap"
+
+
+def _pty_tap_entry_points():
+    """Entry points advertised under the pty_tap group (isolated for tests)."""
+    return importlib.metadata.entry_points(group=PTY_TAP_ENTRY_POINT_GROUP)
+
+
+def load_pty_tap_factory() -> PtyTapFactory | None:
+    """Load and return registered PtyTapFactory from entry points or built-in FdTap.
+
+    If an entry point is registered, uses it.
+    Otherwise returns the built-in make_fd_pty_tap factory.
+    """
+    eps = list(_pty_tap_entry_points())
+    if eps:
+        if len(eps) > 1:
+            names = [getattr(ep, "name", str(ep)) for ep in eps]
+            logger.warning(
+                "Multiple ai_hats.pty_tap entry points found (%s); using '%s'",
+                names,
+                eps[0].name,
+            )
+        try:
+            factory = eps[0].load()
+            if callable(factory):
+                return factory
+            logger.warning("ai_hats.pty_tap entry point '%s' did not return a callable", eps[0].name)
+        except Exception as exc:
+            logger.warning("Failed to load ai_hats.pty_tap entry point '%s': %s", eps[0].name, exc)
+
+    from .pty_relay import make_fd_pty_tap
+
+    return make_fd_pty_tap
+
 
 
 @runtime_checkable

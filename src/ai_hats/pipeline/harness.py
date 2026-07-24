@@ -4,7 +4,7 @@ Per ADR-0002 §1 Harness contract: pipeline-core sees only ``Path`` and
 flat values. The harness turns CLI-style inputs (raw text, optional
 arguments) into a deterministic file-on-disk that pipeline steps read.
 
-Per-session namespace (HATS-308): each ``PipelineHarness`` instance owns
+Per-session namespace: each ``PipelineHarness`` instance owns
 a unique ``<ai_hats_dir>/sessions/runs/pipeline_runs/<pipeline_name>/<session_id>/``
 subdir. Concurrent invocations of the same pipeline name are safe — they
 get disjoint namespaces.
@@ -15,7 +15,7 @@ sessions are ``rmtree``'d on next ``__enter__`` of any harness for the
 same pipeline name. ``ignore_errors=True`` makes concurrent GC of the
 same oldest dir benign.
 
-Trace-mode (HATS-274): when env ``AI_HATS_PIPELINE_TRACE`` is set, the
+Trace-mode: when env ``AI_HATS_PIPELINE_TRACE`` is set, the
 harness wires a ``JsonlTraceWriter`` into ``pipeline.run`` so every
 step emits a TraceEvent. Two value modes:
 
@@ -110,10 +110,10 @@ class PipelineHarness:
         ).strip() not in ("", "0", "false", "False")
 
     def __enter__(self) -> "PipelineHarness":
-        # HATS-275: import user-authored step modules BEFORE any YAML
-        # is loaded — so user step IDs are resolvable from YAML the
-        # same way as built-ins. Errors propagate (fail-fast on a
-        # broken step-dir, don't half-start the pipeline).
+        # Import user-authored step modules BEFORE any YAML is loaded — so user
+        # step IDs are resolvable from YAML the same way as built-ins. Errors
+        # propagate (fail-fast on a broken step-dir, don't half-start the
+        # pipeline).
         load_user_steps(self.project_dir)
         self._gc_old_sessions()
         self.namespace.mkdir(parents=True, exist_ok=True)
@@ -185,8 +185,7 @@ class PipelineHarness:
 
         Same trace/values wiring as :meth:`run`, but bypasses the
         built-in name lookup. Useful for project-local YAMLs (e.g.
-        ``.agent/ai-hats/pipelines/<name>.yaml``) until HATS-268
-        surfaces a uniform CLI for both. Tests and the
+        ``.agent/ai-hats/pipelines/<name>.yaml``). Tests and the
         custom-pipeline-steps how-to also rely on this entry point.
         """
         pipeline = load_pipeline(yaml_path)

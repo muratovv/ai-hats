@@ -338,6 +338,19 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 
 ---
 
+## 9. Remote PTY File Descriptors
+
+`ai-hats` supports driving and observing interactive HITL sessions via file descriptors passed through environment variables. This allows an outer daemon or wrapper (e.g. a remote PTY relay) to spawn `ai-hats` with connected pipes or sockets:
+
+| Environment Variable | Description |
+| -------------------- | ----------- |
+| `AI_HATS_PTY_IN_FD`  | File descriptor from which `ai-hats` reads incoming input (length-prefixed `T_RAW` keystrokes and `T_CTRL` resize frames). |
+| `AI_HATS_PTY_OUT_FD` | File descriptor to which `ai-hats` writes copies of session output (length-prefixed `T_RAW` frames). |
+
+If only one of `AI_HATS_PTY_IN_FD` or `AI_HATS_PTY_OUT_FD` is set, `ai-hats` uses that single file descriptor for both input and output (for example, a single socketpair descriptor). If neither is set, PTY redirection remains disabled.
+
+---
+
 ## References
 
 **[1]** — [`docs/glossary.md`](glossary.md) — core terms (role, provider, session, backlog, …).

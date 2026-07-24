@@ -1,11 +1,11 @@
-"""Boundary-crossing pipeline vocabulary (HATS-917).
+"""Boundary-crossing pipeline vocabulary.
 
 Admission criterion: a key belongs here ONLY if it crosses the
 CLI/runner <-> pipeline boundary (seeded into the harness initial state
 or read back from the final state). Step-internal produce/require keys
 stay inline in each StepIO -- the literal IS the contract declaration
-(open-registry convention, HATS-261). YAML pipeline ids stay declared
-config; the PIPELINE_* constants are the Python-side spellings.
+(open-registry convention). YAML pipeline ids stay declared config;
+the PIPELINE_* constants are the Python-side spellings.
 """
 
 # Seeded by CLI / runners into the initial state.
@@ -100,4 +100,3 @@ __all__ = [
     "PIPELINE_REFLECT_ROLE",
     "PIPELINE_REFLECT_ISSUE",
 ]
-
