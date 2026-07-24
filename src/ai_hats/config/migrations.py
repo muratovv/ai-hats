@@ -43,11 +43,9 @@ def _migrate_v1_to_v2(yaml_path: Path, data: dict[str, Any]) -> dict[str, Any]:
 def _migrate_v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
     """Auto-migrate schema v2 → v3 (HATS-285).
 
-    v3 introduces the layered canonical layout (.agent/ai-hats/) and the
-    `./CLAUDE.md` scaffold-as-asset. The yaml itself only needs a version
-    bump — the filesystem cleanup (stripping the legacy uppercase block
-    from `./CLAUDE.md`) lives in `Assembler._migrate_claude_md_to_v3`,
-    which runs at the start of `init`/`set_role`/`bump`.
+    v3 introduced the layered canonical layout (.agent/ai-hats/) and a
+    `./CLAUDE.md` scaffold, retired since HATS-1170. The yaml only needs a
+    version bump; root `CLAUDE.md` cleanup is migration step 7 (HATS-1201).
     """
     data["schema_version"] = 3
     return data

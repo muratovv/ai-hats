@@ -47,14 +47,7 @@ from .placeholders import expand_path_placeholders
 from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
-from .providers import (
-    INJECTION_END,
-    INJECTION_START,
-    PUBLISH_AGGREGATOR_END,
-    PUBLISH_AGGREGATOR_START,
-    Provider,
-    get_provider,
-)
+from .providers import Provider, get_provider
 from .constants import (
     AGENT_DIR,
     CANONICAL_DIR,
@@ -212,118 +205,6 @@ class Assembler:
             return None
         wt_top = WorktreeManager.worktree_toplevel(cwd)
         return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
-
-    # ----- Scaffold-as-asset (HATS-284) -----
-
-    def _resolve_scaffold_template(self, relpath: str) -> Path | None:
-        """Find a scaffold template asset across `library_paths` (last-wins)."""
-        result: Path | None = None
-        for lib in self.library_paths:
-            candidate = lib / relpath
-            if candidate.is_file():
-                result = candidate
-        return result
-
-    def _ensure_scaffold(self, provider: Provider) -> None:
-        """Write the provider's prompt-file scaffold from a library template.
-
-        - No-op if the provider declares no scaffold (e.g. Agy).
-        - No-op if the prompt file already exists (user owns).
-        - Soft no-op if the template asset is missing from library paths.
-        """
-        rel = provider.scaffold_template_relpath()
-        if rel is None:
-            return
-        prompt_path = provider.system_prompt_path(self.project_dir)
-        if prompt_path.exists():
-            return
-        template = self._resolve_scaffold_template(rel)
-        if template is None:
-            return
-        prompt_path.parent.mkdir(parents=True, exist_ok=True)
-        # exists-check above means this is always a fresh write — replace()
-        # routes through atomic write without taking a snapshot (no-op for
-        # missing files).
-        _safe_replace(
-            prompt_path,
-            template.read_bytes(),
-            reason="scaffold",
-            project_dir=self.project_dir,
-        )
-
-    def _migrate_claude_md_to_v3(self, provider: Provider) -> None:
-        """Bring `./CLAUDE.md` to the current v3 scaffold layout (HATS-285/289).
-
-        Three idempotent fix-ups, applied in order:
-
-        1. Strip the legacy uppercase AI-HATS block (HATS-285) and replace
-           it with the lowercase scaffold from the library template.
-        2. If the scaffold's import line still points at the deprecated
-           `.claude/CLAUDE.md` aggregator (HATS-283), rewrite it to the
-           canonical `imports.md` (HATS-289).
-        3. Delete legacy publish artefacts under `.claude/` (HATS-289)
-           that the canonical aggregator now replaces — keeps `skills/`
-           since that one is auto-discovered by Claude Code.
-
-        Provider must declare a scaffold template (Agy is a no-op via
-        that contract).
-        """
-        rel = provider.scaffold_template_relpath()
-        if rel is None:
-            return
-        prompt_path = provider.system_prompt_path(self.project_dir)
-        if not prompt_path.exists():
-            self._ensure_scaffold(provider)
-            self._cleanup_legacy_claude_publish()
-            return
-
-        existing = prompt_path.read_text()
-        template = self._resolve_scaffold_template(rel)
-        scaffold_body = template.read_text() if template is not None else None
-
-        new_content = existing
-        # 1. Already-on-v3-scaffold OR legacy-uppercase-block path.
-        if PUBLISH_AGGREGATOR_START in new_content and PUBLISH_AGGREGATOR_END in new_content:
-            pass  # scaffold already present
-        elif scaffold_body is None:
-            # Cannot compose without a template. Skip silently.
-            return
-        elif INJECTION_START in new_content and INJECTION_END in new_content:
-            before = new_content[: new_content.index(INJECTION_START)].rstrip("\n")
-            after = new_content[new_content.index(INJECTION_END) + len(INJECTION_END) :]
-            after = after.lstrip("\n")
-            parts = []
-            if before:
-                parts.append(before)
-            parts.append(scaffold_body.rstrip("\n"))
-            if after:
-                parts.append(after.rstrip("\n"))
-            new_content = "\n\n".join(parts) + "\n"
-        else:
-            # No markers at all — user-owned file. Prepend scaffold so the
-            # canonical aggregator gets imported; preserve user content below.
-            new_content = scaffold_body.rstrip("\n") + "\n\n" + new_content.lstrip("\n")
-
-        # 2. Rewrite deprecated import line to the canonical aggregator.
-        new_content = new_content.replace(
-            "@./.claude/CLAUDE.md",
-            "@./.agent/ai-hats/imports.md",
-        )
-
-        if new_content != existing:
-            # HATS-470: snapshot the pre-migrate content so users can
-            # recover if the v3 scaffold rewrite mangles their file
-            # (especially the no-markers branch above which prepends
-            # blindly).
-            _safe_replace(
-                prompt_path,
-                new_content.encode("utf-8"),
-                reason="claude-md-migrate",
-                project_dir=self.project_dir,
-            )
-
-        # 3. Drop legacy `.claude/` publish artefacts.
-        self._cleanup_legacy_claude_publish()
 
     def _cleanup_legacy_claude_publish(self) -> None:
         """Thin seam over the shared legacy sweeps (HATS-905): the generic
@@ -555,18 +436,9 @@ class Assembler:
         if not state_md.exists():
             state_md.write_text("# Task State\n\nNo active tasks.\n")
 
-        active_provider = get_provider(self.project_config.provider)
-
-        # HATS-469 R1: direct heal of ./CLAUDE.md on re-init.
-        # ``_migrate_claude_md_to_v3`` is also a registry entry (step 5)
-        # but registry is gated by ``migration_step``; a re-init on a
-        # fully-migrated project (migration_step=latest) would skip it.
-        # The direct call preserves the legacy contract "init re-run
-        # always normalises CLAUDE.md" — covers the edge case where the
-        # user manually re-introduces a legacy uppercase block.
-        # Idempotent; on greenfield ./CLAUDE.md does not exist yet so
-        # this is a no-op.
-        self._migrate_claude_md_to_v3(active_provider)
+        # HATS-1201: the CLAUDE.md heal is gone with the scaffold (HATS-1170);
+        # the legacy `.claude/` sweeps stay on the per-refresh path.
+        self._cleanup_legacy_claude_publish()
 
         # HATS-469 R2: greenfield invariant — migration_step MUST be
         # seeded to latest BEFORE _refresh. Otherwise run_pending would
@@ -831,34 +703,22 @@ class Assembler:
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
 
-        # HATS-285: bring ./CLAUDE.md to the v3 scaffold layout if a
-        # legacy uppercase AI-HATS block or v2 inline injection is
-        # present. Also a registry entry (step 5), but the runner is
-        # gated by ``migration_step``; the direct call here is the
-        # sole-direct-caller contract documented in migrations.py:38-43
-        # — bootstrap path the registry cannot cover (first session may
-        # predate any bump). Idempotent.
-        self._migrate_claude_md_to_v3(provider)
+        # HATS-1201: sweeps the registry cannot cover — a first session may
+        # predate any bump. Idempotent.
+        self._cleanup_legacy_claude_publish()
 
         # HATS-469: single entry-point. install_time=False → skip registry
         # (migrations replay only via init/do_bump). _refresh handles
-        # _ensure_scaffold, write_canonical, ensure_runtime_hooks, and the
-        # HooksManager materializers (runtime / worktree / git). Diagnostics
-        # are NOT called from here — runtime auto-trigger stays silent
-        # (HATS-469 R3).
+        # write_canonical, ensure_runtime_hooks, and the HooksManager
+        # materializers (runtime / worktree / git). Diagnostics are NOT
+        # called from here — runtime auto-trigger stays silent (HATS-469 R3).
         self._refresh(install_time=False, result=result, warnings_sink=warnings_sink)
 
-        # Provider inline system prompt — Agy-only path.
-        # Claude declares a scaffold template (HATS-284); ./CLAUDE.md is
-        # owned by the scaffold + canonical aggregator. Agy has no
-        # scaffold mechanism, so bare-agy in project_dir relies on
-        # ./AGY.md inline-block injection. Documented asymmetry with
-        # Claude Fork B (HATS-294); separate cleanup task tracks
-        # symmetric drop later.
-        if provider.scaffold_template_relpath() is None:
-            prompt_content = provider.build_system_prompt(result)
-            prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
-            provider.update_system_prompt(self.project_dir, prompt_content)
+        # Provider inline system prompt. Agy writes ./GEMINI.md; Claude and
+        # Cline deliver theirs per-session (ADR-0018) and no-op here.
+        prompt_content = provider.build_system_prompt(result)
+        prompt_content = expand_path_placeholders(prompt_content, self.project_dir)
+        provider.update_system_prompt(self.project_dir, prompt_content)
 
         # Persist active_role + provider.
         self.save_config(active_role=role_name, provider=provider.name)
@@ -936,8 +796,6 @@ class Assembler:
             self._sweep_unclaimed_markers()
 
         # 2. Heal — always.
-        provider = get_provider(self.project_config.provider)
-        self._ensure_scaffold(provider)
         self.write_canonical()
 
         # 3. Managed hooks — provider settings.json wiring + the three surfaces,

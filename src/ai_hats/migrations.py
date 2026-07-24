@@ -16,9 +16,9 @@ and advances the step only after the function returns):
   may execute up to N times (two processes both replaying step 1 is expected,
   not a bug); ``_safe_replace`` file locks handle most byte-level races.
 
-``run_pending`` is not the only call site: some wrapped methods (e.g.
-``_migrate_claude_md_to_v3``) also run directly from ``init`` / ``set_role``, so
-idempotency must hold for those direct invocations, not just the gated replay.
+``run_pending`` is not the only call site: some wrapped methods also run
+directly from ``init`` / ``set_role``, so idempotency must hold for those direct
+invocations, not just the gated replay.
 
 The generic step-gated *runner* now lives in ``ai_hats_core.migrations``
 (``Migration[Ctx]`` / ``run_pending`` / ``latest_step``, HATS-868 T7); this
@@ -117,10 +117,11 @@ def _m_heal_external_refs(a: "Assembler") -> None:
 
 
 def _m_migrate_claude_md_to_v3(a: "Assembler") -> None:
-    from .providers import get_provider
-
-    provider = get_provider(a.project_config.provider)
-    a._migrate_claude_md_to_v3(provider)
+    """Retired by HATS-1201 — kept as a no-op because step numbers are bound
+    to the on-disk counter and must never be reordered or renumbered. The v3
+    scaffold it used to write no longer exists (HATS-1170); step 7 removes
+    what it left behind."""
+    del a
 
 
 def _m_migrate_layout_v4(a: "Assembler") -> None:
@@ -388,7 +389,7 @@ MIGRATIONS: list[Migration] = [
     Migration(
         step=5,
         run=_m_migrate_claude_md_to_v3,
-        label="claude.md → v3 scaffold",
+        label="claude.md → v3 scaffold (retired, no-op)",
     ),
     Migration(
         step=6,

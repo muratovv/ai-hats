@@ -358,15 +358,6 @@ class Provider(abc.ABC):
         del project_dir, result, session_id
         return []
 
-    def scaffold_template_relpath(self) -> str | None:
-        """Library-relative path to the provider's prompt-file scaffold template.
-
-        Default: None — provider has no scaffold (e.g. Agy per HATS-276).
-        Subclasses point at a markdown asset under
-        `libraries/templates/<provider>/...`.
-        """
-        return None
-
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
