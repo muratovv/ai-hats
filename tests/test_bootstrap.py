@@ -46,6 +46,19 @@ def _fixed_requires(monkeypatch, reqs: list[str]) -> None:
     )
 
 
+@pytest.fixture
+def coherent_pycache(monkeypatch):
+    """Detach ``verify_after_install`` from the developer's own checkout.
+
+    ``_check_pycache_coherence`` resolves ``find_spec("ai_hats")`` to the real
+    installed tree, so a stale ``.pyc`` there (another interpreter's bytecode, a
+    regenerated ``_version.py``) fails tests that are about dependency healing
+    (HATS-1201). The coherence contract has its own hermetic test below, against
+    a synthetic tree.
+    """
+    monkeypatch.setattr(_bootstrap, "_check_pycache_coherence", lambda: [])
+
+
 # ---------- T1 ----------
 
 
@@ -153,7 +166,7 @@ def test_t5_bootstrap_or_die_failure_path(monkeypatch, capsys):
 # ---------- T6 ----------
 
 
-def test_t6_verify_after_install_success(monkeypatch, capsys):
+def test_t6_verify_after_install_success(monkeypatch, capsys, coherent_pycache):
     """Stage-2 verify heals on success without re-exec."""
     state = {"missing": True}
 
@@ -225,7 +238,7 @@ def test_t8_transitional_wave_one_action(monkeypatch):
 # ---------- T9 ----------
 
 
-def test_t9_future_dep_cycle(monkeypatch):
+def test_t9_future_dep_cycle(monkeypatch, coherent_pycache):
     """New dep declared in pyproject → stage-2 verify finds & heals it."""
     _fixed_requires(monkeypatch, ["futuredep>=1.0", "ptyprocess>=0.7", "click>=8.1"])
     _force_missing(monkeypatch, {"futuredep"})
@@ -307,7 +320,7 @@ def test_t10_stale_first_party_entry_point_fails_verify(monkeypatch):
     assert _bootstrap.verify_after_install() == 1
 
 
-def test_t11_out_of_tree_provider_plugin_does_not_fail_verify(monkeypatch):
+def test_t11_out_of_tree_provider_plugin_does_not_fail_verify(monkeypatch, coherent_pycache):
     """A third-party plugin must not fail the install verify (mirrors providers policy)."""
     _stub_entry_points(
         monkeypatch,
