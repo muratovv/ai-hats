@@ -55,9 +55,6 @@ dependencies = [
     "claude-agent-sdk>=0.2.0,<0.3",
 ]
 
-[project.scripts]
-ai-hats-hook-dispatcher = "ai_hats.cli.hook_dispatcher:main"
-
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",

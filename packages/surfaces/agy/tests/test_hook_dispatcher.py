@@ -1,11 +1,11 @@
-"""Tests for ai-hats-hook-dispatcher CLI command."""
+"""Tests for ai-hats-hook-dispatcher in AGY surface plugin."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from ai_hats.cli.hook_dispatcher import dispatch_hook
+from ai_hats_agy.hook_dispatcher import dispatch_hook
 
 
 def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:

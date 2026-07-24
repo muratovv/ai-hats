@@ -1,5 +1,6 @@
 """Global Hook Dispatcher for AGY surface (HATS-1166).
 
+Located entirely inside `ai_hats_agy` surface package.
 Executes session-specific hooks from `<project_dir>/.agent/ai-hats/.cache/sessions/<session_id>/hooks.json`
 when invoked by the global AGY hook registered in `~/.gemini/antigravity-cli/settings.json`.
 """
