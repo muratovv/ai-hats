@@ -6,23 +6,35 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Cline now runs through the unified artifact-builder (ADR-0018,
+  `build_category_artifact`) on the clean-root invariant, both HITL and
+  Automate. Role skills materialize into the **per-session cache**
+  (`<ai_hats_dir>/.cache/sessions/<sid>/skills`) and reach cline via
+  `--config <cache>` (cline scans `<base>/skills`; the spike HATS-1191 proved
+  the flag). Nothing is written into the project root — no `.cline/`, no
+  `.gitignore` mutation. Each session owns its cache dir, so the old
+  ref-counted `.cline/skills` marker / filelock is gone (HATS-1171).
+
 ### Added
 
-- `materialize_runtime_skills` is now parallel-safe: the `.ai-hats-managed`
-  marker is a session-ref-counted JSON dict (`session_id → [skill_names]`).
-  Two concurrent cline sessions with different roles each see their OWN skills
-  — no wipe (HATS-981).
-- `build_session_prompt` now writes the TS hook plugin to a **session-scoped**
-  `session_cache_dir/plugins/` and points `--hooks-dir` there. Two concurrent
-  HITL sessions get isolated plugins — no shared `.cline/plugins/` race
-  (HATS-981).
-- `ensure_runtime_hooks` simplified: no filelock, no stale-sweep, no
-  `.ai-hats-managed` marker. Content is static/deterministic (unconditional
-  guard) — overwrite is safe. Remains as project-scoped pre-warm for
-  `_refresh`/`set_role` and automate-path fallback (HATS-981).
-- `get_env` now sets `CLINE_HUB_PORT` to a per-session ephemeral port, moving
-  each ai-hats cline session off the default hub port (25463) so parallel
-  sessions and `cline --help` no longer crash with `EADDRINUSE` (HATS-973).
+- `get_env` sets `CLINE_DATA_DIR` to the real cline home (`~/.cline/data`).
+  `--config` relocates cline's base dir, so pinning the data dir keeps auth,
+  session history, and `resolve_transcript` intact (HATS-1171).
+- `get_env` still sets `CLINE_HUB_PORT` to a per-session ephemeral port so
+  parallel sessions and `cline --help` don't crash with `EADDRINUSE`
+  (HATS-973).
+
+### Removed
+
+- The TS hook plugin (`ai-hats-hooks.ts`), `ensure_runtime_hooks`,
+  `CLINE_HOOKS_DIR`, and the `.cline/plugins` / `.cline/skills` materialization
+  (plus the `.gitignore` mutation). The plugin never loaded — cline's plugin
+  sandbox requires `jiti`, which the CLI does not bundle (see HATS-1083);
+  bash-tool guarding is carried by `SurfaceGuard` (ADR-0018 §4). Restoring a
+  working guard via cline's native `hooks.json` is tracked in HATS-1083
+  (HATS-1171).
 
 ## [0.3.0]
 
