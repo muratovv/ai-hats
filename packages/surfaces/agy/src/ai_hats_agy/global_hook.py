@@ -6,15 +6,21 @@ import json
 from pathlib import Path
 
 MANAGED_DISPATCHER_TAG = "ai-hats:global-dispatcher"
-DISPATCHER_COMMAND = "ai-hats-hook-dispatcher"
+DISPATCHER_COMMAND = (
+    'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] && [ -x "$AI_HATS_PYTHON" ]; '
+    'then "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"; fi\' sh'
+)
 
 
 def ensure_global_dispatcher_hook(settings_path: Path) -> bool:
-    """Ensure ``ai-hats-hook-dispatcher`` is registered in AGY user-global settings.json.
+    """Ensure universal fail-safe dispatcher is registered in AGY user-global settings.json.
 
-    Idempotent: inspects ``settings_path`` (typically ``~/.gemini/antigravity-cli/settings.json``).
-    If the managed dispatcher entries are already present in PreToolUse and PostToolUse, returns False.
-    Otherwise, updates ``settings_path`` preserving all existing permissions/user fields and returns True.
+    Idempotent and version-safe:
+    - Registers a static, fail-safe shell dispatcher command in ``settings_path``.
+    - Uses ``$AI_HATS_PYTHON`` exported by the active session to invoke the exact Python interpreter
+      belonging to that session's venv.
+    - Zero cross-venv clobbering: different venvs write the identical static command string.
+    - Standalone agy runs (without ``AI_HATS_SESSION_ID``) exit 0 immediately with zero overhead.
     """
     data: dict = {}
     if settings_path.is_file():
