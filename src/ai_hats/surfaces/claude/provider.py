@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import BuiltArtifacts, SessionPolicy
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -169,10 +169,11 @@ class ClaudeProvider(Provider):
         result: CompositionResult,
         session_id: str,
         *,
-        run_mode: str,
+        run_mode: RunMode | str = RunMode.HITL,
         policy: SessionPolicy | None = None,
     ) -> BuiltArtifacts:
         """Build and materialize session artifacts per category and delivery mode (ADR-0018)."""
+        mode = RunMode(run_mode)
         if policy is None:
             policy = SessionPolicy()
 
@@ -180,46 +181,74 @@ class ClaudeProvider(Provider):
         cache_dir = session_cache_dir(project_dir, session_id)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Category: context
         if policy.context:
-            prompt_content = self.build_system_prompt(result)
-            prompt_content = expand_path_placeholders(prompt_content, project_dir)
-            prompt_content = expand_role_catalog(prompt_content, project_dir)
+            self._build_context_artifact(project_dir, result, cache_dir, mode, artifacts)
 
-            full_content = self._build_full_content(project_dir, prompt_content)
-            artifacts.full_content = full_content
+        self._build_skills_artifact(project_dir, result, session_id, cache_dir, mode, artifacts)
 
-            override_file = cache_dir / "prompt.md"
-            override_file.write_text(full_content)
-            artifacts.materialized.append(override_file)
+        if policy.hooks:
+            self._build_hooks_artifact(project_dir, result, cache_dir, mode, artifacts)
 
-            if run_mode == "hitl":
-                artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
-            elif run_mode == "automate":
-                artifacts.sdk_options["system_prompt"] = full_content
+        return artifacts
 
-        # 2. Category: skills
+    def _build_context_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        prompt_content = self.build_system_prompt(result)
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        prompt_content = expand_role_catalog(prompt_content, project_dir)
+
+        full_content = self._build_full_content(project_dir, prompt_content)
+        artifacts.full_content = full_content
+
+        override_file = cache_dir / "prompt.md"
+        override_file.write_text(full_content)
+        artifacts.materialized.append(override_file)
+
+        if mode == RunMode.HITL:
+            artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
+        elif mode == RunMode.AUTOMATE:
+            artifacts.sdk_options["system_prompt"] = full_content
+
+    def _build_skills_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
         skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
-        if run_mode == "hitl":
+        if mode == RunMode.HITL:
             artifacts.cli_args.extend(skill_args)
         plugin_skills_dir = cache_dir / "plugin" / "skills"
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_skills_dir)
         artifacts.materialized.append(cache_dir / "plugin")
 
-        # 3. Category: hooks
-        if policy.hooks:
-            desired = self._desired_runtime_entries(project_dir, result)
-            cache_settings = cache_dir / "settings.json"
-            cache_settings.write_text(json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2))
-            artifacts.materialized.append(cache_settings)
+    def _build_hooks_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        desired = self._desired_runtime_entries(project_dir, result)
+        cache_settings = cache_dir / "settings.json"
+        cache_settings.write_text(json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2))
+        artifacts.materialized.append(cache_settings)
 
-            if run_mode == "hitl":
-                artifacts.cli_args.extend(["--settings", str(cache_settings)])
-            elif run_mode == "automate":
-                artifacts.sdk_options["settings"] = str(cache_settings)
-                artifacts.sdk_options["setting_sources"] = []
-
-        return artifacts
+        if mode == RunMode.HITL:
+            artifacts.cli_args.extend(["--settings", str(cache_settings)])
+        elif mode == RunMode.AUTOMATE:
+            artifacts.sdk_options["settings"] = str(cache_settings)
+            artifacts.sdk_options["setting_sources"] = []
 
     def build_session_prompt(
         self,
@@ -229,7 +258,7 @@ class ClaudeProvider(Provider):
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts."""
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode="hitl"
+            project_dir, result, session_id, run_mode=RunMode.HITL
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 

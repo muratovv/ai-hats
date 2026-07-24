@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
-from ai_hats.session_artifacts import BuiltArtifacts, SessionPolicy
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -150,7 +150,7 @@ class Provider(abc.ABC):
         result: CompositionResult,
         session_id: str,
         *,
-        run_mode: str,
+        run_mode: RunMode | str = RunMode.HITL,
         policy: SessionPolicy | None = None,
     ) -> BuiltArtifacts:
         """Build and materialize session artifacts per category and provider delivery mode."""

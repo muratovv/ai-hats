@@ -19,6 +19,11 @@ class DeliveryMode(str, Enum):
     NATIVE_ROOT = "native_root"
 
 
+class RunMode(str, Enum):
+    HITL = "hitl"
+    AUTOMATE = "automate"
+
+
 @dataclass(frozen=True)
 class SessionPolicy:
     context: bool = True
