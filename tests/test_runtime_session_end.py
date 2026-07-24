@@ -371,7 +371,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
             tracer_factory=SidecarTracer,
         )
 
-        def _stub_spawn(self, cmd, env, tracer):
+        def _stub_spawn(self, cmd, env, tracer, pty_tap_factory=None):
             return pty_exit_code
 
         monkeypatch.setattr(WrapRunner, "_pty_spawn", _stub_spawn)

@@ -161,7 +161,7 @@ def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
     # is emitted to stdout even in the non-tty CliRunner.
     from ai_hats import runtime as rt
 
-    monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer: 0)
+    monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0)
     monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0.05")
     monkeypatch.chdir(project)
 

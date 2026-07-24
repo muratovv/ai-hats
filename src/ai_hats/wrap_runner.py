@@ -25,6 +25,7 @@ from .constants import ENV_ROLE, ENV_ROOT_PID
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
+from .pty_tap import NullPtyTap
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
@@ -46,6 +47,8 @@ if TYPE_CHECKING:
 
     from ai_hats_core import CompositionResult
     from ai_hats_observe import Session, SessionManager, SidecarTracer
+
+    from .pty_tap import PtyTapFactory
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +404,7 @@ class WrapRunner:
         self,
         extra_args: list[str] | None = None,
         tags: dict[str, str] | None = None,
+        pty_tap_factory: PtyTapFactory | None = None,
     ) -> tuple[int, Session]:
         """Launch a wrapped CLI session with PTY proxying.
 
@@ -541,7 +545,9 @@ class WrapRunner:
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices)
             with provider.execution_context(self.project_dir):
-                exit_code = self._pty_spawn(cmd, env, tracer)
+                exit_code = self._pty_spawn(
+                    cmd, env, tracer, pty_tap_factory=pty_tap_factory,
+                )
         except KeyboardInterrupt:
             exit_code = 130
         finally:
@@ -613,7 +619,13 @@ class WrapRunner:
         except (ValueError, IndexError, OSError):
             logger.debug("CLI restart-gap detection failed", exc_info=True)
 
-    def _pty_spawn(self, cmd: list[str], env: dict[str, str], tracer: SidecarTracer) -> int:
+    def _pty_spawn(
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+        tracer: SidecarTracer,
+        pty_tap_factory: PtyTapFactory | None = None,
+    ) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace.
 
         Uses ptyprocess so the slave-pty becomes the controlling-tty of the child
@@ -702,10 +714,44 @@ class WrapRunner:
         # a hatch-triggered exit returns 130).
         escape_presses: deque[float] = deque()
         forced_exit = False
+        # HATS-1192: one PtyTap per session (single creation, fail-open). Null-object
+        # default → no None-guards; a composed plugin (HATS-1197) gets the real tap.
+        try:
+            self._tap = (
+                pty_tap_factory(
+                    inject=lambda b: os.write(master_fd, b),
+                    # resize drives the CHILD pty window (same call as _on_winch);
+                    # local-vs-remote precedence is relay policy (HATS-1197).
+                    resize=proc.setwinsize,
+                    session=tracer.session,
+                )
+                if pty_tap_factory is not None
+                else NullPtyTap()
+            )
+        except Exception:  # noqa: BLE001 — a bad plugin must never abort the session
+            logger.warning("pty_tap factory raised — no tap for this session", exc_info=True)
+            self._tap = NullPtyTap()
+
+        def _drop(where: str, exc: BaseException) -> None:
+            # Idempotent: swap to a no-op tap (further ops + close are inert) and
+            # close the dead one once. A tap fault never breaks the sacred loop.
+            dead, self._tap = self._tap, NullPtyTap()
+            logger.warning("pty_tap fault in %s — dropped", where, exc_info=exc)
+            try:
+                dead.close()
+            except Exception:  # noqa: BLE001
+                logger.warning("pty_tap close failed after %s fault", where, exc_info=True)
+
         try:
             while True:
                 try:
-                    rlist, _, _ = select.select(read_fds, [], [])
+                    extra = self._tap.extra_read_fds()
+                except Exception as exc:  # noqa: BLE001 — fail-open
+                    _drop("extra_read_fds", exc)
+                    extra = ()
+                sel_fds = [*read_fds, *extra] if extra else read_fds
+                try:
+                    rlist, _, _ = select.select(sel_fds, [], [])
                 except (OSError, select.error):
                     break
 
@@ -720,6 +766,12 @@ class WrapRunner:
                         os.write(stdout_fd, data)
                     except OSError:
                         break
+                    # OUT tee: bytes already reached the terminal; the tap gets a
+                    # copy (never alters local output).
+                    try:
+                        self._tap.on_output(data)
+                    except Exception as exc:  # noqa: BLE001 — fail-open
+                        _drop("on_output", exc)
 
                 if stdin_fd in rlist:
                     # HATS-220: self-heal termios drift on parent stdin.
@@ -775,7 +827,20 @@ class WrapRunner:
                         except OSError:
                             pass
                         break
+
+                for fd in rlist:
+                    if fd == master_fd or fd == stdin_fd:
+                        continue
+                    try:
+                        self._tap.on_readable(fd)
+                    except Exception as exc:  # noqa: BLE001 — fail-open
+                        _drop("on_readable", exc)
+                        break
         finally:
+            try:
+                self._tap.close()
+            except Exception:  # noqa: BLE001 — fail-open
+                logger.warning("pty_tap close failed", exc_info=True)
             if restore_attrs and old_attrs is not None:
                 try:
                     termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_attrs)
