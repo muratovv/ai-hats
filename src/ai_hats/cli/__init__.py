@@ -24,22 +24,22 @@ from ._helpers import console
 
 class _PassthroughGroup(click.Group):
     """Click group that treats unknown flag-like leftover args as extras
-    instead of failing with 'No such command'. HATS-087.
+    instead of failing with 'No such command'. HATS-087 / HATS-1202.
 
     Click 8.x splits the parser leftover into ``ctx._protected_args[:1]``
     (the candidate subcommand name) and ``ctx.args[1:]``. If the first
-    leftover token starts with ``-``, it is a flag the user wants
-    forwarded to the underlying provider, NOT a subcommand. This override
-    moves those tokens back into ``ctx.args`` so the no-subcommand path
-    runs and the bare ``def main(ctx, ...)`` body sees them.
+    leftover token starts with ``-`` or is not a registered subcommand
+    (HATS-1202), it is treated as provider flags or a bare positional prompt,
+    NOT a subcommand. This override moves those tokens back into ``ctx.args``
+    so the no-subcommand path runs and the bare ``def main(ctx, ...)`` body
+    sees them.
 
     No-op on click 9.x where ``_protected_args`` is removed and ``args``
     already contains all leftover tokens — the ``getattr`` defensiveness
     handles the absence gracefully.
 
-    Caveat: subcommands whose name starts with ``-`` would be mis-routed.
-    The project has none today; if one is added, this override needs
-    updating.
+    Caveat: subcommands whose name starts with ``-`` or match a positional prompt
+    would be mis-routed; registered subcommands always take precedence.
 
     TODO(HATS-120b): drop once Click 9 is pinned.
     """
@@ -47,7 +47,9 @@ class _PassthroughGroup(click.Group):
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         result = super().parse_args(ctx, args)
         protected = getattr(ctx, "_protected_args", None)
-        if protected and protected[0].startswith("-"):
+        if protected and (
+            protected[0].startswith("-") or self.get_command(ctx, protected[0]) is None
+        ):
             ctx.args = list(protected) + list(ctx.args)
             ctx._protected_args = []
         return result
@@ -146,7 +148,7 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
     """ai-hats — AI agent role composition framework.
 
     Without a subcommand, launches a wrapped provider CLI session.
-    Unknown flags are passed through to the provider.
+    Positional text or unknown flags are passed through to the provider.
     """
     # HATS-213: heal a half-finished self-update (missing runtime dep) before
     # touching anything else. On success this re-execs the same command in a
