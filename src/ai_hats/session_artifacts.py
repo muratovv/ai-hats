@@ -11,12 +11,14 @@ class ArtifactCategory(str, Enum):
     CONTEXT = "context"
     SKILLS = "skills"
     HOOKS = "hooks"
+    SETTINGS = "settings"
 
 
 class DeliveryMode(str, Enum):
     CACHE_FLAG = "cache_flag"
     SDK_OPTION = "sdk_option"
     NATIVE_ROOT = "native_root"
+    INLINE = "inline"
 
 
 class RunMode(str, Enum):
@@ -28,6 +30,16 @@ class RunMode(str, Enum):
 class SessionPolicy:
     context: bool = True
     hooks: bool = True
+    settings: bool = True
+
+    def is_enabled(self, category: ArtifactCategory) -> bool:
+        if category == ArtifactCategory.CONTEXT:
+            return self.context
+        if category == ArtifactCategory.HOOKS:
+            return self.hooks
+        if category == ArtifactCategory.SETTINGS:
+            return self.settings
+        return True
 
 
 @dataclass

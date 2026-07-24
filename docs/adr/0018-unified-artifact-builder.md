@@ -27,16 +27,23 @@ class ArtifactCategory(str, Enum):
     CONTEXT = "context"
     SKILLS = "skills"
     HOOKS = "hooks"
+    SETTINGS = "settings"
 
 class DeliveryMode(str, Enum):
     CACHE_FLAG = "cache_flag"
     SDK_OPTION = "sdk_option"
     NATIVE_ROOT = "native_root"
+    INLINE = "inline"
+
+class RunMode(str, Enum):
+    HITL = "hitl"
+    AUTOMATE = "automate"
 
 @dataclass(frozen=True)
 class SessionPolicy:
     context: bool = True
     hooks: bool = True
+    settings: bool = True
 
 @dataclass
 class BuiltArtifacts:
@@ -47,18 +54,32 @@ class BuiltArtifacts:
     full_content: str | None = None
 ```
 
-Every provider implements:
+Every provider implements the per-category materialization strategy:
 
 ```python
-def build_session_artifacts(
-    self,
-    project_dir: Path,
-    result: CompositionResult,
-    session_id: str,
-    *,
-    run_mode: str,
-    policy: SessionPolicy | None = None,
-) -> BuiltArtifacts: ...
+class Provider(abc.ABC):
+    def build_category_artifact(
+        self,
+        category: ArtifactCategory,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None: ...
+
+    def build_session_artifacts(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: RunMode | str = RunMode.HITL,
+        policy: SessionPolicy | None = None,
+    ) -> BuiltArtifacts:
+        # Loops over all ArtifactCategory items and delegates to build_category_artifact
+        ...
 ```
 
 ### 2. Clean-Root Invariant

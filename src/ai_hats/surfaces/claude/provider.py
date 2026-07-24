@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -163,33 +163,28 @@ class ClaudeProvider(Provider):
         # 2-3x duplicate listing (~1.5k tok/session).
         return self._compose_sections(result, include_skills=False)
 
-    def build_session_artifacts(
+    def build_category_artifact(
         self,
+        category: ArtifactCategory,
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
         *,
-        run_mode: RunMode | str = RunMode.HITL,
-        policy: SessionPolicy | None = None,
-    ) -> BuiltArtifacts:
-        """Build and materialize session artifacts per category and delivery mode (ADR-0018)."""
-        mode = RunMode(run_mode)
-        if policy is None:
-            policy = SessionPolicy()
-
-        artifacts = BuiltArtifacts()
+        run_mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Materialize a single category of session artifacts for ClaudeProvider (ADR-0018)."""
         cache_dir = session_cache_dir(project_dir, session_id)
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        if policy.context:
-            self._build_context_artifact(project_dir, result, cache_dir, mode, artifacts)
-
-        self._build_skills_artifact(project_dir, result, session_id, cache_dir, mode, artifacts)
-
-        if policy.hooks:
-            self._build_hooks_artifact(project_dir, result, cache_dir, mode, artifacts)
-
-        return artifacts
+        if category == ArtifactCategory.CONTEXT:
+            self._build_context_artifact(project_dir, result, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.SKILLS:
+            self._build_skills_artifact(project_dir, result, session_id, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.HOOKS:
+            self._build_hooks_artifact(project_dir, result, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.SETTINGS:
+            self._build_settings_artifact(project_dir, result, cache_dir, run_mode, artifacts)
 
     def _build_context_artifact(
         self,
@@ -249,6 +244,17 @@ class ClaudeProvider(Provider):
         elif mode == RunMode.AUTOMATE:
             artifacts.sdk_options["settings"] = str(cache_settings)
             artifacts.sdk_options["setting_sources"] = []
+
+    def _build_settings_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Provider settings / permissions category. Currently dormant for ClaudeProvider."""
+        pass
 
     def build_session_prompt(
         self,
