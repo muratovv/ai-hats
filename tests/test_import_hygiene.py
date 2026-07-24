@@ -68,6 +68,12 @@ ALLOWED_COMPOSITION_CONSUMERS = (
     # `surfaces/`. It subclasses Provider and reuses that module's markers, so
     # it IS the provider layer at a new path — not a brick reaching into it.
     "surfaces",
+    # HATS-1178: a registry over the `ai_hats.providers` entry-point group —
+    # provider-layer infra at a new path (mirrors `surfaces`), not a brick.
+    "surfaces_registry",
+    # HATS-1184: the `self init` orchestration steps run assembly — integrator
+    # orchestration (like the `cli` subtree), not a role-composition brick.
+    "pipeline.steps.init_steps",
 )
 
 # HATS-865 T5 complete: the migration ratchet (EXPECTED_COMPOSITION_OFFENDERS)

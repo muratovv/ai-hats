@@ -145,10 +145,11 @@ def test_pipeline_names():
 def test_step_registry_names_frozen():
     """Built-in step registry is frozen (drift guard).
 
-    The 19 canonical step IDs are registered in _BUILTINS.
+    The 23 canonical step IDs are registered in _BUILTINS.
     Any addition/removal must be deliberate and reflected here.
     """
     expected = [
+        "bootstrap_project",
         "build_handoff",
         "check_update_async",
         "compose_role",
@@ -161,6 +162,7 @@ def test_step_registry_names_frozen():
         "maybe_spawn_session_reviewer",
         "post_log",
         "pre_log",
+        "prepare_execute_session",
         "provider",
         "quorum_autoclose",
         "render_update_banner",
@@ -168,6 +170,7 @@ def test_step_registry_names_frozen():
         "run_session_end",
         "run_session_review",
         "save_artifact",
+        "select_provider",
         "spawn_session_review",
     ]
     assert sorted(_BUILTINS) == expected
