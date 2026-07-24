@@ -36,7 +36,13 @@ import shutil
 import sys
 from typing import TYPE_CHECKING
 
-from .constants import AGENT_DIR
+from .constants import (
+    AGENT_DIR,
+    INJECTION_END,
+    INJECTION_START,
+    PUBLISH_AGGREGATOR_END,
+    PUBLISH_AGGREGATOR_START,
+)
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
@@ -48,6 +54,7 @@ from ai_hats_core.migrations import (
     run_pending as _run_pending,
 )
 from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,6 +125,49 @@ def _m_migrate_claude_md_to_v3(a: "Assembler") -> None:
 
 def _m_migrate_layout_v4(a: "Assembler") -> None:
     migrate_layout_v4(a)
+
+
+def _strip_marked_block(text: str, start: str, end: str) -> str:
+    """Remove one ``start``…``end`` block plus the blank line it leaves behind."""
+    if start not in text or end not in text:
+        return text
+    head = text[: text.index(start)]
+    tail = text[text.index(end) + len(end) :]
+    if head.strip() and tail.strip():
+        return head.rstrip("\n") + "\n\n" + tail.lstrip("\n")
+    return (head + tail).strip("\n")
+
+
+def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
+    """Drop the ai-hats block HATS-1170 orphaned in root ``CLAUDE.md``.
+
+    Root ``CLAUDE.md`` is user territory now, so ai-hats removes only what it
+    wrote itself: the lowercase aggregator block and the legacy uppercase
+    injection block. A file left with nothing but whitespace was pure ai-hats
+    leftover and goes entirely; anything the user put around the block survives
+    byte-for-byte. Only ``CLAUDE.md`` is touched — Cline (``CLINE.md``) and Agy
+    (``GEMINI.md``) still write live blocks under the same markers.
+    """
+    claude_md = a.project_dir / "CLAUDE.md"
+    if not claude_md.is_file():
+        return
+
+    existing = claude_md.read_text()
+    stripped = _strip_marked_block(existing, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END)
+    stripped = _strip_marked_block(stripped, INJECTION_START, INJECTION_END)
+    if stripped == existing:
+        return
+
+    if not stripped.strip():
+        _safe_discard(claude_md, reason="claude-md-scaffold-drop", project_dir=a.project_dir)
+        return
+
+    _safe_replace(
+        claude_md,
+        (stripped.rstrip("\n") + "\n").encode("utf-8"),
+        reason="claude-md-scaffold-drop",
+        project_dir=a.project_dir,
+    )
 
 
 # ----- v4-layout migration logic (HATS-715: moved out of Assembler) --------
@@ -344,6 +394,11 @@ MIGRATIONS: list[Migration] = [
         step=6,
         run=_m_migrate_layout_v4,
         label="layout v4 (sessions+tracker+library)",
+    ),
+    Migration(
+        step=7,
+        run=_m_strip_orphaned_claude_scaffold,
+        label="drop orphaned claude.md scaffold HATS-1201",
     ),
 ]
 
