@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
+from ai_hats.session_artifacts import BuiltArtifacts, SessionPolicy
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -142,6 +143,18 @@ class Provider(abc.ABC):
     @abc.abstractmethod
     def build_system_prompt(self, result: CompositionResult) -> str:
         """Build the complete system prompt from composition result."""
+
+    def build_session_artifacts(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: str,
+        policy: SessionPolicy | None = None,
+    ) -> BuiltArtifacts:
+        """Build and materialize session artifacts per category and provider delivery mode."""
+        raise NotImplementedError
 
     def transcript_parser(self) -> TranscriptParser:
         """The parser ``AuditWriter`` uses for this surface's session record.

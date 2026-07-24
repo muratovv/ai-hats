@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
+from ai_hats.session_artifacts import BuiltArtifacts, SessionPolicy
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -145,7 +146,12 @@ class ClaudeProvider(Provider):
         return claude_md(project_dir)
 
     def scaffold_template_relpath(self) -> str | None:
-        return "templates/claude/CLAUDE.md.template"
+        # HATS-1170: Root CLAUDE.md scaffold is no longer written (native-by-default).
+        return None
+
+    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+        """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""
+        pass
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
@@ -157,63 +163,75 @@ class ClaudeProvider(Provider):
         # 2-3x duplicate listing (~1.5k tok/session).
         return self._compose_sections(result, include_skills=False)
 
+    def build_session_artifacts(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: str,
+        policy: SessionPolicy | None = None,
+    ) -> BuiltArtifacts:
+        """Build and materialize session artifacts per category and delivery mode (ADR-0018)."""
+        if policy is None:
+            policy = SessionPolicy()
+
+        artifacts = BuiltArtifacts()
+        cache_dir = session_cache_dir(project_dir, session_id)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Category: context
+        if policy.context:
+            prompt_content = self.build_system_prompt(result)
+            prompt_content = expand_path_placeholders(prompt_content, project_dir)
+            prompt_content = expand_role_catalog(prompt_content, project_dir)
+
+            full_content = self._build_full_content(project_dir, prompt_content)
+            artifacts.full_content = full_content
+
+            override_file = cache_dir / "prompt.md"
+            override_file.write_text(full_content)
+            artifacts.materialized.append(override_file)
+
+            if run_mode == "hitl":
+                artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
+            elif run_mode == "automate":
+                artifacts.sdk_options["system_prompt"] = full_content
+
+        # 2. Category: skills
+        skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
+        if run_mode == "hitl":
+            artifacts.cli_args.extend(skill_args)
+        plugin_skills_dir = cache_dir / "plugin" / "skills"
+        inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_skills_dir)
+        artifacts.materialized.append(cache_dir / "plugin")
+
+        # 3. Category: hooks
+        if policy.hooks:
+            desired = self._desired_runtime_entries(project_dir, result)
+            cache_settings = cache_dir / "settings.json"
+            cache_settings.write_text(json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2))
+            artifacts.materialized.append(cache_settings)
+
+            if run_mode == "hitl":
+                artifacts.cli_args.extend(["--settings", str(cache_settings)])
+            elif run_mode == "automate":
+                artifacts.sdk_options["settings"] = str(cache_settings)
+                artifacts.sdk_options["setting_sources"] = []
+
+        return artifacts
+
     def build_session_prompt(
         self,
         project_dir: Path,
         result: CompositionResult,
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
-        """Write composed prompt to per-session cache, pass via --system-prompt-file.
-
-        HATS-294: prompt and plugin-dir both live under
-        ``<ai_hats_dir>/.cache/sessions/<session_id>/`` so the whole session's
-        ephemeral artefacts are colocated and cleaned in one rmtree at
-        session_end.
-
-        Preserves project-local content outside AI-HATS markers.
-
-        Third return element (HATS-523): ``full_content`` — the exact bytes
-        written to ``<cache>/sessions/<session_id>/prompt.md`` and passed via
-        ``--system-prompt-file``. Persisted by ``WrapRunner`` to
-        ``<session_dir>/meta_prompt.txt`` for post-hoc regression detection
-        (HATS-452 / HATS-501 class) and e2e verification, symmetric with
-        ``SubAgentRunner.save_meta_prompt``.
-        """
-        prompt_content = self.build_system_prompt(result)
-        # HATS-380: expand placeholder before --system-prompt-file content
-        # reaches the agent.
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
-        # HATS-625: expand <available_roles> with the live role catalog
-        # (no-op unless the placeholder is present, e.g. the initial-wizard).
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-
-        full_content = self._build_full_content(project_dir, prompt_content)
-
-        # HATS-294: write to per-session cache dir. The whole dir is
-        # cleaned at session_end by _cleanup_session_cache in runtime.py,
-        # which also sweeps orphans older than 24h on session_start.
-        cache_dir = session_cache_dir(project_dir, session_id)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        override_file = cache_dir / "prompt.md"
-        override_file.write_text(full_content)
-
-        # HATS-307: materialize spawned role's skills into a plugin-dir under
-        # the same cache dir so Claude Code's Skill tool can resolve them.
-        skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
-
-        extra_env: dict[str, str] = {}
-        plugin_skills_dir = cache_dir / "plugin" / "skills"
-        inject_skill_paths_to_env(extra_env, result.skills, plugin_skills_dir)
-
-        return (
-            [
-                "--system-prompt-file",
-                str(override_file),
-                *skill_args,
-            ],
-            extra_env,
-            full_content,
+        """Write composed prompt & session artifacts via build_session_artifacts."""
+        artifacts = self.build_session_artifacts(
+            project_dir, result, session_id, run_mode="hitl"
         )
+        return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
     def supports_sdk_engine(self) -> bool:
         """Indicates this provider uses the Python SDK path."""
@@ -223,27 +241,7 @@ class ClaudeProvider(Provider):
         return ClaudeSubagentEngine(self)
 
     def _build_full_content(self, project_dir: Path, prompt_content: str) -> str:
-        """Build full file content preserving project-local sections."""
-        # HATS-285: handle both legacy uppercase markers and the new lowercase
-        # scaffold (which contains an @-import line that we replace with inline
-        # override content for the duration of the session).
-        existing_path = self.system_prompt_path(project_dir)
-        if not existing_path.exists():
-            return f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
-        
-        existing = existing_path.read_text()
-        if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
-            before = existing[: existing.index(PUBLISH_AGGREGATOR_START)]
-            after = existing[
-                existing.index(PUBLISH_AGGREGATOR_END) + len(PUBLISH_AGGREGATOR_END) :
-            ]
-            return f"{before}{INJECTION_START}\n{prompt_content}\n{INJECTION_END}{after}"
-        
-        if INJECTION_START in existing and INJECTION_END in existing:
-            before = existing[: existing.index(INJECTION_START)]
-            after = existing[existing.index(INJECTION_END) + len(INJECTION_END) :]
-            return f"{before}{INJECTION_START}\n{prompt_content}\n{INJECTION_END}{after}"
-        
+        """Build prompt content without splicing root CLAUDE.md (HATS-704 / HATS-1170)."""
         return f"{INJECTION_START}\n{prompt_content}\n{INJECTION_END}\n"
 
     def materialize_runtime_skills(
@@ -317,107 +315,16 @@ class ClaudeProvider(Provider):
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """Install / refresh ai-hats-managed runtime-hook entries in
-        ``.claude/settings.json``. Idempotent.
-
-        Writes two kinds of managed entry, keyed by the native Claude event:
-
-        * the HATS-437 shared-state guard (PreToolUse, tag
-          ``ai-hats:hats-437``) — always, until HATS-598 migrates it onto the
-          registry;
-        * one entry per ``(event, skill, matcher)`` a composed skill declares
-          under ``runtime_hooks:`` (HATS-597), tag
-          ``ai-hats:<skill>:<event>:<matcher>``, ``command`` = the
-          :func:`managed_runtime_hook_filename` path the assembler
-          materializes.
-
-        Each managed entry is located by its tag and updated in place; a
-        user-authored entry already wiring the same script is respected (no
-        dup); managed entries no longer desired (e.g. a skill left the role)
-        are swept. User-authored entries (no ``ai-hats:`` tag) are never
-        touched. Commands are written project-relative so the config survives
-        ``project_dir`` moves; ``ai-hats self update``'s migration_healer owns
-        the physical-move case.
+        """HATS-1170: Managed runtime hooks are written to session cache settings via
+        build_session_artifacts, NOT to project-root .claude/settings.json.
         """
-        settings_path, data, changed, _tags, _desired = self._plan_runtime_hooks(
-            project_dir, result
-        )
-        if changed and data is not None:
-            self._write_settings(settings_path, data, project_dir)
-
-    def _plan_runtime_hooks(
-        self, project_dir: Path, result: CompositionResult | None
-    ) -> tuple[Path, dict | None, bool, set[str], dict[str, dict]]:
-        """Compute the desired managed runtime-hook wiring against the current
-        ``.claude/settings.json`` WITHOUT writing (HATS-833).
-
-        Single source of truth shared by :meth:`ensure_runtime_hooks` (which
-        writes the returned ``data`` when ``changed``) and
-        :meth:`runtime_wiring_changes` (which discards it and reports the changed
-        tags). Running the SAME upsert/sweep on a freshly-parsed copy guarantees
-        the detector can never diverge from the writer — in particular it inherits
-        :meth:`_upsert_managed_entry`'s respect for a user-authored entry already
-        wiring the same script (so a covered hook is never flagged drift forever).
-
-        Returns ``(settings_path, data, changed, changed_tags, desired_by_tag)``;
-        ``data`` is ``None`` when the file is user-shaped / malformed and must be
-        left untouched (then ``changed`` is False, ``changed_tags`` empty).
-        """
-        settings_path = claude_settings_json(project_dir)
-        desired = self._desired_runtime_entries(project_dir, result)
-        desired_by_tag = {
-            entry["_ai_hats_managed"]: entry for entries in desired.values() for entry in entries
-        }
-        desired_tags = set(desired_by_tag)
-
-        # Read existing settings, tolerating missing file / malformed JSON.
-        data: dict = {}
-        if settings_path.exists():
-            try:
-                raw = settings_path.read_text()
-                if raw.strip():
-                    data = json.loads(raw)
-                    if not isinstance(data, dict):
-                        # Settings file is not an object — bail to avoid clobbering.
-                        return settings_path, None, False, set(), desired_by_tag
-            except json.JSONDecodeError:
-                # Malformed user-owned settings. Leave alone.
-                return settings_path, None, False, set(), desired_by_tag
-
-        hooks_root = data.setdefault(self._SETTINGS_HOOKS_KEY, {})
-        if not isinstance(hooks_root, dict):
-            return settings_path, None, False, set(), desired_by_tag  # user-shaped
-
-        changed_tags: set[str] = set()
-        for event, want_entries in desired.items():
-            event_list = hooks_root.setdefault(event, [])
-            if not isinstance(event_list, list):
-                continue  # user-shaped event — leave alone
-            for want in want_entries:
-                if self._upsert_managed_entry(event_list, want):
-                    changed_tags.add(want["_ai_hats_managed"])
-
-        # Sweep managed entries no longer desired (across every event, so a
-        # PostToolUse skill hook is swept too when its skill leaves).
-        changed_tags |= self._sweep_stale_managed_tags(hooks_root, desired_tags)
-
-        return settings_path, data, bool(changed_tags), changed_tags, desired_by_tag
+        pass
 
     def runtime_wiring_changes(
         self, project_dir: Path, result: CompositionResult | None = None
     ) -> list[tuple[str, str]]:
-        """Managed settings.json wiring drift as ``[(display_name, "wiring")]``.
-
-        Reuses :meth:`_plan_runtime_hooks` (no write) so it is exactly the set of
-        managed entries ``ensure_runtime_hooks`` would (re)write or sweep.
-        """
-        _path, _data, _changed, changed_tags, desired_by_tag = self._plan_runtime_hooks(
-            project_dir, result
-        )
-        return [
-            (self._runtime_wiring_name(tag, desired_by_tag), "wiring")
-            for tag in sorted(changed_tags)
-        ]
+        """HATS-1170: Project-root .claude/settings.json is no longer written or tracked."""
+        return []
 
     @staticmethod
     def _runtime_wiring_name(tag: str, desired_by_tag: dict[str, dict]) -> str:
@@ -674,6 +581,9 @@ class ClaudeSubagentEngine(SubagentEngine):
         model: str | None,
         timeout_s: int,
     ) -> ProviderRunResult:
+        artifacts = self._provider.build_session_artifacts(
+            project_dir, result, session_id, run_mode="automate"
+        )
         opts = build_options(
             composition_result=result,
             provider=self._provider,
@@ -681,6 +591,8 @@ class ClaudeSubagentEngine(SubagentEngine):
             session_id=session_id,
             work_dir=work_dir,
             model=model or "",
+            settings=artifacts.sdk_options.get("settings"),
+            setting_sources=artifacts.sdk_options.get("setting_sources"),
             extra_env=env,
         )
         msg = build_first_user_message(

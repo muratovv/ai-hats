@@ -220,14 +220,17 @@ class SubAgentRunner:
         # os.environ at spawn time, so we hand it only ai-hats-specific
         # keys to avoid widening the secret-exposure surface (the SDK
         # stores options on a long-lived object, repr-able).
+        provider_env = provider.get_env(session.session_dir, self.project_dir)
         env = {
             **os.environ,
             **session.get_env(),
+            **provider_env,
             ENV_ROLE: role_name,
             ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
         sdk_env_overlay = {
             **session.get_env(),
+            **provider_env,
             ENV_ROLE: role_name,
             ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
         }
