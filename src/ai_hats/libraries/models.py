@@ -162,7 +162,6 @@ class SkillMetadata(_YamlModel):
     runtime_hooks: dict[str, list[RuntimeHook]] = Field(default_factory=dict)
     worktree: dict[str, Any] = Field(default_factory=dict)
     lifecycle_hooks: dict[str, list[str]] = Field(default_factory=dict)
-    plan_sections: list[dict[str, Any]] = Field(default_factory=list)
     triggers: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
 
@@ -297,44 +296,6 @@ class SkillMetadata(_YamlModel):
         data["lifecycle_hooks"] = normalized
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_plan_sections(cls, data: Any) -> Any:
-        """Shape-check ``plan_sections:`` (HATS-1023): entries are a section
-        name string or ``{name, required?}`` — normalized to the dict form.
-        Fail-loud: a dropped section silently weakens the plan-gate."""
-        if not isinstance(data, dict):
-            return data
-        raw = data.get("plan_sections")
-        if not raw:
-            data["plan_sections"] = []
-            return data
-        skill_name = data.get("name", "<unknown>")
-        if not isinstance(raw, list):
-            raise ValueError(
-                f"skill {skill_name!r}: plan_sections must be a list of section "
-                f"names or {{name, required?}} entries, got {type(raw).__name__}"
-            )
-        normalized: list[dict[str, Any]] = []
-        for item in raw:
-            if isinstance(item, str) and item.strip():
-                normalized.append({"name": item.strip(), "required": True})
-            elif (
-                isinstance(item, dict)
-                and isinstance(item.get("name"), str)
-                and item["name"].strip()
-            ):
-                normalized.append(
-                    {"name": item["name"].strip(), "required": bool(item.get("required", True))}
-                )
-            else:
-                raise ValueError(
-                    f"skill {skill_name!r}: bad plan_sections entry {item!r} — "
-                    f"expected a section name or {{name, required?}}"
-                )
-        data["plan_sections"] = normalized
-        return data
-
     @classmethod
     def from_yaml(cls, path: Path) -> SkillMetadata:
         if not path.exists():
@@ -376,6 +337,15 @@ class SkillMetadata(_YamlModel):
         ai_hats = fm.get("ai_hats")
         if not isinstance(ai_hats, dict):
             ai_hats = {}
+        if ai_hats.get("plan_sections"):
+            # Tombstone (HATS-1160 / HATS-1149 A): consumer plan_sections channel
+            # deleted — fail LOUD, never no-op; a dropped section weakens the gate.
+            raise ValueError(
+                f"skill {skill_dir.name!r}: the plan_sections: channel was removed "
+                f"(HATS-1160, HATS-1149 decision A) and no longer extends the "
+                f"plan-gate. Remove the declaration, or re-introduce the channel "
+                f"as an integrator-side live-collect."
+            )
         name = fm.get("name")
         return cls.model_validate(
             {
@@ -384,7 +354,6 @@ class SkillMetadata(_YamlModel):
                 "runtime_hooks": ai_hats.get("runtime_hooks") or {},
                 "worktree": ai_hats.get("worktree") or {},
                 "lifecycle_hooks": ai_hats.get("lifecycle_hooks") or {},
-                "plan_sections": ai_hats.get("plan_sections") or [],
             }
         )
 

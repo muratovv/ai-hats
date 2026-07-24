@@ -395,19 +395,15 @@ def build_rack_kernel(
     """Assemble the integrator kernel: K1 core + every K3 stock extension
     (mirror of ``cli/_helpers._task_manager`` for the rack stack).
 
-    ``sections=None`` (the default) resolves to the stock catalog extended by
-    the materialized consumer config (HATS-1023) — scaffold and gate read one
-    catalog, so contract and enforcement cannot drift (HATS-635)."""
+    ``sections=None`` (the default) resolves to the stock ``DEFAULT_PLAN_SECTIONS``
+    catalog via ``stock_factories`` — scaffold and gate read one catalog, so
+    contract and enforcement cannot drift (HATS-635)."""
     if tasks_dir is None or state_md_path is None:
         from .tracker_wiring import tracker_paths
 
         paths = tracker_paths(project_dir)
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
-    if sections is None:
-        from .rack_consumers import consumer_plan_sections
-
-        sections = consumer_plan_sections(project_dir)
 
     # One backlog definition (catalog backlog.yaml or the packaged default)
     # feeds the kernel AND every subscriber — a single source, no diverging

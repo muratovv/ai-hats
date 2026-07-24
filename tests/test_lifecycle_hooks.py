@@ -1,20 +1,17 @@
 """HATS-1023 — consumer lifecycle-hook union materialization: union collector
 over ALL library skills (not per-role), managed dir + manifest + sweep, LOUD
-health-check (HYP-078/HATS-961), plan-sections config, and the two triggers
+health-check (HYP-078/HATS-961), and the two triggers
 (HooksManager.materialize → self init / set_role; sync_hooks → session start).
 """
 
 from pathlib import Path
 
 import pytest
-import yaml
 
 from ai_hats.assembler import Assembler
 from ai_hats.hooks_manager import HookSurface
 from ai_hats.lifecycle_hooks import (
     LifecycleHookError,
-    PLAN_SECTIONS_FILENAME,
-    collect_plan_sections,
     expected_lifecycle_files,
     lifecycle_hooks_dir,
     materialize_lifecycle_hooks,
@@ -31,11 +28,10 @@ def _skill(
     name: str,
     *,
     hooks: dict[str, list[str]] | None = None,
-    sections: list[str] | None = None,
     script_body: str = GOOD_SCRIPT,
     write_scripts: bool = True,
 ) -> Path:
-    """A library skill declaring lifecycle_hooks / plan_sections in frontmatter."""
+    """A library skill declaring lifecycle_hooks in frontmatter."""
     d = lib / "skills" / name
     d.mkdir(parents=True, exist_ok=True)
     lines = ["---", f"name: {name}", f"description: {name}", "ai_hats:"]
@@ -44,9 +40,6 @@ def _skill(
         for event, scripts in hooks.items():
             lines.append(f"    {event}:")
             lines.extend(f"      - {s}" for s in scripts)
-    if sections:
-        lines.append("  plan_sections:")
-        lines.extend(f"    {s}" for s in sections)
     lines.append("---")
     (d / "SKILL.md").write_text("\n".join(lines) + f"\n# {name}\n")
     if write_scripts:
@@ -148,34 +141,6 @@ def test_empty_script_fails_loud(project, lib):
         materialize_lifecycle_hooks(project, [lib])
 
 
-# ----- plan-sections config -----
-
-
-def test_plan_sections_union_dedupe_and_required_or(project, lib):
-    _skill(lib, "aaa", sections=["- name: Rollback plan\n      required: false"])
-    _skill(lib, "bbb", sections=["- Rollback plan", "- name: Risk log\n      required: false"])
-    assert collect_plan_sections([lib]) == [
-        {"name": "Rollback plan", "required": True},  # OR over declarations
-        {"name": "Risk log", "required": False},
-    ]
-    materialize_lifecycle_hooks(project, [lib])
-    cfg = lifecycle_hooks_dir(project) / PLAN_SECTIONS_FILENAME
-    assert yaml.safe_load(cfg.read_text()) == collect_plan_sections([lib])
-
-
-def test_plan_sections_config_swept_on_revert(project, lib):
-    skill = _skill(lib, "aaa", sections=["- Rollback plan"])
-    materialize_lifecycle_hooks(project, [lib])
-    cfg = lifecycle_hooks_dir(project) / PLAN_SECTIONS_FILENAME
-    assert cfg.is_file()
-
-    import shutil
-
-    shutil.rmtree(skill)
-    materialize_lifecycle_hooks(project, [lib])
-    assert not cfg.exists(), "reverted declaration must sweep the config"
-
-
 # ----- triggers: HooksManager.materialize (self init) + sync drift surface -----
 
 
@@ -235,6 +200,6 @@ def test_unwired_library_paths_skip_surface(project):
 
 
 def test_expected_files_are_deterministic(lib):
-    _skill(lib, "aaa", hooks={"plan--execute": ["a.sh"]}, sections=["- Rollback plan"])
+    _skill(lib, "aaa", hooks={"plan--execute": ["a.sh"]})
     _skill(lib, "bbb", hooks={"document--review": ["b.sh"]})
     assert expected_lifecycle_files([lib]) == expected_lifecycle_files([lib])

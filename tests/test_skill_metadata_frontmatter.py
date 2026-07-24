@@ -122,3 +122,25 @@ def test_no_ai_hats_block_empty_hooks(tmp_path: Path) -> None:
     md = SkillMetadata.from_skill_dir(d)
     assert md.git_hooks == {}
     assert md.runtime_hooks == {}
+
+
+def test_plan_sections_declaration_is_a_loud_tombstone(tmp_path: Path) -> None:
+    # HATS-1160: consumer plan_sections channel deleted — a later declaration
+    # must fail LOUDLY (skill + card named), never silently drop a plan-gate
+    # section (the HYP-078-class hole).
+    d = _skill(
+        tmp_path,
+        "---\n"
+        "name: demo\n"
+        "description: x\n"
+        "ai_hats:\n"
+        "  plan_sections:\n"
+        "    - Rollback plan\n"
+        "---\n"
+        "# Demo\n",
+    )
+    with pytest.raises(ValueError) as exc:
+        SkillMetadata.from_skill_dir(d)
+    msg = str(exc.value)
+    assert "demo" in msg
+    assert "HATS-1149" in msg

@@ -1,25 +1,21 @@
 """Consumer lifecycle-hook channel: union collection + materialization
 (HATS-1023, epic HATS-1014 K4).
 
-Library skills declare ``lifecycle_hooks:`` (bash gates on rack FSM edges) and
-``plan_sections:`` (extra plan-gate checklist entries) in SKILL.md frontmatter
-``ai_hats:``. Unlike every ``_collect_*`` in :mod:`ai_hats.hook_collection`
-(per-role, over a CompositionResult), the collector here is a UNION over ALL
-skills of ALL library layers — lifecycle gates are role-independent (FSM doc
-§5). Materialization is managed-dir + manifest + sweep (the
-``materialize_worktree_hooks`` pattern) into
-``<ai_hats_dir>/tracker/lifecycle-hooks/<from>--<to>.d/`` plus a
-``plan-sections.yaml`` catalog, with a LOUD health-check: a broken declared
-script fails materialization naming the skill — never a silent skip that dies
-on a transaction later (HYP-078 / HATS-961).
+Library skills declare ``lifecycle_hooks:`` (bash gates on rack FSM edges) in
+SKILL.md frontmatter ``ai_hats:``. Unlike every ``_collect_*`` in
+:mod:`ai_hats.hook_collection` (per-role, over a CompositionResult), the
+collector here is a UNION over ALL skills of ALL library layers — lifecycle
+gates are role-independent (FSM doc §5). Materialization is managed-dir +
+manifest + sweep (the ``materialize_worktree_hooks`` pattern) into
+``<ai_hats_dir>/tracker/lifecycle-hooks/<from>--<to>.d/``, with a LOUD
+health-check: a broken declared script fails materialization naming the skill
+— never a silent skip that dies on a transaction later (HYP-078 / HATS-961).
 """  # comment-length: allow — module contract (union vs per-role, loud health-check)
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Sequence
-
-import yaml
 
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
@@ -35,7 +31,6 @@ from .resolver import LibraryResolver
 
 _MANAGED_HEADER = "# ai-hats managed — do not edit"
 MANIFEST_NAME = ".manifest"
-PLAN_SECTIONS_FILENAME = "plan-sections.yaml"
 
 
 class LifecycleHookError(Exception):
@@ -112,28 +107,6 @@ def collect_lifecycle_hooks(
     return collected
 
 
-def collect_plan_sections(library_paths: Sequence[Path]) -> list[dict[str, object]]:
-    """Union of ``plan_sections:`` declarations over ALL library skills.
-
-    Deduped by section name; ``required`` is the OR over declarations (a
-    section any consumer marks required stays required). Deterministic:
-    skills in sorted order, sections in declaration order.
-    """
-    ordered: list[str] = []
-    required: dict[str, bool] = {}
-    for _name, _skill_dir, meta in _iter_library_skills(library_paths):
-        for entry in meta.plan_sections:
-            section_name = str(entry["name"])
-            if section_name not in required:
-                ordered.append(section_name)
-                required[section_name] = bool(entry.get("required", True))
-            else:
-                required[section_name] = required[section_name] or bool(
-                    entry.get("required", True)
-                )
-    return [{"name": n, "required": required[n]} for n in ordered]
-
-
 def _health_check(skill: str, event: str, src: Path) -> bytes:
     """Validate one declared script; return its bytes. LOUD on any defect —
     the whole point of HATS-961/HYP-078: a hook that cannot run must fail the
@@ -160,8 +133,7 @@ def expected_lifecycle_files(library_paths: Sequence[Path]) -> dict[str, bytes]:
 
     Single source for BOTH the materializer and the session-start drift
     detector (the ``expected_git_hook_files`` pattern): keys are
-    ``<event>.d/<skill>-<basename>`` per script plus ``plan-sections.yaml``
-    when any consumer declares sections. Health-checks every script (loud).
+    ``<event>.d/<skill>-<basename>`` per script. Health-checks every script (loud).
     """
     expected: dict[str, bytes] = {}
     declared = collect_lifecycle_hooks(library_paths)
@@ -175,11 +147,6 @@ def expected_lifecycle_files(library_paths: Sequence[Path]) -> dict[str, bytes]:
                     f"'{rel}' with different contents — rename one script"
                 )
             expected[rel] = data
-    sections = collect_plan_sections(library_paths)
-    if sections:
-        expected[PLAN_SECTIONS_FILENAME] = yaml.safe_dump(
-            sections, sort_keys=False, allow_unicode=True
-        ).encode("utf-8")
     return expected
 
 
@@ -191,10 +158,10 @@ def _read_manifest(path: Path) -> set[str]:
 
 def materialize_lifecycle_hooks(project_dir: Path, library_paths: Sequence[Path]) -> None:
     """Bring ``<ai_hats_dir>/tracker/lifecycle-hooks/`` in sync with the union
-    of library declarations: write scripts 0755 + ``plan-sections.yaml``,
-    sweep manifest-tracked strays, keep a clean project clean (no dir/manifest
-    when nothing is or was declared — the ``materialize_worktree_hooks``
-    mirror). Loud on any broken declaration (health-check)."""
+    of library declarations: write scripts 0755, sweep manifest-tracked strays,
+    keep a clean project clean (no dir/manifest when nothing is or was declared
+    — the ``materialize_worktree_hooks`` mirror). Loud on any broken declaration
+    (health-check)."""
     target_dir = lifecycle_hooks_dir(project_dir)
     manifest_path = target_dir / MANIFEST_NAME
 
@@ -214,7 +181,7 @@ def materialize_lifecycle_hooks(project_dir: Path, library_paths: Sequence[Path]
             expected[rel],
             reason="materialize-lifecycle-hook",
             project_dir=project_dir,
-            mode=0o755 if rel != PLAN_SECTIONS_FILENAME else None,
+            mode=0o755,
         )
     for stale in sorted(previous - new_names):
         _safe_discard(target_dir / stale, reason="materialize-lifecycle-sweep",
