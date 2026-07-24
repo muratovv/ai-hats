@@ -23,6 +23,14 @@ KEY_COMPOSITION = "composition"
 KEY_SESSION_MGR = "session_mgr"
 KEY_TRACER_FACTORY = "tracer_factory"
 KEY_MAX_RETRIES = "max_retries"
+KEY_NO_WIZARD = "no_wizard"
+KEY_CHANNEL = "channel"
+KEY_TASK_PREFIX = "task_prefix"
+KEY_AI_HATS_DIR = "ai_hats_dir"
+KEY_VENV_PATH = "venv_path"
+KEY_NO_MANAGE_GITIGNORE = "no_manage_gitignore"
+KEY_HARNESS_PATH = "harness_path"
+KEY_PROJECT_CONFIG = "project_config"
 
 # Read back from the final state by CLI / runners.
 KEY_SESSION_ID = "session_id"
@@ -33,10 +41,12 @@ KEY_ERRORS = "errors"
 KEY_REVIEW_PATH = "review_path"
 KEY_SAVED_PATH = "saved_path"
 KEY_INTAKE_RESULT = "intake_result"
+KEY_EXECUTE_CMD = "execute_cmd"
 
 # Core pipeline names (Python-side).
 PIPELINE_HUMAN = "human"
 PIPELINE_EXECUTE = "execute"
+PIPELINE_INIT = "init"
 PIPELINE_FINALIZE_HITL = "finalize-hitl"
 PIPELINE_FINALIZE_SUBAGENT = "finalize-subagent"
 PIPELINE_REFLECT_SESSION = "reflect-session"
@@ -61,6 +71,14 @@ __all__ = [
     "KEY_SESSION_MGR",
     "KEY_TRACER_FACTORY",
     "KEY_MAX_RETRIES",
+    "KEY_NO_WIZARD",
+    "KEY_CHANNEL",
+    "KEY_TASK_PREFIX",
+    "KEY_AI_HATS_DIR",
+    "KEY_VENV_PATH",
+    "KEY_NO_MANAGE_GITIGNORE",
+    "KEY_HARNESS_PATH",
+    "KEY_PROJECT_CONFIG",
     "KEY_SESSION_ID",
     "KEY_SESSION_DIR",
     "KEY_CLAUDE_SESSION_ID",
@@ -69,8 +87,10 @@ __all__ = [
     "KEY_REVIEW_PATH",
     "KEY_SAVED_PATH",
     "KEY_INTAKE_RESULT",
+    "KEY_EXECUTE_CMD",
     "PIPELINE_HUMAN",
     "PIPELINE_EXECUTE",
+    "PIPELINE_INIT",
     "PIPELINE_FINALIZE_HITL",
     "PIPELINE_FINALIZE_SUBAGENT",
     "PIPELINE_REFLECT_SESSION",
@@ -80,3 +100,4 @@ __all__ = [
     "PIPELINE_REFLECT_ROLE",
     "PIPELINE_REFLECT_ISSUE",
 ]
+

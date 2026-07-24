@@ -266,7 +266,7 @@ def _run_self_update(target_python: str | Path | None = None) -> None:
 
 
 
-def _launch_wizard_session() -> None:
+def _launch_wizard_session(provider: str | None = None, role: str | None = None) -> None:
     """Replace the current process with `ai-hats execute --role initial-wizard`.
 
     Uses ``os.execvp`` so the interactive provider CLI takes over the
@@ -280,10 +280,18 @@ def _launch_wizard_session() -> None:
         )
         return
     console.print("[cyan]→ Launching initial-wizard session …[/]")
-    os.execvp(
+    cmd = [
         ai_hats_bin,
-        [ai_hats_bin, "execute", "--role", "initial-wizard", "--prompt", "initial-wizard"],
-    )
+        "execute",
+        "--role",
+        role or "initial-wizard",
+        "--prompt",
+        "initial-wizard",
+    ]
+    if provider:
+        cmd.extend(["--provider", provider])
+    os.execvp(ai_hats_bin, cmd)
+
 
 
 @click.command()
@@ -369,7 +377,6 @@ def init(
     for CI and scripted invocations.
     """
     project_dir = _project_dir()
-    already = (project_dir / PROJECT_CONFIG).exists()
 
     # HATS-938: mirror the `config --channel` guard — a path only means the
     # local channel.
@@ -377,160 +384,62 @@ def init(
         console.print("[red]Error[/]: --harness-path is only valid with --channel local.")
         raise SystemExit(2)
 
-    # Wizard runs only when stdin is a TTY and the user did NOT supply
-    # both -p and -r (which we treat as a fully-scripted invocation).
     use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
 
-    if not use_wizard and not already and provider is None and role is None and not no_wizard:
-        console.print(
-            "[red]No TTY and no flags[/]: cannot run interactive wizard.\n"
-            "Pass --provider/-p (and optionally --role/-r), or run with "
-            "--no-wizard to bootstrap a minimal config.",
-        )
-        raise SystemExit(2)
-
-    # Wizard path step 0: ensure the framework itself is up to date. The
-    # subsequent `_launch_wizard_session()` os.execvp's into the freshly
-    # installed binary, so the wizard session uses the new code.
-    # HATS-1126: _run_self_update re-execs on success, so it sits above the
-    # pre-init backup below — nothing before this point has side effects that a
-    # second pass would repeat. The env marker keeps that pass from reinstalling.
+    # Wizard path step 0: ensure the framework itself is up to date (HATS-1126)
     if use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
         _run_self_update()
 
+    from ..pipeline.harness import PipelineHarness
+    from ..pipeline.keys import (
+        KEY_AI_HATS_DIR,
+        KEY_CHANNEL,
+        KEY_EXECUTE_CMD,
+        KEY_HARNESS_PATH,
+        KEY_NO_MANAGE_GITIGNORE,
+        KEY_NO_WIZARD,
+        KEY_PROJECT_DIR,
+        KEY_PROVIDER,
+        KEY_ROLE,
+        KEY_TASK_PREFIX,
+        KEY_VENV_PATH,
+        PIPELINE_INIT,
+    )
 
-    # HATS-549: pre-bump snapshot for re-init paths (non-greenfield).
-    # Greenfield init has nothing to back up — the project tree is
-    # empty from ai-hats's POV. Re-init reruns the v07 migration +
-    # registry, both of which can mutate user-managed state.
-    init_backup_path = None
-    if already:
-        from ..migration_backup import BackupError, snapshot_pre_bump
+    already = (project_dir / PROJECT_CONFIG).exists()
+    agent_dir = project_dir / ".agent"
+    agent_existed_before = agent_dir.exists()
 
-        try:
-            init_backup_path = snapshot_pre_bump(project_dir, label="init")
-        except BackupError as be:
-            console.print(f"[red]Pre-init backup failed[/]: {be}")
-            raise SystemExit(1)
-
-    if use_wizard:
-        if channel is None and provider is None:
-            cur_ch = None
-            if already:
-                try:
-                    cur_ch = _assembler(project_dir).project_config.harness.channel.value
-                except Exception:
-                    pass
-            channel = _wizard_harness_prompt(cur_ch)
-
-        if provider is None:
-            detected = _detected_providers()
-            provider = _wizard_provider_prompt(detected)
-
-    # HATS-366: the wizard no longer asks for ai_hats_dir / venv / gitignore
-    # at the CLI prompt — initial-wizard handles those inside the LLM session
-    # via `ai-hats config set ...`. The corresponding `self init` flags
-    # (--ai-hats-dir, --venv, --no-manage-gitignore) remain for scripted use.
-    manage_gitignore: bool | None = False if no_manage_gitignore else None
-
-    asm = _assembler(project_dir)
     try:
-        asm.init(
-            provider=provider,
-            role=role,
-            task_prefix=task_prefix,
-            ai_hats_dir=ai_hats_dir,
-            venv_path=venv_path,
-            manage_gitignore=manage_gitignore,
-            channel=channel,
-            harness_path=harness_path,
-        )
-    except ValueError as err:
-        console.print(f"[red]Error[/]: {err}")
-        raise SystemExit(1)
+        with PipelineHarness(PIPELINE_INIT, project_dir) as h:
+            final = h.run({
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROVIDER: provider,
+                KEY_ROLE: role,
+                KEY_TASK_PREFIX: task_prefix,
+                KEY_AI_HATS_DIR: ai_hats_dir,
+                KEY_VENV_PATH: venv_path,
+                KEY_NO_MANAGE_GITIGNORE: no_manage_gitignore,
+                KEY_NO_WIZARD: no_wizard,
+                KEY_CHANNEL: channel,
+                KEY_HARNESS_PATH: harness_path,
+            })
+    except BaseException:
+        if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
+            shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
+        raise
 
-    # HATS-938: surface a non-default harness so an auto-seeded channel:local
-    # (editable host) or an explicit --channel is visible, not silent.
-    from ..models import Channel as _Channel
 
-    seeded = asm.project_config.harness
-    if seeded.channel is not _Channel.STABLE:
-        loc = f" → {seeded.path}" if seeded.path else ""
-        console.print(f"[green]✓[/] harness channel: [bold]{seeded.channel.value}[/]{loc}")
 
-    # HATS-1125: non-wizard init (flag-only / --no-wizard / non-TTY) seeds harness
-    # channel in ai-hats.yaml above, but the venv still holds the launcher's edge
-    # scaffold. Reconcile the venv with the channel just written if self update
-    # hasn't already run in this process chain.
+
+    # HATS-1125: non-wizard init self-update reconciliation
     if not use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
         _run_self_update()
 
+    cmd = final.get(KEY_EXECUTE_CMD)
+    if cmd:
+        _launch_wizard_session(provider=final.get(KEY_PROVIDER), role=role)
 
-    # HATS-549 Phase 3: end-of-init smoke-assert. Mirrors do_bump's
-    # final step — every hook command path in .claude/settings.json
-    # must resolve. Only fires on re-init (greenfield has no
-    # backup_path AND no pre-existing settings.json to break).
-    if already:
-        from ..assembler import AssemblyError as _AssemblyError
-        from ..migration_assert import assert_runtime_hooks_resolve
-
-        try:
-            assert_runtime_hooks_resolve(
-                project_dir,
-                backup_path=init_backup_path,
-            )
-        except _AssemblyError as e:
-            console.print(f"[red]Init refused[/]:\n{e}")
-            raise SystemExit(1)
-
-    # HATS-469 R6: auto-bump block removed. ``Assembler.init`` itself now
-    # calls ``_refresh(install_time=True)`` (which runs migrations + heal
-    # + hook install) and ``_run_v07_migration`` on re-init. The only
-    # remaining init-time chores not covered by that refresh are the
-    # state-condition diagnostics (orphan warning, empty .agent/ note)
-    # and the trash-bin summary banner. ``TrashFullError`` from inside
-    # ``_refresh`` already propagates up via ``asm.init`` above — no
-    # re-raise needed here. Wizard path still skips (the wizard role
-    # handles its own session-bootstrap surface).
-    if already and not use_wizard:
-        from ai_hats_core.safe_delete import session_summary as _trash_summary
-
-        # HATS-469 R3: re-init is user-initiated → diagnostics OK
-        # (set_role / runtime path stays silent).
-        asm._run_diagnostics()
-        banner = _trash_summary()
-        if banner:
-            console.print(f"  [dim]{banner}[/]")
-
-    label = "Re-initialized" if already else "Initialized"
-    console.print(f"[green]{label}[/] ai-hats in {project_dir}")
-
-    if role:
-        console.print(f"  Default role: [bold]{role}[/]")
-    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
-    if task_prefix:
-        console.print(f"  Task prefix: [bold]{asm.project_config.task_prefix}[/]")
-    if ai_hats_dir:
-        console.print(f"  ai-hats dir: [bold]{asm.project_config.ai_hats_dir}[/]")
-    if venv_path:
-        console.print(f"  Venv path: [bold]{asm.project_config.venv_path}[/]")
-    if manage_gitignore is False:
-        console.print("  manage_gitignore: [bold]disabled[/]")
-
-    # HATS-407: surface the Fork B trade — bare ``claude`` in project_dir
-    # loads only user-rules. Suppressed when handing off to the wizard
-    # (the wizard role explains this in its own copy).
-    if not (use_wizard and not role):
-        console.print(
-            "  [dim]💡 Direct `claude` reads only user-rules. "
-            "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
-        )
-
-    # Hand off to the wizard role for the remaining configuration steps
-    # (stack detection, role selection, customization, feedback policy).
-    # Skipped when -r was given (role already chosen), --no-wizard, or non-TTY.
-    if use_wizard and not role:
-        _launch_wizard_session()
 
 
 # HATS-833: `self sync-hooks` removed — hook drift healing is session-start only.
