@@ -21,7 +21,6 @@ from rich.tree import Tree
 
 from ..constants import ENV_INIT_UPDATED
 from ..paths import PROJECT_CONFIG
-from ..providers import provider_names
 from ._helpers import _assembler, _project_dir, console
 
 
@@ -42,24 +41,17 @@ def _stdin_is_tty() -> bool:
 
 
 def _detected_providers() -> list[str]:
-    """Providers whose home-config directory exists.
+    """Providers whose home-config directory exists on the host.
 
-    Returns EVERY match in provider registration order (deterministic), not
-    just the first — the wizard marks each as ``detected`` and refuses to
-    silently prefer one when several are present (HATS-613). Empty list
-    when no provider home directory is found.
+    HATS-1179: Queries all known surfaces from `surfaces_registry.py` and uses
+    provider-agnostic `detect_surface_presence(name)`. Returns matches in
+    deterministic order.
     """
-    from ..providers import get_provider
+    from ..surfaces_registry import detect_surface_presence, get_known_surfaces
 
-    home = Path.home()
     detected: list[str] = []
-    for name in provider_names():
-        try:
-            p = get_provider(name)
-            dirs = p.detected_home_dirs()
-        except Exception:
-            dirs = [f".{name}"]
-        if any((home / d).is_dir() for d in dirs):
+    for name in get_known_surfaces():
+        if detect_surface_presence(name):
             detected.append(name)
     return detected
 
@@ -73,22 +65,36 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
     explicitly rather than silently inheriting the dict-first provider (HATS-613).
     """
     from ..providers import get_provider
+    from ..surfaces_registry import (
+        get_known_surfaces,
+        is_surface_installed,
+    )
 
     home = Path.home()
-    names = provider_names()
+    known = get_known_surfaces()
+    names = list(known.keys())
+
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
+        markers: list[str] = []
         if name in detected:
             try:
                 p = get_provider(name)
                 dirs = p.detected_home_dirs()
             except Exception:
-                dirs = [f".{name}"]
+                info = known.get(name)
+                dirs = list(info.default_home_dirs) if info else [f".{name}"]
             found_dir = next((d for d in dirs if (home / d).is_dir()), f".{name}")
-            marker = f" [dim](detected — found ~/{found_dir})[/]"
-        else:
-            marker = ""
-        console.print(f"  {idx}) {name}{marker}")
+            markers.append(f"detected — found ~/{found_dir}")
+
+        if not is_surface_installed(name):
+            info = known.get(name)
+            pkg = info.package_name if info else f"ai-hats-{name}"
+            markers.append(f"will install: {pkg}")
+
+        marker_str = f" [dim]({', '.join(markers)})[/]" if markers else ""
+        console.print(f"  {idx}) {name}{marker_str}")
+
     # Pre-select a default only when detection is unambiguous (exactly one).
     default_name = detected[0] if len(detected) == 1 else None
     default_idx = names.index(default_name) + 1 if default_name else None
