@@ -8,10 +8,11 @@ kept for tests that exercise the pipeline core without YAML parsing.
 
 from __future__ import annotations
 
-from .keys import PIPELINE_EXECUTE
+from .keys import PIPELINE_EXECUTE, PIPELINE_INIT
 from .pipeline import build
 from .steps.check_update import CheckUpdateAsync
 from .steps.compose import ComposeRole
+from .steps.init_steps import BootstrapProjectStep, PrepareExecuteSessionStep, SelectProviderStep
 from .steps.launch import Provider
 from .steps.log import PostLog, PreLog
 from .steps.prompt import ResolvePrompt
@@ -30,3 +31,11 @@ execute_pipeline = build(
     RenderUpdateBanner(),
     name=PIPELINE_EXECUTE,
 )
+
+init_pipeline = build(
+    SelectProviderStep(),
+    BootstrapProjectStep(),
+    PrepareExecuteSessionStep(),
+    name=PIPELINE_INIT,
+)
+

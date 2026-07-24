@@ -1,0 +1,6 @@
+name: init
+# `ai-hats self init` pipeline. Selects provider, bootstraps project config, and prepares execute handoff.
+steps:
+  - id: select_provider
+  - id: bootstrap_project
+  - id: prepare_execute_session

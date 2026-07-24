@@ -14,6 +14,7 @@ from .compute_usage import ComputeUsage
 from .emit import EmitStdout
 from .extract import ExtractMarker
 from .handoff import BuildHandoff
+from .init_steps import BootstrapProjectStep, PrepareExecuteSessionStep, SelectProviderStep
 from .launch import LaunchProvider, Provider
 from .log import PostLog, PreLog
 from .make_audit import MakeAudit
@@ -48,7 +49,11 @@ _BUILTIN_CLASSES = (
     RunSessionReview,
     RenderUpdateBanner,
     EmitStdout,
+    SelectProviderStep,
+    BootstrapProjectStep,
+    PrepareExecuteSessionStep,
 )
+
 
 
 def _step_name(cls: type) -> str:
@@ -92,5 +97,9 @@ __all__ = [
     "RunSessionEnd",
     "RunSessionReview",
     "SaveArtifact",
+    "SelectProviderStep",
+    "BootstrapProjectStep",
+    "PrepareExecuteSessionStep",
     "SpawnSessionReview",
 ]
+
