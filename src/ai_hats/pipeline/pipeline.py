@@ -7,10 +7,10 @@ pipeline's external requires or produced by an earlier step). ``run``
 executes steps sequentially, threading state via projection — each step
 sees only the keys it declared.
 
-Optional ``on_step`` callback (HATS-274): when supplied to ``run``, the
-inner loop emits one ``TraceEvent`` after every step (success or
-halt-failure) for observability. ``on_step=None`` is the zero-overhead
-default; the trace branch never executes.
+Optional ``on_step`` callback: when supplied to ``run``, the inner loop emits
+one ``TraceEvent`` after every step (success or halt-failure) for
+observability. ``on_step=None`` is the zero-overhead default; the trace branch
+never executes.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class BuildError(ValueError):
 
 
 class PipelineCancelled(RuntimeError):
-    """Raised when a pipeline run is cancelled before completing (HATS-584).
+    """Raised when a pipeline run is cancelled before completing.
 
     Cause is either a per-step ``timeout`` (``CancelReason.TIMEOUT``) or an
     external caller flipping the supplied ``cancel_token``
@@ -64,8 +64,25 @@ class _StepTimeout(Exception):
 @dataclass(frozen=True)
 class Pipeline(Step):
     steps: tuple[Step, ...]
-    pipeline_name: str = "pipeline"
+    name: str = "pipeline"
     failure_policy: FailurePolicy = "halt"
+
+    def __init__(
+        self,
+        steps: tuple[Step, ...] | list[Step],
+        name: str = "pipeline",
+        failure_policy: FailurePolicy = "halt",
+        pipeline_name: str | None = None,
+    ) -> None:
+        object.__setattr__(self, "steps", tuple(steps))
+        eff_name = pipeline_name if pipeline_name is not None else name
+        object.__setattr__(self, "name", eff_name)
+        object.__setattr__(self, "failure_policy", failure_policy)
+
+    @property
+    def pipeline_name(self) -> str:
+        """Backward-compatible alias for name."""
+        return self.name
 
     @property
     def io(self) -> StepIO:
@@ -77,38 +94,49 @@ class Pipeline(Step):
             external_opt |= (s.io.optional - produced - external_req)
             produced |= s.io.produces
         return StepIO(
-            name=self.pipeline_name,
+            name=self.name,
             requires=frozenset(external_req),
             optional=frozenset(external_opt),
             produces=frozenset(produced),
         )
 
-    def run(self, **inputs: Any) -> dict[str, Any]:
-        return _run_steps(
-            self.steps, dict(inputs), parent_policy=self.failure_policy
+    def run(
+        self,
+        initial: Mapping[str, Any] | None = None,
+        *,
+        on_step: TraceHook | None = None,
+        trace_values: bool = False,
+        cancel_token: CancelToken | None = None,
+        **inputs: Any,
+    ) -> dict[str, Any]:
+        """Execute pipeline against initial state or inputs, threading projections."""
+        state = dict(initial or {})
+        state.update(inputs)
+        return _execute_pipeline(
+            self.steps,
+            state,
+            on_step=on_step,
+            trace_values=trace_values,
+            cancel_token=cancel_token,
+            failure_policy=self.failure_policy,
         )
 
 
 def build(*steps: Step, name: str = "pipeline") -> Pipeline:
-    """Construct a Pipeline. Validation against actual inputs is in ``run``.
-
-    Anything a step requires but no earlier step produces becomes part of
-    the pipeline's external ``requires`` — the implicit set of keys that
-    callers must supply via ``initial``. ``run`` is what checks those
-    against the actual initial state.
-    """
-    return Pipeline(steps=tuple(steps), pipeline_name=name)
+    """Construct a Pipeline. Validation against actual inputs is in ``run``."""
+    return Pipeline(steps=tuple(steps), name=name)
 
 
 def run(
     pipeline: Pipeline,
-    initial: Mapping[str, Any],
+    initial: Mapping[str, Any] | None = None,
     *,
     on_step: TraceHook | None = None,
     trace_values: bool = False,
     cancel_token: CancelToken | None = None,
+    **inputs: Any,
 ) -> dict[str, Any]:
-    """Execute pipeline against ``initial`` state, threading projections.
+    """Execute pipeline against ``initial`` state or kwargs, threading projections.
 
     ``on_step``: optional observability callback invoked after every step
     (success or halt-failure) with a ``TraceEvent``. Default ``None``
@@ -116,14 +144,34 @@ def run(
     ``trace_values``: when True, events carry truncated repr's of the
     actual key values (not just their names). Off by default — keys
     only — to avoid leaking prompt contents to disk.
-    ``cancel_token`` (HATS-584): optional caller-supplied cancellation
-    signal. An external thread may flip it to cancel the run at the next
-    step boundary; the runner also creates one implicitly when a step
-    times out. Either way a cancelled run raises ``PipelineCancelled``.
+    ``cancel_token``: optional caller-supplied cancellation signal. An external
+    thread may flip it to cancel the run at the next step boundary; the runner
+    also creates one implicitly when a step times out. Either way a cancelled run
+    raises ``PipelineCancelled``.
     """
-    available = set(initial.keys())
+    return pipeline.run(
+        initial,
+        on_step=on_step,
+        trace_values=trace_values,
+        cancel_token=cancel_token,
+        **inputs,
+    )
+
+
+def _execute_pipeline(
+    steps: tuple[Step, ...],
+    initial_state: Mapping[str, Any],
+    *,
+    on_step: TraceHook | None = None,
+    trace_values: bool = False,
+    cancel_token: CancelToken | None = None,
+    failure_policy: FailurePolicy = "halt",
+) -> dict[str, Any]:
+    """Unified execution kernel: pre-flight check, sequential step loop, and cancel handling."""
+    del failure_policy  # reserved for future composite policy extensions
+    available = set(initial_state.keys())
     produced: set[str] = set()
-    for s in pipeline.steps:
+    for s in steps:
         missing = s.io.requires - produced - available
         if missing:
             raise BuildError(
@@ -131,10 +179,10 @@ def run(
                 f"(not in initial keys and not produced by prior steps)"
             )
         produced |= s.io.produces
+
     return _run_steps(
-        pipeline.steps,
-        dict(initial),
-        parent_policy=pipeline.failure_policy,
+        steps,
+        dict(initial_state),
         on_step=on_step,
         trace_values=trace_values,
         cancel_token=cancel_token,
@@ -173,22 +221,11 @@ def _run_steps(
     steps: tuple[Step, ...],
     state: dict[str, Any],
     *,
-    parent_policy: FailurePolicy,
     on_step: TraceHook | None = None,
     trace_values: bool = False,
     cancel_token: CancelToken | None = None,
 ) -> dict[str, Any]:
-    """Sequential execution with projection→step.run→delta-merge.
-
-    HATS-584: a step that declares a ``timeout`` is bounded in a worker
-    thread. On the deadline the shared ``cancel_token`` is flipped
-    (creating one if the caller supplied none), the step's ``on_cancel``
-    cleanup runs, remaining steps are skipped, and ``PipelineCancelled`` is
-    raised carrying the partial state. A caller-supplied ``cancel_token``
-    that an external thread flips is observed at the next step boundary and
-    cancels cooperatively the same way.
-    """
-    del parent_policy  # reserved for nested composites; not used in Phase 1
+    """Sequential execution with projection→step.run→delta-merge."""
     token = cancel_token
     for s in steps:
         if token is not None and token.cancelled:
@@ -202,8 +239,7 @@ def _run_steps(
         # {} for no role — ADR-0005 value contract). A non-raising projection
         # keeps ``kwargs`` defined for the ``except`` _emit calls; the presence
         # check below raises a typed StepError INSIDE the try so failure_policy
-        # and the trace hook apply (HATS-739) — never a bare KeyError that
-        # escapes both.
+        # and the trace hook apply — never a bare KeyError that escapes both.
         kwargs = {k: state[k] for k in s.io.requires if k in state}
         kwargs.update({k: state[k] for k in s.io.optional if k in state})
         t0 = time.perf_counter()
@@ -313,13 +349,11 @@ def _run_on_cancel(
 def _merge_none_filtered(state: dict[str, Any], delta: Mapping[str, Any]) -> None:
     """Merge a step delta into state, dropping keys whose value is ``None``.
 
-    HATS-452 (П3 in ADR-0005): pipeline funnel value contract. A ``None``
-    value is indistinguishable from an absent key in the funnel, so it is
-    filtered at the merge boundary — a consumer cannot then distinguish "the
-    step did not emit the key" from "the step emitted the key with value
-    None". This prevents the empty-Optional-as-absent trap that broke
-    HATS-452 (``compose_role`` returned ``{"system_prompt": ""}`` for a
-    missing role; downstream consumed ``""`` as a legitimate override).
+    Pipeline funnel value contract per ADR-0005 §3. A ``None`` value is
+    indistinguishable from an absent key in the funnel, so it is filtered at the
+    merge boundary — a consumer cannot then distinguish "the step did not emit the
+    key" from "the step emitted the key with value None". This prevents the
+    empty-Optional-as-absent trap.
 
     ``""`` (and other falsy values like ``0``, ``False``, ``[]``) are
     intentionally NOT filtered — they are valid non-absent values whose
