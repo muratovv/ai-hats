@@ -85,6 +85,32 @@ def test_absent_file_is_a_noop(tmp_path: Path) -> None:
     assert not (asm.project_dir / "CLAUDE.md").exists()
 
 
+def test_scaffold_survives_while_user_rules_need_it(tmp_path: Path) -> None:
+    """HATS-1201: the block's @imports.md line is the only channel carrying
+    user-rules to Claude, so a project that has any must keep the scaffold."""
+    asm = _project(tmp_path, SCAFFOLD)
+    canonical = asm.project_dir / ".agent" / "ai-hats"
+    (canonical / "user-rules").mkdir(parents=True)
+    (canonical / "user-rules" / "mine.md").write_text("# Mine\n")
+    (canonical / "imports.md").write_text("@./user-rules/mine.md\n")
+
+    _m_strip_orphaned_claude_scaffold(asm)
+
+    assert (asm.project_dir / "CLAUDE.md").read_text() == SCAFFOLD
+
+
+def test_empty_aggregator_does_not_block_the_drop(tmp_path: Path) -> None:
+    """An imports.md with no user-rules carries nothing — strip as usual."""
+    asm = _project(tmp_path, SCAFFOLD)
+    canonical = asm.project_dir / ".agent" / "ai-hats"
+    canonical.mkdir(parents=True)
+    (canonical / "imports.md").write_text("")
+
+    _m_strip_orphaned_claude_scaffold(asm)
+
+    assert not (asm.project_dir / "CLAUDE.md").exists()
+
+
 def test_second_run_is_a_noop(tmp_path: Path) -> None:
     """Migration contract: idempotent under replay and concurrent refreshes."""
     asm = _project(tmp_path, SCAFFOLD + "\n# Mine\n")

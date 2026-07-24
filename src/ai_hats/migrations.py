@@ -148,9 +148,17 @@ def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
     leftover and goes entirely; anything the user put around the block survives
     byte-for-byte. Only ``CLAUDE.md`` is touched — Cline (``CLINE.md``) and Agy
     (``GEMINI.md``) still write live blocks under the same markers.
+
+    Skipped while the project has user-rules: the block's ``@imports.md`` line
+    is still their only delivery channel (HATS-1201 — the composed prompt does
+    not carry them yet), so stripping it would silently drop them.
     """
     claude_md = a.project_dir / "CLAUDE.md"
     if not claude_md.is_file():
+        return
+
+    imports_md = a._canonical_dir / "imports.md"
+    if imports_md.is_file() and imports_md.read_text().strip():
         return
 
     existing = claude_md.read_text()
