@@ -29,6 +29,7 @@ provider`` in new code.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -87,6 +88,14 @@ class Provider(Step):
     ) -> dict[str, Any]:
         from ...harness.guard import apply_post_run_guard
         from ...runtime import SubAgentRunner, WrapRunner
+
+        if not pty_tap_factory:
+            from ...constants import ENV_PTY_IN_FD, ENV_PTY_OUT_FD
+
+            if os.environ.get(ENV_PTY_IN_FD) or os.environ.get(ENV_PTY_OUT_FD):
+                from ...pty_tap import load_pty_tap_factory
+
+                pty_tap_factory = load_pty_tap_factory()
 
         if interactive:
             eff_extra = list(extra_args or [])
