@@ -10,6 +10,7 @@ repo dir. Signal = the entry-point module fails ``find_spec`` (not the
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 import subprocess
 import sys
@@ -18,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .provider_entry_points import PROVIDER_ENTRY_POINT_GROUP, _provider_entry_points
+
+logger = logging.getLogger(__name__)
 
 # Repo layout: surface-plugin members live at ``<repo>/packages/surfaces/<name>``.
 SURFACES_SUBPATH = ("packages", "surfaces")
@@ -263,6 +266,53 @@ def run_editable_heal(
         return None
 
 
+def _uv_install_surface_package(package_name: str) -> None:
+    """Install surface package via uv into THIS venv (HATS-1179)."""
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    subprocess.run(
+        [
+            "uv", "pip", "install",
+            "--python", sys.executable, package_name,
+        ],
+        check=True, capture_output=True, text=True, env=env,
+    )
+
+
+def ensure_surface_plugin_installed(
+    provider_name: str,
+    repo_root: Path | None = None,
+    installer=_uv_install_surface_package,
+) -> bool:
+    """Ensure a surface plugin package is installed in venv (HATS-1179).
+
+    1. If provider_name is already installed & importable, returns True.
+    2. Runs editable heal if in-tree checkout is present.
+    3. If still uninstalled and known in KNOWN_SURFACES, attempts uv pip install.
+    Returns True if provider is installed after these steps, False otherwise.
+    """
+    from .surfaces_registry import get_surface_info, is_surface_installed
+
+    if is_surface_installed(provider_name):
+        return True
+
+    # 1. Try editable heal (for in-tree packages/surfaces/* checkout)
+    run_editable_heal(repo_root=repo_root)
+    if is_surface_installed(provider_name):
+        return True
+
+    # 2. Try package installer if known surface package name is available
+    info = get_surface_info(provider_name)
+    if info and info.package_name:
+        try:
+            installer(info.package_name)
+        except Exception as exc:
+            logger.warning("Failed to install surface package %s: %s", info.package_name, exc)
+
+    return is_surface_installed(provider_name)
+
+
+
 __all__ = [
     "PROVIDER_ENTRY_POINT_GROUP",
     "SURFACES_SUBPATH",
@@ -270,12 +320,13 @@ __all__ = [
     "HealResult",
     "Healed",
     "Warned",
+    "ensure_surface_plugin_installed",
     "find_broken_surface_providers",
     "find_uninstalled_surface_members",
     "get_surface_remediation",
     "heal_surface_editables",
     "is_broken_install_exception",
     "run_editable_heal",
-
     "surface_editable_map",
 ]
+

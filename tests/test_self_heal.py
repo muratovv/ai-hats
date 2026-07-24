@@ -225,3 +225,38 @@ def test_surfaces_registry() -> None:
     assert info_agy.package_name == "ai-hats-agy"
 
 
+def test_ensure_surface_plugin_installed_already_installed() -> None:
+    from ai_hats.self_heal import ensure_surface_plugin_installed
+
+    called = False
+
+    def fake_installer(pkg: str) -> None:
+        nonlocal called
+        called = True
+
+    assert ensure_surface_plugin_installed("claude", installer=fake_installer) is True
+    assert called is False
+
+
+def test_ensure_surface_plugin_installed_triggers_installer(monkeypatch) -> None:
+    from ai_hats.self_heal import ensure_surface_plugin_installed
+
+    installed_state = {"cline": False}
+    installed_pkg = []
+
+    def fake_is_installed(provider_name: str) -> bool:
+        return installed_state.get(provider_name, False)
+
+    def fake_installer(pkg: str) -> None:
+        installed_pkg.append(pkg)
+        installed_state["cline"] = True
+
+    monkeypatch.setattr("ai_hats.surfaces_registry.is_surface_installed", fake_is_installed)
+    monkeypatch.setattr("ai_hats.self_heal.run_editable_heal", lambda repo_root=None: None)
+
+    res = ensure_surface_plugin_installed("cline", installer=fake_installer)
+    assert res is True
+    assert installed_pkg == ["ai-hats-cline"]
+
+
+

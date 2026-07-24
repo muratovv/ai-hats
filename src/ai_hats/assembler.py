@@ -51,7 +51,6 @@ from .providers import (
     INJECTION_END,
     INJECTION_START,
     PUBLISH_AGGREGATOR_END,
-    provider_names,
     PUBLISH_AGGREGATOR_START,
     Provider,
     get_provider,
@@ -1131,17 +1130,28 @@ class Assembler:
 
     @staticmethod
     def _validate_provider(provider_name: str) -> None:
-        """Raise ValueError if `provider_name` is not a registered provider."""
-        from .providers import PROVIDER_ALIASES
+        """Raise ValueError if `provider_name` is not a registered or known provider.
+
+        HATS-1179: If provider_name is in get_known_surfaces() but uninstalled in venv,
+        attempts auto-installation / linking via ensure_surface_plugin_installed().
+        """
+        from .providers import PROVIDER_ALIASES, provider_names
+        from .self_heal import ensure_surface_plugin_installed, get_surface_remediation
+        from .surfaces_registry import get_known_surfaces, is_surface_installed
+
         canonical = PROVIDER_ALIASES.get(provider_name, provider_name)
-        if canonical in provider_names():
+        if is_surface_installed(canonical):
             return
-        from .self_heal import get_surface_remediation
+
+        if canonical in get_known_surfaces():
+            if ensure_surface_plugin_installed(canonical):
+                return
 
         remediation = get_surface_remediation(provider_name)
         hint = f"\nFix: {remediation}" if remediation else ""
+        available = sorted(set(provider_names()) | set(get_known_surfaces().keys()))
         raise ValueError(
-            f"Unknown provider: {provider_name}. Available: {sorted(provider_names())}.{hint}"
+            f"Unknown provider: {provider_name}. Available: {available}.{hint}"
         )
 
     def _build_tree(self, result: CompositionResult) -> dict:
