@@ -1,46 +1,39 @@
 """Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Provider`.
 
-Materialization contract (all driven by ``build_session_prompt`` at session start,
-per session id, into gitignored per-session homes):
+Materialization contract (driven by ``build_session_artifacts`` / ADR-0018):
 
 - **Role / system prompt** — ``build_system_prompt`` composes PRIORITIES + the
-  merged role/trait injection + always-on RULES (rules are *inlined* here; agy has
-  no separate rules channel). Path placeholders and ``<available_roles>`` are
-  expanded, then the bytes are written to ``.cache/sessions/<sid>/rules/GEMINI.md``.
-- **Skills (and their hooks)** — ``materialize_runtime_skills`` mirrors the role's
-  *composed* skills (``result.skills``) into ``.agy/skills/`` — agy's native
-  workspace skill registry, ref-counted per session, gitignored. Each skill dir
-  carries its own hooks. Skills are NOT dropped: this native registry is their
-  delivery channel (HATS-993), which is exactly why ``build_system_prompt`` passes
-  ``include_skills=False`` — the text index would only duplicate the registry.
-- **Session / startup prompt** — the composed ``GEMINI.md`` is threaded to agy via
-  ``--add-dir <session-rules-dir>``; agy loads ``GEMINI.md`` from added directories
-  at start, so the project's active role reaches the agent WITHOUT touching the
-  repo's own ``./GEMINI.md``. The third return value is the exact prompt bytes
-  (persisted by ``WrapRunner`` for audit, HATS-523).
-- **Params passed to agy** — interactive (HITL): ``get_cli_command`` → ``["agy",
-  --add-dir <dir>]``. Headless (Automate): ``get_run_command`` → ``agy [--model
-  <m>] -p <meta_prompt>`` (no ``--skip-trust`` — not a valid agy flag; headless
-  ``agy -p`` needs no trust grant).
-- **Env dependencies** — ``get_env`` exports ``AI_HATS_DIR`` + ``AI_HATS_PROJECT_DIR``
-  so materialized hooks/tools resolve the project root at runtime.
+  merged role/trait injection + always-on RULES. Written to
+  ``.cache/sessions/<sid>/rules/GEMINI.md`` and passed via ``--add-dir <rules_dir>``.
+  Root ``GEMINI.md`` is untouched and native-by-default.
+- **Skills** — ``materialize_runtime_skills`` mirrors composed skills into
+  ``.cache/sessions/<sid>/rules/.agents/skills/``.
+- **Hooks** — ``ensure_global_dispatcher_hook`` idempotently ensures the global
+  dispatcher (``ai-hats-hook-dispatcher``) is registered in ``~/.gemini/antigravity-cli/settings.json``.
+  Active session hooks are written to ``.cache/sessions/<sid>/hooks.json``.
+  Zero files created in project root.
 """
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
-from . import root_rules
+from .global_hook import ensure_global_dispatcher_hook
 
 from ai_hats.paths import (
     GEMINI_MD_FILENAME,
     gemini_md,
-    gemini_settings_dir,
-    gemini_settings_path,
+    session_cache_dir,
 )
+
+def agy_user_settings_json() -> Path:
+    from ai_hats.paths._discovery import tool_home
+    return tool_home("gemini", "GEMINI_CONFIG_DIR") / "antigravity-cli" / "settings.json"
 from ai_hats.providers import Provider
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -85,17 +78,126 @@ class AgyProvider(Provider):
 
     @contextmanager
     def execution_context(self, project_dir: Path) -> Generator[None, None, None]:
-        """Hide the root rule files agy would otherwise merge into the session role."""
-        with root_rules.hidden(project_dir, (GEMINI_MD_FILENAME, "AGENTS.md")):
-            yield
+        """Clean execution context — HATS-1166: file-hiding hacks retired (native-by-default)."""
+        yield
 
     def build_system_prompt(self, result: CompositionResult) -> str:
         # HATS-993: skills reach agy via the native .agy/skills/ registry
         return self._compose_sections(result, include_skills=False)
 
     def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
-        from ai_hats.paths import session_cache_dir
         return session_cache_dir(project_dir, session_id) / "rules" / ".agents" / "skills"
+
+    def build_category_artifact(
+        self,
+        category: ArtifactCategory,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        *,
+        run_mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Materialize a single category of session artifacts for AgyProvider (ADR-0018)."""
+        cache_dir = session_cache_dir(project_dir, session_id)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        if category == ArtifactCategory.CONTEXT:
+            self._build_context_artifact(project_dir, result, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.SKILLS:
+            self._build_skills_artifact(project_dir, result, session_id, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.HOOKS:
+            self._build_hooks_artifact(project_dir, result, session_id, cache_dir, run_mode, artifacts)
+        elif category == ArtifactCategory.SETTINGS:
+            self._build_settings_artifact(project_dir, result, cache_dir, run_mode, artifacts)
+
+    def _build_context_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        from ai_hats.placeholders import expand_path_placeholders
+        from ai_hats.role_catalog import expand_role_catalog
+
+        prompt_content = self.build_system_prompt(result)
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        prompt_content = expand_role_catalog(prompt_content, project_dir)
+
+        artifacts.full_content = prompt_content
+        rules_dir = cache_dir / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        session_md = rules_dir / GEMINI_MD_FILENAME
+        session_md.write_text(prompt_content)
+        artifacts.materialized.append(session_md)
+
+        artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
+
+    def _build_skills_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        self.materialize_runtime_skills(project_dir, result, session_id)
+        skills_dir = self._session_skills_dir(project_dir, session_id)
+        from ai_hats.skills_dir import inject_skill_paths_to_env
+        inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
+        artifacts.materialized.append(skills_dir)
+
+    def _build_hooks_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        from ai_hats.hook_collection import collect_runtime_hooks
+
+        # HATS-1166: Idempotent global hook registration at session start
+        user_settings = agy_user_settings_json()
+        ensure_global_dispatcher_hook(user_settings)
+
+        # Build session hooks manifest in session cache dir
+        collected = collect_runtime_hooks(result)
+        skills_dir = self._session_skills_dir(project_dir, session_id)
+
+        manifest: dict[str, list[dict]] = {}
+        for event, entries in collected.items():
+            event_list = manifest.setdefault(event, [])
+            for skill_name, hook in entries:
+                matcher = getattr(hook, "matcher", "")
+                if "Edit" in matcher or "Write" in matcher:
+                    matcher = AGY_FILE_MUTATION_MATCHER
+                script = getattr(hook, "script", "")
+                command = str(skills_dir / skill_name / script)
+                event_list.append({
+                    "matcher": matcher,
+                    "command": command,
+                    "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
+                })
+
+        hooks_json = cache_dir / "hooks.json"
+        hooks_json.write_text(json.dumps(manifest, indent=2) + "\n")
+        artifacts.materialized.append(hooks_json)
+
+    def _build_settings_artifact(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        cache_dir: Path,
+        mode: RunMode,
+        artifacts: BuiltArtifacts,
+    ) -> None:
+        """Dormant settings category for AgyProvider."""
+        pass
 
     def materialize_runtime_skills(
         self,
@@ -111,56 +213,15 @@ class AgyProvider(Provider):
             result.skills,
             project_dir,
             session_id,
-            gitignore_entry=None,  # session dir is already gitignored
+            gitignore_entry=None,
         )
         return []
 
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None, **kwargs
     ) -> None:
-        """Install provider-specific runtime hooks into ``.gemini/settings.json``. Idempotent."""
-        import json
-        from ai_hats.hook_collection import collect_runtime_hooks
-
-        session_id = kwargs.get("session_id")
-        if result is None or session_id is None:
-            return
-
-        settings_dir = gemini_settings_dir(project_dir)
-        settings_dir.mkdir(parents=True, exist_ok=True)
-        settings_path = gemini_settings_path(project_dir)
-
-        data: dict = {}
-        if settings_path.is_file():
-            try:
-                data = json.loads(settings_path.read_text())
-            except (OSError, ValueError):
-                data = {}
-
-        hooks_map = data.setdefault("hooks", {})
-        collected = collect_runtime_hooks(result)
-
-        skills_dir = self._session_skills_dir(project_dir, session_id)
-
-        for event, entries in collected.items():
-            event_list = hooks_map.setdefault(event, [])
-            for skill_name, hook in entries:
-                matcher = getattr(hook, "matcher", "")
-                if "Edit" in matcher or "Write" in matcher:
-                    matcher = AGY_FILE_MUTATION_MATCHER
-                script = getattr(hook, "script", "")
-                command = str(skills_dir / skill_name / script)
-                hook_item = {
-                    "matcher": matcher,
-                    "command": command,
-                    "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
-                }
-                # Overwrite existing hook with same tag (to update path to current session)
-                event_list[:] = [h for h in event_list if not (isinstance(h, dict) and h.get("tag") == hook_item["tag"])]
-                event_list.append(hook_item)
-
-        settings_path.write_text(json.dumps(data, indent=2) + "\n")
-
+        """HATS-1166: Runtime hooks write to session cache hooks.json via build_session_artifacts."""
+        pass
 
     def build_session_prompt(
         self,
@@ -168,36 +229,11 @@ class AgyProvider(Provider):
         result: CompositionResult,
         session_id: str,
     ) -> tuple[list[str], dict[str, str], str]:
-        """Session-scoped role via ``--add-dir`` memory.
-
-        agy loads ``GEMINI.md`` files from workspace added-directories at
-        session start; a per-session dir under ``.cache/sessions/<sid>/rules/``
-        carries the composed prompt.
-        """
-        from ai_hats.paths import session_cache_dir
-        from ai_hats.placeholders import expand_path_placeholders
-        from ai_hats.role_catalog import expand_role_catalog
-
-        prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
-
-        cache_dir = session_cache_dir(project_dir, session_id)
-        rules_dir = cache_dir / "rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / GEMINI_MD_FILENAME).write_text(prompt_content)
-
-        self.materialize_runtime_skills(project_dir, result, session_id)
-        self.ensure_runtime_hooks(project_dir, result, session_id=session_id)
-
-        extra_env: dict[str, str] = {}
-        from ai_hats.skills_dir import inject_skill_paths_to_env
-
-        skills_dir = self._session_skills_dir(project_dir, session_id)
-        inject_skill_paths_to_env(extra_env, result.skills, skills_dir)
-
-        return ["--add-dir", str(rules_dir)], extra_env, prompt_content
-
+        """Write composed prompt & session artifacts via build_session_artifacts (ADR-0018)."""
+        artifacts = self.build_session_artifacts(
+            project_dir, result, session_id, run_mode=RunMode.HITL
+        )
+        return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
         cmd = ["agy"]
