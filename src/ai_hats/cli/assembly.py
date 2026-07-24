@@ -13,7 +13,7 @@ import shutil
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import click
 from ai_hats_core import LockTimeoutError, file_lock
@@ -258,40 +258,56 @@ def _run_self_update(target_python: str | Path | None = None) -> None:
     # HATS-1126: the install just replaced the tree this interpreter is running
     # from. Modules already imported stay on the old code while anything imported
     # later is read from the new one, so restart rather than run a split set.
-    os.environ[ENV_INIT_UPDATED] = "1"
-    console.print("[dim]Restarting on the updated ai-hats …[/]")
     os.execv(python_target, [python_target, "-m", "ai_hats", *sys.argv[1:]])
 
 
-
-
-
-def _launch_wizard_session(provider: str | None = None, role: str | None = None) -> None:
-    """Replace the current process with `ai-hats execute --role initial-wizard`.
+def _launch_wizard_session(cmd: list[str]) -> None:
+    """Replace the current process with the command prepared by `PrepareExecuteSessionStep`.
 
     Uses ``os.execvp`` so the interactive provider CLI takes over the
     terminal cleanly — same handoff pattern as ``exec_claude_with_retro``.
     """
-    ai_hats_bin = shutil.which("ai-hats")
-    if not ai_hats_bin:
-        console.print(
-            "[yellow]ai-hats binary not in PATH — cannot auto-launch wizard.[/]\n"
-            "Run manually:  ai-hats execute --role initial-wizard --prompt initial-wizard",
-        )
-        return
     console.print("[cyan]→ Launching initial-wizard session …[/]")
-    cmd = [
-        ai_hats_bin,
-        "execute",
-        "--role",
-        role or "initial-wizard",
-        "--prompt",
-        "initial-wizard",
-    ]
-    if provider:
-        cmd.extend(["--provider", provider])
-    os.execvp(ai_hats_bin, cmd)
+    os.execvp(cmd[0], cmd)
 
+
+def _build_init_pipeline_state(
+    project_dir: Path,
+    provider: str | None,
+    role: str | None,
+    task_prefix: str | None,
+    ai_hats_dir: str | None,
+    venv_path: str | None,
+    no_manage_gitignore: bool,
+    no_wizard: bool,
+    channel: str | None,
+    harness_path: str | None,
+) -> dict[str, Any]:
+    """Map CLI options into initial state dict for PIPELINE_INIT."""
+    from ..pipeline.keys import (
+        KEY_AI_HATS_DIR,
+        KEY_CHANNEL,
+        KEY_HARNESS_PATH,
+        KEY_NO_MANAGE_GITIGNORE,
+        KEY_NO_WIZARD,
+        KEY_PROJECT_DIR,
+        KEY_PROVIDER,
+        KEY_ROLE,
+        KEY_TASK_PREFIX,
+        KEY_VENV_PATH,
+    )
+    return {
+        KEY_PROJECT_DIR: project_dir,
+        KEY_PROVIDER: provider,
+        KEY_ROLE: role,
+        KEY_TASK_PREFIX: task_prefix,
+        KEY_AI_HATS_DIR: ai_hats_dir,
+        KEY_VENV_PATH: venv_path,
+        KEY_NO_MANAGE_GITIGNORE: no_manage_gitignore,
+        KEY_NO_WIZARD: no_wizard,
+        KEY_CHANNEL: channel,
+        KEY_HARNESS_PATH: harness_path,
+    }
 
 
 @click.command()
@@ -391,19 +407,19 @@ def init(
         _run_self_update()
 
     from ..pipeline.harness import PipelineHarness
-    from ..pipeline.keys import (
-        KEY_AI_HATS_DIR,
-        KEY_CHANNEL,
-        KEY_EXECUTE_CMD,
-        KEY_HARNESS_PATH,
-        KEY_NO_MANAGE_GITIGNORE,
-        KEY_NO_WIZARD,
-        KEY_PROJECT_DIR,
-        KEY_PROVIDER,
-        KEY_ROLE,
-        KEY_TASK_PREFIX,
-        KEY_VENV_PATH,
-        PIPELINE_INIT,
+    from ..pipeline.keys import KEY_EXECUTE_CMD, PIPELINE_INIT
+
+    init_state = _build_init_pipeline_state(
+        project_dir=project_dir,
+        provider=provider,
+        role=role,
+        task_prefix=task_prefix,
+        ai_hats_dir=ai_hats_dir,
+        venv_path=venv_path,
+        no_manage_gitignore=no_manage_gitignore,
+        no_wizard=no_wizard,
+        channel=channel,
+        harness_path=harness_path,
     )
 
     already = (project_dir / PROJECT_CONFIG).exists()
@@ -412,25 +428,11 @@ def init(
 
     try:
         with PipelineHarness(PIPELINE_INIT, project_dir) as h:
-            final = h.run({
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROVIDER: provider,
-                KEY_ROLE: role,
-                KEY_TASK_PREFIX: task_prefix,
-                KEY_AI_HATS_DIR: ai_hats_dir,
-                KEY_VENV_PATH: venv_path,
-                KEY_NO_MANAGE_GITIGNORE: no_manage_gitignore,
-                KEY_NO_WIZARD: no_wizard,
-                KEY_CHANNEL: channel,
-                KEY_HARNESS_PATH: harness_path,
-            })
+            final = h.run(init_state)
     except BaseException:
         if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
-
-
-
 
     # HATS-1125: non-wizard init self-update reconciliation
     if not use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
@@ -438,7 +440,7 @@ def init(
 
     cmd = final.get(KEY_EXECUTE_CMD)
     if cmd:
-        _launch_wizard_session(provider=final.get(KEY_PROVIDER), role=role)
+        _launch_wizard_session(cmd)
 
 
 
