@@ -188,7 +188,7 @@ def _run_self_update(target_python: str | Path | None = None) -> None:
 
     is_sandbox = (
         target_python is not None
-        or "/tmp/" in resolved_target
+        or "/tmp/" in resolved_target  # nosec B108
         or "pytest-of-" in resolved_target
         or _under_managed_namespace(Path(resolved_target))
     )
