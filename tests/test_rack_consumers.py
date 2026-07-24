@@ -16,7 +16,7 @@ from ai_hats_rack import OperationAborted
 from ai_hats_rack.dispatch import Phase
 
 from ai_hats.lifecycle_hooks import lifecycle_hooks_dir, materialize_lifecycle_hooks
-from ai_hats.rack_consumers import HookRunnerExtension, consumer_plan_sections, consumer_subscribers
+from ai_hats.rack_consumers import HookRunnerExtension, consumer_subscribers
 from ai_hats.rack_wiring import build_rack_kernel
 
 from tests.test_lifecycle_hooks import _skill  # shared fixture-skill builder
@@ -284,14 +284,13 @@ def test_consumer_abort_leaves_no_worktree(project, lib):
     assert not WorktreeManager.branch_exists(project, "task/t-1")
 
 
-# ----- demo consumer end-to-end: declaration → materialization → gates -----
+# ----- demo consumer end-to-end: declaration → materialization → hook gate -----
 
 
 def test_demo_consumer_end_to_end(project, lib):
-    """A fixture consumer skill ships a summary gate on document--review AND
-    an extra required plan section; the whole channel is exercised:
-    declaration → union materialization → scaffold+gate extension → hook
-    abort with the hook's reason → pass after compliance."""
+    """A fixture consumer skill ships a summary gate on document--review; the
+    hook channel is exercised end-to-end: declaration → union materialization →
+    hook abort with the hook's reason → pass after compliance."""
     summary_gate = (
         "#!/usr/bin/env bash\n"
         'dir="$(dirname "$AI_HATS_HOOK_TASK_FILE")"\n'
@@ -304,27 +303,15 @@ def test_demo_consumer_end_to_end(project, lib):
         lib,
         "summary-gate",
         hooks={"document--review": ["gate.sh"]},
-        sections=["- Rollback plan"],
         script_body=summary_gate,
     )
     _materialize(project, lib)
 
-    kernel = _kernel(project)  # sections=None → consumer catalog picked up
+    kernel = _kernel(project)
     kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
     kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
 
-    scaffold = (kernel.tasks_dir / "T-1" / "plan.md").read_text()
-    assert "## Rollback plan" in scaffold, "consumer section must reach the scaffold"
-
     (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
-    with pytest.raises(OperationAborted) as exc_info:  # consumer section unfilled
-        kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
-    assert exc_info.value.subscriber == "plan-gate"
-    assert "Rollback plan" in exc_info.value.reason
-
-    (kernel.tasks_dir / "T-1" / "plan.md").write_text(
-        _FILLED_PLAN + "\n## Rollback plan\nrevert the merge\n"
-    )
     kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
     kernel.transition("T-1", "document", actor="test", caller_cwd=project)
 
@@ -339,22 +326,31 @@ def test_demo_consumer_end_to_end(project, lib):
     assert kernel.get("T-1").state == "review"
 
 
-def test_fail_under_revert_consumer_section(project, lib):
-    """Remove the consumer declaration → re-materialize → the gate stops
-    requiring the section (config-driven, not baked in)."""
-    skill = _skill(lib, "extra", sections=["- Rollback plan"])
-    _materialize(project, lib)
-    assert any(s.name == "Rollback plan" for s in consumer_plan_sections(project))
+def test_stock_plan_catalog_wiring_without_consumer_config(project, lib):
+    """HATS-1160: the consumer plan_sections channel is gone. A kernel built
+    with sections=None (the default) and zero plan-sections.yaml on disk
+    scaffolds AND gates on the stock DEFAULT_PLAN_SECTIONS catalog — the
+    fallback lives in stock_factories, not a consumer read."""
+    _materialize(project, lib)  # no skill declares hooks → nothing materialized
+    assert not (lifecycle_hooks_dir(project) / "plan-sections.yaml").exists()
 
-    shutil.rmtree(skill)
-    _materialize(project, lib)
-    assert all(s.name != "Rollback plan" for s in consumer_plan_sections(project))
-
-    kernel = _kernel(project)
+    kernel = _kernel(project)  # sections=None
     kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
     kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
+
+    scaffold = (kernel.tasks_dir / "T-1" / "plan.md").read_text()
+    assert "## Requirements" in scaffold
+    assert "## Verification Protocol" in scaffold
+
+    # the gate enforces the stock catalog: a plan missing required sections aborts
+    (kernel.tasks_dir / "T-1" / "plan.md").write_text("# Plan\n\n## Requirements\nonly this\n")
+    with pytest.raises(OperationAborted) as exc_info:
+        kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
+    assert exc_info.value.subscriber == "plan-gate"
+
+    # a complete stock plan passes
     (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
-    kernel.transition("T-1", "execute", actor="test", caller_cwd=project)  # must not raise
+    kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
     assert kernel.get("T-1").state == "execute"
 
 

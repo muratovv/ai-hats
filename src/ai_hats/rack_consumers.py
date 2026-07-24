@@ -19,17 +19,10 @@ from typing import Sequence
 
 from ai_hats_rack.dispatch import AbortOperation, Phase, Subscription
 from ai_hats_rack.events import EdgeEvent
-from ai_hats_rack.extensions import (
-    DEFAULT_PLAN_SECTIONS,
-    Section,
-    load_sections,
-    merge_sections,
-)
 from ai_hats_rack.fsm import Topology, load_topology
 
 from .lifecycle_hooks import (
     MANIFEST_NAME,
-    PLAN_SECTIONS_FILENAME,
     lifecycle_hooks_dir,
 )
 from .sweeper import read_marker_names
@@ -170,16 +163,6 @@ class HookRunnerExtension:
             )
 
 
-def consumer_plan_sections(project_dir: Path) -> tuple[Section, ...]:
-    """The stock section catalog extended by the materialized consumer config
-    (``plan-sections.yaml``); absent config → stock only. Base-wins merge —
-    a consumer cannot weaken a stock section (see ``merge_sections``)."""
-    path = lifecycle_hooks_dir(project_dir) / PLAN_SECTIONS_FILENAME
-    if not path.is_file():
-        return DEFAULT_PLAN_SECTIONS
-    return merge_sections(DEFAULT_PLAN_SECTIONS, load_sections(path))
-
-
 def consumer_subscribers(
     project_dir: Path,
     *,
@@ -206,6 +189,5 @@ def consumer_subscribers(
 __all__ = [
     "HOOK_TIMEOUT",
     "HookRunnerExtension",
-    "consumer_plan_sections",
     "consumer_subscribers",
 ]
