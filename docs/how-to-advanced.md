@@ -231,13 +231,23 @@ Run `wt merge` / `wt discard` from the **main repo**, passing the branch explici
 
 ### 2.3 Running commands inside the worktree
 
-Always use `ai-hats wt exec` instead of hand-rolled `WT=...; PYTHONPATH=$WT/src` boilerplate — it sets cwd and `PYTHONPATH=src` for you and skips a permission round-trip on every new worktree:
+Always use `ai-hats wt exec` instead of hand-rolled `WT=...; PYTHONPATH=$WT/src` boilerplate — it sets cwd and the workspace `PYTHONPATH` for you and skips a permission round-trip on every new worktree:
 
 ```bash
 ai-hats wt exec -- pytest tests/test_foo.py -xvs
 ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
 ai-hats wt exec -- ruff check src/
 ```
+
+It is an environment wrapper, not a teleporter: the command runs **where you stand** when your cwd is inside the worktree, and at the worktree root otherwise. `PYTHONPATH` follows the project that *owns* that directory — the nearest ancestor carrying a `pyproject.toml`, bounded by the worktree root — so a subproject with its own venv gets its own `src` instead of the outer repo's packages, while a plain subdirectory keeps the worktree-root workspace.
+
+To reach a subproject without leaving the main checkout, name it with `-C` (worktree-relative) rather than `cd`-ing to an absolute worktree path:
+
+```bash
+ai-hats wt exec task/hats-1193 -C relay -- pytest
+```
+
+Pass `--` before any command carrying its own `-C` (e.g. `make -C`).
 
 For an interactive shell session inside the worktree:
 

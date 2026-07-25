@@ -12,6 +12,20 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment
+  wrapper, not a teleporter: with a cwd inside the worktree the command runs
+  *there* instead of being moved to the worktree root (the published shape is
+  unchanged — a call from the main checkout still lands at the root). New
+  `-C/--cd <subdir>` names a worktree-relative directory from outside, refused
+  if it escapes the worktree. `PYTHONPATH` now roots at the project that **owns**
+  the run directory — the nearest ancestor with a `pyproject.toml`, bounded by
+  the worktree root — so a worktree subproject with its own venv gets its own
+  `src` rather than the outer repo's packages, while a plain subdirectory keeps
+  the worktree-root workspace. This closes the gap that left "always use
+  `wt exec`" unfollowable for a subproject and pushed agents onto absolute
+  worktree paths. Rides `ai-hats-wt` 0.4.1, whose `list_active` stops offering
+  worktrees git no longer backs (phantoms padded the selector-ambiguity list).
+
 - **hatrack is the default backlog manager** (HATS-1054). `trait-agent` composes
   the `hatrack` skill instead of `backlog-manager` — every library role drives
   the task lifecycle through the `rack` CLI; `backlog-manager` is composed by no

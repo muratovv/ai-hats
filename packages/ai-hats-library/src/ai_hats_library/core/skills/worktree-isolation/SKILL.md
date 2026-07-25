@@ -115,15 +115,15 @@ see the drift block in step 3 of the Workflow above.
 
 ## Commands
 
-| Command                      | What it does                                        |
-| ---------------------------- | --------------------------------------------------- |
-| `ai-hats wt create <branch>` | Create worktree on new branch                       |
-| `ai-hats wt merge`           | Squash-merge changes back, clean up                 |
-| `ai-hats wt discard`         | Delete worktree and branch                          |
-| `ai-hats wt list`            | Show all worktrees                                  |
-| `ai-hats wt status`          | Show active worktree                                |
-| `ai-hats wt exec -- <cmd>`   | Run command in worktree (auto cwd + PYTHONPATH=src) |
-| `ai-hats wt env`             | Print `export WT=... PYTHONPATH=...` for eval       |
+| Command                      | What it does                                            |
+| ---------------------------- | ------------------------------------------------------- |
+| `ai-hats wt create <branch>` | Create worktree on new branch                           |
+| `ai-hats wt merge`           | Squash-merge changes back, clean up                     |
+| `ai-hats wt discard`         | Delete worktree and branch                              |
+| `ai-hats wt list`            | Show all worktrees                                      |
+| `ai-hats wt status`          | Show active worktree                                    |
+| `ai-hats wt exec -- <cmd>`   | Run command in worktree, where you stand (+ PYTHONPATH) |
+| `ai-hats wt env`             | Print `export WT=... PYTHONPATH=...` for eval           |
 
 ## Teardown runs lifecycle hooks
 
@@ -139,18 +139,36 @@ author one see `docs/how-to-extend.md` → "Worktree lifecycle hooks".
 
 ## Running Commands in Worktree
 
-**Always use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate:**
+**Always use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate.** It is an
+environment wrapper, not a teleporter: it runs your command **where you stand**
+when your cwd is inside the worktree, and at the worktree root otherwise.
 
 ```bash
-# CORRECT — single command, no env vars, no permission noise:
+# CORRECT — single command, no env vars, no absolute paths:
 ai-hats wt exec -- pytest tests/test_foo.py -xvs
 ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
 ai-hats wt exec -- ruff check src/
 
-# WRONG — generates garbage permission entries on every new worktree:
+# WRONG — hand-rolled paths, and one dead permission grant per worktree:
 WT=/var/folders/.../ai-hats-wt-...
 PYTHONPATH=$WT/src python -m pytest tests/test_foo.py -xvs
 ```
+
+**Subprojects.** A worktree may hold a subproject with its own `pyproject.toml`
+and venv. `cd` into it and carry on, or name it with `-C` from outside — never
+`cd` to an absolute worktree path:
+
+```bash
+cd relay && ai-hats wt exec -- pytest         # from inside the worktree
+ai-hats wt exec task/hats-1 -C relay -- pytest  # from the main checkout
+```
+
+PYTHONPATH follows the project that **owns** the directory you run in: the
+nearest ancestor with a `pyproject.toml`, bounded by the worktree root. So a
+subproject gets its own `src`, and a plain subdirectory keeps the worktree-root
+workspace.
+
+Pass `--` before any command that has its own `-C` (e.g. `make -C`).
 
 For interactive shell work (rare):
 
