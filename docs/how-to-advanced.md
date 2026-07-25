@@ -247,12 +247,20 @@ To reach a subproject without leaving the main checkout, name it with `-C` (work
 ai-hats wt exec task/hats-1193 -C relay -- pytest
 ```
 
-Pass `--` before any command carrying its own `-C` (e.g. `make -C`).
-
-For an interactive shell session inside the worktree:
+A leading token that names an **active branch** is a worktree selector, and it always beats cwd — so the reach-in form works from anywhere, including from inside a *different* worktree (HATS-1213). A first token that names no active worktree is just the command:
 
 ```bash
-eval "$(ai-hats wt env)"   # exports $WT and PYTHONPATH
+# from inside task/hats-1205 — still runs in 1193:
+ai-hats wt exec task/hats-1193 -- git rev-parse --abbrev-ref HEAD
+```
+
+Pass `--` before any command carrying its own `-C` (e.g. `make -C`).
+
+For an interactive shell session inside a worktree — bare for your cwd's (or the sole active) worktree, or named to reach another:
+
+```bash
+eval "$(ai-hats wt env)"                  # exports $WT and PYTHONPATH
+eval "$(ai-hats wt env task/hats-1193)"   # reach into another worktree
 cd $WT
 ```
 

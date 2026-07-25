@@ -123,7 +123,7 @@ see the drift block in step 3 of the Workflow above.
 | `ai-hats wt list`            | Show all worktrees                                      |
 | `ai-hats wt status`          | Show active worktree                                    |
 | `ai-hats wt exec -- <cmd>`   | Run command in worktree, where you stand (+ PYTHONPATH) |
-| `ai-hats wt env`             | Print `export WT=... PYTHONPATH=...` for eval           |
+| `ai-hats wt env [<branch>]`  | Print `export WT=... PYTHONPATH=...` for eval           |
 
 ## Teardown runs lifecycle hooks
 
@@ -170,10 +170,16 @@ workspace.
 
 Pass `--` before any command that has its own `-C` (e.g. `make -C`).
 
-For interactive shell work (rare):
+**Reaching another worktree.** A leading token naming an active branch is a
+selector and always beats cwd, so this works from inside a *different* worktree
+too (HATS-1213). Without a selector the worktree comes from cwd, else the sole
+active one; with several active and no selector, `wt exec` refuses and lists them.
+
+For interactive shell work (rare) — bare, or named to reach another worktree:
 
 ```bash
 eval "$(ai-hats wt env)"
+eval "$(ai-hats wt env task/hats-1)"
 cd $WT
 ```
 
