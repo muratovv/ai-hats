@@ -33,6 +33,12 @@ class SessionReport:
     prompt: Path | None
     plan: MaterializationPlan
     cwd: str = ""
+    # Paths that appeared on disk during a plan-mode build: a write that went
+    # around the port. Empty is the invariant; non-empty names a live bypass.
+    escapes: tuple[Path, ...] = ()
+    # Known gaps between what this report can observe and what the surface
+    # actually delivers — never leave such a gap silent.
+    notes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +66,8 @@ class SessionReport:
                 for e in self.plan.entries
             ],
             "duplicates": [str(p) for p in self.plan.duplicates()],
+            "escapes": [str(p) for p in self.escapes],
+            "notes": list(self.notes),
         }
 
     def render(self, *, full: bool = False) -> str:
@@ -72,9 +80,15 @@ class SessionReport:
         ]
         if d["cwd"]:
             lines.append(f"cwd       {d['cwd']}")
+        # Both surfaces pass the whole role text as one argv token (claude's
+        # system_prompt, agy's -p) — unreadable inline, verbatim in --json.
+        shown = [
+            t if len(t) <= 160 else f"{t[:80]}… <{_human_size(len(t.encode()))} total>"
+            for t in d["launch"]
+        ]
         lines += [
             "",
-            "launch    " + " ".join(d["launch"]),
+            "launch    " + " ".join(shown),
             "env       " + (", ".join(d["env_keys"]) or "(none)"),
         ]
 
@@ -97,5 +111,18 @@ class SessionReport:
 
         for dup in d["duplicates"]:
             lines.append(f"  ! {dup} materialized twice")
+
+        if d["notes"]:
+            lines.append("")
+            lines += [f"note      {n}" for n in d["notes"]]
+
+        if d["escapes"]:
+            lines += [
+                "",
+                "BYPASS — these were written for real during a dry-run, i.e. by a",
+                "path that does not go through the materialization port (HATS-1207):",
+            ]
+            lines += [f"  ! {p}" for p in d["escapes"]]
+            lines.append("  (removed again; the dry-run left nothing behind)")
 
         return "\n".join(lines) + "\n"
