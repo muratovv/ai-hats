@@ -24,12 +24,27 @@ consumer appears later, it's a 5-line addition.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult
 
+from .paths import user_rules_dir
+
 if TYPE_CHECKING:
     from .assembler import Assembler
+
+
+def discover_user_rules(project_dir: Path) -> tuple[Path, ...]:
+    """Project-authored rule files, name-sorted (HATS-1203).
+
+    Unfiltered by design: unlike library rules there is no catalog to select
+    from, so dropping a file into ``user-rules/`` IS the opt-in.
+    """
+    rules_dir = user_rules_dir(project_dir)
+    if not rules_dir.is_dir():
+        return ()
+    return tuple(sorted(rules_dir.glob("*.md")))
 
 
 def compose_for_role(assembler: "Assembler", role: str) -> CompositionResult:
@@ -49,6 +64,10 @@ def compose_for_role(assembler: "Assembler", role: str) -> CompositionResult:
     preserved. Callers that require strict semantics should inspect
     ``result.errors`` and decide locally.
     """
-    return assembler.composer.compose(
+    result = assembler.composer.compose(
         role, overlays=assembler._get_overlays(role),
     )
+    # HATS-1203: the composer sees library_paths only, so user-rules attach
+    # here — the one funnel — and reach every consumer. Discovery is delegated
+    # to the assembler: this facade stays free of filesystem work.
+    return result.with_user_rules(assembler.user_rules())

@@ -9,6 +9,7 @@ skills (F3 ruling, HATS-862 plan.md).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -57,6 +58,9 @@ class CompositionResult:
     trait_injections: dict[str, str] = field(default_factory=dict)
     role_injection: str = ""
     overlay_injection: str = ""
+    # Project-authored rule FILES, not library components — the composer is
+    # project-agnostic, so these are attached downstream (HATS-1203).
+    user_rules: tuple[Path, ...] = ()
 
     @property
     def merged_injection(self) -> str:
@@ -72,3 +76,11 @@ class CompositionResult:
         (ADR-0005 П2).
         """
         return replace(self, injections=[text])
+
+    def with_user_rules(self, paths: "Iterable[Path]") -> "CompositionResult":
+        """Return a copy carrying the project's user-rule files (HATS-1203).
+
+        Attached by ``compose_for_role`` — the one composition site that knows
+        ``project_dir`` — so every consumer of the result inherits them.
+        """
+        return replace(self, user_rules=tuple(paths))

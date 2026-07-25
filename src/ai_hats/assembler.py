@@ -21,7 +21,7 @@ import yaml
 from ai_hats_core import CompositionResult, atomic_write_bytes
 from .composer import Composer
 from .hooks_manager import HooksManager
-from .materialize import compose_for_role
+from .materialize import compose_for_role, discover_user_rules
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
@@ -1076,6 +1076,15 @@ class Assembler:
         prompt_ok = any(f(self.project_dir).exists() for f in (gemini_md, claude_md))
         health["system_prompt"] = "OK" if prompt_ok else "Missing"
         return health
+
+    def user_rules(self) -> tuple[Path, ...]:
+        """Project-authored rule files for this project (HATS-1203).
+
+        Owned here, not in the compose facade, so ``compose_for_role`` stays
+        free of filesystem work and a mocked Assembler cannot drag path
+        resolution into a unit test.
+        """
+        return discover_user_rules(self.project_dir)
 
     # ----- Canonical layered layer (HATS-282) -----
 
