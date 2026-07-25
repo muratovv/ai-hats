@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hats-relay"
+version = "0.1.0"
+description = "Session broker: one server holds many ai-hats sessions and fans each out to many clients."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "muratovv", email = "f@muratovv.me" }, # ai-hats: allow-secret
+]
+keywords = ["pty", "relay", "broker", "websocket", "terminal"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = ["websockets>=16.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+hats-relay = "hats_relay.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hats_relay"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"] # asserts are what pytest is for
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
