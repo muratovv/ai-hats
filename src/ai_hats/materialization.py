@@ -1,22 +1,19 @@
 """Materialization port — the one seam every session write goes through (HATS-1211).
 
-``apply`` writes and records; ``plan`` records the intent and touches nothing, so
-the dry-run report cannot drift from reality — same call, two modes. Design and
-the by-construction argument: tasks/HATS-1211/plan.md.
+One interface, two implementations: :class:`ApplyMaterializer` writes and records,
+:class:`PlanMaterializer` records the same entry and touches nothing (``--dry-run``).
+Both build their entries from the shared ``describe_*`` functions, so the record
+cannot differ by implementation — that identity is the contract test suite's subject.
 """
 
 from __future__ import annotations
 
+import abc
 import json
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-
-
-class MaterializationMode(str, Enum):
-    APPLY = "apply"
-    PLAN = "plan"
 
 
 class WriteKind(str, Enum):
@@ -57,6 +54,54 @@ class MaterializationPlan:
         return [target for target, n in seen.items() if n > 1]
 
 
+# --- describe: pure, shared by both implementations so records cannot diverge ---
+
+
+def describe_write_text(path: Path, content: str) -> MaterializationEntry:
+    return MaterializationEntry(
+        kind=WriteKind.WRITE_TEXT, target=path, size=len(content.encode())
+    )
+
+
+def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
+    files = [p for p in src.rglob("*") if p.is_file()]
+    return MaterializationEntry(
+        kind=WriteKind.COPY_TREE,
+        target=dest,
+        source=src,
+        size=sum(p.stat().st_size for p in files),
+        file_count=len(files),
+    )
+
+
+def describe_mkdir(path: Path) -> MaterializationEntry:
+    return MaterializationEntry(kind=WriteKind.MKDIR, target=path, file_count=0)
+
+
+def describe_remove_tree(path: Path) -> MaterializationEntry:
+    return MaterializationEntry(kind=WriteKind.REMOVE_TREE, target=path)
+
+
+def render_json(data: dict) -> str:
+    return json.dumps(data, indent=2) + "\n"
+
+
+def describe_merge_json(path: Path, data: dict) -> MaterializationEntry:
+    content = render_json(data)
+    current = path.read_text() if path.is_file() else None
+    return MaterializationEntry(
+        kind=WriteKind.MERGE_JSON,
+        target=path,
+        size=len(content.encode()),
+        detail=_key_diff(current, data),
+    )
+
+
+def json_differs(path: Path, data: dict) -> bool:
+    current = path.read_text() if path.is_file() else None
+    return current != render_json(data)
+
+
 def _key_diff(current_text: str | None, desired: dict) -> str:
     """Top-level key delta, rendered for the report (``+hooks``, ``~theme``)."""
     try:
@@ -72,87 +117,126 @@ def _key_diff(current_text: str | None, desired: dict) -> str:
     return " ".join(added + changed + removed)
 
 
-class Materializer:
-    """The write port. Construct per session build; read ``plan`` afterwards."""
+# --- the port ---
 
-    def __init__(self, mode: MaterializationMode = MaterializationMode.APPLY) -> None:
-        self.mode = MaterializationMode(mode)
+
+class Materializer(abc.ABC):
+    """Every session write goes through here. Read ``plan`` after the build."""
+
+    def __init__(self) -> None:
         self.plan = MaterializationPlan()
 
-    @property
-    def _writes(self) -> bool:
-        return self.mode is MaterializationMode.APPLY
+    def _record(self, entry: MaterializationEntry) -> None:
+        self.plan.entries.append(entry)
+
+    @abc.abstractmethod
+    def write_text(self, path: Path, content: str) -> None: ...
+
+    @abc.abstractmethod
+    def mkdir(self, path: Path) -> None:
+        """Only a real creation is recorded — every category handler mkdirs the cache."""
+
+    @abc.abstractmethod
+    def copy_tree(self, src: Path, dest: Path) -> None: ...
+
+    @abc.abstractmethod
+    def merge_json(self, path: Path, data: dict) -> bool:
+        """Write ``data`` as JSON only if it differs; returns whether it does.
+
+        The caller hands the whole desired document; content decides, so
+        read-modify-write callers keep their ``changed`` semantics.
+        """
+
+    @abc.abstractmethod
+    def remove_tree(self, path: Path) -> None:
+        """Recursive delete. Absent target is a no-op and stays out of the plan."""
+
+
+class ApplyMaterializer(Materializer):
+    """The real session: perform the write, then record it."""
 
     def write_text(self, path: Path, content: str) -> None:
-        if self._writes:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
-        self.plan.entries.append(
-            MaterializationEntry(
-                kind=WriteKind.WRITE_TEXT,
-                target=path,
-                size=len(content.encode()),
-            )
-        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        self._record(describe_write_text(path, content))
 
-    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
-        """Only a real creation is recorded — every category handler mkdirs the cache."""
+    def mkdir(self, path: Path) -> None:
         if path.is_dir():
             return
-        if self._writes:
-            path.mkdir(parents=parents, exist_ok=exist_ok)
-        self.plan.entries.append(
-            MaterializationEntry(kind=WriteKind.MKDIR, target=path, file_count=0)
-        )
+        path.mkdir(parents=True, exist_ok=True)
+        self._record(describe_mkdir(path))
 
     def copy_tree(self, src: Path, dest: Path) -> None:
-        """Recursive copy. Plan mode sizes the source instead of performing it."""
-        files = [p for p in src.rglob("*") if p.is_file()]
-        if self._writes:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src, dest)
-        self.plan.entries.append(
-            MaterializationEntry(
-                kind=WriteKind.COPY_TREE,
-                target=dest,
-                source=src,
-                size=sum(p.stat().st_size for p in files),
-                file_count=len(files),
-            )
-        )
+        entry = describe_copy_tree(src, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest)
+        self._record(entry)
 
     def merge_json(self, path: Path, data: dict) -> bool:
-        """Write ``data`` as JSON only if it differs from what is on disk.
-
-        The caller hands the whole desired document; content decides. Returns
-        whether it differs, so read-modify-write callers keep their ``changed``
-        semantics. Used for user-owned files (agy global settings), hence the
-        recorded key-level diff — a session touching a user's file is news.
-        """
-        content = json.dumps(data, indent=2) + "\n"
-        current = path.read_text() if path.is_file() else None
-        if current == content:
+        if not json_differs(path, data):
             return False
-
-        if self._writes:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
-        self.plan.entries.append(
-            MaterializationEntry(
-                kind=WriteKind.MERGE_JSON,
-                target=path,
-                size=len(content.encode()),
-                detail=_key_diff(current, data),
-            )
-        )
+        entry = describe_merge_json(path, data)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_json(data))
+        self._record(entry)
         return True
 
     def remove_tree(self, path: Path) -> None:
-        """Recursive delete. Absent target is a no-op and stays out of the plan."""
         if not path.exists():
             return
-        if self._writes:
-            shutil.rmtree(path)  # safe-delete: ok caller-owned session artifact
-        self.plan.entries.append(
-            MaterializationEntry(kind=WriteKind.REMOVE_TREE, target=path)
-        )
+        entry = describe_remove_tree(path)
+        shutil.rmtree(path)  # safe-delete: ok caller-owned session artifact
+        self._record(entry)
+
+
+class PlanMaterializer(Materializer):
+    """``--dry-run``: record the same entry, leave the filesystem untouched.
+
+    Carries a small overlay of what it *would* have created and removed. Without
+    it the record diverges from ApplyMaterializer's on ordinary sequences — four
+    category handlers mkdir'ing one cache dir, or the rebuild's remove-then-mkdir.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._created: set[Path] = set()
+        self._removed: set[Path] = set()
+
+    def _would_exist(self, path: Path) -> bool:
+        if path in self._created:
+            return True
+        if any(path == gone or gone in path.parents for gone in self._removed):
+            return False
+        return path.exists()
+
+    def _mark_created(self, path: Path) -> None:
+        self._removed.discard(path)
+        self._created.update([path, *path.parents])
+
+    def write_text(self, path: Path, content: str) -> None:
+        self._mark_created(path.parent)  # apply creates parents without recording
+        self._record(describe_write_text(path, content))
+
+    def mkdir(self, path: Path) -> None:
+        if self._would_exist(path):
+            return
+        self._mark_created(path)
+        self._record(describe_mkdir(path))
+
+    def copy_tree(self, src: Path, dest: Path) -> None:
+        self._mark_created(dest)
+        self._record(describe_copy_tree(src, dest))
+
+    def merge_json(self, path: Path, data: dict) -> bool:
+        if not json_differs(path, data):
+            return False
+        self._mark_created(path.parent)
+        self._record(describe_merge_json(path, data))
+        return True
+
+    def remove_tree(self, path: Path) -> None:
+        if not self._would_exist(path):
+            return
+        self._created.discard(path)
+        self._removed.add(path)
+        self._record(describe_remove_tree(path))
