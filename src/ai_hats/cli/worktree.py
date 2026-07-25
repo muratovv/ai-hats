@@ -132,6 +132,21 @@ def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
     return _resolve_worktree(selector)
 
 
+def _effective_dir(wt_path: Path) -> Path:
+    """Where `wt exec` should run: the caller's cwd when it is inside this
+    worktree, else the worktree root (HATS-1205 — an env wrapper, not a
+    teleporter).
+
+    Both sides are resolved: on macOS a worktree minted under ``/var/folders``
+    reports a cwd under ``/private/var/folders``.
+    """
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:  # cwd unlinked under us
+        return wt_path
+    return cwd if cwd.is_relative_to(wt_path.resolve()) else wt_path
+
+
 @click.group()
 def wt():
     """Manage git worktrees for isolated work."""
@@ -570,8 +585,10 @@ def wt_exec(cmd_args: tuple[str, ...]):
     # HATS-913: src alone Franken-mixes — packages/*/src must come from the worktree
     env["PYTHONPATH"] = workspace_pythonpath(wt_path, env.get("PYTHONPATH", ""))
 
+    run_dir = _effective_dir(wt_path)
+
     try:
-        result = subprocess.run(args, cwd=str(wt_path), env=env)
+        result = subprocess.run(args, cwd=str(run_dir), env=env)
     except FileNotFoundError as e:
         console.print(f"[red]Command not found:[/] {e.filename}")
         sys.exit(127)
