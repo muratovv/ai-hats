@@ -16,9 +16,9 @@ and advances the step only after the function returns):
   may execute up to N times (two processes both replaying step 1 is expected,
   not a bug); ``_safe_replace`` file locks handle most byte-level races.
 
-``run_pending`` is not the only call site: some wrapped methods (e.g.
-``_migrate_claude_md_to_v3``) also run directly from ``init`` / ``set_role``, so
-idempotency must hold for those direct invocations, not just the gated replay.
+``run_pending`` is not the only call site: some wrapped methods also run
+directly from ``init`` / ``set_role``, so idempotency must hold for those direct
+invocations, not just the gated replay.
 
 The generic step-gated *runner* now lives in ``ai_hats_core.migrations``
 (``Migration[Ctx]`` / ``run_pending`` / ``latest_step``, HATS-868 T7); this
@@ -36,7 +36,13 @@ import shutil
 import sys
 from typing import TYPE_CHECKING
 
-from .constants import AGENT_DIR
+from .constants import (
+    AGENT_DIR,
+    INJECTION_END,
+    INJECTION_START,
+    PUBLISH_AGGREGATOR_END,
+    PUBLISH_AGGREGATOR_START,
+)
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
@@ -48,6 +54,7 @@ from ai_hats_core.migrations import (
     run_pending as _run_pending,
 )
 from ai_hats_core.safe_delete import discard as _safe_discard
+from ai_hats_core.safe_delete import replace as _safe_replace
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -110,14 +117,66 @@ def _m_heal_external_refs(a: "Assembler") -> None:
 
 
 def _m_migrate_claude_md_to_v3(a: "Assembler") -> None:
-    from .providers import get_provider
-
-    provider = get_provider(a.project_config.provider)
-    a._migrate_claude_md_to_v3(provider)
+    """Retired by HATS-1201 — kept as a no-op because step numbers are bound
+    to the on-disk counter and must never be reordered or renumbered. The v3
+    scaffold it used to write no longer exists (HATS-1170); step 7 removes
+    what it left behind."""
+    del a
 
 
 def _m_migrate_layout_v4(a: "Assembler") -> None:
     migrate_layout_v4(a)
+
+
+def _strip_marked_block(text: str, start: str, end: str) -> str:
+    """Remove one ``start``…``end`` block plus the blank line it leaves behind."""
+    if start not in text or end not in text:
+        return text
+    head = text[: text.index(start)]
+    tail = text[text.index(end) + len(end) :]
+    if head.strip() and tail.strip():
+        return head.rstrip("\n") + "\n\n" + tail.lstrip("\n")
+    return (head + tail).strip("\n")
+
+
+def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
+    """Drop the ai-hats block HATS-1170 orphaned in root ``CLAUDE.md``.
+
+    Root ``CLAUDE.md`` is user territory now, so ai-hats removes only what it
+    wrote itself: the lowercase aggregator block and the legacy uppercase
+    injection block. A file left with nothing but whitespace was pure ai-hats
+    leftover and goes entirely; anything the user put around the block survives
+    byte-for-byte. Only ``CLAUDE.md`` is touched — Cline (``CLINE.md``) and Agy
+    (``GEMINI.md``) still write live blocks under the same markers.
+
+    Skipped while the project has user-rules: the block's ``@imports.md`` line
+    is still their only delivery channel (HATS-1201 — the composed prompt does
+    not carry them yet), so stripping it would silently drop them.
+    """
+    claude_md = a.project_dir / "CLAUDE.md"
+    if not claude_md.is_file():
+        return
+
+    imports_md = a._canonical_dir / "imports.md"
+    if imports_md.is_file() and imports_md.read_text().strip():
+        return
+
+    existing = claude_md.read_text()
+    stripped = _strip_marked_block(existing, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END)
+    stripped = _strip_marked_block(stripped, INJECTION_START, INJECTION_END)
+    if stripped == existing:
+        return
+
+    if not stripped.strip():
+        _safe_discard(claude_md, reason="claude-md-scaffold-drop", project_dir=a.project_dir)
+        return
+
+    _safe_replace(
+        claude_md,
+        (stripped.rstrip("\n") + "\n").encode("utf-8"),
+        reason="claude-md-scaffold-drop",
+        project_dir=a.project_dir,
+    )
 
 
 # ----- v4-layout migration logic (HATS-715: moved out of Assembler) --------
@@ -338,12 +397,17 @@ MIGRATIONS: list[Migration] = [
     Migration(
         step=5,
         run=_m_migrate_claude_md_to_v3,
-        label="claude.md → v3 scaffold",
+        label="claude.md → v3 scaffold (retired, no-op)",
     ),
     Migration(
         step=6,
         run=_m_migrate_layout_v4,
         label="layout v4 (sessions+tracker+library)",
+    ),
+    Migration(
+        step=7,
+        run=_m_strip_orphaned_claude_scaffold,
+        label="drop orphaned claude.md scaffold HATS-1201",
     ),
 ]
 

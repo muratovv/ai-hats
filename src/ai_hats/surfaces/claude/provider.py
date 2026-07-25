@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -43,8 +43,6 @@ from ai_hats.constants import (
     INJECTION_START,
     INJECTION_END,
     PROVIDER_CLAUDE,
-    PUBLISH_AGGREGATOR_START,
-    PUBLISH_AGGREGATOR_END,
 )
 
 
@@ -144,10 +142,6 @@ class ClaudeProvider(Provider):
 
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)
-
-    def scaffold_template_relpath(self) -> str | None:
-        # HATS-1170: Root CLAUDE.md scaffold is no longer written (native-by-default).
-        return None
 
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""

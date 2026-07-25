@@ -73,10 +73,9 @@ def test_set_creates_project(cli_project):
     assert (rules_dir(project)).is_dir()
     assert (skills_dir(project)).is_dir()
     assert (tasks_dir(project)).is_dir()
-    # HATS-284: ./CLAUDE.md is now a thin scaffold (~65 bytes); the aggregator
-    # at .claude/CLAUDE.md carries the framework injection.
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    # HATS-1170 clean-root invariant: the role reaches Claude per-session via
+    # --system-prompt-file, so nothing lands in the project root.
+    assert not (project / "CLAUDE.md").exists()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
 
 
@@ -88,8 +87,7 @@ def test_set_all_roles(cli_project, role):
     r = runner.invoke(main, ["config", "set", "-r", role, "-p", "claude"])
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
-    assert (project / "CLAUDE.md").exists()
-    assert "@./.agent/ai-hats/imports.md" in (project / "CLAUDE.md").read_text()
+    assert not (project / "CLAUDE.md").exists()
     assert (project / ".agent" / "ai-hats" / "imports.md").exists()
 
 
@@ -114,7 +112,6 @@ def test_bump_after_set(cli_project, monkeypatch):
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
-    prompt_before = (project / "CLAUDE.md").read_text()
     aggregator_before = (project / ".agent" / "ai-hats" / "imports.md").read_text()
 
     # `ai-hats self bump` must NOT be a registered click command anymore.
@@ -129,12 +126,11 @@ def test_bump_after_set(cli_project, monkeypatch):
     rc = _bump_internal.main([])
     assert rc == 0
 
-    # ./CLAUDE.md (scaffold) is byte-stable; canonical aggregator is
-    # also stable for the same role.
-    prompt_after = (project / "CLAUDE.md").read_text()
+    # Canonical aggregator is stable for the same role, and the bump adds no
+    # root artefact (HATS-1170 clean-root invariant).
     aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
-    assert prompt_before == prompt_after
     assert aggregator_before == aggregator_after
+    assert not (project / "CLAUDE.md").exists()
 
 
 def test_init_unknown_role_fails_loud(cli_project):
@@ -183,7 +179,8 @@ def test_set_unknown_role_fails_loud(cli_project):
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
-    claude_before = (project / "CLAUDE.md").read_text()
+    aggregator = project / ".agent" / "ai-hats" / "imports.md"
+    aggregator_before = aggregator.read_text()
 
     result = runner.invoke(main, ["config", "set", "-r", "nonexistent-role"])
 
@@ -191,7 +188,7 @@ def test_set_unknown_role_fails_loud(cli_project):
     assert "nonexistent-role" in result.output
     assert "Role set" not in result.output
     # Existing composition must remain intact.
-    assert (project / "CLAUDE.md").read_text() == claude_before
+    assert aggregator.read_text() == aggregator_before
 
 
 def test_set_unknown_provider_only_fails_loud(cli_project):
@@ -219,13 +216,14 @@ def test_set_idempotent_via_cli(cli_project):
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
-    prompt_first = (project / "CLAUDE.md").read_text()
+    aggregator = project / ".agent" / "ai-hats" / "imports.md"
+    first = aggregator.read_text()
 
     r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
-    prompt_second = (project / "CLAUDE.md").read_text()
-    assert prompt_first == prompt_second
+    assert aggregator.read_text() == first
+    assert not (project / "CLAUDE.md").exists()
 
 
 # -- Role override (shadow prompt) CLI tests --
@@ -323,7 +321,7 @@ def test_subcommands_work_with_passthrough_context(cli_project):
 
 
 def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
-    """--role override produces a temp file and leaves CLAUDE.md untouched."""
+    """--role override produces a temp file and writes nothing to the project root."""
     from pathlib import Path
 
     from ai_hats.assembler import Assembler
@@ -334,7 +332,6 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
 
     # Init + set base role. HATS-407: CLI writes default_role, not active_role.
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
-    original_claude = (project / "CLAUDE.md").read_text()
     original_profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert original_profile.default_role == "assistant"
     assert original_profile.active_role == ""  # runtime-only field
@@ -353,7 +350,7 @@ def test_override_creates_shadow_prompt_without_modifying_project(cli_project):
     assert "sre" in override_content.lower() or "RELIABILITY" in override_content.upper()
 
     # Project files NOT modified
-    assert (project / "CLAUDE.md").read_text() == original_claude
+    assert not (project / "CLAUDE.md").exists()
     after_profile = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     assert after_profile.default_role == "assistant"
     assert after_profile.active_role == ""
@@ -405,11 +402,9 @@ def test_multiple_parallel_overrides_are_independent(cli_project):
         or "ARCHITECT" in overrides["architect"]["content"]
     )
 
-    # HATS-294: project CLAUDE.md still imports the canonical aggregator;
-    # aggregator now contains only user-rules (empty in this fixture).
-    # Per-session role content lives in the override temp files asserted above.
-    claude_scaffold = (project / "CLAUDE.md").read_text()
-    assert "@./.agent/ai-hats/imports.md" in claude_scaffold
+    # HATS-1170: role content lives only in the per-session override files
+    # asserted above — three parallel sessions still leave the root clean.
+    assert not (project / "CLAUDE.md").exists()
 
     # Cleanup
     for info in overrides.values():

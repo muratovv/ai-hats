@@ -1,9 +1,8 @@
 """Litmus role-swap tests for the canonical→publish layout (HATS-286).
 
 3-step swap (A → B → A) verifies that:
-- ./CLAUDE.md is byte-stable across role changes (user-owned scaffold).
-- .claude/CLAUDE.md aggregator and .agent/ai-hats/role.md change with the
-  active role and restore exactly when the role is set back.
+- no root CLAUDE.md is ever created, whatever the role (HATS-1170).
+- .agent/ai-hats/imports.md restores exactly when the role is set back.
 - Bump after a swap is byte-stable (idempotency end-to-end).
 """
 
@@ -44,17 +43,18 @@ def project_two_roles(tmp_path: Path) -> Path:
     return project
 
 
-def test_role_swap_keeps_claude_md_byte_stable(project_two_roles: Path) -> None:
+def test_role_swap_never_creates_root_claude_md(project_two_roles: Path) -> None:
+    """HATS-1170: no swap, in either direction, materializes a root CLAUDE.md."""
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
-    md5_step1 = md5(project_two_roles / "CLAUDE.md")
+    assert not (project_two_roles / "CLAUDE.md").exists()
 
     asm.set_role("role-b", provider_name="claude")
-    assert md5(project_two_roles / "CLAUDE.md") == md5_step1
+    assert not (project_two_roles / "CLAUDE.md").exists()
 
     asm.set_role("role-a", provider_name="claude")
-    assert md5(project_two_roles / "CLAUDE.md") == md5_step1
+    assert not (project_two_roles / "CLAUDE.md").exists()
 
 
 def test_role_swap_tracks_active_role_in_profile(
@@ -84,25 +84,20 @@ def test_role_swap_tracks_active_role_in_profile(
 
 
 def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
-    """HATS-294: only CLAUDE.md scaffold and imports.md (user-rules aggregator)
-    survive on disk. Both must be byte-stable across bump.
+    """HATS-1170: imports.md (user-rules aggregator) is the only survivor on
+    disk, and it must be byte-stable across bump.
     """
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
 
-    snapshot = {
-        "claude_md": md5(project_two_roles / "CLAUDE.md"),
-        "aggregator": md5(project_two_roles / ".agent" / "ai-hats" / "imports.md"),
-    }
+    aggregator = project_two_roles / ".agent" / "ai-hats" / "imports.md"
+    before = md5(aggregator)
 
     bump_pipeline(asm)
 
-    assert md5(project_two_roles / "CLAUDE.md") == snapshot["claude_md"]
-    assert (
-        md5(project_two_roles / ".agent" / "ai-hats" / "imports.md")
-        == snapshot["aggregator"]
-    )
+    assert md5(aggregator) == before
+    assert not (project_two_roles / "CLAUDE.md").exists()
 
 
 def test_set_role_agy_still_inline(tmp_path: Path) -> None:
@@ -124,13 +119,12 @@ def test_set_role_agy_still_inline(tmp_path: Path) -> None:
 
 
 def test_set_role_claude_skips_inline_update(project_two_roles: Path) -> None:
-    """./CLAUDE.md after set_role is exactly the scaffold — no inline content."""
+    """Claude's update_system_prompt is a no-op — the role never hits the root."""
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
 
-    body = (project_two_roles / "CLAUDE.md").read_text()
-    # Scaffold only — no inline role content, no uppercase markers.
-    assert "Role A injection." not in body
-    assert "<!-- AI-HATS:START -->" not in body
-    assert "@./.agent/ai-hats/imports.md" in body
+    assert not (project_two_roles / "CLAUDE.md").exists()
+    assert "Role A injection." not in (
+        project_two_roles / ".agent" / "ai-hats" / "imports.md"
+    ).read_text()

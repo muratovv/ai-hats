@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from ai_hats_core import CompositionResult
 from ai_hats.session_artifacts import (
@@ -13,7 +12,7 @@ from ai_hats.session_artifacts import (
     DeliveryMode,
     SessionPolicy,
 )
-from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START, INJECTION_END
+from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START
 
 
 def test_session_artifacts_types():
@@ -111,7 +110,7 @@ def test_clean_root_scaffold_disabled(tmp_path: Path):
 
     provider = ClaudeProvider()
 
-    assert provider.scaffold_template_relpath() is None
     provider.ensure_runtime_hooks(project_dir)
+    assert not (project_dir / "CLAUDE.md").exists()
     assert not (project_dir / ".claude" / "settings.json").exists()
     assert provider.runtime_wiring_changes(project_dir) == []

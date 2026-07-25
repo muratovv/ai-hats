@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START, INJECTION_END, PUBLISH_AGGREGATOR_START, PUBLISH_AGGREGATOR_END
+from ai_hats.constants import PUBLISH_AGGREGATOR_END, PUBLISH_AGGREGATOR_START
+from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START, INJECTION_END
 
 
 def test_build_full_content_no_splicing_root_claude_md(tmp_path: Path):
