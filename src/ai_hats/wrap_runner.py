@@ -26,6 +26,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
+from .session_artifacts import assemble_launch_command
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
@@ -486,10 +487,12 @@ class WrapRunner:
 
         # Build CLI command with session ID for JSONL linkage
         claude_session_id = str(uuid.uuid4())
-        cmd = provider.get_cli_command(extra_args)
-        cmd.extend(session_args)
-        _resuming = extra_args and any(f in extra_args for f in ("--resume", "--continue", "-c"))
-        cmd = provider.get_cli_launch_args(cmd, claude_session_id, _resuming)
+        cmd = assemble_launch_command(
+            provider,
+            extra_args=extra_args,
+            session_args=session_args,
+            provider_session_id=claude_session_id,
+        )
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 
