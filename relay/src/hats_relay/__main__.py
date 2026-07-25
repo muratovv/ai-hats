@@ -9,7 +9,7 @@ import logging
 import signal
 
 from .broker import Broker
-from .server import serve_broker
+from .server import serve_broker, shutdown
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,9 +49,7 @@ async def run(args: argparse.Namespace) -> int:
     try:
         await stop
     finally:
-        server.close()
-        await server.wait_closed()
-        await broker.aclose()
+        await shutdown(server, broker)
     return 0
 
 

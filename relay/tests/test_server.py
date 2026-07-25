@@ -14,7 +14,7 @@ from websockets.exceptions import InvalidStatus
 
 from hats_relay import wire
 from hats_relay.broker import Broker
-from hats_relay.server import serve_broker
+from hats_relay.server import serve_broker, shutdown
 
 FAKE_CHILD = [sys.executable, str(Path(__file__).resolve().parent / "fake_session_child.py")]
 HOST = "127.0.0.1"
@@ -36,9 +36,7 @@ async def running_broker():
     try:
         yield f"ws://{HOST}:{port}", broker
     finally:
-        server.close()
-        await server.wait_closed()
-        await broker.aclose()
+        await shutdown(server, broker)
 
 
 async def _recv_until_binary(ws, timeout=10.0):
@@ -136,6 +134,29 @@ def test_a_refused_control_message_does_not_open_a_session():
     reply, sessions = run(scenario())
     assert "error" in reply
     assert sessions == []
+
+
+def test_shutdown_is_prompt_even_with_a_client_that_stopped_reading():
+    """A relay you cannot stop is an operational trap: the close handshake wants to
+    drain, and a peer that is not reading has nowhere to drain to."""
+
+    async def scenario():
+        broker = Broker(argv_for)
+        server = await serve_broker(broker, host=HOST, port=0)
+        port = next(iter(server.sockets)).getsockname()[1]
+
+        # max_queue=1 makes the client stop reading its socket almost immediately.
+        async with connect(f"ws://{HOST}:{port}", max_queue=1) as ws:
+            await ws.send(json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25}))
+            for _ in range(200):
+                await ws.send(wire.client_input(b"x" * 4096))
+            await asyncio.sleep(0.5)  # let the backlog pile up unread
+
+            started = asyncio.get_running_loop().time()
+            await shutdown(server, broker)
+            return asyncio.get_running_loop().time() - started
+
+    assert run(scenario()) < 5.0
 
 
 def test_binding_an_interface_is_mandatory():

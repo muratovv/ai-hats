@@ -115,6 +115,22 @@ def make_handler(broker: Broker):
     return handler
 
 
+async def shutdown(server, broker: Broker | None = None) -> None:
+    """Stop the server without waiting on peers that stopped reading.
+
+    The closing handshake wants to drain, and a peer that is not reading has nowhere
+    to drain to; measured at ~19s to stop a server with one such client. Aborting the
+    transports first turns that into an immediate stop.
+    """
+    for connection in list(server.connections):
+        with contextlib.suppress(Exception):
+            connection.transport.abort()
+    server.close()
+    await server.wait_closed()
+    if broker is not None:
+        await broker.aclose()
+
+
 async def serve_broker(broker: Broker, *, host: str, port: int, **kwargs):
     """Start the server.
 

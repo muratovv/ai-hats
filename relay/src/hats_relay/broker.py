@@ -21,15 +21,26 @@ SID_BYTES = 16  # 128 bits: unguessable, so gating on it later needs no protocol
 MAX_QUEUED_BYTES = 4 << 20
 RING_BYTES = 1 << 20
 
+# Neither the byte budget nor websockets' ping_timeout catches a peer that simply
+# stopped reading; stall duration is the signal that does. See HATS-1193/research.md §3.
+STALL_SECONDS = 10.0
+
 Sender = Callable[[bytes], Awaitable[None]]
 
 
 class Attachment:
     """One client's view of one session: a bounded queue and the task draining it."""
 
-    def __init__(self, send: Sender, on_drop: Callable[[Attachment], None]) -> None:
+    def __init__(
+        self,
+        send: Sender,
+        on_drop: Callable[[Attachment], None],
+        *,
+        stall_timeout: float | None = None,
+    ) -> None:
         self._send = send
         self._on_drop = on_drop
+        self._stall = STALL_SECONDS if stall_timeout is None else stall_timeout
         self._queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._queued = 0
         self.dropped = False
@@ -63,7 +74,10 @@ class Attachment:
                 return
             self._queued -= len(frame)
             try:
-                await self._send(frame)
+                await asyncio.wait_for(self._send(frame), self._stall)
+            except (TimeoutError, asyncio.TimeoutError):
+                self.drop()
+                return
             except Exception:  # noqa: BLE001 — a dead client must not kill the session
                 self.drop()
                 return
@@ -94,9 +108,11 @@ class SessionEntry:
     def client_count(self) -> int:
         return len(self._clients)
 
-    def attach(self, send: Sender) -> tuple[Attachment, list[tuple[int, bytes]]]:
+    def attach(
+        self, send: Sender, *, stall_timeout: float | None = None
+    ) -> tuple[Attachment, list[tuple[int, bytes]]]:
         """Attach a client; returns it plus whatever backlog the ring still holds."""
-        att = Attachment(send, self._clients.discard)
+        att = Attachment(send, self._clients.discard, stall_timeout=stall_timeout)
         self._clients.add(att)
         return att, list(self._ring)
 
