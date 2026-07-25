@@ -36,7 +36,7 @@ pytestmark = pytest.mark.integration
 
 
 def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str, int | None]:
-    """Run `ai-hats self init --no-update` under a PTY, pick claude, capture.
+    """Run `ai-hats self init --no-update --channel stable` under a PTY, pick claude, capture.
 
     HATS-790: invoked as ``<venv>/bin/python -m ai_hats`` — there is no
     bin/ai-hats console script. PATH still omits ai-hats so the wizard's
@@ -44,6 +44,7 @@ def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str,
 
     Returns ``(ansi_stripped_output, exit_status)``.
     """
+    import select
     from ptyprocess import PtyProcess
 
     env = {
@@ -56,7 +57,7 @@ def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str,
     }
 
     proc = PtyProcess.spawn(
-        [str(venv_python), "-m", "ai_hats", "self", "init", "--no-update"],
+        [str(venv_python), "-m", "ai_hats", "self", "init", "--no-update", "--channel", "stable"],
         env=env,
         cwd=str(project),
         dimensions=(40, 120),  # wide enough that the menu line never wraps
@@ -66,15 +67,19 @@ def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str,
     wrote = False
     deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
-        try:
-            chunk = proc.read(4096)
-        except EOFError:
+        if not proc.isalive():
             break
-        if chunk:
-            buf += chunk.decode(errors="replace")
-            if not wrote and "Provider [" in strip_ansi(buf):
-                proc.write(b"claude\n")
-                wrote = True
+        r, _, _ = select.select([proc.fd], [], [], 0.5)
+        if r:
+            try:
+                chunk = proc.read(4096)
+            except EOFError:
+                break
+            if chunk:
+                buf += chunk.decode(errors="replace")
+                if not wrote and "Provider [" in strip_ansi(buf):
+                    proc.write(b"claude\n")
+                    wrote = True
 
     try:
         proc.wait()
