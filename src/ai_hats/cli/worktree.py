@@ -132,6 +132,45 @@ def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
     return _resolve_worktree(selector)
 
 
+def _effective_dir(wt_path: Path, subdir: str | None = None) -> Path:
+    """Where `wt exec` should run (HATS-1205 — an env wrapper, not a teleporter).
+
+    ``-C`` wins; else the caller's cwd when it is inside this worktree; else the
+    worktree root. Paths are resolved before comparison: on macOS a worktree
+    minted under ``/var/folders`` reports a cwd under ``/private/var/folders``.
+    """
+    root = wt_path.resolve()
+    if subdir is not None:
+        target = (wt_path / subdir).resolve()
+        if not target.is_relative_to(root):
+            raise click.UsageError(f"--cd escapes the worktree: {subdir}")
+        if not target.is_dir():
+            raise click.UsageError(f"--cd target is not a directory in the worktree: {subdir}")
+        return target
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:  # cwd unlinked under us
+        return wt_path
+    return cwd if cwd.is_relative_to(root) else wt_path
+
+
+def _owner_root(run_dir: Path, wt_path: Path) -> Path:
+    """The checkout root whose environment `run_dir` belongs to (HATS-1205).
+
+    Nearest ancestor carrying a ``pyproject.toml``, bounded by the worktree
+    root — so a subproject gets its own ``src`` instead of the outer repo's
+    packages, while a plain subdirectory keeps the worktree-root workspace.
+    """
+    root = wt_path.resolve()
+    here = run_dir.resolve()
+    for candidate in (here, *here.parents):
+        if not candidate.is_relative_to(root):
+            break
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    return wt_path
+
+
 @click.group()
 def wt():
     """Manage git worktrees for isolated work."""
@@ -531,16 +570,27 @@ def wt_status():
 
 
 @wt.command("exec", context_settings={"ignore_unknown_options": True})
+@click.option(
+    "-C",
+    "--cd",
+    "subdir",
+    default=None,
+    metavar="<subdir>",
+    help="Worktree-relative directory to run in (default: your cwd when it is "
+    "inside the worktree, else the worktree root).",
+)
 @click.argument("cmd_args", nargs=-1, type=click.UNPROCESSED, required=True)
-def wt_exec(cmd_args: tuple[str, ...]):
-    """Run a command inside a worktree (cwd + PYTHONPATH=src).
+def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
+    """Run a command in a worktree, where you stand (cwd + workspace PYTHONPATH).
 
     With >1 active worktree, pass one as the first arg (a leading token matching
-    an active branch is the selector); else it is inferred from cwd. `--` optional:
+    an active branch is the selector); else it is inferred from cwd. `--` optional
+    — but required when the inner command has its own `-C`:
 
     \b
         ai-hats wt exec -- pytest tests/test_foo.py -xvs      # sole/inside wt
         ai-hats wt exec task/hats-1 -- ruff check src/        # pick a worktree
+        ai-hats wt exec task/hats-1 -C relay -- pytest        # a subproject
         ai-hats wt exec task/hats-1 python -c 'import ai_hats'
     """
     args = list(cmd_args)
@@ -567,11 +617,13 @@ def wt_exec(cmd_args: tuple[str, ...]):
     env = os.environ.copy()
     for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(_var, None)
-    # HATS-913: src alone Franken-mixes — packages/*/src must come from the worktree
-    env["PYTHONPATH"] = workspace_pythonpath(wt_path, env.get("PYTHONPATH", ""))
+    run_dir = _effective_dir(wt_path, subdir)
+    # HATS-913: src alone Franken-mixes — packages/*/src must come from the
+    # worktree. HATS-1205: rooted at whichever project owns run_dir.
+    env["PYTHONPATH"] = workspace_pythonpath(_owner_root(run_dir, wt_path), env.get("PYTHONPATH", ""))
 
     try:
-        result = subprocess.run(args, cwd=str(wt_path), env=env)
+        result = subprocess.run(args, cwd=str(run_dir), env=env)
     except FileNotFoundError as e:
         console.print(f"[red]Command not found:[/] {e.filename}")
         sys.exit(127)
