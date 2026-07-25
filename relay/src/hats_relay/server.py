@@ -36,31 +36,52 @@ async def _resync(entry: SessionEntry, cols: int, rows: int) -> None:
     await entry.session.resize(cols, rows)
 
 
+async def _client_loop(ws: ServerConnection, entry: SessionEntry) -> None:
+    async for message in ws:
+        if isinstance(message, bytes):
+            await entry.session.send_input(wire.parse_client_input(message))
+            continue
+        try:
+            inner = protocol.parse_control(message)
+        except protocol.ProtocolError as exc:
+            await _reply_error(ws, str(exc))
+            continue
+        if inner.op == "resize":
+            await entry.session.resize(inner.cols, inner.rows)
+        else:
+            await _reply_error(ws, f"op {inner.op!r} is not valid on an attached connection")
+
+
 async def _pipe(ws: ServerConnection, entry: SessionEntry, ctl: protocol.Control) -> None:
     """Run the byte-pipe phase for one attached client."""
     attachment, _ = entry.attach(ws.send)
+    reader = asyncio.create_task(_client_loop(ws, entry))
     try:
         if ctl.op == "attach":
             for seq, data in entry.backlog_since(ctl.after_seq or 0):
                 attachment.offer(wire.client_output(seq=seq, payload=data))
             await _resync(entry, ctl.cols, ctl.rows)
 
-        async for message in ws:
-            if isinstance(message, bytes):
-                await entry.session.send_input(wire.parse_client_input(message))
-                continue
-            try:
-                inner = protocol.parse_control(message)
-            except protocol.ProtocolError as exc:
-                await _reply_error(ws, str(exc))
-                continue
-            if inner.op == "resize":
-                await entry.session.resize(inner.cols, inner.rows)
-            else:
-                await _reply_error(ws, f"op {inner.op!r} is not valid on an attached connection")
+        # Whichever ends first: the client leaving, or the session dying. Waiting only
+        # on the client would close the connection with no reason ever shown.
+        await asyncio.wait(
+            [reader, entry.pump_task], return_when=asyncio.FIRST_COMPLETED
+        )
+        if entry.pump_task.done():
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(
+                    protocol.event(
+                        "exit",
+                        returncode=entry.exited,
+                        detail=entry.stdio_tail.decode("utf-8", "replace").strip(),
+                    )
+                )
     except (ConnectionClosed, ValueError) as exc:
         logger.debug("client left session %s: %s", entry.sid, exc)
     finally:
+        reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await reader
         await attachment.aclose()
 
 

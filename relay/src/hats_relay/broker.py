@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import secrets
 import time
 from collections import deque
 from typing import Awaitable, Callable
 
 from .session import Session
+
+logger = logging.getLogger(__name__)
 
 SID_BYTES = 16  # 128 bits: unguessable, so gating on it later needs no protocol change
 MAX_QUEUED_BYTES = 4 << 20
@@ -99,6 +102,7 @@ class SessionEntry:
         self.created_at = time.time()
         self.seq = 0
         self.exited: int | None = None
+        self.stdio_tail = b""
         self._ring: deque[tuple[int, bytes]] = deque()
         self._ring_bytes = 0
         self._clients: set[Attachment] = set()
@@ -138,7 +142,17 @@ class SessionEntry:
             frame = _encode(self.seq, data)
             for att in list(self._clients):
                 att.offer(frame)
-        self.exited = self.session.returncode
+        # Reap before reporting: returncode is not populated until the child is waited
+        # for, so reading it straight after EOF reports a dead session as running.
+        self.exited = await self.session.wait()
+        self.stdio_tail = self.session.stdio_tail
+        if self.exited:
+            logger.warning(
+                "session %s exited %s; child said: %s",
+                self.sid,
+                self.exited,
+                self.stdio_tail.decode("utf-8", "replace").strip() or "<nothing>",
+            )
         for att in list(self._clients):
             att.drop()
 

@@ -26,6 +26,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 hats-relay = "hats_relay.__main__:main"
+hats-relay-attach = "hats_relay.client:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hats_relay"]

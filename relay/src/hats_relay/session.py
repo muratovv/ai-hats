@@ -20,6 +20,9 @@ from . import wire
 
 DEFAULT_TERM = "xterm-256color"
 _READ_SIZE = 65536
+# The child's own stdio is not relayed, but discarding it outright makes a session
+# that dies during startup die silently — the reason is written exactly there.
+STDIO_TAIL_BYTES = 8192
 
 
 def set_winsize(fd: int, cols: int, rows: int) -> None:
@@ -39,7 +42,19 @@ class Session:
         self._eof = False
         self._closed = False
         self._draining = False
+        self._stdio_tail = bytearray()
         self._start_drain()
+
+    @property
+    def stdio_tail(self) -> bytes:
+        """The child's last words on its own stdio — why a failed start failed."""
+        return bytes(self._stdio_tail)
+
+    async def wait(self) -> int | None:
+        """Reap the child and return its exit code."""
+        with contextlib.suppress(Exception):
+            return await self._proc.wait()
+        return self._proc.returncode
 
     @property
     def pid(self) -> int:
@@ -121,6 +136,9 @@ class Session:
             data = b""  # EIO on Linux when the slave side closes
         if not data:
             self._stop_drain()
+            return
+        self._stdio_tail.extend(data)
+        del self._stdio_tail[:-STDIO_TAIL_BYTES]
 
     def _stop_drain(self) -> None:
         if not self._draining:

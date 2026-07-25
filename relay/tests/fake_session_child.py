@@ -19,6 +19,12 @@ def frame(ftype: int, payload: bytes) -> bytes:
 
 
 def main() -> int:
+    if "fail-to-start" in sys.argv[1:]:
+        # Like ai-hats refusing an unknown role: the reason goes to its OWN stdio,
+        # which the broker does not relay, so it must be captured to be diagnosable.
+        print("Error: Role 'nope' not found.", flush=True)
+        return 3
+
     in_fd = int(os.environ["AI_HATS_PTY_IN_FD"])
     out_fd = int(os.environ["AI_HATS_PTY_OUT_FD"])
 

@@ -136,6 +136,32 @@ def test_a_refused_control_message_does_not_open_a_session():
     assert sessions == []
 
 
+def test_a_session_that_fails_to_start_tells_the_client_why():
+    """The child writes its refusal to its OWN stdio, which the broker does not relay.
+    Discarding that outright is how a session dies silently and reports 'running'."""
+
+    async def scenario():
+        async with running_broker() as (url, broker):
+            async with connect(url) as ws:
+                await ws.send(
+                    json.dumps(
+                        {"op": "create", "spec": {"role": "fail-to-start"}, "cols": 90, "rows": 25}
+                    )
+                )
+                await ws.recv()  # ack
+                async with asyncio.timeout(10):
+                    while True:
+                        msg = await ws.recv()
+                        if isinstance(msg, str) and "event" in msg:
+                            return json.loads(msg), broker.list()
+
+    exit_event, listing = run(scenario())
+    assert exit_event["event"] == "exit"
+    assert exit_event["returncode"] == 3
+    assert "Role 'nope' not found" in exit_event["detail"]
+    assert listing[0]["exited"] == 3, "a dead session must not report itself as running"
+
+
 def test_shutdown_is_prompt_even_with_a_client_that_stopped_reading():
     """A relay you cannot stop is an operational trap: the close handshake wants to
     drain, and a peer that is not reading has nowhere to drain to."""
