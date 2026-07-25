@@ -142,7 +142,9 @@ def test_declared_handler_subscribes_once_per_event(tmp_path):
         "    - {from: execute, to: document}\n"
         "links:\n  kinds: [{name: parent_task}]\n"
     )
-    subs = build_bound_subscribers(_defn(tmp_path, body), tmp_path, {"guard": _stub_factory("guard")})
+    subs = build_bound_subscribers(
+        _defn(tmp_path, body), tmp_path, {"guard": _stub_factory("guard")}
+    )
     guard = next(s for s in subs if s.name == "guard")
     hits = [s for s in guard.subscriptions() if s.event_key == "edge:plan--execute"]
     assert len(hits) == 1

@@ -30,7 +30,9 @@ def _writer(op):
 
 
 def test_forbid_rejects_set_of_undeclared_key(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir, schema=_schema("forbid"), subscribers=[_writer({"mystery": Set("x")})])
+    kernel = make_kernel(
+        tasks_dir, schema=_schema("forbid"), subscribers=[_writer({"mystery": Set("x")})]
+    )
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     with pytest.raises(ExtrasForbiddenError) as exc_info:
         kernel.transition("T-1", "plan", actor="t", caller_cwd=cwd)
@@ -40,7 +42,9 @@ def test_forbid_rejects_set_of_undeclared_key(tasks_dir, cwd):
 
 
 def test_forbid_rejects_append_of_undeclared_key(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir, schema=_schema("forbid"), subscribers=[_writer({"votes": Append(1)})])
+    kernel = make_kernel(
+        tasks_dir, schema=_schema("forbid"), subscribers=[_writer({"votes": Append(1)})]
+    )
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     with pytest.raises(ExtrasForbiddenError):
         kernel.transition("T-1", "plan", actor="t", caller_cwd=cwd)
@@ -60,7 +64,9 @@ def test_forbid_allows_a_declared_field_and_an_anchor_field(tasks_dir, cwd):
 
 
 def test_allow_passes_an_undeclared_write_into_extras(tasks_dir, cwd):
-    kernel = make_kernel(tasks_dir, schema=_schema("allow"), subscribers=[_writer({"mystery": Set("x")})])
+    kernel = make_kernel(
+        tasks_dir, schema=_schema("allow"), subscribers=[_writer({"mystery": Set("x")})]
+    )
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     card = kernel.transition("T-1", "plan", actor="t", caller_cwd=cwd).task
     assert card.extras["mystery"] == "x"

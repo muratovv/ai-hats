@@ -55,8 +55,19 @@ def _seed_all(runner, tasks):
     assert _run(runner, tasks, "hyp", "create", "an idea", "--hypothesis", "H").exit_code == 0
     assert (
         _run(
-            runner, tasks, "proposal", "create", "a prop",
-            "--category", "rule", "--target", "t", "--description", "d", "--rationale", "why",
+            runner,
+            tasks,
+            "proposal",
+            "create",
+            "a prop",
+            "--category",
+            "rule",
+            "--target",
+            "t",
+            "--description",
+            "d",
+            "--rationale",
+            "why",
         ).exit_code
         == 0
     )

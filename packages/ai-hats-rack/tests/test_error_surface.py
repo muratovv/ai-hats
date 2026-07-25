@@ -78,9 +78,7 @@ def test_every_rack_error_subclass_has_a_handler():
     # handler must fail here rather than fall silently into the generic branch.
     _import_all_rack_modules()
     missing = sorted(
-        cls.__qualname__
-        for cls in _all_subclasses(RackError)
-        if lookup_error_handler(cls) is None
+        cls.__qualname__ for cls in _all_subclasses(RackError) if lookup_error_handler(cls) is None
     )
     assert not missing, f"RackError subclasses with no CLI handler: {missing}"
 
@@ -101,30 +99,52 @@ _CASES = [
         "invalid_transition",
         {"task_id": "HATS-1", "from_state": "plan", "to_state": "done", "legal_edges": ["execute"]},
     ),
-    (UnknownStateError("nope", ("brainstorm", "plan")), "unknown_state",
-     {"known_states": ["brainstorm", "plan"]}),
-    (OperationAborted("edge:x", "sub", "because"), "aborted",
-     {"subscriber": "sub", "reason": "because"}),
+    (
+        UnknownStateError("nope", ("brainstorm", "plan")),
+        "unknown_state",
+        {"known_states": ["brainstorm", "plan"]},
+    ),
+    (
+        OperationAborted("edge:x", "sub", "because"),
+        "aborted",
+        {"subscriber": "sub", "reason": "because"},
+    ),
     (UnknownTaskError("HATS-9"), "unknown_task", {"task_id": "HATS-9"}),
     (TaskExistsError("HATS-9"), "task_exists", {"task_id": "HATS-9"}),
     (OpParseError("bad"), "invalid_ops", {}),
     (AttachSourceError("/x"), "attach_source", {"src": "/x"}),
     (DocumentNameError("../x", "escapes"), "invalid_document_name", {"name": "../x"}),
-    (UnknownDocumentError("HATS-1", "plan.md"), "unknown_document",
-     {"task_id": "HATS-1", "name": "plan.md"}),
-    (FrozenDocumentError("HATS-1", "plan.md"), "frozen_document",
-     {"task_id": "HATS-1", "name": "plan.md"}),
+    (
+        UnknownDocumentError("HATS-1", "plan.md"),
+        "unknown_document",
+        {"task_id": "HATS-1", "name": "plan.md"},
+    ),
+    (
+        FrozenDocumentError("HATS-1", "plan.md"),
+        "frozen_document",
+        {"task_id": "HATS-1", "name": "plan.md"},
+    ),
     (
         FrozenPinDriftError("HATS-1", "plan.md", "sha256:aa", "sha256:bb"),
         "frozen_pin_drift",
-        {"task_id": "HATS-1", "name": "plan.md", "pinned_digest": "sha256:aa",
-         "current_digest": "sha256:bb"},
+        {
+            "task_id": "HATS-1",
+            "name": "plan.md",
+            "pinned_digest": "sha256:aa",
+            "current_digest": "sha256:bb",
+        },
     ),
     (SelfLinkError("HATS-1"), "self_link", {"task_id": "HATS-1"}),
-    (UnknownLinkKindError("wat", ["blocks", "related"]), "unknown_link_kind",
-     {"kind": "wat", "configured": ["blocks", "related"]}),
-    (DerivedLinkKindError("children", "parent"), "derived_link_kind",
-     {"kind": "children", "inverse": "parent"}),
+    (
+        UnknownLinkKindError("wat", ["blocks", "related"]),
+        "unknown_link_kind",
+        {"kind": "wat", "configured": ["blocks", "related"]},
+    ),
+    (
+        DerivedLinkKindError("children", "parent"),
+        "derived_link_kind",
+        {"kind": "children", "inverse": "parent"},
+    ),
     (NoProjectRootError(Path("/no/such/root")), "no_project_root", {}),
     (ForceRequiresReasonError(), "invalid_request", {}),
     (LockTimeoutError(Path("/no/such/lock"), "task lock", 30.0), "lock_timeout", {}),
@@ -183,7 +203,9 @@ def test_task_exists_maps_via_shared_handler(tmp_path):
 def test_invalid_ops_maps_via_shared_handler(tmp_path):
     runner = CliRunner()
     runner.invoke(main, ["create", "t", *_tasks(tmp_path), "--json"])
-    bad = runner.invoke(main, ["transition", "HATS-001", "--bogus", "x", *_tasks(tmp_path), "--json"])
+    bad = runner.invoke(
+        main, ["transition", "HATS-001", "--bogus", "x", *_tasks(tmp_path), "--json"]
+    )
     assert bad.exit_code == 1
     assert json.loads(bad.output)["error"]["code"] == "invalid_ops"
 
@@ -191,7 +213,9 @@ def test_invalid_ops_maps_via_shared_handler(tmp_path):
 def test_echo_ops_plain_output_unchanged(tmp_path):
     runner = CliRunner()
     runner.invoke(main, ["create", "t", *_tasks(tmp_path)])
-    out = runner.invoke(main, ["transition", "HATS-001", "plan", "--log", "did it", *_tasks(tmp_path)])
+    out = runner.invoke(
+        main, ["transition", "HATS-001", "plan", "--log", "did it", *_tasks(tmp_path)]
+    )
     assert out.exit_code == 0, out.output
     assert "Transitioned: HATS-001 brainstorm → plan" in out.output
     assert "Logged: did it" in out.output

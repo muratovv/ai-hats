@@ -610,7 +610,9 @@ def test_create_child_dispatches_epicify(tasks_dir, cwd):
     reconciler = StubSubscriber("ownership-reconcile", [post_lock("epicify")])
     kernel = make_kernel(tasks_dir, subscribers=[reconciler])
     _create(kernel, cwd, title="future epic")
-    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="t")
+    result = kernel.create(
+        actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="t"
+    )
 
     assert len(reconciler.contexts) == 1
     ctx = reconciler.contexts[0]

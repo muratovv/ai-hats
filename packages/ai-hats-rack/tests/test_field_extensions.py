@@ -52,7 +52,12 @@ def _seed(catalog: Path, task_id: str, *, state: str, **body) -> None:
 def test_append_verdict_appends_without_state_change(tmp_path, cwd):
     kernel, exts = _kernel(tmp_path, "hypotheses")
     _seed(tmp_path, "HYP-1", state="active", hypothesis="h", validation_log=[])
-    entry = {"date": "2026-06-10", "verdict": "inconclusive", "evidence": "seen", "session_id": "s1"}
+    entry = {
+        "date": "2026-06-10",
+        "verdict": "inconclusive",
+        "evidence": "seen",
+        "session_id": "s1",
+    }
     res = exts["hyp-verdicts"].append_verdict("HYP-1", entry, actor="reflect", caller_cwd=cwd)
     card = kernel.get("HYP-1")
     assert card.state == "active"  # no transition
@@ -88,8 +93,15 @@ def test_append_verdict_malformed_entry_is_refused_atomically(tmp_path, cwd):
 
 def test_add_vote_appends_a_valid_vote(tmp_path, cwd):
     kernel, exts = _kernel(tmp_path, "proposals")
-    _seed(tmp_path, "PROP-1", state="open", category="rule", target="x",
-          description="d", rationale="r")
+    _seed(
+        tmp_path,
+        "PROP-1",
+        state="open",
+        category="rule",
+        target="x",
+        description="d",
+        rationale="r",
+    )
     vote = {"session_id": "s1", "timestamp": "2026-01-01T00:00:00Z", "reasoning": "sound"}
     exts["prop-votes"].add_vote("PROP-1", vote, actor="reflect", caller_cwd=cwd)
     assert kernel.get("PROP-1").extras["votes"] == [vote]
@@ -97,8 +109,15 @@ def test_add_vote_appends_a_valid_vote(tmp_path, cwd):
 
 def test_add_vote_rejects_a_malformed_vote_atomically(tmp_path, cwd):
     kernel, exts = _kernel(tmp_path, "proposals")
-    _seed(tmp_path, "PROP-1", state="open", category="rule", target="x",
-          description="d", rationale="r")
+    _seed(
+        tmp_path,
+        "PROP-1",
+        state="open",
+        category="rule",
+        target="x",
+        description="d",
+        rationale="r",
+    )
     bad = {"session_id": "s1"}  # missing reasoning/timestamp (Vote extra=forbid shape)
     with pytest.raises(FieldValidationError):
         exts["prop-votes"].add_vote("PROP-1", bad, actor="reflect", caller_cwd=cwd)

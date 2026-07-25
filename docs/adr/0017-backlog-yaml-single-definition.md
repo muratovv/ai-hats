@@ -141,9 +141,10 @@ links:
     # fired on link/unlink of that kind (§3); e.g. a dep-cycle-check on
     # depends_on. Same model, both edge families.
     - { name: parent_task, arity: one, inverse: children }
-    - { name: depends_on, arity: many, aliases: [depends] }
+    - { name: depends_on, arity: many, aliases: [depends], inverse: blocks }
     - { name: related, arity: many, inverse: related }
     - { name: children, derived: true, inverse: parent_task }
+    - { name: blocks, derived: true, inverse: depends_on }
 
 extensions: # ambient SELF-SUBSCRIBING subscribers: all-edges guards and
   # non-edge reactions (epicify, pre-destroy) whose keys are not one

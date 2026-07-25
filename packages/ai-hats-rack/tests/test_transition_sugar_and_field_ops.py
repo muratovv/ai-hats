@@ -69,7 +69,9 @@ def test_named_edge_resolves_to_its_target_from_the_current_state(tmp_path):
     runner = CliRunner()
     _create(runner, tmp_path)
     for state in ("execute", "document", "review", "done"):
-        runner.invoke(main, ["transition", "HATS-001", state, "--force", "--reason", "w", *_args(tmp_path)])
+        runner.invoke(
+            main, ["transition", "HATS-001", state, "--force", "--reason", "w", *_args(tmp_path)]
+        )
     out = runner.invoke(main, ["transition", "HATS-001", "reopen", *_args(tmp_path), "--json"])
     assert out.exit_code == 0, out.output
     payload = json.loads(out.output)
@@ -204,8 +206,17 @@ def test_set_on_a_str_field_never_parses_json():
 def test_set_append_refuse_structural_fields():
     # HATS-1067 guard: --set/--append must not bypass the FSM (state) / graph
     # (links) / audit (work_log) verbs, nor touch kernel-owned identity/timestamps.
-    for bad in ("state=done", "parent_task=T-9", "depends_on=T-9", "related=T-9",
-                "links=x", "work_log=x", "id=T-2", "created=now", "updated=now"):
+    for bad in (
+        "state=done",
+        "parent_task=T-9",
+        "depends_on=T-9",
+        "related=T-9",
+        "links=x",
+        "work_log=x",
+        "id=T-2",
+        "created=now",
+        "updated=now",
+    ):
         with pytest.raises(OpParseError):
             parse_ops(["--set", bad])
     with pytest.raises(OpParseError):  # --append is guarded the same way
@@ -238,13 +249,17 @@ def test_new_flags_are_registered_and_map_to_a_rendered_op_kind():
 def test_set_writes_a_declared_field_and_bad_choice_is_typed(tmp_path):
     runner = CliRunner()
     _create(runner, tmp_path)
-    ok = runner.invoke(main, ["transition", "HATS-001", "--set", "priority=high", *_args(tmp_path), "--json"])
+    ok = runner.invoke(
+        main, ["transition", "HATS-001", "--set", "priority=high", *_args(tmp_path), "--json"]
+    )
     assert ok.exit_code == 0, ok.output
     payload = json.loads(ok.output)
     assert payload["task"]["priority"] == "high"
     assert [o["op"] for o in payload["ops"]] == ["fields"]
 
-    bad = runner.invoke(main, ["transition", "HATS-001", "--set", "priority=urgent", *_args(tmp_path), "--json"])
+    bad = runner.invoke(
+        main, ["transition", "HATS-001", "--set", "priority=urgent", *_args(tmp_path), "--json"]
+    )
     assert bad.exit_code == 1
     error = json.loads(bad.output)["error"]
     assert error["code"] == "invalid_field" and error["field"] == "priority"
@@ -253,7 +268,9 @@ def test_set_writes_a_declared_field_and_bad_choice_is_typed(tmp_path):
 def test_append_writes_a_list_field(tmp_path):
     runner = CliRunner()
     _create(runner, tmp_path)
-    out = runner.invoke(main, ["transition", "HATS-001", "--append", 'tags="urgent"', *_args(tmp_path), "--json"])
+    out = runner.invoke(
+        main, ["transition", "HATS-001", "--append", 'tags="urgent"', *_args(tmp_path), "--json"]
+    )
     assert out.exit_code == 0, out.output
     assert json.loads(out.output)["task"]["tags"] == ["urgent"]
 
@@ -300,10 +317,14 @@ def test_set_int_field_coerces_end_to_end_over_a_custom_catalog(tmp_path):
     (catalog / "backlog.yaml").write_text(_INT_BACKLOG, encoding="utf-8")
     runner = CliRunner()
     runner.invoke(main, ["create", "c", *_args(tmp_path), "--json"])
-    out = runner.invoke(main, ["transition", "HATS-001", "--set", "budget=5", *_args(tmp_path), "--json"])
+    out = runner.invoke(
+        main, ["transition", "HATS-001", "--set", "budget=5", *_args(tmp_path), "--json"]
+    )
     assert out.exit_code == 0, out.output
     assert json.loads(out.output)["task"]["budget"] == 5  # coerced to int, not "5"
 
-    bad = runner.invoke(main, ["transition", "HATS-001", "--set", "budget=lots", *_args(tmp_path), "--json"])
+    bad = runner.invoke(
+        main, ["transition", "HATS-001", "--set", "budget=lots", *_args(tmp_path), "--json"]
+    )
     assert bad.exit_code == 1
     assert json.loads(bad.output)["error"]["code"] == "invalid_ops"

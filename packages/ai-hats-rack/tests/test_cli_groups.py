@@ -175,14 +175,24 @@ def test_hyp_create_without_required_field_is_typed_refusal(runner, tmp_path):
 
 def test_hyp_append_verdict_and_autoclose_quorum(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
-    hid = _json(
-        _run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json")
-    )["task"]["id"]
+    hid = _json(_run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json"))["task"][
+        "id"
+    ]
     # three distinct refuted sessions → quorum K=3 reached
     for sid in ("s1", "s2", "s3"):
         out = _run(
-            runner, tasks, "hyp", "append-verdict", hid,
-            "--verdict", "refuted", "--evidence", "no", "--session-id", sid, "--json",
+            runner,
+            tasks,
+            "hyp",
+            "append-verdict",
+            hid,
+            "--verdict",
+            "refuted",
+            "--evidence",
+            "no",
+            "--session-id",
+            sid,
+            "--json",
         )
         assert out.exit_code == 0, out.output
     dry = _json(_run(runner, tasks, "hyp", "autoclose", "--dry-run", "--json"))
@@ -199,9 +209,9 @@ def test_hyp_append_verdict_and_autoclose_quorum(runner, tmp_path):
 
 def test_hyp_manual_refute_by_edge_name_then_update(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
-    hid = _json(
-        _run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json")
-    )["task"]["id"]
+    hid = _json(_run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json"))["task"][
+        "id"
+    ]
     # edge-name sugar: `refute` resolves to active→refuted (never quorum-gated for a human)
     refuted = _json(_run(runner, tasks, "transition", hid, "refute", "--json"))
     assert refuted["task"]["state"] == "refuted"
@@ -213,9 +223,9 @@ def test_hyp_manual_refute_by_edge_name_then_update(runner, tmp_path):
 
 def test_hyp_revive_edge_name_from_stalled(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
-    hid = _json(
-        _run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json")
-    )["task"]["id"]
+    hid = _json(_run(runner, tasks, "hyp", "create", "h", "--hypothesis", "H", "--json"))["task"][
+        "id"
+    ]
     _run(runner, tasks, "transition", hid, "stall", "--json")
     revived = _json(_run(runner, tasks, "transition", hid, "revive", "--json"))
     assert revived["task"]["state"] == "active"
@@ -239,7 +249,18 @@ def test_proposal_create_vote_accept(runner, tmp_path):
     # meta-proposal marker (HATS-1264): the flag lands on the card at create...
     assert created["task"]["failed_session_id"] == "20260504-120000-1"
     voted = _json(
-        _run(runner, tasks, "proposal", "vote", pid, "--reasoning", "sound", "--session-id", "s1", "--json")
+        _run(
+            runner,
+            tasks,
+            "proposal",
+            "vote",
+            pid,
+            "--reasoning",
+            "sound",
+            "--session-id",
+            "s1",
+            "--json",
+        )
     )
     assert voted["task"]["votes"][-1]["session_id"] == "s1"
     accepted = _json(_run(runner, tasks, "transition", pid, "accept", "--json"))
@@ -251,8 +272,20 @@ def test_proposal_create_vote_accept(runner, tmp_path):
 def test_proposal_create_bad_choice_is_typed_refusal(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
     out = _run(
-        runner, tasks, "proposal", "create", "p",
-        "--category", "nope", "--target", "t", "--description", "d", "--rationale", "why", "--json",
+        runner,
+        tasks,
+        "proposal",
+        "create",
+        "p",
+        "--category",
+        "nope",
+        "--target",
+        "t",
+        "--description",
+        "d",
+        "--rationale",
+        "why",
+        "--json",
     )
     assert out.exit_code == 1
     error = json.loads(out.output)["error"]
@@ -264,8 +297,19 @@ def test_proposal_vote_missing_session_is_typed_refusal(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
     pid = _json(
         _run(
-            runner, tasks, "proposal", "create", "p",
-            "--category", "rule", "--target", "t", "--description", "d", "--rationale", "why",
+            runner,
+            tasks,
+            "proposal",
+            "create",
+            "p",
+            "--category",
+            "rule",
+            "--target",
+            "t",
+            "--description",
+            "d",
+            "--rationale",
+            "why",
             "--json",
         )
     )["task"]["id"]

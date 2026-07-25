@@ -17,7 +17,9 @@ def test_transition_and_transition_ops_refuse_gates_identically(tmp_path):
         kernel.transition(tid, "cancelled", actor="t", caller_cwd=tmp_path)
 
     with pytest.raises(StateGateError):
-        kernel.transition_ops(tid, parse_ops(["--state", "cancelled"]), actor="t", caller_cwd=tmp_path)
+        kernel.transition_ops(
+            tid, parse_ops(["--state", "cancelled"]), actor="t", caller_cwd=tmp_path
+        )
 
     card = kernel.get(tid)
     assert card.state == "brainstorm"

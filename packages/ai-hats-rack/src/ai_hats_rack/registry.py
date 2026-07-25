@@ -101,12 +101,16 @@ class LinksRegistry:
         return tuple(k for k in self.kinds if k.stored)
 
     @property
+    def derived_kinds(self) -> tuple[LinkKind, ...]:
+        return tuple(k for k in self.kinds if k.derived)
+
+    @property
     def hierarchy_kind(self) -> LinkKind | None:
         """The stored kind whose inverse is a *derived* kind — the parent edge
         `is_epic` and epic-automation bind to. Structural, not name-based, so a
         renamed hierarchy kind is still found."""
         for kind in self.kinds:
-            if kind.derived:
+            if kind.derived or kind.arity != "one":
                 continue
             inverse = self.get(kind.inverse) if kind.inverse else None
             if inverse is not None and inverse.derived:

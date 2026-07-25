@@ -105,9 +105,7 @@ def test_kind_handler_sees_the_mutated_card_and_journals(tmp_path, cwd):
     rec = _Recorder()
     k = _kernel_with(tmp_path, rec)
     _two_cards(k, cwd)
-    res = k.transition_ops(
-        "T-1", parse_ops(["--link", "depends:T-2"]), actor="t", caller_cwd=cwd
-    )
+    res = k.transition_ops("T-1", parse_ops(["--link", "depends:T-2"]), actor="t", caller_cwd=cwd)
     # the handler's ctx.task carries the just-added link (mutate → dispatch order)
     assert rec.seen_depends == [["T-2"]]
     # link event rides the existing DispatchRecord machinery
@@ -133,9 +131,7 @@ def test_kind_without_handlers_dispatches_nothing(tmp_path, cwd):
     tasks = tmp_path / "tasks"
     k = make_kernel(tasks, subscribers=standalone_extensions(tasks))
     _two_cards(k, cwd)
-    res = k.transition_ops(
-        "T-1", parse_ops(["--link", "related:T-2"]), actor="t", caller_cwd=cwd
-    )
+    res = k.transition_ops("T-1", parse_ops(["--link", "related:T-2"]), actor="t", caller_cwd=cwd)
     assert res.journal == ()  # no edge, no link event → empty journal
     assert res.ops[0]["changed"] is True  # the link itself still happened
     assert "T-2" in k.get("T-1").related
@@ -143,9 +139,7 @@ def test_kind_without_handlers_dispatches_nothing(tmp_path, cwd):
 
 def test_kind_handler_subscribes_once_per_link_event(tmp_path):
     defn = _defn(tmp_path)
-    subs = build_link_subscribers(
-        defn, tmp_path, {"dep-check": lambda d, c, cfg: _Recorder()}
-    )
+    subs = build_link_subscribers(defn, tmp_path, {"dep-check": lambda d, c, cfg: _Recorder()})
     dep = [s for s in subs if s.name == "dep-check"]
     assert len(dep) == 1  # one channel — not one per (kind, verb)
     keys = [s.event_key for s in dep[0].subscriptions()]

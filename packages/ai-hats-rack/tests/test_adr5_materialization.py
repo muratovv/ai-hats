@@ -148,8 +148,13 @@ def test_prop_create_without_category_is_refused(tasks_dir, cwd):
 
 def _seed_prop(catalog, task_id="PROP-1"):
     return _seed(
-        catalog, task_id, state="open",
-        category="rule", target="skill-x", description="d", rationale="r",
+        catalog,
+        task_id,
+        state="open",
+        category="rule",
+        target="skill-x",
+        description="d",
+        rationale="r",
     )
 
 

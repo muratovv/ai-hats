@@ -74,7 +74,9 @@ def project(tmp_path):
 def test_cross_backlog_mirror_fires_on_target_kernel(project):
     ws, cwd, _alpha, _beta = project
     a = ws.kernel_for("AA-1")
-    res = a.transition_ops("AA-1", parse_ops(["--link", "mirror_to:BB-1"]), actor="t", caller_cwd=cwd)
+    res = a.transition_ops(
+        "AA-1", parse_ops(["--link", "mirror_to:BB-1"]), actor="t", caller_cwd=cwd
+    )
     assert res.ops[0]["changed"] is True
     assert ws.kernel_for("BB-1").get("BB-1").links.get("mirror_from") in (None, [])  # not yet
     ws.mirror_after("AA-1", res, actor="t", caller_cwd=cwd)  # post-lock dispatch
@@ -86,7 +88,9 @@ def test_mirror_unlink_removes_the_reverse_edge(project):
     _seed(beta, "BB-1", links={"mirror_from": ["AA-1"]})  # reverse already present
     _seed(alpha, "AA-1", links={"mirror_to": ["BB-1"]})  # forward present
     a = ws.kernel_for("AA-1")
-    res = a.transition_ops("AA-1", parse_ops(["--unlink", "mirror_to:BB-1"]), actor="t", caller_cwd=proj)
+    res = a.transition_ops(
+        "AA-1", parse_ops(["--unlink", "mirror_to:BB-1"]), actor="t", caller_cwd=proj
+    )
     assert res.ops[0]["changed"] is True
     ws.mirror_after("AA-1", res, actor="t", caller_cwd=proj)
     assert ws.kernel_for("BB-1").get("BB-1").links.get("mirror_from") in (None, [])
@@ -129,8 +133,12 @@ def test_mirror_failure_is_journaled_and_origin_untouched(tmp_path):
         encoding="utf-8",
     )
     defn = load_backlog(doc)
-    subs = compose_subscribers(defn, catalog, {**stock_factories(), "boom": lambda d, c, cfg: _Boom()})
-    kernel = make_kernel(catalog, topology=defn.topology, registry=defn.links_registry, subscribers=subs)
+    subs = compose_subscribers(
+        defn, catalog, {**stock_factories(), "boom": lambda d, c, cfg: _Boom()}
+    )
+    kernel = make_kernel(
+        catalog, topology=defn.topology, registry=defn.links_registry, subscribers=subs
+    )
     _seed(catalog, "T-1")
     rec = kernel.apply_mirror(
         LinkMirrorEvent(kind="reverse", origin="X-1", target="T-1"), actor="t", caller_cwd=tmp_path

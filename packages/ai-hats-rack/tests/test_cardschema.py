@@ -23,8 +23,17 @@ from ai_hats_rack.models import TaskCard
 from rack_testkit import make_kernel
 
 
-def _field(name, type="str", *, has_default=True, default="", required=False,
-           choices=None, validator=None, emit="always"):
+def _field(
+    name,
+    type="str",
+    *,
+    has_default=True,
+    default="",
+    required=False,
+    choices=None,
+    validator=None,
+    emit="always",
+):
     return ResolvedField(name, type, has_default, default, required, choices, validator, emit)
 
 
@@ -167,8 +176,9 @@ def test_create_default_args_are_byte_identical(tasks_dir, cwd):
     # The None-sentinel resolution must reproduce today's card exactly (R5).
     kernel = make_kernel(tasks_dir)
     card = kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="demo").task
-    reference = TaskCard(id="T-1", title="demo", state=card.state, created=card.created,
-                         updated=card.updated)
+    reference = TaskCard(
+        id="T-1", title="demo", state=card.state, created=card.created, updated=card.updated
+    )
     assert card.to_dict() == reference.to_dict()
 
 
@@ -179,9 +189,7 @@ def test_transition_validates_touched_resolution_field(tasks_dir, cwd):
     kernel = make_kernel(tasks_dir)
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     # resolution is a declared str field — a str value passes write-strict.
-    result = kernel.transition(
-        "T-1", "plan", actor="t", caller_cwd=cwd, resolution="looks good"
-    )
+    result = kernel.transition("T-1", "plan", actor="t", caller_cwd=cwd, resolution="looks good")
     assert result.task.resolution == "looks good"
 
 

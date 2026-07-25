@@ -78,7 +78,16 @@ def test_force_does_not_bypass_the_guard(runner, tmp_path):
     (card_dir / "evidence.log").write_bytes(b"v2")
     result = runner.invoke(
         main,
-        ["transition", "HATS-001", "review", "--force", "--reason", "why", *_args(tmp_path), "--json"],
+        [
+            "transition",
+            "HATS-001",
+            "review",
+            "--force",
+            "--reason",
+            "why",
+            *_args(tmp_path),
+            "--json",
+        ],
     )
     assert result.exit_code == 1
     assert json.loads(result.output)["error"]["subscriber"] == "frozen-integrity"
@@ -133,8 +142,15 @@ def test_one_composite_refreeze_and_state_passes_the_guard(runner, tmp_path):
     result = runner.invoke(
         main,
         [
-            "transition", "HATS-001", "--freeze", "evidence.log",
-            "--state", "plan", "--ack-frozen", *_args(tmp_path), "--json",
+            "transition",
+            "HATS-001",
+            "--freeze",
+            "evidence.log",
+            "--state",
+            "plan",
+            "--ack-frozen",
+            *_args(tmp_path),
+            "--json",
         ],
     )
     assert result.exit_code == 0, result.output

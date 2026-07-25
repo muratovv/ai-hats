@@ -396,9 +396,9 @@ def _edges_of(kernel: Kernel, registry: LinksRegistry, card: TaskCard) -> list[t
     """Every outgoing edge of a card as ``(kind, target_id)`` in registry order,
     derived children filled from the kernel reverse scan."""
     derived: dict[str, list[str]] = {}
-    children_kind = registry.children_kind
-    if children_kind is not None:
-        derived[children_kind.name] = kernel.children_of(card.id)
+    for dk in registry.derived_kinds:
+        if dk.inverse:
+            derived[dk.name] = kernel.reverse_links_of(dk.inverse, card.id)
     resolved = resolve_links(registry, card, derived=derived)
     edges: list[tuple[LinkKind, str]] = []
     for kind_name, ids in resolved.items():
@@ -735,9 +735,9 @@ def build_context(
 
     kernel = Kernel(tasks_dir, registry=reg)
     derived: dict[str, list[str]] = {}
-    children_kind = reg.children_kind
-    if children_kind is not None:
-        derived[children_kind.name] = kernel.children_of(task_id)
+    for dk in reg.derived_kinds:
+        if dk.inverse:
+            derived[dk.name] = kernel.reverse_links_of(dk.inverse, task_id)
     resolved = resolve_links(reg, card, derived=derived)
 
     seen = {task_id}

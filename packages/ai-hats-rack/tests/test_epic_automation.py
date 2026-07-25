@@ -61,8 +61,11 @@ def _fast_close(kernel, task_id, cwd):
 
 def _epic_in(kernel, epic_id, state, cwd):
     _create(kernel, cwd, epic_id, title="Epic")
-    hops = {"plan": ["plan"], "execute": ["plan", "execute"],
-            "document": ["plan", "execute", "document"]}
+    hops = {
+        "plan": ["plan"],
+        "execute": ["plan", "execute"],
+        "document": ["plan", "execute", "document"],
+    }
     walk(kernel, epic_id, *hops[state], cwd=cwd)
 
 

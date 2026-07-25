@@ -19,7 +19,9 @@ _LEVELS = ("top", "fsm", "state", "edge", "links", "kind", "field")
 
 
 def _schema() -> dict:
-    text = resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    text = (
+        resources.files("ai_hats_rack").joinpath("backlog-schema.yaml").read_text(encoding="utf-8")
+    )
     return yaml.safe_load(text)
 
 

@@ -158,7 +158,7 @@ def test_link_unknown_kind_is_typed(tasks_dir):
     make_card(tasks_dir, "T-1")
     make_card(tasks_dir, "T-2")
     with pytest.raises(UnknownLinkKindError) as err:
-        link(tasks_dir, "T-1", "T-2", "blocks")
+        link(tasks_dir, "T-1", "T-2", "nonexistent")
     # the refusal names the configured set so the caller can self-correct
     assert set(err.value.configured) == {
         "parent_task",
@@ -167,7 +167,17 @@ def test_link_unknown_kind_is_typed(tasks_dir):
         "related",
         "see_also",
         "folded_into",
+        "blocks",
     }
+
+
+def test_blocks_derived_reverse_link_resolution(tasks_dir):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", depends_on=["T-1"])
+    pkg = build_context(tasks_dir, "T-1")
+    assert "blocks" in pkg.links
+    assert len(pkg.links["blocks"]) == 1
+    assert pkg.links["blocks"][0].id == "T-2"
 
 
 def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
@@ -254,8 +264,15 @@ def test_unlink_dangling_target_is_removable(tasks_dir):
 def _graph(tasks_dir):
     """Epic T-1 ⇄ task T-2 (parent) ; T-2 depends_on T-3, related T-4 ; kid T-5."""
     make_card(tasks_dir, "T-1", title="epic", state="execute", priority="high")
-    make_card(tasks_dir, "T-2", title="task", state="plan", parent_task="T-1",
-              depends_on=["T-3"], related=["T-4"])
+    make_card(
+        tasks_dir,
+        "T-2",
+        title="task",
+        state="plan",
+        parent_task="T-1",
+        depends_on=["T-3"],
+        related=["T-4"],
+    )
     make_card(tasks_dir, "T-3", title="dep", state="done")
     make_card(tasks_dir, "T-4", title="rel", state="execute")
     make_card(tasks_dir, "T-5", title="kid", state="plan", parent_task="T-2")
@@ -309,9 +326,7 @@ def test_walk_row_filter_prunes_output_but_not_traversal(tasks_dir):
     # T-5 (plan) is reachable only THROUGH T-2 (plan). Filtering to state=plan
     # still traverses T-2 to surface T-5; T-1/T-3/T-4 (other states) drop out.
     _graph(tasks_dir)
-    rows = walk_neighborhood(
-        tasks_dir, "T-1", depth=2, row_filter=card_filter(state="plan")
-    )
+    rows = walk_neighborhood(tasks_dir, "T-1", depth=2, row_filter=card_filter(state="plan"))
     assert {n.id for n in rows} == {"T-2", "T-5"}
 
 

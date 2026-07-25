@@ -44,6 +44,29 @@ def _field_value(task: TaskCard, name: str) -> Any:
     return getattr(task, name) if name in TaskCard._KNOWN_FIELDS else task.extras.get(name)
 
 
+def _reverse_prefilter(kind: Any, task_id: str) -> tuple[re.Pattern[str], ...]:
+    """Cheap text gates a card must pass before a reverse scan parses it.
+
+    Each gate is a SUPERSET of a real match — never narrower — so the parse
+    that follows stays authoritative. A bare ``\\bID\\b`` also matched the id in
+    prose and work_log, so every read paid a full YAML parse per mention
+    (HATS-1208).
+    """
+    ident = re.escape(task_id)
+    if kind.name in LINK_STORAGE_FIELDS:
+        field = re.escape(kind.name)
+        if kind.arity == "one":
+            return (re.compile(rf"^{field}:\s*['\"]?{ident}['\"]?\s*$", re.MULTILINE),)
+        return (
+            re.compile(rf"^{field}:", re.MULTILINE),
+            re.compile(rf"^\s*-\s*['\"]?{ident}['\"]?\s*$", re.MULTILINE),
+        )
+    return (
+        re.compile(rf"^\s*{re.escape(kind.name)}:", re.MULTILINE),
+        re.compile(rf"\b{ident}\b"),
+    )
+
+
 class UnknownTaskError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
@@ -221,10 +244,45 @@ class Kernel:
         for card_path in sorted(self.tasks_dir.glob("*/task.yaml")):
             try:
                 card = TaskCard.from_yaml(card_path)
-            except (OSError, ValueError):
+            except Exception:  # noqa: BLE001, S112 — a broken neighbour must not sink the read
                 continue
             if self.registry.parent_of(card) == task_id:
                 out.append(card_path.parent.name)
+        return out
+
+    def reverse_links_of(self, stored_kind_name: str, task_id: str) -> list[str]:
+        """Ids of cards that link to ``task_id`` via stored link kind ``stored_kind_name``."""
+        if not self.tasks_dir.exists():
+            return []
+        hierarchy = self.registry.hierarchy_kind
+        if hierarchy is not None and stored_kind_name == hierarchy.name:
+            return self.children_of(task_id)
+
+        kind = self.registry.get(stored_kind_name)
+        if kind is None or kind.derived:
+            return []
+
+        gates = _reverse_prefilter(kind, task_id)
+        out: list[str] = []
+        for card_path in sorted(self.tasks_dir.glob("*/task.yaml")):
+            try:
+                text = card_path.read_text(encoding="utf-8")
+                if not all(g.search(text) for g in gates):
+                    continue
+                card = TaskCard.from_yaml(card_path)
+            except Exception:  # noqa: BLE001, S112 — a broken neighbour must not sink the read
+                continue
+            if kind.name in LINK_STORAGE_FIELDS:
+                val = getattr(card, kind.name, None)
+                if kind.arity == "one":
+                    if val == task_id:
+                        out.append(card_path.parent.name)
+                elif isinstance(val, (list, tuple)) and task_id in val:
+                    out.append(card_path.parent.name)
+            else:
+                links = card.links.get(kind.name, ())
+                if task_id in links:
+                    out.append(card_path.parent.name)
         return out
 
     def is_epic(self, task_id: str) -> bool:
@@ -294,8 +352,11 @@ class Kernel:
         if task_id is not None and prefix_of(task_id) != self.prefix:
             raise UnroutableIdError(task_id, self.prefix)
         provided: dict[str, Any] = {
-            "description": description, "priority": priority, "role": role,
-            "reviewer": reviewer, "tags": tags,
+            "description": description,
+            "priority": priority,
+            "role": role,
+            "reviewer": reviewer,
+            "tags": tags,
         }
         if fields:
             provided.update(fields)
@@ -593,13 +654,9 @@ class Kernel:
                             outcomes=outcomes,
                             events=dispatched,
                         )
-                        transitions.append(
-                            TaskTransition(task_id, from_state, to_state, reason)
-                        )
+                        transitions.append(TaskTransition(task_id, from_state, to_state, reason))
                         entered.append(to_state)
-                        txn.results.append(
-                            {"op": "state", "from": from_state, "to": to_state}
-                        )
+                        txn.results.append({"op": "state", "from": from_state, "to": to_state})
                     elif isinstance(op, FieldsOp):
                         # Declared-field ops ride the same lock/persist, schema-
                         # gated via _delta_applier — an extension-owned field write
@@ -752,9 +809,7 @@ class Kernel:
             ),
         )
 
-    def apply_mirror(
-        self, event: Any, *, actor: str, caller_cwd: Path
-    ) -> DispatchRecord | None:
+    def apply_mirror(self, event: Any, *, actor: str, caller_cwd: Path) -> DispatchRecord | None:
         """Run a link mirror reaction on the TARGET card in a FRESH lock window
         (ADR-0017 §2/R4): sequential, never nested, and fail-soft — a reaction
         failure is journaled and swallowed (the origin already persisted, so the

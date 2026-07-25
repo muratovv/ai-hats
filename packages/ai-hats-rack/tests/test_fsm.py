@@ -84,9 +84,7 @@ def _write_backlog(tmp_path, fsm_block):
     links section — so a structural failure is attributable to the topology."""
     path = tmp_path / "backlog.yaml"
     path.write_text(
-        "name: t\nprefix: T\n"
-        f"fsm:\n{fsm_block}"
-        "links:\n  kinds:\n    - {name: parent_task}\n"
+        f"name: t\nprefix: T\nfsm:\n{fsm_block}links:\n  kinds:\n    - {{name: parent_task}}\n"
     )
     return path
 
@@ -100,9 +98,7 @@ def test_document_state_is_required_at_composition(tmp_path):
 
     path = _write_backlog(
         tmp_path,
-        "  initial: brainstorm\n"
-        "  states: [{name: brainstorm}, {name: done}]\n"
-        "  edges: []\n",
+        "  initial: brainstorm\n  states: [{name: brainstorm}, {name: done}]\n  edges: []\n",
     )
     defn = load_backlog(path)  # loads now — no load-time document anchor
     ext = EpicAutomationExtension(topology=load_topology())

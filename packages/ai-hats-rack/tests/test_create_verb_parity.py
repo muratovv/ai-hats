@@ -31,9 +31,7 @@ _HISTORICAL_OPTIONS = {
 
 def _option_specs(cmd: click.Command) -> set[tuple]:
     return {
-        (tuple(p.opts), p.name, bool(p.multiple))
-        for p in cmd.params
-        if isinstance(p, click.Option)
+        (tuple(p.opts), p.name, bool(p.multiple)) for p in cmd.params if isinstance(p, click.Option)
     }
 
 
@@ -72,15 +70,38 @@ def test_kernel_create_fields_mapping_equals_fixed_kwargs(tmp_path):
     # migrated path stays parity with the pre-refactor fixed-kwarg signature).
     from ai_hats_rack.kernel import Kernel
 
-    named = Kernel(tmp_path / "a").create(
-        actor="t", caller_cwd=tmp_path, task_id="HATS-1", title="x",
-        description="d", priority="high", role="r", reviewer="rev", tags=["t1", "t2"],
-    ).task
-    mapped = Kernel(tmp_path / "b").create(
-        actor="t", caller_cwd=tmp_path, task_id="HATS-1", title="x",
-        fields={"description": "d", "priority": "high", "role": "r",
-                "reviewer": "rev", "tags": ["t1", "t2"]},
-    ).task
+    named = (
+        Kernel(tmp_path / "a")
+        .create(
+            actor="t",
+            caller_cwd=tmp_path,
+            task_id="HATS-1",
+            title="x",
+            description="d",
+            priority="high",
+            role="r",
+            reviewer="rev",
+            tags=["t1", "t2"],
+        )
+        .task
+    )
+    mapped = (
+        Kernel(tmp_path / "b")
+        .create(
+            actor="t",
+            caller_cwd=tmp_path,
+            task_id="HATS-1",
+            title="x",
+            fields={
+                "description": "d",
+                "priority": "high",
+                "role": "r",
+                "reviewer": "rev",
+                "tags": ["t1", "t2"],
+            },
+        )
+        .task
+    )
     a, b = named.to_dict(), mapped.to_dict()
     for volatile in ("created", "updated"):
         a.pop(volatile, None)

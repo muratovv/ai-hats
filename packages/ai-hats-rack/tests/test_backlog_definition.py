@@ -64,10 +64,14 @@ def test_links_match_the_golden_kinds():
         "see_also",
         "folded_into",
         "children",
+        "blocks",
     )
     assert defn.links_registry.hierarchy_kind.name == "parent_task"
     assert defn.links_registry.children_kind.name == "children"
     assert defn.links_registry.get("depends_on").aliases == ("depends",)
+    assert defn.links_registry.get("depends_on").inverse == "blocks"
+    assert defn.links_registry.get("blocks").derived is True
+    assert defn.links_registry.get("blocks").inverse == "depends_on"
     assert defn.links_registry.get("related").symmetric is True
 
 
@@ -252,8 +256,16 @@ def test_bad_handler_ref_shape_fails_closed(tmp_path):
 def test_packaged_fields_are_todays_ten():
     defn = load_backlog()
     assert [f.name for f in defn.fields] == [
-        "description", "priority", "assignee", "reviewer", "role",
-        "tags", "resolution", "completed_at", "final_state", "work_policy",
+        "description",
+        "priority",
+        "assignee",
+        "reviewer",
+        "role",
+        "tags",
+        "resolution",
+        "completed_at",
+        "final_state",
+        "work_policy",
     ]
 
 
@@ -287,8 +299,9 @@ def test_packaged_extras_policy_is_allow():
 
 def _fields_doc(fields_block="", extras_line=""):
     return (
-        "name: t\nprefix: T\n" + extras_line +
-        "fsm:\n  initial: brainstorm\n  states: [{name: brainstorm}, {name: document}]\n"
+        "name: t\nprefix: T\n"
+        + extras_line
+        + "fsm:\n  initial: brainstorm\n  states: [{name: brainstorm}, {name: document}]\n"
         "  edges: [{from: brainstorm, to: document}, {from: document, to: brainstorm}]\n"
         "links:\n  kinds: [{name: parent_task}]\n" + fields_block
     )
@@ -296,12 +309,14 @@ def _fields_doc(fields_block="", extras_line=""):
 
 def test_custom_fields_parse_all_grammar_keys(tmp_path):
     doc = tmp_path / "backlog.yaml"
-    doc.write_text(_fields_doc(
-        "fields:\n"
-        "  - {name: hypothesis, type: str, required: true}\n"
-        "  - {name: votes, type: any, validator: prop-vote-entries, default: []}\n"
-        "  - {name: count, type: int, default: 4}\n"
-    ))
+    doc.write_text(
+        _fields_doc(
+            "fields:\n"
+            "  - {name: hypothesis, type: str, required: true}\n"
+            "  - {name: votes, type: any, validator: prop-vote-entries, default: []}\n"
+            "  - {name: count, type: int, default: 4}\n"
+        )
+    )
     fields = load_backlog(doc).fields
     assert fields[0] == FieldSpec(name="hypothesis", type="str", required=True)
     assert fields[1] == FieldSpec(

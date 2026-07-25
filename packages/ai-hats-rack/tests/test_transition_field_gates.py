@@ -142,9 +142,7 @@ def test_final_state_with_no_state_op_at_all_is_refused(tmp_path):
     # A bare field write is not a transition entering `review` either.
     kernel, tid = _card(tmp_path)
     with pytest.raises(StateGateError):
-        kernel.transition_ops(
-            tid, _ops("--set", "final_state=x"), actor="t", caller_cwd=tmp_path
-        )
+        kernel.transition_ops(tid, _ops("--set", "final_state=x"), actor="t", caller_cwd=tmp_path)
 
 
 def test_final_state_on_the_review_edge_passes(tmp_path):

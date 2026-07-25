@@ -62,6 +62,7 @@ def test_packaged_default_kinds():
         "see_also",
         "folded_into",
         "children",
+        "blocks",
     )
     assert reg.hierarchy_kind.name == "parent_task"
     assert reg.children_kind.name == "children"
@@ -79,7 +80,7 @@ def test_packaged_default_kinds():
 def test_unknown_kind_names_the_configured_set():
     reg = load_registry()
     with pytest.raises(UnknownLinkKindError) as err:
-        reg.require("blocks")
+        reg.require("nonexistent")
     assert err.value.configured == (
         "parent_task",
         "depends_on",
@@ -87,6 +88,7 @@ def test_unknown_kind_names_the_configured_set():
         "see_also",
         "folded_into",
         "children",
+        "blocks",
     )
 
 

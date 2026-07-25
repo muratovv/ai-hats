@@ -61,12 +61,30 @@ def test_packaged_emit_declarations_match_to_dict_for_the_ten():
     # Scoped to schema fields: to_dict's when-set for the LINK fields
     # (depends_on/related/see_also/folded_into/links) is NOT schema-driven.
     schema = default_card_schema()
-    empty = {"description": "", "priority": "", "assignee": "", "reviewer": "",
-             "role": "", "tags": [], "resolution": "", "completed_at": "", "final_state": "",
-             "work_policy": ""}
-    setv = {"description": "d", "priority": "p", "assignee": "a", "reviewer": "r",
-            "role": "x", "tags": ["t"], "resolution": "res", "completed_at": "c",
-            "final_state": "f", "work_policy": "wp"}
+    empty = {
+        "description": "",
+        "priority": "",
+        "assignee": "",
+        "reviewer": "",
+        "role": "",
+        "tags": [],
+        "resolution": "",
+        "completed_at": "",
+        "final_state": "",
+        "work_policy": "",
+    }
+    setv = {
+        "description": "d",
+        "priority": "p",
+        "assignee": "a",
+        "reviewer": "r",
+        "role": "x",
+        "tags": ["t"],
+        "resolution": "res",
+        "completed_at": "c",
+        "final_state": "f",
+        "work_policy": "wp",
+    }
     assert {f.name for f in schema.fields} == set(empty)  # exactly the ten
     for f in schema.fields:
         d_empty = TaskCard(id="HATS-1", **{f.name: empty[f.name]}).to_dict()
@@ -83,8 +101,16 @@ def test_packaged_emit_declarations_match_to_dict_for_the_ten():
 
 def test_golden_card_load_save_is_byte_identical(tasks_dir, cwd):
     kernel = make_kernel(tasks_dir)  # packaged tasks schema (zero-config)
-    kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="demo",
-                  description="a body", priority="high", role="dev", tags=["x", "y"])
+    kernel.create(
+        actor="t",
+        caller_cwd=cwd,
+        task_id="T-1",
+        title="demo",
+        description="a body",
+        priority="high",
+        role="dev",
+        tags=["x", "y"],
+    )
     path = tasks_dir / "T-1" / "task.yaml"
     first = path.read_bytes()
     # load → persist through the emit gate is a fixed point (byte identity).

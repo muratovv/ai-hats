@@ -110,7 +110,10 @@ def test_attach_then_freeze_digests_the_materialized_file(tasks_dir, cwd, tmp_pa
     src = tmp_path / "e.log"
     src.write_text("v1")
     res = k.transition_ops(
-        "T-1", parse_ops(["--attach", f"{src}:e.log", "--freeze", "e.log"]), actor="t", caller_cwd=cwd
+        "T-1",
+        parse_ops(["--attach", f"{src}:e.log", "--freeze", "e.log"]),
+        actor="t",
+        caller_cwd=cwd,
     )
     assert [o["op"] for o in res.ops] == ["attach", "freeze"]
     assert res.ops[1]["digest"].startswith("sha256:")
@@ -123,8 +126,10 @@ def test_freeze_before_attach_aborts_and_unwinds(tasks_dir, cwd, tmp_path):
     src.write_text("v1")
     with pytest.raises(UnknownDocumentError):
         k.transition_ops(
-            "T-1", parse_ops(["--freeze", "e.log", "--attach", f"{src}:e.log"]),
-            actor="t", caller_cwd=cwd,
+            "T-1",
+            parse_ops(["--freeze", "e.log", "--attach", f"{src}:e.log"]),
+            actor="t",
+            caller_cwd=cwd,
         )
     assert not (tasks_dir / "T-1" / "e.log").exists()  # the later attach was rolled back
 
@@ -141,8 +146,10 @@ def test_abort_after_attach_removes_staged_file_and_leaves_card_untouched(tasks_
     src.write_text("body")
     with pytest.raises(UnknownDocumentError):
         k.transition_ops(
-            "T-1", parse_ops(["--attach", f"{src}:a.md", "--rm", "ghost.md"]),
-            actor="t", caller_cwd=cwd,
+            "T-1",
+            parse_ops(["--attach", f"{src}:a.md", "--rm", "ghost.md"]),
+            actor="t",
+            caller_cwd=cwd,
         )
     assert not (card_dir / "a.md").exists()  # zero staged residue
     assert (card_dir / "task.yaml").read_bytes() == before  # zero-byte card change
@@ -206,8 +213,10 @@ def test_link_derived_and_unknown_kinds_are_typed(tasks_dir, cwd):
     k.create(actor="t", caller_cwd=cwd, task_id="T-2", title="b")
     with pytest.raises(DerivedLinkKindError):
         k.transition_ops("T-1", parse_ops(["--link", "children:T-2"]), actor="t", caller_cwd=cwd)
-    with pytest.raises(UnknownLinkKindError):
+    with pytest.raises(DerivedLinkKindError):
         k.transition_ops("T-1", parse_ops(["--link", "blocks:T-2"]), actor="t", caller_cwd=cwd)
+    with pytest.raises(UnknownLinkKindError):
+        k.transition_ops("T-1", parse_ops(["--link", "bogus:T-2"]), actor="t", caller_cwd=cwd)
 
 
 def test_link_unknown_target_is_typed(tasks_dir, cwd):
@@ -273,7 +282,16 @@ def test_cli_attach_before_state_vs_reverse(tmp_path):
     runner.invoke(main, ["transition", "HATS-001", "plan", *args])
     ok = runner.invoke(
         main,
-        ["transition", "HATS-001", "--attach", f"{ready}:plan.md", "--state", "execute", *args, "--json"],
+        [
+            "transition",
+            "HATS-001",
+            "--attach",
+            f"{ready}:plan.md",
+            "--state",
+            "execute",
+            *args,
+            "--json",
+        ],
     )
     assert ok.exit_code == 0, ok.output
     assert json.loads(ok.output)["task"]["state"] == "execute"
@@ -282,7 +300,16 @@ def test_cli_attach_before_state_vs_reverse(tmp_path):
     runner.invoke(main, ["transition", "HATS-002", "plan", *args])
     bad = runner.invoke(
         main,
-        ["transition", "HATS-002", "--state", "execute", "--attach", f"{ready}:plan.md", *args, "--json"],
+        [
+            "transition",
+            "HATS-002",
+            "--state",
+            "execute",
+            "--attach",
+            f"{ready}:plan.md",
+            *args,
+            "--json",
+        ],
     )
     assert bad.exit_code == 1
     assert json.loads(bad.output)["error"]["code"] == "aborted"

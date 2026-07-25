@@ -51,8 +51,10 @@ def test_illegal_set_on_choices_field_aborts_journals_nothing_persisted(tasks_di
 
 def test_legal_set_and_append_pass(tasks_dir, cwd):
     schema = CardSchema(
-        [_rf("priority", default="medium", choices=("low", "medium", "high")),
-         _rf("votes", "any", default=[])]
+        [
+            _rf("priority", default="medium", choices=("low", "medium", "high")),
+            _rf("votes", "any", default=[]),
+        ]
     )
     op = {"priority": Set("high"), "votes": Append({"session": "s1"})}
     kernel = make_kernel(tasks_dir, schema=schema, subscribers=[_writer(op)])

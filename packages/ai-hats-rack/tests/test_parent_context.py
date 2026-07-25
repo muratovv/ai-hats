@@ -119,7 +119,9 @@ def test_kinds_read_composes_a_read_subscriber(tmp_path):
     assert len(subs) == 1
     sub = subs[0]
     assert isinstance(sub, BoundReadSubscriber) and sub.name == "parent-context"
-    assert [(s.event_key, s.phase) for s in sub.subscriptions()] == [("read:parent_task", Phase.READ)]
+    assert [(s.event_key, s.phase) for s in sub.subscriptions()] == [
+        ("read:parent_task", Phase.READ)
+    ]
 
 
 def test_unknown_read_handler_fails_closed(tmp_path):
@@ -140,9 +142,15 @@ def _save(tasks_dir, card):
 def test_build_context_delivers_requirements_across_the_whole_chain(tmp_path):
     tasks = tmp_path / "tasks"
     _save(tasks, TaskCard(id="T-1", title="grandparent", work_policy="[plan] affordance"))
-    _save(tasks, TaskCard(id="T-2", title="parent", parent_task="T-1",
-                          work_policy="[after execute] A/B validate"))
-    _save(tasks, TaskCard(id="T-3", title="child", parent_task="T-2", description="leaf, no policy"))
+    _save(
+        tasks,
+        TaskCard(
+            id="T-2", title="parent", parent_task="T-1", work_policy="[after execute] A/B validate"
+        ),
+    )
+    _save(
+        tasks, TaskCard(id="T-3", title="child", parent_task="T-2", description="leaf, no policy")
+    )
     defn = load_backlog()
     subs = build_read_subscribers(defn, tasks, stock_factories())
     pkg = build_context(tasks, "T-3", registry=defn.links_registry, read_subscribers=subs)

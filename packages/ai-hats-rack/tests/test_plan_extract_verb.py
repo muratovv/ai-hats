@@ -11,12 +11,7 @@ from click.testing import CliRunner
 
 from ai_hats_rack.cli import main
 
-_SUBTASKS_PLAN = (
-    "# Plan\n\n"
-    "## Subtasks\n\n"
-    "- Carve out the widget\n"
-    "- Wire the seam\n"
-)
+_SUBTASKS_PLAN = "# Plan\n\n## Subtasks\n\n- Carve out the widget\n- Wire the seam\n"
 
 
 @pytest.fixture
@@ -55,9 +50,7 @@ def test_plan_extract_is_a_top_level_verb():
 
 def test_dry_run_lists_candidates_and_mutates_nothing(runner, tmp_path):
     parent = _create_parent(runner, tmp_path)
-    res = runner.invoke(
-        main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"]
-    )
+    res = runner.invoke(main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"])
     assert res.exit_code == 0, res.output
     titles = [c["title"] for c in json.loads(res.output)["candidates"]]
     assert titles == ["Carve out the widget", "Wire the seam"]
@@ -111,9 +104,7 @@ def test_rerun_is_idempotent(runner, tmp_path):
 def test_steps_checklist_parity(runner, tmp_path):
     plan = "# Plan\n\n## Steps\n\n- [ ] First step\n- [x] Second step\n"
     parent = _create_parent(runner, tmp_path, plan)
-    res = runner.invoke(
-        main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"]
-    )
+    res = runner.invoke(main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"])
     cands = json.loads(res.output)["candidates"]
     assert [c["title"] for c in cands] == ["First step", "Second step"]
     assert {c["kind"] for c in cands} == {"steps"}
@@ -122,9 +113,7 @@ def test_steps_checklist_parity(runner, tmp_path):
 def test_numbered_heading_parity(runner, tmp_path):
     plan = "# Plan\n\n### 1. Alpha\n\n### 2. Beta\n"
     parent = _create_parent(runner, tmp_path, plan)
-    res = runner.invoke(
-        main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"]
-    )
+    res = runner.invoke(main, ["plan-extract", parent, "--dry-run", *_args(tmp_path), "--json"])
     cands = json.loads(res.output)["candidates"]
     assert [c["title"] for c in cands] == ["Alpha", "Beta"]
     assert {c["kind"] for c in cands} == {"phase"}

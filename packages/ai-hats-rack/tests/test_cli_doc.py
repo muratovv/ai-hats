@@ -62,7 +62,8 @@ def test_context_surfaces_frozen_drift(runner, tmp_path):
 def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     card_dir = _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
     result = runner.invoke(
-        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"]
+        main,
+        ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"],
     )
     assert result.exit_code == 0, result.output
     (op,) = json.loads(result.output)["ops"]
@@ -72,7 +73,8 @@ def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     # --ack-frozen hatch accepts the new content (HATS-1031 Р13 recipe).
     (card_dir / "evidence.log").write_bytes(b"v2")
     refused = runner.invoke(
-        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"]
+        main,
+        ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path), "--json"],
     )
     assert refused.exit_code == 1
     error = json.loads(refused.output)["error"]
@@ -81,8 +83,13 @@ def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
     accepted = runner.invoke(
         main,
         [
-            "transition", "HATS-001", "--freeze", "evidence.log",
-            "--ack-frozen", *_tasks_args(tmp_path), "--json",
+            "transition",
+            "HATS-001",
+            "--freeze",
+            "evidence.log",
+            "--ack-frozen",
+            *_tasks_args(tmp_path),
+            "--json",
         ],
     )
     assert accepted.exit_code == 0, accepted.output
@@ -92,7 +99,9 @@ def test_freeze_via_transition_and_drift_refusal(runner, tmp_path):
 
 def test_rm_frozen_refusal_names_the_flag_then_succeeds_with_ack(runner, tmp_path):
     _setup_task(runner, tmp_path, ("evidence.log", b"v1"))
-    runner.invoke(main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)])
+    runner.invoke(
+        main, ["transition", "HATS-001", "--freeze", "evidence.log", *_tasks_args(tmp_path)]
+    )
     refused = runner.invoke(
         main, ["transition", "HATS-001", "--rm", "evidence.log", *_tasks_args(tmp_path), "--json"]
     )
@@ -104,8 +113,13 @@ def test_rm_frozen_refusal_names_the_flag_then_succeeds_with_ack(runner, tmp_pat
     removed = runner.invoke(
         main,
         [
-            "transition", "HATS-001", "--rm", "evidence.log",
-            "--ack-frozen", *_tasks_args(tmp_path), "--json",
+            "transition",
+            "HATS-001",
+            "--rm",
+            "evidence.log",
+            "--ack-frozen",
+            *_tasks_args(tmp_path),
+            "--json",
         ],
     )
     assert removed.exit_code == 0, removed.output

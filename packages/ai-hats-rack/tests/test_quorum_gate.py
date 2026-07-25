@@ -55,8 +55,13 @@ def _refuted(session_id: str | None) -> dict:
 def _seed(catalog: Path, hyp_id: str, *, status: str = "active", log=None) -> None:
     d = catalog / hyp_id
     d.mkdir(parents=True, exist_ok=True)
-    body = {"id": hyp_id, "title": f"t-{hyp_id}", "state": status, "hypothesis": "h",
-            "validation_log": log or []}
+    body = {
+        "id": hyp_id,
+        "title": f"t-{hyp_id}",
+        "state": status,
+        "hypothesis": "h",
+        "validation_log": log or [],
+    }
     (d / "task.yaml").write_text(yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
 
 
@@ -113,8 +118,9 @@ def test_sentinel_session_excluded(tmp_path):
 
 def test_only_active_hyps_scanned(tmp_path):
     _, v = _hyp(tmp_path)
-    _seed(tmp_path, "HYP-001", status="refuted",
-          log=[_refuted("s1"), _refuted("s2"), _refuted("s3")])
+    _seed(
+        tmp_path, "HYP-001", status="refuted", log=[_refuted("s1"), _refuted("s2"), _refuted("s3")]
+    )
     assert v.find_quorum_closures() == []
 
 
@@ -155,12 +161,19 @@ def test_autoclose_appends_audit_then_flips(tmp_path):
 def test_autoclose_skips_when_not_active(tmp_path):
     """The FSM guard refuses to refute (and to append to) a non-active HYP."""
     kernel, v = _hyp(tmp_path)
-    _seed(tmp_path, "HYP-001", status="confirmed",
-          log=[_refuted("s1"), _refuted("s2"), _refuted("s3")])
+    _seed(
+        tmp_path,
+        "HYP-001",
+        status="confirmed",
+        log=[_refuted("s1"), _refuted("s2"), _refuted("s3")],
+    )
 
     out = v.append_then_set_status(
-        "HYP-001", _refuted(AUTO_SESSION_ID), to_state="refuted",
-        actor=AUTOCLOSE_ACTOR, caller_cwd=tmp_path,
+        "HYP-001",
+        _refuted(AUTO_SESSION_ID),
+        to_state="refuted",
+        actor=AUTOCLOSE_ACTOR,
+        caller_cwd=tmp_path,
     )
     assert out is None
     card = kernel.get("HYP-001")
@@ -198,7 +211,9 @@ def test_gate_blocks_automation_actor_without_quorum(tmp_path):
     kernel, _v = _hyp(tmp_path)
     _seed(tmp_path, "HYP-001", log=[_refuted("s1"), _refuted("s2")])  # below K
     with pytest.raises(OperationAborted) as err:
-        kernel.transition_ops("HYP-001", [StateOp("refuted")], actor=AUTOCLOSE_ACTOR, caller_cwd=tmp_path)
+        kernel.transition_ops(
+            "HYP-001", [StateOp("refuted")], actor=AUTOCLOSE_ACTOR, caller_cwd=tmp_path
+        )
     assert "quorum" in err.value.reason
     assert kernel.get("HYP-001").state == "active"  # aborted before persist
 
@@ -206,7 +221,9 @@ def test_gate_blocks_automation_actor_without_quorum(tmp_path):
 def test_gate_passes_automation_actor_at_quorum(tmp_path):
     kernel, _v = _hyp(tmp_path)
     _seed(tmp_path, "HYP-001", log=[_refuted("s1"), _refuted("s2"), _refuted("s3")])
-    kernel.transition_ops("HYP-001", [StateOp("refuted")], actor=AUTOCLOSE_ACTOR, caller_cwd=tmp_path)
+    kernel.transition_ops(
+        "HYP-001", [StateOp("refuted")], actor=AUTOCLOSE_ACTOR, caller_cwd=tmp_path
+    )
     assert kernel.get("HYP-001").state == "refuted"
 
 
