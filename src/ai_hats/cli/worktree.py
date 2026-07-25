@@ -106,22 +106,24 @@ def _resolve_worktree(branch: str | None = None):
     )
 
 
-def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
-    """HATS-859: peel a leading worktree selector from ``args`` (in place).
+def _peel_selector(args: list[str]) -> str | None:
+    """Peel a leading worktree selector off ``args`` (in place); None if absent.
 
-    Only reached when the no-arg :func:`_resolve_worktree` was ambiguous (>1
-    active). Pops ``args[0]`` (and a trailing ``--``) when it names an active
-    worktree and resolves that one; re-raises ``ambiguity`` otherwise.
+    A parser, not a resolver — the caller resolves, so an unresolvable selector
+    refuses instead of falling back to cwd. ``args[0]`` is a selector only when
+    it names an active worktree; otherwise it is the command (HATS-859).
     """
     from ai_hats_wt import WorktreeManager
     from ..wt_lifecycle import HOOK_LIFECYCLE
 
+    if not args:
+        return None
     project_dir = _project_dir()
     active = WorktreeManager.list_active(
         project_dir, lifecycle=HOOK_LIFECYCLE, state_dir=worktrees_dir(project_dir)
     )
-    if not (args and any(m.branch_name == args[0] for m in active)):
-        raise ambiguity
+    if not any(m.branch_name == args[0] for m in active):
+        return None
     selector = args.pop(0)
     # Click strips only a *leading* `--`; one that trailed the selector can
     # survive in cmd_args — drop it so it never reaches the inner command.
@@ -129,7 +131,7 @@ def _peel_selector_and_resolve(args: list[str], ambiguity: click.UsageError):
         args.pop(0)
     if not args:
         raise click.UsageError("No command to run. Usage: ai-hats wt exec [<branch>] [--] <cmd…>")
-    return _resolve_worktree(selector)
+    return selector
 
 
 def _effective_dir(wt_path: Path, subdir: str | None = None) -> Path:
@@ -583,9 +585,9 @@ def wt_status():
 def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
     """Run a command in a worktree, where you stand (cwd + workspace PYTHONPATH).
 
-    With >1 active worktree, pass one as the first arg (a leading token matching
-    an active branch is the selector); else it is inferred from cwd. `--` optional
-    — but required when the inner command has its own `-C`:
+    A leading token matching an active branch is the selector and always wins;
+    without one the worktree is inferred from cwd, else the sole active one. `--`
+    optional — but required when the inner command has its own `-C`:
 
     \b
         ai-hats wt exec -- pytest tests/test_foo.py -xvs      # sole/inside wt
@@ -594,12 +596,10 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
         ai-hats wt exec task/hats-1 python -c 'import ai_hats'
     """
     args = list(cmd_args)
-    try:
-        mgr = _resolve_worktree()
-    except click.UsageError as ambiguity:
-        # HATS-859: >1 active worktree — exec never peeled the "first arg" the
-        # ambiguity error tells the user to add, so it was run as the command.
-        mgr = _peel_selector_and_resolve(args, ambiguity)
+    # HATS-1213: peel the selector BEFORE resolving — cwd (and the sole-active
+    # convenience) used to silently beat an explicit `wt exec <branch>`. With no
+    # selector this is the old no-arg call, ambiguity refusal included.
+    mgr = _resolve_worktree(_peel_selector(args))
 
     if mgr is None:
         console.print("[yellow]No active worktree[/]")
@@ -631,16 +631,18 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
 
 
 @wt.command("env")
-def wt_env():
-    """Print shell exports for the active worktree (eval-friendly).
+@click.argument("branch", required=False)
+def wt_env(branch: str | None):
+    """Print shell exports for a worktree (eval-friendly).
 
-    Usage:
+    Without BRANCH: inferred from CWD, else the sole active worktree.
 
     \b
         eval "$(ai-hats wt env)"
+        eval "$(ai-hats wt env task/hats-1)"   # reach into another worktree
         # now $WT and $PYTHONPATH are set; cd to it manually if needed
     """
-    mgr = _resolve_worktree()
+    mgr = _resolve_worktree(branch)
     if mgr is None:
         click.echo("# no active worktree", err=True)
         sys.exit(1)
