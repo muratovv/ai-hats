@@ -154,6 +154,23 @@ def _effective_dir(wt_path: Path, subdir: str | None = None) -> Path:
     return cwd if cwd.is_relative_to(root) else wt_path
 
 
+def _owner_root(run_dir: Path, wt_path: Path) -> Path:
+    """The checkout root whose environment `run_dir` belongs to (HATS-1205).
+
+    Nearest ancestor carrying a ``pyproject.toml``, bounded by the worktree
+    root — so a subproject gets its own ``src`` instead of the outer repo's
+    packages, while a plain subdirectory keeps the worktree-root workspace.
+    """
+    root = wt_path.resolve()
+    here = run_dir.resolve()
+    for candidate in (here, *here.parents):
+        if not candidate.is_relative_to(root):
+            break
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    return wt_path
+
+
 @click.group()
 def wt():
     """Manage git worktrees for isolated work."""
@@ -600,10 +617,10 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
     env = os.environ.copy()
     for _var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(_var, None)
-    # HATS-913: src alone Franken-mixes — packages/*/src must come from the worktree
-    env["PYTHONPATH"] = workspace_pythonpath(wt_path, env.get("PYTHONPATH", ""))
-
     run_dir = _effective_dir(wt_path, subdir)
+    # HATS-913: src alone Franken-mixes — packages/*/src must come from the
+    # worktree. HATS-1205: rooted at whichever project owns run_dir.
+    env["PYTHONPATH"] = workspace_pythonpath(_owner_root(run_dir, wt_path), env.get("PYTHONPATH", ""))
 
     try:
         result = subprocess.run(args, cwd=str(run_dir), env=env)
