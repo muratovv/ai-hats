@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from ai_hats.materialization import ApplyMaterializer
 from ai_hats_agy.global_hook import (
     DISPATCHER_COMMAND,
     MANAGED_DISPATCHER_TAG,
@@ -15,7 +16,7 @@ def test_ensure_global_dispatcher_hook_creates_settings_when_missing(tmp_path: P
     settings_file = tmp_path / "settings.json"
     assert not settings_file.exists()
 
-    changed = ensure_global_dispatcher_hook(settings_file)
+    changed = ensure_global_dispatcher_hook(settings_file, ApplyMaterializer())
 
     assert changed is True
     assert settings_file.is_file()
@@ -29,10 +30,10 @@ def test_ensure_global_dispatcher_hook_creates_settings_when_missing(tmp_path: P
 
 def test_ensure_global_dispatcher_hook_is_idempotent(tmp_path: Path) -> None:
     settings_file = tmp_path / "settings.json"
-    ensure_global_dispatcher_hook(settings_file)
+    ensure_global_dispatcher_hook(settings_file, ApplyMaterializer())
 
     # Second call should return False (no changes)
-    changed = ensure_global_dispatcher_hook(settings_file)
+    changed = ensure_global_dispatcher_hook(settings_file, ApplyMaterializer())
     assert changed is False
 
 
@@ -49,7 +50,7 @@ def test_ensure_global_dispatcher_hook_preserves_existing_user_settings(tmp_path
     }
     settings_file.write_text(json.dumps(initial_data, indent=2))
 
-    changed = ensure_global_dispatcher_hook(settings_file)
+    changed = ensure_global_dispatcher_hook(settings_file, ApplyMaterializer())
 
     assert changed is True
     data = json.loads(settings_file.read_text())

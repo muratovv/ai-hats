@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from .materialization import ApplyMaterializer, Materializer
+
 
 class ArtifactCategory(str, Enum):
     CONTEXT = "context"
@@ -49,3 +51,6 @@ class BuiltArtifacts:
     sdk_options: dict = field(default_factory=dict)  # Automate: {"settings":..., "setting_sources":[]}
     materialized: list[Path] = field(default_factory=list)  # for tests/audit
     full_content: str | None = None  # composed prompt bytes (meta_prompt.txt)
+    # HATS-1211: every session write goes through here; a PlanMaterializer turns
+    # the whole build into a dry-run. Appended last — positional ctor stays safe.
+    port: Materializer = field(default_factory=ApplyMaterializer)

@@ -9,11 +9,15 @@ cannot differ by implementation — that identity is the contract test suite's s
 from __future__ import annotations
 
 import abc
+import contextlib
 import json
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+# A rebuild is a sub-second fs op, so a timeout means a stuck/dead holder (HATS-604).
+LOCK_TIMEOUT = 30.0
 
 
 class WriteKind(str, Enum):
@@ -151,6 +155,14 @@ class Materializer(abc.ABC):
     def remove_tree(self, path: Path) -> None:
         """Recursive delete. Absent target is a no-op and stays out of the plan."""
 
+    @abc.abstractmethod
+    def lock(self, path: Path) -> contextlib.AbstractContextManager[None]:
+        """Serialise a multi-step rebuild. Not materialization — never recorded.
+
+        It belongs on the port because taking a ``filelock`` creates a file: a
+        dry-run that locked would leave one behind.
+        """
+
 
 class ApplyMaterializer(Materializer):
     """The real session: perform the write, then record it."""
@@ -187,6 +199,22 @@ class ApplyMaterializer(Materializer):
         entry = describe_remove_tree(path)
         shutil.rmtree(path)  # safe-delete: ok caller-owned session artifact
         self._record(entry)
+
+    @contextlib.contextmanager
+    def lock(self, path: Path):
+        import filelock
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        flock = filelock.FileLock(str(path), timeout=LOCK_TIMEOUT)
+        try:
+            with flock:
+                yield
+        except filelock.Timeout as exc:
+            raise RuntimeError(
+                f"materialization blocked >{LOCK_TIMEOUT:.0f}s on lock {path} — "
+                f"a stuck ai-hats process likely holds it. "
+                f"If safe, remove the lock file and retry."
+            ) from exc
 
 
 class PlanMaterializer(Materializer):
@@ -240,3 +268,7 @@ class PlanMaterializer(Materializer):
         self._created.discard(path)
         self._removed.add(path)
         self._record(describe_remove_tree(path))
+
+    @contextlib.contextmanager
+    def lock(self, path: Path):
+        yield  # nothing is written, so nothing needs serialising
