@@ -22,7 +22,18 @@ from websockets.exceptions import ConnectionClosed
 
 from . import wire
 
-DETACH_KEY = b"\x1d"  # Ctrl-]
+# A TUI that turns on the kitty keyboard protocol (claude does — `\x1b[>1u`) makes the
+# terminal report control keys as CSI-u sequences instead of the legacy control byte,
+# so each key is matched in both encodings. `--keys` prints what actually arrives.
+DETACH_KEYS: dict[str, tuple[bytes, ...]] = {
+    "ctrl-]": (b"\x1d", b"\x1b[93;5u"),
+    "ctrl-\\": (b"\x1c", b"\x1b[92;5u"),
+    "ctrl-o": (b"\x0f", b"\x1b[111;5u"),
+    "ctrl-g": (b"\x07", b"\x1b[103;5u"),
+    "f12": (b"\x1b[24~", b"\x1b[57376u"),
+}
+# Ctrl-G opens $EDITOR in claude and Ctrl-O toggles its output, so both are taken.
+DEFAULT_DETACH = "ctrl-\\"
 
 # ai-hats writes its own reset to its stdout, which under a broker goes nowhere. A
 # stale keyboard mode makes Enter arrive as \x1b[13u, i.e. a newline instead of submit.
@@ -74,7 +85,7 @@ async def _open(ws, args) -> dict:
     return reply
 
 
-async def _pump_stdin(ws, stop: asyncio.Future) -> None:
+async def _pump_stdin(ws, stop: asyncio.Future, detach: tuple[bytes, ...]) -> None:
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[bytes] = asyncio.Queue()
 
@@ -90,13 +101,43 @@ async def _pump_stdin(ws, stop: asyncio.Future) -> None:
     try:
         while not stop.done():
             data = await queue.get()
-            if DETACH_KEY in data:
+            if any(pattern in data for pattern in detach):
                 stop.done() or stop.set_result("detached")
                 return
             await ws.send(wire.client_input(data))
     finally:
         with contextlib.suppress(Exception):
             loop.remove_reader(0)
+
+
+async def probe_keys() -> int:
+    """Print the raw bytes of each keypress, so a detach key can be chosen on evidence.
+
+    What a key sends depends on the modes the remote TUI turned on, which is why a
+    shortcut that looks obvious can silently never match.
+    """
+    print("Press keys to see what your terminal sends. Ctrl-C to stop.\r")
+    loop = asyncio.get_running_loop()
+    stop = loop.create_future()
+
+    def on_readable() -> None:
+        data = os.read(0, 65536)
+        if data == b"\x03":
+            stop.done() or stop.set_result(None)
+            return
+        pretty = " ".join(f"{b:02x}" for b in data)
+        names = [n for n, pats in DETACH_KEYS.items() if any(p in data for p in pats)]
+        label = f"  <- matches {', '.join(names)}" if names else ""
+        os.write(1, f"  {pretty}   {data!r}{label}\r\n".encode())
+
+    with RawTerminal():
+        loop.add_reader(0, on_readable)
+        try:
+            await stop
+        finally:
+            with contextlib.suppress(Exception):
+                loop.remove_reader(0)
+    return 0
 
 
 async def _pump_output(ws, stop: asyncio.Future) -> None:
@@ -135,15 +176,22 @@ async def list_sessions(url: str) -> int:
 
 
 async def run_client(args) -> int:
+    if args.keys:
+        return await probe_keys()
+    if not args.url:
+        raise SystemExit("hats-relay-attach: a url is required (or use --keys)")
     if args.list:
         return await list_sessions(args.url)
     async with connect(args.url, max_size=None, compression=None) as ws:
         reply = await _open(ws, args)
         stop: asyncio.Future = asyncio.get_running_loop().create_future()
 
+        detach = DETACH_KEYS[args.detach_key]
         with RawTerminal():
             os.write(1, TERM_RESET)
-            os.write(2, f"[relay] session {reply['sid']} — Ctrl-] to detach\r\n".encode())
+            os.write(
+                2, f"[relay] session {reply['sid']} — {args.detach_key} to detach\r\n".encode()
+            )
 
             def on_winch(*_a) -> None:
                 cols, rows = terminal_size()
@@ -153,7 +201,7 @@ async def run_client(args) -> int:
                 signal.signal(signal.SIGWINCH, on_winch)
 
             tasks = [
-                asyncio.create_task(_pump_stdin(ws, stop)),
+                asyncio.create_task(_pump_stdin(ws, stop, detach)),
                 asyncio.create_task(_pump_output(ws, stop)),
             ]
             reason = await stop
@@ -169,11 +217,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hats-relay-attach", description="Attach a terminal to an ai-hats session."
     )
-    parser.add_argument("url", help="e.g. ws://192.168.1.10:8787")
+    parser.add_argument("url", nargs="?", help="e.g. ws://192.168.1.10:8787")
     parser.add_argument("--role", default="assistant", help="role for a NEW session")
     parser.add_argument("--sid", default=None, help="attach to an existing session instead")
     parser.add_argument("--after-seq", type=int, default=None, help="resume from this sequence")
     parser.add_argument("--list", action="store_true", help="list live sessions and exit")
+    parser.add_argument(
+        "--detach-key",
+        choices=sorted(DETACH_KEYS),
+        default=DEFAULT_DETACH,
+        help=f"key that detaches without ending the session (default: {DEFAULT_DETACH})",
+    )
+    parser.add_argument(
+        "--keys",
+        action="store_true",
+        help="print the bytes your terminal sends for each key, then exit",
+    )
     return parser
 
 

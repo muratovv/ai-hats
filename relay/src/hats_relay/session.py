@@ -87,6 +87,9 @@ class Session:
         child_env["AI_HATS_PTY_IN_FD"] = str(child_fd)
         child_env["AI_HATS_PTY_OUT_FD"] = str(child_fd)
         child_env.setdefault("TERM", DEFAULT_TERM)
+        # Its warnings go to stdio we do not relay and its skip-key can never arrive,
+        # so the hold is pure dead time here — 12.0s to first byte, 1.1s without.
+        child_env.setdefault("AI_HATS_STARTUP_HOLD", "0")
 
         try:
             proc = await asyncio.create_subprocess_exec(

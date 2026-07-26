@@ -78,6 +78,28 @@ def test_a_refusal_surfaces_instead_of_hanging():
     run(scenario())
 
 
+def test_every_detach_key_matches_both_encodings():
+    """A TUI that enables the kitty keyboard protocol makes the terminal report control
+    keys as CSI-u sequences, so matching only the legacy byte silently never fires —
+    which is exactly how the first detach key failed in acceptance."""
+    from hats_relay.client import DEFAULT_DETACH, DETACH_KEYS
+
+    assert DEFAULT_DETACH in DETACH_KEYS
+    for name, patterns in DETACH_KEYS.items():
+        assert len(patterns) >= 2, f"{name} has no CSI-u alternative"
+        assert all(patterns), name
+    legacy, csi_u = DETACH_KEYS["ctrl-\\"]
+    assert legacy == b"\x1c"
+    assert csi_u.startswith(b"\x1b[") and csi_u.endswith(b"u")
+
+
+def test_keys_probe_needs_no_url():
+    """The probe exists to diagnose a broker you cannot reach a shell on."""
+    args = build_parser().parse_args(["--keys"])
+    assert args.keys is True
+    assert args.url is None
+
+
 def test_raw_terminal_restores_even_on_an_exception():
     """The failure mode is a shell left in raw mode after a crash — unusable."""
     with pytest.raises(RuntimeError), RawTerminal(fd=0):
