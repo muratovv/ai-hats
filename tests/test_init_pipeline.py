@@ -65,10 +65,7 @@ def test_self_init_cli_launches_wizard_with_provider_flag(tmp_path, monkeypatch)
     runner = CliRunner()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
-        patch("ai_hats.cli.assembly._run_self_update"),
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(main, ["self", "init", "-p", "gemini", "--no-update"])
         assert result.exit_code == 0, result.output
         cmd = launch.call_args[0][0]

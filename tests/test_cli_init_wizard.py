@@ -103,10 +103,7 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     runner = CliRunner()
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session"),
-        patch("ai_hats.cli.assembly._run_self_update"),
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session"):
         result = runner.invoke(main, ["self", "init", "--no-update"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
     assert "Choose harness channel" in result.output
@@ -156,10 +153,7 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
     """TTY + no flags → prompts for harness & provider → minimal config → launches wizard."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
-        patch("ai_hats.cli.assembly._run_self_update") as upd,
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(
             main, ["self", "init", "--no-update"], input="1\nclaude\n",
         )
@@ -167,17 +161,13 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
     assert "Choose harness channel" in result.output
     assert (fresh_project / PROJECT_CONFIG).exists()
     launch.assert_called_once()
-    upd.assert_not_called()
 
 
 def test_init_wizard_with_provider_flag_skips_cli_prompts(fresh_project, monkeypatch):
     """TTY + only -p (no -r) → skips CLI prompts, but wizard still launches."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
-        patch("ai_hats.cli.assembly._run_self_update"),
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(
             main, ["self", "init", "-p", "agy", "--no-update"],
         )
@@ -194,39 +184,41 @@ def test_init_wizard_launches_on_reinit(fresh_project, monkeypatch):
     runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"])
 
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
-        patch("ai_hats.cli.assembly._run_self_update"),
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(main, ["self", "init", "--no-update"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
     assert "Choose harness channel" in result.output
     launch.assert_called_once()
 
 
-def test_init_wizard_does_not_run_self_update_by_default(fresh_project, monkeypatch):
-    """Wizard path (TTY, no flags) operates strictly locally without calling _run_self_update."""
+def test_init_never_builds_an_update_command(fresh_project, monkeypatch):
+    """`self init` is local-only: it must never construct an install command.
+
+    Guards the contract, not a symbol — the inline `_run_self_update` helper was
+    deleted, so a patch on it would pass vacuously. `_build_update_cmd` is the
+    single place any install command is assembled.
+    """
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with (
         patch("ai_hats.cli.assembly._launch_wizard_session"),
-        patch("ai_hats.cli.assembly._run_self_update", return_value=True) as upd,
+        patch("ai_hats.cli.maintenance._build_update_cmd") as build_cmd,
     ):
         result = runner.invoke(main, ["self", "init"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
-    upd.assert_not_called()
+    build_cmd.assert_not_called()
 
 
 def test_init_flag_only_path_does_not_self_update(fresh_project):
-    """Flag-only (CI) path with --no-update must NOT trigger pip install."""
+    """Flag-only (CI) path must NOT trigger an install."""
     runner = CliRunner()
     with (
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
-        patch("ai_hats.cli.assembly._run_self_update") as upd,
+        patch("ai_hats.cli.maintenance._build_update_cmd") as build_cmd,
     ):
         result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-update"])
     assert result.exit_code == 0, result.output
-    upd.assert_not_called()
+    build_cmd.assert_not_called()
     launch.assert_not_called()
 
 
@@ -236,10 +228,7 @@ def test_init_flag_only_persists_paths(fresh_project):
     import yaml
 
     runner = CliRunner()
-    with (
-        patch("ai_hats.cli.assembly._launch_wizard_session"),
-        patch("ai_hats.cli.assembly._run_self_update"),
-    ):
+    with patch("ai_hats.cli.assembly._launch_wizard_session"):
         result = runner.invoke(
             main,
             [
