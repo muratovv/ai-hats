@@ -94,6 +94,18 @@ def test_every_detach_key_matches_both_encodings():
     assert csi_u.startswith(b"\x1b[") and csi_u.endswith(b"u")
 
 
+def test_explicit_detach_bytes_win_over_the_guessed_table():
+    """The named table is guesswork about terminal encoding; captured bytes are not."""
+    from hats_relay.client import resolve_detach
+
+    args = build_parser().parse_args(["ws://x", "--detach-bytes", "1b 4f 53"])
+    assert resolve_detach(args) == (b"\x1bOS",)
+
+    bad = build_parser().parse_args(["ws://x", "--detach-bytes", "zz"])
+    with pytest.raises(SystemExit, match="not hex"):
+        resolve_detach(bad)
+
+
 def test_keys_probe_needs_no_url():
     """The probe exists to diagnose a broker you cannot reach a shell on."""
     args = build_parser().parse_args(["--keys"])

@@ -42,6 +42,24 @@ TERM_RESET = b"\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
 LEAVE_ALT_SCREEN = b"\x1b[?1049l\x1b[?25h\x1b[0m"
 
 
+def resolve_detach(args) -> tuple[bytes, ...]:
+    """Detach trigger: an explicit byte sequence wins over a named key.
+
+    The named table is guesswork about how a terminal encodes a key under whatever
+    modes the attached TUI enabled. `--detach-bytes` is the way out of guessing —
+    capture the real bytes with `--log-keys`, then name them here.
+    """
+    if args.detach_bytes:
+        try:
+            raw = bytes.fromhex(args.detach_bytes.replace(" ", "").replace("0x", ""))
+        except ValueError as exc:
+            raise SystemExit(f"hats-relay-attach: --detach-bytes is not hex: {exc}") from exc
+        if not raw:
+            raise SystemExit("hats-relay-attach: --detach-bytes is empty")
+        return (raw,)
+    return DETACH_KEYS[args.detach_key]
+
+
 def terminal_size() -> tuple[int, int]:
     try:
         size = os.get_terminal_size()
@@ -86,7 +104,9 @@ async def _open(ws, args) -> dict:
     return reply
 
 
-async def _pump_stdin(ws, stop: asyncio.Future, detach: tuple[bytes, ...]) -> None:
+async def _pump_stdin(
+    ws, stop: asyncio.Future, detach: tuple[bytes, ...], keylog: str | None = None
+) -> None:
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[bytes] = asyncio.Queue()
 
@@ -96,6 +116,12 @@ async def _pump_stdin(ws, stop: asyncio.Future, detach: tuple[bytes, ...]) -> No
         except (BlockingIOError, OSError):
             return
         if data:
+            if keylog:
+                # What a key sends depends on the modes the ATTACHED TUI turned on, so
+                # this has to be captured in-session; a standalone probe sees a
+                # different terminal state and answers the wrong question.
+                with contextlib.suppress(OSError), open(keylog, "a") as fh:
+                    fh.write(f"{' '.join(f'{b:02x}' for b in data)}  {data!r}\n")
             queue.put_nowait(data)
 
     loop.add_reader(0, on_readable)
@@ -187,7 +213,7 @@ async def run_client(args) -> int:
         reply = await _open(ws, args)
         stop: asyncio.Future = asyncio.get_running_loop().create_future()
 
-        detach = DETACH_KEYS[args.detach_key]
+        detach = resolve_detach(args)
         with RawTerminal():
             os.write(1, TERM_RESET)
             os.write(
@@ -202,7 +228,7 @@ async def run_client(args) -> int:
                 signal.signal(signal.SIGWINCH, on_winch)
 
             tasks = [
-                asyncio.create_task(_pump_stdin(ws, stop, detach)),
+                asyncio.create_task(_pump_stdin(ws, stop, detach, args.log_keys)),
                 asyncio.create_task(_pump_output(ws, stop)),
             ]
             reason = await stop
@@ -230,9 +256,21 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"key that detaches without ending the session (default: {DEFAULT_DETACH})",
     )
     parser.add_argument(
+        "--detach-bytes",
+        default=None,
+        help="exact detach sequence as hex (e.g. '1b4f53'); overrides --detach-key",
+    )
+    parser.add_argument(
         "--keys",
         action="store_true",
-        help="print the bytes your terminal sends for each key, then exit",
+        help="print the bytes your terminal sends for each key, then exit (NOT in-session)",
+    )
+    parser.add_argument(
+        "--log-keys",
+        default=None,
+        metavar="PATH",
+        help="while attached, append every keystroke's bytes to PATH — this is the one "
+        "that sees what a live TUI's keyboard mode actually produces",
     )
     return parser
 
