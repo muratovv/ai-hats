@@ -165,6 +165,41 @@ def drop_legacy_claude_publish(project_dir: Path) -> list[str]:
     return removed
 
 
+def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
+    """Discard pre-HATS-1165 root skill & artifact mirrors (.agy/skills, .gemini/skills, .cline/skills, .agents).
+
+    Clean-root role materialization (HATS-1165) moves all session materializations
+    strictly inside `.cache/sessions/<sid>/`. This function sweeps legacy root-level
+    materialization directories left over in project roots.
+    """
+    candidates = (
+        project_dir / ".agy" / "skills",
+        project_dir / ".gemini" / "skills",
+        project_dir / ".cline" / "skills",
+        project_dir / ".agents",
+    )
+    removed: list[str] = []
+    for cand in candidates:
+        if not cand.exists() and not cand.is_symlink():
+            continue
+        try:
+            rel = str(cand.relative_to(project_dir))
+        except ValueError:
+            continue
+        discard(cand, reason="legacy-root-skills-mirror", project_dir=project_dir)
+        removed.append(rel)
+        parent = cand.parent
+        if parent != project_dir and parent.is_dir():
+            try:
+                if not any(parent.iterdir()):
+                    parent.rmdir()  # safe-delete: ok empty-dir
+
+            except OSError:
+                pass
+    return removed
+
+
+
 def _is_safe_relative(base_dir: Path, name: str) -> bool:
     """:func:`_is_plain_child` generalized to nested relative entries
     (HATS-905: githooks/publish manifests list ``a/b`` paths); victims must
