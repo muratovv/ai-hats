@@ -44,7 +44,10 @@ def test_launch_session_invokes_human_pipeline(tmp_path: Path):
     assert initial["role"] == "judge"
     assert initial["interactive"] is True
     assert initial["project_dir"] == tmp_path
-    assert initial["provider"] == "claude"
+    # HATS-1218: the provider rides the composition payload, not a second
+    # funnel key beside it — no step ever read the old ``provider`` seed.
+    assert initial["composition"].provider.name == "claude"
+    assert "provider" not in initial
     assert initial["extra_args"] == ["--continue"]
     assert initial["tags"] == {"k": "v"}
 

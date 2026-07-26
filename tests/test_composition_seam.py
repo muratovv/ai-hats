@@ -86,6 +86,66 @@ def test_seam_interactive_requires_provider(tmp_path: Path):
             build_composition_payload(tmp_path, interactive=True)
 
 
+def _provider_seam_assembler() -> MagicMock:
+    """Assembler whose cfg names ``claude`` and whose role is already active.
+
+    An active role keeps ``first_run_hitl`` false on BOTH paths, so these tests
+    isolate provider resolution from the ``set_role`` side effect.
+    """
+    asm = _fake_assembler(["judge"])
+    asm.project_config.provider = "claude"
+    asm.project_config.active_role = "judge"
+    asm.project_config.default_role = "judge"
+    return asm
+
+
+def _resolved_provider(tmp_path: Path, **kwargs) -> str:
+    """The name ``build_composition_payload`` actually resolves a provider for."""
+    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    asm = _provider_seam_assembler()
+    with patch("ai_hats.assembler.Assembler", return_value=asm), \
+         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
+         patch("ai_hats.providers.get_provider") as get_provider:
+        build_composition_payload(tmp_path, role_override="judge", **kwargs)
+    return get_provider.call_args.args[0]
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_seam_explicit_provider_wins_over_cfg(tmp_path: Path, interactive: bool):
+    """HATS-1218 R4: an explicit override beats ``cfg.provider`` on BOTH paths.
+
+    Pre-fix the batch arm hard-read ``cfg.provider``, so ``ai-hats execute -p agy
+    --batch`` accepted the flag and ran the configured surface in silence.
+    """
+    assert _resolved_provider(
+        tmp_path, provider_name="agy", interactive=interactive,
+    ) == "agy"
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_seam_absent_override_falls_back_to_cfg(tmp_path: Path, interactive: bool):
+    """HATS-1218 R4, other half: no override still resolves ``cfg.provider``."""
+    assert _resolved_provider(
+        tmp_path, provider_name=None, interactive=interactive,
+    ) == "claude"
+
+
+def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
+    """HATS-1218: honouring ``-p`` on the batch path must not drag the
+    interactive-only ``set_role`` write along with it — the whole point of the
+    fix is that ``interactive`` keeps meaning (a) and stops meaning (b)."""
+    fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
+    asm = _fake_assembler([])
+    asm.project_config.provider = "claude"
+    asm.project_config.active_role = ""  # would be a first run, were it HITL
+    asm.project_config.default_role = "judge"
+    with patch("ai_hats.assembler.Assembler", return_value=asm), \
+         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
+         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+        build_composition_payload(tmp_path, provider_name="agy", interactive=False)
+    asm.set_role.assert_not_called()
+
+
 def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     """HATS-970: a hooks warning raised by the first-run set_role side effect is
     carried on payload.startup_warnings so WrapRunner surfaces it in the hold."""

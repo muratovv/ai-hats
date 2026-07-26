@@ -119,10 +119,12 @@ def build_composition_payload(
     """Compose the effective role once and bundle everything runners need.
 
     Ordering preserves the pre-HATS-865 observable sequence: explicit-role
-    validation, the interactive provider check (former ``launch_provider``
-    message), provider resolution, then the HITL first-run ``set_role`` side
-    effect. ``strict=False`` skips the explicit-role raises for tolerant
-    callers (retro reviewer spawn — HATS-271 owns its failure mode).
+    validation, the provider check (former ``launch_provider`` message),
+    provider resolution, then the HITL first-run ``set_role`` side effect.
+    ``strict=False`` skips the explicit-role raises for tolerant callers
+    (retro reviewer spawn — HATS-271 owns its failure mode). ``interactive``
+    gates ONLY that ``set_role`` persist — ``provider_name`` wins over
+    ``cfg.provider`` on either path (HATS-1218).
     """
     from ai_hats_observe import AuditWriter, Session
     from .providers import get_provider
@@ -135,16 +137,13 @@ def build_composition_payload(
         label="compose_role",
     )
 
-    if interactive:
-        eff_provider = _effective_provider(
-            cfg,
-            provider_name,
-            missing_hint="launch_provider: no provider configured. "
-            "Run: ai-hats config set -p <provider>",
-        )
-    else:
-        # Batch path never honoured a provider flag (SubAgentRunner read cfg).
-        eff_provider = cfg.provider
+    # HATS-1218: the batch arm used to hard-read cfg and drop the override here.
+    eff_provider = _effective_provider(
+        cfg,
+        provider_name,
+        missing_hint="launch_provider: no provider configured. "
+        "Run: ai-hats config set -p <provider>",
+    )
     provider = get_provider(eff_provider)
 
     startup_warnings: list[str] = []
