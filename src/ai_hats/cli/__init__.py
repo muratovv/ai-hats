@@ -261,7 +261,6 @@ def _launch_session(
         KEY_EXTRA_ARGS,
         KEY_INTERACTIVE,
         KEY_PROJECT_DIR,
-        KEY_PROVIDER,
         KEY_ROLE,
         KEY_SESSION_MGR,
         KEY_TAGS,
@@ -287,7 +286,6 @@ def _launch_session(
                     KEY_ROLE: role,
                     KEY_INTERACTIVE: True,
                     KEY_PROJECT_DIR: project_dir,
-                    KEY_PROVIDER: provider,
                     KEY_EXTRA_ARGS: list(extra_args or []),
                     KEY_TAGS: tags,
                     KEY_COMPOSITION: build_composition_payload(
