@@ -482,7 +482,8 @@ class WrapRunner:
             **session_env,
         }
         prompt_file = next(
-            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None
+            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
+            session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
         report = SessionReport(
             role=active_role,

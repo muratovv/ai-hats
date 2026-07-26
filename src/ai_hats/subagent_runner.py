@@ -238,7 +238,8 @@ class SubAgentRunner:
 
         # HATS-1216: persist launch record as role_materialization.json
         prompt_file = next(
-            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None
+            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
+            session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
         report = SessionReport(
             role=role_name,
