@@ -231,6 +231,19 @@ async def list_sessions(url: str, token: str = "") -> int:
     return 0
 
 
+async def hand_over(args) -> int:
+    """Start a session and print where to reach it, without taking the terminal.
+
+    The session outlives this process — the broker owns it — so this is the whole
+    flow for driving from a browser: run it, copy the link, close the shell.
+    """
+    async with connect(args.url, compression=None) as ws:
+        reply = await _open(ws, args)
+    print(reply["sid"])
+    print(browser_url(args.url, reply["sid"], args.token))
+    return 0
+
+
 async def run_client(args) -> int:
     if args.keys:
         return await probe_keys()
@@ -238,6 +251,8 @@ async def run_client(args) -> int:
         raise SystemExit("hats-relay-attach: a url is required (or use --keys)")
     if args.list:
         return await list_sessions(args.url, args.token)
+    if args.no_attach:
+        return await hand_over(args)
     async with connect(args.url, max_size=None, compression=None) as ws:
         reply = await _open(ws, args)
         stop: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -279,6 +294,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sid", default=None, help="attach to an existing session instead")
     parser.add_argument("--after-seq", type=int, default=None, help="resume from this sequence")
     parser.add_argument("--list", action="store_true", help="list live sessions and exit")
+    parser.add_argument(
+        "--no-attach",
+        action="store_true",
+        help="start the session, print its sid and browser link, and exit",
+    )
     parser.add_argument(
         "--token",
         default=os.environ.get("HATS_RELAY_TOKEN", ""),

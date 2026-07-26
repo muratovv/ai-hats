@@ -24,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", required=True, help="interface to bind (no default, on purpose)")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--binary", default="ai-hats", help="the ai-hats entry point to spawn")
+    # Not the project default: that resolves to agy here, and HATS-1188 excludes agy
+    # from the remote channel on ToS grounds. Pass --provider '' to take it anyway.
+    parser.add_argument(
+        "--provider",
+        default="claude",
+        help="provider for spawned sessions (default: claude; '' uses the project default)",
+    )
     parser.add_argument("--cwd", default=None, help="working directory for spawned sessions")
     parser.add_argument(
         "--web", action="store_true", help="also serve the browser client on the same port"
@@ -39,15 +46,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def make_argv_builder(binary: str):
+def make_argv_builder(binary: str, provider: str = ""):
     def argv_for(spec: dict) -> list[str]:
-        return [binary, "-r", spec["role"]]
+        argv = [binary]
+        if provider:
+            argv += ["-p", provider]
+        return [*argv, "-r", spec["role"]]
 
     return argv_for
 
 
 async def run(args: argparse.Namespace) -> int:
-    broker = Broker(make_argv_builder(args.binary), cwd=args.cwd)
+    broker = Broker(make_argv_builder(args.binary, args.provider), cwd=args.cwd)
     server = await serve_broker(
         broker, host=args.host, port=args.port, web_client=args.web, token=args.token
     )
