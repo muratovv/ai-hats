@@ -29,7 +29,7 @@ its full description. The index would be a 2-3x duplicate.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from claude_agent_sdk import ClaudeAgentOptions

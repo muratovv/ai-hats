@@ -616,6 +616,7 @@ class ClaudeSubagentEngine(SubagentEngine):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        artifacts: BuiltArtifacts | None = None,
     ) -> ProviderRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(

@@ -28,12 +28,13 @@ from ai_hats.paths import (
     gemini_md,
     session_cache_dir,
 )
+from ai_hats.providers import Provider
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
+
 
 def agy_user_settings_json() -> Path:
     from ai_hats.paths._discovery import tool_home
     return tool_home("gemini", "GEMINI_CONFIG_DIR") / "antigravity-cli" / "settings.json"
-from ai_hats.providers import Provider
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult

@@ -25,7 +25,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
-from .session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from .session_artifacts import BuiltArtifacts, RunMode
 from .session_report import SessionReport
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
