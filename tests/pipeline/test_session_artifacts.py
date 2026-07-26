@@ -12,7 +12,7 @@ from ai_hats.session_artifacts import (
     DeliveryMode,
     SessionPolicy,
 )
-from ai_hats.surfaces.claude.provider import ClaudeProvider, INJECTION_START
+from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 
 def test_session_artifacts_types():
@@ -78,8 +78,12 @@ def test_claude_build_session_artifacts_automate(tmp_path: Path):
         project_dir, result, session_id, run_mode="automate"
     , artifacts=BuiltArtifacts())
 
-    assert "system_prompt" in artifacts.sdk_options
-    assert INJECTION_START in artifacts.sdk_options["system_prompt"]
+    # HATS-1207 S3: AUTOMATE emits the SDK's preset+append shape — the same value
+    # sdk_options.py used to recompute — rather than the marker-wrapped HITL bytes.
+    sys_prompt = artifacts.sdk_options["system_prompt"]
+    assert sys_prompt["type"] == "preset"
+    assert sys_prompt["preset"] == "claude_code"
+    assert "append" in sys_prompt
     assert "settings" in artifacts.sdk_options
     assert artifacts.sdk_options["setting_sources"] == []
 

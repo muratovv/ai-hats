@@ -191,14 +191,6 @@ def test_build_first_user_message_wires_linked_context_after_ticket() -> None:
     assert "# LINKED_CONTEXT" not in msg_empty
 
 
-def _stub_result():
-    class _Result:
-        merged_injection = "ROLE TEXT"
-        priorities: list[str] = []
-
-    return _Result()
-
-
 def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
     """Agy live channel: _build_meta_prompt emits LINKED_CONTEXT after TICKET_CONTEXT."""
     project_dir = tmp_path / "proj"
@@ -222,7 +214,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
         ),
     )
     out = _runner(project_dir)._build_meta_prompt(
-        result=_stub_result(), provider=None, task="go", ticket_id="HATS-902"
+        role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id="HATS-902"
     )
     assert "# TICKET_CONTEXT" in out
     assert "# LINKED_CONTEXT" in out
@@ -235,6 +227,6 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
         TaskCard(id="HATS-903", title="lonely", state=TaskState.EXECUTE),
     )
     out_nolinks = _runner(project_dir)._build_meta_prompt(
-        result=_stub_result(), provider=None, task="go", ticket_id="HATS-903"
+        role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id="HATS-903"
     )
     assert "# LINKED_CONTEXT" not in out_nolinks

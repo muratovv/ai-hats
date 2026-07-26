@@ -1,14 +1,26 @@
-"""Characterization goldens per (surface, run_mode) pair (HATS-1207 S1).
+"""Characterization goldens per (surface, run_mode) — the refactor's net (HATS-1207 S1).
 
-Pins the baseline dry-run payload for each of the 6 (surface ∈ {claude, agy, cline})
-× (run_mode ∈ {hitl, automate}) pairs under default SessionPolicy().
+Pins the whole ``--dry-run --json`` payload for all six pairs under the default
+policy: values, not shapes. The predecessor asserted only ``isinstance(…, list)``
+and stayed green across S2–S4 while three behaviours changed under it — a net
+that cannot fail reads as coverage without being any.
 
-Recorded against master behavior before production builder refactor.
+Recorded AFTER S2–S4 landed, not before as the plan intended (the slices were
+committed first), so this is forward regression cover, not proof those slices
+preserved bytes; pre-refactor payloads are at ``2914fa6e``. Synthetic library +
+pinned ``HOME`` keep the payload dependent on this repo's code alone — but agy
+bakes absolute paths into ``hooks.json``, so adding a hook script to the fixture
+skill would make these goldens tmp-path flaky.
 """
+# comment-length: allow — the provenance caveat must not be trimmed away: a
+# reader who believes these goldens prove S2-S4 preserved bytes is misled.
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+
 import pytest
 
 from ai_hats.assembler import Assembler
@@ -17,102 +29,91 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import SessionPolicy
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+SURFACES = ["claude", "agy", "cline"]
+GOLDEN_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "artifact_builder_goldens"
+
+# Set to re-record every golden. Regenerating is a deliberate act: read the diff
+# and be able to say which slice caused each line of it, or you have laundered a
+# regression into the baseline.
+UPDATE = os.environ.get("AI_HATS_UPDATE_GOLDENS") == "1"
 
 
 @pytest.fixture
-def project_factory(tmp_path: Path):
-    """Fixture to build a temp project configured for a given provider."""
-    def _create(provider_name: str) -> Path:
-        project = tmp_path / f"proj_{provider_name}"
-        project.mkdir(parents=True, exist_ok=True)
-        ProjectConfig(
-            provider=provider_name,
-            library_paths=[str(LIBRARY_DIR)],
-            ai_hats_dir=".agent/ai-hats",
-            active_role="maintainer",
-            default_role="maintainer",
-        ).save(project / PROJECT_CONFIG)
-        asm = Assembler(project, library_paths=[LIBRARY_DIR])
-        asm.init()
-        asm.set_role("maintainer", provider_name=provider_name)
-        return project
-    return _create
+def project(tmp_path: Path, monkeypatch) -> Path:
+    """A composable project on a synthetic library, isolated from the user's home."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
 
-
-@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
-def test_golden_hitl_default_policy(project_factory, surface: str):
-    """Pin HITL dry-run output under default policy."""
-    project = project_factory(surface)
-    report = dry_run_hitl(project, role="maintainer", provider=surface, policy=SessionPolicy())
-    d = report.to_dict()
-
-    assert d["role"] == "maintainer"
-    assert d["provider"] == surface
-    assert d["run_mode"] == "hitl"
-    assert d["policy"] == {"context": True, "hooks": True, "settings": True}
-    assert isinstance(d["launch"], list)
-    assert len(d["launch"]) > 0
-    assert isinstance(d["env_keys"], list)
-    assert isinstance(d["materialized"], list)
-
-    # Surface-specific baseline checks
-    if surface == "claude":
-        assert any("--system-prompt-file" in arg for arg in d["launch"])
-    elif surface == "agy":
-        assert any("--add-dir" in arg for arg in d["launch"])
-    elif surface == "cline":
-        assert any("-i" == arg for arg in d["launch"])
-
-
-@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
-def test_golden_automate_default_policy(project_factory, surface: str):
-    """Pin AUTOMATE dry-run output under default policy."""
-    project = project_factory(surface)
-    report = dry_run_automate(
-        project, role="maintainer", provider=surface, task="test task", policy=SessionPolicy()
+    lib = tmp_path / "lib"
+    skill = lib / "skills" / "s"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: s\ndescription: x\n---\n# body\n")
+    role = lib / "roles" / "test-role"
+    role.mkdir(parents=True)
+    (role / "config.yaml").write_text(
+        "name: test-role\npriorities:\n  - Quality\n"
+        "composition:\n  skills: [s]\ninjection: Role body.\n"
     )
-    d = report.to_dict()
 
-    assert d["role"] == "maintainer"
-    assert d["provider"] == surface
-    assert d["run_mode"] == "automate"
-    assert d["policy"] == {"context": True, "hooks": True, "settings": True}
-    assert isinstance(d["launch"], list)
-    assert len(d["launch"]) > 0
-    assert isinstance(d["notes"], list)
-
-@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
-def test_policy_context_false_hitl(project_factory, surface: str):
-    """policy=SessionPolicy(context=False) suppresses CONTEXT for HITL mode across all surfaces."""
-    project = project_factory(surface)
-    report = dry_run_hitl(project, role="maintainer", provider=surface, policy=SessionPolicy(context=False))
-    d = report.to_dict()
-
-    if surface == "claude":
-        assert not any("--system-prompt-file" in arg for arg in d["launch"])
-    elif surface == "agy":
-        assert not any("--add-dir" in arg for arg in d["launch"])
-    elif surface == "cline":
-        assert not any("-s" in arg for arg in d["launch"])
-        # M5 regression check: cline HITL retains -i even when CONTEXT is suppressed
-        assert any("-i" == arg for arg in d["launch"])
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(proj / PROJECT_CONFIG)
+    asm = Assembler(proj, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role", provider_name="claude")
+    return proj
 
 
-@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
-def test_policy_context_false_automate(project_factory, surface: str):
-    """policy=SessionPolicy(context=False) suppresses CONTEXT for AUTOMATE mode across all surfaces."""
-    project = project_factory(surface)
-    report = dry_run_automate(
-        project, role="maintainer", provider=surface, task="test task", policy=SessionPolicy(context=False)
+def _normalize(obj, subs: list[tuple[str, str]]):
+    """Rewrite machine-specific absolute paths to stable tokens, recursively."""
+    if isinstance(obj, str):
+        for needle, token in subs:
+            obj = obj.replace(needle, token)
+        return obj
+    if isinstance(obj, list):
+        return [_normalize(o, subs) for o in obj]
+    if isinstance(obj, dict):
+        return {k: _normalize(v, subs) for k, v in obj.items()}
+    return obj
+
+
+def _payload(report, project: Path) -> dict:
+    # Longest first: <project> lives under <tmp>, so substituting <tmp> first
+    # would leave a half-rewritten project path behind.
+    subs = [
+        (str(project), "<project>"),
+        (str(project.parent / "home"), "<home>"),
+        (str(project.parent), "<tmp>"),
+    ]
+    return _normalize(report.to_dict(), subs)
+
+
+def _assert_golden(name: str, payload: dict) -> None:
+    path = GOLDEN_DIR / f"{name}.json"
+    if UPDATE:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        pytest.skip(f"recorded golden {name}")
+    assert path.is_file(), f"missing golden {path} — record it with AI_HATS_UPDATE_GOLDENS=1"
+    expected = json.loads(path.read_text())
+    assert payload == expected, (
+        f"{name}: the delivered session changed.\n"
+        "If the change is intended, say which slice caused it, then re-record "
+        "with AI_HATS_UPDATE_GOLDENS=1."
     )
-    d = report.to_dict()
 
-    if surface == "claude":
-        sys_arg = next((arg for arg in d["launch"] if arg.startswith("system_prompt=")), None)
-        assert sys_arg is None or "system_prompt=None" in sys_arg or "'append': ''" in sys_arg or "system_prompt={}" in sys_arg
-    elif surface in ("agy", "cline"):
-        # meta-prompt does not contain # SYSTEM_ROLE when context=False
-        launch_str = " ".join(d["launch"])
-        assert "# SYSTEM_ROLE" not in launch_str
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_golden_hitl_default_policy(project: Path, surface: str):
+    report = dry_run_hitl(project, role="test-role", provider=surface, policy=SessionPolicy())
+
+    _assert_golden(f"{surface}-hitl", _payload(report, project))
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_golden_automate_default_policy(project: Path, surface: str):
+    report = dry_run_automate(
+        project, role="test-role", provider=surface, task="demo", policy=SessionPolicy()
+    )
+
+    _assert_golden(f"{surface}-automate", _payload(report, project))
