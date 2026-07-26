@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
 from ..pipeline.keys import (
@@ -77,6 +78,51 @@ def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
             param_hint="--prompt",
         )
     return arg
+
+
+# Flags the HITL runner cannot act on: ``WrapRunner.run`` takes only
+# ``(extra_args, tags, pty_tap_factory)``. Param name → the spelling to echo.
+_BATCH_ONLY_FLAGS = (
+    ("model", "--model"),
+    ("isolation", "--isolation"),
+    ("ticket", "--ticket"),
+    ("as_json", "--json"),
+)
+
+
+def _reject_inert_flags(interactive: bool, extra_args: tuple[str, ...]) -> None:
+    """Refuse a flag the chosen mode cannot act on (HATS-1218).
+
+    The help text said "(batch only)" while the CLI accepted the flag and
+    dropped it, and ``--batch`` swallowed ``extra_args`` with no note at all —
+    the same accept-and-ignore shape as the provider override. Follows the
+    HATS-827 precedent below: fail at the boundary, naming the mode.
+    """
+    if not interactive:
+        if extra_args:
+            raise click.BadParameter(
+                f"extra args {list(extra_args)} are interactive-only — the "
+                "sub-agent runner takes none, so --batch would drop them. "
+                "Pass the prompt via --prompt, or use --interactive.",
+                param_hint="extra arguments",
+            )
+        return
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return
+    named = [
+        flag
+        for name, flag in _BATCH_ONLY_FLAGS
+        if ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+    ]
+    if named:
+        raise click.BadParameter(
+            f"{', '.join(named)} {'is' if len(named) == 1 else 'are'} batch-only "
+            "— the interactive runner cannot act on "
+            f"{'it' if len(named) == 1 else 'them'}. Drop "
+            f"{'it' if len(named) == 1 else 'them'}, or pass --batch.",
+            param_hint=", ".join(named),
+        )
 
 
 @click.command(
@@ -152,6 +198,7 @@ def execute_cmd(
             "'ai-hats agent <role> --task ...'; or pass -r/--role.",
             param_hint="--role",
         )
+    _reject_inert_flags(interactive, extra_args)
 
     try:
         tags = parse_tags(tags_raw)
@@ -162,9 +209,7 @@ def execute_cmd(
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
     if not interactive:
-        # HATS-1218: one Automate wiring, shared with ``ai-hats agent`` — which
-        # is why ``extra_args`` stops here: the pipeline forwards it on the HITL
-        # branch only, so batch never received it.
+        # HATS-1218: one Automate wiring, shared with ``ai-hats agent``.
         run_batch(
             project_dir,
             role=role,

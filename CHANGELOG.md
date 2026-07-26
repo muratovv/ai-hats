@@ -26,6 +26,17 @@ since the latest tag lives under **Unreleased** until the next release.
   the duplicated funnel seed and post-run report are one shared path, which is
   what let `execute` grow the flag while `agent` silently went without.
 
+- **`ai-hats execute` refuses a flag its mode cannot act on** (HATS-1218). The
+  provider override was one case of a class. `WrapRunner` accepts only
+  `(extra_args, tags)`, so `--model`, `--isolation`, `--ticket` and `--json`
+  were inert under `--interactive` — hedged as "(batch only)" in `--help` and
+  enforced nowhere; `SubAgentRunner` takes no `extra_args`, so `--batch`
+  swallowed trailing arguments with no note at all. **This changes shipped
+  behaviour**: each of those six combinations is now a usage error naming the
+  mode, following the existing precedent that `--batch` without `-r/--role` is
+  refused at the boundary. Defaults are unaffected — the check reads Click's
+  `ParameterSource`, so only a flag you actually typed can be refused.
+
 ### Changed
 
 - **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment
