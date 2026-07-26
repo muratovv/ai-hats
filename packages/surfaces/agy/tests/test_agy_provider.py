@@ -206,3 +206,33 @@ def test_agy_provider_detected_home_dirs() -> None:
     provider = AgyProvider()
     assert ".gemini" in provider.detected_home_dirs()
     assert ".agy" in provider.detected_home_dirs()
+
+
+def test_build_session_artifacts_automate_materializes_hooks_and_full_context(tmp_path: Path) -> None:
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+
+    repo_root = Path(__file__).parent.parent.parent.parent.parent
+    asm = Assembler(repo_root)
+    result = asm.composer.compose("maintainer")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    provider = AgyProvider()
+
+    artifacts = BuiltArtifacts()
+    provider.build_session_artifacts(
+        project, result, "sid-auto", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+    )
+
+    # Session hooks manifest must be written in AUTOMATE mode
+    cache_hooks = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-auto" / "hooks.json"
+    assert cache_hooks.is_file(), "hooks.json must be materialized in session cache under AUTOMATE mode"
+    data = json.loads(cache_hooks.read_text())
+    pre_tool_hooks = data.get("PreToolUse", [])
+    assert any("wt_gate.py" in str(h.get("command")) for h in pre_tool_hooks)
+
+    # Full context must contain PRIORITIES and RULES
+    assert artifacts.full_content is not None
+    assert "## PRIORITIES" in artifacts.full_content
+    assert "## RULES" in artifacts.full_content
+

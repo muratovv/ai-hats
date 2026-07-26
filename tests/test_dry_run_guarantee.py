@@ -94,7 +94,7 @@ def test_automate_no_longer_traverses_the_runner_bypass(project: Path, surface: 
 
     assert not any("bypass 2" in n for n in report.notes)
     assert report.escapes == ()
-    assert "# SYSTEM_ROLE" in " ".join(report.launch)
+    assert "Role body." in " ".join(report.launch)
 
 
 def test_claude_automate_delivers_the_builders_own_values(project: Path):

@@ -111,10 +111,14 @@ class ClineProvider(Provider):
 
     def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
         """Role sections inline in the meta-prompt — no flag."""
-        from ai_hats.session_artifacts import compose_role_context_sections
+        from ai_hats.placeholders import expand_path_placeholders
+        from ai_hats.role_catalog import expand_role_catalog
 
         self._cache_dir(project_dir, session_id, artifacts)
-        artifacts.full_content = compose_role_context_sections(result, project_dir)
+        prompt = self.build_system_prompt(result)
+        prompt = expand_path_placeholders(prompt, project_dir)
+        prompt = expand_role_catalog(prompt, project_dir)
+        artifacts.full_content = prompt
 
     # -- skills ----------------------------------------------------------------
 

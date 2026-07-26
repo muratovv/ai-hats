@@ -97,8 +97,8 @@ def test_automate_context_false_drops_the_role_sections(project: Path, surface: 
         policy=SessionPolicy(context=False),
     )
 
-    assert any("# SYSTEM_ROLE" in arg for arg in on.launch), "baseline"
-    assert not any("# SYSTEM_ROLE" in arg for arg in off.launch)
+    assert any("Role body." in arg for arg in on.launch), "baseline"
+    assert not any("Role body." in arg for arg in off.launch)
 
 
 def test_claude_automate_context_false_carries_no_role_text(project: Path):
