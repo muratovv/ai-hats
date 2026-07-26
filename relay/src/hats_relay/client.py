@@ -22,19 +22,20 @@ from websockets.exceptions import ConnectionClosed
 
 from . import wire
 
-# A TUI that turns on the kitty keyboard protocol (claude does — `\x1b[>1u`) makes the
-# terminal report control keys as CSI-u sequences instead of the legacy control byte,
-# so each key is matched in both encodings. `--keys` prints what actually arrives.
+# An attached TUI re-encodes control keys, so the legacy byte alone never matches.
+# Measured in-session: xterm modifyOtherKeys, `CSI 27 ; modifier ; codepoint ~`. Kitty
+# CSI-u forms kept for terminals speaking that; settle anything else with --log-keys.
 DETACH_KEYS: dict[str, tuple[bytes, ...]] = {
-    "ctrl-/": (b"\x1f", b"\x1b[47;5u"),
-    "ctrl-]": (b"\x1d", b"\x1b[93;5u"),
-    "ctrl-\\": (b"\x1c", b"\x1b[92;5u"),
-    "ctrl-o": (b"\x0f", b"\x1b[111;5u"),
-    "ctrl-g": (b"\x07", b"\x1b[103;5u"),
     "f12": (b"\x1b[24~", b"\x1b[57376u"),
+    "ctrl-/": (b"\x1f", b"\x1b[27;5;95~", b"\x1b[47;5u"),
+    "ctrl-]": (b"\x1d", b"\x1b[27;5;93~", b"\x1b[93;5u"),
+    "ctrl-\\": (b"\x1c", b"\x1b[27;5;92~", b"\x1b[92;5u"),
+    "ctrl-o": (b"\x0f", b"\x1b[27;5;111~", b"\x1b[111;5u"),
+    "ctrl-g": (b"\x07", b"\x1b[27;5;103~", b"\x1b[103;5u"),
 }
-# Ctrl-G opens $EDITOR in claude and Ctrl-O toggles its output, so both are taken.
-DEFAULT_DETACH = "ctrl-/"
+# Every ctrl- candidate is already bound inside the session (Ctrl-/ erases the input
+# line, Ctrl-G opens $EDITOR, Ctrl-O toggles output); F12 costs the user nothing.
+DEFAULT_DETACH = "f12"
 
 # ai-hats writes its own reset to its stdout, which under a broker goes nowhere. A
 # stale keyboard mode makes Enter arrive as \x1b[13u, i.e. a newline instead of submit.

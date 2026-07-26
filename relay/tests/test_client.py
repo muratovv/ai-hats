@@ -78,20 +78,38 @@ def test_a_refusal_surfaces_instead_of_hanging():
     run(scenario())
 
 
-def test_every_detach_key_matches_both_encodings():
-    """A TUI that enables the kitty keyboard protocol makes the terminal report control
-    keys as CSI-u sequences, so matching only the legacy byte silently never fires —
-    which is exactly how the first detach key failed in acceptance."""
+# Captured in-session with --log-keys, claude under tmux 3.6a. Two rounds of guessing
+# died here: the terminal speaks xterm modifyOtherKeys, not kitty CSI-u, and it reports
+# Ctrl-/ as codepoint 95 ('_'), not 47 ('/').
+MEASURED = {
+    "ctrl-/": b"\x1b[27;5;95~",
+    "f12": b"\x1b[24~",
+}
+
+
+@pytest.mark.parametrize("name, arriving", sorted(MEASURED.items()))
+def test_detach_matches_what_the_terminal_really_sends(name, arriving):
+    from hats_relay.client import DETACH_KEYS
+
+    assert arriving in DETACH_KEYS[name], f"{name} would not fire on {arriving!r}"
+
+
+def test_every_detach_key_carries_more_than_the_legacy_byte():
+    """Matching only the legacy byte is how the first two attempts silently failed."""
     from hats_relay.client import DEFAULT_DETACH, DETACH_KEYS
 
     assert DEFAULT_DETACH in DETACH_KEYS
     for name, patterns in DETACH_KEYS.items():
-        assert len(patterns) >= 2, f"{name} has no CSI-u alternative"
+        assert len(patterns) >= 2, f"{name} has a single encoding"
         assert all(patterns), name
-    # Measured on the supervisor's terminal during acceptance: Ctrl-/ sends 0x1f.
-    legacy, csi_u = DETACH_KEYS["ctrl-/"]
-    assert legacy == b"\x1f"
-    assert csi_u.startswith(b"\x1b[") and csi_u.endswith(b"u")
+
+
+def test_the_default_is_a_key_the_session_does_not_want():
+    """Ctrl-/ erases the input line in claude, Ctrl-G opens $EDITOR, Ctrl-O toggles
+    output. A detach key that steals a working binding is a bad trade."""
+    from hats_relay.client import DEFAULT_DETACH
+
+    assert not DEFAULT_DETACH.startswith("ctrl-")
 
 
 def test_explicit_detach_bytes_win_over_the_guessed_table():
