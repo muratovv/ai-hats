@@ -207,21 +207,13 @@ class SubAgentRunner:
             launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
         else:
             meta_prompt = self._build_meta_prompt(
-                result=result,
-                provider=provider,
+                role_context=artifacts.full_content or "",
                 task=task,
                 ticket_id=ticket_id,
             )
-            skill_args = provider.materialize_runtime_skills(
-                self.project_dir, result, session.session_id
-            )
             flags = provider.model_flags(model) if model else []
-            cmd = provider.get_cli_command() + skill_args + flags
+            cmd = provider.get_cli_command() + artifacts.cli_args + flags
             launch = provider.get_run_command(cmd, meta_prompt)
-            notes.append(
-                f"{provider.name}/automate: the role is delivered by the runner's "
-                "meta-prompt, not the builder (HATS-1207 bypass 2)."
-            )
 
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
@@ -551,29 +543,12 @@ class SubAgentRunner:
             f"{initial_message}\n"
         )
 
-    def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
+    def _build_meta_prompt(self, role_context: str, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
-        from .placeholders import expand_path_placeholders
-
         sections = []
 
-        # SYSTEM_ROLE — HATS-380: expand <ai_hats_dir> before the role/trait
-        # injection reaches the sub-agent inline. Canonical writer and provider
-        # build_session_prompt paths already expand; meta-prompt was the residual gap
-        # (roles like session-reviewer carry literal <ai_hats_dir> in injection).
-        merged = expand_path_placeholders(result.merged_injection, self.project_dir)
-        sections.append(f"# SYSTEM_ROLE\n{merged}")
-
-        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is intentionally
-        # NOT injected. On-data verification (154 prompts) showed it was ~5.4K
-        # tok of mostly-completed-task dead weight per sub-agent run, unused by
-        # the dominant consumer (session-reviewer). Sub-agents reach the backlog
-        # on-demand via the `ai-hats task` CLI.
-
-        # CONSTRAINTS
-        if result.priorities:
-            constraints = "\n".join(f"- {p}" for p in result.priorities)
-            sections.append(f"# CONSTRAINTS\n{constraints}")
+        if role_context:
+            sections.append(role_context)
 
         # TICKET_CONTEXT
         if ticket_id:
@@ -581,9 +556,7 @@ class SubAgentRunner:
             if ticket_context:
                 sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
 
-            # LINKED_CONTEXT (HATS-689) — directly-linked cards (parent epic +
-            # plan.md, plus depends_on/related/see_also). Live Agy channel;
-            # the Claude path mirrors this via build_first_user_message.
+            # LINKED_CONTEXT (HATS-689)
             linked_context = self._load_linked_context(ticket_id)
             if linked_context:
                 sections.append(f"# LINKED_CONTEXT\n{linked_context}")

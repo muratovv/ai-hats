@@ -142,27 +142,12 @@ def dry_run_automate(
     notes: list[str] = []
     if prov.name == PROVIDER_CLAUDE:
         launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-        notes.append(
-            "claude/automate: the engine recomputes system_prompt and plugins in "
-            "sdk_options.py and ignores the values shown here — these are the "
-            "builder's, not what the SDK receives (HATS-1207 bypass 1)."
-        )
     else:
-        # The runner's own path: materialize_runtime_skills + a runner-built
-        # meta-prompt, both around the builder (HATS-1207 bypass 2). It takes no
-        # port, so it writes — the escape detector below catches and undoes it.
-        skill_args = prov.materialize_runtime_skills(
-            project_dir, payload.result, DRY_RUN_SESSION_ID
-        )
+        role_ctx = artifacts.full_content or ""
+        meta_prompt = _meta_prompt(role_ctx, task, ticket_id)
         flags = prov.model_flags(model) if model else []
-        cmd = prov.get_cli_command() + skill_args + flags
-        launch = prov.get_run_command(
-            cmd, _meta_prompt(payload.result, project_dir, task, ticket_id)
-        )
-        notes.append(
-            f"{prov.name}/automate: the role is delivered by the runner's "
-            "meta-prompt, not the builder (HATS-1207 bypass 2)."
-        )
+        cmd = prov.get_cli_command() + artifacts.cli_args + flags
+        launch = prov.get_run_command(cmd, meta_prompt)
 
     return SessionReport(
         role=payload.effective_role,
@@ -179,13 +164,10 @@ def dry_run_automate(
     )
 
 
-def _meta_prompt(result, project_dir: Path, task: str, ticket_id: str) -> str:
-    """The role sections a non-claude sub-agent receives (subagent_runner:517)."""
-    from .placeholders import expand_path_placeholders
-
-    sections = [f"# SYSTEM_ROLE\n{expand_path_placeholders(result.merged_injection, project_dir)}"]
-    if result.priorities:
-        sections.append("# CONSTRAINTS\n" + "\n".join(f"- {p}" for p in result.priorities))
+def _meta_prompt(role_context: str, task: str, ticket_id: str) -> str:
+    sections = []
+    if role_context:
+        sections.append(role_context)
     if task:
         sections.append(f"# TASK\n{task}")
     return "\n\n".join(sections)

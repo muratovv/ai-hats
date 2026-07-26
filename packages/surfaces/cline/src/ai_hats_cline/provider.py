@@ -100,6 +100,14 @@ class ClineProvider(Provider):
         elif category == ArtifactCategory.SKILLS:
             self._build_skills_artifact(project_dir, result, cache_dir, artifacts)
 
+    def get_cli_launch_args(
+        self, base_cmd: list[str], session_id: str, is_resume: bool
+    ) -> list[str]:
+        cmd = list(base_cmd)
+        if "-i" not in cmd and "--yolo" not in cmd:
+            cmd.insert(1, "-i")
+        return super().get_cli_launch_args(cmd, session_id, is_resume)
+
     def _build_context_artifact(
         self,
         project_dir: Path,
@@ -110,16 +118,15 @@ class ClineProvider(Provider):
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        prompt = self.build_system_prompt(result)
-        prompt = expand_path_placeholders(prompt, project_dir)
-        prompt = expand_role_catalog(prompt, project_dir)
-        artifacts.full_content = prompt
-
         if mode == RunMode.HITL:
-            # Interactive TUI + role inline; -i never meets the automate --yolo.
-            artifacts.cli_args.extend(["-i", "-s", prompt])
-        # AUTOMATE: role is delivered by the runner's meta_prompt (positional);
-        # adding -s here would double-deliver it.
+            prompt = self.build_system_prompt(result)
+            prompt = expand_path_placeholders(prompt, project_dir)
+            prompt = expand_role_catalog(prompt, project_dir)
+            artifacts.full_content = prompt
+            artifacts.cli_args.extend(["-s", prompt])
+        elif mode == RunMode.AUTOMATE:
+            from ai_hats.session_artifacts import compose_role_context_sections
+            artifacts.full_content = compose_role_context_sections(result, project_dir)
 
     def _build_skills_artifact(
         self,

@@ -82,26 +82,37 @@ def test_golden_automate_default_policy(project_factory, surface: str):
     assert isinstance(d["launch"], list)
     assert len(d["launch"]) > 0
     assert isinstance(d["notes"], list)
-    assert len(d["notes"]) > 0
+
+@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
+def test_policy_context_false_hitl(project_factory, surface: str):
+    """policy=SessionPolicy(context=False) suppresses CONTEXT for HITL mode across all surfaces."""
+    project = project_factory(surface)
+    report = dry_run_hitl(project, role="maintainer", provider=surface, policy=SessionPolicy(context=False))
+    d = report.to_dict()
 
     if surface == "claude":
-        assert any("system_prompt=" in arg for arg in d["launch"])
-    else:
-        assert any("bypass 2" in note for note in d["notes"])
-        if surface == "agy":
-            # agy AUTOMATE baseline: role is in meta-prompt, no --add-dir in launch
-            assert not any("--add-dir" in arg for arg in d["launch"])
+        assert not any("--system-prompt-file" in arg for arg in d["launch"])
+    elif surface == "agy":
+        assert not any("--add-dir" in arg for arg in d["launch"])
+    elif surface == "cline":
+        assert not any("-s" in arg for arg in d["launch"])
+        # M5 regression check: cline HITL retains -i even when CONTEXT is suppressed
+        assert any("-i" == arg for arg in d["launch"])
 
 
-def test_claude_automate_policy_context_false(project_factory):
-    """policy=SessionPolicy(context=False) drops system_prompt for Claude AUTOMATE."""
-    project = project_factory("claude")
+@pytest.mark.parametrize("surface", ["claude", "agy", "cline"])
+def test_policy_context_false_automate(project_factory, surface: str):
+    """policy=SessionPolicy(context=False) suppresses CONTEXT for AUTOMATE mode across all surfaces."""
+    project = project_factory(surface)
     report = dry_run_automate(
-        project, role="maintainer", provider="claude", task="test task",
-        policy=SessionPolicy(context=False)
+        project, role="maintainer", provider=surface, task="test task", policy=SessionPolicy(context=False)
     )
     d = report.to_dict()
-    assert d["policy"]["context"] is False
-    # launch contains system_prompt=... string representation of dict
-    sys_arg = next((arg for arg in d["launch"] if arg.startswith("system_prompt=")), None)
-    assert sys_arg is None or "system_prompt=None" in sys_arg or "'append': ''" in sys_arg or "system_prompt={}" in sys_arg
+
+    if surface == "claude":
+        sys_arg = next((arg for arg in d["launch"] if arg.startswith("system_prompt=")), None)
+        assert sys_arg is None or "system_prompt=None" in sys_arg or "'append': ''" in sys_arg or "system_prompt={}" in sys_arg
+    elif surface in ("agy", "cline"):
+        # meta-prompt does not contain # SYSTEM_ROLE when context=False
+        launch_str = " ".join(d["launch"])
+        assert "# SYSTEM_ROLE" not in launch_str

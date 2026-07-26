@@ -122,18 +122,21 @@ class AgyProvider(Provider):
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
-        prompt_content = self.build_system_prompt(result)
-        prompt_content = expand_path_placeholders(prompt_content, project_dir)
-        prompt_content = expand_role_catalog(prompt_content, project_dir)
+        if mode == RunMode.HITL:
+            prompt_content = self.build_system_prompt(result)
+            prompt_content = expand_path_placeholders(prompt_content, project_dir)
+            prompt_content = expand_role_catalog(prompt_content, project_dir)
 
-        artifacts.full_content = prompt_content
-        rules_dir = cache_dir / "rules"
-        artifacts.port.mkdir(rules_dir)
-        session_md = rules_dir / GEMINI_MD_FILENAME
-        artifacts.port.write_text(session_md, prompt_content)
-        artifacts.materialized.append(session_md)
-
-        artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
+            artifacts.full_content = prompt_content
+            rules_dir = cache_dir / "rules"
+            artifacts.port.mkdir(rules_dir)
+            session_md = rules_dir / GEMINI_MD_FILENAME
+            artifacts.port.write_text(session_md, prompt_content)
+            artifacts.materialized.append(session_md)
+            artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
+        elif mode == RunMode.AUTOMATE:
+            from ai_hats.session_artifacts import compose_role_context_sections
+            artifacts.full_content = compose_role_context_sections(result, project_dir)
 
     def _build_skills_artifact(
         self,
@@ -189,9 +192,10 @@ class AgyProvider(Provider):
                     "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
                 })
 
-        hooks_json = cache_dir / "hooks.json"
-        artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
-        artifacts.materialized.append(hooks_json)
+        if mode == RunMode.HITL:
+            hooks_json = cache_dir / "hooks.json"
+            artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
+            artifacts.materialized.append(hooks_json)
 
     def _build_settings_artifact(
         self,

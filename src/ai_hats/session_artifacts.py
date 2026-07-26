@@ -75,3 +75,16 @@ class BuiltArtifacts:
     port: Materializer = field(default_factory=ApplyMaterializer)
     # HATS-1207: policy rides BuiltArtifacts so per-category handlers can read it
     policy: SessionPolicy = field(default_factory=SessionPolicy)
+
+
+def compose_role_context_sections(result, project_dir: Path) -> str:
+    """Compose the # SYSTEM_ROLE and # CONSTRAINTS sections for AUTOMATE context (HATS-1207)."""
+    from .placeholders import expand_path_placeholders
+
+    sections = []
+    merged = expand_path_placeholders(result.merged_injection, project_dir)
+    sections.append(f"# SYSTEM_ROLE\n{merged}")
+    if result.priorities:
+        constraints = "\n".join(f"- {p}" for p in result.priorities)
+        sections.append(f"# CONSTRAINTS\n{constraints}")
+    return "\n\n".join(sections)
