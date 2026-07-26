@@ -152,11 +152,34 @@ def test_get_cli_command() -> None:
     assert provider.get_cli_command(["--foo", "bar"]) == ["agy", "--foo", "bar"]
 
 
+def test_get_cli_launch_args_translates_positional_prompt() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
+        "agy", "-i", "hello world", "--add-dir", "/path/to/rules"
+    ]
+
+
+def test_get_cli_launch_args_preserves_existing_prompt_flag() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "-i", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == base_cmd
+
+
+def test_get_cli_launch_args_with_model_flag_and_positional_prompt() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "--model", "gemini-2.5-pro", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
+        "agy", "-i", "hello world", "--model", "gemini-2.5-pro", "--add-dir", "/path/to/rules"
+    ]
+
+
 def test_get_run_command_with_harness_flags() -> None:
     provider = AgyProvider()
     flags = provider.model_flags("gemini-2.5-pro")
     cmd = provider.get_run_command(["agy"] + flags, "task prompt")
     assert cmd == ["agy", "--model", "gemini-2.5-pro", "-p", "task prompt"]
+
 
 
 def test_get_env(tmp_path: Path) -> None:
