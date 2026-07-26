@@ -167,7 +167,7 @@ def _sweep_proc(
     project_dir: Path, surface: ProcSurface, *, dry_run: bool = False
 ) -> SurfaceSweep | None:
     marker = project_dir / Path(surface.marker_relpath)
-    if not marker.is_file():
+    if not marker.exists():
         return None
     if owners.is_living(surface.owner_key):
         return None

@@ -174,8 +174,13 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
     """
     candidates = (
         project_dir / ".agy" / "skills",
+        project_dir / ".agy" / "rules",
         project_dir / ".gemini" / "skills",
+        project_dir / ".gemini" / "rules",
         project_dir / ".cline" / "skills",
+        project_dir / ".cline" / "plugins",
+        project_dir / ".cline" / "rules",
+        project_dir / ".clinerules",
         project_dir / ".agents",
     )
     removed: list[str] = []
@@ -193,9 +198,22 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
             try:
                 if not any(parent.iterdir()):
                     parent.rmdir()  # safe-delete: ok empty-dir
-
             except OSError:
                 pass
+
+    parents = (
+        project_dir / ".agy",
+        project_dir / ".gemini",
+        project_dir / ".cline",
+    )
+    for p in parents:
+        if p != project_dir and p.is_dir():
+            try:
+                if not any(p.iterdir()):
+                    p.rmdir()  # safe-delete: ok empty-dir
+            except OSError:
+                pass
+
     return removed
 
 
