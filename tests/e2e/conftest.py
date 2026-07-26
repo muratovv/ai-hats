@@ -239,10 +239,34 @@ def ai_hats_shim(tmp_path_factory) -> Path:
     pytest session tmp dir (NOT ``build/``, which wheel-building e2e tests clean).
     Worktree-portable: ``sys.executable`` is pytest's interpreter wherever it runs.
     """
+    _guard_interpreter_matches_checkout()
+
     shim = tmp_path_factory.mktemp("ai-hats-shim") / "ai-hats"
     shim.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" -m ai_hats "$@"\n')
     shim.chmod(0o755)
     return shim
+
+
+def _guard_interpreter_matches_checkout() -> None:
+    """Refuse to run e2e against another checkout's editable install (HATS-1218).
+
+    Silent wrong-code is worse than no coverage: the tier goes green on master's
+    behaviour while you believe it validated your branch."""
+    import os
+
+    from _helpers.env import clean_env
+    from _helpers.interpreter import (
+        foreign_source_checkout,
+        remedy,
+        resolve_ai_hats_init,
+    )
+
+    resolved = resolve_ai_hats_init(clean_env(os.environ))
+    if resolved is None:
+        return  # not importable without PYTHONPATH — a different failure, louder downstream
+    foreign = foreign_source_checkout(resolved, REPO_ROOT)
+    if foreign is not None:
+        pytest.fail(remedy(REPO_ROOT, foreign), pytrace=False)
 
 
 @pytest.fixture

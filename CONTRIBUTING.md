@@ -99,19 +99,44 @@ confirming which mode you're in.
 Prefer `make` targets to run tests with automatic timeout protection:
 
 - `make tests` (or `make unit` / `make check`) — run unit test suite bounded by timeout (default 300s, ~2x observed execution time).
-- `make e2e` — run e2e integration tests bounded by timeout (default 900s, ~2x observed execution time).
+- `make e2e` — run e2e integration tests bounded by timeout (default 3600s, ~2x observed execution time).
 - `make lint` — run ruff linter and formatter check.
 - `make help` — display available Makefile targets.
 
 Options:
+
 - Pass custom pytest flags via `ARGS`: `make tests ARGS="-k test_something"`
 - Override timeout via `TIMEOUT_TESTS` or `TIMEOUT_E2E`: `make e2e TIMEOUT_E2E=1200`
 
 Direct `pytest` invocation:
+
 - `pytest tests/` — the full suite (unit + integration).
 - `pytest tests/ -m smoke` — quick smoke gate used by the pre-commit hook.
 - `pytest tests/ -m integration` — slower tests that spawn real
   subprocesses or use a real PTY.
+
+### Running e2e from a git worktree
+
+E2E tests spawn a real `ai-hats` binary as `python -m ai_hats`, and the
+subprocess env strips `PYTHONPATH` on purpose so the tier exercises the
+*installed* artefact rather than a source-tree shadow. Inside a worktree the
+interpreter's editable install still points at the **main** checkout, so e2e
+would silently test code you did not write. `tests/e2e/conftest.py` refuses to
+run in that state and prints the fix; setting `PYTHONPATH` is not it. Install
+the worktree and use that interpreter:
+
+```bash
+uv venv /tmp/e2e-venv
+VIRTUAL_ENV=/tmp/e2e-venv uv pip install -e ".[dev]"
+/tmp/e2e-venv/bin/python -m pytest tests/e2e/...
+```
+
+The pre-commit smoke hook takes `pytest` from `PATH`, so hand it the same
+interpreter instead of reaching for `AI_HATS_SMOKE_SKIP=1`:
+
+```bash
+PATH=/tmp/e2e-venv/bin:$PATH git commit ...
+```
 
 A change is **not done** until:
 

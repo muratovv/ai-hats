@@ -220,10 +220,11 @@ def _dry_run_session(
     """Print what a launch would deliver; spawn nothing, write nothing."""
     import json as _json
 
-    from ..composition_seam import RoleNotFoundError
+    from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..dry_run import dry_run_hitl
     from ..providers import UnknownProviderError
     from ._helpers import (
+        _handle_missing_provider,
         _handle_role_not_found,
         _handle_unknown_provider,
         _project_dir,
@@ -237,6 +238,8 @@ def _dry_run_session(
         _handle_role_not_found(exc)
     except UnknownProviderError as exc:
         _handle_unknown_provider(exc)
+    except MissingProviderError as exc:
+        _handle_missing_provider(exc)
 
     if as_json:
         click.echo(_json.dumps(report.to_dict(), indent=2))
@@ -251,7 +254,11 @@ def _launch_session(
     tags: dict[str, str] | None = None,
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
-    from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..composition_seam import (
+        MissingProviderError,
+        RoleNotFoundError,
+        build_composition_payload,
+    )
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
@@ -261,7 +268,6 @@ def _launch_session(
         KEY_EXTRA_ARGS,
         KEY_INTERACTIVE,
         KEY_PROJECT_DIR,
-        KEY_PROVIDER,
         KEY_ROLE,
         KEY_SESSION_MGR,
         KEY_TAGS,
@@ -270,6 +276,7 @@ def _launch_session(
     )
     from ..providers import UnknownProviderError
     from ._helpers import (
+        _handle_missing_provider,
         _handle_role_not_found,
         _handle_unknown_provider,
         _project_dir,
@@ -287,7 +294,6 @@ def _launch_session(
                     KEY_ROLE: role,
                     KEY_INTERACTIVE: True,
                     KEY_PROJECT_DIR: project_dir,
-                    KEY_PROVIDER: provider,
                     KEY_EXTRA_ARGS: list(extra_args or []),
                     KEY_TAGS: tags,
                     KEY_COMPOSITION: build_composition_payload(
@@ -311,6 +317,9 @@ def _launch_session(
         # HATS-965: friendly stderr + exit 2 for an unavailable ``-p`` provider,
         # mirroring the RoleNotFoundError arm. See ``_handle_unknown_provider``.
         _handle_unknown_provider(exc)
+    except MissingProviderError as exc:
+        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
+        _handle_missing_provider(exc)
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 

@@ -14,10 +14,12 @@ Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
    ``maintainer`` role. We pass a VALID role so role validation/composition
    (which runs BEFORE the provider check) passes and the raise fires on the
    provider — not on the role.
-2. ``ai-hats -p <bogus> --role maintainer``. Only the bare-launch surface
-   honours ``-p``; the raise fires in ``build_composition_payload`` BEFORE
-   ``WrapRunner`` PTY-attaches, so this runs cleanly in a non-TTY subprocess
-   (no provider binary is ever spawned).
+2. ``ai-hats -p <bogus> --role maintainer``. The raise fires in
+   ``build_composition_payload`` BEFORE ``WrapRunner`` PTY-attaches, so this
+   runs cleanly in a non-TTY subprocess (no provider binary is ever spawned).
+   This file covers the bare-launch surface only; ``execute`` / ``agent`` are
+   covered by ``test_batch_provider_override.py`` (HATS-1218 — until then they
+   declared ``-p`` and dropped or rejected it).
 3. Assertions:
    - exit code == 2 (Click's UsageError convention; mirrors the role handler).
    - stderr names the bogus provider.

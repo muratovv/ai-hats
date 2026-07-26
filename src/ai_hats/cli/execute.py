@@ -18,14 +18,13 @@ go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 
 from ai_hats_wt import IsolationMode
-from ai_hats_observe.artifacts import METRICS_JSON
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,
@@ -35,17 +34,14 @@ from ..pipeline.keys import (
     KEY_MODEL,
     KEY_PROMPT_PATH,
     KEY_PROJECT_DIR,
-    KEY_PROVIDER,
     KEY_ROLE,
-    KEY_SESSION_DIR,
-    KEY_SESSION_ID,
     KEY_SESSION_MGR,
     KEY_TAGS,
     KEY_TICKET,
     KEY_TRACER_FACTORY,
     PIPELINE_EXECUTE,
 )
-from ._helpers import _project_dir, console
+from ._helpers import _project_dir
 
 
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
@@ -82,6 +78,51 @@ def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
             param_hint="--prompt",
         )
     return arg
+
+
+# Flags the HITL runner cannot act on: ``WrapRunner.run`` takes only
+# ``(extra_args, tags, pty_tap_factory)``. Param name → the spelling to echo.
+_BATCH_ONLY_FLAGS = (
+    ("model", "--model"),
+    ("isolation", "--isolation"),
+    ("ticket", "--ticket"),
+    ("as_json", "--json"),
+)
+
+
+def _reject_inert_flags(interactive: bool, extra_args: tuple[str, ...]) -> None:
+    """Refuse a flag the chosen mode cannot act on (HATS-1218).
+
+    The help text said "(batch only)" while the CLI accepted the flag and
+    dropped it, and ``--batch`` swallowed ``extra_args`` with no note at all —
+    the same accept-and-ignore shape as the provider override. Follows the
+    HATS-827 precedent below: fail at the boundary, naming the mode.
+    """
+    if not interactive:
+        if extra_args:
+            raise click.BadParameter(
+                f"extra args {list(extra_args)} are interactive-only — the "
+                "sub-agent runner takes none, so --batch would drop them. "
+                "Pass the prompt via --prompt, or use --interactive.",
+                param_hint="extra arguments",
+            )
+        return
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return
+    named = [
+        flag
+        for name, flag in _BATCH_ONLY_FLAGS
+        if ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+    ]
+    if named:
+        raise click.BadParameter(
+            f"{', '.join(named)} {'is' if len(named) == 1 else 'are'} batch-only "
+            "— the interactive runner cannot act on "
+            f"{'it' if len(named) == 1 else 'them'}. Drop "
+            f"{'it' if len(named) == 1 else 'them'}, or pass --batch.",
+            param_hint=", ".join(named),
+        )
 
 
 @click.command(
@@ -140,12 +181,22 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
-    from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..composition_seam import (
+        MissingProviderError,
+        RoleNotFoundError,
+        build_composition_payload,
+    )
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
+    from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
-    from ._helpers import _handle_role_not_found
+    from ._batch_launch import run_batch
+    from ._helpers import (
+        _handle_missing_provider,
+        _handle_role_not_found,
+        _handle_unknown_provider,
+    )
 
     # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
     # the boundary instead of crashing deep in worktree creation.
@@ -155,6 +206,7 @@ def execute_cmd(
             "'ai-hats agent <role> --task ...'; or pass -r/--role.",
             param_hint="--role",
         )
+    _reject_inert_flags(interactive, extra_args)
 
     try:
         tags = parse_tags(tags_raw)
@@ -163,6 +215,20 @@ def execute_cmd(
 
     project_dir = _project_dir()
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
+
+    if not interactive:
+        # HATS-1218: one Automate wiring, shared with ``ai-hats agent``.
+        run_batch(
+            project_dir,
+            role=role,
+            task=prompt_text,
+            provider=provider,
+            model=model,
+            isolation=isolation,
+            ticket=ticket,
+            tags=tags,
+            as_json=as_json,
+        )
 
     try:
         with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
@@ -173,10 +239,9 @@ def execute_cmd(
             # here so the harness contract (Path-only inputs) is preserved.
             final = h.run({
                 KEY_ROLE: role,
-                KEY_INTERACTIVE: interactive,
+                KEY_INTERACTIVE: True,
                 KEY_PROJECT_DIR: project_dir,
                 KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-                KEY_PROVIDER: provider,
                 KEY_MODEL: model,
                 KEY_ISOLATION: isolation,
                 KEY_TICKET: ticket,
@@ -186,7 +251,7 @@ def execute_cmd(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
-                    interactive=interactive,
+                    interactive=True,
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
@@ -195,34 +260,14 @@ def execute_cmd(
             })
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
-        # pre-fix this exception bubbled up as a 9-frame traceback. Both
-        # ``--interactive`` and ``--batch`` reach this catch because
-        # ``compose_role`` runs before either runner branches.
+        # pre-fix this exception bubbled up as a 9-frame traceback.
         _handle_role_not_found(exc)
+    except UnknownProviderError as exc:
+        # HATS-1218: bare ``ai-hats`` got this in HATS-965; ``execute`` declared
+        # the same ``-p`` and still leaked the traceback.
+        _handle_unknown_provider(exc)
+    except MissingProviderError as exc:
+        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
+        _handle_missing_provider(exc)
 
-    if interactive:
-        sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
-
-    # Batch mode: read metrics for --json output, print summary, exit.
-    session_id = final[KEY_SESSION_ID]
-    session_dir = final[KEY_SESSION_DIR]
-    metrics_path = session_dir / METRICS_JSON
-    metrics: dict = {}
-    if metrics_path.exists():
-        try:
-            metrics = json.loads(metrics_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            metrics = {}
-
-    if as_json:
-        payload = {
-            **metrics,
-            "session_id": session_id,
-            "session_dir": str(session_dir),
-        }
-        click.echo(json.dumps(payload, sort_keys=True))
-    else:
-        console.print(f"[green]Sub-agent completed[/]: {session_id}")
-        console.print(f"  Session dir: {session_dir}")
-
-    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))
+    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))

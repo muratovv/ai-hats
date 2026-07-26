@@ -1,32 +1,16 @@
-"""`ai-hats agent` — launch a sub-agent session with an isolated worktree."""
+"""`ai-hats agent` — launch a sub-agent session with an isolated worktree.
+
+A thin front-end over ``_batch_launch.run_batch``, shared with
+``ai-hats execute --batch`` (HATS-1218). What stays here is this command's own
+UX: a positional role and ``--task`` as literal text (``execute --prompt``
+resolves names/paths through ``initial_injections`` instead).
+"""
 
 from __future__ import annotations
-
-import json
-import sys
 
 import click
 
 from ai_hats_wt import IsolationMode
-from ai_hats_observe.artifacts import METRICS_JSON
-from ..pipeline.keys import (
-    KEY_COMPOSITION,
-    KEY_EXIT_CODE,
-    KEY_INTERACTIVE,
-    KEY_ISOLATION,
-    KEY_MODEL,
-    KEY_PROMPT_PATH,
-    KEY_PROJECT_DIR,
-    KEY_ROLE,
-    KEY_SESSION_DIR,
-    KEY_SESSION_ID,
-    KEY_SESSION_MGR,
-    KEY_TAGS,
-    KEY_TICKET,
-    KEY_TRACER_FACTORY,
-    PIPELINE_EXECUTE,
-)
-from ._helpers import console
 
 
 @click.command("agent")
@@ -34,6 +18,7 @@ from ._helpers import console
 @click.option("--ticket", default=None, help="Ticket/task ID for context")
 @click.option("--model", default=None, help="Model override")
 @click.option("--task", default=None, help="Task description")
+@click.option("--provider", "-p", default=None, help="Provider override")
 @click.option(
     "--isolation",
     default=IsolationMode.DISCARD.value,
@@ -68,6 +53,7 @@ def run_subagent(
     ticket: str | None,
     model: str | None,
     task: str | None,
+    provider: str | None,
     isolation: str,
     tags_raw: tuple[str, ...],
     as_json: bool,
@@ -83,12 +69,16 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
-    from ..composition_seam import RoleNotFoundError, build_composition_payload
-    from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
-    from ..pipeline.harness import PipelineHarness
+    from ..composition_seam import MissingProviderError, RoleNotFoundError
+    from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
-    from ._helpers import _handle_role_not_found, _project_dir
+    from ._batch_launch import run_batch
+    from ._helpers import (
+        _handle_missing_provider,
+        _handle_role_not_found,
+        _handle_unknown_provider,
+        _project_dir,
+    )
 
     if dry_run:
         import json as _json
@@ -98,10 +88,14 @@ def run_subagent(
         try:
             report = dry_run_automate(
                 _project_dir(), role=role, task=task or "",
-                ticket_id=ticket or "", model=model or "",
+                ticket_id=ticket or "", model=model or "", provider=provider,
             )
         except RoleNotFoundError as exc:
             _handle_role_not_found(exc)
+        except UnknownProviderError as exc:
+            _handle_unknown_provider(exc)
+        except MissingProviderError as exc:
+            _handle_missing_provider(exc)
         click.echo(
             _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),
             nl=as_json,
@@ -113,52 +107,14 @@ def run_subagent(
     except TagValidationError as e:
         raise click.BadParameter(str(e), param_hint="--tag") from e
 
-    project_dir = _project_dir()
-    try:
-        with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-            final = h.run({
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: False,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(task),
-                KEY_MODEL: model or "",
-                KEY_ISOLATION: isolation,
-                KEY_TICKET: ticket or "",
-                KEY_TAGS: tags or None,
-                KEY_COMPOSITION: build_composition_payload(
-                    project_dir, role_override=role,
-                ),
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            })
-    except RoleNotFoundError as exc:
-        # HATS-545 / S-CLI-05: same friendly handler as ``_launch_session``
-        # and ``execute_cmd``; pre-fix this exception bubbled up as a
-        # 9-frame traceback. Third "compose-then-run" entry-point to
-        # share the helper (HATS-547 set the precedent).
-        _handle_role_not_found(exc)
-
-    session_id = final[KEY_SESSION_ID]
-    session_dir = final[KEY_SESSION_DIR]
-    metrics_path = session_dir / METRICS_JSON
-    metrics: dict = {}
-    if metrics_path.exists():
-        try:
-            metrics = json.loads(metrics_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            metrics = {}
-
-    if as_json:
-        payload = {
-            **metrics,
-            "session_id": session_id,
-            "session_dir": str(session_dir),
-        }
-        click.echo(json.dumps(payload, sort_keys=True))
-    else:
-        console.print(f"[green]Sub-agent completed[/]: {session_id}")
-        console.print(f"  Session dir: {session_dir}")
-
-    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))
+    run_batch(
+        _project_dir(),
+        role=role,
+        task=task,
+        provider=provider,
+        model=model or "",
+        isolation=isolation,
+        ticket=ticket or "",
+        tags=tags,
+        as_json=as_json,
+    )

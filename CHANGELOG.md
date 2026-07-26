@@ -10,6 +10,43 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**
+  (HATS-1224). The compose seam raised a bare `RuntimeError` that no CLI arm
+  caught, so `ai-hats`, `--dry-run`, `execute --batch` and `agent` all crashed
+  with a 9-frame trace — while the adjacent failure, an *unknown* provider name,
+  had exited 2 with the available list since HATS-965. All of them now print the
+  same friendly block, name `ai-hats config set -p <provider>` as the fix, and
+  exit 2. The message no longer carries the `launch_provider:` prefix (a step
+  renamed in HATS-535) or the `materialize_system_prompt:` one — the typed error
+  carries its own text, so `config show-prompt` reports it identically.
+
+- **`-p/--provider` is honoured on the batch surfaces** (HATS-1218). The compose
+  seam read the configured provider whenever composition was non-interactive, so
+  `ai-hats execute -p <x> --batch` accepted the flag and launched the surface
+  from `ai-hats.yaml` instead — no warning, no error. **This changes shipped
+  behaviour**: that command now runs `<x>`. `interactive` still gates the
+  first-run `active_role` write; it no longer decides whether an explicit
+  override counts. `ai-hats agent` gains `-p/--provider` (also honoured by its
+  `--dry-run`), so a sub-agent surface can be chosen without editing
+  `ai-hats.yaml`, and both commands now report an unknown provider the way bare
+  `ai-hats` has since HATS-965 — named, with the available list, exit 2, no
+  traceback. Internally the two commands stopped hand-wiring one pipeline twice:
+  the duplicated funnel seed and post-run report are one shared path, which is
+  what let `execute` grow the flag while `agent` silently went without.
+
+- **`ai-hats execute` refuses a flag its mode cannot act on** (HATS-1218). The
+  provider override was one case of a class. `WrapRunner` accepts only
+  `(extra_args, tags)`, so `--model`, `--isolation`, `--ticket` and `--json`
+  were inert under `--interactive` — hedged as "(batch only)" in `--help` and
+  enforced nowhere; `SubAgentRunner` takes no `extra_args`, so `--batch`
+  swallowed trailing arguments with no note at all. **This changes shipped
+  behaviour**: each of those six combinations is now a usage error naming the
+  mode, following the existing precedent that `--batch` without `-r/--role` is
+  refused at the boundary. Defaults are unaffected — the check reads Click's
+  `ParameterSource`, so only a flag you actually typed can be refused.
+
 ### Changed
 
 - **`SubagentEngine.run` accepts optional keyword argument `artifacts`** (HATS-1207). Custom `SubagentEngine` subclasses receive prebuilt session artifacts (`BuiltArtifacts | None = None`) to avoid recomputing system prompt and plugins.
