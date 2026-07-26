@@ -23,7 +23,10 @@ const term = new Terminal({
   fontSize: 13,
   scrollback: 5000,
 });
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
 term.open(document.getElementById("terminal"));
+fit.fit();
 term.focus();
 
 const params = new URLSearchParams(location.search);
@@ -73,7 +76,11 @@ function onControl(text) {
   }
   if (message.event === "exit") {
     const detail = message.detail ? ` — ${message.detail}` : "";
-    say(`session exited (${message.returncode})${detail}`, "ended");
+    // A killed session is reaped without a code; "exited (null)" would read as a bug.
+    const how = message.returncode === null || message.returncode === undefined
+      ? "session ended"
+      : `session exited (${message.returncode})`;
+    say(`${how}${detail}`, "ended");
     return;
   }
   if (message.ok) say(`attached to ${message.sid}`);
@@ -95,3 +102,18 @@ socket.addEventListener("close", () => {
 });
 
 socket.addEventListener("error", () => say("could not reach the broker", "error"));
+
+// Telling the session is driven by xterm's own resize event, NOT by the observer:
+// the observer fires on things that do not change the grid (a scrollbar appearing, the
+// status line rewrapping), and fitting re-enters it. Sending from there put a burst of
+// resize frames between consecutive keystrokes — each one a repaint of a live TUI.
+term.onResize(({ cols, rows }) => {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ op: "resize", cols, rows }));
+});
+
+let resizeTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => fit.fit(), 150);
+}).observe(document.getElementById("terminal"));
