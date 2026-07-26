@@ -7,10 +7,12 @@ import os
 import subprocess
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats.cli.worktree import _effective_dir, _owner_root
 from ai_hats_wt import WorktreeManager
 from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
 from ai_hats.paths import worktrees_dir
@@ -590,3 +592,76 @@ class TestDirtyWorktreeSafety:
         assert not wt.exists()
         # Committed work merged
         assert (git_project / "saved.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# HATS-1205: where wt exec runs, and whose environment it runs with
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveDir:
+    """`-C` wins; else cwd when inside the worktree; else the worktree root."""
+
+    def test_cwd_inside_the_worktree_is_kept(self, tmp_path: Path, monkeypatch) -> None:
+        wt = tmp_path / "wt"
+        (wt / "sub").mkdir(parents=True)
+        monkeypatch.chdir(wt / "sub")
+        assert _effective_dir(wt) == (wt / "sub").resolve()
+
+    def test_cwd_outside_falls_back_to_the_root(self, tmp_path: Path, monkeypatch) -> None:
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        monkeypatch.chdir(outside)
+        assert _effective_dir(wt) == wt
+
+    def test_subdir_overrides_cwd(self, tmp_path: Path, monkeypatch) -> None:
+        wt = tmp_path / "wt"
+        (wt / "sub").mkdir(parents=True)
+        (wt / "other").mkdir()
+        monkeypatch.chdir(wt / "other")
+        assert _effective_dir(wt, "sub") == (wt / "sub").resolve()
+
+    @pytest.mark.parametrize("escape", ["..", "../..", "sub/../.."])
+    def test_escaping_subdir_is_refused(self, tmp_path: Path, escape: str) -> None:
+        wt = tmp_path / "wt"
+        (wt / "sub").mkdir(parents=True)
+        with pytest.raises(click.UsageError, match="escapes the worktree"):
+            _effective_dir(wt, escape)
+
+    def test_missing_subdir_is_refused(self, tmp_path: Path) -> None:
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        with pytest.raises(click.UsageError, match="not a directory"):
+            _effective_dir(wt, "nope")
+
+
+class TestOwnerRoot:
+    """PYTHONPATH roots at the nearest pyproject.toml owner, bounded by the wt."""
+
+    def test_nearest_owning_ancestor_wins(self, tmp_path: Path) -> None:
+        wt = tmp_path / "wt"
+        deep = wt / "sub" / "tests" / "unit"
+        deep.mkdir(parents=True)
+        (wt / "pyproject.toml").write_text("")
+        (wt / "sub" / "pyproject.toml").write_text("")
+        assert _owner_root(deep, wt) == (wt / "sub").resolve()
+
+    def test_plain_subdir_keeps_the_worktree_root(self, tmp_path: Path) -> None:
+        wt = tmp_path / "wt"
+        (wt / "plain").mkdir(parents=True)
+        (wt / "pyproject.toml").write_text("")
+        assert _owner_root(wt / "plain", wt) == wt.resolve()
+
+    def test_no_pyproject_anywhere_falls_back_to_the_worktree(self, tmp_path: Path) -> None:
+        wt = tmp_path / "wt"
+        (wt / "plain").mkdir(parents=True)
+        assert _owner_root(wt / "plain", wt) == wt
+
+    def test_search_never_climbs_above_the_worktree(self, tmp_path: Path) -> None:
+        """An outer pyproject must not capture a worktree subdirectory."""
+        (tmp_path / "pyproject.toml").write_text("")
+        wt = tmp_path / "wt"
+        (wt / "plain").mkdir(parents=True)
+        assert _owner_root(wt / "plain", wt) == wt

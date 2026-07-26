@@ -12,6 +12,20 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment
+  wrapper, not a teleporter: with a cwd inside the worktree the command runs
+  *there* instead of being moved to the worktree root (the published shape is
+  unchanged — a call from the main checkout still lands at the root). New
+  `-C/--cd <subdir>` names a worktree-relative directory from outside, refused
+  if it escapes the worktree. `PYTHONPATH` now roots at the project that **owns**
+  the run directory — the nearest ancestor with a `pyproject.toml`, bounded by
+  the worktree root — so a worktree subproject with its own venv gets its own
+  `src` rather than the outer repo's packages, while a plain subdirectory keeps
+  the worktree-root workspace. This closes the gap that left "always use
+  `wt exec`" unfollowable for a subproject and pushed agents onto absolute
+  worktree paths. Rides `ai-hats-wt` 0.4.1, whose `list_active` stops offering
+  worktrees git no longer backs (phantoms padded the selector-ambiguity list).
+
 - **hatrack is the default backlog manager** (HATS-1054). `trait-agent` composes
   the `hatrack` skill instead of `backlog-manager` — every library role drives
   the task lifecycle through the `rack` CLI; `backlog-manager` is composed by no
@@ -163,6 +177,17 @@ since the latest tag lives under **Unreleased** until the next release.
   naming the successor task. Zero behaviour change to the CLI, events, or wiring.
 
 ### Fixed
+
+- **An explicit `wt exec` worktree selector beats cwd** (HATS-1213). The selector
+  peel ran only in the ambiguity-refusal path, so it was skipped whenever the
+  worktree resolved on its own — from inside any linked worktree, and with a sole
+  active worktree. The branch name then stayed in the command vector: `wt exec
+  task/hats-1193 -- pytest` from inside another worktree ran `task/hats-1193` as
+  the program (`Command not found`, rc=127), and under `-C` the refusal named the
+  subdirectory of a worktree the caller never asked for — reading as a missing
+  subdir rather than an ignored selector. The selector is now peeled before cwd is
+  consulted, so it wins from anywhere; an unresolvable one refuses instead of
+  falling back. `ai-hats wt env` gains the same optional `[<branch>]` reach-in.
 
 - **Gemini wrap sessions get their session role again** (HATS-993). gemini-cli
   > =0.45 silently ignores `GEMINI_CLI_PROJECT_RULES_PATH`, so the per-session

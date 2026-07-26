@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Fixed
+
+- **`list_active` drops worktrees git no longer backs** (HATS-1205). It
+  documented "Prunes stale entries" but only dropped entries whose state JSON
+  had vanished, so a directory surviving without its `.git` link file (or one
+  `git worktree prune` disowned) stayed "active" forever and kept padding the
+  selector-ambiguity list callers build from it. Liveness is the presence of the
+  `.git` link — local, no subprocess. The directory is untouched; only the claim
+  is dropped.
+
 ## [0.4.0]
 
 ### Changed
