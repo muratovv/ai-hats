@@ -161,6 +161,15 @@ class Provider(abc.ABC):
         """
         logger.debug("Provider %s does not handle artifact category %s", self.name, category)
 
+    def handles_artifact_categories(self) -> bool:
+        """Whether this surface implements the ADR-0018 per-category seam.
+
+        False for a pre-ADR-0018 out-of-tree provider that overrides only
+        ``build_session_prompt``: routing it through the builder would deliver an
+        empty session rather than fail, since the category hook above no-ops.
+        """
+        return type(self).build_category_artifact is not Provider.build_category_artifact
+
     def build_session_artifacts(
         self,
         project_dir: Path,

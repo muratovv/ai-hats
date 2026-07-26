@@ -440,21 +440,35 @@ class WrapRunner:
         # session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
-                # HATS-452 (П2): no override channel on WrapRunner — the payload's
-        # composition flows straight into ``build_session_prompt``.
+        # HATS-452 (П2): no override channel on WrapRunner — the payload's
+        # composition flows straight into the builder.
+        builder_notices: list[StartupNotice] = []
         with provider.execution_context(self.project_dir):
             result = payload.result
-            artifacts = provider.build_session_artifacts(
-                self.project_dir,
-                result,
-                session.session_id,
-                run_mode=RunMode.HITL,
-                policy=payload.policy,
-                artifacts=BuiltArtifacts(),
-            )
-            session_args = artifacts.cli_args
-            session_env = artifacts.extra_env
-            meta_prompt = artifacts.full_content or ""
+            if provider.handles_artifact_categories():
+                artifacts = provider.build_session_artifacts(
+                    self.project_dir,
+                    result,
+                    session.session_id,
+                    run_mode=RunMode.HITL,
+                    policy=payload.policy,
+                    artifacts=BuiltArtifacts(),
+                )
+                session_args = artifacts.cli_args
+                session_env = artifacts.extra_env
+                meta_prompt = artifacts.full_content or ""
+            else:
+                # HATS-1207 R4: the legacy entry point predates SessionPolicy, so
+                # a non-default policy is dropped — loudly, not in silence.
+                session_args, session_env, meta_prompt = provider.build_session_prompt(
+                    self.project_dir, result, session.session_id
+                )
+                if payload.policy != SessionPolicy():
+                    builder_notices.append(StartupNotice(
+                        "warn",
+                        f"provider '{provider_name}' predates the artifact builder: "
+                        f"session policy {payload.policy} is NOT applied to it.",
+                    ))
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -517,6 +531,7 @@ class WrapRunner:
         # HATS-833: fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.
         startup_notices: list[StartupNotice] = []
+        startup_notices.extend(builder_notices)
         startup_notices.extend(self._resync_managed_hooks(session, result))
         startup_notices.extend(self._check_skill_collisions(session, result))
         startup_notices.extend(self._check_skill_script_collisions(session, result))
