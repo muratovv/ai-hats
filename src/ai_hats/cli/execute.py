@@ -18,14 +18,12 @@ go through ``PipelineHarness`` over a built-in YAML pipeline (HATS-269).
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 import click
 
 from ai_hats_wt import IsolationMode
-from ai_hats_observe.artifacts import METRICS_JSON
 from ..pipeline.keys import (
     KEY_COMPOSITION,
     KEY_EXIT_CODE,
@@ -37,15 +35,13 @@ from ..pipeline.keys import (
     KEY_PROJECT_DIR,
     KEY_PROVIDER,
     KEY_ROLE,
-    KEY_SESSION_DIR,
-    KEY_SESSION_ID,
     KEY_SESSION_MGR,
     KEY_TAGS,
     KEY_TICKET,
     KEY_TRACER_FACTORY,
     PIPELINE_EXECUTE,
 )
-from ._helpers import _project_dir, console
+from ._helpers import _project_dir
 
 
 def _resolve_prompt(arg: str | None, project_dir: Path) -> str | None:
@@ -145,6 +141,7 @@ def execute_cmd(
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
+    from ._batch_launch import run_batch
     from ._helpers import _handle_role_not_found
 
     # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
@@ -164,6 +161,22 @@ def execute_cmd(
     project_dir = _project_dir()
     prompt_text = _resolve_prompt(prompt_arg, project_dir)
 
+    if not interactive:
+        # HATS-1218: one Automate wiring, shared with ``ai-hats agent`` — which
+        # is why ``extra_args`` stops here: the pipeline forwards it on the HITL
+        # branch only, so batch never received it.
+        run_batch(
+            project_dir,
+            role=role,
+            task=prompt_text,
+            provider=provider,
+            model=model,
+            isolation=isolation,
+            ticket=ticket,
+            tags=tags,
+            as_json=as_json,
+        )
+
     try:
         with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
             # Interactive mode: provider CLI receives prompt as the first
@@ -173,7 +186,7 @@ def execute_cmd(
             # here so the harness contract (Path-only inputs) is preserved.
             final = h.run({
                 KEY_ROLE: role,
-                KEY_INTERACTIVE: interactive,
+                KEY_INTERACTIVE: True,
                 KEY_PROJECT_DIR: project_dir,
                 KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
                 KEY_PROVIDER: provider,
@@ -186,7 +199,7 @@ def execute_cmd(
                     project_dir,
                     role_override=role,
                     provider_name=provider,
-                    interactive=interactive,
+                    interactive=True,
                 ),
                 # HATS-867: the CLI (integrator) injects the observe writer
                 # handles — runners no longer construct them.
@@ -195,34 +208,7 @@ def execute_cmd(
             })
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
-        # pre-fix this exception bubbled up as a 9-frame traceback. Both
-        # ``--interactive`` and ``--batch`` reach this catch because
-        # ``compose_role`` runs before either runner branches.
+        # pre-fix this exception bubbled up as a 9-frame traceback.
         _handle_role_not_found(exc)
 
-    if interactive:
-        sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
-
-    # Batch mode: read metrics for --json output, print summary, exit.
-    session_id = final[KEY_SESSION_ID]
-    session_dir = final[KEY_SESSION_DIR]
-    metrics_path = session_dir / METRICS_JSON
-    metrics: dict = {}
-    if metrics_path.exists():
-        try:
-            metrics = json.loads(metrics_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            metrics = {}
-
-    if as_json:
-        payload = {
-            **metrics,
-            "session_id": session_id,
-            "session_dir": str(session_dir),
-        }
-        click.echo(json.dumps(payload, sort_keys=True))
-    else:
-        console.print(f"[green]Sub-agent completed[/]: {session_id}")
-        console.print(f"  Session dir: {session_dir}")
-
-    sys.exit(int(final.get(KEY_EXIT_CODE, metrics.get("exit_code", 1))))
+    sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
