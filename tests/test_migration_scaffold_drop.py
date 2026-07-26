@@ -85,9 +85,10 @@ def test_absent_file_is_a_noop(tmp_path: Path) -> None:
     assert not (asm.project_dir / "CLAUDE.md").exists()
 
 
-def test_scaffold_survives_while_user_rules_need_it(tmp_path: Path) -> None:
-    """HATS-1201: the block's @imports.md line is the only channel carrying
-    user-rules to Claude, so a project that has any must keep the scaffold."""
+def test_scaffold_dropped_even_when_user_rules_exist(tmp_path: Path) -> None:
+    """HATS-1203 inverts HATS-1201's gate: the composed prompt carries
+    user-rules now, so a non-empty imports.md no longer keeps the block alive.
+    The rules themselves stay — only the orphaned block goes."""
     asm = _project(tmp_path, SCAFFOLD)
     canonical = asm.project_dir / ".agent" / "ai-hats"
     (canonical / "user-rules").mkdir(parents=True)
@@ -96,7 +97,8 @@ def test_scaffold_survives_while_user_rules_need_it(tmp_path: Path) -> None:
 
     _m_strip_orphaned_claude_scaffold(asm)
 
-    assert (asm.project_dir / "CLAUDE.md").read_text() == SCAFFOLD
+    assert not (asm.project_dir / "CLAUDE.md").exists()
+    assert (canonical / "user-rules" / "mine.md").read_text() == "# Mine\n"
 
 
 def test_empty_aggregator_does_not_block_the_drop(tmp_path: Path) -> None:

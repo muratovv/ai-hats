@@ -4,8 +4,9 @@ Covers the four contracts (was HATS-408 P4 — relocated from
 ``self migrate-v07`` to inline ``bump``):
 
 1. Refusal on user edit (default behaviour): exit 1, no writes.
-2. ``--migrate-force`` bypass: sweep Tier 1+2, regenerate ``imports.md``,
-   persist yaml hardening (``imports_order`` strip + ``default_role`` heal),
+2. ``--migrate-force`` bypass: sweep Tier 1+2 — ``imports.md`` among them,
+   since HATS-1203 retired it — persist yaml hardening
+   (``imports_order`` strip + ``default_role`` heal),
    stderr WARN per overwritten file. **No auto-commit** — the worktree
    carries unstaged deletions, user commits at leisure.
 3. Idempotent rerun: second ``--migrate-force`` on the migrated tree is a
@@ -243,12 +244,12 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     # Tier 2 wiped — rules subdir (whole tree) AND hooks flat file.
     assert not paths["library_rule_dir"].exists()
     assert not paths["library_hook_flat"].exists()
-    # imports.md regenerated (v0.7 shape — sorted user-rules aggregator).
+    # HATS-1203: imports.md is swept, not regenerated — user-rules now ride
+    # the composed prompt, so the aggregator has no reader to serve.
     imports_md = paths["canonical_dir"] / "imports.md"
-    assert imports_md.is_file()
-    assert imports_md.read_text() == "@./user-rules/keep_me.md\n", \
-        f"unexpected imports.md content: {imports_md.read_text()!r}"
-    # MANAGED rewritten to list only imports.md (modulo a comment header).
+    assert not imports_md.exists(), \
+        f"retired aggregator survived the heal: {imports_md.read_text()!r}"
+    # MANAGED rewritten empty (modulo a comment header) — nothing is managed.
     managed = paths["canonical_dir"] / "MANAGED"
     assert managed.is_file()
     managed_entries = [
@@ -256,7 +257,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
         for line in managed.read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    assert managed_entries == ["imports.md"], managed_entries
+    assert managed_entries == [], managed_entries
     # user-rules untouched (defence in depth).
     assert paths["user_rule"].read_text() == "# user rule — DO NOT TOUCH\n"
 

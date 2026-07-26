@@ -279,8 +279,8 @@ class PrepareExecuteSessionStep(Step):
 
         if not (use_wizard and not role):
             console.print(
-                "  [dim]💡 Direct `claude` reads only user-rules. "
-                "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
+                "  [dim]💡 A direct provider session reads no ai-hats content. "
+                "Run `ai-hats execute [-r ROLE]` for role + user-rules.[/]"
             )
 
         if use_wizard and not role:

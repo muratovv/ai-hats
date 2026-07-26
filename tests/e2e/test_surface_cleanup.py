@@ -5,16 +5,16 @@ Validates the post-HATS-407 contracts via the **real** package invoked as
 subprocess invocations:
 
 - ``ai-hats self init`` — scaffolds dirs + ai-hats.yaml + ./CLAUDE.md +
-  .gitignore + writes user-rules-only imports.md. **No** role-content
-  materialization under ``<ai_hats_dir>/library/{rules,skills}/``,
-  **no** ``.last_backup/`` created.
+  .gitignore + the empty ``user-rules/`` landing zone (HATS-1203 retired the
+  ``imports.md`` aggregator). **No** role-content materialization under
+  ``<ai_hats_dir>/library/{rules,skills}/``, **no** ``.last_backup/`` created.
 
 - ``ai-hats config set -r ROLE`` — yaml-only flip of ``default_role``.
   ``active_role`` stays empty (runtime cache, written by session start
   only). No mutation under ``<ai_hats_dir>/library/``, no ``.last_backup/``.
 
-- ``ai-hats self bump`` — refreshes ``imports.md`` to pick up new
-  user-rule files; no role-content materialization, no ``.last_backup/``.
+- ``ai-hats self bump`` — leaves a dropped-in user-rule alone and
+  materializes nothing for it; no role-content, no ``.last_backup/``.
 
 Per ``dev_rule_e2e_gate``: real subprocess chain (real bash, the real package
 run as ``<dev-venv python> -m ai_hats`` — HATS-790 removed the
@@ -82,10 +82,15 @@ def fresh_project(tmp_path):
 
 
 def _run(cmd, *, cwd, expect_exit=0, timeout=60):
+    from _helpers.env import checkout_pythonpath
+
     env = os.environ.copy()
     # Avoid network / pip in the e2e: the binary on PATH is the one we
     # want under test.
     env["AI_HATS_NO_UPDATE"] = "1"
+    # HATS-1203: without this the subprocess imports the *installed* package —
+    # the main checkout — so a worktree's changes are never exercised.
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     result = subprocess.run(
         cmd, cwd=str(cwd), env=env,
         capture_output=True, text=True, timeout=timeout,
@@ -103,10 +108,11 @@ def _run(cmd, *, cwd, expect_exit=0, timeout=60):
 # --------------------------------------------------------------------- #
 
 
-def test_init_writes_yaml_scaffold_and_user_rules_aggregator_only(fresh_project):
+def test_init_writes_yaml_and_user_rules_dir_only(fresh_project):
     """``ai-hats self init -p claude -r assistant --no-wizard --no-update``
-    produces ai-hats.yaml + ./CLAUDE.md + imports.md aggregator. NO
-    library/rules/* or library/skills/* materialization. NO .last_backup/.
+    produces ai-hats.yaml + an empty ``user-rules/``. NO root ./CLAUDE.md
+    (HATS-1170), NO imports.md aggregator (HATS-1203), NO library/rules/* or
+    library/skills/* materialization, NO .last_backup/.
     """
     project = fresh_project
 
@@ -124,18 +130,15 @@ def test_init_writes_yaml_scaffold_and_user_rules_aggregator_only(fresh_project)
     # active_role is the runtime cache — empty until first session_start.
     assert "active_role: ''" in body or "active_role: \"\"" in body, body
 
-    # ./CLAUDE.md scaffold imports the canonical aggregator.
-    claude_md = project / "CLAUDE.md"
-    assert claude_md.exists(), "./CLAUDE.md scaffold not created"
-    assert "@./.agent/ai-hats/imports.md" in claude_md.read_text()
+    # HATS-1170 clean-root invariant: no scaffold in the project root.
+    assert not (project / "CLAUDE.md").exists(), "root CLAUDE.md must not be created"
 
-    # imports.md exists — empty (no user-rules yet) or with newline.
-    imports_md = project / ".agent" / "ai-hats" / "imports.md"
-    assert imports_md.exists(), "imports.md aggregator not created"
-    assert "@./" not in imports_md.read_text() or "user-rules" in imports_md.read_text()
+    # HATS-1203: the landing zone exists, the aggregator does not.
+    canon = project / ".agent" / "ai-hats"
+    assert (canon / "user-rules").is_dir(), "user-rules/ landing zone not created"
+    assert not (canon / "imports.md").exists(), "imports.md aggregator was retired"
 
     # NO role-content materialization (HATS-407 contract).
-    canon = project / ".agent" / "ai-hats"
     for forbidden in ("priorities.md", "role.md", "skills_index.md"):
         assert not (canon / forbidden).exists(), f"{forbidden} should not be materialized"
     for forbidden_dir in ("traits", "rules"):
@@ -175,7 +178,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
 
     canon = project / ".agent" / "ai-hats"
     # Snapshot canonical state immediately after init.
-    initial_imports = (canon / "imports.md").read_text()
+    initial_canonical = sorted(p.name for p in canon.iterdir())
 
     res = _run(
         [*AI_HATS, "config", "set", "-r", "sre"],
@@ -189,8 +192,8 @@ def test_config_set_role_is_yaml_only(fresh_project):
     assert "default_role: sre" in body, body
     assert "active_role: ''" in body or "active_role: \"\"" in body, body
 
-    # imports.md unchanged — config set must not regenerate.
-    assert (canon / "imports.md").read_text() == initial_imports
+    # Canonical tree unchanged — config set must not regenerate anything.
+    assert sorted(p.name for p in canon.iterdir()) == initial_canonical
 
     # No role-content materialization.
     for forbidden in ("priorities.md", "role.md", "skills_index.md"):
@@ -201,13 +204,14 @@ def test_config_set_role_is_yaml_only(fresh_project):
 
 
 # --------------------------------------------------------------------- #
-# 3. bump — regenerates user-rules aggregator, no role-content
+# 3. bump — leaves user-rules alone, materializes nothing
 # --------------------------------------------------------------------- #
 
 
-def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
+def test_bump_leaves_user_rules_unmaterialized(fresh_project):
     """``ai-hats self bump`` after dropping a new user-rule must:
-    - include the new rule in imports.md
+    - leave the rule file untouched and build no aggregator for it
+      (HATS-1203: delivery is the composed prompt, not an on-disk index)
     - NOT materialize role-content files
     - NOT create .last_backup/
     """
@@ -232,9 +236,11 @@ def test_bump_regenerates_user_rules_aggregator_only(fresh_project):
     res = _run([_sys.executable, "-m", "ai_hats._bump_internal"], cwd=project)
     assert "Bumped" in res.stdout, res.stdout
 
-    # imports.md picked up the new user-rule.
-    imports_body = (canon / "imports.md").read_text()
-    assert "@./user-rules/my-rule.md" in imports_body, imports_body
+    # The rule survives verbatim and no aggregator is built for it.
+    assert (user_rules / "my-rule.md").read_text() == (
+        "# my rule\n\nProject-specific guidance.\n"
+    )
+    assert not (canon / "imports.md").exists(), "imports.md aggregator was retired"
 
     # No role-content materialization (HATS-407 contract).
     for forbidden in ("priorities.md", "role.md", "skills_index.md"):

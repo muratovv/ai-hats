@@ -1,13 +1,12 @@
-"""Tests for the canonical writer after HATS-294.
+"""Tests for the canonical writer after HATS-1203.
 
-Post-HATS-294 contract:
-- ``write_canonical`` emits ONLY ``imports.md`` (a list of user-rules
-  ``@-import`` lines) plus the ``MANAGED`` manifest tracking it.
-- Framework content (priorities / role / traits / rules / skills_index)
-  is composed in memory per-session by ``Provider.build_session_prompt``
-  and never materialized on disk.
-- ``user-rules/`` is never deleted by stale cleanup.
-- Stale framework files from prior v0.6 layouts are swept on first call.
+Post-HATS-1203 contract:
+- ``write_canonical`` emits NO framework artefact — not even ``imports.md``,
+  which lost its last reader when HATS-1170 dropped the root ``CLAUDE.md``
+  scaffold. Only ``user-rules/`` and the (now empty) ``MANAGED`` manifest.
+- An ``imports.md`` from an older layout is swept like any stale managed file,
+  as are v0.6 framework files; ``user-rules/`` is never deleted.
+- Delivery moved to the composed prompt — ``test_user_rules_composition.py``.
 """
 
 from __future__ import annotations
@@ -77,20 +76,23 @@ def _canonical(project: Path) -> Path:
     return project / AGENT_DIR / CANONICAL_DIR
 
 
+def _manifest_entries(project: Path) -> list[str]:
+    manifest = (_canonical(project) / CANONICAL_MANIFEST).read_text()
+    return [ln for ln in manifest.splitlines() if ln.strip() and not ln.startswith("#")]
+
+
 # --------------------------------------------------------------------- #
-# imports.md is the only framework artefact on disk
+# No framework artefact on disk — imports.md included
 # --------------------------------------------------------------------- #
 
 
-def test_write_canonical_emits_imports_md_only(project_with_library: Path) -> None:
-    """No priorities.md / role.md / traits/ / rules/ / skills_index.md on disk."""
-    asm, result = _compose(project_with_library)
+def test_write_canonical_emits_no_framework_files(project_with_library: Path) -> None:
+    """HATS-1203: no imports.md, and no priorities/role/traits/rules/skills_index."""
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
     canonical = _canonical(project_with_library)
-    assert (canonical / "imports.md").is_file()
-
-    # Nothing else managed by ai-hats lives at the canonical root.
+    assert not (canonical / "imports.md").exists(), "aggregator was retired by HATS-1203"
     for stripped in ("priorities.md", "role.md", "skills_index.md"):
         assert not (canonical / stripped).exists()
     assert not (canonical / "traits").exists()
@@ -98,65 +100,47 @@ def test_write_canonical_emits_imports_md_only(project_with_library: Path) -> No
 
 
 def test_write_canonical_creates_empty_user_rules_dir(project_with_library: Path) -> None:
-    """``user-rules/`` is always created so the aggregator has a place to look."""
-    asm, result = _compose(project_with_library)
+    """``user-rules/`` is always created — it is the landing zone the composed
+    prompt reads at session time."""
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
     assert (_canonical(project_with_library) / USER_RULES_SUBDIR).is_dir()
 
 
-def test_write_canonical_manifest_tracks_imports_only(project_with_library: Path) -> None:
-    """MANAGED manifest tracks ``imports.md`` and nothing else."""
-    asm, result = _compose(project_with_library)
+def test_write_canonical_manifest_tracks_nothing(project_with_library: Path) -> None:
+    """MANAGED manifest is empty — the canonical layer manages no file now."""
+    asm, _ = _compose(project_with_library)
+    asm.write_canonical()
+    assert _manifest_entries(project_with_library) == []
+
+
+def test_write_canonical_leaves_only_user_rules_and_manifest(project_with_library: Path) -> None:
+    """The whole canonical root: ``user-rules/`` + the MANAGED manifest."""
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
-    manifest = (_canonical(project_with_library) / CANONICAL_MANIFEST).read_text()
-    entries = [
-        ln for ln in manifest.splitlines() if ln.strip() and not ln.startswith("#")
-    ]
-    assert entries == ["imports.md"]
+    on_disk = {p.name for p in _canonical(project_with_library).iterdir()}
+    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST}
 
 
-# --------------------------------------------------------------------- #
-# imports.md content: user-rules only
-# --------------------------------------------------------------------- #
-
-
-def test_imports_aggregator_empty_when_no_user_rules(project_with_library: Path) -> None:
-    """No user-rules → aggregator is an empty file (still tracked in manifest)."""
-    asm, result = _compose(project_with_library)
-    asm.write_canonical()
-    assert (_canonical(project_with_library) / "imports.md").read_text() == ""
-
-
-def test_imports_aggregator_lists_user_rules_sorted(project_with_library: Path) -> None:
-    """Aggregator emits ``@./user-rules/*.md`` in sorted order, one per line."""
+def test_write_canonical_does_not_aggregate_user_rules(project_with_library: Path) -> None:
+    """User-rules present → still no aggregator. They travel in the composed
+    prompt, not through an on-disk ``@``-import list.
+    """
     canonical = _canonical(project_with_library)
-    canonical.mkdir(parents=True, exist_ok=True)
     user_rules = canonical / USER_RULES_SUBDIR
-    user_rules.mkdir(exist_ok=True)
-    (user_rules / "z_last.md").write_text("z")
+    user_rules.mkdir(parents=True, exist_ok=True)
     (user_rules / "a_first.md").write_text("a")
-    (user_rules / "m_middle.md").write_text("m")
+    (user_rules / "z_last.md").write_text("z")
 
-    asm, result = _compose(project_with_library)
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
-    body = (canonical / "imports.md").read_text()
-    assert body == (
-        "@./user-rules/a_first.md\n"
-        "@./user-rules/m_middle.md\n"
-        "@./user-rules/z_last.md\n"
-    )
-
-
-def test_imports_aggregator_no_framework_refs(project_with_library: Path) -> None:
-    """No legacy ``@./priorities.md``, ``@./role.md``, ``@./traits/...``, etc."""
-    asm, result = _compose(project_with_library)
-    asm.write_canonical()
-
-    body = (_canonical(project_with_library) / "imports.md").read_text()
-    for forbidden in ("priorities.md", "role.md", "skills_index.md", "traits/", "rules/"):
-        assert forbidden not in body, f"aggregator must not reference {forbidden!r}"
+    assert not (canonical / "imports.md").exists()
+    assert _manifest_entries(project_with_library) == []
+    # The rules themselves are untouched data.
+    assert (user_rules / "a_first.md").read_text() == "a"
+    assert (user_rules / "z_last.md").read_text() == "z"
 
 
 # --------------------------------------------------------------------- #
@@ -165,14 +149,30 @@ def test_imports_aggregator_no_framework_refs(project_with_library: Path) -> Non
 
 
 def test_write_canonical_idempotent_no_op(project_with_library: Path) -> None:
-    """Re-running with the same result is a no-op for imports.md mtime."""
-    asm, result = _compose(project_with_library)
+    """Re-running is a no-op for the manifest mtime."""
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
-    imports_md = _canonical(project_with_library) / "imports.md"
-    first_mtime = imports_md.stat().st_mtime_ns
+    manifest = _canonical(project_with_library) / CANONICAL_MANIFEST
+    first_mtime = manifest.stat().st_mtime_ns
 
     asm.write_canonical()
-    assert imports_md.stat().st_mtime_ns == first_mtime
+    assert manifest.stat().st_mtime_ns == first_mtime
+
+
+def test_write_canonical_sweeps_pre_existing_imports_md(project_with_library: Path) -> None:
+    """HATS-1203 retirement heal: an aggregator from the previous layout, still
+    claimed by the manifest, is removed on the next refresh.
+    """
+    canonical = _canonical(project_with_library)
+    canonical.mkdir(parents=True, exist_ok=True)
+    (canonical / "imports.md").write_text("@./user-rules/mine.md\n")
+    (canonical / CANONICAL_MANIFEST).write_text("imports.md\n")
+
+    asm, _ = _compose(project_with_library)
+    asm.write_canonical()
+
+    assert not (canonical / "imports.md").exists(), "stale aggregator was not swept"
+    assert _manifest_entries(project_with_library) == []
 
 
 def test_write_canonical_sweeps_legacy_framework_files(project_with_library: Path) -> None:
@@ -194,7 +194,7 @@ def test_write_canonical_sweeps_legacy_framework_files(project_with_library: Pat
         "rules/rule_a.md\nimports.md\n"
     )
 
-    asm, result = _compose(project_with_library)
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
     assert not (canonical / "priorities.md").exists()
@@ -216,7 +216,7 @@ def test_write_canonical_does_not_delete_user_rules(project_with_library: Path) 
         f"{USER_RULES_SUBDIR}/my-rule.md\nimports.md\n"
     )
 
-    asm, result = _compose(project_with_library)
+    asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
     assert (user_rules / "my-rule.md").read_text() == "# user content"
@@ -231,7 +231,7 @@ def test_write_canonical_ignores_priorities_role_traits_rules_skills(
     project_with_library: Path,
 ) -> None:
     """Non-empty ``result.priorities`` / ``role_injection`` / etc. produce no
-    on-disk files. Regression test for HATS-294 contract: composition is
+    on-disk files. Regression test for the HATS-294 contract: composition is
     consumed per-session by Provider, never materialized.
     """
     asm, result = _compose(project_with_library)
@@ -242,11 +242,9 @@ def test_write_canonical_ignores_priorities_role_traits_rules_skills(
     assert result.skills
 
     asm.write_canonical()
-    canonical = _canonical(project_with_library)
 
-    # Only imports.md + user-rules/ subdir + MANAGED manifest on disk.
-    on_disk = {p.name for p in canonical.iterdir()}
-    assert on_disk == {"imports.md", USER_RULES_SUBDIR, CANONICAL_MANIFEST}
+    on_disk = {p.name for p in _canonical(project_with_library).iterdir()}
+    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST}
 
 
 def test_set_role_writes_canonical(project_with_library: Path) -> None:
@@ -255,4 +253,6 @@ def test_set_role_writes_canonical(project_with_library: Path) -> None:
     asm.init()
     asm.set_role("test-role", provider_name="claude")
 
-    assert (_canonical(project_with_library) / "imports.md").is_file()
+    canonical = _canonical(project_with_library)
+    assert (canonical / USER_RULES_SUBDIR).is_dir()
+    assert (canonical / CANONICAL_MANIFEST).is_file()

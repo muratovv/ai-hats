@@ -682,8 +682,8 @@ def set_role(
         console.print(f"  Skills: {len(result.skills)}")
         console.print(f"  Injections: {len(result.injections)}")
         console.print(
-            "  [dim]💡 Composed per-session. Direct `claude` reads only "
-            "user-rules; use `ai-hats execute` for role-loaded sessions.[/]"
+            "  [dim]💡 Composed per-session. A direct provider session reads no "
+            "ai-hats content — use `ai-hats execute` for role + user-rules.[/]"
         )
 
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
@@ -995,8 +995,8 @@ def status():
     # Health — HATS-497: prefixed with install-level diagnostics (version,
     # interpreter, venv, source, library, resolved-via, repo HEAD) so a
     # single ``config status`` answers both project-config and "where does
-    # my ai-hats live" questions. Existing project-side checks
-    # (imports.md, system_prompt) print after, with their OK/Missing icons.
+    # my ai-hats live" questions. The project-side check (system_prompt)
+    # prints after, with its OK/Missing icon.
     from .maintenance import _gather_install_info
 
     console.print("\n[bold]Health:[/]")
@@ -1172,8 +1172,8 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     else:
         console.print(f"[green]Bumped[/]: {result.name} (hooks re-installed)")
     console.print(
-        "  [dim]💡 Direct `claude` reads only user-rules. "
-        "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
+        "  [dim]💡 A direct provider session reads no ai-hats content. "
+        "Run `ai-hats execute [-r ROLE]` for role + user-rules.[/]"
     )
     # HATS-470: surface the trash-bin banner so the user knows where
     # snapshots from this bump live (if any).

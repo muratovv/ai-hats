@@ -2,7 +2,7 @@
 
 3-step swap (A → B → A) verifies that:
 - no root CLAUDE.md is ever created, whatever the role (HATS-1170).
-- .agent/ai-hats/imports.md restores exactly when the role is set back.
+- role content never lands in the canonical tree — it is composed per session.
 - Bump after a swap is byte-stable (idempotency end-to-end).
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.assembler import Assembler
+from ai_hats.assembler import CANONICAL_MANIFEST, Assembler
 
 # HATS-469: ``Assembler.bump()`` removed; use the test pipeline helper.
 from tests._assembler_helpers import bump_pipeline
@@ -84,20 +84,22 @@ def test_role_swap_tracks_active_role_in_profile(
 
 
 def test_bump_after_role_swap_is_byte_stable(project_two_roles: Path) -> None:
-    """HATS-1170: imports.md (user-rules aggregator) is the only survivor on
+    """HATS-1203: the MANAGED manifest is the last framework artefact left on
     disk, and it must be byte-stable across bump.
     """
     asm = Assembler(project_two_roles)
     asm.init(provider="claude")
     asm.set_role("role-a", provider_name="claude")
 
-    aggregator = project_two_roles / ".agent" / "ai-hats" / "imports.md"
-    before = md5(aggregator)
+    canonical = project_two_roles / ".agent" / "ai-hats"
+    manifest = canonical / CANONICAL_MANIFEST
+    before = md5(manifest)
 
     bump_pipeline(asm)
 
-    assert md5(aggregator) == before
+    assert md5(manifest) == before
     assert not (project_two_roles / "CLAUDE.md").exists()
+    assert not (canonical / "imports.md").exists()
 
 
 def test_set_role_agy_still_inline(tmp_path: Path) -> None:
@@ -125,6 +127,11 @@ def test_set_role_claude_skips_inline_update(project_two_roles: Path) -> None:
     asm.set_role("role-a", provider_name="claude")
 
     assert not (project_two_roles / "CLAUDE.md").exists()
-    assert "Role A injection." not in (
-        project_two_roles / ".agent" / "ai-hats" / "imports.md"
-    ).read_text()
+    # Nor anywhere in the canonical tree — the role is composed per session.
+    canonical = project_two_roles / ".agent" / "ai-hats"
+    leaked = [
+        p
+        for p in canonical.rglob("*")
+        if p.is_file() and "Role A injection." in p.read_text(errors="ignore")
+    ]
+    assert not leaked, f"role injection materialized into: {leaked}"
