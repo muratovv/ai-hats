@@ -15,8 +15,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ai_hats.composition_seam import (
+    MissingProviderError,
     RoleNotFoundError,
     build_composition_payload,
+    build_preview_payload,
 )
 
 
@@ -75,15 +77,37 @@ def test_seam_lenient_mode_skips_raises(tmp_path: Path):
     assert payload.result is fake_result
 
 
+def _provider_less_assembler() -> MagicMock:
+    """Assembler whose cfg carries an explicitly emptied ``provider:``."""
+    asm = _fake_assembler(["judge"])
+    asm.project_config.provider = ""
+    asm.project_config.active_role = "judge"
+    asm.project_config.default_role = "judge"
+    return asm
+
+
 def test_seam_interactive_requires_provider(tmp_path: Path):
     """The former launch-step 'no provider configured' contract, relocated."""
-    asm = _fake_assembler([])
-    asm.project_config.provider = ""
-    asm.project_config.active_role = ""
-    asm.project_config.default_role = ""
-    with patch("ai_hats.assembler.Assembler", return_value=asm):
-        with pytest.raises(RuntimeError, match="no provider configured"):
+    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler()):
+        with pytest.raises(MissingProviderError) as exc_info:
             build_composition_payload(tmp_path, interactive=True)
+    _assert_missing_provider_contract(exc_info.value)
+
+
+def test_preview_seam_requires_provider(tmp_path: Path):
+    """HATS-1224: the dry-run/preview twin raises the same typed error."""
+    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler()):
+        with pytest.raises(MissingProviderError) as exc_info:
+            build_preview_payload(tmp_path)
+    _assert_missing_provider_contract(exc_info.value)
+
+
+def _assert_missing_provider_contract(exc: MissingProviderError) -> None:
+    # RuntimeError base keeps `config show-prompt`'s broad catch friendly
+    # (HATS-1224), mirroring UnknownProviderError(ValueError).
+    assert isinstance(exc, RuntimeError)
+    assert "no provider configured" in str(exc)
+    assert "claude" in exc.available
 
 
 def _provider_seam_assembler() -> MagicMock:

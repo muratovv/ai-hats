@@ -69,11 +69,12 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
-    from ..composition_seam import RoleNotFoundError
+    from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
     from ._helpers import (
+        _handle_missing_provider,
         _handle_role_not_found,
         _handle_unknown_provider,
         _project_dir,
@@ -93,6 +94,8 @@ def run_subagent(
             _handle_role_not_found(exc)
         except UnknownProviderError as exc:
             _handle_unknown_provider(exc)
+        except MissingProviderError as exc:
+            _handle_missing_provider(exc)
         click.echo(
             _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),
             nl=as_json,
