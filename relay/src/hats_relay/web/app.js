@@ -16,6 +16,25 @@ function say(text, kind) {
   else delete status.dataset.kind;
 }
 
+// OSC (BEL- or ST-terminated), CSI, charset designation, two-character escapes, and
+// stray control bytes. Charset designation is here because `ESC ( B` otherwise loses
+// only its ESC and leaves a literal "(B" in the text.
+const CONTROL = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -\/]*[@-~]|\x1b[()*+][@-~]|\x1b[@-Z\\-_]|[\x00-\x08\x0b-\x1f\x7f]/g;
+const DETAIL_LIMIT = 200;
+
+function readable(raw) {
+  if (!raw) return "";
+  const text = raw
+    .replace(CONTROL, " ")
+    // A TUI's rules and padding are real characters, not escapes; left alone they eat
+    // the budget that the actual last words need.
+    .replace(/(.)\1{3,}/g, "$1$1$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Keep the END: a dying process says why in its last line, not its first.
+  return text.length > DETAIL_LIMIT ? `…${text.slice(-DETAIL_LIMIT)}` : text;
+}
+
 const term = new Terminal({
   convertEol: false,
   cursorBlink: true,
@@ -75,12 +94,15 @@ function onControl(text) {
     return;
   }
   if (message.event === "exit") {
-    const detail = message.detail ? ` — ${message.detail}` : "";
     // A killed session is reaped without a code; "exited (null)" would read as a bug.
     const how = message.returncode === null || message.returncode === undefined
       ? "session ended"
       : `session exited (${message.returncode})`;
-    say(`${how}${detail}`, "ended");
+    // `detail` is the child's raw stdio tail — kilobytes of escape sequences. It exists
+    // to explain a session that died on its own, so it is worth showing only when one
+    // did, and only after the terminal control is taken back out of it.
+    const detail = message.returncode ? readable(message.detail) : "";
+    say(detail ? `${how} — ${detail}` : how, "ended");
     return;
   }
   if (message.ok) say(`attached to ${message.sid}`);
