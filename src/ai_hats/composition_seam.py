@@ -65,11 +65,31 @@ def _project_context(project_dir: Path, role_override: str | None):
     return asm, cfg, (role_override or cfg.active_role or cfg.default_role)
 
 
-def _effective_provider(cfg, override: str | None, *, missing_hint: str) -> str:
+class MissingProviderError(RuntimeError):
+    """Raised by the compose seam when no provider is configured at all.
+
+    The sibling of ``UnknownProviderError`` (a *named* provider absent from the
+    registry) for the *unnamed* case; carries ``available`` so the CLI handler
+    renders without re-querying the registry. Subclasses ``RuntimeError`` so
+    ``config show-prompt``'s broad catch keeps working — the same
+    backwards-compat move as ``UnknownProviderError(ValueError)`` (HATS-1224).
+    """
+
+    def __init__(self, available: list[str]) -> None:
+        self.available = available
+        super().__init__(
+            "no provider configured in ai-hats.yaml. "
+            "Run: ai-hats config set -p <provider>"
+        )
+
+
+def _effective_provider(cfg, override: str | None) -> str:
     """The provider-fallback chain: override → cfg.provider, loud when absent."""
     eff = override or cfg.provider
     if not eff:
-        raise RuntimeError(missing_hint)
+        from .providers import provider_names
+
+        raise MissingProviderError(provider_names())
     return eff
 
 
@@ -119,8 +139,8 @@ def build_composition_payload(
     """Compose the effective role once and bundle everything runners need.
 
     Ordering preserves the pre-HATS-865 observable sequence: explicit-role
-    validation, the provider check (former ``launch_provider`` message),
-    provider resolution, then the HITL first-run ``set_role`` side effect.
+    validation, the provider check (``MissingProviderError``), provider
+    resolution, then the HITL first-run ``set_role`` side effect.
     ``strict=False`` skips the explicit-role raises for tolerant callers
     (retro reviewer spawn — HATS-271 owns its failure mode). ``interactive``
     gates ONLY that ``set_role`` persist — ``provider_name`` wins over
@@ -138,12 +158,7 @@ def build_composition_payload(
     )
 
     # HATS-1218: the batch arm used to hard-read cfg and drop the override here.
-    eff_provider = _effective_provider(
-        cfg,
-        provider_name,
-        missing_hint="launch_provider: no provider configured. "
-        "Run: ai-hats config set -p <provider>",
-    )
+    eff_provider = _effective_provider(cfg, provider_name)
     provider = get_provider(eff_provider)
 
     startup_warnings: list[str] = []
@@ -183,8 +198,9 @@ def build_preview_payload(
     """Read-only payload for the ``materialize_system_prompt`` preview surface.
 
     No ``set_role`` side effect, no hooks/analyzer — pure "what would the
-    agent see". Raises ``RuntimeError`` with the step's historical messages so
-    ``config show-prompt`` UX is unchanged.
+    agent see". Raises ``RuntimeError`` (the no-role case) or its
+    ``MissingProviderError`` subclass, both of which ``config show-prompt``
+    renders as a friendly exit 2.
     """
     from .materialize import compose_for_role
     from .providers import get_provider
@@ -196,12 +212,7 @@ def build_preview_payload(
             "(no --role override, no active_role/default_role in "
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
-    eff_provider = _effective_provider(
-        cfg,
-        provider,
-        missing_hint="materialize_system_prompt: no provider configured. "
-        "Set `provider:` in ai-hats.yaml or pass `provider=...`.",
-    )
+    eff_provider = _effective_provider(cfg, provider)
     result = compose_for_role(asm, eff_role)
     if result.errors:
         raise RuntimeError(
