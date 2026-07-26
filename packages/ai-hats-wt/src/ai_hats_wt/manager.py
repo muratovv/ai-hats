@@ -1470,9 +1470,20 @@ class WorktreeManager:
         for f in sorted(states_dir.glob("*.json")):
             key = f.stem
             mgr = cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=states_dir)
-            if mgr is not None:
+            if mgr is not None and mgr._is_live_worktree():
                 result.append(mgr)
         return result
+
+    def _is_live_worktree(self) -> bool:
+        """Whether git still backs this worktree (HATS-1205).
+
+        ``_load_by_key`` drops an entry only when the directory itself is gone;
+        a directory whose ``.git`` link file was removed (or that ``git worktree
+        prune`` disowned) stayed "active" forever and kept padding the
+        selector-ambiguity list. The ``.git`` link is the local, subprocess-free
+        signal — a linked worktree always carries one.
+        """
+        return self.worktree_path is not None and (self.worktree_path / ".git").exists()
 
     @staticmethod
     def is_inside_linked_worktree(path: Path) -> bool:

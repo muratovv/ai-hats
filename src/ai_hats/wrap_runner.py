@@ -26,6 +26,8 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
+from .session_artifacts import BuiltArtifacts, RunMode, SessionPolicy, assemble_launch_command
+from .session_report import SessionReport
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
@@ -442,11 +444,17 @@ class WrapRunner:
         # composition flows straight into ``build_session_prompt``.
         with provider.execution_context(self.project_dir):
             result = payload.result
-            session_args, session_env, meta_prompt = provider.build_session_prompt(
+            artifacts = provider.build_session_artifacts(
                 self.project_dir,
                 result,
                 session.session_id,
+                run_mode=RunMode.HITL,
+                policy=SessionPolicy(),
+                artifacts=BuiltArtifacts(),
             )
+            session_args = artifacts.cli_args
+            session_env = artifacts.extra_env
+            meta_prompt = artifacts.full_content or ""
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -458,6 +466,38 @@ class WrapRunner:
         # HATS-380 placeholder expansion). Saved before hooks / _pty_spawn so
         # the artefact survives early failures.
         session.save_meta_prompt(meta_prompt)
+
+        # Build CLI command with session ID for JSONL linkage
+        claude_session_id = str(uuid.uuid4())
+        cmd = assemble_launch_command(
+            provider,
+            extra_args=extra_args,
+            session_args=session_args,
+            provider_session_id=claude_session_id,
+        )
+
+        # HATS-1216: persist launch record as role_materialization.json
+        env_map = {
+            **provider.get_env(session.session_dir, self.project_dir),
+            **session_env,
+        }
+        prompt_file = next(
+            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
+            session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
+        )
+        report = SessionReport(
+            role=active_role,
+            provider=provider_name,
+            run_mode=RunMode.HITL.value,
+            policy=SessionPolicy(),
+            launch=cmd,
+            env=env_map,
+            prompt=prompt_file,
+            plan=artifacts.port.plan,
+            cwd=str(self.project_dir),
+        )
+        session.save_role_materialization(report.to_dict())
+
         session.log_sys(f"Session started: role={active_role}")
 
         # Log CLI restart gap from previous session (helps judge distinguish
@@ -484,12 +524,6 @@ class WrapRunner:
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
 
-        # Build CLI command with session ID for JSONL linkage
-        claude_session_id = str(uuid.uuid4())
-        cmd = provider.get_cli_command(extra_args)
-        cmd.extend(session_args)
-        _resuming = extra_args and any(f in extra_args for f in ("--resume", "--continue", "-c"))
-        cmd = provider.get_cli_launch_args(cmd, claude_session_id, _resuming)
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
 

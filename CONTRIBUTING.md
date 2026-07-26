@@ -20,7 +20,7 @@ For how the framework's reflection loop works see
 git clone git@github.com:muratovv/ai-hats.git && cd ai-hats
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest tests/ -v
+make tests
 ```
 
 Requirements:
@@ -96,6 +96,18 @@ confirming which mode you're in.
 
 ## Testing
 
+Prefer `make` targets to run tests with automatic timeout protection:
+
+- `make tests` (or `make unit` / `make check`) — run unit test suite bounded by timeout (default 300s, ~2x observed execution time).
+- `make e2e` — run e2e integration tests bounded by timeout (default 900s, ~2x observed execution time).
+- `make lint` — run ruff linter and formatter check.
+- `make help` — display available Makefile targets.
+
+Options:
+- Pass custom pytest flags via `ARGS`: `make tests ARGS="-k test_something"`
+- Override timeout via `TIMEOUT_TESTS` or `TIMEOUT_E2E`: `make e2e TIMEOUT_E2E=1200`
+
+Direct `pytest` invocation:
 - `pytest tests/` — the full suite (unit + integration).
 - `pytest tests/ -m smoke` — quick smoke gate used by the pre-commit hook.
 - `pytest tests/ -m integration` — slower tests that spawn real

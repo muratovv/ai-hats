@@ -17,7 +17,8 @@ from ai_hats.placeholders import (
     expand_fsm_edges_token,
     render_backlog_fsm_edges,
 )
-from ai_hats.plugin_dir import materialize_plugin_dir
+from ai_hats.materialization import ApplyMaterializer
+from ai_hats.surfaces.claude.plugin_dir import materialize_plugin_dir
 
 
 def _row(table: str, state_value: str) -> str:
@@ -107,7 +108,7 @@ def _make_skill(name: str, root: Path, body: str) -> ResolvedComponent:
 
 def test_materialize_substitutes_token_in_skill_md(tmp_path: Path) -> None:
     skill = _make_skill("hatrack", tmp_path / "src", body=f"# Hatrack\n\n{FSM_EDGES_TOKEN}\n")
-    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin")
+    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
     body = (out / "skills" / "hatrack" / "SKILL.md").read_text()
     assert FSM_EDGES_TOKEN not in body
     assert "| From state | Legal transitions |" in body
@@ -117,7 +118,7 @@ def test_materialize_substitutes_token_in_skill_md(tmp_path: Path) -> None:
 def test_materialize_leaves_non_token_skill_byte_identical(tmp_path: Path) -> None:
     original = "# Plain skill\n\nno tokens here.\n"
     skill = _make_skill("plain", tmp_path / "src", body=original)
-    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin")
+    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
     assert (out / "skills" / "plain" / "SKILL.md").read_text() == original
 
 
@@ -127,7 +128,7 @@ def test_materialize_is_layer_agnostic_for_arm_dir_source(tmp_path: Path) -> Non
     # AFTER resolution, so the override body gets the same substitution.
     arm_skills = tmp_path / "arms" / "new" / "skills"
     skill = _make_skill("hatrack", arm_skills, body=f"arm-dir body\n\n{FSM_EDGES_TOKEN}\n")
-    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin")
+    out = materialize_plugin_dir("some-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
     body = (out / "skills" / "hatrack" / "SKILL.md").read_text()
     assert FSM_EDGES_TOKEN not in body
     assert "| `brainstorm` |" in body

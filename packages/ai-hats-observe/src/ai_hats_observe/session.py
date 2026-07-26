@@ -20,6 +20,7 @@ from .artifacts import (
     METRICS_JSON,
     PTY_RAW_LOG,
     REASONING_LOG,
+    ROLE_MATERIALIZATION_JSON,
     TRACE_LOG,
     USAGE_JSON,
     session_dirname,
@@ -164,6 +165,7 @@ class Session:
         # ``session show``'s Usage section.
         self.usage_path = session_dir / USAGE_JSON
         self.meta_prompt_path = session_dir / META_PROMPT_TXT
+        self.role_materialization_path = session_dir / ROLE_MATERIALIZATION_JSON
         # HATS-220: pre-strip raw byte dump from PTY (master + stdin). Captures
         # CSI escapes (kitty-keyboard push/pop, DEC modes) that strip_ansi
         # erases from trace.log — needed to diagnose terminal-mode regressions
@@ -301,6 +303,13 @@ class Session:
     def save_meta_prompt(self, prompt: str) -> None:
         """Save the meta-prompt used for sub-agent execution."""
         self.meta_prompt_path.write_text(prompt)
+
+    def save_role_materialization(self, report_dict: dict) -> None:
+        """Save the launch-time role materialization report (HATS-1216)."""
+        atomic_write_text(
+            self.role_materialization_path,
+            json.dumps(report_dict, indent=2) + "\n",
+        )
 
     def get_env(self) -> dict[str, str]:
         """Environment variables for this session."""

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai_hats.materialization import Materializer
 
 MANAGED_DISPATCHER_TAG = "ai-hats:global-dispatcher"
 DISPATCHER_COMMAND = (
@@ -12,7 +16,7 @@ DISPATCHER_COMMAND = (
 )
 
 
-def ensure_global_dispatcher_hook(settings_path: Path) -> bool:
+def ensure_global_dispatcher_hook(settings_path: Path, port: "Materializer") -> bool:
     """Ensure universal fail-safe dispatcher is registered in AGY user-global settings.json.
 
     Idempotent and version-safe:
@@ -64,9 +68,8 @@ def ensure_global_dispatcher_hook(settings_path: Path) -> bool:
             event_list.append(desired_entry)
             changed = True
 
-    if changed:
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        content = (json.dumps(data, indent=2) + "\n").encode("utf-8")
-        settings_path.write_bytes(content)
+    if not changed:
+        return False
 
-    return changed
+    # A session mutating a user-owned file is news — the port records the key diff.
+    return port.merge_json(settings_path, data)

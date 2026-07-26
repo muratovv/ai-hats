@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -43,8 +43,6 @@ from ai_hats.constants import (
     INJECTION_START,
     INJECTION_END,
     PROVIDER_CLAUDE,
-    PUBLISH_AGGREGATOR_START,
-    PUBLISH_AGGREGATOR_END,
 )
 
 
@@ -145,10 +143,6 @@ class ClaudeProvider(Provider):
     def system_prompt_path(self, project_dir: Path) -> Path:
         return claude_md(project_dir)
 
-    def scaffold_template_relpath(self) -> str | None:
-        # HATS-1170: Root CLAUDE.md scaffold is no longer written (native-by-default).
-        return None
-
     def update_system_prompt(self, project_dir: Path, content: str) -> None:
         """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""
         pass
@@ -175,7 +169,7 @@ class ClaudeProvider(Provider):
     ) -> None:
         """Materialize a single category of session artifacts for ClaudeProvider (ADR-0018)."""
         cache_dir = session_cache_dir(project_dir, session_id)
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        artifacts.port.mkdir(cache_dir)
 
         if category == ArtifactCategory.CONTEXT:
             self._build_context_artifact(project_dir, result, cache_dir, run_mode, artifacts)
@@ -202,7 +196,7 @@ class ClaudeProvider(Provider):
         artifacts.full_content = full_content
 
         override_file = cache_dir / "prompt.md"
-        override_file.write_text(full_content)
+        artifacts.port.write_text(override_file, full_content)
         artifacts.materialized.append(override_file)
 
         if mode == RunMode.HITL:
@@ -219,9 +213,16 @@ class ClaudeProvider(Provider):
         mode: RunMode,
         artifacts: BuiltArtifacts,
     ) -> None:
-        skill_args = self.materialize_runtime_skills(project_dir, result, session_id)
+        # Not via materialize_runtime_skills: that is a published extension point
+        # and cannot take the port (HATS-1211 / HATS-1207 R4).
+        from .plugin_dir import materialize_plugin_dir
+
+        plugin_dir = cache_dir / "plugin"
+        materialize_plugin_dir(
+            result.name, result.skills, project_dir, plugin_dir, artifacts.port
+        )
         if mode == RunMode.HITL:
-            artifacts.cli_args.extend(skill_args)
+            artifacts.cli_args.extend(["--plugin-dir", str(plugin_dir)])
         plugin_skills_dir = cache_dir / "plugin" / "skills"
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_skills_dir)
         artifacts.materialized.append(cache_dir / "plugin")
@@ -236,7 +237,9 @@ class ClaudeProvider(Provider):
     ) -> None:
         desired = self._desired_runtime_entries(project_dir, result)
         cache_settings = cache_dir / "settings.json"
-        cache_settings.write_text(json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2))
+        artifacts.port.write_text(
+            cache_settings, json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2)
+        )
         artifacts.materialized.append(cache_settings)
 
         if mode == RunMode.HITL:
@@ -264,7 +267,8 @@ class ClaudeProvider(Provider):
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts."""
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL
+            project_dir, result, session_id, run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
@@ -293,10 +297,16 @@ class ClaudeProvider(Provider):
         produces a valid (empty) plugin-dir so the argument is always
         consistent — the no-skills case is free.
         """
-        from ai_hats.plugin_dir import materialize_plugin_dir
+        from ai_hats.materialization import ApplyMaterializer
 
+        from .plugin_dir import materialize_plugin_dir
+
+        # A published extension point cannot carry the port, so this path always
+        # writes — it is one of the builder bypasses HATS-1207 removes.
         plugin_dir = session_cache_dir(project_dir, session_id) / "plugin"
-        materialize_plugin_dir(result.name, result.skills, project_dir, plugin_dir)
+        materialize_plugin_dir(
+            result.name, result.skills, project_dir, plugin_dir, ApplyMaterializer()
+        )
         return ["--plugin-dir", str(plugin_dir)]
 
     def get_cli_command(self, args: list[str] | None = None) -> list[str]:
@@ -507,21 +517,6 @@ class ClaudeProvider(Provider):
         """Bool back-compat wrapper over :meth:`_sweep_stale_managed_tags`."""
         return bool(ClaudeProvider._sweep_stale_managed_tags(hooks_root, desired_tags))
 
-    @staticmethod
-    def _write_settings(settings_path: Path, data: dict, project_dir: Path) -> None:
-        from ai_hats_core.safe_delete import replace as _safe_replace
-
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        # HATS-470: .claude/settings.json is a user-owned file (carries
-        # the user's PreToolUse hooks). Snapshot via safe_delete.replace
-        # so a bad ai-hats overwrite is recoverable from trash.
-        _safe_replace(
-            settings_path,
-            (json.dumps(data, indent=2) + "\n").encode("utf-8"),
-            reason="claude-settings",
-            project_dir=project_dir,
-        )
-
     def build_meta_prompt(
         self,
         result: "CompositionResult",
@@ -617,7 +612,8 @@ class ClaudeSubagentEngine(SubagentEngine):
         timeout_s: int,
     ) -> ProviderRunResult:
         artifacts = self._provider.build_session_artifacts(
-            project_dir, result, session_id, run_mode="automate"
+            project_dir, result, session_id, run_mode="automate",
+            artifacts=BuiltArtifacts(),
         )
         opts = build_options(
             composition_result=result,

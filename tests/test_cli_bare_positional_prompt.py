@@ -1,0 +1,40 @@
+"""Tests for HATS-1202: bare ai-hats positional prompt parsing in _PassthroughGroup."""
+
+from unittest.mock import patch
+
+from click.testing import CliRunner
+
+from ai_hats.cli import main
+
+
+def test_bare_positional_prompt_passed_to_launch_session() -> None:
+    """Bare positional text (e.g. `ai-hats -p agy "hello world"`) should route to _launch_session."""
+    runner = CliRunner()
+    with patch("ai_hats.cli._launch_session") as mock_launch:
+        result = runner.invoke(main, ["-p", "agy", "hello world"])
+        assert result.exit_code == 0, result.output
+        mock_launch.assert_called_once()
+        _, kwargs = mock_launch.call_args
+        assert kwargs["provider"] == "agy"
+        assert kwargs["extra_args"] == ["hello world"]
+
+
+def test_bare_positional_unquoted_args_passed_to_launch_session() -> None:
+    """Unquoted positional words `ai-hats hello world` pass as list to extra_args."""
+    runner = CliRunner()
+    with patch("ai_hats.cli._launch_session") as mock_launch:
+        result = runner.invoke(main, ["hello", "world"])
+        assert result.exit_code == 0, result.output
+        mock_launch.assert_called_once()
+        _, kwargs = mock_launch.call_args
+        assert kwargs["extra_args"] == ["hello", "world"]
+
+
+def test_registered_subcommands_still_route_normally() -> None:
+    """Registered subcommands (e.g. `ai-hats task list`) MUST NOT be treated as positional prompts."""
+    runner = CliRunner()
+    with patch("ai_hats.cli._launch_session") as mock_launch:
+        result = runner.invoke(main, ["task", "--help"])
+        assert result.exit_code == 0, result.output
+        assert "Manage task cards and state machine" in result.output
+        mock_launch.assert_not_called()

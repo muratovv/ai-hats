@@ -24,22 +24,22 @@ from ._helpers import console
 
 class _PassthroughGroup(click.Group):
     """Click group that treats unknown flag-like leftover args as extras
-    instead of failing with 'No such command'. HATS-087.
+    instead of failing with 'No such command'. HATS-087 / HATS-1202.
 
     Click 8.x splits the parser leftover into ``ctx._protected_args[:1]``
     (the candidate subcommand name) and ``ctx.args[1:]``. If the first
-    leftover token starts with ``-``, it is a flag the user wants
-    forwarded to the underlying provider, NOT a subcommand. This override
-    moves those tokens back into ``ctx.args`` so the no-subcommand path
-    runs and the bare ``def main(ctx, ...)`` body sees them.
+    leftover token starts with ``-`` or is not a registered subcommand
+    (HATS-1202), it is treated as provider flags or a bare positional prompt,
+    NOT a subcommand. This override moves those tokens back into ``ctx.args``
+    so the no-subcommand path runs and the bare ``def main(ctx, ...)`` body
+    sees them.
 
     No-op on click 9.x where ``_protected_args`` is removed and ``args``
     already contains all leftover tokens — the ``getattr`` defensiveness
     handles the absence gracefully.
 
-    Caveat: subcommands whose name starts with ``-`` would be mis-routed.
-    The project has none today; if one is added, this override needs
-    updating.
+    Caveat: subcommands whose name starts with ``-`` or match a positional prompt
+    would be mis-routed; registered subcommands always take precedence.
 
     TODO(HATS-120b): drop once Click 9 is pinned.
     """
@@ -47,7 +47,9 @@ class _PassthroughGroup(click.Group):
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         result = super().parse_args(ctx, args)
         protected = getattr(ctx, "_protected_args", None)
-        if protected and protected[0].startswith("-"):
+        if protected and (
+            protected[0].startswith("-") or self.get_command(ctx, protected[0]) is None
+        ):
             ctx.args = list(protected) + list(ctx.args)
             ctx._protected_args = []
         return result
@@ -134,6 +136,25 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     "Stored in metrics.json under 'tags' for later query.",
 )
 @click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Report what the launch would deliver (prompt, args, materialized "
+    "files) and exit without spawning the provider. Writes nothing.",
+)
+@click.option(
+    "--dry-run-json",
+    "dry_run_json",
+    is_flag=True,
+    help="Machine-readable --dry-run payload.",
+)
+@click.option(
+    "--dry-run-full",
+    "dry_run_full",
+    is_flag=True,
+    help="With --dry-run: dump the composed prompt body, not just its path.",
+)
+@click.option(
     "--tree",
     is_flag=True,
     is_eager=True,
@@ -142,11 +163,19 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     help="Print the full command tree (man-style) and exit.",
 )
 @click.pass_context
-def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...]):
+def main(
+    ctx,
+    provider: str | None,
+    role: str | None,
+    tags_raw: tuple[str, ...],
+    dry_run: bool,
+    dry_run_json: bool,
+    dry_run_full: bool,
+):
     """ai-hats — AI agent role composition framework.
 
     Without a subcommand, launches a wrapped provider CLI session.
-    Unknown flags are passed through to the provider.
+    Positional text or unknown flags are passed through to the provider.
     """
     # HATS-213: heal a half-finished self-update (missing runtime dep) before
     # touching anything else. On success this re-execs the same command in a
@@ -158,6 +187,16 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
 
+        if dry_run or dry_run_json or dry_run_full:
+            _dry_run_session(
+                provider=provider,
+                role=role,
+                extra_args=ctx.args,
+                as_json=dry_run_json,
+                full=dry_run_full,
+            )
+            return
+
         try:
             tags = parse_tags(tags_raw)
         except TagValidationError as e:
@@ -168,6 +207,41 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
             extra_args=ctx.args,
             tags=tags or None,
         )
+
+
+def _dry_run_session(
+    *,
+    provider: str | None,
+    role: str | None,
+    extra_args: list[str] | None,
+    as_json: bool,
+    full: bool,
+) -> None:
+    """Print what a launch would deliver; spawn nothing, write nothing."""
+    import json as _json
+
+    from ..composition_seam import RoleNotFoundError
+    from ..dry_run import dry_run_hitl
+    from ..providers import UnknownProviderError
+    from ._helpers import (
+        _handle_role_not_found,
+        _handle_unknown_provider,
+        _project_dir,
+    )
+
+    try:
+        report = dry_run_hitl(
+            _project_dir(), role=role, provider=provider, extra_args=list(extra_args or [])
+        )
+    except RoleNotFoundError as exc:
+        _handle_role_not_found(exc)
+    except UnknownProviderError as exc:
+        _handle_unknown_provider(exc)
+
+    if as_json:
+        click.echo(_json.dumps(report.to_dict(), indent=2))
+    else:
+        click.echo(report.render(full=full), nl=False)
 
 
 def _launch_session(

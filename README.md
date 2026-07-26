@@ -155,6 +155,7 @@ Common scenarios:
 ```bash
 # Interactive session with role injection
 ai-hats                                    # current settings
+ai-hats -p agy "your prompt text"          # pass prompt directly as positional argument
 ai-hats -p claude -r architect             # override provider and role
 ai-hats --tag client=acme                  # custom tags in metrics.json
 

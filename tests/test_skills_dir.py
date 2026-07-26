@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
 
+from ai_hats.materialization import ApplyMaterializer
 from ai_hats.skills_dir import MANAGED_MARKER, materialize_skills_dir
 
 
@@ -29,7 +30,7 @@ def test_materializes_skill_and_writes_marker(tmp_path: Path) -> None:
     skill = _make_skill("alpha", skills_root)
     target = tmp_path / ".agy" / "skills"
 
-    materialize_skills_dir(target, [skill], tmp_path, "sid-1")
+    materialize_skills_dir(target, [skill], tmp_path, "sid-1", ApplyMaterializer())
 
     assert (target / "alpha" / "SKILL.md").is_file()
     refs = json.loads((target / MANAGED_MARKER).read_text())
@@ -43,8 +44,8 @@ def test_role_change_sweeps_unreferenced_skill(tmp_path: Path) -> None:
     beta = _make_skill("beta", skills_root)
     target = tmp_path / "skills"
 
-    materialize_skills_dir(target, [alpha], tmp_path, "sid-1")
-    materialize_skills_dir(target, [beta], tmp_path, "sid-1")
+    materialize_skills_dir(target, [alpha], tmp_path, "sid-1", ApplyMaterializer())
+    materialize_skills_dir(target, [beta], tmp_path, "sid-1", ApplyMaterializer())
 
     assert not (target / "alpha").exists()
     assert (target / "beta" / "SKILL.md").is_file()
@@ -57,8 +58,8 @@ def test_parallel_sessions_keep_each_others_skills(tmp_path: Path) -> None:
     beta = _make_skill("beta", skills_root)
     target = tmp_path / "skills"
 
-    materialize_skills_dir(target, [alpha], tmp_path, "sid-1")
-    materialize_skills_dir(target, [beta], tmp_path, "sid-2")
+    materialize_skills_dir(target, [alpha], tmp_path, "sid-1", ApplyMaterializer())
+    materialize_skills_dir(target, [beta], tmp_path, "sid-2", ApplyMaterializer())
 
     assert (target / "alpha" / "SKILL.md").is_file()
     assert (target / "beta" / "SKILL.md").is_file()
@@ -77,8 +78,14 @@ def test_concurrent_threads_both_skill_sets_present(tmp_path: Path) -> None:
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [
-            pool.submit(materialize_skills_dir, target, [alpha], tmp_path, "sid-1"),
-            pool.submit(materialize_skills_dir, target, [beta], tmp_path, "sid-2"),
+            pool.submit(
+                materialize_skills_dir, target, [alpha], tmp_path, "sid-1",
+                ApplyMaterializer(),
+            ),
+            pool.submit(
+                materialize_skills_dir, target, [beta], tmp_path, "sid-2",
+                ApplyMaterializer(),
+            ),
         ]
         for f in futures:
             f.result()
@@ -96,8 +103,8 @@ def test_user_authored_dir_untouched_by_sweep(tmp_path: Path) -> None:
     user_skill.mkdir(parents=True)
     (user_skill / "SKILL.md").write_text("# mine\n")
 
-    materialize_skills_dir(target, [alpha], tmp_path, "sid-1")
-    materialize_skills_dir(target, [], tmp_path, "sid-1")
+    materialize_skills_dir(target, [alpha], tmp_path, "sid-1", ApplyMaterializer())
+    materialize_skills_dir(target, [], tmp_path, "sid-1", ApplyMaterializer())
 
     assert (user_skill / "SKILL.md").is_file()
     assert not (target / "alpha").exists()
@@ -111,26 +118,11 @@ def test_expands_placeholder_in_skill_md_only(tmp_path: Path) -> None:
     (alpha.source_path / "asset.txt").write_text("verbatim <ai_hats_dir>\n")
     target = tmp_path / "skills"
 
-    materialize_skills_dir(target, [alpha], tmp_path, "sid-1")
+    materialize_skills_dir(target, [alpha], tmp_path, "sid-1", ApplyMaterializer())
 
     materialized = (target / "alpha" / "SKILL.md").read_text()
     assert "<ai_hats_dir>" not in materialized
     assert (target / "alpha" / "asset.txt").read_text() == "verbatim <ai_hats_dir>\n"
-
-
-def test_gitignore_entry_appended_once(tmp_path: Path) -> None:
-    skills_root = tmp_path / "src"
-    skills_root.mkdir()
-    alpha = _make_skill("alpha", skills_root)
-    target = tmp_path / ".agy" / "skills"
-
-    for _ in range(2):
-        materialize_skills_dir(
-            target, [alpha], tmp_path, "sid-1", gitignore_entry=".agy/skills/"
-        )
-
-    lines = (tmp_path / ".gitignore").read_text().splitlines()
-    assert lines.count(".agy/skills/") == 1
 
 
 def test_corrupt_marker_starts_fresh(tmp_path: Path) -> None:
@@ -141,7 +133,7 @@ def test_corrupt_marker_starts_fresh(tmp_path: Path) -> None:
     target.mkdir(parents=True)
     (target / MANAGED_MARKER).write_text("not json{")
 
-    materialize_skills_dir(target, [alpha], tmp_path, "sid-1")
+    materialize_skills_dir(target, [alpha], tmp_path, "sid-1", ApplyMaterializer())
 
     refs = json.loads((target / MANAGED_MARKER).read_text())
     assert refs == {"sid-1": ["alpha"]}

@@ -18,6 +18,7 @@ TRANSCRIPT_TXT = "transcript.txt"
 METRICS_JSON = "metrics.json"
 USAGE_JSON = "usage.json"
 META_PROMPT_TXT = "meta_prompt.txt"
+ROLE_MATERIALIZATION_JSON = "role_materialization.json"
 REASONING_LOG = "reasoning.log"
 PTY_RAW_LOG = "pty_raw.log"
 RETRO_LOG = "retro.log"
@@ -43,6 +44,7 @@ __all__ = [
     "METRICS_JSON",
     "USAGE_JSON",
     "META_PROMPT_TXT",
+    "ROLE_MATERIALIZATION_JSON",
     "REASONING_LOG",
     "PTY_RAW_LOG",
     "RETRO_LOG",
