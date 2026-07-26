@@ -60,11 +60,29 @@ AI_HATS = [sys.executable, "-m", "ai_hats"]
 
 def _ai_hats_available() -> bool:
     """True iff the dev-venv interpreter can import the package (HATS-790:
-    importability replaces the removed bin/ai-hats existence check)."""
-    probe = subprocess.run(
-        [sys.executable, "-c", "import ai_hats"], capture_output=True, text=True
+    importability replaces the removed bin/ai-hats existence check).
+
+    Carries HATS-1218's foreign-checkout guard too: this module builds its own
+    ``AI_HATS`` rather than taking the ``ai_hats_shim`` fixture, so it is the
+    one e2e file the conftest guard never sees. Unguarded it goes green on
+    another checkout's install — silently, which is worse than not running.
+    """
+    import os
+
+    from _helpers.env import clean_env
+    from _helpers.interpreter import (
+        foreign_source_checkout,
+        remedy,
+        resolve_ai_hats_init,
     )
-    return probe.returncode == 0
+
+    resolved = resolve_ai_hats_init(clean_env(os.environ))
+    if resolved is None:
+        return False
+    foreign = foreign_source_checkout(resolved, REPO_ROOT)
+    if foreign is not None:
+        pytest.fail(remedy(REPO_ROOT, foreign), pytrace=False)
+    return True
 
 
 @pytest.fixture
@@ -82,15 +100,10 @@ def fresh_project(tmp_path):
 
 
 def _run(cmd, *, cwd, expect_exit=0, timeout=60):
-    from _helpers.env import checkout_pythonpath
-
     env = os.environ.copy()
     # Avoid network / pip in the e2e: the binary on PATH is the one we
     # want under test.
     env["AI_HATS_NO_UPDATE"] = "1"
-    # HATS-1203: without this the subprocess imports the *installed* package —
-    # the main checkout — so a worktree's changes are never exercised.
-    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     result = subprocess.run(
         cmd, cwd=str(cwd), env=env,
         capture_output=True, text=True, timeout=timeout,
