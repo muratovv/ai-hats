@@ -1460,7 +1460,6 @@ def _seed_healthy_layers(project: Path) -> None:
     (ai_hats / "tracker" / "backlog").mkdir(parents=True)
     (ai_hats / "user-rules").mkdir()
     (ai_hats / "library" / "hooks").mkdir(parents=True)
-    (ai_hats / "imports.md").write_text("", encoding="utf-8")
     # HATS-1163: a composed wt_out hook, as HooksManager materializes it.
     wt = ai_hats / "library" / "wt-hooks"
     wt.mkdir(parents=True)

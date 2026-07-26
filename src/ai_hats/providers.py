@@ -258,7 +258,7 @@ class Provider(abc.ABC):
         """Assemble the shared system-prompt sections.
 
         Order: PRIORITIES → merged role/trait injection → always-on RULES →
-        optional AVAILABLE SKILLS index.
+        USER RULES → optional AVAILABLE SKILLS index.
 
         ``include_skills`` is the provider-specific toggle (HATS-701). Agy
         passes ``True`` — it has no native skill registry, so this index is
@@ -288,6 +288,21 @@ class Provider(abc.ABC):
                 if body:
                     rules_section += f"\n### {rule.name}\n{body}\n"
             sections.append(rules_section)
+
+        # HATS-1203: project-authored rules, after the framework's own so they
+        # read as the more specific layer. Unfiltered — see discover_user_rules.
+        user_rules_section = "## USER RULES\n"
+        emitted = False
+        for rule_path in result.user_rules:
+            try:
+                body = rule_path.read_text()
+            except OSError:
+                continue
+            if body.strip():
+                user_rules_section += f"\n### {rule_path.stem}\n{body}\n"
+                emitted = True
+        if emitted:
+            sections.append(user_rules_section)
 
         # Skills: index only (body loaded on demand via native provider).
         if include_skills and result.skills:

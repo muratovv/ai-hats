@@ -13,8 +13,8 @@ Two sub-cases amortize the heavy bootstrap setup:
      early role-check return).
   2. **Role-initialized project.** After ``ai-hats self init -p claude
      -r assistant``, ``config status`` prints role + composition tree
-     + install Health fields + existing project-side checks
-     (imports.md, system_prompt with OK/Missing icons).
+     + install Health fields + the project-side check
+     (system_prompt with an OK/Missing icon).
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``.

@@ -144,9 +144,7 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
 
 
 def _managed_reports(project_dir: Path) -> list[LayerReport]:
-    base = ai_hats_dir(project_dir)
     return [
-        _presence(Layer.MANAGED, "imports.md", base / "imports.md", _INIT, project_dir),
         _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
         _manifest_report("library/hooks", hooks_dir(project_dir), project_dir, absent_ok=False),
         _manifest_report(
