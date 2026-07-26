@@ -178,6 +178,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **An explicit `wt exec` worktree selector beats cwd** (HATS-1213). The selector
+  peel ran only in the ambiguity-refusal path, so it was skipped whenever the
+  worktree resolved on its own — from inside any linked worktree, and with a sole
+  active worktree. The branch name then stayed in the command vector: `wt exec
+  task/hats-1193 -- pytest` from inside another worktree ran `task/hats-1193` as
+  the program (`Command not found`, rc=127), and under `-C` the refusal named the
+  subdirectory of a worktree the caller never asked for — reading as a missing
+  subdir rather than an ignored selector. The selector is now peeled before cwd is
+  consulted, so it wins from anywhere; an unresolvable one refuses instead of
+  falling back. `ai-hats wt env` gains the same optional `[<branch>]` reach-in.
+
 - **Gemini wrap sessions get their session role again** (HATS-993). gemini-cli
   > =0.45 silently ignores `GEMINI_CLI_PROJECT_RULES_PATH`, so the per-session
   > composed role never reached the agent (it fell back to the last-applied
