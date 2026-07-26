@@ -177,6 +177,7 @@ class Provider(abc.ABC):
         """
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
+        artifacts.policy = policy
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(

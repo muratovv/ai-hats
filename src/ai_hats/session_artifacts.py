@@ -71,5 +71,7 @@ class BuiltArtifacts:
     materialized: list[Path] = field(default_factory=list)  # for tests/audit
     full_content: str | None = None  # composed prompt bytes (meta_prompt.txt)
     # HATS-1211: every session write goes through here; a PlanMaterializer turns
-    # the whole build into a dry-run. Appended last — positional ctor stays safe.
+    # the whole build into a dry-run.
     port: Materializer = field(default_factory=ApplyMaterializer)
+    # HATS-1207: policy rides BuiltArtifacts so per-category handlers can read it
+    policy: SessionPolicy = field(default_factory=SessionPolicy)

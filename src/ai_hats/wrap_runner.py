@@ -449,7 +449,7 @@ class WrapRunner:
                 result,
                 session.session_id,
                 run_mode=RunMode.HITL,
-                policy=SessionPolicy(),
+                policy=payload.policy,
                 artifacts=BuiltArtifacts(),
             )
             session_args = artifacts.cli_args
@@ -489,7 +489,7 @@ class WrapRunner:
             role=active_role,
             provider=provider_name,
             run_mode=RunMode.HITL.value,
-            policy=SessionPolicy(),
+            policy=payload.policy,
             launch=cmd,
             env=env_map,
             prompt=prompt_file,

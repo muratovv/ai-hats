@@ -52,6 +52,8 @@ class BuiltArtifacts:
     sdk_options: dict = field(default_factory=dict)
     materialized: list[Path] = field(default_factory=list)
     full_content: str | None = None
+    port: Materializer = field(default_factory=ApplyMaterializer)
+    policy: SessionPolicy = field(default_factory=SessionPolicy)
 ```
 
 Every provider implements the per-category materialization strategy:
