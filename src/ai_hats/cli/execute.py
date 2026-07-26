@@ -139,9 +139,10 @@ def execute_cmd(
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
+    from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
-    from ._helpers import _handle_role_not_found
+    from ._helpers import _handle_role_not_found, _handle_unknown_provider
 
     # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
     # the boundary instead of crashing deep in worktree creation.
@@ -208,5 +209,9 @@ def execute_cmd(
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
         # pre-fix this exception bubbled up as a 9-frame traceback.
         _handle_role_not_found(exc)
+    except UnknownProviderError as exc:
+        # HATS-1218: bare ``ai-hats`` got this in HATS-965; ``execute`` declared
+        # the same ``-p`` and still leaked the traceback.
+        _handle_unknown_provider(exc)
 
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
