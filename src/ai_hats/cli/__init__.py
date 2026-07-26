@@ -237,26 +237,14 @@ def _dry_run_session(
     """Print what a launch would deliver; spawn nothing, write nothing."""
     import json as _json
 
-    from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..dry_run import dry_run_hitl
-    from ..providers import UnknownProviderError
-    from ._helpers import (
-        _handle_missing_provider,
-        _handle_role_not_found,
-        _handle_unknown_provider,
-        _project_dir,
-    )
+    from ._helpers import _project_dir
 
-    try:
-        report = dry_run_hitl(
-            _project_dir(), role=role, provider=provider, extra_args=list(extra_args or [])
-        )
-    except RoleNotFoundError as exc:
-        _handle_role_not_found(exc)
-    except UnknownProviderError as exc:
-        _handle_unknown_provider(exc)
-    except MissingProviderError as exc:
-        _handle_missing_provider(exc)
+    # HATS-1228: the seam's typed errors render at the root group —
+    # cli/_helpers.dispatch_friendly_error.
+    report = dry_run_hitl(
+        _project_dir(), role=role, provider=provider, extra_args=list(extra_args or [])
+    )
 
     if as_json:
         click.echo(_json.dumps(report.to_dict(), indent=2))
@@ -271,13 +259,8 @@ def _launch_session(
     tags: dict[str, str] | None = None,
 ):
     """Launch a wrapped provider CLI session via the ``human`` pipeline."""
-    from ..composition_seam import (
-        MissingProviderError,
-        RoleNotFoundError,
-        build_composition_payload,
-    )
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
+    from ..composition_seam import build_composition_payload, make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.keys import (
         KEY_COMPOSITION,
@@ -291,52 +274,35 @@ def _launch_session(
         KEY_TRACER_FACTORY,
         PIPELINE_HUMAN,
     )
-    from ..providers import UnknownProviderError
-    from ._helpers import (
-        _handle_missing_provider,
-        _handle_role_not_found,
-        _handle_unknown_provider,
-        _project_dir,
-    )
+    from ._helpers import _project_dir
 
     project_dir = _project_dir()
 
-    try:
-        with PipelineHarness(PIPELINE_HUMAN, project_dir) as h:
-            # HATS-865: compose ONCE here (effective-role resolution + the
-            # first-run set_role side effect live in the seam) and seed the
-            # payload into the funnel; the launch step hands it to WrapRunner.
-            final = h.run(
-                {
-                    KEY_ROLE: role,
-                    KEY_INTERACTIVE: True,
-                    KEY_PROJECT_DIR: project_dir,
-                    KEY_EXTRA_ARGS: list(extra_args or []),
-                    KEY_TAGS: tags,
-                    KEY_COMPOSITION: build_composition_payload(
-                        project_dir,
-                        role_override=role,
-                        provider_name=provider,
-                        interactive=True,
-                    ),
-                    # HATS-867: the CLI (integrator) injects the observe writer
-                    # handles — runners no longer construct them.
-                    KEY_SESSION_MGR: make_session_manager(project_dir),
-                    KEY_TRACER_FACTORY: SidecarTracer,
-                }
-            )
-    except RoleNotFoundError as exc:
-        # HATS-507 contract, HATS-547 shared helper. Friendly stderr +
-        # exit 2; no traceback. See ``_handle_role_not_found`` for the
-        # full output shape.
-        _handle_role_not_found(exc)
-    except UnknownProviderError as exc:
-        # HATS-965: friendly stderr + exit 2 for an unavailable ``-p`` provider,
-        # mirroring the RoleNotFoundError arm. See ``_handle_unknown_provider``.
-        _handle_unknown_provider(exc)
-    except MissingProviderError as exc:
-        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
-        _handle_missing_provider(exc)
+    # HATS-1228: the seam's typed errors render at the root group —
+    # cli/_helpers.dispatch_friendly_error.
+    with PipelineHarness(PIPELINE_HUMAN, project_dir) as h:
+        # HATS-865: compose ONCE here (effective-role resolution + the
+        # first-run set_role side effect live in the seam) and seed the
+        # payload into the funnel; the launch step hands it to WrapRunner.
+        final = h.run(
+            {
+                KEY_ROLE: role,
+                KEY_INTERACTIVE: True,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_EXTRA_ARGS: list(extra_args or []),
+                KEY_TAGS: tags,
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override=role,
+                    provider_name=provider,
+                    interactive=True,
+                ),
+                # HATS-867: the CLI (integrator) injects the observe writer
+                # handles — runners no longer construct them.
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 
@@ -581,15 +547,16 @@ def main_entry() -> None:
             path = _extract_tree_path(sys.argv[1:])
             print_subtree(main, path, console)
             sys.exit(0)
-        # HATS-839: a write op resolved to a non-project root — render the library
-        # NotAnAiHatsProjectError as a friendly message instead of a traceback.
-        from ..paths import NotAnAiHatsProjectError
+        # HATS-1228: same registry the root group dispatches through, kept here
+        # too because this boundary also covers the pre-click phase above
+        # (HATS-839: a write op resolved to a non-project root).
+        from ._helpers import dispatch_friendly_error
 
         try:
             main()
-        except NotAnAiHatsProjectError as exc:
-            console.print(f"[red]Error:[/] {exc}")
-            sys.exit(2)
+        except Exception as exc:
+            dispatch_friendly_error(exc)
+            raise
     except Exception as exc:
         from ..self_heal import is_broken_install_exception
 

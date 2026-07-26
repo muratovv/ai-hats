@@ -30,13 +30,10 @@ logger = logging.getLogger(__name__)
 def _handle_role_not_found(exc: "RoleNotFoundError") -> NoReturn:
     """Render a `RoleNotFoundError` as a friendly stderr message and exit 2.
 
-    Single source of truth for the unknown-role UX shared by every CLI
-    entry-point that composes at the integrator seam (bare ``ai-hats``,
-    ``ai-hats execute``, ``ai-hats agent``, ``ai-hats reflect *`` —
-    HATS-865 moved the raise from the ``compose_role`` step to
-    ``composition_seam.build_composition_payload``). Before HATS-547 only
-    ``_launch_session`` handled the typed exception; ``execute_cmd`` let it
-    bubble up as a 9-frame traceback (S-CLI-20 — Wave 2 e2e gap).
+    Single source of truth for the unknown-role UX. Reached from the root
+    group's dispatch (HATS-1228), so it now genuinely covers every surface that
+    composes — including ``ai-hats reflect *``, which this docstring claimed
+    since HATS-547 while ``reflect.py`` caught nothing and shipped a traceback.
 
     Output contract (asserted by
     ``tests/e2e/test_unknown_role_friendly_error.py``):

@@ -71,37 +71,25 @@ def run_subagent(
     - 124 — timeout (sub-agent exceeded wall-clock limit)
     - other non-zero — forwarded verbatim from provider CLI
     """
-    from ..composition_seam import MissingProviderError, RoleNotFoundError
-    from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
-    from ._helpers import (
-        _handle_missing_provider,
-        _handle_role_not_found,
-        _handle_unknown_provider,
-        _project_dir,
-    )
+    from ._helpers import _project_dir
 
     if dry_run:
         import json as _json
 
         from ..dry_run import dry_run_automate
 
-        try:
-            report = dry_run_automate(
-                _project_dir(),
-                role=role,
-                task=task or "",
-                ticket_id=ticket or "",
-                model=model or "",
-                provider=provider,
-            )
-        except RoleNotFoundError as exc:
-            _handle_role_not_found(exc)
-        except UnknownProviderError as exc:
-            _handle_unknown_provider(exc)
-        except MissingProviderError as exc:
-            _handle_missing_provider(exc)
+        # HATS-1228: the seam's typed errors render at the root group —
+        # cli/_helpers.dispatch_friendly_error.
+        report = dry_run_automate(
+            _project_dir(),
+            role=role,
+            task=task or "",
+            ticket_id=ticket or "",
+            model=model or "",
+            provider=provider,
+        )
         click.echo(
             _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),
             nl=as_json,

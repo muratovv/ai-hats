@@ -35,6 +35,22 @@ since the latest tag lives under **Unreleased** until the next release.
   actually clears it. Both refusal recipes lead with that rebase and demote
   `--accept-drift` to what it always meant: merging a baseline you knowingly
   leave stale.
+- **`ai-hats reflect *` reports a config error instead of a traceback**
+  (HATS-1228). Friendly rendering of the compose-seam errors — unknown role,
+  unknown provider, no provider configured — was wired per call site, and
+  `cli/reflect.py` composes in five places without a single handler, so those
+  `reflect` subcommands exited 1 on a 9-frame trace. (`_handle_role_not_found`
+  had listed `ai-hats reflect *` among its covered surfaces since HATS-547; it
+  never was.) Dispatch now lives on the root command group, so a surface cannot
+  opt out by omission — the 15 per-site handlers are gone and `reflect.py` was
+  not touched. In-process invocations (`CliRunner`) get the same rendering as
+  the shipped binary, and anything unregistered still surfaces its traceback
+  rather than being flattened into a tidy exit 2. One surface still opts out by
+  catching first: `reflect issue` wraps its intake in `except (RuntimeError,
+  IntakeParseError)`, and `MissingProviderError` is a `RuntimeError`, so a
+  provider-less config there still degrades to a minimal HYP at exit 0 instead
+  of reaching the group. `RoleNotFoundError` and `UnknownProviderError` are not
+  `RuntimeError` subclasses and do reach it.
 
 - **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**
   (HATS-1224). The compose seam raised a bare `RuntimeError` that no CLI arm

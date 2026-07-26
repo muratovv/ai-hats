@@ -56,55 +56,34 @@ def run_batch(
     exactly the ignored knob HATS-1218 exists to remove.
     """
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import (
-        MissingProviderError,
-        RoleNotFoundError,
-        build_composition_payload,
-    )
-    from ..composition_seam import make_session_manager
+    from ..composition_seam import build_composition_payload, make_session_manager
     from ..pipeline.harness import PipelineHarness
-    from ..providers import UnknownProviderError
-    from ._helpers import (
-        _handle_missing_provider,
-        _handle_role_not_found,
-        _handle_unknown_provider,
-    )
 
-    try:
-        with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-            final = h.run(
-                {
-                    KEY_ROLE: role,
-                    KEY_INTERACTIVE: False,
-                    KEY_PROJECT_DIR: project_dir,
-                    KEY_PROMPT_PATH: h.materialize_prompt(task),
-                    KEY_MODEL: model,
-                    KEY_ISOLATION: isolation,
-                    KEY_TICKET: ticket,
-                    KEY_TAGS: tags or None,
-                    KEY_COMPOSITION: build_composition_payload(
-                        project_dir,
-                        role_override=role,
-                        provider_name=provider,
-                        interactive=False,
-                    ),
-                    # HATS-867: the CLI (integrator) injects the observe writer
-                    # handles — runners no longer construct them.
-                    KEY_SESSION_MGR: make_session_manager(project_dir),
-                    KEY_TRACER_FACTORY: SidecarTracer,
-                }
-            )
-    except RoleNotFoundError as exc:
-        # HATS-545 / HATS-547: friendly stderr + exit 2, never a 9-frame
-        # traceback. Shared with the bare-launch surface.
-        _handle_role_not_found(exc)
-    except UnknownProviderError as exc:
-        # HATS-1218: the provider analogue (HATS-965), until now reachable only
-        # from bare ``ai-hats`` because no batch surface honoured ``-p``.
-        _handle_unknown_provider(exc)
-    except MissingProviderError as exc:
-        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
-        _handle_missing_provider(exc)
+    # HATS-1228: the seam's typed errors (unknown role / unknown provider / no
+    # provider) render at the root group — cli/_helpers.dispatch_friendly_error.
+    with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
+        final = h.run(
+            {
+                KEY_ROLE: role,
+                KEY_INTERACTIVE: False,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(task),
+                KEY_MODEL: model,
+                KEY_ISOLATION: isolation,
+                KEY_TICKET: ticket,
+                KEY_TAGS: tags or None,
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override=role,
+                    provider_name=provider,
+                    interactive=False,
+                ),
+                # HATS-867: the CLI (integrator) injects the observe writer
+                # handles — runners no longer construct them.
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
 
     _report(final, as_json=as_json)
 

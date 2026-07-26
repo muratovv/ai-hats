@@ -183,22 +183,11 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
-    from ..composition_seam import (
-        MissingProviderError,
-        RoleNotFoundError,
-        build_composition_payload,
-    )
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import make_session_manager
+    from ..composition_seam import build_composition_payload, make_session_manager
     from ..pipeline.harness import PipelineHarness
-    from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
-    from ._helpers import (
-        _handle_missing_provider,
-        _handle_role_not_found,
-        _handle_unknown_provider,
-    )
 
     # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
     # the boundary instead of crashing deep in worktree creation.
@@ -232,46 +221,36 @@ def execute_cmd(
             as_json=as_json,
         )
 
-    try:
-        with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-            # Interactive mode: provider CLI receives prompt as the first
-            # positional arg in extra_args. The pipeline's resolve_prompt
-            # step reads prompt_path → prompt_text and launch_provider then
-            # prepends prompt_text to extra_args. We materialize the prompt
-            # here so the harness contract (Path-only inputs) is preserved.
-            final = h.run(
-                {
-                    KEY_ROLE: role,
-                    KEY_INTERACTIVE: True,
-                    KEY_PROJECT_DIR: project_dir,
-                    KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-                    KEY_MODEL: model,
-                    KEY_ISOLATION: isolation,
-                    KEY_TICKET: ticket,
-                    KEY_TAGS: tags or None,
-                    KEY_EXTRA_ARGS: list(extra_args),
-                    KEY_COMPOSITION: build_composition_payload(
-                        project_dir,
-                        role_override=role,
-                        provider_name=provider,
-                        interactive=True,
-                    ),
-                    # HATS-867: the CLI (integrator) injects the observe writer
-                    # handles — runners no longer construct them.
-                    KEY_SESSION_MGR: make_session_manager(project_dir),
-                    KEY_TRACER_FACTORY: SidecarTracer,
-                }
-            )
-    except RoleNotFoundError as exc:
-        # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
-        # pre-fix this exception bubbled up as a 9-frame traceback.
-        _handle_role_not_found(exc)
-    except UnknownProviderError as exc:
-        # HATS-1218: bare ``ai-hats`` got this in HATS-965; ``execute`` declared
-        # the same ``-p`` and still leaked the traceback.
-        _handle_unknown_provider(exc)
-    except MissingProviderError as exc:
-        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
-        _handle_missing_provider(exc)
+    # HATS-1228: the seam's typed errors render at the root group —
+    # cli/_helpers.dispatch_friendly_error.
+    with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
+        # Interactive mode: provider CLI receives prompt as the first
+        # positional arg in extra_args. The pipeline's resolve_prompt
+        # step reads prompt_path → prompt_text and launch_provider then
+        # prepends prompt_text to extra_args. We materialize the prompt
+        # here so the harness contract (Path-only inputs) is preserved.
+        final = h.run(
+            {
+                KEY_ROLE: role,
+                KEY_INTERACTIVE: True,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
+                KEY_MODEL: model,
+                KEY_ISOLATION: isolation,
+                KEY_TICKET: ticket,
+                KEY_TAGS: tags or None,
+                KEY_EXTRA_ARGS: list(extra_args),
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override=role,
+                    provider_name=provider,
+                    interactive=True,
+                ),
+                # HATS-867: the CLI (integrator) injects the observe writer
+                # handles — runners no longer construct them.
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
 
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
