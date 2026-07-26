@@ -17,7 +17,10 @@ from rich.console import Console
 from ..constants import is_debug_mode
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ..composition_seam import MissingProviderError, RoleNotFoundError
+    from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
 
 console = Console()
@@ -93,6 +96,48 @@ def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
         click.echo(f"  - {name}", err=True)
     click.echo("\nHint: 'ai-hats list providers' shows the full table.", err=True)
     sys.exit(2)
+
+
+def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
+    """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
+
+    Lifted verbatim out of ``main_entry`` (HATS-839) so it can join the registry
+    below; ``main_entry`` still owns the pre-click phase and routes through it.
+    """
+    console.print(f"[red]Error:[/] {exc}")
+    sys.exit(2)
+
+
+def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., NoReturn]], ...]":
+    """The typed errors the CLI renders instead of a traceback, most-specific first.
+
+    Imported lazily: this module loads on every CLI path, the seam does not.
+    """
+    with catch_broken_install():
+        from ..composition_seam import MissingProviderError, RoleNotFoundError
+        from ..paths import NotAnAiHatsProjectError
+        from ..providers import UnknownProviderError
+
+    return (
+        (RoleNotFoundError, _handle_role_not_found),
+        (UnknownProviderError, _handle_unknown_provider),
+        (MissingProviderError, _handle_missing_provider),
+        (NotAnAiHatsProjectError, _handle_not_a_project),
+    )
+
+
+def dispatch_friendly_error(exc: BaseException) -> bool:
+    """Render ``exc`` through its registered handler (which exits 2), or return False.
+
+    The single opt-out-proof rendering point (HATS-1228): surfaces used to catch
+    these per call site, so one that forgot — ``cli/reflect.py``, five compose
+    sites and no arms — shipped a traceback. Matching is by ``isinstance``:
+    ``MissingProviderError`` is itself a ``RuntimeError`` subclass.
+    """
+    for exc_type, handler in _friendly_error_handlers():
+        if isinstance(exc, exc_type):
+            handler(exc)
+    return False
 
 
 def exec_claude_with_retro(retro_path: Path, kind: str = "session") -> None:

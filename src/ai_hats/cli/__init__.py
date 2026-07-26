@@ -44,6 +44,23 @@ class _PassthroughGroup(click.Group):
     TODO(HATS-120b): drop once Click 9 is pinned.
     """
 
+    def invoke(self, ctx: click.Context):
+        """Render the CLI's typed errors friendly, wherever they were raised.
+
+        HATS-1228: every command reachable from this group — the bare-launch
+        callback, subcommands, nested groups — funnels through here, so friendly
+        handling is no longer per-site opt-in (``cli/reflect.py`` composed five
+        times and caught nothing). Unregistered exceptions keep their traceback:
+        this is a renderer, not a catch-all.
+        """
+        from ._helpers import dispatch_friendly_error
+
+        try:
+            return super().invoke(ctx)
+        except Exception as exc:
+            dispatch_friendly_error(exc)
+            raise
+
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         result = super().parse_args(ctx, args)
         protected = getattr(ctx, "_protected_args", None)
