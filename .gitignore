@@ -47,8 +47,7 @@ CLAUDE.md
 .claude/settings.json
 .envrc
 .gemini/
-.agent/ai-hats/
 .cline/skills/
 .cline/plugins/
-.gemini/skills/
-.agy/skills/
+.agy/
+

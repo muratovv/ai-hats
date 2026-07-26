@@ -44,7 +44,12 @@ from .paths import (
 )
 from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
-from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
+from .plugin_dir import (
+    drop_legacy_claude_publish,
+    drop_legacy_root_skills_mirrors,
+    drop_legacy_skills_mirror,
+)
+
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import Provider, get_provider
@@ -207,11 +212,13 @@ class Assembler:
         return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
 
     def _cleanup_legacy_claude_publish(self) -> None:
-        """Thin seam over the shared legacy sweeps (HATS-905): the generic
+        """Thin seam over the shared legacy sweeps (HATS-905, HATS-1172): the generic
         unclaimed-marker sweeper runs the same procedures at bump; this path
         keeps them firing on every refresh as before."""
         drop_legacy_skills_mirror(self.project_dir)
         drop_legacy_claude_publish(self.project_dir)
+        drop_legacy_root_skills_mirrors(self.project_dir)
+
 
     @staticmethod
     def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
