@@ -42,18 +42,17 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     asm = Assembler(REPO_ROOT)
     result = asm.composer.compose("maintainer")
     provider = AgyProvider()
-    provider.materialize_runtime_skills(main, result, "sid-agy-gate")
-    provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate")
+    provider.build_session_prompt(main, result, "sid-agy-gate")
 
-    settings_file = main / ".gemini" / "settings.json"
-    assert settings_file.is_file(), ".gemini/settings.json must be created"
-    settings_data = json.loads(settings_file.read_text())
-    pre_tool_hooks = settings_data.get("hooks", {}).get("PreToolUse", [])
+    hooks_file = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate" / "hooks.json"
+    assert hooks_file.is_file(), "hooks.json must be created in session cache"
+    hooks_data = json.loads(hooks_file.read_text())
+    pre_tool_hooks = hooks_data.get("PreToolUse", [])
     assert any(
         "wt_gate.py" in h.get("command", "") and "Create" in h.get("matcher", "")
         for h in pre_tool_hooks
         if isinstance(h, dict)
-    ), "wt_gate.py PreToolUse matcher in agy settings.json must include Create"
+    ), "wt_gate.py PreToolUse matcher in agy hooks.json must include Create"
 
     hook_script = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate" / "rules" / ".agents" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
     assert hook_script.is_file(), "wt_gate.py must be materialized in session cache dir"

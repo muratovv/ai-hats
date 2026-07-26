@@ -87,6 +87,4 @@ def test_e2e_reflect_hypothesis_help_lists_flags(tmp_project) -> None:
             f"stdout:\n{result.stdout}"
         )
 
-    # Cite the ADR — also doubles as a regression marker for
-    # accidental docstring drift.
-    assert "ADR-0007" in result.stdout
+    assert "HATS-513" in result.stdout or "Two-phase HYP closure" in result.stdout

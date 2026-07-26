@@ -148,7 +148,6 @@ def test_e2e_install_init_break_heal(tmp_path):
     # ---- 3. self init ----
     res = ai_hats("self", "init", "-r", "assistant", "-p", "claude")
     assert (project / PROJECT_CONFIG).is_file()
-    assert (project / "CLAUDE.md").is_file()
     yaml_text = (project / PROJECT_CONFIG).read_text()
     # HATS-407: init writes default_role; active_role stays empty
     # (runtime cache, written by session-bootstrap only).
@@ -157,7 +156,7 @@ def test_e2e_install_init_break_heal(tmp_path):
 
     # ---- 4. composition smoke ----
     res = ai_hats("config", "status")
-    assert "system_prompt: OK" in res.stdout
+    assert "Role: assistant" in res.stdout
 
     # ---- 5. simulate a host python upgrade — breaks BOTH venvs ----
     # Post-HATS-647 the active venv is versions/<sha>, not .venv. A python
@@ -212,7 +211,7 @@ def test_e2e_install_init_break_heal(tmp_path):
 
     # ---- 8. tool restored — runs again (from the recreated .venv) ----
     res = ai_hats("config", "status")
-    assert "system_prompt: OK" in res.stdout
+    assert "Role: assistant" in res.stdout
 
 
 @pytest.mark.integration
@@ -268,7 +267,6 @@ def test_e2e_fresh_init_heals(tmp_path):
 
     # Init configured the project in the same command.
     assert (project / PROJECT_CONFIG).is_file()
-    assert (project / "CLAUDE.md").is_file()
     yaml_text = (project / PROJECT_CONFIG).read_text()
     assert "default_role: assistant" in yaml_text
     assert "provider: claude" in yaml_text

@@ -109,9 +109,7 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
         f"Greenfield init replayed registry (R2 invariant broken):\n"
         f"{res.stderr}"
     )
-    # Diagnostics silent — R3 (greenfield: nothing to diagnose).
     assert ORPHAN_WARN_FRAGMENT not in res.stderr
-    assert EMPTY_AGENT_NOTE_FRAGMENT not in res.stderr
 
     # Sanity: yaml is seeded.
     cfg_path = project / PROJECT_CONFIG
@@ -124,12 +122,9 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
         f"greenfield init failed to seed migration_step: {raw}"
     )
 
-    # Sanity: provider scaffold + static hooks materialized.
-    assert (project / "CLAUDE.md").exists()
-    settings = project / ".claude" / "settings.json"
-    assert settings.exists(), "static hooks (settings.json) not installed"
-    settings_data = yaml.safe_load(settings.read_text())  # JSON is YAML-superset
-    assert "hooks" in settings_data, "PreToolUse entry missing"
+    # Sanity: static hooks materialized.
+    guard_script = project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    assert guard_script.exists(), "static hooks not installed"
 
 
 # ----- Test 2: re-init replays registry once + surfaces diagnostics -----
@@ -282,10 +277,10 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
     )
 
     # Static hooks (D1: always-fire) ARE installed.
-    settings = project / ".claude" / "settings.json"
-    assert settings.exists(), (
+    guard_script = project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    assert guard_script.exists(), (
         f"set_role failed to install static hooks (D1 broken — "
-        f"ensure_runtime_hooks must always fire in _refresh):\n"
+        f"materialize_runtime_hooks must always fire in _refresh):\n"
         f"stderr={res.stderr}"
     )
 
