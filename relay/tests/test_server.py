@@ -12,6 +12,8 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
+from conftest import RELAY_TOKEN, ctl
+
 from hats_relay import wire
 from hats_relay.broker import Broker
 from hats_relay.server import serve_broker, shutdown
@@ -31,7 +33,7 @@ def run(coro):
 @contextlib.asynccontextmanager
 async def running_broker():
     broker = Broker(argv_for)
-    server = await serve_broker(broker, host=HOST, port=0)
+    server = await serve_broker(broker, host=HOST, port=0, token=RELAY_TOKEN)
     port = next(iter(server.sockets)).getsockname()[1]
     try:
         yield f"ws://{HOST}:{port}", broker
@@ -52,7 +54,7 @@ def test_create_then_drive_a_session():
     async def scenario():
         async with running_broker() as (url, _broker):
             async with connect(url) as ws:
-                await ws.send(json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25}))
+                await ws.send(ctl(op="create", spec={"role": "r"}, cols=90, rows=25))
                 ack = json.loads(await ws.recv())
                 _, hello = await _recv_until_binary(ws)
                 await ws.send(wire.client_input(b"drive me"))
@@ -85,12 +87,12 @@ def test_a_second_client_attaches_and_gets_the_screen_back():
     async def scenario():
         async with running_broker() as (url, _broker):
             async with connect(url) as first:
-                await first.send(json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25}))
+                await first.send(ctl(op="create", spec={"role": "r"}, cols=90, rows=25))
                 sid = json.loads(await first.recv())["sid"]
                 await _recv_until_binary(first)  # hello
 
                 async with connect(url) as second:
-                    await second.send(json.dumps({"op": "attach", "sid": sid, "cols": 90, "rows": 25}))
+                    await second.send(ctl(op="attach", sid=sid, cols=90, rows=25))
                     ack = json.loads(await second.recv())
                     # The resync toggle reaches the child as CTRL frames; the fake child
                     # echoes them, which is our proof the repaint nudge was delivered.
@@ -112,10 +114,10 @@ def test_list_reports_live_sessions():
     async def scenario():
         async with running_broker() as (url, _broker):
             async with connect(url) as ws:
-                await ws.send(json.dumps({"op": "create", "spec": {"role": "alpha"}, "cols": 80, "rows": 24}))
+                await ws.send(ctl(op="create", spec={"role": "alpha"}, cols=80, rows=24))
                 await ws.recv()
                 async with connect(url) as other:
-                    await other.send(json.dumps({"op": "list"}))
+                    await other.send(ctl(op="list"))
                     return json.loads(await other.recv())
 
     reply = run(scenario())
@@ -127,7 +129,7 @@ def test_a_refused_control_message_does_not_open_a_session():
     async def scenario():
         async with running_broker() as (url, broker):
             async with connect(url) as ws:
-                await ws.send(json.dumps({"op": "create", "spec": {"role": "-x"}, "cols": 80, "rows": 24}))
+                await ws.send(ctl(op="create", spec={"role": "-x"}, cols=80, rows=24))
                 reply = json.loads(await ws.recv())
             return reply, broker.list()
 
@@ -143,11 +145,7 @@ def test_a_session_that_fails_to_start_tells_the_client_why():
     async def scenario():
         async with running_broker() as (url, broker):
             async with connect(url) as ws:
-                await ws.send(
-                    json.dumps(
-                        {"op": "create", "spec": {"role": "fail-to-start"}, "cols": 90, "rows": 25}
-                    )
-                )
+                await ws.send(ctl(op="create", spec={"role": "fail-to-start"}, cols=90, rows=25))
                 await ws.recv()  # ack
                 async with asyncio.timeout(10):
                     while True:
@@ -168,12 +166,12 @@ def test_shutdown_is_prompt_even_with_a_client_that_stopped_reading():
 
     async def scenario():
         broker = Broker(argv_for)
-        server = await serve_broker(broker, host=HOST, port=0)
+        server = await serve_broker(broker, host=HOST, port=0, token=RELAY_TOKEN)
         port = next(iter(server.sockets)).getsockname()[1]
 
         # max_queue=1 makes the client stop reading its socket almost immediately.
         async with connect(f"ws://{HOST}:{port}", max_queue=1) as ws:
-            await ws.send(json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25}))
+            await ws.send(ctl(op="create", spec={"role": "r"}, cols=90, rows=25))
             for _ in range(200):
                 await ws.send(wire.client_input(b"x" * 4096))
             await asyncio.sleep(0.5)  # let the backlog pile up unread
@@ -186,8 +184,8 @@ def test_shutdown_is_prompt_even_with_a_client_that_stopped_reading():
 
 
 def test_binding_an_interface_is_mandatory():
-    """No auth means reaching the port is the whole right to drive a session, so
-    exposure must be a decision. A default would make it an accident."""
+    """Exposure must be a decision; a default would make it an accident. Still required
+    now that a token is too — the token says who may drive, not who may reach."""
     from hats_relay.__main__ import build_parser
 
     with pytest.raises(SystemExit):
@@ -204,7 +202,7 @@ def test_attach_to_an_unknown_session_is_refused():
     async def scenario():
         async with running_broker() as (url, _broker):
             async with connect(url) as ws:
-                await ws.send(json.dumps({"op": "attach", "sid": "0" * 32, "cols": 80, "rows": 24}))
+                await ws.send(ctl(op="attach", sid="0" * 32, cols=80, rows=24))
                 return json.loads(await ws.recv())
 
     assert "error" in run(scenario())

@@ -86,8 +86,8 @@ async def _pipe(ws: ServerConnection, entry: SessionEntry, ctl: protocol.Control
         await attachment.aclose()
 
 
-def make_handler(broker: Broker, *, token: str = ""):
-    """Build the connection handler bound to ``broker``."""
+def make_handler(broker: Broker, *, token: str):
+    """Build the connection handler bound to ``broker``. ``token`` is not optional."""
 
     async def handler(ws: ServerConnection) -> None:
         try:
@@ -106,7 +106,7 @@ def make_handler(broker: Broker, *, token: str = ""):
 
         # Before any op: `list` leaks the sids that are themselves the capability, so
         # there is no op cheap enough to answer unauthenticated.
-        if token and not secrets.compare_digest(ctl.token, token):
+        if not secrets.compare_digest(ctl.token, token):
             await _reply_error(ws, "unauthorized")
             return
 
@@ -176,10 +176,11 @@ async def serve_broker(
     """
     if not host:
         raise ValueError("host is required — bind an explicit interface")
-    # Serving a page means accepting any Origin (below); without a token that leaves
-    # nothing at all in front of a shell-capable agent, so the pair is not separable.
-    if web_client and not token:
-        raise ValueError("--web requires a token — see HATS-1194")
+    # A session is an agent with a shell, and --web additionally means accepting any
+    # Origin. HATS-1232 permits agy here only on an authenticated transport, so this is
+    # a guardrail rather than a default: there is no way to start without one.
+    if not token:
+        raise ValueError("a token is required — the relay does not run unauthenticated")
     return await serve(
         make_handler(broker, token=token),
         host,

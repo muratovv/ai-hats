@@ -24,12 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", required=True, help="interface to bind (no default, on purpose)")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--binary", default="ai-hats", help="the ai-hats entry point to spawn")
-    # Not the project default: that resolves to agy here, and HATS-1188 excludes agy
-    # from the remote channel on ToS grounds. Pass --provider '' to take it anyway.
     parser.add_argument(
         "--provider",
-        default="claude",
-        help="provider for spawned sessions (default: claude; '' uses the project default)",
+        default="",
+        help="provider override for spawned sessions (default: whatever the project resolves)",
     )
     parser.add_argument("--cwd", default=None, help="working directory for spawned sessions")
     parser.add_argument(
@@ -40,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         # An argv token is readable in `ps` by anyone else on the box; the env var is
         # the way to keep it out of there.
         default=os.environ.get("HATS_RELAY_TOKEN", ""),
-        help="shared token every client must present (env: HATS_RELAY_TOKEN)",
+        help="shared token every client must present, required (env: HATS_RELAY_TOKEN)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
@@ -86,9 +84,9 @@ async def run(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    if args.web and not args.token:
-        parser.error("--web requires --token (or HATS_RELAY_TOKEN): serving a page means "
-                     "accepting any Origin, and the token is what replaces that check")
+    if not args.token:
+        parser.error("--token is required (or HATS_RELAY_TOKEN): a session is an agent "
+                     "with a shell, and reaching the port must not be the whole right to drive it")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",

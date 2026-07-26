@@ -11,6 +11,8 @@ from pathlib import Path
 from websockets.asyncio.client import connect
 
 from hats_relay.__main__ import make_argv_builder
+from conftest import RELAY_TOKEN, ctl
+
 from hats_relay.broker import Broker
 from hats_relay.server import serve_broker, shutdown
 
@@ -25,7 +27,7 @@ def argv_for(spec: dict) -> list[str]:
 @contextlib.asynccontextmanager
 async def running_broker():
     broker = Broker(argv_for)
-    server = await serve_broker(broker, host=HOST, port=0)
+    server = await serve_broker(broker, host=HOST, port=0, token=RELAY_TOKEN)
     port = next(iter(server.sockets)).getsockname()[1]
     try:
         yield f"ws://{HOST}:{port}", broker
@@ -51,7 +53,7 @@ def test_a_session_outlives_the_client_that_started_it():
         async with running_broker() as (url, broker):
             async with connect(url) as ws:
                 await ws.send(
-                    json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25})
+                    ctl(op="create", spec={"role": "r"}, cols=90, rows=25)
                 )
                 sid = json.loads(await ws.recv())["sid"]
             # The connection is now closed, exactly as it is after --no-attach returns.
@@ -72,12 +74,12 @@ def test_a_later_client_can_attach_to_it():
         async with running_broker() as (url, _broker):
             async with connect(url) as ws:
                 await ws.send(
-                    json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25})
+                    ctl(op="create", spec={"role": "r"}, cols=90, rows=25)
                 )
                 sid = json.loads(await ws.recv())["sid"]
             async with connect(url) as later:
                 await later.send(
-                    json.dumps({"op": "attach", "sid": sid, "cols": 90, "rows": 25})
+                    ctl(op="attach", sid=sid, cols=90, rows=25)
                 )
                 return json.loads(await later.recv())
 

@@ -32,11 +32,9 @@ TOKEN = "asset-token"  # noqa: S105 — a fixture, not a credential
 @contextlib.asynccontextmanager
 async def running_broker(*, web_client: bool):
     broker = Broker(argv_for)
-    # --web refuses to start tokenless (test_token.py owns that rule); these tests are
-    # about the asset routing that sits in front of it.
-    server = await serve_broker(
-        broker, host=HOST, port=0, web_client=web_client, token=TOKEN if web_client else ""
-    )
+    # No broker starts tokenless (test_token.py owns that rule); these tests are about
+    # the asset routing that sits in front of it.
+    server = await serve_broker(broker, host=HOST, port=0, web_client=web_client, token=TOKEN)
     port = next(iter(server.sockets)).getsockname()[1]
     try:
         yield port, broker

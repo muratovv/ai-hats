@@ -85,28 +85,34 @@ def test_the_right_token_gets_through():
     assert asyncio.run(scenario())["ok"] is True
 
 
-def test_no_token_configured_means_no_check():
-    """The existing LAN posture is unchanged when the operator sets no token."""
+@pytest.mark.parametrize("web_client", [False, True])
+def test_a_tokenless_broker_refuses_to_start(web_client):
+    """No unauthenticated transport, page or no page.
 
-    async def scenario():
-        async with running_broker() as (url, _broker):
-            return await _first_reply(url, {"op": "list"})
-
-    assert asyncio.run(scenario())["ok"] is True
-
-
-def test_web_without_a_token_refuses_to_start():
-    """Serving a page relaxes the Origin check; the token is what replaces it."""
+    HATS-1232 permits agy over this relay only on an authenticated transport, so the
+    guardrail lives here rather than in a document: there is no argument combination
+    that starts a broker anyone can reach.
+    """
 
     async def scenario():
         broker = Broker(argv_for)
         try:
-            with pytest.raises(ValueError, match="--web requires a token"):
-                await serve_broker(broker, host=HOST, port=0, web_client=True)
+            with pytest.raises(ValueError, match="a token is required"):
+                await serve_broker(broker, host=HOST, port=0, web_client=web_client)
         finally:
             await broker.aclose()
 
     asyncio.run(scenario())
+
+
+def test_the_cli_refuses_too_rather_than_traceback():
+    from hats_relay.__main__ import build_parser, main
+
+    parser = build_parser()
+    assert parser.parse_args(["--host", "127.0.0.1"]).token == ""
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code != 0
 
 
 @pytest.mark.parametrize(
