@@ -193,23 +193,18 @@ class SubAgentRunner:
             result,
             session.session_id,
             run_mode=RunMode.AUTOMATE,
-            policy=SessionPolicy(),
+            policy=self.payload.policy,
             artifacts=BuiltArtifacts(),
         )
 
         notes: list[str] = []
         if provider_name == PROVIDER_CLAUDE:
             meta_prompt = self._build_sdk_prompt_audit(
-                result=result,
+                artifacts=artifacts,
                 task=task,
                 ticket_id=ticket_id,
             )
             launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-            notes.append(
-                "claude/automate: the engine recomputes system_prompt and plugins in "
-                "sdk_options.py and ignores the values shown here — these are the "
-                "builder's, not what the SDK receives (HATS-1207 bypass 1)."
-            )
         else:
             meta_prompt = self._build_meta_prompt(
                 result=result,
@@ -245,7 +240,7 @@ class SubAgentRunner:
             role=role_name,
             provider=provider.name,
             run_mode=RunMode.AUTOMATE.value,
-            policy=SessionPolicy(),
+            policy=self.payload.policy,
             launch=launch,
             env=dict(artifacts.extra_env),
             prompt=prompt_file,
@@ -339,6 +334,7 @@ class SubAgentRunner:
                         env=sdk_env_overlay,
                         model=model,
                         timeout_s=timeout_s,
+                        artifacts=artifacts,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     if run_result.session_id:
@@ -529,22 +525,19 @@ class SubAgentRunner:
     def _build_sdk_prompt_audit(
         self,
         *,
-        result,
+        artifacts: BuiltArtifacts,
         task: str,
         ticket_id: str,
     ) -> str:
-        """Render a human-readable artifact of what the SDK was actually sent.
+        """Render a human-readable artifact of what the SDK was actually sent."""
+        from .surfaces.claude.sdk_options import build_first_user_message
 
-        Saved alongside the session as ``meta_prompt.txt`` (same path the
-        legacy subprocess path used) so audit / debugging tooling that
-        relies on that file keeps working. The structure mirrors the two
-        SDK inputs: the appended part of ``system_prompt`` and the first
-        user message.
-        """
-        from .surfaces.claude.sdk_options import _build_system_prompt, build_first_user_message
+        sys_opt = artifacts.sdk_options.get("system_prompt")
+        if isinstance(sys_opt, dict):
+            system_text = sys_opt.get("append", "")
+        else:
+            system_text = sys_opt or ""
 
-        sp = _build_system_prompt(result, self.project_dir, self.payload.provider)
-        system_text = sp.get("append", "")
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),
             linked_context=self._load_linked_context(ticket_id),

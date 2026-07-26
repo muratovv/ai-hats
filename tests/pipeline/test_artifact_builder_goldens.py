@@ -86,9 +86,22 @@ def test_golden_automate_default_policy(project_factory, surface: str):
 
     if surface == "claude":
         assert any("system_prompt=" in arg for arg in d["launch"])
-        assert any("bypass 1" in note for note in d["notes"])
     else:
         assert any("bypass 2" in note for note in d["notes"])
         if surface == "agy":
             # agy AUTOMATE baseline: role is in meta-prompt, no --add-dir in launch
             assert not any("--add-dir" in arg for arg in d["launch"])
+
+
+def test_claude_automate_policy_context_false(project_factory):
+    """policy=SessionPolicy(context=False) drops system_prompt for Claude AUTOMATE."""
+    project = project_factory("claude")
+    report = dry_run_automate(
+        project, role="maintainer", provider="claude", task="test task",
+        policy=SessionPolicy(context=False)
+    )
+    d = report.to_dict()
+    assert d["policy"]["context"] is False
+    # launch contains system_prompt=... string representation of dict
+    sys_arg = next((arg for arg in d["launch"] if arg.startswith("system_prompt=")), None)
+    assert sys_arg is None or "system_prompt=None" in sys_arg or "'append': ''" in sys_arg or "system_prompt={}" in sys_arg

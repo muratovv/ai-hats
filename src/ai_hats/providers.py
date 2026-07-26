@@ -102,6 +102,7 @@ class SubagentEngine(abc.ABC):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        artifacts: BuiltArtifacts | None = None,
     ) -> ProviderRunResult:
         pass
 

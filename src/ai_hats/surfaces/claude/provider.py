@@ -202,7 +202,8 @@ class ClaudeProvider(Provider):
         if mode == RunMode.HITL:
             artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
         elif mode == RunMode.AUTOMATE:
-            artifacts.sdk_options["system_prompt"] = full_content
+            text = expand_path_placeholders(self.build_system_prompt(result), project_dir)
+            artifacts.sdk_options["system_prompt"] = {"type": "preset", "preset": "claude_code", "append": text}
 
     def _build_skills_artifact(
         self,
@@ -223,6 +224,11 @@ class ClaudeProvider(Provider):
         )
         if mode == RunMode.HITL:
             artifacts.cli_args.extend(["--plugin-dir", str(plugin_dir)])
+        elif mode == RunMode.AUTOMATE:
+            if result.skills:
+                artifacts.sdk_options["plugins"] = [{"type": "local", "path": str(plugin_dir)}]
+            else:
+                artifacts.sdk_options["plugins"] = []
         plugin_skills_dir = cache_dir / "plugin" / "skills"
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_skills_dir)
         artifacts.materialized.append(cache_dir / "plugin")
@@ -611,10 +617,13 @@ class ClaudeSubagentEngine(SubagentEngine):
         model: str | None,
         timeout_s: int,
     ) -> ProviderRunResult:
-        artifacts = self._provider.build_session_artifacts(
-            project_dir, result, session_id, run_mode="automate",
-            artifacts=BuiltArtifacts(),
-        )
+        if artifacts is None:
+            artifacts = self._provider.build_session_artifacts(
+                project_dir, result, session_id, run_mode="automate",
+                artifacts=BuiltArtifacts(),
+            )
+        sys_prompt = artifacts.sdk_options.get("system_prompt")
+        plugins = artifacts.sdk_options.get("plugins")
         opts = build_options(
             composition_result=result,
             provider=self._provider,
@@ -625,6 +634,8 @@ class ClaudeSubagentEngine(SubagentEngine):
             settings=artifacts.sdk_options.get("settings"),
             setting_sources=artifacts.sdk_options.get("setting_sources"),
             extra_env=env,
+            system_prompt=sys_prompt,
+            plugins=plugins,
         )
         msg = build_first_user_message(
             task=task,
