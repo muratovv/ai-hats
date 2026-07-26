@@ -167,7 +167,7 @@ class AgyProvider(Provider):
                 })
         return manifest
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
         """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
@@ -177,9 +177,11 @@ class AgyProvider(Provider):
         artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
         artifacts.materialized.append(hooks_json)
 
+    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
+
     def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        """Global dispatcher registration plus the session manifest it reads (HATS-1223)."""
-        self._build_hooks_hitl(project_dir, result, session_id, artifacts)
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
 
     def materialize_runtime_skills(
         self,
