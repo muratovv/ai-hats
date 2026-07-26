@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>hats-relay</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        color: #ddd;
+        font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      #terminal {
+        flex: 1;
+        min-height: 0;
+      }
+      #status {
+        padding: 4px 8px;
+        background: #111;
+        border-top: 1px solid #333;
+        white-space: pre-wrap;
+      }
+      #status[data-kind="error"] {
+        background: #3b1111;
+        color: #ffb4b4;
+      }
+      #status[data-kind="ended"] {
+        background: #1d1d2b;
+        color: #b9b9ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <div id="status" role="status" aria-live="polite">connecting…</div>
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-fit.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

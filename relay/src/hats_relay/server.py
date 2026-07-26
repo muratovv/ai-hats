@@ -13,7 +13,7 @@ import logging
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from . import protocol, wire
+from . import protocol, web, wire
 from .broker import Broker, SessionEntry
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ async def shutdown(server, broker: Broker | None = None) -> None:
         await broker.aclose()
 
 
-async def serve_broker(broker: Broker, *, host: str, port: int, **kwargs):
+async def serve_broker(broker: Broker, *, host: str, port: int, web_client: bool = False, **kwargs):
     """Start the server.
 
     ``host`` is required on purpose: with no authentication, reaching the port is the
@@ -165,10 +165,11 @@ async def serve_broker(broker: Broker, *, host: str, port: int, **kwargs):
         make_handler(broker),
         host,
         port,
-        # Only an upgrade WITHOUT an Origin is acceptable. Our clients are native or a
-        # page we serve; a browser page that is not ours must not be able to drive an
-        # agent that has a shell (the CSWSH class — WebSockets are outside the SOP).
-        origins=[None],
+        # Only an upgrade WITHOUT an Origin is acceptable: a browser page that is not
+        # ours must not drive an agent with a shell (CSWSH — WS is outside the SOP).
+        # --web must relax it (a browser always sends one); HATS-1194 S2 swaps in a token.
+        origins=None if web_client else [None],
+        process_request=web.make_process_request() if web_client else None,
         # LAN: deflate is GIL-bound and buys nothing here.
         compression=None,
         **kwargs,
