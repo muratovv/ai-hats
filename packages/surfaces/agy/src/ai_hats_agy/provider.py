@@ -116,9 +116,13 @@ class AgyProvider(Provider):
 
     def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
         """Role sections inline in the meta-prompt — nothing on disk, no flag."""
-        from ai_hats.session_artifacts import compose_role_context_sections
+        from ai_hats.placeholders import expand_path_placeholders
+        from ai_hats.role_catalog import expand_role_catalog
 
-        artifacts.full_content = compose_role_context_sections(result, project_dir)
+        prompt_content = self.build_system_prompt(result)
+        prompt_content = expand_path_placeholders(prompt_content, project_dir)
+        prompt_content = expand_role_catalog(prompt_content, project_dir)
+        artifacts.full_content = prompt_content
 
     # -- skills ----------------------------------------------------------------
 
@@ -163,7 +167,7 @@ class AgyProvider(Provider):
                 })
         return manifest
 
-    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+    def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
         """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
@@ -173,15 +177,11 @@ class AgyProvider(Provider):
         artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
         artifacts.materialized.append(hooks_json)
 
-    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
-        """Registers the dispatcher but writes NO manifest, so no ai-hats hook fires.
+    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
 
-        Preserved as-is by HATS-1207 R5 (byte-for-byte refactor); it is a real
-        defect and HATS-1223 owns fixing it. Being an explicit method rather than
-        a missing branch is the point — the gap is now visible here.
-        """
-        self._cache_dir(project_dir, session_id, artifacts)
-        ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
+    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_hooks(project_dir, result, session_id, artifacts)
 
     def materialize_runtime_skills(
         self,

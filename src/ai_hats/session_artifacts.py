@@ -77,15 +77,3 @@ class BuiltArtifacts:
     # published signature change (ADR-0018 §1). Same rule — append last.
     policy: SessionPolicy = field(default_factory=SessionPolicy)
 
-
-def compose_role_context_sections(result, project_dir: Path) -> str:
-    """Compose the # SYSTEM_ROLE and # CONSTRAINTS sections for AUTOMATE context (HATS-1207)."""
-    from .placeholders import expand_path_placeholders
-
-    sections = []
-    merged = expand_path_placeholders(result.merged_injection, project_dir)
-    sections.append(f"# SYSTEM_ROLE\n{merged}")
-    if result.priorities:
-        constraints = "\n".join(f"- {p}" for p in result.priorities)
-        sections.append(f"# CONSTRAINTS\n{constraints}")
-    return "\n\n".join(sections)

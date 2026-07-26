@@ -190,6 +190,7 @@ class ClaudeProvider(Provider):
         """
         self._write_prompt_file(project_dir, session_id, result, artifacts)
         text = expand_path_placeholders(self.build_system_prompt(result), project_dir)
+        text = expand_role_catalog(text, project_dir)
         artifacts.sdk_options["system_prompt"] = {
             "type": "preset", "preset": "claude_code", "append": text,
         }

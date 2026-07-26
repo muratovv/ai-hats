@@ -6,7 +6,7 @@
   "launch": [
     "agy",
     "-p",
-    "# SYSTEM_ROLE\nRole body.\n\n# CONSTRAINTS\n- Quality\n\n# TASK\ndemo"
+    "## PRIORITIES\n1. Quality\n\nRole body.\n\n# TASK\ndemo"
   ],
   "materialized": [
     {
@@ -53,6 +53,15 @@
       "size": 597,
       "source": null,
       "target": "<home>/.gemini/antigravity-cli/settings.json"
+    },
+    {
+      "detail": "",
+      "digest": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 3,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/hooks.json"
     }
   ],
   "notes": [],

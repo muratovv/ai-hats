@@ -9,7 +9,7 @@
     "<project>/.agent/ai-hats/.cache/sessions/dry-run",
     "--yolo",
     "--json",
-    "# SYSTEM_ROLE\nRole body.\n\n# CONSTRAINTS\n- Quality\n\n# TASK\ndemo"
+    "## PRIORITIES\n1. Quality\n\nRole body.\n\n# TASK\ndemo"
   ],
   "materialized": [
     {
