@@ -19,7 +19,7 @@ from ..constants import is_debug_mode
 from ..paths import PROJECT_CONFIG
 
 if TYPE_CHECKING:
-    from ..composition_seam import RoleNotFoundError
+    from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..providers import UnknownProviderError
 
 console = Console()
@@ -73,6 +73,23 @@ def _handle_unknown_provider(exc: "UnknownProviderError") -> NoReturn:
     if remediation:
         click.echo(f"Surface provider {exc.name!r} is not installed.", err=True)
         click.echo(f"Fix: {remediation}\n", err=True)
+    click.echo("Available providers:", err=True)
+    for name in exc.available:
+        click.echo(f"  - {name}", err=True)
+    click.echo("\nHint: 'ai-hats list providers' shows the full table.", err=True)
+    sys.exit(2)
+
+
+def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
+    """Render a ``MissingProviderError`` as friendly stderr + exit 2.
+
+    The absent-provider analogue of ``_handle_unknown_provider`` (HATS-1224):
+    no name to echo back, so it leads with the remediation command. Output
+    contract asserted by ``tests/e2e/test_missing_provider_friendly_error.py``.
+    """
+    click.echo("Error: no provider configured in ai-hats.yaml.\n", err=True)
+    example = exc.available[0] if exc.available else "<provider>"
+    click.echo(f"Fix: ai-hats config set -p {example}\n", err=True)
     click.echo("Available providers:", err=True)
     for name in exc.available:
         click.echo(f"  - {name}", err=True)

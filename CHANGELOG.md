@@ -12,6 +12,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**
+  (HATS-1224). The compose seam raised a bare `RuntimeError` that no CLI arm
+  caught, so `ai-hats`, `--dry-run`, `execute --batch` and `agent` all crashed
+  with a 9-frame trace — while the adjacent failure, an *unknown* provider name,
+  had exited 2 with the available list since HATS-965. All of them now print the
+  same friendly block, name `ai-hats config set -p <provider>` as the fix, and
+  exit 2. The message no longer carries the `launch_provider:` prefix (a step
+  renamed in HATS-535) or the `materialize_system_prompt:` one — the typed error
+  carries its own text, so `config show-prompt` reports it identically.
+
 - **`-p/--provider` is honoured on the batch surfaces** (HATS-1218). The compose
   seam read the configured provider whenever composition was non-interactive, so
   `ai-hats execute -p <x> --batch` accepted the flag and launched the surface

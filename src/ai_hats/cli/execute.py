@@ -181,14 +181,22 @@ def execute_cmd(
     extra_args: tuple[str, ...],
 ):
     """Launch a provider session with a composed role + optional initial prompt."""
-    from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..composition_seam import (
+        MissingProviderError,
+        RoleNotFoundError,
+        build_composition_payload,
+    )
     from ai_hats_observe import SidecarTracer
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..providers import UnknownProviderError
     from ..tags import TagValidationError, parse_tags
     from ._batch_launch import run_batch
-    from ._helpers import _handle_role_not_found, _handle_unknown_provider
+    from ._helpers import (
+        _handle_missing_provider,
+        _handle_role_not_found,
+        _handle_unknown_provider,
+    )
 
     # HATS-827: empty role builds the git-invalid branch agent//<sid>; fail at
     # the boundary instead of crashing deep in worktree creation.
@@ -258,5 +266,8 @@ def execute_cmd(
         # HATS-1218: bare ``ai-hats`` got this in HATS-965; ``execute`` declared
         # the same ``-p`` and still leaked the traceback.
         _handle_unknown_provider(exc)
+    except MissingProviderError as exc:
+        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
+        _handle_missing_provider(exc)
 
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))

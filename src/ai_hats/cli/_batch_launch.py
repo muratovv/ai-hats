@@ -56,11 +56,19 @@ def run_batch(
     exactly the ignored knob HATS-1218 exists to remove.
     """
     from ai_hats_observe import SidecarTracer
-    from ..composition_seam import RoleNotFoundError, build_composition_payload
+    from ..composition_seam import (
+        MissingProviderError,
+        RoleNotFoundError,
+        build_composition_payload,
+    )
     from ..composition_seam import make_session_manager
     from ..pipeline.harness import PipelineHarness
     from ..providers import UnknownProviderError
-    from ._helpers import _handle_role_not_found, _handle_unknown_provider
+    from ._helpers import (
+        _handle_missing_provider,
+        _handle_role_not_found,
+        _handle_unknown_provider,
+    )
 
     try:
         with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
@@ -92,6 +100,9 @@ def run_batch(
         # HATS-1218: the provider analogue (HATS-965), until now reachable only
         # from bare ``ai-hats`` because no batch surface honoured ``-p``.
         _handle_unknown_provider(exc)
+    except MissingProviderError as exc:
+        # HATS-1224: the absent-provider sibling — an emptied ``provider:``.
+        _handle_missing_provider(exc)
 
     _report(final, as_json=as_json)
 
