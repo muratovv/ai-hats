@@ -10,6 +10,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`-p/--provider` is honoured on the batch surfaces** (HATS-1218). The compose
+  seam read the configured provider whenever composition was non-interactive, so
+  `ai-hats execute -p <x> --batch` accepted the flag and launched the surface
+  from `ai-hats.yaml` instead — no warning, no error. **This changes shipped
+  behaviour**: that command now runs `<x>`. `interactive` still gates the
+  first-run `active_role` write; it no longer decides whether an explicit
+  override counts. `ai-hats agent` gains `-p/--provider` (also honoured by its
+  `--dry-run`), so a sub-agent surface can be chosen without editing
+  `ai-hats.yaml`, and both commands now report an unknown provider the way bare
+  `ai-hats` has since HATS-965 — named, with the available list, exit 2, no
+  traceback. Internally the two commands stopped hand-wiring one pipeline twice:
+  the duplicated funnel seed and post-run report are one shared path, which is
+  what let `execute` grow the flag while `agent` silently went without.
+
 ### Changed
 
 - **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment

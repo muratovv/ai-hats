@@ -53,9 +53,7 @@ def dry_run_hitl(
     from .composition_seam import build_preview_payload
     from .paths import session_cache_dir
 
-    # The seam's read-only payload: same compose facade, no ``set_role`` write,
-    # and it honours an explicit -p — which build_composition_payload drops on
-    # its non-interactive path (composition_seam.py:139-147).
+    # The seam's read-only payload: same compose facade, no ``set_role`` write.
     payload = build_preview_payload(project_dir, role=role, provider=provider)
     prov = payload.provider
 
@@ -119,9 +117,7 @@ def dry_run_automate(
     from .constants import PROVIDER_CLAUDE
     from .paths import session_cache_dir
 
-    # The seam's read-only payload: same compose facade, no ``set_role`` write,
-    # and it honours an explicit -p — which build_composition_payload drops on
-    # its non-interactive path (composition_seam.py:139-147).
+    # The seam's read-only payload: same compose facade, no ``set_role`` write.
     payload = build_preview_payload(project_dir, role=role, provider=provider)
     prov = payload.provider
     eff_policy = policy or SessionPolicy()

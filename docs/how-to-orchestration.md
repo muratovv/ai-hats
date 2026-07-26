@@ -4,14 +4,18 @@ When you fan out ai-hats sessions via parallel, xargs, CI, or webhook orchestrat
 
 ## Which command: `ai-hats agent` vs `ai-hats execute`
 
-For sub-agents and fan-out, reach for **`ai-hats agent <role>`**. The role is required, so you cannot launch a roleless session by accident, and you get `--task`, `--ticket`, `--json`, and friendly role errors out of the box. Every example below uses it.
-
-`ai-hats execute` is the **low-level primitive** behind it — a dual-mode launcher (`--interactive`, the default, is the same path as bare `ai-hats`; `--batch` is the same path as `ai-hats agent`). Use it directly only for knobs the wrapper does not expose, such as a provider override or an initial-injection prompt resolved by name:
+For sub-agents and fan-out, reach for **`ai-hats agent <role>`**. The role is required, so you cannot launch a roleless session by accident, and you get `--task`, `--ticket`, `--json`, `-p/--provider`, and friendly role/provider errors out of the box. Every example below uses it.
 
 ```bash
-# power case: provider override + initial-injection prompt by name
-# (knobs `agent` does not expose) — a role is still REQUIRED for --batch
-ai-hats execute --role <role> --batch --provider <provider> --prompt <injection-name>
+# pick the surface per run, without editing ai-hats.yaml
+ai-hats agent <role> --task "..." -p <provider>
+```
+
+`ai-hats execute` is the **low-level primitive** behind it — a dual-mode launcher (`--interactive`, the default, is the same path as bare `ai-hats`; `--batch` is the same path as `ai-hats agent`). Both run the same pipeline through the same wiring, so reach for `execute` only for the knobs the wrapper still does not expose — chiefly an initial-injection prompt resolved by name:
+
+```bash
+# a role is still REQUIRED for --batch
+ai-hats execute --role <role> --batch --prompt <injection-name>
 ```
 
 `execute --batch` without `-r/--role` is a usage error (it would build the invalid worktree branch `agent//<sid>`); the CLI redirects you to `ai-hats agent <role>`.
