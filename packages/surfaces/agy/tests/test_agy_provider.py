@@ -16,8 +16,11 @@ from ai_hats_agy.provider import AgyProvider
 
 
 @pytest.fixture
-def agy_project(tmp_path):
+def agy_project(tmp_path, monkeypatch):
     """Minimal library + role composed for the agy provider."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+
     project = tmp_path / "project"
     project.mkdir()
     lib = tmp_path / "lib"
