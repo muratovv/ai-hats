@@ -62,6 +62,7 @@ class SessionReport:
                     "size": e.size,
                     "file_count": e.file_count,
                     "detail": e.detail,
+                    "digest": e.digest,
                 }
                 for e in self.plan.entries
             ],

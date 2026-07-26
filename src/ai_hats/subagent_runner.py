@@ -25,6 +25,8 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
+from .session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from .session_report import SessionReport
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
     SUBAGENT_EXIT_TIMEOUT,
@@ -186,16 +188,27 @@ class SubAgentRunner:
         _ctx = provider.execution_context(self.project_dir)
         _ctx.__enter__()
 
-        # HATS-474: for the Claude path the meta-prompt stored on disk is
-        # a *forensic* artifact — it records what we actually sent to the
-        # SDK (system_prompt + initial user message), not what the legacy
-        # ``-p`` arg would have looked like. For non-Claude providers we
-        # keep the legacy structure intact.
+        artifacts = provider.build_session_artifacts(
+            self.project_dir,
+            result,
+            session.session_id,
+            run_mode=RunMode.AUTOMATE,
+            policy=SessionPolicy(),
+            artifacts=BuiltArtifacts(),
+        )
+
+        notes: list[str] = []
         if provider_name == PROVIDER_CLAUDE:
             meta_prompt = self._build_sdk_prompt_audit(
                 result=result,
                 task=task,
                 ticket_id=ticket_id,
+            )
+            launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
+            notes.append(
+                "claude/automate: the engine recomputes system_prompt and plugins in "
+                "sdk_options.py and ignores the values shown here — these are the "
+                "builder's, not what the SDK receives (HATS-1207 bypass 1)."
             )
         else:
             meta_prompt = self._build_meta_prompt(
@@ -204,6 +217,17 @@ class SubAgentRunner:
                 task=task,
                 ticket_id=ticket_id,
             )
+            skill_args = provider.materialize_runtime_skills(
+                self.project_dir, result, session.session_id
+            )
+            flags = provider.model_flags(model) if model else []
+            cmd = provider.get_cli_command() + skill_args + flags
+            launch = provider.get_run_command(cmd, meta_prompt)
+            notes.append(
+                f"{provider.name}/automate: the role is delivered by the runner's "
+                "meta-prompt, not the builder (HATS-1207 bypass 2)."
+            )
+
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
             role=role_name,
@@ -211,6 +235,26 @@ class SubAgentRunner:
             model=model,
             composition=self.payload.snapshot,
         )
+
+        # HATS-1216: persist launch record as role_materialization.json
+        prompt_file = next(
+            (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
+            session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
+        )
+        report = SessionReport(
+            role=role_name,
+            provider=provider.name,
+            run_mode=RunMode.AUTOMATE.value,
+            policy=SessionPolicy(),
+            launch=launch,
+            env=dict(artifacts.extra_env),
+            prompt=prompt_file,
+            plan=artifacts.port.plan,
+            cwd="<worktree, assigned at launch>",
+            notes=tuple(notes),
+        )
+        session.save_role_materialization(report.to_dict())
+
         session.log_sub(f"Sub-agent started: role={role_name}")
 
         # HATS-474 review fix: keep the env we pass to a *subprocess* (Agy

@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import abc
 import contextlib
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+from .plugin_dir import _dir_digest
 
 # A rebuild is a sub-second fs op, so a timeout means a stuck/dead holder (HATS-604).
 LOCK_TIMEOUT = 30.0
@@ -36,6 +39,7 @@ class MaterializationEntry:
     source: Path | None = None
     file_count: int = 1
     detail: str = ""
+    digest: str | None = None
 
 
 _CREATING = (WriteKind.WRITE_TEXT, WriteKind.COPY_TREE, WriteKind.MERGE_JSON)
@@ -62,19 +66,24 @@ class MaterializationPlan:
 
 
 def describe_write_text(path: Path, content: str) -> MaterializationEntry:
+    content_bytes = content.encode()
     return MaterializationEntry(
-        kind=WriteKind.WRITE_TEXT, target=path, size=len(content.encode())
+        kind=WriteKind.WRITE_TEXT,
+        target=path,
+        size=len(content_bytes),
+        digest=hashlib.sha256(content_bytes).hexdigest(),
     )
 
 
 def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
-    files = [p for p in src.rglob("*") if p.is_file()]
+    files = [p for p in src.rglob("*") if p.is_file()] if src.is_dir() else []
     return MaterializationEntry(
         kind=WriteKind.COPY_TREE,
         target=dest,
         source=src,
         size=sum(p.stat().st_size for p in files),
         file_count=len(files),
+        digest=_dir_digest(src) if src.is_dir() else None,
     )
 
 
@@ -92,12 +101,14 @@ def render_json(data: dict) -> str:
 
 def describe_merge_json(path: Path, data: dict) -> MaterializationEntry:
     content = render_json(data)
+    content_bytes = content.encode()
     current = path.read_text() if path.is_file() else None
     return MaterializationEntry(
         kind=WriteKind.MERGE_JSON,
         target=path,
-        size=len(content.encode()),
+        size=len(content_bytes),
         detail=_key_diff(current, data),
+        digest=hashlib.sha256(content_bytes).hexdigest(),
     )
 
 
