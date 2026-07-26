@@ -1,0 +1,99 @@
+{
+  "cwd": "<project>",
+  "duplicates": [],
+  "env_keys": [
+    "AI_HATS_DIR",
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_PYTHON"
+  ],
+  "escapes": [],
+  "launch": [
+    "agy",
+    "--add-dir",
+    "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules"
+  ],
+  "materialized": [
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules"
+    },
+    {
+      "detail": "",
+      "digest": "c5981cfc631f2074faf408956766f48f34b027c68f9858c5a20f09c3be570d4d",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 36,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/GEMINI.md"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills"
+    },
+    {
+      "detail": "",
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "file_count": 1,
+      "kind": "copy_tree",
+      "size": 38,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/s"
+    },
+    {
+      "detail": "",
+      "digest": "03b6f8155ff0040e71433661bca58f3416181a4f1223ea5bda0811244dd768f0",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 31,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/.ai-hats-managed"
+    },
+    {
+      "detail": "+hooks",
+      "digest": "2c7146e11716a54850925e502620621c623388aa7a2935d235de61b5ab478b9c",
+      "file_count": 1,
+      "kind": "merge_json",
+      "size": 597,
+      "source": null,
+      "target": "<home>/.gemini/antigravity-cli/settings.json"
+    },
+    {
+      "detail": "",
+      "digest": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 3,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/hooks.json"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/GEMINI.md",
+  "provider": "agy",
+  "role": "test-role",
+  "run_mode": "hitl"
+}

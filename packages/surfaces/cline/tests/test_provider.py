@@ -142,14 +142,17 @@ def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
 
 
 def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
-    args, env, meta_prompt = ClineProvider().build_session_prompt(
+    provider = ClineProvider()
+    args, env, meta_prompt = provider.build_session_prompt(
         tmp_path, _fake_result(), "sid-1"
     )
-    # HITL: interactive TUI + role inline via -s
-    assert args[0] == "-i"
-    assert args[1] == "-s"
+    # HITL: role inline via -s. HATS-1207 moved -i out of the CONTEXT handler —
+    # it is launch mode, not context, so suppressing CONTEXT must not drop the TUI.
+    assert args[0] == "-s"
     # the -s value IS the persisted meta-prompt bytes (HATS-523 symmetry)
-    assert args[2] == meta_prompt
+    assert args[1] == meta_prompt
+    # -i now rides the launch-args seam, and still reaches the real command
+    assert "-i" in provider.get_cli_launch_args(["cline", *args], "sid-1", False)
     assert "## PRIORITIES" in meta_prompt
     assert env == {}
     # HATS-1171: skills reach cline via --config <cache> (not a root .cline dir)

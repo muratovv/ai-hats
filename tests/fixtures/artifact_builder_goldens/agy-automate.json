@@ -1,0 +1,68 @@
+{
+  "cwd": "<worktree, assigned at launch>",
+  "duplicates": [],
+  "env_keys": [],
+  "escapes": [],
+  "launch": [
+    "agy",
+    "-p",
+    "# SYSTEM_ROLE\nRole body.\n\n# CONSTRAINTS\n- Quality\n\n# TASK\ndemo"
+  ],
+  "materialized": [
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills"
+    },
+    {
+      "detail": "",
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "file_count": 1,
+      "kind": "copy_tree",
+      "size": 38,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/s"
+    },
+    {
+      "detail": "",
+      "digest": "03b6f8155ff0040e71433661bca58f3416181a4f1223ea5bda0811244dd768f0",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 31,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/.ai-hats-managed"
+    },
+    {
+      "detail": "+hooks",
+      "digest": "2c7146e11716a54850925e502620621c623388aa7a2935d235de61b5ab478b9c",
+      "file_count": 1,
+      "kind": "merge_json",
+      "size": 597,
+      "source": null,
+      "target": "<home>/.gemini/antigravity-cli/settings.json"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": null,
+  "provider": "agy",
+  "role": "test-role",
+  "run_mode": "automate"
+}

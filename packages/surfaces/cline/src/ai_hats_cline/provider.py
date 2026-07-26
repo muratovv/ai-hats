@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai_hats.providers import Provider
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     # Workspace-boundary Rule 1 (HATS-869): only first-party root is `ai_hats`.
@@ -75,61 +75,53 @@ class ClineProvider(Provider):
 
     # ----- HATS-1171: unified artifact-builder (ADR-0018) -----
 
-    def build_category_artifact(
-        self,
-        category: ArtifactCategory,
-        project_dir: Path,
-        result: CompositionResult,
-        session_id: str,
-        *,
-        run_mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        """Materialize one category of session artifacts for cline (ADR-0018).
+    # HOOKS/SETTINGS deliver nothing in either mode, hence no handler for them:
+    # the TS hook plugin is dropped (jiti-less cline never loaded it — HATS-1083)
+    # and guarding is SurfaceGuard's job.
 
-        HOOKS/SETTINGS are no-ops: the TS hook plugin is dropped (jiti-less
-        cline never loaded it — HATS-1083); guarding is SurfaceGuard's job.
-        """
+    def get_cli_launch_args(
+        self, base_cmd: list[str], session_id: str, is_resume: bool
+    ) -> list[str]:
+        cmd = list(base_cmd)
+        if "-i" not in cmd and "--yolo" not in cmd:
+            cmd.insert(1, "-i")
+        return super().get_cli_launch_args(cmd, session_id, is_resume)
+
+    def _cache_dir(self, project_dir: Path, session_id: str, artifacts: BuiltArtifacts) -> Path:
         from ai_hats.paths import session_cache_dir
 
         cache_dir = session_cache_dir(project_dir, session_id)
         artifacts.port.mkdir(cache_dir)
+        return cache_dir
 
-        if category == ArtifactCategory.CONTEXT:
-            self._build_context_artifact(project_dir, result, run_mode, artifacts)
-        elif category == ArtifactCategory.SKILLS:
-            self._build_skills_artifact(project_dir, result, cache_dir, artifacts)
+    # -- context ---------------------------------------------------------------
 
-    def _build_context_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
+    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        """Role inline via -s. The TUI flag is launch mode, not context — see
+        ``get_cli_launch_args`` (HATS-1207: gating CONTEXT must not drop -i)."""
         from ai_hats.placeholders import expand_path_placeholders
         from ai_hats.role_catalog import expand_role_catalog
 
+        self._cache_dir(project_dir, session_id, artifacts)
         prompt = self.build_system_prompt(result)
         prompt = expand_path_placeholders(prompt, project_dir)
         prompt = expand_role_catalog(prompt, project_dir)
         artifacts.full_content = prompt
+        artifacts.cli_args.extend(["-s", prompt])
 
-        if mode == RunMode.HITL:
-            # Interactive TUI + role inline; -i never meets the automate --yolo.
-            artifacts.cli_args.extend(["-i", "-s", prompt])
-        # AUTOMATE: role is delivered by the runner's meta_prompt (positional);
-        # adding -s here would double-deliver it.
+    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
+        """Role sections inline in the meta-prompt — no flag."""
+        from ai_hats.session_artifacts import compose_role_context_sections
 
-    def _build_skills_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        cache_dir: Path,
-        artifacts: BuiltArtifacts,
-    ) -> None:
+        self._cache_dir(project_dir, session_id, artifacts)
+        artifacts.full_content = compose_role_context_sections(result, project_dir)
+
+    # -- skills ----------------------------------------------------------------
+
+    def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env
 
+        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         skills_dir = cache_dir / "skills"
         self._materialize_skills_to_cache(skills_dir, result, project_dir, artifacts.port)
         # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
@@ -137,6 +129,12 @@ class ClineProvider(Provider):
         artifacts.cli_args.extend(["--config", str(cache_dir)])
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
         artifacts.materialized.append(skills_dir)
+
+    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_skills(project_dir, result, session_id, artifacts)
+
+    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
+        self._deliver_skills(project_dir, result, session_id, artifacts)
 
     @staticmethod
     def _materialize_skills_to_cache(

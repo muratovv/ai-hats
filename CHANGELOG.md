@@ -49,6 +49,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **`SubagentEngine.run` accepts optional keyword argument `artifacts`** (HATS-1207). Custom `SubagentEngine` subclasses receive prebuilt session artifacts (`BuiltArtifacts | None = None`) to avoid recomputing system prompt and plugins.
+
 - **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment
   wrapper, not a teleporter: with a cwd inside the worktree the command runs
   *there* instead of being moved to the worktree root (the published shape is
