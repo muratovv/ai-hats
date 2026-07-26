@@ -76,20 +76,27 @@ def test_e2e_reinit_launches_wizard_and_runs_offline(tmp_venv_project, tmp_path)
                     proc.write(b"claude\n")
                     wrote = True
 
+    # Reap only after killing: the wizard keeps prompting past the read
+    # deadline, so an unconditional wait() on a live child blocks forever.
+    if proc.isalive():
+        proc.terminate(force=True)
     try:
         proc.wait()
     except Exception:
         pass
-    if proc.isalive():
-        proc.terminate(force=True)
 
     plain = strip_ansi(buf)
 
-    # 1. Verify wizard prompt was rendered despite pre-existing config
-    assert wrote or "Provider [" in plain or "Harness channel" in plain or "Re-initialized" in plain, (
-        f"Wizard prompt was not triggered on re-init. Output:\n{plain}"
-    )
+    # 1. The wizard PROMPTED, despite a pre-existing ai-hats.yaml.
+    # `wrote` is set only after "Provider [" / "Harness channel" appears, so it
+    # is the interactive-wizard signal. Do NOT accept "Re-initialized" as proof:
+    # init_steps.py prints it on EVERY re-init, wizard or not, which would make
+    # this assertion pass even when the wizard never launched (HATS-1215 review).
+    assert wrote, f"Wizard prompt was not triggered on re-init. Output:\n{plain}"
 
-    # 2. Verify no self-update network attempt was logged or triggered
-    assert "Checking for updates" not in plain
-    assert "Updating ai-hats" not in plain
+    # 2. No self-update was attempted. In this PTY env `PYTEST_CURRENT_TEST` is
+    # absent, so a surviving `_run_self_update` call would NOT short-circuit —
+    # it would either print "Update skipped" (unmanaged target) or run a real
+    # uv install. Absence of all three markers is what makes this offline.
+    for marker in ("Checking for updates", "Updating ai-hats", "Update skipped"):
+        assert marker not in plain, f"self init attempted an update ({marker!r}):\n{plain}"
