@@ -137,6 +137,30 @@ def test_raw_terminal_restores_even_on_an_exception():
         raise RuntimeError("boom")
 
 
+@pytest.mark.parametrize(
+    "mode, what",
+    [
+        (b"\x1b[?1000l", "mouse clicks"),
+        (b"\x1b[?1002l", "mouse drag"),
+        (b"\x1b[?1003l", "any-motion mouse"),
+        (b"\x1b[?1006l", "SGR mouse coordinates"),
+        (b"\x1b[?1004l", "focus reporting"),
+        (b"\x1b[?2004l", "bracketed paste"),
+        (b"\x1b[=0;1u", "kitty keyboard flags"),
+        (b"\x1b[>4;0m", "modifyOtherKeys"),
+        (b"\x1b[?1049l", "alternate screen"),
+        (b"\x1b[?25h", "cursor visibility"),
+    ],
+)
+def test_detach_turns_off_every_mode_the_session_enabled(mode, what):
+    """The session keeps running after a detach, so it never sends these disables. Any
+    one left on damages the terminal the user goes back to — mouse reporting most
+    visibly, which makes every pointer move spew escape sequences."""
+    from hats_relay.client import TERM_RESTORE
+
+    assert mode in TERM_RESTORE, f"detach leaves {what} enabled"
+
+
 def test_client_drives_a_session_over_the_wire():
     """The client's own framing must match what the broker expects, end to end."""
 

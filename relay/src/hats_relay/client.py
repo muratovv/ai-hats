@@ -40,7 +40,22 @@ DEFAULT_DETACH = "f12"
 # ai-hats writes its own reset to its stdout, which under a broker goes nowhere. A
 # stale keyboard mode makes Enter arrive as \x1b[13u, i.e. a newline instead of submit.
 TERM_RESET = b"\x1b[=0;1u\x1b[>4;0m\x1b[20l\x1b>\x1b[?2004l\x1b[?1l\x1b[?25h"
-LEAVE_ALT_SCREEN = b"\x1b[?1049l\x1b[?25h\x1b[0m"
+
+# Detaching must undo every mode the session enabled here: the session lives on, so it
+# will never send the disables itself. Mouse reporting is the one you see.
+TERM_RESTORE = b"".join(
+    (
+        b"\x1b[?1000l\x1b[?1002l\x1b[?1003l",  # mouse: click, drag, any-motion
+        b"\x1b[?1005l\x1b[?1006l\x1b[?1015l",  # mouse coordinate encodings
+        b"\x1b[?1004l",  # focus in/out reporting
+        b"\x1b[?2004l",  # bracketed paste
+        b"\x1b[=0;1u",  # kitty keyboard flags
+        b"\x1b[>4;0m",  # xterm modifyOtherKeys
+        b"\x1b[?1l\x1b>",  # cursor keys and keypad back to normal
+        b"\x1b[?1049l",  # leave the alternate screen
+        b"\x1b[?25h\x1b[0m",  # cursor visible, attributes cleared
+    )
+)
 
 
 def resolve_detach(args) -> tuple[bytes, ...]:
@@ -87,7 +102,7 @@ class RawTerminal:
             with contextlib.suppress(termios.error, ValueError):
                 termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
         with contextlib.suppress(OSError):
-            os.write(1, LEAVE_ALT_SCREEN)
+            os.write(1, TERM_RESTORE)
 
 
 async def _open(ws, args) -> dict:
