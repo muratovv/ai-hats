@@ -26,7 +26,9 @@ const term = new Terminal({
 term.open(document.getElementById("terminal"));
 term.focus();
 
-const sid = new URLSearchParams(location.search).get("sid");
+const params = new URLSearchParams(location.search);
+const sid = params.get("sid");
+const token = params.get("token") || "";
 if (!sid) {
   say("no sid in the URL — open the link hats-relay-attach printed", "error");
   throw new Error("missing sid");
@@ -36,7 +38,9 @@ const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}:/
 socket.binaryType = "arraybuffer";
 
 socket.addEventListener("open", () => {
-  socket.send(JSON.stringify({ op: "attach", sid, cols: term.cols, rows: term.rows }));
+  const attach = { op: "attach", sid, cols: term.cols, rows: term.rows };
+  if (token) attach.token = token;
+  socket.send(JSON.stringify(attach));
 });
 
 socket.addEventListener("message", (event) => {

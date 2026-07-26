@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
@@ -85,7 +86,7 @@ async def _pipe(ws: ServerConnection, entry: SessionEntry, ctl: protocol.Control
         await attachment.aclose()
 
 
-def make_handler(broker: Broker):
+def make_handler(broker: Broker, *, token: str = ""):
     """Build the connection handler bound to ``broker``."""
 
     async def handler(ws: ServerConnection) -> None:
@@ -101,6 +102,12 @@ def make_handler(broker: Broker):
             ctl = protocol.parse_control(first)
         except protocol.ProtocolError as exc:
             await _reply_error(ws, str(exc))
+            return
+
+        # Before any op: `list` leaks the sids that are themselves the capability, so
+        # there is no op cheap enough to answer unauthenticated.
+        if token and not secrets.compare_digest(ctl.token, token):
+            await _reply_error(ws, "unauthorized")
             return
 
         if ctl.op == "list":
@@ -152,7 +159,15 @@ async def shutdown(server, broker: Broker | None = None) -> None:
         await broker.aclose()
 
 
-async def serve_broker(broker: Broker, *, host: str, port: int, web_client: bool = False, **kwargs):
+async def serve_broker(
+    broker: Broker,
+    *,
+    host: str,
+    port: int,
+    web_client: bool = False,
+    token: str = "",
+    **kwargs,
+):
     """Start the server.
 
     ``host`` is required on purpose: with no authentication, reaching the port is the
@@ -161,8 +176,12 @@ async def serve_broker(broker: Broker, *, host: str, port: int, web_client: bool
     """
     if not host:
         raise ValueError("host is required — bind an explicit interface")
+    # Serving a page means accepting any Origin (below); without a token that leaves
+    # nothing at all in front of a shell-capable agent, so the pair is not separable.
+    if web_client and not token:
+        raise ValueError("--web requires a token — see HATS-1194")
     return await serve(
-        make_handler(broker),
+        make_handler(broker, token=token),
         host,
         port,
         # Only an upgrade WITHOUT an Origin is acceptable: a browser page that is not

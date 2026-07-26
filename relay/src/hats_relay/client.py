@@ -12,10 +12,12 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import signal
 import sys
 import termios
 import tty
+import urllib.parse
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
@@ -113,11 +115,20 @@ async def _open(ws, args) -> dict:
             request["after_seq"] = args.after_seq
     else:
         request = {"op": "create", "spec": {"role": args.role}, "cols": cols, "rows": rows}
+    if args.token:
+        request["token"] = args.token
     await ws.send(json.dumps(request))
     reply = json.loads(await ws.recv())
     if "error" in reply:
         raise SystemExit(f"hats-relay: {reply['error']}")
     return reply
+
+
+def browser_url(ws_url: str, sid: str, token: str) -> str:
+    """The link to open elsewhere: a 32-hex sid is not something anyone retypes."""
+    base = re.sub(r"^ws", "http", ws_url.rstrip("/"))
+    query = urllib.parse.urlencode({"sid": sid, **({"token": token} if token else {})})
+    return f"{base}/?{query}"
 
 
 async def _pump_stdin(
@@ -199,11 +210,13 @@ async def _pump_output(ws, stop: asyncio.Future) -> None:
         stop.done() or stop.set_result("session ended")
 
 
-async def list_sessions(url: str) -> int:
+async def list_sessions(url: str, token: str = "") -> int:
     """Print the live sessions, so a human can pick a sid to attach to."""
     async with connect(url, compression=None) as ws:
-        await ws.send(json.dumps({"op": "list"}))
+        await ws.send(json.dumps({"op": "list", **({"token": token} if token else {})}))
         reply = json.loads(await ws.recv())
+    if "error" in reply:
+        raise SystemExit(f"hats-relay: {reply['error']}")
     sessions = reply.get("sessions", [])
     if not sessions:
         print("no live sessions")
@@ -224,7 +237,7 @@ async def run_client(args) -> int:
     if not args.url:
         raise SystemExit("hats-relay-attach: a url is required (or use --keys)")
     if args.list:
-        return await list_sessions(args.url)
+        return await list_sessions(args.url, args.token)
     async with connect(args.url, max_size=None, compression=None) as ws:
         reply = await _open(ws, args)
         stop: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -235,6 +248,7 @@ async def run_client(args) -> int:
             os.write(
                 2, f"[relay] session {reply['sid']} — {args.detach_key} to detach\r\n".encode()
             )
+            os.write(2, f"[relay] browser: {browser_url(args.url, reply['sid'], args.token)}\r\n".encode())
 
             def on_winch(*_a) -> None:
                 cols, rows = terminal_size()
@@ -265,6 +279,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sid", default=None, help="attach to an existing session instead")
     parser.add_argument("--after-seq", type=int, default=None, help="resume from this sequence")
     parser.add_argument("--list", action="store_true", help="list live sessions and exit")
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("HATS_RELAY_TOKEN", ""),
+        help="token the broker requires (env: HATS_RELAY_TOKEN)",
+    )
     parser.add_argument(
         "--detach-key",
         choices=sorted(DETACH_KEYS),

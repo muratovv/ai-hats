@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import socket
 import sys
 import urllib.error
@@ -25,10 +26,17 @@ def argv_for(spec: dict) -> list[str]:
     return [*FAKE_CHILD, spec["role"]]
 
 
+TOKEN = "asset-token"  # noqa: S105 — a fixture, not a credential
+
+
 @contextlib.asynccontextmanager
 async def running_broker(*, web_client: bool):
     broker = Broker(argv_for)
-    server = await serve_broker(broker, host=HOST, port=0, web_client=web_client)
+    # --web refuses to start tokenless (test_token.py owns that rule); these tests are
+    # about the asset routing that sits in front of it.
+    server = await serve_broker(
+        broker, host=HOST, port=0, web_client=web_client, token=TOKEN if web_client else ""
+    )
     port = next(iter(server.sockets)).getsockname()[1]
     try:
         yield port, broker
@@ -130,7 +138,7 @@ def test_websocket_upgrade_still_works_with_the_page_served():
     async def scenario():
         async with running_broker(web_client=True) as (port, _broker):
             async with connect(f"ws://{HOST}:{port}") as ws:
-                await ws.send('{"op": "list"}')
+                await ws.send(json.dumps({"op": "list", "token": TOKEN}))
                 return await ws.recv()
 
     assert '"ok"' in asyncio.run(scenario())

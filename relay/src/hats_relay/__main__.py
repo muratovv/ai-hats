@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import os
 import signal
 
 from .broker import Broker
@@ -27,6 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--web", action="store_true", help="also serve the browser client on the same port"
     )
+    parser.add_argument(
+        "--token",
+        # An argv token is readable in `ps` by anyone else on the box; the env var is
+        # the way to keep it out of there.
+        default=os.environ.get("HATS_RELAY_TOKEN", ""),
+        help="shared token every client must present (env: HATS_RELAY_TOKEN)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -40,7 +48,9 @@ def make_argv_builder(binary: str):
 
 async def run(args: argparse.Namespace) -> int:
     broker = Broker(make_argv_builder(args.binary), cwd=args.cwd)
-    server = await serve_broker(broker, host=args.host, port=args.port, web_client=args.web)
+    server = await serve_broker(
+        broker, host=args.host, port=args.port, web_client=args.web, token=args.token
+    )
 
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
@@ -50,7 +60,12 @@ async def run(args: argparse.Namespace) -> int:
 
     logging.info("listening on ws://%s:%s", args.host, args.port)
     if args.web:
-        logging.info("browser client on http://%s:%s/?sid=<sid>", args.host, args.port)
+        logging.info(
+            "browser client on http://%s:%s/?sid=<sid>&token=<token> — "
+            "hats-relay-attach prints the whole link",
+            args.host,
+            args.port,
+        )
     try:
         await stop
     finally:
@@ -59,7 +74,11 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.web and not args.token:
+        parser.error("--web requires --token (or HATS_RELAY_TOKEN): serving a page means "
+                     "accepting any Origin, and the token is what replaces that check")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
