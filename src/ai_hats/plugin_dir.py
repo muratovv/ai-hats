@@ -179,6 +179,8 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
         project_dir / ".gemini" / "rules",
         project_dir / ".cline" / "skills",
         project_dir / ".cline" / "plugins",
+        project_dir / ".cline" / "rules",
+        project_dir / ".clinerules",
         project_dir / ".agents",
     )
     removed: list[str] = []
