@@ -56,6 +56,6 @@ def test_launcher_drops_foreign_ai_hats_dir_on_repin(
     assert (project / ".agent" / "ai-hats" / "library").is_dir(), (
         f"init did not materialize into the project's own namespace:\n{out}"
     )
-    assert "HATS-1123" in res.stderr, (
+    assert "dropping it" in res.stderr, (
         f"expected the launcher to announce the dropped pin:\n{out}"
     )

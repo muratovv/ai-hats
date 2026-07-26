@@ -111,7 +111,19 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     project = tmp_path / "proj_rthook_wire"
     _init_with_fixture_role(launcher, env, project)
 
-    settings = json.loads((project / ".claude" / "settings.json").read_text())
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths import session_cache_dir
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    provider = ClaudeProvider()
+    asm = Assembler(project)
+    result = asm.composer.compose("e2e-rthook-role")
+    provider.build_session_artifacts(
+        project, result, "sid-rthook-prop", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+    )
+    cache_settings = session_cache_dir(project, "sid-rthook-prop") / "settings.json"
+    settings = json.loads(cache_settings.read_text())
     by_event = _managed_entries(settings)
 
     # A. PreToolUse managed entry for the skill, tagged with the matcher.
