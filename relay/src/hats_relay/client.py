@@ -26,6 +26,7 @@ from . import wire
 # terminal report control keys as CSI-u sequences instead of the legacy control byte,
 # so each key is matched in both encodings. `--keys` prints what actually arrives.
 DETACH_KEYS: dict[str, tuple[bytes, ...]] = {
+    "ctrl-/": (b"\x1f", b"\x1b[47;5u"),
     "ctrl-]": (b"\x1d", b"\x1b[93;5u"),
     "ctrl-\\": (b"\x1c", b"\x1b[92;5u"),
     "ctrl-o": (b"\x0f", b"\x1b[111;5u"),
@@ -33,7 +34,7 @@ DETACH_KEYS: dict[str, tuple[bytes, ...]] = {
     "f12": (b"\x1b[24~", b"\x1b[57376u"),
 }
 # Ctrl-G opens $EDITOR in claude and Ctrl-O toggles its output, so both are taken.
-DEFAULT_DETACH = "ctrl-\\"
+DEFAULT_DETACH = "ctrl-/"
 
 # ai-hats writes its own reset to its stdout, which under a broker goes nowhere. A
 # stale keyboard mode makes Enter arrive as \x1b[13u, i.e. a newline instead of submit.

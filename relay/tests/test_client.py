@@ -88,8 +88,9 @@ def test_every_detach_key_matches_both_encodings():
     for name, patterns in DETACH_KEYS.items():
         assert len(patterns) >= 2, f"{name} has no CSI-u alternative"
         assert all(patterns), name
-    legacy, csi_u = DETACH_KEYS["ctrl-\\"]
-    assert legacy == b"\x1c"
+    # Measured on the supervisor's terminal during acceptance: Ctrl-/ sends 0x1f.
+    legacy, csi_u = DETACH_KEYS["ctrl-/"]
+    assert legacy == b"\x1f"
     assert csi_u.startswith(b"\x1b[") and csi_u.endswith(b"u")
 
 
