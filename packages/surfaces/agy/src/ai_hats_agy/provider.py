@@ -229,6 +229,48 @@ class AgyProvider(Provider):
             cmd.extend(args)
         return cmd
 
+    def get_cli_launch_args(self, base_cmd: list[str], session_id: str, is_resume: bool) -> list[str]:
+        """Convert positional prompt text in `base_cmd` into `-i <prompt>` for interactive agy sessions."""
+        del session_id, is_resume
+        if not base_cmd or len(base_cmd) <= 1:
+            return base_cmd
+
+        prompt_flags = {"-i", "--prompt-interactive", "-p", "--print", "--prompt"}
+        if any(arg in prompt_flags for arg in base_cmd):
+            return base_cmd
+
+        flags_with_val = {
+            "--add-dir", "--agent", "--effort", "--log-file", "--mode",
+            "--model", "--print-timeout", "--project", "--conversation",
+        }
+
+        executable = base_cmd[0]
+        args = base_cmd[1:]
+
+        other_tokens: list[str] = []
+        positional_prompt: list[str] = []
+
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token in flags_with_val:
+                other_tokens.append(token)
+                if i + 1 < len(args):
+                    other_tokens.append(args[i + 1])
+                    i += 1
+            elif token.startswith("-"):
+                other_tokens.append(token)
+            else:
+                positional_prompt.append(token)
+            i += 1
+
+        if not positional_prompt:
+            return base_cmd
+
+        prompt_str = " ".join(positional_prompt)
+        return [executable, "-i", prompt_str, *other_tokens]
+
+
     def get_run_command(
         self,
         cmd: list[str],
