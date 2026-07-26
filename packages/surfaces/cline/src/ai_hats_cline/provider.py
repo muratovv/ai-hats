@@ -8,7 +8,6 @@ The dead TS hook plugin is dropped (guarding → SurfaceGuard). See task plan.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,6 +16,7 @@ from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     # Workspace-boundary Rule 1 (HATS-869): only first-party root is `ai_hats`.
+    from ai_hats.materialization import Materializer
     from ai_hats.providers import CompositionResult, ProviderHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
@@ -93,7 +93,7 @@ class ClineProvider(Provider):
         from ai_hats.paths import session_cache_dir
 
         cache_dir = session_cache_dir(project_dir, session_id)
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        artifacts.port.mkdir(cache_dir)
 
         if category == ArtifactCategory.CONTEXT:
             self._build_context_artifact(project_dir, result, run_mode, artifacts)
@@ -131,7 +131,7 @@ class ClineProvider(Provider):
         from ai_hats.skills_dir import inject_skill_paths_to_env
 
         skills_dir = cache_dir / "skills"
-        self._materialize_skills_to_cache(skills_dir, result, project_dir)
+        self._materialize_skills_to_cache(skills_dir, result, project_dir, artifacts.port)
         # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
         # CLINE_DATA_DIR (get_env) keeps auth/state off this ephemeral base.
         artifacts.cli_args.extend(["--config", str(cache_dir)])
@@ -143,6 +143,7 @@ class ClineProvider(Provider):
         skills_dir: Path,
         result: CompositionResult,
         project_dir: Path,
+        port: "Materializer",
     ) -> None:
         """Copy the composed role's skills into the per-session cache.
 
@@ -151,21 +152,21 @@ class ClineProvider(Provider):
         """
         from ai_hats.placeholders import expand_path_placeholders
 
-        skills_dir.mkdir(parents=True, exist_ok=True)
+        port.mkdir(skills_dir)
         for skill in result.skills:
             if not skill.source_path.is_dir():
                 continue
             dest = skills_dir / skill.name
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(skill.source_path, dest)
+            port.remove_tree(dest)
+            port.copy_tree(skill.source_path, dest)
             # Expand <ai_hats_dir> in SKILL.md (HATS-380 parity); assets verbatim.
-            skill_md = dest / "SKILL.md"
-            if skill_md.exists():
-                original = skill_md.read_text()
+            # Read the SOURCE: under a PlanMaterializer the copy does not exist.
+            source_md = skill.source_path / "SKILL.md"
+            if source_md.exists():
+                original = source_md.read_text()
                 expanded = expand_path_placeholders(original, project_dir)
                 if expanded != original:
-                    skill_md.write_text(expanded)
+                    port.write_text(dest / "SKILL.md", expanded)
 
     def build_session_prompt(
         self,
@@ -179,7 +180,8 @@ class ClineProvider(Provider):
         exact bytes WrapRunner persists to ``meta_prompt.txt`` (HATS-523).
         """
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL
+            project_dir, result, session_id, run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
@@ -196,7 +198,8 @@ class ClineProvider(Provider):
         so the headless path lands skills in the cache too (no project-root leak).
         """
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.AUTOMATE
+            project_dir, result, session_id, run_mode=RunMode.AUTOMATE,
+            artifacts=BuiltArtifacts(),
         )
         return artifacts.cli_args
 

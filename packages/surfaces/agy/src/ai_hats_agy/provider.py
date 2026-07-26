@@ -100,7 +100,7 @@ class AgyProvider(Provider):
     ) -> None:
         """Materialize a single category of session artifacts for AgyProvider (ADR-0018)."""
         cache_dir = session_cache_dir(project_dir, session_id)
-        cache_dir.mkdir(parents=True, exist_ok=True)
+        artifacts.port.mkdir(cache_dir)
 
         if category == ArtifactCategory.CONTEXT:
             self._build_context_artifact(project_dir, result, cache_dir, run_mode, artifacts)
@@ -128,9 +128,9 @@ class AgyProvider(Provider):
 
         artifacts.full_content = prompt_content
         rules_dir = cache_dir / "rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
+        artifacts.port.mkdir(rules_dir)
         session_md = rules_dir / GEMINI_MD_FILENAME
-        session_md.write_text(prompt_content)
+        artifacts.port.write_text(session_md, prompt_content)
         artifacts.materialized.append(session_md)
 
         artifacts.cli_args.extend(["--add-dir", str(rules_dir)])
@@ -144,9 +144,14 @@ class AgyProvider(Provider):
         mode: RunMode,
         artifacts: BuiltArtifacts,
     ) -> None:
-        self.materialize_runtime_skills(project_dir, result, session_id)
+        # Not via materialize_runtime_skills: that is a published extension point
+        # and cannot take the port (HATS-1211 / HATS-1207 R4).
+        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
+
         skills_dir = self._session_skills_dir(project_dir, session_id)
-        from ai_hats.skills_dir import inject_skill_paths_to_env
+        materialize_skills_dir(
+            skills_dir, result.skills, project_dir, session_id, artifacts.port
+        )
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
         artifacts.materialized.append(skills_dir)
 
@@ -163,7 +168,7 @@ class AgyProvider(Provider):
 
         # HATS-1166: Idempotent global hook registration at session start
         user_settings = agy_user_settings_json()
-        ensure_global_dispatcher_hook(user_settings)
+        ensure_global_dispatcher_hook(user_settings, artifacts.port)
 
         # Build session hooks manifest in session cache dir
         collected = collect_runtime_hooks(result)
@@ -185,7 +190,7 @@ class AgyProvider(Provider):
                 })
 
         hooks_json = cache_dir / "hooks.json"
-        hooks_json.write_text(json.dumps(manifest, indent=2) + "\n")
+        artifacts.port.write_text(hooks_json, json.dumps(manifest, indent=2) + "\n")
         artifacts.materialized.append(hooks_json)
 
     def _build_settings_artifact(
@@ -206,14 +211,17 @@ class AgyProvider(Provider):
         session_id: str,
     ) -> list[str]:
         """Mirror the role's skills into the session's ``rules/.agents/skills/``."""
+        from ai_hats.materialization import ApplyMaterializer
         from ai_hats.skills_dir import materialize_skills_dir
 
+        # A published extension point cannot carry the port, so this path always
+        # writes — it is one of the builder bypasses HATS-1207 removes.
         materialize_skills_dir(
             self._session_skills_dir(project_dir, session_id),
             result.skills,
             project_dir,
             session_id,
-            gitignore_entry=None,
+            ApplyMaterializer(),
         )
         return []
 
@@ -231,7 +239,8 @@ class AgyProvider(Provider):
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts (ADR-0018)."""
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL
+            project_dir, result, session_id, run_mode=RunMode.HITL,
+            artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 

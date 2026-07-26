@@ -168,11 +168,15 @@ class Provider(abc.ABC):
         *,
         run_mode: RunMode | str = RunMode.HITL,
         policy: SessionPolicy | None = None,
+        artifacts: BuiltArtifacts,
     ) -> BuiltArtifacts:
-        """Build and materialize session artifacts per category and provider delivery mode."""
+        """Build and materialize session artifacts per category and provider delivery mode.
+
+        The caller owns ``artifacts`` and therefore its ``port``: hand one carrying
+        a ``PlanMaterializer`` and the whole build becomes a dry-run (HATS-1211).
+        """
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
-        artifacts = BuiltArtifacts()
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(

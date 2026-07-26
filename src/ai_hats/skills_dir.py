@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,11 +20,12 @@ if TYPE_CHECKING:
 
     from ai_hats_core import ResolvedComponent
 
+    from .materialization import Materializer
+
 
 logger = logging.getLogger(__name__)
 
 MANAGED_MARKER = ".ai-hats-managed"
-_LOCK_TIMEOUT = 30.0
 
 
 def find_skill_script_collisions(
@@ -117,28 +117,12 @@ def materialize_skills_dir(
     skills: Iterable[ResolvedComponent],
     project_dir: Path,
     session_id: str,
-    *,
-    gitignore_entry: str | None = None,
+    port: "Materializer",
 ) -> None:
     """Copy ``skills`` into ``skills_dir`` under a filelock; sweep orphans."""
-    import filelock
-
-    if gitignore_entry:
-        _ensure_gitignored(project_dir, gitignore_entry)
-
-    skills_dir.mkdir(parents=True, exist_ok=True)
-
-    lock_path = skills_dir.parent / "skills.lock"
-    lock = filelock.FileLock(str(lock_path), timeout=_LOCK_TIMEOUT)
-    try:
-        with lock:
-            _rebuild(skills_dir, list(skills), project_dir, session_id)
-    except filelock.Timeout as exc:
-        raise RuntimeError(
-            f"skills materialization blocked >{_LOCK_TIMEOUT:.0f}s on lock "
-            f"{lock_path} — a stuck ai-hats process likely holds it. "
-            f"If safe, remove the lock file and retry."
-        ) from exc
+    port.mkdir(skills_dir)
+    with port.lock(skills_dir.parent / "skills.lock"):
+        _rebuild(skills_dir, list(skills), project_dir, session_id, port)
 
 
 def _rebuild(
@@ -146,6 +130,7 @@ def _rebuild(
     skills: list[ResolvedComponent],
     project_dir: Path,
     session_id: str,
+    port: "Materializer",
 ) -> None:
     """Additive ref-counted rebuild; caller holds the lock (HATS-981 pattern)."""
     from .placeholders import expand_fsm_edges_token, expand_path_placeholders
@@ -167,38 +152,23 @@ def _rebuild(
 
     # Sweep skills that were managed but no session references anymore.
     for name in prev_all - new_all:
-        stale = skills_dir / name
-        if stale.is_dir():
-            shutil.rmtree(stale)  # safe-delete: ok managed-skills-mirror sweep
+        port.remove_tree(skills_dir / name)
 
     for skill in skills:
         if not skill.source_path.is_dir():
             continue
         dest = skills_dir / skill.name
-        if dest.exists():
-            shutil.rmtree(dest)  # safe-delete: ok managed-skills-mirror refresh
-        shutil.copytree(skill.source_path, dest)
-        # Expand <ai_hats_dir> (HATS-380) + inject the FSM edge table for the
-        # {{backlog_fsm_edges}} token (HATS-1051); other assets verbatim.
-        skill_md = dest / "SKILL.md"
-        if skill_md.exists():
-            original = skill_md.read_text()
+        port.remove_tree(dest)
+        port.copy_tree(skill.source_path, dest)
+        # Expand <ai_hats_dir> (HATS-380) + inject the FSM edge table (HATS-1051).
+        # Read the SOURCE: under a PlanMaterializer the copy does not exist.
+        source_md = skill.source_path / "SKILL.md"
+        if source_md.exists():
+            original = source_md.read_text()
             rendered = expand_fsm_edges_token(
                 expand_path_placeholders(original, project_dir)
             )
             if rendered != original:
-                skill_md.write_text(rendered)
+                port.write_text(dest / "SKILL.md", rendered)
 
-    marker.write_text(json.dumps(refs, indent=2, sort_keys=True) + "\n")
-
-
-def _ensure_gitignored(project_dir: Path, entry: str) -> None:
-    """Idempotent: append ``entry`` to the project .gitignore if absent."""
-    gitignore = project_dir / ".gitignore"
-    if gitignore.exists():
-        lines = gitignore.read_text().splitlines()
-        if entry in lines:
-            return
-        gitignore.write_text(gitignore.read_text().rstrip("\n") + f"\n{entry}\n")
-    else:
-        gitignore.write_text(f"{entry}\n")
+    port.write_text(marker, json.dumps(refs, indent=2, sort_keys=True) + "\n")

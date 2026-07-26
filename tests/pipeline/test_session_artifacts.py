@@ -46,7 +46,7 @@ def test_claude_build_session_artifacts_hitl(tmp_path: Path):
 
     artifacts = provider.build_session_artifacts(
         project_dir, result, session_id, run_mode="hitl"
-    )
+    , artifacts=BuiltArtifacts())
 
     # CLI args assertion
     assert "--system-prompt-file" in artifacts.cli_args
@@ -76,7 +76,7 @@ def test_claude_build_session_artifacts_automate(tmp_path: Path):
 
     artifacts = provider.build_session_artifacts(
         project_dir, result, session_id, run_mode="automate"
-    )
+    , artifacts=BuiltArtifacts())
 
     assert "system_prompt" in artifacts.sdk_options
     assert INJECTION_START in artifacts.sdk_options["system_prompt"]
@@ -99,7 +99,7 @@ def test_claude_session_policy_hooks_disabled(tmp_path: Path):
     policy = SessionPolicy(hooks=False)
     artifacts = provider.build_session_artifacts(
         project_dir, result, session_id, run_mode="hitl", policy=policy
-    )
+    , artifacts=BuiltArtifacts())
 
     assert "--settings" not in artifacts.cli_args
 

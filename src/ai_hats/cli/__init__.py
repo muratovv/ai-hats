@@ -136,6 +136,25 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     "Stored in metrics.json under 'tags' for later query.",
 )
 @click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Report what the launch would deliver (prompt, args, materialized "
+    "files) and exit without spawning the provider. Writes nothing.",
+)
+@click.option(
+    "--dry-run-json",
+    "dry_run_json",
+    is_flag=True,
+    help="Machine-readable --dry-run payload.",
+)
+@click.option(
+    "--dry-run-full",
+    "dry_run_full",
+    is_flag=True,
+    help="With --dry-run: dump the composed prompt body, not just its path.",
+)
+@click.option(
     "--tree",
     is_flag=True,
     is_eager=True,
@@ -144,7 +163,15 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     help="Print the full command tree (man-style) and exit.",
 )
 @click.pass_context
-def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...]):
+def main(
+    ctx,
+    provider: str | None,
+    role: str | None,
+    tags_raw: tuple[str, ...],
+    dry_run: bool,
+    dry_run_json: bool,
+    dry_run_full: bool,
+):
     """ai-hats — AI agent role composition framework.
 
     Without a subcommand, launches a wrapped provider CLI session.
@@ -160,6 +187,16 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
 
+        if dry_run or dry_run_json or dry_run_full:
+            _dry_run_session(
+                provider=provider,
+                role=role,
+                extra_args=ctx.args,
+                as_json=dry_run_json,
+                full=dry_run_full,
+            )
+            return
+
         try:
             tags = parse_tags(tags_raw)
         except TagValidationError as e:
@@ -170,6 +207,41 @@ def main(ctx, provider: str | None, role: str | None, tags_raw: tuple[str, ...])
             extra_args=ctx.args,
             tags=tags or None,
         )
+
+
+def _dry_run_session(
+    *,
+    provider: str | None,
+    role: str | None,
+    extra_args: list[str] | None,
+    as_json: bool,
+    full: bool,
+) -> None:
+    """Print what a launch would deliver; spawn nothing, write nothing."""
+    import json as _json
+
+    from ..composition_seam import RoleNotFoundError
+    from ..dry_run import dry_run_hitl
+    from ..providers import UnknownProviderError
+    from ._helpers import (
+        _handle_role_not_found,
+        _handle_unknown_provider,
+        _project_dir,
+    )
+
+    try:
+        report = dry_run_hitl(
+            _project_dir(), role=role, provider=provider, extra_args=list(extra_args or [])
+        )
+    except RoleNotFoundError as exc:
+        _handle_role_not_found(exc)
+    except UnknownProviderError as exc:
+        _handle_unknown_provider(exc)
+
+    if as_json:
+        click.echo(_json.dumps(report.to_dict(), indent=2))
+    else:
+        click.echo(report.render(full=full), nl=False)
 
 
 def _launch_session(

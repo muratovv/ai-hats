@@ -56,6 +56,13 @@ from ._helpers import console
          "the human-readable summary. Pair with stable exit code propagation "
          "so orchestrators can fan out via parallel/xargs/CI scripts.",
 )
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Report what the sub-agent would receive (prompt sections, launch, "
+    "materialized files) and exit without spawning. Writes nothing.",
+)
 def run_subagent(
     role: str,
     ticket: str | None,
@@ -64,6 +71,7 @@ def run_subagent(
     isolation: str,
     tags_raw: tuple[str, ...],
     as_json: bool,
+    dry_run: bool,
 ):
     """Run a sub-agent with the given role.
 
@@ -81,6 +89,24 @@ def run_subagent(
     from ..pipeline.harness import PipelineHarness
     from ..tags import TagValidationError, parse_tags
     from ._helpers import _handle_role_not_found, _project_dir
+
+    if dry_run:
+        import json as _json
+
+        from ..dry_run import dry_run_automate
+
+        try:
+            report = dry_run_automate(
+                _project_dir(), role=role, task=task or "",
+                ticket_id=ticket or "", model=model or "",
+            )
+        except RoleNotFoundError as exc:
+            _handle_role_not_found(exc)
+        click.echo(
+            _json.dumps(report.to_dict(), indent=2) if as_json else report.render(),
+            nl=as_json,
+        )
+        return
 
     try:
         tags = parse_tags(tags_raw)

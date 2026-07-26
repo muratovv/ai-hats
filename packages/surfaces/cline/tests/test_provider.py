@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ai_hats.paths import session_cache_dir
-from ai_hats.session_artifacts import RunMode, SessionPolicy
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from ai_hats_cline import ClineProvider
 
 
@@ -190,6 +190,7 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
     artifacts = provider.build_session_artifacts(
         tmp_path, _fake_result(), "sid-1",
         run_mode=RunMode.HITL, policy=SessionPolicy(context=False),
+        artifacts=BuiltArtifacts(),
     )
     assert "-s" not in artifacts.cli_args
     # skills category is unaffected by policy
@@ -199,7 +200,8 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
 def test_hooks_and_settings_categories_are_noop(tmp_path) -> None:
     # HATS-1171: plugin dropped → HOOKS/SETTINGS write nothing, add no args.
     artifacts = ClineProvider().build_session_artifacts(
-        tmp_path, _fake_result(), "sid-1", run_mode=RunMode.HITL
+        tmp_path, _fake_result(), "sid-1", run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
     )
     assert "--settings" not in artifacts.cli_args
     assert "--hooks-dir" not in artifacts.cli_args
