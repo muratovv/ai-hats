@@ -39,5 +39,11 @@ address. Hardening is tracked separately.
 ```bash
 python -m venv .venv
 ./.venv/bin/pip install -e '.[dev]'
-./.venv/bin/python -m pytest tests -q
+make test
 ```
+
+### Running locally
+
+- Start local server: `make run-server` (or `make relay-server` from repo root)
+- Attach local client: `make run-client` (or `make relay-client` from repo root)
+
