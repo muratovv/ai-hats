@@ -119,8 +119,8 @@ ai-hats self init -p claude -r go-dev --no-wizard \
 ai-hats                       # start a session with current settings
 ai-hats --resume              # flags pass through to the provider (claude / gemini)
 ai-hats config status         # health-check the composition
-ai-hats self init             # re-configure project or launch setup wizard
-ai-hats self update           # update ai-hats package
+ai-hats self init             # initialize project or re-configure via setup wizard
+ai-hats self update           # update ai-hats package (self-healing)
 ```
 
 `ai-hats self update` is self-healing: if a system Python upgrade breaks the venv, it is rebuilt automatically (default venvs only; override venvs are user-owned).
@@ -163,9 +163,9 @@ ai-hats --tag client=acme                  # custom tags in metrics.json
 ai-hats agent sre --task "investigate alert XYZ"
 
 # Lifecycle
-ai-hats self init                          # interactive bootstrap (wizard) — new projects
+ai-hats self init                          # initialize project or re-configure via setup wizard
 ai-hats config set -r <role> -p <provider> # change role / provider in an existing project
-ai-hats self update && ai-hats self init   # update ai-hats and rebuild the prompt
+ai-hats self update                        # update ai-hats package (self-healing)
 ai-hats config status                      # health-check the composition
 ```
 
