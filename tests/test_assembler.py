@@ -163,8 +163,8 @@ def test_set_role_with_claude(project_with_library):
 def test_status(project_with_library):
     """HATS-407: status.health reflects on-disk artefacts only.
     With per-session compose, rules/skills are NOT materialized into the
-    canonical tree, so the only verifiable disk pieces are imports.md and
-    the provider system prompt."""
+    canonical tree; since HATS-1203 retired imports.md, the provider system
+    prompt is the only verifiable disk piece left."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -174,8 +174,7 @@ def test_status(project_with_library):
     assert status["role"] == "test-role"
     assert status["provider"] == "agy"
     assert status["tree"] is not None
-    assert "imports.md" in status["health"]
-    assert status["health"]["imports.md"] == "OK"
+    assert "imports.md" not in status["health"]
     assert status["health"]["system_prompt"] == "OK"
 
 
@@ -1229,10 +1228,9 @@ def _assert_no_literal_placeholder(*paths: Path) -> None:
 
 
 def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_library):
-    """HATS-294: only ``imports.md`` is materialized on disk; it imports
-    user-rules only and must be placeholder-free. Framework content with
-    placeholders is composed per-session — verified separately via the
-    Provider.build_session_prompt path.
+    """Nothing ai-hats writes under the canonical dir may carry the literal
+    token. Framework content with placeholders is composed per-session —
+    verified separately via the Provider.build_session_prompt path.
     """
     project, lib = project_with_placeholder_library
     asm = Assembler(project, library_paths=[lib])
@@ -1240,7 +1238,7 @@ def test_canonical_dir_has_no_literal_placeholder(project_with_placeholder_libra
     asm.set_role("ph-role", provider_name="claude")
 
     canonical = project / ".agent" / "ai-hats"
-    _assert_no_literal_placeholder(canonical / "imports.md")
+    _assert_no_literal_placeholder(*canonical.rglob("*"))
 
 
 def test_agy_inline_prompt_has_no_literal_placeholder(

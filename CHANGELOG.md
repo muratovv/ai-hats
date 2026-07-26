@@ -217,6 +217,27 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **user-rules reach the agent again** (HATS-1203). `<ai_hats_dir>/user-rules/*.md`
+  had exactly one delivery channel — the `@`-import inside the root `CLAUDE.md`
+  scaffold — and HATS-1170 stopped writing that scaffold. On greenfield projects
+  ai-hats listed every user-rule in `imports.md` and no one read it: no warning,
+  and a health check that asserted only that the aggregator *existed*. The rules
+  are now read at compose time and emitted as a `## USER RULES` section of the
+  composed system prompt, after `## RULES`. Because the section is built in the
+  shared provider seam, agy and cline gain a user-rules channel they never had;
+  `config show-prompt` and the session prompt are fed by the same funnel, so the
+  preview cannot drift from what the session gets.
+
+  The `imports.md` aggregator is **retired** with it — writer, health probes,
+  `config status` row and all. Leaving both channels live would have injected
+  every user-rule twice in upgraded projects. An existing `imports.md` is swept
+  by the MANAGED cleanup on the next refresh, and the migration that drops the
+  orphaned root `CLAUDE.md` block no longer skips projects that have user-rules
+  (that gate existed only because the block was still their delivery channel).
+  `user-rules/` itself is untouched — it remains the hand-authored DATA landing
+  zone. `@`-references *inside* rule bodies still reach the model as literal
+  text (HATS-1206).
+
 - **An explicit `wt exec` worktree selector beats cwd** (HATS-1213). The selector
   peel ran only in the ambiguity-refusal path, so it was skipped whenever the
   worktree resolved on its own — from inside any linked worktree, and with a sole

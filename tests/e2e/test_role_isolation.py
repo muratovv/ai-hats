@@ -3,12 +3,12 @@
 Validates the user-visible contract for HATS-294: under the unified
 per-session compose path, `claude --print` reads:
 
-- ``--system-prompt-file <cache>/prompt.md`` — the composed role's prompt
-- auto-discovered ``./CLAUDE.md`` → ``imports.md`` → ``user-rules/*``
+- ``--system-prompt-file <cache>/prompt.md`` — the composed role's prompt,
+  carrying the ``## USER RULES`` section since HATS-1203
 
-After Phase 2, ``imports.md`` no longer references priorities / role /
-traits / rules / skills_index — so the agent CANNOT double-load role
-content via CLAUDE.md auto-discovery (Phase 0 evidence of F5+F6).
+Nothing ai-hats writes is auto-discovered any more: HATS-1170 dropped the root
+``CLAUDE.md`` scaffold and HATS-1203 the ``imports.md`` aggregator it imported,
+so the agent CANNOT double-load role content (Phase 0 evidence of F5+F6).
 
 Per ``dev_rule_e2e_gate``: real ``claude`` binary, real subprocess chain,
 ``@pytest.mark.integration``. Cost-capped via ``--model claude-haiku-4-5``;
@@ -118,8 +118,8 @@ def auth_gate():
 @pytest.fixture
 def project_with_assistant_default(tmp_path):
     """Fresh project with the real ai-hats core library and assistant as the
-    active role. CLAUDE.md is materialized (so auto-discovery has something
-    to find), imports.md is the post-HATS-294 user-rules-only aggregator.
+    active role. Nothing is materialized for auto-discovery to find — the
+    prompt is the only channel (HATS-1170 / HATS-1203).
     """
     project = tmp_path / "proj"
     project.mkdir()
