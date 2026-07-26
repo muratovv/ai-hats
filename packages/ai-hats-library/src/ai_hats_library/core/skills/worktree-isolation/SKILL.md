@@ -199,22 +199,16 @@ lifecycle.
 - Always `cd` back to project dir before merge/discard
 - Commit your work in the worktree before merging
 
-## Syncing After Skill Edits
+## Skill Edits
 
-After editing `library/{core,usage}/skills/*/SKILL.md`, run:
-
-```
-ai-hats self init
-```
-
-This re-copies all skills to `.claude/skills/` and `.agent/ai-hats/library/skills/`.
-**Never manually `cp` skill files** — it generates garbage permission entries.
+Skills materialize per-session under `.cache/sessions/<sid>/plugin/`. Edits to skill files in `ai-hats-library` take effect automatically on the next session without running any command.
+**Never manually `cp` skill files** into `.claude/skills/` or `.agent/ai-hats/library/skills/` — skill materialization is per-session.
 
 ## Anti-Patterns
 
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
-- Manually copying skill files with `cp src/.../SKILL.md .claude/skills/.../SKILL.md` — use `ai-hats self init` instead
+- Manually copying skill files with `cp` — skills materialize automatically per-session
 - Multiple active worktrees without tracking — leads to forgotten branches
 - Running `ai-hats wt create` / `wt merge` / `wt discard` / `rack transition <id> done|failed|cancelled` from inside a linked worktree — all blocked (HATS-788). The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
 - Mixing manual `wt create` with `rack transition <id> execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.

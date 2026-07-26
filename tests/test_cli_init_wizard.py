@@ -204,8 +204,8 @@ def test_init_wizard_launches_on_reinit(fresh_project, monkeypatch):
     launch.assert_called_once()
 
 
-def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
-    """Wizard path (TTY, no flags, no --no-update) calls _run_self_update once."""
+def test_init_wizard_does_not_run_self_update_by_default(fresh_project, monkeypatch):
+    """Wizard path (TTY, no flags) operates strictly locally without calling _run_self_update."""
     runner = CliRunner()
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with (
@@ -214,7 +214,7 @@ def test_init_wizard_runs_self_update_by_default(fresh_project, monkeypatch):
     ):
         result = runner.invoke(main, ["self", "init"], input="1\nclaude\n")
     assert result.exit_code == 0, result.output
-    upd.assert_called_once()
+    upd.assert_not_called()
 
 
 def test_init_flag_only_path_does_not_self_update(fresh_project):

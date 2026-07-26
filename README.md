@@ -36,7 +36,7 @@ Have you ever watched the same AI agent step on the same rakes across projects? 
 
 ai-hats answers this with two things:
 
-- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it via `ai-hats self init`.
+- **Roles as compositions of reusable components** — `traits`, `rules`, `skills`, and `hooks` are assembled into a role once and injected into the system prompt of any provider (Gemini / Claude). A fix to one component reaches every role that includes it on the next session.
 - **Deep reflection after every session** — a structured retrospective with a factual layer (metrics, files, commits) plus an LLM narrative that delivers verdicts on active hypotheses and votes on improvement proposals. Patterns observed across 3–5 sessions become new rules and skills, and the loop closes.
 
 ```
@@ -119,8 +119,8 @@ ai-hats self init -p claude -r go-dev --no-wizard \
 ai-hats                       # start a session with current settings
 ai-hats --resume              # flags pass through to the provider (claude / gemini)
 ai-hats config status         # health-check the composition
-ai-hats self init             # rebuild the prompt after library changes
-ai-hats self update           # update ai-hats and auto-bump
+ai-hats self init             # re-configure project or launch setup wizard
+ai-hats self update           # update ai-hats package
 ```
 
 `ai-hats self update` is self-healing: if a system Python upgrade breaks the venv, it is rebuilt automatically (default venvs only; override venvs are user-owned).

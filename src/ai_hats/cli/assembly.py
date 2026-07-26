@@ -408,10 +408,6 @@ def init(
 
     use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
 
-    # Wizard path step 0: ensure the framework itself is up to date (HATS-1126)
-    if use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
-        _run_self_update()
-
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.keys import KEY_EXECUTE_CMD, PIPELINE_INIT
 
@@ -439,10 +435,6 @@ def init(
         if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
-
-    # HATS-1125: non-wizard init self-update reconciliation
-    if not use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
-        _run_self_update()
 
     cmd = final.get(KEY_EXECUTE_CMD)
     if cmd:
