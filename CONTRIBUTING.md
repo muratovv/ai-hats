@@ -99,7 +99,7 @@ confirming which mode you're in.
 Prefer `make` targets to run tests with automatic timeout protection:
 
 - `make tests` (or `make unit` / `make check`) — run unit test suite bounded by timeout (default 300s, ~2x observed execution time).
-- `make e2e` — run e2e integration tests bounded by timeout (default 900s, ~2x observed execution time).
+- `make e2e` — run e2e integration tests bounded by timeout (default 3600s, ~2x observed execution time).
 - `make lint` — run ruff linter and formatter check.
 - `make help` — display available Makefile targets.
 
