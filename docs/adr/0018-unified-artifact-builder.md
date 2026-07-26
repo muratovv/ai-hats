@@ -56,10 +56,22 @@ class BuiltArtifacts:
     policy: SessionPolicy = field(default_factory=SessionPolicy)
 ```
 
-Every provider implements the per-category materialization strategy:
+A surface implements one method per **(category, run mode)** pair, named
+`_build_<category>_<run_mode>`; the base dispatches to it. A surface therefore
+never branches on the run mode — HITL delivery (launch flags) and AUTOMATE
+delivery (inline text / SDK options) are different jobs that happen to share a
+category name, and mixing them in one method is what let cline's interactive `-i`
+end up inside a context handler (HATS-1207). A pair a surface does not deliver is
+an **absent method**, which is visible, rather than an `else` that falls through
+in silence — `agy` has no `_build_hooks_automate` manifest write, and that gap is
+now legible in the class body (HATS-1223).
 
 ```python
 class Provider(abc.ABC):
+    # implemented per surface, e.g.:
+    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None: ...
+    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None: ...
+
     def build_category_artifact(
         self,
         category: ArtifactCategory,
@@ -69,7 +81,9 @@ class Provider(abc.ABC):
         *,
         run_mode: RunMode,
         artifacts: BuiltArtifacts,
-    ) -> None: ...
+    ) -> None:
+        # Dispatches to _build_<category>_<run_mode>; absent pair = no delivery.
+        ...
 
     def build_session_artifacts(
         self,

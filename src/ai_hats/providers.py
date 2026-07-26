@@ -155,20 +155,34 @@ class Provider(abc.ABC):
         run_mode: RunMode,
         artifacts: BuiltArtifacts,
     ) -> None:
-        """Build and materialize a single category of session artifacts for this provider.
+        """Materialize one category of session artifacts for this surface (ADR-0018).
 
-        Default is a no-op; provider surfaces override for supported categories.
+        Dispatches to a ``_build_<category>_<run_mode>`` method so a surface never
+        branches on the run mode: HITL delivery (launch flags) and AUTOMATE
+        delivery (inline / SDK) are different jobs that happen to share a name.
+        A combination a surface does not deliver is simply an absent method —
+        visible, unlike an ``else`` that falls through in silence.
         """
-        logger.debug("Provider %s does not handle artifact category %s", self.name, category)
+        handler = getattr(self, f"_build_{category.value}_{RunMode(run_mode).value}", None)
+        if handler is None:
+            logger.debug("Provider %s delivers no %s in %s", self.name, category, run_mode)
+            return
+        handler(project_dir, result, session_id, artifacts)
 
     def handles_artifact_categories(self) -> bool:
         """Whether this surface implements the ADR-0018 per-category seam.
 
         False for a pre-ADR-0018 out-of-tree provider that overrides only
         ``build_session_prompt``: routing it through the builder would deliver an
-        empty session rather than fail, since the category hook above no-ops.
+        empty session rather than fail, since the dispatch above finds no handler.
         """
-        return type(self).build_category_artifact is not Provider.build_category_artifact
+        if type(self).build_category_artifact is not Provider.build_category_artifact:
+            return True  # overrides the seam wholesale — its own dispatch
+        return any(
+            hasattr(self, f"_build_{c.value}_{m.value}")
+            for c in ArtifactCategory
+            for m in RunMode
+        )
 
     def build_session_artifacts(
         self,
