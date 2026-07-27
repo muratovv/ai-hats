@@ -201,8 +201,18 @@ lifecycle.
 
 ## Skill Edits
 
-Skills materialize per-session under `.cache/sessions/<sid>/plugin/`. Edits to skill files in `ai-hats-library` take effect automatically on the next session without running any command.
-**Never manually `cp` skill files** into `.claude/skills/` or `.agent/ai-hats/library/skills/` — skill materialization is per-session.
+Editing a `SKILL.md` body needs **no command** — the role is composed fresh at
+every session launch, so the edit is live for the next session. Only changes to
+`ai-hats.yaml` need `ai-hats self init` re-applied.
+
+Skills materialize into the per-session cache under
+`<ai_hats_dir>/.cache/sessions/<sid>/`; the exact subpath is provider-specific
+(claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
+
+**Never manually `cp` skill files** into `.claude/skills/` or
+`<ai_hats_dir>/library/skills/`. Neither is a mirror of the installed library:
+the first was retired in HATS-294, and the second is where components **you**
+author locally live.
 
 ## Anti-Patterns
 

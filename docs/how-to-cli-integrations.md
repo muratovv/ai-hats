@@ -70,7 +70,8 @@ composition:
     - github-cli
 ````
 
-After `ai-hats self init` the skill becomes visible to the agent through the standard skill-injection mechanism.
+The skill reaches the agent on the next session — roles are composed at launch,
+so wiring one in needs no command. Confirm with `ai-hats config status`.
 
 ## Examples
 

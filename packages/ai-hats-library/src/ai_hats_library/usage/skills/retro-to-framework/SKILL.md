@@ -3,18 +3,22 @@ name: retro-to-framework
 description: Convert project retrospective findings into framework-level improvements (rules, skills, skill updates). Use after a retrospective identifies problems that are not project-specific, when CLAUDE.md band-aids accumulate (more than 3 per-project rules that could be generic), or when the same problem recurs across multiple projects.
 license: MIT
 ---
+
 # Retro-to-Framework
 
 Convert project-level retrospective findings into framework-level improvements.
 
 > **Invocation in a harness shell.** Harness-spawned bash does not inherit an activated venv. When running `ai-hats self init` (step 5), define a resolver once (host launcher on PATH, else the project venv's interpreter — no `bin/ai-hats` console script since HATS-790):
+>
 > ```bash
 > ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
 > ah self init
 > ```
+>
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 ## When to Use
+
 Runs *downstream* of a retro: **self-retrospective** produces the findings, this
 skill promotes the generic ones into rules/skills. Two boundaries — the finding
 must be **cross-project generic** (a project-local fix stays in that project's
@@ -30,12 +34,12 @@ CLAUDE.md), and trimming or dedup of components that already exist is
    - NO → project-specific (stays in project CLAUDE.md)
 
 2. **Map to component type:**
-   | Finding type | Framework component |
-   |---|---|
-   | Behavioral constraint ("always do X") | Rule |
-   | Multi-step process ("when X, do Y then Z") | Skill |
-   | Missing check in existing process | Skill update |
-   | Knowledge gap | Reference doc or injection update |
+   | Finding type                               | Framework component               |
+   | ------------------------------------------ | --------------------------------- |
+   | Behavioral constraint ("always do X")      | Rule                              |
+   | Multi-step process ("when X, do Y then Z") | Skill                             |
+   | Missing check in existing process          | Skill update                      |
+   | Knowledge gap                              | Reference doc or injection update |
 
 3. **Draft the improvement:**
    Follow **skill-template** for new skills, rule naming convention for rules.
@@ -46,15 +50,20 @@ CLAUDE.md), and trimming or dedup of components that already exist is
    Update trait config.yaml. Run composer validation for all affected roles.
 
 5. **Propagate to projects:**
-   In each project using the affected role: `ai-hats self init`.
-   Remove corresponding band-aids from project CLAUDE.md.
-   Verify the framework version appears in the generated prompt.
+   Roles are composed fresh at every session launch, so a library edit needs no
+   per-project command — it is live for the next session. A project pinned to a
+   published `ai-hats-library` needs `ai-hats self update` to pull the new
+   version; `self init` does not fetch one.
+   Remove corresponding band-aids from the project's own CLAUDE.md.
+   Verify with `ai-hats config status` (composition tree) or `ai-hats --dry-run`
+   (the exact artifacts a launch would deliver).
 
 6. **Close the loop:**
    Update the original retrospective with a link to the framework change.
    Create a HATS task if the change is non-trivial.
 
 ## Completion
+
 - Findings classified as framework vs project-specific
 - Framework improvements implemented and validated (composer 0 errors, tests green)
 - All projects using affected roles bumped
@@ -62,6 +71,7 @@ CLAUDE.md), and trimming or dedup of components that already exist is
 - Original retrospective updated with provenance
 
 ## Anti-Patterns
+
 - Leaving band-aids in project CLAUDE.md after framework fixes exist — remove them
 - Making everything a framework change — some things are truly project-specific
 - Skipping composer validation — always verify after wiring changes
