@@ -1000,8 +1000,9 @@ def test_t10_update_invokes_stage2_verify(cli_project, monkeypatch):
     assert len(verify_calls) == 1, f"expected one stage-2 verify call, got {verify_calls}"
 
 
-def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypatch):
-    """Stage-2 verify failure surfaces as a yellow warning, update keeps going."""
+def test_t11_update_fails_loud_on_stage2_failure(cli_project, monkeypatch):
+    """Stage-2 verify failure aborts the update — an install that landed but does
+    not work must never report success (HATS-1116, made fatal in HATS-1239)."""
     import subprocess
 
     project, runner = cli_project
@@ -1011,8 +1012,8 @@ def test_t11_update_warns_on_stage2_failure_does_not_crash(cli_project, monkeypa
     monkeypatch.setattr(subprocess, "run", _make_mock_run_factory(verify_rc=1))
 
     result = runner.invoke(main, ["self", "update"])
-    assert result.exit_code == 0, result.output
-    assert "Post-install verify warned" in result.output
+    assert result.exit_code == 1, result.output
+    assert "Post-install verify failed" in result.output
 
 
 def test_t12_update_prints_activation_banner_on_dep_change(cli_project, monkeypatch):
