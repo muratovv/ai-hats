@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from . import protocol, wire
+from . import protocol, web, wire
 from .broker import Broker, SessionEntry
 
 logger = logging.getLogger(__name__)
@@ -85,8 +86,8 @@ async def _pipe(ws: ServerConnection, entry: SessionEntry, ctl: protocol.Control
         await attachment.aclose()
 
 
-def make_handler(broker: Broker):
-    """Build the connection handler bound to ``broker``."""
+def make_handler(broker: Broker, *, token: str):
+    """Build the connection handler bound to ``broker``. ``token`` is not optional."""
 
     async def handler(ws: ServerConnection) -> None:
         try:
@@ -101,6 +102,12 @@ def make_handler(broker: Broker):
             ctl = protocol.parse_control(first)
         except protocol.ProtocolError as exc:
             await _reply_error(ws, str(exc))
+            return
+
+        # Before any op: `list` leaks the sids that are themselves the capability, so
+        # there is no op cheap enough to answer unauthenticated.
+        if not secrets.compare_digest(ctl.token, token):
+            await _reply_error(ws, "unauthorized")
             return
 
         if ctl.op == "list":
@@ -152,7 +159,15 @@ async def shutdown(server, broker: Broker | None = None) -> None:
         await broker.aclose()
 
 
-async def serve_broker(broker: Broker, *, host: str, port: int, **kwargs):
+async def serve_broker(
+    broker: Broker,
+    *,
+    host: str,
+    port: int,
+    web_client: bool = False,
+    token: str = "",
+    **kwargs,
+):
     """Start the server.
 
     ``host`` is required on purpose: with no authentication, reaching the port is the
@@ -161,14 +176,20 @@ async def serve_broker(broker: Broker, *, host: str, port: int, **kwargs):
     """
     if not host:
         raise ValueError("host is required — bind an explicit interface")
+    # A session is an agent with a shell, and --web additionally means accepting any
+    # Origin. HATS-1232 permits agy here only on an authenticated transport, so this is
+    # a guardrail rather than a default: there is no way to start without one.
+    if not token:
+        raise ValueError("a token is required — the relay does not run unauthenticated")
     return await serve(
-        make_handler(broker),
+        make_handler(broker, token=token),
         host,
         port,
-        # Only an upgrade WITHOUT an Origin is acceptable. Our clients are native or a
-        # page we serve; a browser page that is not ours must not be able to drive an
-        # agent that has a shell (the CSWSH class — WebSockets are outside the SOP).
-        origins=[None],
+        # Only an upgrade WITHOUT an Origin is acceptable: a browser page that is not
+        # ours must not drive an agent with a shell (CSWSH — WS is outside the SOP).
+        # --web must relax it (a browser always sends one); HATS-1194 S2 swaps in a token.
+        origins=None if web_client else [None],
+        process_request=web.make_process_request() if web_client else None,
         # LAN: deflate is GIL-bound and buys nothing here.
         compression=None,
         **kwargs,

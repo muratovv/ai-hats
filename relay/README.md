@@ -27,12 +27,43 @@ Client-side, over WebSocket, the split follows the same idea: **binary messages 
 terminal bytes, text messages carry JSON control.** One WebSocket connection serves one
 session; a client that wants two sessions opens two connections.
 
+## Driving a session from a browser
+
+`--web` serves a self-contained xterm.js page from the port the broker already listens
+on, so a device with nothing but a browser can drive a session:
+
+```bash
+hats-relay --host 127.0.0.1 --web --token "$(openssl rand -hex 16)"
+
+# elsewhere: start a session, take the link, keep your shell
+hats-relay-attach ws://127.0.0.1:8787 --role assistant --no-attach
+# 880492ab3cace453c7b744be7dc32fca
+# http://127.0.0.1:8787/?sid=880492ab…&token=…
+```
+
+The session belongs to the broker, not to the client that started it, so `--no-attach`
+hands over a link and exits while the session keeps running.
+
+**`--token` is required — there is no unauthenticated mode.** A session is an agent with
+a shell, so reaching the port must not be the whole right to drive it. The token is
+compared on the first control message of *every* op, `list` included, since the session
+ids `list` returns are themselves the capability. Use `HATS_RELAY_TOKEN` to keep it out
+of `ps`. `--web` additionally means accepting any `Origin` (a browser always sends one,
+and behind a tunnel it is not knowable when the port is bound), which is the second
+reason the token is not optional.
+
+`--provider` is empty by default: the session is whatever the project resolves, and the
+relay does not second-guess it. Antigravity (`agy`) is fine here — the official binary
+runs locally under its own login and we relay its terminal, the shape its own CLI
+supports over SSH. What is *not* fine is unattended agy on consumer credentials; see
+`HATS-1232` for the reasoning and its guardrails.
+
 ## Status
 
-Early. LAN only: no TLS, no container, and **no authentication** — reaching the port is
-the whole right to drive a session. Since a session is an AI agent with shell and
-filesystem access, run this only on a network you trust, and always bind an explicit
-address. Hardening is tracked separately.
+Early. LAN or a trusted tunnel: no TLS, no container, and **one shared token** — no
+principals, no expiry, no per-session capabilities. Since a session is an AI agent with
+shell and filesystem access, run this only where you trust the network, and always bind
+an explicit address. Hardening is tracked separately.
 
 ## Development
 

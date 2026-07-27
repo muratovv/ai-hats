@@ -8,12 +8,13 @@ client builds, and that it restores the terminal whatever happens.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 
 import pytest
 from websockets.asyncio.client import connect
+
+from conftest import RELAY_TOKEN, ctl
 
 from hats_relay import wire
 from hats_relay.broker import Broker
@@ -34,7 +35,7 @@ def run(coro):
 
 async def _serve():
     broker = Broker(argv_for)
-    server = await serve_broker(broker, host=HOST, port=0)
+    server = await serve_broker(broker, host=HOST, port=0, token=RELAY_TOKEN)
     port = next(iter(server.sockets)).getsockname()[1]
     return broker, server, f"ws://{HOST}:{port}"
 
@@ -44,7 +45,7 @@ def test_list_mode_reports_sessions(capsys):
         broker, server, url = await _serve()
         try:
             entry = await broker.create({"role": "maintainer"}, cols=90, rows=25)
-            await list_sessions(url)
+            await list_sessions(url, RELAY_TOKEN)
             return entry.sid
         finally:
             await shutdown(server, broker)
@@ -69,7 +70,7 @@ def test_a_refusal_surfaces_instead_of_hanging():
     async def scenario():
         broker, server, url = await _serve()
         try:
-            args = build_parser().parse_args([url, "--sid", "0" * 32])
+            args = build_parser().parse_args([url, "--sid", "0" * 32, "--token", RELAY_TOKEN])
             with pytest.raises(SystemExit, match="no such session"):
                 await run_client(args)
         finally:
@@ -169,7 +170,7 @@ def test_client_drives_a_session_over_the_wire():
         try:
             async with connect(url) as ws:
                 await ws.send(
-                    json.dumps({"op": "create", "spec": {"role": "r"}, "cols": 90, "rows": 25})
+                    ctl(op="create", spec={"role": "r"}, cols=90, rows=25)
                 )
                 await ws.recv()
                 await ws.send(wire.client_input(b"typed by hand"))

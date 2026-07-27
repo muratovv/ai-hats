@@ -36,6 +36,8 @@ class Control:
     cols: int = 0
     rows: int = 0
     after_seq: int | None = None
+    # Carried by every op; the server compares it. This module never holds the secret.
+    token: str = ""
 
 
 def _validate_spec(raw: object) -> dict:
@@ -71,21 +73,29 @@ def parse_control(text: str | bytes) -> Control:
     if op not in OPS:
         raise ProtocolError(f"unknown op {op!r}; expected one of {', '.join(sorted(OPS))}")
 
+    token = msg.get("token", "")
+    if not isinstance(token, str):
+        raise ProtocolError("token must be a string")
+
     if op == "list":
-        return Control(op=op)
+        return Control(op=op, token=token)
     if op == "kill":
-        return Control(op=op, sid=_require_sid(msg))
+        return Control(op=op, sid=_require_sid(msg), token=token)
 
     cols, rows = _validate_size(msg)
     if op == "resize":
-        return Control(op=op, cols=cols, rows=rows)
+        return Control(op=op, cols=cols, rows=rows, token=token)
     if op == "create":
-        return Control(op=op, spec=_validate_spec(msg.get("spec")), cols=cols, rows=rows)
+        return Control(
+            op=op, spec=_validate_spec(msg.get("spec")), cols=cols, rows=rows, token=token
+        )
 
     after = msg.get("after_seq")
     if after is not None and (not isinstance(after, int) or isinstance(after, bool) or after < 0):
         raise ProtocolError("after_seq must be a non-negative integer")
-    return Control(op=op, sid=_require_sid(msg), cols=cols, rows=rows, after_seq=after)
+    return Control(
+        op=op, sid=_require_sid(msg), cols=cols, rows=rows, after_seq=after, token=token
+    )
 
 
 def _require_sid(msg: dict) -> str:

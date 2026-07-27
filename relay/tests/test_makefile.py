@@ -2,11 +2,44 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 RELAY_DIR = Path(__file__).resolve().parent.parent
 ROOT_DIR = RELAY_DIR.parent
+
+
+def _run(target: str, *extra: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["make", "-C", str(RELAY_DIR), target, *extra],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_a_tokenless_run_is_refused_with_the_way_out():
+    """The targets have to stay in step with the relay: since HATS-1194 the broker does
+    not start unauthenticated, so a target that shells out without a token would fail
+    with an argparse dump the moment it is used. Help text and dry-run assertions cannot
+    see that — only actually invoking it can."""
+    env = {k: v for k, v in os.environ.items() if k != "HATS_RELAY_TOKEN"}
+    for target in ("run-server", "run-client"):
+        res = _run(target, env=env)
+        assert res.returncode != 0, f"{target} started without a token"
+        assert "HATS_RELAY_TOKEN is not set" in res.stderr, res.stderr
+        assert "openssl rand" in res.stderr, f"{target} refuses without saying how to fix it"
+
+
+def test_the_token_is_not_put_on_the_command_line():
+    """An argv token is readable in `ps` by anyone else on the box, so it rides the
+    environment the CLI already reads."""
+    env = {**os.environ, "HATS_RELAY_TOKEN": "from-the-environment"}
+    res = _run("run-server", "-n", env=env)
+    assert res.returncode == 0, res.stderr
+    assert "--token" not in res.stdout
+    assert "from-the-environment" not in res.stdout
 
 
 def test_relay_makefile_help():
