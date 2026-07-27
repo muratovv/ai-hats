@@ -1697,7 +1697,8 @@ def test_check_venv_consistency_ladder(tmp_path, monkeypatch):
     )
     warnings = asm._check_venv_consistency()
     assert len(warnings) == 1
-    assert "dev env outdated" in warnings[0]
+    assert "Level 2" in warnings[0]
+    assert "Remediation" in warnings[0]
 
     # Level 3 failure (broken venv)
     monkeypatch.setattr(
