@@ -37,15 +37,6 @@
       "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/s"
     },
     {
-      "detail": "",
-      "digest": "03b6f8155ff0040e71433661bca58f3416181a4f1223ea5bda0811244dd768f0",
-      "file_count": 1,
-      "kind": "write_text",
-      "size": 31,
-      "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/.ai-hats-managed"
-    },
-    {
       "detail": "+hooks",
       "digest": "2c7146e11716a54850925e502620621c623388aa7a2935d235de61b5ab478b9c",
       "file_count": 1,

@@ -14,7 +14,12 @@ def tool_home(name: str, env_var: str) -> Path:
 
 
 def session_start_ts(session_id: str) -> float | None:
-    """ai-hats ``session_id[:15]`` → UTC epoch seconds, or None on malformed."""
+    """ai-hats ``session_id[:15]`` → UTC epoch seconds, or None on malformed.
+
+    Deliberately NOT delegating to ``ai_hats_observe.artifacts.session_start_dt``:
+    observe resolves from PyPI on a self-update install, so the integrator must
+    not import a symbol newer than observe's published version (HATS-1248).
+    """
     try:
         return (
             datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S")
