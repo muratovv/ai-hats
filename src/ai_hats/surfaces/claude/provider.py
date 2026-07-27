@@ -140,12 +140,15 @@ class ClaudeProvider(Provider):
             if provider_session_id else None,
         )
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return claude_md(project_dir)
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
+        """HATS-1170/1238: Claude uses per-session prompt cache; no root CLAUDE.md managed."""
+        del project_dir
+        return None
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""
-        pass
+        del project_dir, content
+        return None
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"

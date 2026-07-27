@@ -58,13 +58,15 @@ class ClineProvider(Provider):
             sessions_dir, "*/*.messages.json", session_id, exact_path=exact,
         )
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        # Vestigial — the role goes inline via -s (never read/written); ABC requires it.
-        return project_dir / "CLINE.md"
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
+        # HATS-1238: Inline-only surface — no root file managed.
+        del project_dir
+        return None
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         # Inline-only surface: set_role must not write a CLINE.md cline would ignore.
         del project_dir, content
+        return None
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
