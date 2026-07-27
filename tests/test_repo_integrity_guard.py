@@ -133,6 +133,7 @@ def test_tripwire_fires_on_real_repo_mutation(pytester, tmp_path, monkeypatch) -
         """
     )
     monkeypatch.setenv("AI_HATS_REPO_INTEGRITY_ROOT", str(victim))
+    monkeypatch.setenv("AI_HATS_IGNORE_FOREIGN_CHECKOUT", "1")
     monkeypatch.setenv("PYTHONPATH", pythonpath_with_repo_root())
     result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
 
