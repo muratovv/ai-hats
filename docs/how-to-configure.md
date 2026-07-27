@@ -323,7 +323,7 @@ If you want to see what the bump changed:
 git diff ai-hats.yaml
 ```
 
-Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under `library_paths`. `ai-hats config status` is a health-check — green means the next session will get the composition you expect.
+Yaml edits and `library_paths` changes need no rerun — they are picked up at the next launch. Rerun `self init` when you want the config validated and the project scaffold refreshed, or after `ai-hats self update`. `ai-hats config status` is a health-check — green means the next session will get the composition you expect.
 
 ---
 

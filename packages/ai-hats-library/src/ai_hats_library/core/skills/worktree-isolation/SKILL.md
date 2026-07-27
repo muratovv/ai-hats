@@ -202,8 +202,12 @@ lifecycle.
 ## Skill Edits
 
 Editing a `SKILL.md` body needs **no command** — the role is composed fresh at
-every session launch, so the edit is live for the next session. Only changes to
-`ai-hats.yaml` need `ai-hats self init` re-applied.
+every session launch, so the edit is live for the next session. The same goes
+for `ai-hats.yaml`: it is re-read at launch, so a role or customization change
+also lands on its own. `ai-hats self init` validates the config and refreshes
+the project scaffold (migrations, `.gitignore`, git hooks, and for agy the
+managed block in the root `GEMINI.md`) — it is not how composition changes take
+effect.
 
 Skills materialize into the per-session cache under
 `<ai_hats_dir>/.cache/sessions/<sid>/`; the exact subpath is provider-specific

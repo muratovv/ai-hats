@@ -94,9 +94,12 @@ the surface by flag:
 | **agy**    | `--add-dir <cache>/rules` (`rules/GEMINI.md`) | `<cache>/rules/.agents/skills/` | `<cache>/hooks.json` + global dispatcher      |
 | **cline**  | `--config <cache>`                            | `<cache>/skills`                | `<cache>`                                     |
 
-**What this means in practice.** Editing a `SKILL.md` body requires **no command
-at all** — the next session composes it fresh. Only changes to `ai-hats.yaml`
-need `ai-hats self init` to be re-applied. There is no permanent skill mirror at
+**What this means in practice.** Nothing about a composition change needs a
+command. `ai-hats.yaml` is re-read and the role re-composed at every launch, so
+editing a `SKILL.md` body, swapping a role, or adding a customization all land
+on the next session by themselves. `self init` is for step 1 above — validating
+the config and refreshing the project scaffold — not for making composition
+changes take effect. There is no permanent skill mirror at
 `.claude/skills/` (retired in HATS-294) and none at
 `<ai_hats_dir>/library/skills/` — that directory is the landing spot for
 components **you** author locally, not an export of the installed library.

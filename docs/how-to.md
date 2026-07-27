@@ -4,7 +4,7 @@ A collection of common tasks you hit when wiring ai-hats into a project: extendi
 
 > Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> All changes to `ai-hats.yaml` are applied with `ai-hats self init` (re-validates the config and refreshes the project scaffold; the role itself is composed per session — see [8]). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
+> Changes to `ai-hats.yaml` apply on the next session by themselves — the config is re-read and the role re-composed at every launch (see [8]). Run `ai-hats self init` to validate the config and refresh the project scaffold, not to make the change take effect. Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
 >
 > Any overlay edit can be done in two ways:
 >
