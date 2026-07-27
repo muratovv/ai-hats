@@ -3,10 +3,13 @@
 ## Status
 
 Proposed (HATS-1139, 2026-07-24; last revised at rev 7 — HATS-1240, 2026-07-27).
-Gates the epic HATS-1138 mechanism chain (HATS-1152 → 1140 → 1241 → 1141 → 1151 →
-1142 → 1143), its consumers (HATS-1137 merge-correctness gate, HATS-1144
-hunk-review) and the re-bindings (HATS-1145–1147). Driver: HATS-1134 (incident
-HATS-1130).
+Governs two epics. **HATS-1266** fixes the substrate — retiring `lifecycle_hooks`
+(HATS-1147), the execution primitive (HATS-1151, HATS-1161) and moving the
+remaining channels to `in_process` (HATS-1268, HATS-1269) — and runs first, per
+D8. **HATS-1138** then builds the declarative mechanism (HATS-1152 → 1140 → 1241
+→ 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
+HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). Driver:
+HATS-1134 (incident HATS-1130).
 
 **It stays `Proposed` on purpose.** This ADR replaces a channel with zero
 declared consumers, and neither candidate consumer is live yet. It becomes
@@ -133,11 +136,14 @@ What this buys against the two consequences above:
   traits/rules/skills — same overlay precedence, last-wins, dedup.
   `lifecycle_hooks`' union-scope special case disappears rather than being
   extended to a fifth channel.
-- **Referential integrity.** `skill:` naming a skill that is not composed is a
-  loud composition error; `script:` is health-checked (exists, non-empty,
-  shebang, executable) by the existing `_health_check`. Binding does **not**
-  implicitly pull the skill in — implicit composition is how you get surprise
-  gates.
+- **Referential integrity.** `skill:` naming a skill nobody composed is a loud
+  composition error (a skill an overlay *removed* is a warning — D6); `script:`
+  is health-checked at composition for exists / non-empty / shebang / executable
+  per **D6**. *(Rev 7: this bullet used to attribute that check to "the existing
+  `_health_check`". Rev 4 recorded that the existing one never examined the exec
+  bit, but corrected only its own section and left this sentence standing — the
+  check D6 now specifies is new, not inherited.)* Binding does **not** implicitly
+  pull the skill in — implicit composition is how you get surprise gates.
 
 Deliberately **not** added: a skill-side `provides:` block naming each check.
 It would be `{name, script}` — a rename of a path — after which the trait repeats
