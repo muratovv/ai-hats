@@ -1712,16 +1712,16 @@ def update(
             console.print(f"[red]Update failed[/]: {result.stderr}")
             # HATS-718: legacy in-place install failed → exit non-zero so
             # `self update && self init` stops instead of running init against a
-            # half-updated env. (The post-install verify below stays non-fatal:
-            # it heals via cli.main() layer A on the next invocation.)
+            # half-updated env.
             sys.exit(1)
 
-        # 2b. HATS-213 stage-2 verify. Non-fatal here by HATS-213's choice —
-        # NB its stated rationale (layer A heals it next run) covers missing
-        # deps only, not the integrity failures HATS-1116 added.
+        # 2b. HATS-1116 / HATS-1239 stage-2 verify (fatal): an install that lands
+        # is not an install that works. Stop immediately if post-install verify
+        # fails so `ai-hats self update && ...` does not proceed against a broken env.
         ok, detail = _run_post_install_verify(sys.executable)
         if not ok:
-            console.print(f"[yellow]Post-install verify warned[/]: {detail}")
+            console.print(f"[red]Post-install verify failed[/]: {detail}")
+            sys.exit(1)
 
         # 3. Version diff
         new_version = _get_installed_version()

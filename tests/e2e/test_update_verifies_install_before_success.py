@@ -9,13 +9,11 @@ Retargeted from ``self init`` to ``self update`` (HATS-1215): init no longer
 installs anything, so the verify it used to run now lives only on the update
 path (``cli/maintenance.py:_run_post_install_verify``).
 
-**The guarantee is weaker on this path, deliberately asserted as such.** Init's
-verify was fatal (``SystemExit(1)``); update's is a warning by HATS-213's
-choice, and ``maintenance.py:1719-1721`` already notes that rationale covers
-missing deps, not HATS-1116 integrity failures. So this test pins what update
-actually promises — the breakage is *detected and surfaced*, never dressed up
-as success — and does NOT assert a non-zero exit. Whether update should exit
-non-zero is its own open question; asserting it here would just fail.
+**The guarantee is fatal (HATS-1239).** Init's verify was fatal (``SystemExit(1)``);
+update's post-install verify is now also fatal (``SystemExit(1)``) so an install that
+lands but produces an unusable tree exits non-zero, surfacing the failure red.
+This test asserts that update exits non-zero, names the breakage, and never prints
+success.
 
 Setup (real launcher + real uv install, per ``dev_rule_e2e_gate`` — no stubs):
 
@@ -101,6 +99,7 @@ def test_update_does_not_report_success_for_a_broken_install(tmp_path: Path, rep
         pytest.fail("update hung instead of failing the verify")
 
     out = proc.stdout + proc.stderr
+    assert proc.returncode != 0, f"update exited 0 for a broken install:\n{out}"
     assert "ai-hats updated" not in out, f"success line printed for a broken install:\n{out}"
-    assert "Post-install verify warned" in out, f"broken install was not surfaced:\n{out}"
+    assert "Post-install verify failed" in out, f"broken install failure message was not surfaced:\n{out}"
     assert _MISSING_SYMBOL.split(" =")[0] in out, f"verify did not name the breakage:\n{out}"
