@@ -125,19 +125,21 @@ def check_dangerous_bin(cmd_bin: str, args) -> str:
 
 
 def check_sed(args) -> str:
+    if _acked():
+        return ""
     if any(tok == "-i" or (tok.startswith("-i") and not tok.startswith("--")) for tok in args):
-        return "Stopped: sed with -i flag modifies files. Explicit permission required."
+        return _ack_hint("Stopped: `sed -i` edits files in place.")
     return ""
 
 
 def check_sql(cmd_bin: str, args) -> str:
     """Scoped to DB clients so a bug report naming the phrase is not a command."""
-    if cmd_bin not in SQL_CLIENTS:
+    if cmd_bin not in SQL_CLIENTS or _acked():
         return ""
     joined = " ".join(args).lower()
     for sub in ("drop table", "drop database"):
         if sub in joined:
-            return f"Stopped: destructive SQL detected ({sub})."
+            return _ack_hint(f"Stopped: destructive SQL detected ({sub}).")
     return ""
 
 

@@ -201,6 +201,49 @@ def test_non_destructive_binaries_pass(hooked_project, command):
     assert not verdict.denied, f"{command!r} should not be gated; got {verdict}"
 
 
+# --- Invariants that guard FUTURE denies -----------------------------------
+
+#: Denials for which no consent flag exists, by design.
+NO_HATCH = ("rm -rf /", "rm -rf $HOME", "mkfs.ext4 /dev/sda1")
+
+#: A broad sweep. Rows here are not asserted allow/deny — the invariant is only
+#: that whatever is denied explains how to proceed.
+SWEEP = NO_HATCH + (
+    "git push origin master",
+    "git push --force origin master",
+    "gh pr merge 42 --merge",
+    "rm -f data/app.sqlite3",
+    "rm .env",
+    "rm -rf volumes/",
+    "dd if=/dev/zero of=/dev/sda",
+    "sed -i 's/a/b/' file.txt",
+    "psql -c 'drop table users'",
+)
+
+
+@pytest.mark.parametrize("command", SWEEP)
+@pytest.mark.integration
+def test_every_deny_names_its_hatch(hooked_project, command):
+    """A deny must name the flag that opens it, or be a known no-hatch case.
+
+    The guard against the HATS-1113 shape: a deny with nowhere to go leaves the
+    agent only blunt instruments, which is what graduated consent exists to
+    avoid. Applies to denies added later, not just the ones fixed here.
+    """
+    project, env, settings = hooked_project
+    verdict = run_chain(project, command, settings=settings, env=env)
+    if not verdict.denied:
+        return
+    if command in NO_HATCH:
+        assert not verdict.names_ack_flag, (
+            f"{command!r} must not advertise a flag that cannot open it; got {verdict}"
+        )
+        return
+    assert verdict.names_ack_flag, (
+        f"{command!r} was denied without naming a consent flag; got {verdict}"
+    )
+
+
 @pytest.mark.integration
 def test_mkfs_still_denied(hooked_project):
     """``mkfs`` has no legitimate agent use and stays on the blocked list."""
