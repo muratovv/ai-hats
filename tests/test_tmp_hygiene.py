@@ -46,6 +46,7 @@ def test_worktree_mkdtemp_lands_in_sandbox() -> None:
 @pytest.mark.integration
 def test_failed_session_preserves_sandbox(pytester, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PYTHONPATH", pythonpath_with_repo_root())
+    monkeypatch.setenv("AI_HATS_IGNORE_FOREIGN_CHECKOUT", "1")
     pytester.makeconftest(_CONFTEST.read_text())
     rec = tmp_path / "sandbox_path.txt"
     pytester.makepyfile(
@@ -67,6 +68,7 @@ def test_failed_session_preserves_sandbox(pytester, tmp_path, monkeypatch) -> No
 @pytest.mark.integration
 def test_green_session_sweeps_sandbox(pytester, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PYTHONPATH", pythonpath_with_repo_root())
+    monkeypatch.setenv("AI_HATS_IGNORE_FOREIGN_CHECKOUT", "1")
     pytester.makeconftest(_CONFTEST.read_text())
     rec = tmp_path / "sandbox_path.txt"
     pytester.makepyfile(

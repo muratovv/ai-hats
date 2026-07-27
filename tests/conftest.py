@@ -160,6 +160,28 @@ def _dev_environment_integrity_tripwire():
         )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _check_foreign_checkout(request: pytest.FixtureRequest) -> None:
+    """Fail the test session loud if ai_hats imports from a foreign checkout (HATS-1242).
+
+    Prevents tests running inside a worktree from silently validating code from
+    a different (e.g. main) checkout.
+    """
+    from pathlib import Path
+    import ai_hats
+    from tests._checkout_guard import check_checkout_integrity
+
+    rootdir = Path(request.config.rootdir).resolve()
+    resolved_init = (
+        Path(ai_hats.__file__).resolve()
+        if hasattr(ai_hats, "__file__") and ai_hats.__file__
+        else None
+    )
+    try:
+        check_checkout_integrity(resolved_init, rootdir)
+    except RuntimeError as err:
+        pytest.fail(str(err), pytrace=False)
+
 
 @pytest.fixture(autouse=True)
 def _reset_safe_delete_session(monkeypatch):

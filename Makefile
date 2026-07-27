@@ -1,6 +1,6 @@
 # Makefile for ai-hats
 
-.PHONY: help tests unit e2e lint check
+.PHONY: help tests unit e2e lint check relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -49,4 +49,11 @@ lint: ## Run ruff linter and formatter check
 	ruff format --check src/ tests/
 
 check: lint unit ## Run lint and unit tests
+
+relay-server: ## Run local hats-relay server (delegates to relay/Makefile)
+	$(MAKE) -C relay run-server ARGS="$(ARGS)"
+
+relay-client: ## Run local hats-relay client (delegates to relay/Makefile)
+	$(MAKE) -C relay run-client ARGS="$(ARGS)"
+
 
