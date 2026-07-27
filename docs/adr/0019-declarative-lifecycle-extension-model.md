@@ -33,8 +33,10 @@ last open item: the `plan_sections` consumer channel is **deleted** (HATS-1149,
 option A; implementation HATS-1160). **Rev 7 (HATS-1240, 2026-07-27) rewrites
 D9**: rev 5–6 resolved bindings out of the *provider's* per-session skill tree,
 which by then existed only for claude — see D9 for what falsified it. Rev 7 also
-amends D6, adds **D10** (channel taxonomy) and corrects a stale Risk paragraph in
-*Consequences* that rev 5 had already superseded.
+amends D6, **inverts D8** (the retirement of `lifecycle_hooks` now leads the
+migration instead of trailing it, and closes by tombstone rather than a
+deprecation window), adds **D10** (channel taxonomy) and corrects a stale Risk
+paragraph in *Consequences* that rev 5 had already superseded.
 
 ## Context
 
@@ -373,15 +375,43 @@ behaviour of three third-party scanners. Nothing is owed to it later: a binding
 names `{skill, script}`, not a path, so if HATS-1217 adopts that shape only the
 resolution root moves.
 
-### D8 — Migration: expand–contract
+### D8 — Migration: contract *first*, then expand
 
-1. Add `Composition.checks` + the `wt:pre-merge` point. Absorb `lifecycle_hooks`
-   outright — **zero consumers, no compat shim owed**; keep it parsing with a
-   deprecation warning for one release.
-2. **Defer** folding `worktree.wt_in/wt_out` in. Its carry is **persisted into
-   worktree state JSON at create and replayed at teardown** (`wt_hooks`,
-   ADR-0013 D5), so live worktrees would replay the old shape. Needs a
-   state-compat shim; its own card.
+*Revised at rev 7 (HATS-1240). Rev 5–6 had the expansion lead and the retirement
+trail it; the order is inverted, and the deprecation window is replaced by a
+tombstone.*
+
+Expand–contract exists to protect consumers of the thing being removed.
+`lifecycle_hooks` has none — zero declarations across `library/core` (29 skills),
+`library/usage` (70) and `ai-hats-custom`, and two importers. With no consumers,
+the window between removing it and shipping `checks` is empty, and the ordering
+is free to be chosen on other grounds. It is chosen thus:
+
+1. **Retire `lifecycle_hooks` first**, machinery included: the `<event>.d/` tree,
+   the `.manifest`, the sweep, `_assert_manifest_intact`, the managed-name
+   flattening, the unresolved `skill_dir / script` join. Everything the following
+   steps would otherwise have to interoperate with, for the length of an epic, is
+   gone before they start. Epic **HATS-1266**, card HATS-1147.
+2. **A declaration of `lifecycle_hooks:` fails composition loudly** — a tombstone,
+   not a deprecation warning. Rev 5–6 called for "parsing with a deprecation
+   warning for one release"; a warning is the wrong instrument when the failure
+   mode is *a gate that does not install*, and the zero-declaration survey covers
+   only the layers we can see. Precedent: HATS-1160 tombstoned `plan_sections`
+   the same way.
+3. **Then add `Composition.checks` + the `wt:pre-merge` point** (epic HATS-1138),
+   on the cleaned substrate and calling the execution primitive step 1's epic
+   leaves behind.
+4. **Defer** folding `worktree.wt_in/wt_out` into `checks:`. Its carry is
+   **persisted into worktree state JSON at create and replayed at teardown**
+   (`wt_hooks`, ADR-0013 D5), so live worktrees would replay the old shape. Needs
+   a state-compat shim; its own card (HATS-1146). Note this is the *declaration*
+   channel only — moving that channel's *scripts* to `in_process` per D10 is
+   independent of `checks` and rides step 1's epic (HATS-1269).
+
+**The cost of leading with the retirement, stated plainly.** Between step 1 and
+step 3 the project has no FSM edge extension point at all. Today that window is
+empty; if an edge gate becomes necessary inside it, the answer is to wait rather
+than to build a temporary fourth channel whose only purpose is deletion.
 
 ### D10 — Channel taxonomy: `in_process` vs `detached`
 
