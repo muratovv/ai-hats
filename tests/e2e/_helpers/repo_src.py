@@ -61,15 +61,12 @@ def build_src(repo_root: Path) -> Path:
         return cached
     dst = Path(tempfile.mkdtemp(prefix=f"hats-buildsrc-{worker}-"))
     src = dst / "repo"
-    # Scrubbed env (HATS-1247): inheriting GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE would
-    # retarget the clone off repo_root, and they ARE set whenever pytest is spawned from a
-    # git process — the pre-commit smoke gate does exactly that (HATS-887).
-    from _helpers.env import clean_env
-
+    # No explicit env on purpose: the autouse `_isolate_git_env` fixture already strips
+    # GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for every test (HATS-886), and passing an
+    # os.environ-derived env here re-leaks the class that guard exists to prevent.
     subprocess.run(
         ["git", "clone", "--shared", "--quiet", str(repo_root), str(src)],
-        check=True, capture_output=True, text=True,
-        env=clean_env(os.environ), timeout=CLONE_TIMEOUT_S,
+        check=True, capture_output=True, text=True, timeout=CLONE_TIMEOUT_S,
     )
     _CACHE["src"] = src
     return src
