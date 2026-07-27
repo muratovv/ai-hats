@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+from enum import Enum
 from pathlib import Path
 
 import yaml
@@ -1073,7 +1074,9 @@ class Assembler:
             prompt_path = None
 
         if prompt_path is not None:
-            health["system_prompt"] = "OK" if prompt_path.exists() else "Missing"
+            health["system_prompt"] = (
+                HealthStatus.OK if prompt_path.exists() else HealthStatus.MISSING
+            )
         return health
 
     def user_rules(self) -> tuple[Path, ...]:
@@ -1577,5 +1580,10 @@ class Assembler:
         return relocation.relocate(self, new_dir)
 
 
-class AssemblyError(Exception):
+class HealthStatus(str, Enum):
+    OK = "OK"
+    MISSING = "Missing"
+
+
+class AssemblyError(RuntimeError):
     pass
