@@ -7,6 +7,10 @@
 HOST ?= 127.0.0.1
 PORT ?= 8787
 ROLE ?= assistant
+# Sessions need an INITIALIZED ai-hats project as their cwd; relay/ is not one, so
+# without this a session dies at birth ("venv missing at relay/.agent/ai-hats/.venv")
+# while the client still prints a working-looking link. Override for another project.
+CWD ?= $(abspath $(CURDIR)/..)
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 
@@ -31,8 +35,8 @@ check-token:
 		exit 1; \
 	fi
 
-run-server: check-venv check-token ## Run local hats-relay server (options: HOST, PORT, ARGS)
-	PYTHONPATH=src $(PYTHON) -m hats_relay --host $(HOST) --port $(PORT) $(ARGS)
+run-server: check-venv check-token ## Run local hats-relay server (options: HOST, PORT, CWD, ARGS)
+	PYTHONPATH=src $(PYTHON) -m hats_relay --host $(HOST) --port $(PORT) --cwd $(CWD) $(ARGS)
 
 run-client: check-venv check-token ## Run local hats-relay client (options: HOST, PORT, ROLE, ARGS)
 	PYTHONPATH=src $(PYTHON) -m hats_relay.client ws://$(HOST):$(PORT) --role $(ROLE) $(ARGS)
