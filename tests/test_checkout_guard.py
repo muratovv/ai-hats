@@ -67,7 +67,7 @@ def test_remedy_message(tmp_path: Path) -> None:
 
     msg = remedy_message(repo_root, foreign)
     assert "WRONG checkout" in msg
-    assert "make wt-venv" in msg
+    assert "uv venv .venv" in msg
     assert "-e 'packages/surfaces/agy'" in msg
     assert ENV_IGNORE_FOREIGN_CHECKOUT in msg
 

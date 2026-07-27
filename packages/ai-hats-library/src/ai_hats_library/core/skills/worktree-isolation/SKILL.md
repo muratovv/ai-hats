@@ -23,8 +23,9 @@ Isolated development using git worktrees. Each task gets its own working copy �
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
 > **Worktree Python Environment & Interpreter Trap (HATS-1242).** A worktree has no venv of its own by default. Running tests or Python scripts in a worktree using the main checkout's `.venv` causes `import` statements to silently load code from the main checkout instead of the worktree.
-> - Provision a dedicated venv inside the worktree (e.g. `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` or a repo's provision target such as `make wt-venv` if provided by the project).
+> - Provision a dedicated venv inside the worktree via `uv`: `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
 > - Test suites enforce this via a session tripwire (`tests/conftest.py`) that refuses running tests if package imports resolve to a foreign checkout.
+
 
 
 
