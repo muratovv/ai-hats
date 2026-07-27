@@ -126,9 +126,11 @@ def test_project_run_scrubs_ambient_env(monkeypatch, tmp_path):
 
     captured_env = None
 
-    def fake_subprocess_run(cmd, cwd, env, capture_output, text, timeout):
+    # Permissive on purpose (HATS-1247): a double that pins one caller's exact argument
+    # list explodes as soon as any other call site reaches this patched global.
+    def fake_subprocess_run(cmd, *args, **kwargs):
         nonlocal captured_env
-        captured_env = env
+        captured_env = kwargs.get("env")
         from types import SimpleNamespace
 
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -138,22 +140,62 @@ def test_project_run_scrubs_ambient_env(monkeypatch, tmp_path):
     project = Project(path=tmp_path, ai_hats_binary=tmp_path / "bin" / "ai-hats")
     project.run("self", "update")
 
-    assert captured_env is not None
+    assert captured_env is not None, "Project.run must pass an explicit env, not inherit"
     assert ENV_AI_HATS_DIR not in captured_env
     assert "PYTHONPATH" not in captured_env
 
 
+def test_build_src_clone_is_bounded(monkeypatch, tmp_path):
+    """HATS-1247: the per-worker clone must not run unbounded.
+
+    Only the timeout is asserted here. Git plumbing isolation is NOT this call's job:
+    the autouse ``_isolate_git_env`` fixture already strips ``GIT_*`` for every test
+    (HATS-886), and passing an ``os.environ``-derived env would re-leak the very class
+    ``test_git_env_hygiene`` guards against.
+    """
+    import _helpers.repo_src as repo_src
+
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+    # Fresh memo: a faked clone must never leave a path nothing created in the real
+    # module-level cache, which the rest of this worker installs from.
+    monkeypatch.setattr(repo_src, "_CACHE", {})
+
+    captured = {}
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        captured.update(kwargs)
+        from types import SimpleNamespace
+
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    repo_src.build_src(tmp_path)
+
+    assert captured.get("timeout"), "clone must be bounded so a hang cannot stall a worker"
+
+
 def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
-    """HATS-1129: build_launcher_venv must scrub ambient ENV_DENYLIST from os.environ."""
+    """HATS-1129: build_launcher_venv must scrub ambient ENV_DENYLIST from os.environ.
+
+    HATS-1247: ``build_src`` is stubbed, not exercised. Under xdist it takes its
+    per-worker ``git clone`` branch and would reach the patched ``subprocess.run``,
+    which is what made this test xdist-only red. Worse, a faked clone still populates
+    ``repo_src._CACHE`` with a path nothing created, poisoning every later test on the
+    worker that installs from ``build_src``. The subject here is the env scrub.
+    """
     from _helpers.venv import build_launcher_venv
 
     monkeypatch.setenv(ENV_AI_HATS_DIR, "/leak/ambient/.agent")
     monkeypatch.setenv("PYTHONPATH", "/leak/src")
+    monkeypatch.setattr("_helpers.repo_src.build_src", lambda repo_root: repo_root)
 
     captured_envs = []
 
-    def fake_subprocess_run(cmd, cwd, env, capture_output, text, timeout, check):
-        captured_envs.append(env)
+    # Permissive on purpose (HATS-1247): a double that pins one caller's exact argument
+    # list explodes as soon as any other call site reaches this patched global.
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        captured_envs.append(kwargs.get("env"))
         if "install-launcher.sh" in cmd[1]:
             bin_path = tmp_path / "bin" / "ai-hats"
             bin_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,6 +228,9 @@ def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
 
     assert captured_envs
     for env in captured_envs:
+        # Inheriting the ambient env IS the leak under guard, so an absent env is a
+        # failure in its own right — not a call to skip over.
+        assert env is not None, "build_launcher_venv must pass an explicit env, not inherit"
         assert ENV_AI_HATS_DIR not in env
         assert "PYTHONPATH" not in env
 

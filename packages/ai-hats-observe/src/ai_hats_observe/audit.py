@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import atomic_write_text
 
-from .artifacts import TRANSCRIPT_TXT
+from .artifacts import TRANSCRIPT_TXT, session_start_dt
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
@@ -48,14 +48,10 @@ class AuditWriter:
 
         # Duration from session_id (UTC)
         duration = "?"
-        try:
-            start = datetime.strptime(session.session_id[:15], "%Y%m%d-%H%M%S").replace(
-                tzinfo=timezone.utc
-            )
+        start = session_start_dt(session.session_id)
+        if start is not None:
             secs = int((datetime.now(timezone.utc) - start).total_seconds())
             duration = f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
-        except Exception:
-            pass
 
         total_in = sum(s["in"] for s in (model_stats or {}).values())
         total_out = sum(s["out"] for s in (model_stats or {}).values())

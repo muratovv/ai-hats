@@ -1,15 +1,14 @@
-"""Ref-counted materializer for directory-convention skill registries.
+"""Materializer for directory-convention skill registries.
 
 Extracted from ClineProvider (HATS-963/981) for providers whose harness
-discovers skills from a project-scoped dir (``.agy/skills/``,
-``.cline/skills/``): the union of all live sessions' skills stays on disk;
-a JSON marker keyed by session_id prevents parallel sessions from sweeping
-each other's skills.  # HATS-993
+discovers skills from a directory convention (agy's ``rules/.agents/skills/``).
+That dir was project-scoped when this module was written; since HATS-1166 it is
+session-scoped, so the rebuild is a plain wipe-and-copy — see
+:func:`materialize_skills_dir`.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -24,8 +23,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-MANAGED_MARKER = ".ai-hats-managed"
 
 
 def find_skill_script_collisions(
@@ -116,49 +113,27 @@ def materialize_skills_dir(
     skills_dir: Path,
     skills: Iterable[ResolvedComponent],
     project_dir: Path,
-    session_id: str,
     port: "Materializer",
 ) -> None:
-    """Copy ``skills`` into ``skills_dir`` under a filelock; sweep orphans."""
-    port.mkdir(skills_dir)
-    with port.lock(skills_dir.parent / "skills.lock"):
-        _rebuild(skills_dir, list(skills), project_dir, session_id, port)
+    """Wipe ``skills_dir`` and copy ``skills`` in.
 
-
-def _rebuild(
-    skills_dir: Path,
-    skills: list[ResolvedComponent],
-    project_dir: Path,
-    session_id: str,
-    port: "Materializer",
-) -> None:
-    """Additive ref-counted rebuild; caller holds the lock (HATS-981 pattern)."""
+    HATS-1248: this used to be a ref-counted rebuild behind a filelock — a JSON
+    marker keyed by session_id, so parallel sessions would not sweep each other's
+    skills. But the target is itself keyed by session_id, so the map could only
+    hold a second entry when two processes minted the SAME id, and then they
+    shared one ref slot and overwrote each other anyway. With ids unique the
+    dir has exactly one writer, and this is a plain wipe-and-copy (what cline
+    has always done for its session-scoped equivalent).
+    """
     from .placeholders import expand_fsm_edges_token, expand_path_placeholders
 
-    marker = skills_dir / MANAGED_MARKER
-    refs: dict[str, list[str]] = {}
-    if marker.is_file():
-        try:
-            refs = json.loads(marker.read_text())
-        except (json.JSONDecodeError, ValueError):
-            refs = {}  # corrupt marker — start fresh
-
-    prev_all = {name for names in refs.values() for name in names}
-
-    desired = {s.name for s in skills if s.source_path.is_dir()}
-    refs[session_id] = sorted(desired)
-
-    new_all = {name for names in refs.values() for name in names}
-
-    # Sweep skills that were managed but no session references anymore.
-    for name in prev_all - new_all:
-        port.remove_tree(skills_dir / name)
+    port.remove_tree(skills_dir)
+    port.mkdir(skills_dir)
 
     for skill in skills:
         if not skill.source_path.is_dir():
             continue
         dest = skills_dir / skill.name
-        port.remove_tree(dest)
         port.copy_tree(skill.source_path, dest)
         # Expand <ai_hats_dir> (HATS-380) + inject the FSM edge table (HATS-1051).
         # Read the SOURCE: under a PlanMaterializer the copy does not exist.
@@ -170,5 +145,3 @@ def _rebuild(
             )
             if rendered != original:
                 port.write_text(dest / "SKILL.md", rendered)
-
-    port.write_text(marker, json.dumps(refs, indent=2, sort_keys=True) + "\n")

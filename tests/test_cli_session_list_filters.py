@@ -37,19 +37,19 @@ def project_dir(tmp_path: Path) -> Path:
         "schema_version: 2\nprovider: claude\nactive_role: primary\n"
     )
     # Set of sessions covering filter axes.
-    _make_session(project_dir=tmp_path, session_id="20260401T100000Z_a1", metrics={
+    _make_session(project_dir=tmp_path, session_id="20260401-100000-1-1001", metrics={
         "role": "diagnoser", "provider": "claude",
         "exit_code": 0, "turns": 5, "tool_calls": 10,
         "tokens": {"input": 100, "output": 200, "cache_read": 0, "cache_creation": 0},
         "tags": {"alert_fp": "abc", "client": "home"},
     })
-    _make_session(project_dir=tmp_path, session_id="20260410T120000Z_b2", metrics={
+    _make_session(project_dir=tmp_path, session_id="20260410-120000-1-1002", metrics={
         "role": "diagnoser", "provider": "claude",
         "exit_code": 0, "turns": 3, "tool_calls": 7,
         "tokens": {"input": 50, "output": 100, "cache_read": 0, "cache_creation": 0},
         "tags": {"alert_fp": "xyz", "client": "home"},
     })
-    _make_session(project_dir=tmp_path, session_id="20260420T090000Z_c3", metrics={
+    _make_session(project_dir=tmp_path, session_id="20260420-090000-1-1003", metrics={
         "role": "primary", "provider": "agy",
         "exit_code": 1, "turns": 2, "tool_calls": 3,
         "tokens": {"input": 30, "output": 60, "cache_read": 0, "cache_creation": 0},
@@ -83,7 +83,7 @@ def test_json_item_has_computed_fields(cli, project_dir):
     first = data[0]
     assert "session_id" in first
     assert "session_dir" in first
-    assert first["session_id"] == "20260401T100000Z_a1"
+    assert first["session_id"] == "20260401-100000-1-1001"
     # Absolute path — forward compatible for orchestrators.
     assert first["session_dir"].startswith(str(project_dir))
     assert first["started_at"] == "2026-04-01T10:00:00Z"
@@ -105,7 +105,7 @@ def test_tag_filter_single(cli):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
-    assert ids == ["20260401T100000Z_a1", "20260420T090000Z_c3"]
+    assert ids == ["20260401-100000-1-1001", "20260420-090000-1-1003"]
 
 
 def test_tag_filter_and(cli):
@@ -115,7 +115,7 @@ def test_tag_filter_and(cli):
     ])
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
-    assert ids == ["20260401T100000Z_a1"]
+    assert ids == ["20260401-100000-1-1001"]
 
 
 def test_role_filter(cli):
@@ -124,7 +124,7 @@ def test_role_filter(cli):
     ])
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
-    assert ids == ["20260401T100000Z_a1", "20260410T120000Z_b2"]
+    assert ids == ["20260401-100000-1-1001", "20260410-120000-1-1002"]
 
 
 def test_since_filter(cli):
@@ -133,7 +133,7 @@ def test_since_filter(cli):
     ])
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
-    assert ids == ["20260410T120000Z_b2", "20260420T090000Z_c3"]
+    assert ids == ["20260410-120000-1-1002", "20260420-090000-1-1003"]
 
 
 def test_combined_filters(cli):
@@ -146,7 +146,7 @@ def test_combined_filters(cli):
     ])
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
-    assert ids == ["20260410T120000Z_b2"]
+    assert ids == ["20260410-120000-1-1002"]
 
 
 # ---------------------------------------------------------------------------

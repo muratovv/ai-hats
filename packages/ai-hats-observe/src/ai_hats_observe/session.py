@@ -7,7 +7,9 @@ DI seam + ``atomic_write_text``) and observe's own vocab leaves — no integrato
 
 from __future__ import annotations
 
+import itertools
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +37,11 @@ AUDIT_SCHEMA_VERSION = "audit/v1"
 class SessionManager:
     """Manages session lifecycle and directories."""
 
+    # HATS-1248: process-wide, not per-instance — one process can build several
+    # managers (`reflect hypothesis` runs two phases), and a per-instance counter
+    # restarts at 1 in each. `next()` on a count() is atomic under the GIL.
+    _counter = itertools.count(1)
+
     def __init__(
         self,
         project_dir: Path | None = None,
@@ -46,7 +53,6 @@ class SessionManager:
         # `gitlog_dir` name kept for backwards source compat; it's the runs root.
         self.gitlog_dir = runs_dir
         self.gitlog_dir.mkdir(parents=True, exist_ok=True)
-        self._counter = 0
         self.project_dir = project_dir
         # HATS-948: package-pure default = no-op recovery; the integrator injects
         # the real EnvironmentRecovery at the run-path seam (make_session_manager).
@@ -54,18 +60,26 @@ class SessionManager:
         self._recovery: RecoveryProtocol = recovery or NoOpRecovery()
 
     def create_session(self, parent_session: str | None = None) -> Session:
-        """Create a new session with a unique ID."""
+        """Create a new session with an id unique across managers and processes.
+
+        Shape ``<YYYYMMDD-HHMMSS>-<counter>-<pid>``: readers parse only the
+        timestamp prefix, so the suffix is inert to them (HATS-1248). Keep the
+        suffix free of ``.`` and ``/`` — the id round-trips through filenames
+        via ``Path.stem`` in the retro store.
+        """
         # HATS-649: converge crash-recovery (ref write + cache/version sweeps +
         # orphan-version reclaim) on every run, before allocating the session.
         self._recovery.run()
         now = datetime.now(timezone.utc)
-        self._counter += 1
         base_id = now.strftime("%Y%m%d-%H%M%S")
+        # HATS-1248: the counter alone is not cross-process unique (it restarts
+        # per process), so two runs in one second shared a session dir.
+        suffix = f"{next(SessionManager._counter)}-{os.getpid()}"
 
         if parent_session:
-            session_id = f"{parent_session}_{base_id}-{self._counter}"
+            session_id = f"{parent_session}_{base_id}-{suffix}"
         else:
-            session_id = f"{base_id}-{self._counter}"
+            session_id = f"{base_id}-{suffix}"
 
         session_dir = self.gitlog_dir / session_dirname(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,6 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG, gemini_md
-from ai_hats.skills_dir import MANAGED_MARKER
 from ai_hats_agy.provider import AgyProvider
 
 
@@ -55,8 +54,6 @@ def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
 
     skills_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-1" / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
-    refs = json.loads((skills_dir / MANAGED_MARKER).read_text())
-    assert refs == {"sid-1": ["s"]}
 
 
 def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:

@@ -43,6 +43,9 @@ from pathlib import Path
 # Per-process (= per-xdist-worker) memo. Key is constant: one clone per worker.
 _CACHE: dict[str, Path] = {}
 
+# A --shared clone copies no objects, so this bounds a hang, not the happy path.
+CLONE_TIMEOUT_S = 120
+
 
 def build_src(repo_root: Path) -> Path:
     """Return the wheel-build source for the current worker.
@@ -58,9 +61,12 @@ def build_src(repo_root: Path) -> Path:
         return cached
     dst = Path(tempfile.mkdtemp(prefix=f"hats-buildsrc-{worker}-"))
     src = dst / "repo"
+    # No explicit env on purpose: the autouse `_isolate_git_env` fixture already strips
+    # GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for every test (HATS-886), and passing an
+    # os.environ-derived env here re-leaks the class that guard exists to prevent.
     subprocess.run(
         ["git", "clone", "--shared", "--quiet", str(repo_root), str(src)],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, timeout=CLONE_TIMEOUT_S,
     )
     _CACHE["src"] = src
     return src

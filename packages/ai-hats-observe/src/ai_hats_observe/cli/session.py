@@ -20,6 +20,7 @@ from ..artifacts import (
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
+    session_start_dt,
 )
 from . import _seam
 
@@ -198,10 +199,10 @@ def _emit_sessions_json(sessions) -> None:
     import json
 
     def _started_at(sid: str) -> str | None:
-        # session_id convention: YYYYMMDDTHHMMSSZ_<suffix>
-        if len(sid) < 16 or sid[8] != "T" or sid[15] != "Z":
-            return None
-        return f"{sid[:4]}-{sid[4:6]}-{sid[6:8]}T{sid[9:11]}:{sid[11:13]}:{sid[13:15]}Z"
+        # HATS-1248: gated on a `YYYYMMDDTHHMMSSZ_` shape nothing ever minted,
+        # so this field was absent from every real session.
+        start = session_start_dt(sid)
+        return start.strftime("%Y-%m-%dT%H:%M:%SZ") if start else None
 
     out: list[dict] = []
     for s in sessions:

@@ -1,12 +1,14 @@
 """Session-dir artifact names — observe's session-dir schema (HATS-948, T15).
 
-Filename constants + the session-dir helpers. A pure leaf (imports nothing) so
+Filename constants + the session-dir helpers. A pure leaf (stdlib only) so
 the observe writer uses it intra-package and integrator name-consumers
 (retro/cli/pipeline) import it without dragging the writer. observe owns this
 schema (ADR-0014); it does NOT belong in core.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 # Session directory prefix for session IDs
 SESSION_PREFIX = "session_"
@@ -36,6 +38,21 @@ def strip_session_prefix(session_id: str) -> str:
     return session_id
 
 
+def session_start_dt(session_id: str) -> datetime | None:
+    """Parse the leading ``YYYYMMDD-HHMMSS`` as UTC; None if malformed.
+
+    The one place that knows where a session id carries its start time, so the
+    uniqueness suffix after it stays free to change (HATS-1248). Accepts a bare
+    id or a ``session_<id>`` dirname. On a nested id this yields the PARENT's
+    start time — long-standing behaviour every caller already relies on.
+    """
+    sid = strip_session_prefix(session_id)
+    try:
+        return datetime.strptime(sid[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+    except (ValueError, IndexError):
+        return None
+
+
 __all__ = [
     "SESSION_PREFIX",
     "TRACE_LOG",
@@ -50,4 +67,5 @@ __all__ = [
     "RETRO_LOG",
     "session_dirname",
     "strip_session_prefix",
+    "session_start_dt",
 ]
