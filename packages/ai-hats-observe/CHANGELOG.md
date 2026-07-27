@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+Cross-process unique session ids. Until now the id was a UTC second plus a
+per-process counter, so two runs starting in the same second keyed the same
+session dir and silently merged — the defect behind the plugin-dir shredding
+patched surgically in HATS-604.
+
 ### Fixed
 
 - `SessionManager.create_session` mints ids unique across processes. The id was
