@@ -7,11 +7,11 @@ sweep and the auto-discovery collision report.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .fs_digest import dir_digest
 from .paths import (
     AI_HATS_MANAGED_MARKER,
     claude_dir,
@@ -68,7 +68,7 @@ def duplicate_skill_registrations(
                 continue
             if name in managed:
                 verdict = "managed"
-            elif _dir_digest(candidate) == _dir_digest(plugin_skills_root / name):
+            elif dir_digest(candidate) == dir_digest(plugin_skills_root / name):
                 verdict = "identical"
             else:
                 verdict = "differs"
@@ -258,16 +258,3 @@ def _marker_names(marker: Path) -> frozenset[str]:
         for line in marker.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     )
-
-
-def _dir_digest(root: Path) -> str:
-    """sha256 over sorted (relpath, bytes) — equal digests ⇔ equal trees."""
-    if not root.is_dir():
-        return ""
-    digest = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        digest.update(str(path.relative_to(root)).encode())
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()

@@ -10,7 +10,7 @@ legacy semantics of the two pre-HATS-905 dead surfaces.
 Marker convention (HATS-911): new line-manifest markers are written via
 :func:`write_marker` — ``# ai-hats-owner: <owner_key>`` header, then one
 ``<sha256-12>  <relpath>`` line per owned entry (dirs hash via
-``plugin_dir._dir_digest``). The hash is the content-proof: sweep discards an
+``fs_digest.dir_digest``). The hash is the content-proof: sweep discards an
 entry only while its on-disk content still matches; user-modified files are
 kept with a WARN. ``#`` lines are comments, so hash-less readers stay compatible.
 """  # comment-length: allow — marker-format contract (HATS-911)
@@ -27,8 +27,9 @@ from typing import Callable, Iterable
 from ai_hats_core.safe_delete import discard, replace
 
 from . import owners
+from .fs_digest import dir_digest
 from .paths import AI_HATS_MANAGED_MARKER, claude_dir, claude_settings_json, claude_skills_dir
-from .plugin_dir import _dir_digest, _is_safe_relative
+from .plugin_dir import _is_safe_relative
 
 _SETTINGS_RELPATH = str(claude_settings_json(Path(".")))
 
@@ -442,7 +443,7 @@ def _content_proven(
 
 def _digest_of(victim: Path) -> str:
     if victim.is_dir():
-        return _dir_digest(victim)[:_DIGEST_LEN]
+        return dir_digest(victim)[:_DIGEST_LEN]
     try:
         return hashlib.sha256(victim.read_bytes()).hexdigest()[:_DIGEST_LEN]
     except OSError:
