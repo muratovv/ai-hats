@@ -1,4 +1,4 @@
-"""Guard: the e2e interpreter must import the checkout under test (HATS-1218).
+"""Guard: the e2e interpreter must import the checkout under test (HATS-1218, HATS-1242).
 
 ``ai_hats_shim`` execs ``sys.executable -m ai_hats``, and ``clean_env`` strips
 ``PYTHONPATH`` on purpose (HATS-685 — e2e must exercise the *installed*
@@ -21,21 +21,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests._checkout_guard import (
+    foreign_source_checkout as foreign_source_checkout,
+)
+from tests._checkout_guard import (
+    remedy_message as remedy,
+)
+
+__all__ = ["foreign_source_checkout", "remedy", "resolve_ai_hats_init"]
+
 _PROBE = "import ai_hats, pathlib; print(pathlib.Path(ai_hats.__file__).resolve())"
-
-
-def foreign_source_checkout(resolved_init: Path, repo_root: Path) -> Path | None:
-    """The other checkout ``ai_hats`` resolves into, or ``None`` when fine.
-
-    An editable install resolves to ``<checkout>/src/ai_hats/__init__.py``; a
-    wheel install resolves inside ``site-packages`` and is the intended target
-    of the e2e tier, so it never trips this.
-    """
-    src_dir = resolved_init.parent.parent
-    if src_dir.name != "src":
-        return None
-    checkout = src_dir.parent
-    return None if checkout == repo_root else checkout
 
 
 def resolve_ai_hats_init(env: dict[str, str]) -> Path | None:
@@ -47,22 +42,3 @@ def resolve_ai_hats_init(env: dict[str, str]) -> Path | None:
     if proc.returncode != 0 or not proc.stdout.strip():
         return None
     return Path(proc.stdout.strip())
-
-
-def remedy(repo_root: Path, foreign: Path) -> str:
-    """Operator-facing message: what went wrong and the exact way out."""
-    return (
-        f"e2e would test the WRONG checkout.\n\n"
-        f"  tests live in : {repo_root}\n"
-        f"  but 'python -m ai_hats' imports from: {foreign}\n\n"
-        f"{sys.executable} has an editable install pointing at another "
-        f"checkout, and the e2e subprocess env strips PYTHONPATH by design "
-        f"(HATS-685), so the source under test cannot win.\n\n"
-        f"Fix — install THIS checkout into a throwaway venv and use it:\n"
-        f"  uv venv /tmp/e2e-venv\n"
-        f"  VIRTUAL_ENV=/tmp/e2e-venv uv pip install -e '{repo_root}[dev]'\n"
-        f"  /tmp/e2e-venv/bin/python -m pytest tests/e2e/...\n\n"
-        f"The pre-commit smoke hook takes pytest from PATH, so give it the "
-        f"same interpreter:\n"
-        f"  PATH=/tmp/e2e-venv/bin:$PATH git commit ..."
-    )
