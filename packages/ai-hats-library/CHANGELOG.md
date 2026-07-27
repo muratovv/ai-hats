@@ -3,6 +3,29 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.4.0
+
+- **`safety-guard` matches paths and subcommands, not bare tokens** (HATS-1253).
+  `check_git` denied any command whose tokens contained `push`, duplicating a
+  concern `pre_bash_shared_state_guard.sh` already owned. A deny is binary, so
+  the coarser gate won and the documented ack handshake could never complete:
+  supervisor-approved pushes were refused, as were `git stash push`,
+  `--dry-run`, and read-only searches whose *arguments* named the word. The
+  duplicate is gone; the shared-state guard owns the policy alone and gates a
+  regular push behind `AI_HATS_SHARED_STATE_ACK=1`.
+- **`rm` is path-based** (HATS-1253). The old check matched the binary name, so
+  `rm -rf /tmp/scratch` and `rm -rf /` were indistinguishable — it denied the
+  cleanup `global_rule_resource_hygiene` mandates while being no stricter on a
+  production database. Now: scratch paths pass, the paths
+  `global_rule_destructive_actions` names take `AI_HATS_DESTRUCTIVE_ACK=1`, and
+  the filesystem root / `$HOME` are refused outright. `chown` and `truncate`
+  leave the blocked list; `mkfs.*` is caught (bare `mkfs` never matched a real
+  invocation) and `dd` only when writing to a device.
+- **Every denial names the flag that opens it**, or says none does.
+- **Command splitting is quote-aware** (HATS-1253). The regex split on
+  `;`/`&&`/`||`/`|` ignored quoting, so a quoted argument synthesised a phantom
+  command and the guard denied commands that were never issued.
+
 ## 0.3.0
 
 - **Default backlog manager flipped to rack (hatrack)** (HATS-1054). `trait-agent`

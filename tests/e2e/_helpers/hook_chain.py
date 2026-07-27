@@ -1,0 +1,162 @@
+"""HATS-1253 — drive the MATERIALIZED PreToolUse chain, not a single hook.
+
+Single-hook tests cannot observe hook B overriding hook A's verdict, which is
+how a green test coexisted with the opposite live behaviour. This resolves the
+Bash chain from the project's settings.json and returns the composite verdict.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+CLAUDE_PROJECT_DIR_VAR = "$CLAUDE_PROJECT_DIR/"
+
+#: Flags that grant consent. A deny whose text names none of these leaves the
+#: agent nowhere to go — see the deny-names-its-hatch invariant (HATS-1253 P4).
+ACK_FLAG_RE = re.compile(r"AI_HATS_[A-Z0-9_]*ACK")
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Composite outcome of the whole chain."""
+
+    decision: str  # "allow" | "deny"
+    reason: str = ""
+    hook: str = ""  # basename of the deciding hook; "" when allowed
+
+    @property
+    def denied(self) -> bool:
+        return self.decision == "deny"
+
+    @property
+    def names_ack_flag(self) -> bool:
+        return bool(ACK_FLAG_RE.search(self.reason))
+
+    def __str__(self) -> str:  # pragma: no cover - assertion messages only
+        if not self.denied:
+            return "allow"
+        return f"deny by {self.hook}: {self.reason.strip()[:200]}"
+
+
+def _matches_bash(matcher: str) -> bool:
+    """True when a settings.json matcher applies to the Bash tool."""
+    if not matcher or matcher == "*":
+        return True
+    try:
+        return re.fullmatch(matcher, "Bash") is not None
+    except re.error:
+        return matcher == "Bash"
+
+
+def build_session_settings(project: Path, role: str = "assistant", session_id: str = "sid-hooks") -> Path:
+    """Compose a session and return its materialized settings.json.
+
+    HATS-1170 moved hook wiring out of project-root ``.claude/settings.json``
+    into the per-session cache, so the composed chain only exists once a
+    session is built.
+    """
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths import session_cache_dir
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    result = Assembler(project).composer.compose(role)
+    ClaudeProvider().build_session_artifacts(
+        project, result, session_id, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+    )
+    return session_cache_dir(project, session_id) / "settings.json"
+
+
+def bash_pretooluse_hooks(settings: Path, project: Path) -> list[str]:
+    """Hook commands wired onto Bash in ``settings``, in recorded order.
+
+    Returned verbatim, ``$CLAUDE_PROJECT_DIR`` unexpanded — the shell resolves
+    it exactly as the harness does, so a wiring regression surfaces here.
+    """
+    if not settings.is_file():
+        raise AssertionError(f"no materialized settings.json at {settings}")
+
+    data = json.loads(settings.read_text())
+    commands: list[str] = []
+    for entry in data.get("hooks", {}).get("PreToolUse", []) or []:
+        if not isinstance(entry, dict) or not _matches_bash(str(entry.get("matcher", "") or "")):
+            continue
+        for hook in entry.get("hooks", []) or []:
+            if isinstance(hook, dict) and hook.get("command"):
+                commands.append(str(hook["command"]))
+    return commands
+
+
+def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
+    # `bash -c <path>` execs the file so its shebang picks the interpreter —
+    # running `bash <path>` would make bash parse a .py hook as shell.
+    proc = subprocess.run(  # noqa: S603 - command comes from our own settings.json
+        ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
+        input=payload,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    name = command.rsplit("/", 1)[-1]
+
+    # Convention 1: exit 2 blocks, stderr carries the reason.
+    if proc.returncode == 2:
+        return Verdict("deny", proc.stderr, name)
+
+    # Convention 2: a permissionDecision on stdout.
+    out = (proc.stdout or "").strip()
+    if out:
+        try:
+            payload_out = json.loads(out)
+        except json.JSONDecodeError:
+            payload_out = {}
+        hso = payload_out.get("hookSpecificOutput") or {}
+        if str(hso.get("permissionDecision", "")).lower() == "deny":
+            return Verdict("deny", str(hso.get("permissionDecisionReason", "")), name)
+
+    return Verdict("allow")
+
+
+def run_chain(
+    project: Path,
+    command: str,
+    *,
+    settings: Path,
+    env: dict | None = None,
+    ack: str | None = None,
+) -> Verdict:
+    """Run ``command`` through the project's whole Bash PreToolUse chain.
+
+    ``ack`` names a consent flag to set to ``"1"`` for this run. Every known
+    ack flag is stripped first, so an ambient one in the developer's shell can
+    never make a test pass by accident.
+    """
+    base_env = dict(env) if env is not None else os.environ.copy()
+    for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
+        del base_env[key]
+    base_env.pop("AI_HATS_YOLO", None)
+    if ack:
+        base_env[ack] = "1"
+
+    payload = json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}}
+    )
+
+    base_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
+
+    hooks = bash_pretooluse_hooks(settings, project)
+    if not hooks:
+        raise AssertionError(f"no Bash PreToolUse hooks wired in {settings}")
+
+    for command_str in hooks:
+        verdict = _run_one(command_str, payload, project, base_env)
+        if verdict.denied:
+            return verdict
+    return Verdict("allow")

@@ -3,7 +3,7 @@
 # git pre-push hooks).
 #
 # Function: classify_command "<full command string>"
-#   echoes one of: irreversible | shared | safe
+#   echoes one of: irreversible | gated | shared | safe
 #
 # Classification:
 #   irreversible — no undo path. Hook should BLOCK without explicit ack.
@@ -11,13 +11,16 @@
 #                                   but same classification — block is binary)
 #     - git push --force / -f / --force-with-lease
 #
+#   gated        — reversible, but must not happen without the supervisor's
+#                  go-ahead. Hook BLOCKS; the ack flag opens it (HATS-1253).
+#     - git push (regular)
+#
 #   shared       — writes a shared resource but reversible. Rule (Level 2)
 #                  asks agent to pause; hook does NOT block. Returned for
 #                  completeness so callers can distinguish.
 #     - gh pr create / close
 #     - gh issue comment
 #     - gh release create
-#     - git push (regular)
 #
 #   safe         — everything else.
 #
@@ -62,8 +65,16 @@ classify_command() {
         echo shared
         return 0
     fi
+    # --- gated ---
     if [[ "$cmd" =~ (^|[\;\&\|\(\`\$\{[:space:]])git[[:space:]]+push([[:space:]]|$) ]]; then
-        echo shared
+        # --dry-run contacts the remote but writes nothing. Checked HERE, not
+        # globally: the irreversible patterns above have already returned, so
+        # a chained `git push --dry-run && gh pr merge` cannot mask itself.
+        if [[ "$cmd" =~ (^|[[:space:]])--dry-run([[:space:]]|$) ]]; then
+            echo safe
+            return 0
+        fi
+        echo gated
         return 0
     fi
 

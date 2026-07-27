@@ -12,6 +12,13 @@ The rule fires if the task changed any of:
 - `scripts/*.sh` — shell scripts (`install-launcher.sh`, `bootstrap.sh`, etc.).
 - `src/ai_hats/_bootstrap.py`, `src/ai_hats/cli/maintenance.py` — pip install / launcher / venv flow.
 - `[project.scripts]` block in `pyproject.toml` — new or renamed entry-points.
+- `packages/ai-hats-library/**/hooks/**` — PreToolUse / PostToolUse hook scripts.
+  Highest blast radius in the repo: a hook gates *every* tool call of *every*
+  role composing it, so a four-line change can disable every agent. The test
+  must drive the **composed chain** (all hooks on the matcher, in order) via
+  `tests/e2e/_helpers/hook_chain.py`, never one script in isolation: a
+  single-hook test cannot observe a second hook overriding its verdict, which
+  is how HATS-1113 shipped a blanket deny past a green suite (HATS-1253).
 - Anything else crossing an external contract: PEP 508 URL forms, click nesting, shell quoting, venv invocation.
 
 **Does not trigger:** internal Python modules (storage, parsing, business logic), docs, tests-only changes, version bump.

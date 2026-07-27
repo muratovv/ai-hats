@@ -101,10 +101,21 @@ def test_pretool_ack_overrides_block():
 
 
 @pytest.mark.integration
-def test_pretool_allows_regular_push():
-    """Regular `git push` is shared (rule covers it) but hook must not block."""
+def test_pretool_gates_regular_push_without_ack():
+    """HATS-1253: regular `git push` is `gated` — blocked, and the refusal
+    names the flag that opens it. Was ``test_pretool_allows_regular_push``,
+    which encoded the pre-1253 rule-only-pause policy."""
     payload = '{"tool_input":{"command":"git push origin master"}}'
     res = _run(PRETOOL_HOOK, stdin=payload)
+    assert res.returncode == 2, res.stderr
+    assert "AI_HATS_SHARED_STATE_ACK=1" in res.stderr
+
+
+@pytest.mark.integration
+def test_pretool_allows_regular_push_with_ack():
+    """The approved-push handshake completes — the point of HATS-1253."""
+    payload = '{"tool_input":{"command":"git push origin master"}}'
+    res = _run(PRETOOL_HOOK, stdin=payload, env={"AI_HATS_SHARED_STATE_ACK": "1"})
     assert res.returncode == 0, res.stderr
 
 
