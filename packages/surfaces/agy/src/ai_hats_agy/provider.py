@@ -71,7 +71,7 @@ class AgyProvider(Provider):
             ),
         ]
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
         return gemini_md(project_dir)
 
     def rules_dir(self, session_dir: Path) -> Path:

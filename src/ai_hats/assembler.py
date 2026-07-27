@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+from enum import Enum
 from pathlib import Path
 
 import yaml
@@ -1058,17 +1059,24 @@ class Assembler:
         }
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
-        """Check the one artefact that still lives on disk — the provider
-        system prompt (``./CLAUDE.md`` / ``./AGY.md``).
+        """Check artefacts on disk — namely the provider system prompt if the
+        configured provider manages one (HATS-1238).
 
         Rules/skills/hooks are composed in memory per session (HATS-294/407),
-        so there is nothing else to probe. HATS-1203 dropped the
-        ``imports.md`` row with the aggregator itself.
+        so there is nothing else to probe.
         """
         del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}
-        prompt_ok = any(f(self.project_dir).exists() for f in (gemini_md, claude_md))
-        health["system_prompt"] = "OK" if prompt_ok else "Missing"
+        try:
+            provider = get_provider(self.project_config.provider)
+            prompt_path = provider.system_prompt_path(self.project_dir)
+        except Exception:
+            prompt_path = None
+
+        if prompt_path is not None:
+            health["system_prompt"] = (
+                HealthStatus.OK if prompt_path.exists() else HealthStatus.MISSING
+            )
         return health
 
     def user_rules(self) -> tuple[Path, ...]:
@@ -1572,5 +1580,10 @@ class Assembler:
         return relocation.relocate(self, new_dir)
 
 
-class AssemblyError(Exception):
+class HealthStatus(str, Enum):
+    OK = "OK"
+    MISSING = "Missing"
+
+
+class AssemblyError(RuntimeError):
     pass

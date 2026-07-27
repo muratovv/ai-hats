@@ -868,12 +868,14 @@ def status():
     # prints after, with its OK/Missing icon.
     from .maintenance import _gather_install_info
 
+    from ..assembler import HealthStatus
+
     console.print("\n[bold]Health:[/]")
     for key, val in _gather_install_info().items():
         console.print(f"  {key}: [dim]{val}[/]", highlight=False)
     if st.get("health"):
         for component, status_val in st["health"].items():
-            icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
+            icon = "[green]OK[/]" if status_val == HealthStatus.OK else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)
 
     # HATS-791: stray-shadow detector. WARN (never delete) if any ai-hats on

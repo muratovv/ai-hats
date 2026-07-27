@@ -126,8 +126,8 @@ class Provider(abc.ABC):
         return []
 
     @abc.abstractmethod
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        """Path to the system prompt file for this provider."""
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
+        """Path to the system prompt file for this provider, or None if omitted."""
 
     @abc.abstractmethod
     def rules_dir(self, session_dir: Path) -> Path:
@@ -293,7 +293,8 @@ class Provider(abc.ABC):
         # read as the more specific layer. Unfiltered — see discover_user_rules.
         user_rules_section = "## USER RULES\n"
         emitted = False
-        for rule_path in result.user_rules:
+        user_rules = getattr(result, "user_rules", ())
+        for rule_path in user_rules:
             try:
                 body = rule_path.read_text()
             except OSError:
@@ -432,7 +433,7 @@ class Provider(abc.ABC):
         del project_dir, result
         return []
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         """Write or update the inline system prompt block.
 
         Used by providers without a scaffold (e.g. Agy) to maintain the
@@ -446,6 +447,8 @@ class Provider(abc.ABC):
         from ai_hats_core.safe_delete import replace as _safe_replace
 
         prompt_path = self.system_prompt_path(project_dir)
+        if prompt_path is None:
+            return None
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
 
         if prompt_path.exists():
@@ -454,7 +457,7 @@ class Provider(abc.ABC):
             # the canonical-publish layout — `./CLAUDE.md` is user-owned and
             # the framework injection lives in `.claude/CLAUDE.md`.
             if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
-                return
+                return prompt_path
             if INJECTION_START in existing and INJECTION_END in existing:
                 # Update between markers, preserve everything outside
                 before = existing[: existing.index(INJECTION_START)]
@@ -466,7 +469,7 @@ class Provider(abc.ABC):
                     reason="system-prompt",
                     project_dir=project_dir,
                 )
-                return
+                return prompt_path
             if existing.strip():
                 # Existing file without markers — preserve as project context
                 _safe_replace(
@@ -475,7 +478,7 @@ class Provider(abc.ABC):
                     reason="system-prompt",
                     project_dir=project_dir,
                 )
-                return
+                return prompt_path
 
         # Fresh write with markers
         _safe_replace(
@@ -484,6 +487,7 @@ class Provider(abc.ABC):
             reason="system-prompt",
             project_dir=project_dir,
         )
+        return prompt_path
 
 
 _PROVIDER_REGISTRY: dict[str, type[Provider]] = {}
