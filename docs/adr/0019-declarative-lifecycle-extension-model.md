@@ -2,17 +2,24 @@
 
 ## Status
 
-Proposed (HATS-1139, 2026-07-24). Gates the epic HATS-1138 mechanism chain
-(HATS-1140–1143), its consumers (HATS-1137 merge-correctness gate, HATS-1144
+Proposed (HATS-1139, 2026-07-24; last revised at rev 7 — HATS-1240, 2026-07-27).
+Gates the epic HATS-1138 mechanism chain (HATS-1152 → 1140 → 1241 → 1141 → 1151 →
+1142 → 1143), its consumers (HATS-1137 merge-correctness gate, HATS-1144
 hunk-review) and the re-bindings (HATS-1145–1147). Driver: HATS-1134 (incident
 HATS-1130).
+
+**It stays `Proposed` on purpose.** This ADR replaces a channel with zero
+declared consumers, and neither candidate consumer is live yet. It becomes
+`Accepted` when one is bound and proven to refuse — not when the mechanism
+merges. See *Consequences*.
 
 **Renumbered from ADR-0018.** This decision was drafted as ADR-0018 in
 `HATS-1139/design.md`. Cross-epic coordination (2026-07-24) assigned **ADR-0018**
 to the provider **artifact-builder** (HATS-1170, epic HATS-1165) — materialization
-is the foundational substrate — and this lifecycle-extension model, the handlers
-that resolve from that materialized per-session skill tree, follows it as
-**ADR-0019**. Historical "ADR-0018" references in the epic HATS-1138 backlog
+is the foundational substrate — and this lifecycle-extension model follows it as
+**ADR-0019**. (The 2026-07-24 wording said the lifecycle handlers "resolve from
+that materialized per-session skill tree". **Rev 7 reverses exactly that** — see
+D9.) Historical "ADR-0018" references in the epic HATS-1138 backlog
 (work_log entries, closed cards such as HATS-1160 / HATS-1149) predate the
 renumber and point here.
 
@@ -23,7 +30,11 @@ change.** Rev 4 folded in an adversarial review (exit code, reversed open questi
 3, factual corrections). Rev 5 removes materialization altogether — see **D9**,
 which supersedes rev 4's role-keyed-materialization mitigation. Rev 6 resolves the
 last open item: the `plan_sections` consumer channel is **deleted** (HATS-1149,
-option A; implementation HATS-1160).
+option A; implementation HATS-1160). **Rev 7 (HATS-1240, 2026-07-27) rewrites
+D9**: rev 5–6 resolved bindings out of the *provider's* per-session skill tree,
+which by then existed only for claude — see D9 for what falsified it. Rev 7 also
+amends D6, adds **D10** (channel taxonomy) and corrects a stale Risk paragraph in
+*Consequences* that rev 5 had already superseded.
 
 ## Context
 
@@ -184,11 +195,21 @@ at data-protection points belongs to the point catalog, not the binding author.
 ADR-0012 deliberately put that lever in the engine (`wt_lifecycle.py`) so a
 component could not opt out; moving it into user YAML would regress that.
 
-`on_error` governs **only the check's own exit status**. A missing,
-non-executable, or manifest-unexpected managed script is *infrastructure
-corruption*, fails closed at every point, and **cannot be downgraded by
-`on_error: warn`** — otherwise every warn-binding becomes a way to silently
-disarm the `_assert_manifest_intact` backstop.
+`on_error` governs **only the check's own exit status**. A bound script that is
+missing or not executable where the binding says it is, is *infrastructure
+corruption* — not a verdict and not a check failure. It fails closed at every
+point and **cannot be downgraded by `on_error: warn`**, otherwise every
+warn-binding becomes a way to disarm a gate by deleting a file. *(Rev 7: this
+paragraph formerly named the `_assert_manifest_intact` backstop as what
+`on_error: warn` must not disarm. D9 deletes that backstop along with the
+manifest; the rule it enforced is what survives, and D6 now catches the same
+corruption earlier, at composition.)*
+
+> **Card drift, recorded once.** HATS-1140's description carried the rev-3
+> contract (`1` = refuse) for three days after rev 4 replaced it, and would have
+> been implemented from that text. Where a card and this ADR disagree, the ADR is
+> authority — the epic's `work_policy` says so, which is only safe because this
+> document states the decisions rather than pointing at the cards.
 
 Separating "I refuse" from "I broke" is load-bearing: a check that crashes on a
 task with no worktree must not wedge the backlog. The hunk binding declares
@@ -212,21 +233,40 @@ Existing point-specific variables keep their names; migrated scripts do not chur
 
 ### D6 — Validation: loud on structure, forgiving on vocabulary
 
-- Unknown namespace / point, malformed row, missing `skill`/`script`, uncomposed
-  `skill:` → fail loud at composition, naming the trait/role and the entry. A
-  gate that silently fails to install is the HYP-078 / HATS-961 hole.
+- Unknown namespace / point, malformed row, missing `skill`/`script` → fail loud
+  at composition, naming the trait/role and the entry. A gate that silently fails
+  to install is the HYP-078 / HATS-961 hole.
 - Unknown *optional field* on a row → warn and ignore, so a newer trait does not
   hard-fail composition on an older engine (ADR-0012 Revisions #3).
 - Script health-check keeps `lifecycle_hooks._health_check`'s *posture* (missing
   / empty / shebang-less → loud, "a no-op gate is a broken gate") but moves to
-  **composition time**, since D9 removes the materialization step it ran in. It
-  does **not** examine the exec bit — with no copy step there is no `0o755`
-  rewrite, so the script must already be executable in the skill dir, and that is
-  checked at run time (a non-executable script is *broke*, not *refuse*).
+  **composition time**, since D9 removes the materialization step it ran in.
 - `script:` must resolve **inside** the declaring skill's directory. Today
   `collect_lifecycle_hooks` joins `skill_dir / script` unresolved
-  (`lifecycle_hooks.py:111`), so `../../../x.sh` escapes; under D2 the binding is
+  (`lifecycle_hooks.py`), so `../../../x.sh` escapes; under D2 the binding is
   authored in a *trait* that need not own the skill, which makes it worse.
+
+**Amended at rev 7 (HATS-1240):**
+
+- **The exec bit is checked, at composition time.** Rev 5 deferred it to run time
+  on the reasoning that "with no copy step there is no `0o755` rewrite". D9 now
+  *does* copy into the session snapshot — via `copytree`, which preserves mode and
+  never chmods — so a `644` script is dead on arrival at every point it is bound
+  to. Checking it beside the shebang costs nothing and converts a runtime *broke*
+  into an authoring-time error. (Note the rev-5 text also mis-stated the existing
+  `_health_check` as validating executability; it never has.) Audited before
+  adopting: every hook script across `library/core`, `library/usage` and
+  `ai-hats-custom` is `100755` in the git index — the only `100644` entries are
+  data files, not scripts — so this makes nothing that works today fail.
+- **A binding whose `skill:` an overlay removed is a warning, not an error.**
+  Rev 5 listed uncomposed `skill:` among the loud failures. That is right for a
+  *typo* and wrong for a deliberate `--remove-skill`, which an overlay may legally
+  apply to a trait-brought skill (HATS-1046). Hard-failing would force a user
+  making a legitimate removal to author a new role; staying silent would drop a
+  gate they expected. So: warn, naming the trait that bound it, drop the binding,
+  and continue composing. A `skill:` that was never composed by anyone remains a
+  loud error — the two cases are distinguishable, because one of them is a
+  recorded removal (supervisor ruling, 2026-07-26).
 
 One posture, replacing today's three.
 
@@ -244,54 +284,94 @@ Implementation consequence — see **D9**, which replaces the obvious-but-wrong
 answer (make `materialize_lifecycle_hooks()` role-aware and add a role-aware
 drift detector). That approach was rejected in rev 5.
 
-### D9 — No materialization: composition is the truth, the session tree is a cache
+### D9 — Composition is the truth; the check root is ai-hats's own, never a provider's
 
-**Bindings are not copied anywhere.** The composed skill tree is *already*
-materialized per session at
-`<ai_hats_dir>/.cache/sessions/<sid>/plugin/skills/<skill>/…`, scripts included
-and with the exec bit preserved (verified: 35 skills, `hooks/*.py`,
-`git_hooks/*.sh`, mode `0755`). A binding names `{skill, script}`, which resolves
-directly to a path in that tree. The runner executes it **in place**.
+*Rewritten at rev 7 (HATS-1240). The principle below is rev 5's and survives
+unchanged; what changed is where a binding resolves.*
 
-The session id already reaches the environment (`AI_HATS_SESSION_ID`, set at
-`ai_hats_observe/session.py:308`) and the rack already reads it
-(`rack_wiring.py:88`).
+**What rev 5–6 said, and why it was adopted.** Bindings are copied nowhere: the
+composed skill tree is *already* materialized per session at
+`<ai_hats_dir>/.cache/sessions/<sid>/plugin/skills/<skill>/…`, so a binding
+`{skill, script}` resolves directly into it and the runner executes it in place.
+That was correct when it was written — claude was then the **only** surface with
+a per-session tree.
 
-This **deletes**, rather than mitigates: the copy into `<event>.d/`; the
+**What falsified it.** ADR-0018 (epic HATS-1165) landed the artifact-builder and
+two further surfaces, each materializing its skills where its own third-party
+binary scans:
+
+| surface | per-session skill tree                |
+| ------- | ------------------------------------- |
+| claude  | `<sid>/plugin/skills/<skill>/`        |
+| agy     | `<sid>/rules/.agents/skills/<skill>/` |
+| cline   | `<sid>/skills/<skill>/`               |
+
+A resolver keyed on the claude path therefore **silently does nothing under agy
+and cline** — the HYP-078 fail-open this ADR exists to remove, reintroduced by
+its own design. The error was not the principle "the tree is a cache". It was
+borrowing the *provider's* cache instead of owning one.
+
+**D9, restated.**
+
+1. **The resolution source is the composition.** Every skill in a
+   `CompositionResult` already carries `ResolvedComponent.source_path`, the
+   skill's own directory (`ai_hats_core/composition.py`). A binding resolves as
+   `source_path / script`. Surface-independent by construction: no code consults
+   a provider layout, so no surface can be forgotten.
+2. **Inside a session, the root is ai-hats's own snapshot** at
+   `<ai_hats_dir>/.cache/sessions/<sid>/checks/<skill>/` — the declaring skill's
+   directory copied *whole*, through the existing `Materializer` port. Whole, not
+   just the script, so sibling data files survive (see **D10**, `bundle`). A
+   session must execute the same bytes from start to finish and stay isolated
+   from a library being edited concurrently; relying on worktree discipline for
+   that isolation would be a policy, not a mechanism, and it lapses at merge.
+3. **Outside a session the root is the live library.** `rack transition` from a
+   bare terminal, from cron, or via the standalone `rack` binary has no
+   `AI_HATS_SESSION_ID` (`_session_id()` returns `""` there) and no snapshot, so
+   the runner composes the active role from config and resolves from the library.
+   The two modes are not a blemish: the non-negotiable property is that the
+   out-of-session mode is **live**, never **absent**. Fail-open there would leave
+   HATS-1137 one `env -u AI_HATS_SESSION_ID` away from useless.
+4. **A task worktree is never a resolution root.** `builtin_library_root()` is
+   worktree-aware, so a naive resolve inside a worktree would run the branch's
+   own half-written check — a gate judging the change it is part of.
+
+**The out-of-session cost, measured rather than feared.** Rev 5 priced this path
+off the `~99 SKILL.md parses` figure from the HATS-1149 research. That is the
+cost of the **union scan over the whole library**, which **D7 abolishes**: a
+per-role composition touches only the composed set. Measured on this repository:
+**42 ms** for a 35-skill, 13-rule role, against a `HOOK_TIMEOUT` and a rack
+`LOCK_TIMEOUT` of 30 s. No new machinery is owed either — `composition_seam`
+already composes a role from config for `--dry-run`.
+
+**What is still deleted** — unchanged from rev 5: the copy into `<event>.d/`; the
 flattened `<skill>-<basename>` managed name and its collision rule; the
 `.manifest`; the `previous - new_names` sweep; `_assert_manifest_intact`; the
 role-stamped manifest and the role-aware drift detector.
 
-With them go five of the ranked backward-compat hazards, **by construction**:
-the sweep-vs-manifest wedge; last-writer-wins mis-gating between concurrent
-roles; silent disarmament via `materialize(result=None)`; the `config set-role`
-mis-gating window; and version-skew freezing another role's gates. Every one was
-an artifact of a persistent shared managed directory. There is no such directory.
+**What the per-session snapshot does *not* bring back.** Every hazard rev 5
+dissolved — the sweep-vs-manifest wedge, last-writer-wins mis-gating between
+concurrent roles, silent disarmament via `materialize(result=None)`, the
+`config set-role` window, version-skew freezing another role's gates — was an
+artifact of a **persistent, shared, project-level** managed directory. A
+per-session directory has one writer, does not outlive the session, and cannot
+desynchronise from the composition that produced it. Copying is not what made
+those hazards; sharing was.
 
-Rev 4 proposed role-keyed materialization instead. That was worse: it invented a
-new key and a new role-resolution path for the runner, when **the session already
-is the role key** (one session composes exactly one role).
+Rev 4's role-keyed materialization stays rejected, and for a sharper reason than
+rev 5 gave: **one session composes exactly one role *and* launches exactly one
+provider** — HITL and every sub-agent each mint their own session id — so the
+session already is the key, and a session never holds two provider trees at once.
 
-**The cost, stated plainly: invocation outside a session.** `rack transition`
-from a bare terminal, from cron, from a script, or via the standalone `rack`
-binary has neither `AI_HATS_SESSION_ID` nor a session tree, so bindings would not
-resolve and **no gate would run — fail open**, the HYP-078 hole. This is not
-hypothetical: `_session_id()` already returns `""` for that path today. It bites
-HATS-1137 precisely — a ruff/test gate on `wt:pre-merge` would be one
-`env -u AI_HATS_SESSION_ID` away from useless, the escape-habituation failure
-mode this epic exists to avoid.
-
-**Resolution — composition is the source of truth; the session tree is only a
-cache.** When no session tree is resolvable, the runner composes the active role
-from config and resolves bindings straight from the library. No materialization
-in either path.
-
-The prize is bigger than closing the hole. Today's bug class is "materialized
-state drifts from composition" — the drift detector exists *only* because
-materialized state is authoritative. Demoting it to a cache removes the entire
-drift category instead of adding another watchdog. Cost: one compose per
-out-of-session transition (a rare, human-in-a-terminal path), cacheable by a hash
-of the composition inputs.
+**Rejected here, and why it belongs elsewhere:** a single ai-hats-owned skill
+tree that all surfaces *deliver from* rather than each materializing its own.
+Its only real argument is layering — "materialization is core, delivery is
+surface" — which is the open question of **HATS-1217**, not of this ADR. It would
+also be a cross-package refactor of three surfaces behind the published
+`ai_hats.providers` entry point, and it would rest on undocumented symlink
+behaviour of three third-party scanners. Nothing is owed to it later: a binding
+names `{skill, script}`, not a path, so if HATS-1217 adopts that shape only the
+resolution root moves.
 
 ### D8 — Migration: expand–contract
 
@@ -303,6 +383,56 @@ of the composition inputs.
    ADR-0013 D5), so live worktrees would replay the old shape. Needs a
    state-compat shim; its own card.
 
+### D10 — Channel taxonomy: `in_process` vs `detached`
+
+*Added at rev 7 (HATS-1240).* D9 raises a question the ADR had left implicit:
+if a check can execute from ai-hats's own root, why do the four pre-existing
+channels each keep a copy somewhere else? The answer is that only one of them
+has to — and naming the axis prevents the next channel from picking a shape by
+imitation.
+
+The axis is **not** "snapshot versus live". Nothing in the system snapshots
+*bytes*: even the worktree carry persists only the hook **set**
+(`{skill, script, on}`) into worktree state and re-resolves the content at
+teardown. The axis is **who is guaranteed to be running when the script is
+spawned**:
+
+| mode         | who spawns it                                | what it requires                                                                            |
+| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `in_process` | ai-hats itself                               | an absolute path resolved fresh at spawn; no copy, no manifest, sibling files intact        |
+| `detached`   | a third party, with no ai-hats process alive | materialization to a stable self-describing dir, plus a manifest and a fail-closed backstop |
+
+Assignment: `in_process` — `checks` (this ADR), `worktree` `wt_in`/`wt_out`,
+`runtime_hooks` on both surfaces. `detached` — **`git_hooks`, alone.**
+
+`git_hooks` cannot move, on two independent constraints. A human `git commit`
+runs the hook with no process able to evaluate `builtin_library_root()` — and
+that resolver is not a stable path source in any case: it is worktree-aware,
+cwd-sensitive, and in the zipimport tier resolves to a temp directory alive only
+for the calling process. Separately, git requires a real executable named exactly
+`<event>` under `core.hooksPath`, and the dispatcher is generated rather than
+shipped by a skill. Note what is *not* a reason: `.githooks/` is git-ignored, so
+"it is committed with the repository" does not apply. Symlinking the `.d/`
+entries into the library is not a halfway house either — a broken link trips the
+dispatcher's fail-closed backstop and blocks every commit.
+
+Two further attributes are today implicit, and silently violated:
+
+- **`selection: composed | union`.** Only `lifecycle_hooks` collects over every
+  library skill; every other channel is per-composed-role. **D7** moves this
+  channel to `composed`, after which the divergence disappears.
+- **`bundle: script | dir`.** Whether a hook needs the sibling files shipped
+  beside it. Flatten-copying a single script silently drops them, and two live
+  scripts already read siblings via `__file__` or a repo-relative path. Under
+  `in_process`, `bundle: dir` is free — which is why D9 snapshots the declaring
+  skill's directory whole rather than the one file.
+
+Retrofitting `runtime_hooks` and the worktree channel onto `in_process` is
+deliberately **not** part of this ADR's migration (D8): the worktree carry is
+replayed from the state files of *live* worktrees and needs a compat shim
+(HATS-1146). This ADR fixes the taxonomy; the retrofit follows one channel at a
+time.
+
 ## Consequences
 
 **Gained.** One catalog of points, one exit contract, one validation posture;
@@ -312,13 +442,30 @@ HATS-1134 gap without a fifth ad-hoc channel; the union special case is retired
 rather than propagated. **Zero changes to any `SKILL.md` schema.**
 
 **Cost.** One new `Composition` field, whose overlay-precedence semantics must be
-defined (last-wins per `(skill, script, point)`?). Two concepts coexist during
-the deprecation window. Binding-site indirection means reading `SKILL.md` alone
-no longer shows where a script fires — mitigated by rendering the effective
-binding table (the `routing.md` precedent).
+defined (dedup by `(skill, script, point)`, strictest `on_error` winning). Two
+concepts coexist during the deprecation window. Binding-site indirection means
+reading `SKILL.md` alone no longer shows where a script fires — mitigated by
+rendering the effective binding table (the `routing.md` precedent). Resolution
+has two modes (D9), in-session and out-of-session, and both must be exercised:
+one of them being tested is how a gate ships half-armed.
 
-**Risk.** Role-aware materialization + drift detection (D7) is the delicate part:
-a stale materialization after a role change would leave the wrong gates armed.
+**Risk.** *(Rewritten at rev 7. The former text named "role-aware materialization
+
+- drift detection" as the delicate part — that mitigation had already been
+  removed by rev 5, and the paragraph was left behind.)* The delicate part is now
+  **coverage of the paths that reach a bound point**. The failure this ADR exists
+  to remove is a gate that silently does not run, and every such failure so far has
+  been a path nobody enumerated: a second CLI verb that bypasses the kernel
+  (HATS-1150), a surface whose tree lives elsewhere (what rev 7 fixes), an
+  invocation with no session. The mitigation is enumeration, not cleverness: every
+  path that can reach a point carries either a test that the check fires or a
+  recorded decision that it must not.
+
+**Deliberately unresolved.** This ADR stays `Proposed` until a live consumer is
+bound and proven to refuse. The mechanism replaces a channel with zero declared
+consumers, and its two candidate consumers (HATS-1137, HATS-1144) are not yet
+live; shipping it unbound would leave a fifth channel in the accretion this ADR
+is meant to end.
 
 ## Alternatives considered
 
@@ -347,6 +494,16 @@ trait each author the same fact. Rejected as duplicate work for indirection with
 no current consumer.
 
 ## Rev 4 — corrections from adversarial review
+
+> **Reading note (rev 7).** This section is a dated record of a review held on
+> 2026-07-23, kept because it is the evidence behind D4 and D9. Its `file.py:NN`
+> citations are **as-of that date and are not maintained** — an audit on
+> 2026-07-26 confirmed the cited files and symbols still exist while several line
+> numbers had moved. Chasing them each time the code shifts would give the record
+> a precision it never claimed; use the file and symbol names, not the offsets.
+> Two claims here were also overtaken by later revisions: the `0o755`-writing
+> materializer (deleted by D9) and the "no in-repo consumer" survey (see
+> *Consequences*, which now makes a live consumer a release condition).
 
 Three independent reviewers (completeness / backward-compat / corner-cases)
 returned **INCOMPLETE** on the plan and found defects in rev 3. Corrections that
