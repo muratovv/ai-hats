@@ -1,6 +1,6 @@
 # Makefile for hats-relay
 
-.PHONY: help run-server run-client test check-venv
+.PHONY: help run-server run-client test check-venv check-token
 
 .DEFAULT_GOAL := help
 
@@ -20,10 +20,21 @@ check-venv:
 		exit 1; \
 	fi
 
-run-server: check-venv ## Run local hats-relay server (options: HOST, PORT, ARGS)
+# The relay does not run unauthenticated, and server and client must agree on the same
+# value — so the token comes from the environment rather than from a Make variable: a
+# variable would land in argv, where `ps` shows it to everyone else on the box.
+check-token:
+	@if [ -z "$$HATS_RELAY_TOKEN" ]; then \
+		echo "Error: HATS_RELAY_TOKEN is not set — the relay does not run unauthenticated." >&2; \
+		echo "  export HATS_RELAY_TOKEN=\"\$$(openssl rand -hex 16)\"" >&2; \
+		echo "Export it in this shell AND in the one running the other side." >&2; \
+		exit 1; \
+	fi
+
+run-server: check-venv check-token ## Run local hats-relay server (options: HOST, PORT, ARGS)
 	PYTHONPATH=src $(PYTHON) -m hats_relay --host $(HOST) --port $(PORT) $(ARGS)
 
-run-client: check-venv ## Run local hats-relay client (options: HOST, PORT, ROLE, ARGS)
+run-client: check-venv check-token ## Run local hats-relay client (options: HOST, PORT, ROLE, ARGS)
 	PYTHONPATH=src $(PYTHON) -m hats_relay.client ws://$(HOST):$(PORT) --role $(ROLE) $(ARGS)
 
 test: check-venv ## Run relay test suite
