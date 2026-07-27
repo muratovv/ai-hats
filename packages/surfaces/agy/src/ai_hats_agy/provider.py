@@ -133,9 +133,7 @@ class AgyProvider(Provider):
 
         self._cache_dir(project_dir, session_id, artifacts)
         skills_dir = self._session_skills_dir(project_dir, session_id)
-        materialize_skills_dir(
-            skills_dir, result.skills, project_dir, session_id, artifacts.port
-        )
+        materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_dir)
         artifacts.materialized.append(skills_dir)
         return skills_dir
@@ -199,7 +197,6 @@ class AgyProvider(Provider):
             self._session_skills_dir(project_dir, session_id),
             result.skills,
             project_dir,
-            session_id,
             ApplyMaterializer(),
         )
         return []
