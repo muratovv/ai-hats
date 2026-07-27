@@ -44,6 +44,36 @@ make test
 
 ### Running locally
 
-- Start local server: `make run-server` (or `make relay-server` from repo root)
-- Attach local client: `make run-client` (or `make relay-client` from repo root)
+#### Server Management
+
+- **Start server**:
+  ```bash
+  make relay-server                           # from repo root (or `make run-server` inside relay/)
+  make relay-server ARGS="--port 8787 -v"     # with custom options
+  ```
+  By default, the server binds to `127.0.0.1:8787`.
+
+- **Stop server**:
+  Press `Ctrl-C` (or send `SIGINT` / `SIGTERM`). The server catches the signal, cleanly terminates active sessions, and shuts down.
+
+#### Client & Session Management
+
+- **Create a new client session**:
+  ```bash
+  make relay-client                           # creates a new session with default role ('assistant')
+  make relay-client ROLE=reviewer             # creates a new session with a specific role
+  ```
+
+- **List active sessions**:
+  ```bash
+  make relay-client ARGS="--list"
+  ```
+
+- **Attach to an existing session**:
+  ```bash
+  make relay-client ARGS="--sid <SID>"
+  ```
+
+- **Detach from a session**:
+  Press `F12` (or your configured `--detach-key`). The client restores local terminal settings and detaches, leaving the session running asynchronously on the server.
 
