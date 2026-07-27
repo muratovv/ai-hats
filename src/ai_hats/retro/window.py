@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ai_hats_observe.artifacts import METRICS_JSON, strip_session_prefix
+from ai_hats_observe.artifacts import METRICS_JSON, session_start_dt
 from ..paths import PROJECT_CONFIG
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,10 @@ logger = logging.getLogger(__name__)
 
 def parse_session_start(session_id: str) -> datetime:
     """Parse `YYYYMMDD-HHMMSS-N-PID` (or `session_<id>`) into a UTC datetime."""
-    sid = strip_session_prefix(session_id)
-    try:
-        return datetime.strptime(sid[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
-    except ValueError as e:
-        raise ValueError(f"Cannot parse session start from {session_id!r}") from e
+    start = session_start_dt(session_id)
+    if start is None:
+        raise ValueError(f"Cannot parse session start from {session_id!r}")
+    return start
 
 
 def compute_session_end(

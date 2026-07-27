@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 from pathlib import Path
+
+from ai_hats_observe.artifacts import session_start_dt
 
 
 def tool_home(name: str, env_var: str) -> Path:
@@ -14,15 +15,9 @@ def tool_home(name: str, env_var: str) -> Path:
 
 
 def session_start_ts(session_id: str) -> float | None:
-    """ai-hats ``session_id[:15]`` → UTC epoch seconds, or None on malformed."""
-    try:
-        return (
-            datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S")
-            .replace(tzinfo=timezone.utc)
-            .timestamp()
-        )
-    except (ValueError, IndexError):
-        return None
+    """ai-hats session id → UTC epoch seconds, or None on malformed."""
+    start = session_start_dt(session_id)
+    return start.timestamp() if start else None
 
 
 def discover_recent_by_mtime(
