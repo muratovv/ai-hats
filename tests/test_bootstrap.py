@@ -365,8 +365,8 @@ def test_is_first_party_dist_metadata_fallback():
     assert _bootstrap._is_first_party(DummyEP()) is True
 
 
-def test_check_pycache_coherence_flags_stale_bytecode(tmp_path, monkeypatch):
-    """HATS-1118: _check_pycache_coherence flags .pyc files with recorded mtime/size mismatch."""
+def test_check_pycache_coherence_auto_heals_stale_bytecode(tmp_path, monkeypatch):
+    """HATS-1234: _check_pycache_coherence unlinks stale .pyc files (auto-heal) and returns no failure."""
     pkg_dir = tmp_path / "ai_hats"
     pkg_dir.mkdir()
     pycache_dir = pkg_dir / "__pycache__"
@@ -393,6 +393,44 @@ def test_check_pycache_coherence_flags_stale_bytecode(tmp_path, monkeypatch):
         "find_spec",
         lambda name: DummySpec() if name == "ai_hats" else None,
     )
+
+    failures = _bootstrap._check_pycache_coherence()
+    assert failures == []
+    assert not pyc_file.exists()
+
+
+def test_check_pycache_coherence_reports_failure_when_unlink_fails(tmp_path, monkeypatch):
+    """HATS-1234: _check_pycache_coherence reports failure when stale .pyc cannot be unlinked."""
+    pkg_dir = tmp_path / "ai_hats"
+    pkg_dir.mkdir()
+    pycache_dir = pkg_dir / "__pycache__"
+    pycache_dir.mkdir()
+
+    source_py = pkg_dir / "sample.py"
+    source_py.write_text("print('hello')\n")
+    st = source_py.stat()
+    real_mtime = int(st.st_mtime) & 0xFFFFFFFF
+    real_size = st.st_size & 0xFFFFFFFF
+
+    import struct
+
+    wrong_header = struct.pack("<IIII", 0x0A0D0D03, 0, real_mtime - 10, real_size)
+    pyc_file = pycache_dir / "sample.cpython-311.pyc"
+    pyc_file.write_bytes(wrong_header + b"fakebytecode")
+
+    class DummySpec:
+        submodule_search_locations = [str(pkg_dir)]
+
+    monkeypatch.setattr(
+        _bootstrap.importlib.util,
+        "find_spec",
+        lambda name: DummySpec() if name == "ai_hats" else None,
+    )
+
+    def failing_unlink(path):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(_bootstrap.os, "unlink", failing_unlink)
 
     failures = _bootstrap._check_pycache_coherence()
     assert len(failures) == 1

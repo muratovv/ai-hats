@@ -264,10 +264,13 @@ def _check_pycache_coherence() -> list[str]:
             py_size = st.st_size & 0xFFFFFFFF
 
             if recorded_mtime != py_mtime or recorded_size != py_size:
-                failures.append(
-                    f"stale __pycache__: {pyc_path} recorded mtime/size ({recorded_mtime}/{recorded_size}) "
-                    f"does not match {source_path} ({py_mtime}/{py_size})"
-                )
+                try:
+                    os.unlink(pyc_path)  # safe-delete: ok pycache-autoheal
+                except OSError:
+                    failures.append(
+                        f"stale __pycache__: {pyc_path} recorded mtime/size ({recorded_mtime}/{recorded_size}) "
+                        f"does not match {source_path} ({py_mtime}/{py_size})"
+                    )
 
     return failures
 

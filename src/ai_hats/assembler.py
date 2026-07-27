@@ -843,6 +843,7 @@ class Assembler:
             self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
+        self._check_venv_consistency()
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
@@ -1564,6 +1565,56 @@ class Assembler:
                 file=sys.stderr,
             )
         return bool(findings)
+
+    def _check_venv_consistency(self) -> list[str]:
+        """HATS-1234: Graded escalation ladder for venv and environment consistency.
+
+        Hierarchy:
+        - Level 1 (Local regenerable build artifacts / pycache): Auto-heal stale bytecode
+          by unlinking .pyc files via _check_pycache_coherence(). If un-unlinkable stale
+          .pyc files persist, report Level 1 remediation.
+        - Level 2 (Editable dev env drift): Check for `stale_dev_env_warnings()`.
+          Remediation: `uv sync --inexact --all-packages`.
+        - Level 3 (Genuinely broken venv / missing deps): Check `find_integrity_failures()`.
+          Remediation: escalate to `ai-hats self update`.
+
+        Returns list of warning messages emitted (test seam).
+        """
+        from ._bootstrap import _check_pycache_coherence, find_integrity_failures
+        from .env_drift import stale_dev_env_warnings
+
+        warnings: list[str] = []
+
+        # Level 1: Regenerable build artifacts / pycache (auto-healed inside _check_pycache_coherence)
+        pycache_failures = _check_pycache_coherence()
+        if pycache_failures:
+            msg = (
+                "[Warning] ⚠️  Level 1 (Local cache stale): un-cleared __pycache__ bytecode files remain.\n"
+                "  Remediation: clear local caches (e.g. `find . -name '*.pyc' -delete` or re-activate venv)."
+            )
+            warnings.append(msg)
+            print(msg, file=sys.stderr)
+
+        # Level 2: Editable dev env drift
+        dev_drift = stale_dev_env_warnings(repo_root=self.project_dir)
+        if dev_drift:
+            for d in dev_drift:
+                warnings.append(d)
+                print(f"[Warning] ⚠️  Level 2 (Dev env drift): {d}", file=sys.stderr)
+
+        # Level 3: Genuinely broken venv (integrity failures persist after Level 1)
+        integrity_failures = find_integrity_failures()
+        if integrity_failures:
+            detail = "\n".join(f"    - {f}" for f in integrity_failures)
+            msg = (
+                "[Warning] ⚠️  Level 3 (Broken venv): integrity failures detected in installed packages:\n"
+                f"{detail}\n"
+                "  Remediation: run `ai-hats self update` to repair environment."
+            )
+            warnings.append(msg)
+            print(msg, file=sys.stderr)
+
+        return warnings
 
     def relocate(self, new_dir: str) -> "RelocationResult":
         """Move the framework dir to ``new_dir`` (logic in relocation.py, HATS-715)."""

@@ -1666,3 +1666,49 @@ def test_unknown_provider_in_yaml_fails_loud_at_load(tmp_path):
 
     with pytest.raises(ValueError, match="bogus-provider"):
         Assembler(project_dir=project)
+
+
+def test_check_venv_consistency_ladder(tmp_path, monkeypatch):
+    """HATS-1234: _check_venv_consistency executes the graded escalation ladder."""
+    asm = Assembler(project_dir=tmp_path)
+
+    # Clean state -> no warnings
+    monkeypatch.setattr("ai_hats._bootstrap._check_pycache_coherence", lambda: [])
+    monkeypatch.setattr("ai_hats.env_drift.stale_dev_env_warnings", lambda **kw: [])
+    monkeypatch.setattr("ai_hats._bootstrap.find_integrity_failures", lambda: [])
+
+    warnings = asm._check_venv_consistency()
+    assert warnings == []
+
+    # Level 1 failure (un-cleared pycache)
+    monkeypatch.setattr(
+        "ai_hats._bootstrap._check_pycache_coherence",
+        lambda: ["stale __pycache__: sample.pyc"],
+    )
+    warnings = asm._check_venv_consistency()
+    assert len(warnings) == 1
+    assert "Level 1" in warnings[0]
+
+    # Level 2 failure (dev env drift)
+    monkeypatch.setattr("ai_hats._bootstrap._check_pycache_coherence", lambda: [])
+    monkeypatch.setattr(
+        "ai_hats.env_drift.stale_dev_env_warnings",
+        lambda **kw: ["dev env outdated — run: uv sync"],
+    )
+    warnings = asm._check_venv_consistency()
+    assert len(warnings) == 1
+    assert "dev env outdated" in warnings[0]
+
+    # Level 3 failure (broken venv)
+    monkeypatch.setattr(
+        "ai_hats.env_drift.stale_dev_env_warnings",
+        lambda **kw: [],
+    )
+    monkeypatch.setattr(
+        "ai_hats._bootstrap.find_integrity_failures",
+        lambda: ["import ai_hats.assembler: ModuleNotFoundError"],
+    )
+    warnings = asm._check_venv_consistency()
+    assert len(warnings) == 1
+    assert "Level 3" in warnings[0]
+    assert "self update" in warnings[0]
