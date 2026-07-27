@@ -21,7 +21,7 @@ from .sweeper import read_marker_names
 
 
 
-__all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status"]
+__all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
 
 
 class Layer(str, Enum):
@@ -228,3 +228,55 @@ def worst_status(reports: list[LayerReport]) -> Status:
         if any(r.status is severity for r in reports):
             return severity
     return Status.OK
+
+
+def check_venv_consistency(project_dir: Path) -> list[str]:
+    """HATS-1234: Graded escalation ladder for venv and environment consistency.
+
+    Hierarchy:
+    - Level 1 (Local regenerable build artifacts / pycache): Auto-heal stale bytecode
+      by unlinking .pyc files via _check_pycache_coherence(). If un-unlinkable stale
+      .pyc files persist, report Level 1 remediation.
+    - Level 2 (Editable dev env drift): Check for `stale_dev_env_warnings()`.
+      Remediation: `uv sync --inexact --all-packages`.
+    - Level 3 (Genuinely broken venv / missing deps): Check `find_integrity_failures()`.
+      Remediation: escalate to `ai-hats self update`.
+
+    Returns list of warning messages emitted.
+    """
+    from ._bootstrap import _check_pycache_coherence, find_integrity_failures
+    from .env_drift import stale_dev_env_warnings
+
+    warnings: list[str] = []
+
+    # Level 1: Regenerable build artifacts / pycache (auto-healed inside _check_pycache_coherence)
+    pycache_failures = _check_pycache_coherence()
+    if pycache_failures:
+        msg = (
+            "[Warning] ⚠️  Level 1 (Local cache stale): un-cleared __pycache__ bytecode files remain.\n"
+            "  Remediation: clear local caches (e.g. `find . -name '*.pyc' -delete` or re-activate venv)."
+        )
+        warnings.append(msg)
+
+    # Level 2: Editable dev env drift
+    dev_drift = stale_dev_env_warnings(repo_root=project_dir)
+    if dev_drift:
+        for d in dev_drift:
+            msg = (
+                f"[Warning] ⚠️  Level 2 (Dev env drift): {d}\n"
+                "  Remediation: run `uv sync --inexact --all-packages` to sync dev dependencies."
+            )
+            warnings.append(msg)
+
+    # Level 3: Genuinely broken venv (integrity failures persist after Level 1)
+    integrity_failures = find_integrity_failures()
+    if integrity_failures:
+        detail = "\n".join(f"    - {f}" for f in integrity_failures)
+        msg = (
+            "[Warning] ⚠️  Level 3 (Broken venv): integrity failures detected in installed packages:\n"
+            f"{detail}\n"
+            "  Remediation: run `ai-hats self update` to repair environment."
+        )
+        warnings.append(msg)
+
+    return warnings

@@ -844,6 +844,7 @@ class Assembler:
             self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
+        self._check_venv_consistency()
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
@@ -1572,6 +1573,15 @@ class Assembler:
                 file=sys.stderr,
             )
         return bool(findings)
+
+    def _check_venv_consistency(self) -> list[str]:
+        """HATS-1234: Thin seam delegating venv consistency check to :func:`health.check_venv_consistency`."""
+        from .health import check_venv_consistency
+
+        warnings = check_venv_consistency(self.project_dir)
+        for w in warnings:
+            print(w, file=sys.stderr)
+        return warnings
 
     def relocate(self, new_dir: str) -> "RelocationResult":
         """Move the framework dir to ``new_dir`` (logic in relocation.py, HATS-715)."""
