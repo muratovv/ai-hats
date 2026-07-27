@@ -199,30 +199,10 @@ lifecycle.
 - Always `cd` back to project dir before merge/discard
 - Commit your work in the worktree before merging
 
-## Skill Edits
-
-Editing a `SKILL.md` body needs **no command** — the role is composed fresh at
-every session launch, so the edit is live for the next session. The same goes
-for `ai-hats.yaml`: it is re-read at launch, so a role or customization change
-also lands on its own. `ai-hats self init` validates the config and refreshes
-the project scaffold (migrations, `.gitignore`, git hooks, and for agy the
-managed block in the root `GEMINI.md`) — it is not how composition changes take
-effect.
-
-Skills materialize into the per-session cache under
-`<ai_hats_dir>/.cache/sessions/<sid>/`; the exact subpath is provider-specific
-(claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
-
-**Never manually `cp` skill files** into `.claude/skills/` or
-`<ai_hats_dir>/library/skills/`. Neither is a mirror of the installed library:
-the first was retired in HATS-294, and the second is where components **you**
-author locally live.
-
 ## Anti-Patterns
 
 - Working directly on main branch for non-trivial changes — use a worktree
 - Forgetting to `cd` back to project dir before merge/discard — commands fail silently
-- Manually copying skill files with `cp` — skills materialize automatically per-session
 - Multiple active worktrees without tracking — leads to forgotten branches
 - Running `ai-hats wt create` / `wt merge` / `wt discard` / `rack transition <id> done|failed|cancelled` from inside a linked worktree — all blocked (HATS-788). The teardown commands run `git worktree remove` on the very cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker. Always `cd` back to the main repo first; use `ai-hats wt exec` / `ai-hats wt env` to act on a worktree without leaving it.
 - Mixing manual `wt create` with `rack transition <id> execute` from the main repo — if you created a worktree manually and want the task to use it, `cd` into the worktree first, then transition. Otherwise the transition errors out with a clear remediation message.
