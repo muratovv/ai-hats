@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 def parse_session_start(session_id: str) -> datetime:
-    """Parse `YYYYMMDD-HHMMSS-N` (or `session_<id>`) into a UTC datetime."""
+    """Parse `YYYYMMDD-HHMMSS-N-PID` (or `session_<id>`) into a UTC datetime.
+
+    Kept independent of ``ai_hats_observe.artifacts.session_start_dt`` — see
+    ``paths._discovery.session_start_ts`` for why the integrator cannot import
+    a symbol newer than observe's published version (HATS-1248).
+    """
     sid = strip_session_prefix(session_id)
     try:
         return datetime.strptime(sid[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
