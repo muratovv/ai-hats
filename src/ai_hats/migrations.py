@@ -142,23 +142,16 @@ def _strip_marked_block(text: str, start: str, end: str) -> str:
 def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
     """Drop the ai-hats block HATS-1170 orphaned in root ``CLAUDE.md``.
 
-    Root ``CLAUDE.md`` is user territory now, so ai-hats removes only what it
-    wrote itself: the lowercase aggregator block and the legacy uppercase
-    injection block. A file left with nothing but whitespace was pure ai-hats
-    leftover and goes entirely; anything the user put around the block survives
-    byte-for-byte. Only ``CLAUDE.md`` is touched — Cline (``CLINE.md``) and Agy
-    (``GEMINI.md``) still write live blocks under the same markers.
-
-    Skipped while the project has user-rules: the block's ``@imports.md`` line
-    is still their only delivery channel (HATS-1201 — the composed prompt does
-    not carry them yet), so stripping it would silently drop them.
+    Root ``CLAUDE.md`` is user territory now, so only ai-hats's own markers go
+    — the aggregator block and the legacy uppercase injection block; whatever
+    the user wrote around them survives byte-for-byte, and a file left as pure
+    whitespace was all ours and goes entirely. ``CLINE.md`` / ``GEMINI.md``
+    are untouched: their blocks under the same markers are still live.
+    HATS-1203 removed HATS-1201's skip-while-user-rules-exist gate — the
+    composed prompt carries user-rules now, so this block delivers nothing.
     """
     claude_md = a.project_dir / "CLAUDE.md"
     if not claude_md.is_file():
-        return
-
-    imports_md = a._canonical_dir / "imports.md"
-    if imports_md.is_file() and imports_md.read_text().strip():
         return
 
     existing = claude_md.read_text()

@@ -94,7 +94,19 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     project = tmp_path / "proj_rthook_fires"
     _init_with_fixture_role(launcher, env, project)
 
-    settings = json.loads((project / ".claude" / "settings.json").read_text())
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths import session_cache_dir
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    provider = ClaudeProvider()
+    asm = Assembler(project)
+    result = asm.composer.compose("e2e-rthook-role")
+    provider.build_session_artifacts(
+        project, result, "sid-rthook-fires", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+    )
+    cache_settings = session_cache_dir(project, "sid-rthook-fires") / "settings.json"
+    settings = json.loads(cache_settings.read_text())
     pre_cmd = _managed_command(settings, "ai-hats:e2e-rthook:PreToolUse:Bash")
     post_cmd = _managed_command(settings, "ai-hats:e2e-rthook:PostToolUse:Edit|Write")
     # Both events route to the same materialized script (one declared script).

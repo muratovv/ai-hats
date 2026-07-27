@@ -13,8 +13,8 @@ Two sub-cases amortize the heavy bootstrap setup:
      early role-check return).
   2. **Role-initialized project.** After ``ai-hats self init -p claude
      -r assistant``, ``config status`` prints role + composition tree
-     + install Health fields + existing project-side checks
-     (imports.md, system_prompt with OK/Missing icons).
+     + install Health fields + the project-side check
+     (system_prompt with an OK/Missing icon).
 
 Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
 ``ai-hats`` binary, marked ``@pytest.mark.integration``.
@@ -108,9 +108,9 @@ def test_e2e_config_status_install_diagnostics(
         assert key in out2, (
             f"install Health field {key!r} missing from role-init output:\n{out2}"
         )
-    # Project-side checks (existing, pre-HATS-497) still present.
-    assert "system_prompt:" in out2, (
-        f"existing project health check 'system_prompt' missing:\n{out2}"
+    # HATS-1238: Claude provider uses per-session prompt cache; no root prompt file is managed.
+    assert "system_prompt:" not in out2, (
+        f"claude provider should not report root system_prompt health (HATS-1238):\n{out2}"
     )
     # HATS-707: the dead lifecycle ``hooks:`` channel is gone — the composition
     # tree must NOT render a hooks branch. Pre-HATS-707 the ``assistant`` role

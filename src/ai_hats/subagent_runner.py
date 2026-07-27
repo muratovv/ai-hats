@@ -25,7 +25,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
-from .session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+from .session_artifacts import BuiltArtifacts, RunMode
 from .session_report import SessionReport
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -193,40 +193,27 @@ class SubAgentRunner:
             result,
             session.session_id,
             run_mode=RunMode.AUTOMATE,
-            policy=SessionPolicy(),
+            policy=self.payload.policy,
             artifacts=BuiltArtifacts(),
         )
 
         notes: list[str] = []
         if provider_name == PROVIDER_CLAUDE:
             meta_prompt = self._build_sdk_prompt_audit(
-                result=result,
+                artifacts=artifacts,
                 task=task,
                 ticket_id=ticket_id,
             )
             launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-            notes.append(
-                "claude/automate: the engine recomputes system_prompt and plugins in "
-                "sdk_options.py and ignores the values shown here — these are the "
-                "builder's, not what the SDK receives (HATS-1207 bypass 1)."
-            )
         else:
             meta_prompt = self._build_meta_prompt(
-                result=result,
-                provider=provider,
+                role_context=artifacts.full_content or "",
                 task=task,
                 ticket_id=ticket_id,
             )
-            skill_args = provider.materialize_runtime_skills(
-                self.project_dir, result, session.session_id
-            )
             flags = provider.model_flags(model) if model else []
-            cmd = provider.get_cli_command() + skill_args + flags
+            cmd = provider.get_cli_command() + artifacts.cli_args + flags
             launch = provider.get_run_command(cmd, meta_prompt)
-            notes.append(
-                f"{provider.name}/automate: the role is delivered by the runner's "
-                "meta-prompt, not the builder (HATS-1207 bypass 2)."
-            )
 
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
@@ -245,7 +232,7 @@ class SubAgentRunner:
             role=role_name,
             provider=provider.name,
             run_mode=RunMode.AUTOMATE.value,
-            policy=SessionPolicy(),
+            policy=self.payload.policy,
             launch=launch,
             env=dict(artifacts.extra_env),
             prompt=prompt_file,
@@ -339,6 +326,7 @@ class SubAgentRunner:
                         env=sdk_env_overlay,
                         model=model,
                         timeout_s=timeout_s,
+                        artifacts=artifacts,
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     if run_result.session_id:
@@ -529,22 +517,19 @@ class SubAgentRunner:
     def _build_sdk_prompt_audit(
         self,
         *,
-        result,
+        artifacts: BuiltArtifacts,
         task: str,
         ticket_id: str,
     ) -> str:
-        """Render a human-readable artifact of what the SDK was actually sent.
+        """Render a human-readable artifact of what the SDK was actually sent."""
+        from .surfaces.claude.sdk_options import build_first_user_message
 
-        Saved alongside the session as ``meta_prompt.txt`` (same path the
-        legacy subprocess path used) so audit / debugging tooling that
-        relies on that file keeps working. The structure mirrors the two
-        SDK inputs: the appended part of ``system_prompt`` and the first
-        user message.
-        """
-        from .surfaces.claude.sdk_options import _build_system_prompt, build_first_user_message
+        sys_opt = artifacts.sdk_options.get("system_prompt")
+        if isinstance(sys_opt, dict):
+            system_text = sys_opt.get("append", "")
+        else:
+            system_text = sys_opt or ""
 
-        sp = _build_system_prompt(result, self.project_dir, self.payload.provider)
-        system_text = sp.get("append", "")
         initial_message = build_first_user_message(
             ticket_context=self._load_ticket(ticket_id),
             linked_context=self._load_linked_context(ticket_id),
@@ -558,29 +543,12 @@ class SubAgentRunner:
             f"{initial_message}\n"
         )
 
-    def _build_meta_prompt(self, result, provider, task: str, ticket_id: str) -> str:
+    def _build_meta_prompt(self, role_context: str, task: str, ticket_id: str) -> str:
         """Build the meta-prompt for sub-agent execution."""
-        from .placeholders import expand_path_placeholders
-
         sections = []
 
-        # SYSTEM_ROLE — HATS-380: expand <ai_hats_dir> before the role/trait
-        # injection reaches the sub-agent inline. Canonical writer and provider
-        # build_session_prompt paths already expand; meta-prompt was the residual gap
-        # (roles like session-reviewer carry literal <ai_hats_dir> in injection).
-        merged = expand_path_placeholders(result.merged_injection, self.project_dir)
-        sections.append(f"# SYSTEM_ROLE\n{merged}")
-
-        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is intentionally
-        # NOT injected. On-data verification (154 prompts) showed it was ~5.4K
-        # tok of mostly-completed-task dead weight per sub-agent run, unused by
-        # the dominant consumer (session-reviewer). Sub-agents reach the backlog
-        # on-demand via the `ai-hats task` CLI.
-
-        # CONSTRAINTS
-        if result.priorities:
-            constraints = "\n".join(f"- {p}" for p in result.priorities)
-            sections.append(f"# CONSTRAINTS\n{constraints}")
+        if role_context:
+            sections.append(role_context)
 
         # TICKET_CONTEXT
         if ticket_id:
@@ -588,9 +556,7 @@ class SubAgentRunner:
             if ticket_context:
                 sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
 
-            # LINKED_CONTEXT (HATS-689) — directly-linked cards (parent epic +
-            # plan.md, plus depends_on/related/see_also). Live Agy channel;
-            # the Claude path mirrors this via build_first_user_message.
+            # LINKED_CONTEXT (HATS-689)
             linked_context = self._load_linked_context(ticket_id)
             if linked_context:
                 sections.append(f"# LINKED_CONTEXT\n{linked_context}")

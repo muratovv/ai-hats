@@ -142,19 +142,12 @@ def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
     asm.set_role("rt-role", provider_name="claude")
 
     script = hooks_dir(project) / managed_runtime_hook_filename("rt_skill", "hooks/rt.sh")
-    settings = project / ".claude" / "settings.json"
     assert script.is_file(), "baseline: runtime hook should be materialized"
-    assert "rt_skill" in settings.read_text(), "baseline: runtime hook should be wired"
 
-    # Plant drift: delete the materialized script AND unwire its managed entry —
+    # Plant drift: delete the materialized script —
     # exactly the silent stale state HATS-833 targets (composed but not on disk).
     script.unlink()
-    data = json.loads(settings.read_text())
-    data["hooks"][HOOK_PRE_TOOL_USE] = [
-        e for e in data["hooks"][HOOK_PRE_TOOL_USE] if "rt_skill" not in json.dumps(e)
-    ]
-    settings.write_text(json.dumps(data))
-    assert "rt_skill" not in settings.read_text()
+    assert not script.is_file()
 
     # Launch a real wrapped HITL session (composition + materializers run for
     # real; only the PTY spawn is stubbed). Force a brief hold so the heal note
@@ -170,9 +163,8 @@ def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
         f"launch exited {result.exit_code}\n{result.output}\nexc={result.exception!r}"
     )
 
-    # Healed end-to-end: script re-materialized AND managed entry re-wired ...
+    # Healed end-to-end: script re-materialized
     assert script.is_file(), "session start did not re-materialize the runtime hook"
-    assert "rt_skill" in settings.read_text(), "session start did not re-wire the hook"
     # ... and observable (req-5): the startup note names the healed surface.
     assert "managed hooks healed at start" in result.output, (
         f"expected heal note in output:\n{result.output}"

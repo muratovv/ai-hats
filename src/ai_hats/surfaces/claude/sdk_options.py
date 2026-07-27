@@ -29,7 +29,7 @@ its full description. The index would be a 2-3x duplicate.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from claude_agent_sdk import ClaudeAgentOptions
@@ -101,6 +101,9 @@ def _build_plugins(
 # ---------------------------------------------------------------------------
 
 
+_UNSET = object()
+
+
 def build_options(
     composition_result: "CompositionResult",
     *,
@@ -120,52 +123,26 @@ def build_options(
     fork_session: bool = False,
     permission_mode: str | None = None,
     allowed_tools: list[str] | None = None,
+    system_prompt: Any = _UNSET,
+    plugins: Any = _UNSET,
 ) -> "ClaudeAgentOptions":
-    """Build a :class:`ClaudeAgentOptions` from composition + per-call inputs.
-
-    Parameters
-    ----------
-    composition_result:
-        Output of :func:`materialize.compose_for_role` (or :meth:`Composer
-        .compose`). Drives system_prompt + plugins.
-    project_dir:
-        Project root — used for placeholder expansion in the system prompt
-        and as the default ``cwd`` if ``work_dir`` is None.
-    session_id:
-        ai-hats session id (date-prefixed, our convention). Used to key
-        the per-session cache dir where the plugin-dir is materialized.
-        **NOT** the same as the SDK's ``session_id`` field (see
-        ``claude_session_id``).
-    work_dir:
-        Working directory the agent runs in. Defaults to ``project_dir``.
-        Sub-agent path passes the worktree dir here.
-    claude_session_id:
-        Optional UUID to pre-assign as the SDK / Claude Code session id.
-        When None, the SDK assigns one — the caller must capture it from
-        the first ``ResultMessage`` for resume continuity.
-    model, mcp_config, settings, extra_env, max_budget_usd, max_turns,
-    resume, fork_session, permission_mode, allowed_tools:
-        Direct passthrough fields. Set to None / falsy to omit and rely
-        on SDK defaults.
-
-    Returns
-    -------
-    ClaudeAgentOptions
-        Ready to pass to ``ClaudeSDKClient(options=...)``.
-
-    Notes
-    -----
-    The SDK import is deferred to call time so framework imports stay
-    cheap and deployments running only the Agy provider don't pull
-    the SDK transitively at every CLI invocation.
-
-    Deliberate long API param contract — noqa: comment-length.
-    """
+    """Build a :class:`ClaudeAgentOptions` from composition + per-call inputs."""
     from claude_agent_sdk import ClaudeAgentOptions
 
+    eff_system_prompt = (
+        _build_system_prompt(composition_result, project_dir, provider)
+        if system_prompt is _UNSET
+        else system_prompt
+    )
+    eff_plugins = (
+        _build_plugins(composition_result, project_dir, session_id, provider)
+        if plugins is _UNSET
+        else plugins
+    )
+
     kwargs: dict = {
-        "system_prompt": _build_system_prompt(composition_result, project_dir, provider),
-        "plugins": _build_plugins(composition_result, project_dir, session_id, provider),
+        "system_prompt": eff_system_prompt,
+        "plugins": eff_plugins,
         "cwd": str(work_dir if work_dir is not None else project_dir),
     }
     if claude_session_id is not None:

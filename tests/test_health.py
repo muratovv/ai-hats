@@ -28,7 +28,6 @@ def project(tmp_path: Path) -> Path:
     (ai_hats / "tracker" / "backlog").mkdir(parents=True)
     (ai_hats / "user-rules").mkdir()
     (ai_hats / "library" / "hooks").mkdir(parents=True)
-    (ai_hats / "imports.md").write_text("", encoding="utf-8")
     return tmp_path
 
 
@@ -59,13 +58,12 @@ def test_managed_layer_broken_when_library_missing(project: Path) -> None:
     assert "self init" in row.remediation
 
 
-def test_managed_layer_broken_when_imports_md_missing(project: Path) -> None:
-    (project / ".agent" / "ai-hats" / "imports.md").unlink()
-
-    row = _row(triage(project), "imports.md")
-
-    assert row.layer is Layer.MANAGED
-    assert row.status is Status.BROKEN
+def test_no_imports_md_row_is_reported(project: Path) -> None:
+    """HATS-1203: the aggregator is retired, so triage must not probe for it —
+    a project without one is healthy, not BROKEN.
+    """
+    assert not [r for r in triage(project) if r.name == "imports.md"]
+    assert not (project / ".agent" / "ai-hats" / "imports.md").exists()
 
 
 # ----- composed probes (S2) -----

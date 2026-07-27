@@ -374,7 +374,15 @@ def test_proc_surface_dry_run_reports_without_acting(tmp_path):
 def test_default_surfaces_cover_all_known_owners():
     keys = [s.owner_key for s in sweeper.default_surfaces()]
 
-    assert keys == ["git-hooks", "runtime-hooks", "skills-export", "claude-publish"]
+    assert keys == [
+        "git-hooks",
+        "runtime-hooks",
+        "skills-export",
+        "claude-publish",
+        "root-skills-export",
+    ]
+
+
 
 
 def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):

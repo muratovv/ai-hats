@@ -53,6 +53,15 @@ def cli_project(tmp_path, monkeypatch):
     return project, CliRunner()
 
 
+def _assert_canonical_retired(project) -> None:
+    """HATS-1203: ``user-rules/`` is the only canonical survivor — the
+    ``imports.md`` aggregator that used to sit beside it is retired.
+    """
+    canonical = project / ".agent" / "ai-hats"
+    assert (canonical / "user-rules").is_dir()
+    assert not (canonical / "imports.md").exists()
+
+
 def _pin_edge(project):
     """HATS-764: append a `harness: channel: edge` block so `self update` takes
     the git ahead/diverged + in-place path these pre-channel tests assert,
@@ -76,7 +85,7 @@ def test_set_creates_project(cli_project):
     # HATS-1170 clean-root invariant: the role reaches Claude per-session via
     # --system-prompt-file, so nothing lands in the project root.
     assert not (project / "CLAUDE.md").exists()
-    assert (project / ".agent" / "ai-hats" / "imports.md").exists()
+    _assert_canonical_retired(project)
 
 
 @pytest.mark.parametrize("role", ALL_ROLES, ids=ALL_ROLES)
@@ -88,7 +97,7 @@ def test_set_all_roles(cli_project, role):
     assert r.exit_code == 0, r.output
     assert "Warning" not in r.output
     assert not (project / "CLAUDE.md").exists()
-    assert (project / ".agent" / "ai-hats" / "imports.md").exists()
+    _assert_canonical_retired(project)
 
 
 def test_status_after_set(cli_project):
@@ -112,7 +121,7 @@ def test_bump_after_set(cli_project, monkeypatch):
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
 
-    aggregator_before = (project / ".agent" / "ai-hats" / "imports.md").read_text()
+    canonical_before = sorted(p.name for p in (project / ".agent" / "ai-hats").iterdir())
 
     # `ai-hats self bump` must NOT be a registered click command anymore.
     bump_cli_attempt = runner.invoke(main, ["self", "bump"])
@@ -126,11 +135,12 @@ def test_bump_after_set(cli_project, monkeypatch):
     rc = _bump_internal.main([])
     assert rc == 0
 
-    # Canonical aggregator is stable for the same role, and the bump adds no
-    # root artefact (HATS-1170 clean-root invariant).
-    aggregator_after = (project / ".agent" / "ai-hats" / "imports.md").read_text()
-    assert aggregator_before == aggregator_after
+    # Canonical layout is stable for the same role, the bump adds no root
+    # artefact (HATS-1170), and no aggregator comes back (HATS-1203).
+    canonical_after = sorted(p.name for p in (project / ".agent" / "ai-hats").iterdir())
+    assert canonical_before == canonical_after
     assert not (project / "CLAUDE.md").exists()
+    _assert_canonical_retired(project)
 
 
 def test_init_unknown_role_fails_loud(cli_project):
@@ -179,16 +189,17 @@ def test_set_unknown_role_fails_loud(cli_project):
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
-    aggregator = project / ".agent" / "ai-hats" / "imports.md"
-    aggregator_before = aggregator.read_text()
+    config = project / PROJECT_CONFIG
+    config_before = config.read_text()
 
     result = runner.invoke(main, ["config", "set", "-r", "nonexistent-role"])
 
     assert result.exit_code != 0, result.output
     assert "nonexistent-role" in result.output
     assert "Role set" not in result.output
-    # Existing composition must remain intact.
-    assert aggregator.read_text() == aggregator_before
+    # Existing composition must remain intact — since HATS-1203 the active role
+    # is the only on-disk record of it.
+    assert config.read_text() == config_before
 
 
 def test_set_unknown_provider_only_fails_loud(cli_project):
@@ -216,14 +227,15 @@ def test_set_idempotent_via_cli(cli_project):
     project, runner = cli_project
 
     runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
-    aggregator = project / ".agent" / "ai-hats" / "imports.md"
-    first = aggregator.read_text()
+    canonical = project / ".agent" / "ai-hats"
+    first = sorted(p.name for p in canonical.iterdir())
 
     r = runner.invoke(main, ["config", "set", "-r", ALL_ROLES[0], "-p", "claude"])
     assert r.exit_code == 0, r.output
 
-    assert aggregator.read_text() == first
+    assert sorted(p.name for p in canonical.iterdir()) == first
     assert not (project / "CLAUDE.md").exists()
+    _assert_canonical_retired(project)
 
 
 # -- Role override (shadow prompt) CLI tests --
@@ -640,17 +652,6 @@ def test_update_command_uses_uv_reinstall():
     assert "--python" in cmd and cmd[cmd.index("--python") + 1] == sys.executable, (
         "B1: must pin --python sys.executable so uv targets THIS interpreter"
     )
-
-
-def test_run_self_update_fails_loud_without_uv(monkeypatch):
-    """HATS-763 D2: the wizard self-update step fails loud (clean exit, not a raw
-    FileNotFoundError traceback) when uv is absent from PATH."""
-    from ai_hats.cli.assembly import _run_self_update
-
-    monkeypatch.setattr("shutil.which", lambda _name: None)
-    with pytest.raises(SystemExit) as exc:
-        _run_self_update()
-    assert exc.value.code == 1
 
 
 def test_update_command_runs_via_cli(cli_project, monkeypatch):

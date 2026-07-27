@@ -1,0 +1,58 @@
+{
+  "cwd": "<project>",
+  "duplicates": [],
+  "env_keys": [
+    "AI_HATS_DIR",
+    "AI_HATS_PROJECT_DIR",
+    "CLINE_DATA_DIR",
+    "CLINE_HUB_PORT"
+  ],
+  "escapes": [],
+  "launch": [
+    "cline",
+    "-i",
+    "-s",
+    "## PRIORITIES\n1. Quality\n\nRole body.",
+    "--config",
+    "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+  ],
+  "materialized": [
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/skills"
+    },
+    {
+      "detail": "",
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "file_count": 1,
+      "kind": "copy_tree",
+      "size": 38,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/skills/s"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": null,
+  "provider": "cline",
+  "role": "test-role",
+  "run_mode": "hitl"
+}

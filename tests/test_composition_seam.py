@@ -22,9 +22,13 @@ from ai_hats.composition_seam import (
 )
 
 
-def _fake_assembler(available: list[str]) -> MagicMock:
+def _fake_assembler(available: list[str], project_dir: Path) -> MagicMock:
+    """Assembler double. ``project_dir`` MUST be a real Path: unmocked code
+    paths do filesystem/YAML work on it, and a MagicMock there makes PyYAML
+    iterate a mock as a stream until the process dies (HATS-1203)."""
     asm = MagicMock(name="assembler")
     asm.resolver.list_components.return_value = available
+    asm.project_dir = project_dir
     return asm
 
 
@@ -32,7 +36,7 @@ def test_seam_routes_through_facade(tmp_path: Path):
     """HATS-501/456 invariant, relocated: the ONE composition goes through
     ``compose_for_role`` (single derivation point)."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
-    asm = _fake_assembler(["judge"])
+    asm = _fake_assembler(["judge"], tmp_path)
     with patch("ai_hats.assembler.Assembler", return_value=asm), \
          patch("ai_hats.materialize.compose_for_role",
                return_value=fake_result) as facade, \
@@ -46,7 +50,7 @@ def test_seam_routes_through_facade(tmp_path: Path):
 def test_seam_raises_role_not_found_for_explicit_role(tmp_path: Path):
     """HATS-507 UX contract survives the move: unknown explicit role raises
     the typed error BEFORE any pipeline runs (cli renders 'Available roles')."""
-    asm = _fake_assembler(["judge"])
+    asm = _fake_assembler(["judge"], tmp_path)
     with patch("ai_hats.assembler.Assembler", return_value=asm):
         with pytest.raises(RoleNotFoundError) as exc_info:
             build_composition_payload(tmp_path, role_override="ghost")
@@ -56,7 +60,7 @@ def test_seam_raises_role_not_found_for_explicit_role(tmp_path: Path):
 
 def test_seam_raises_on_compose_errors(tmp_path: Path):
     fake_result = MagicMock(errors=["role not found"])
-    asm = _fake_assembler(["ghost"])
+    asm = _fake_assembler(["ghost"], tmp_path)
     with patch("ai_hats.assembler.Assembler", return_value=asm), \
          patch("ai_hats.materialize.compose_for_role", return_value=fake_result):
         with pytest.raises(RuntimeError, match="failed to resolve role"):
@@ -67,7 +71,7 @@ def test_seam_lenient_mode_skips_raises(tmp_path: Path):
     """strict=False (retro reviewer spawn): no existence/errors raise —
     HATS-271 owns that failure mode downstream."""
     fake_result = MagicMock(errors=["broken"], merged_injection="")
-    asm = _fake_assembler([])
+    asm = _fake_assembler([], tmp_path)
     with patch("ai_hats.assembler.Assembler", return_value=asm), \
          patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
          patch("ai_hats.providers.get_provider", return_value=MagicMock()):
@@ -77,9 +81,9 @@ def test_seam_lenient_mode_skips_raises(tmp_path: Path):
     assert payload.result is fake_result
 
 
-def _provider_less_assembler() -> MagicMock:
+def _provider_less_assembler(project_dir: Path) -> MagicMock:
     """Assembler whose cfg carries an explicitly emptied ``provider:``."""
-    asm = _fake_assembler(["judge"])
+    asm = _fake_assembler(["judge"], project_dir)
     asm.project_config.provider = ""
     asm.project_config.active_role = "judge"
     asm.project_config.default_role = "judge"
@@ -88,7 +92,9 @@ def _provider_less_assembler() -> MagicMock:
 
 def test_seam_interactive_requires_provider(tmp_path: Path):
     """The former launch-step 'no provider configured' contract, relocated."""
-    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler()):
+    with patch(
+        "ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)
+    ):
         with pytest.raises(MissingProviderError) as exc_info:
             build_composition_payload(tmp_path, interactive=True)
     _assert_missing_provider_contract(exc_info.value)
@@ -96,7 +102,9 @@ def test_seam_interactive_requires_provider(tmp_path: Path):
 
 def test_preview_seam_requires_provider(tmp_path: Path):
     """HATS-1224: the dry-run/preview twin raises the same typed error."""
-    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler()):
+    with patch(
+        "ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)
+    ):
         with pytest.raises(MissingProviderError) as exc_info:
             build_preview_payload(tmp_path)
     _assert_missing_provider_contract(exc_info.value)
@@ -110,13 +118,13 @@ def _assert_missing_provider_contract(exc: MissingProviderError) -> None:
     assert "claude" in exc.available
 
 
-def _provider_seam_assembler() -> MagicMock:
+def _provider_seam_assembler(project_dir: Path) -> MagicMock:
     """Assembler whose cfg names ``claude`` and whose role is already active.
 
     An active role keeps ``first_run_hitl`` false on BOTH paths, so these tests
     isolate provider resolution from the ``set_role`` side effect.
     """
-    asm = _fake_assembler(["judge"])
+    asm = _fake_assembler(["judge"], project_dir)
     asm.project_config.provider = "claude"
     asm.project_config.active_role = "judge"
     asm.project_config.default_role = "judge"
@@ -126,7 +134,7 @@ def _provider_seam_assembler() -> MagicMock:
 def _resolved_provider(tmp_path: Path, **kwargs) -> str:
     """The name ``build_composition_payload`` actually resolves a provider for."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
-    asm = _provider_seam_assembler()
+    asm = _provider_seam_assembler(tmp_path)
     with patch("ai_hats.assembler.Assembler", return_value=asm), \
          patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
          patch("ai_hats.providers.get_provider") as get_provider:
@@ -159,7 +167,7 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
     interactive-only ``set_role`` write along with it — the whole point of the
     fix is that ``interactive`` keeps meaning (a) and stops meaning (b)."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
-    asm = _fake_assembler([])
+    asm = _fake_assembler([], tmp_path)
     asm.project_config.provider = "claude"
     asm.project_config.active_role = ""  # would be a first run, were it HITL
     asm.project_config.default_role = "judge"
@@ -174,7 +182,7 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     """HATS-970: a hooks warning raised by the first-run set_role side effect is
     carried on payload.startup_warnings so WrapRunner surfaces it in the hold."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
-    asm = _fake_assembler(["judge"])
+    asm = _fake_assembler(["judge"], tmp_path)
     asm.project_config.active_role = ""  # first-run → set_role fires
     asm.project_config.default_role = "judge"
     asm.project_config.provider = "agy"

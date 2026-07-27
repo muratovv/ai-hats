@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+from enum import Enum
 from pathlib import Path
 
 import yaml
@@ -21,7 +22,7 @@ import yaml
 from ai_hats_core import CompositionResult, atomic_write_bytes
 from .composer import Composer
 from .hooks_manager import HooksManager
-from .materialize import compose_for_role
+from .materialize import compose_for_role, discover_user_rules
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
@@ -44,7 +45,12 @@ from .paths import (
 )
 from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
-from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
+from .plugin_dir import (
+    drop_legacy_claude_publish,
+    drop_legacy_root_skills_mirrors,
+    drop_legacy_skills_mirror,
+)
+
 from ai_hats_core.safe_delete import discard as _safe_discard
 from ai_hats_core.safe_delete import replace as _safe_replace
 from .providers import Provider, get_provider
@@ -207,11 +213,13 @@ class Assembler:
         return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
 
     def _cleanup_legacy_claude_publish(self) -> None:
-        """Thin seam over the shared legacy sweeps (HATS-905): the generic
+        """Thin seam over the shared legacy sweeps (HATS-905, HATS-1172): the generic
         unclaimed-marker sweeper runs the same procedures at bump; this path
         keeps them firing on every refresh as before."""
         drop_legacy_skills_mirror(self.project_dir)
         drop_legacy_claude_publish(self.project_dir)
+        drop_legacy_root_skills_mirrors(self.project_dir)
+
 
     @staticmethod
     def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
@@ -836,6 +844,7 @@ class Assembler:
             self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
+        self._check_venv_consistency()
 
     def _note_empty_legacy_agent_dir(self) -> None:
         """HATS-317: print a NOTE if `.agent/` only holds the managed `ai-hats/`.
@@ -1051,24 +1060,34 @@ class Assembler:
         }
 
     def _check_health(self, result: CompositionResult) -> dict[str, str]:
-        """Check health of disk-resident artefacts post-HATS-407.
+        """Check artefacts on disk — namely the provider system prompt if the
+        configured provider manages one (HATS-1238).
 
-        With per-session compose (HATS-294) and yaml-only set_role
-        (HATS-407), framework rules/skills/hooks are not materialized into
-        the canonical tree — composition resolves them via the library
-        layers in memory. Only artefacts that DO live on disk are
-        verifiable here:
-
-        - ``<ai_hats_dir>/imports.md`` — canonical user-rules aggregator.
-        - Provider system prompt (``./CLAUDE.md`` / ``./AGY.md``).
+        Rules/skills/hooks are composed in memory per session (HATS-294/407),
+        so there is nothing else to probe.
         """
         del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}
-        imports_md = self._canonical_dir / "imports.md"
-        health["imports.md"] = "OK" if imports_md.exists() else "Missing"
-        prompt_ok = any(f(self.project_dir).exists() for f in (gemini_md, claude_md))
-        health["system_prompt"] = "OK" if prompt_ok else "Missing"
+        try:
+            provider = get_provider(self.project_config.provider)
+            prompt_path = provider.system_prompt_path(self.project_dir)
+        except Exception:
+            prompt_path = None
+
+        if prompt_path is not None:
+            health["system_prompt"] = (
+                HealthStatus.OK if prompt_path.exists() else HealthStatus.MISSING
+            )
         return health
+
+    def user_rules(self) -> tuple[Path, ...]:
+        """Project-authored rule files for this project (HATS-1203).
+
+        Owned here, not in the compose facade, so ``compose_for_role`` stays
+        free of filesystem work and a mocked Assembler cannot drag path
+        resolution into a unit test.
+        """
+        return discover_user_rules(self.project_dir)
 
     # ----- Canonical layered layer (HATS-282) -----
 
@@ -1077,39 +1096,22 @@ class Assembler:
         return self.agent_dir / CANONICAL_DIR
 
     def write_canonical(self) -> None:
-        """Write the canonical aggregator under .agent/ai-hats/ (HATS-294/407).
+        """Prepare the canonical tree under .agent/ai-hats/ — no framework
+        artefact is emitted, only the ``user-rules/`` landing zone.
 
-        Emits only ``imports.md`` — a list of ``@./user-rules/*.md`` imports.
-        All framework content (priorities / role / traits / rules / skills_index)
-        is composed in memory per-session by ``Provider.build_session_prompt``
-        and never materialized on disk.
-
-        Stale framework files from prior v0.6 layouts are swept by the
-        manifest-driven cleanup below; ``user-rules/`` is never touched.
-
-        Idempotent: per-file bytes-compare avoids spurious mtime updates.
-
-        HATS-407: the ``result`` parameter was dropped — composition no longer
-        feeds the canonical writer, and callers must not pretend to influence
-        the emitted aggregator via the result.
+        Project-authored rules reach the agent through the composed prompt's
+        ``## USER RULES`` section; the ``imports.md`` aggregator written here
+        until HATS-1203 had no reader once HATS-1170 dropped the root
+        ``CLAUDE.md`` scaffold that imported it. Anything a prior layout left
+        behind is swept below, ``user-rules/`` excepted.
         """
         canonical = self._canonical_dir
         canonical.mkdir(parents=True, exist_ok=True)
         (canonical / USER_RULES_SUBDIR).mkdir(exist_ok=True)
 
-        aggregator = self._render_canonical_aggregator(canonical).encode()
-        # HATS-380: expand `<ai_hats_dir>` placeholder before write so the
-        # agent never sees the literal token (it would otherwise create a
-        # bogus `./<ai_hats_dir>/` directory in the project root).
-        aggregator = expand_path_placeholders(aggregator.decode(), self.project_dir).encode()
-        self._atomic_write_if_changed(canonical / "imports.md", aggregator)
-
-        # Stale cleanup: remove previous-managed files no longer present.
-        # On v0.6→v0.7 upgrade this sweeps priorities.md, role.md, traits/*,
-        # rules/*, skills_index.md. ``user-rules/`` is always preserved.
-        # HATS-408 layers user-edit detection on top of this cleanup before
-        # release; HATS-294 alone is not user-shippable.
-        new_paths = {"imports.md"}
+        # Sweeps the v0.6 framework files (priorities/role/traits/rules/
+        # skills_index) and, since HATS-1203, imports.md.
+        new_paths: set[str] = set()
         previous = self._read_canonical_manifest(canonical / CANONICAL_MANIFEST)
         for stale in previous - new_paths:
             if stale.startswith(f"{USER_RULES_SUBDIR}/") or stale == USER_RULES_SUBDIR:
@@ -1130,23 +1132,6 @@ class Assembler:
                 parent = parent.parent
 
         self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
-
-    @staticmethod
-    def _render_canonical_aggregator(canonical_dir: Path) -> str:
-        """Build ``imports.md`` — a sorted list of ``@./user-rules/*.md`` imports.
-
-        HATS-294: framework content (priorities / role / traits / rules /
-        skills_index) is composed in memory per session and never written to
-        disk; the aggregator therefore lists only user-rules. ``./CLAUDE.md``
-        still imports this single file as its stable entry-point.
-        """
-        user_rules_dir = canonical_dir / USER_RULES_SUBDIR
-        if not user_rules_dir.is_dir():
-            return ""
-        paths = sorted(f"@./{USER_RULES_SUBDIR}/{md.name}" for md in user_rules_dir.glob("*.md"))
-        if not paths:
-            return ""
-        return "\n".join(paths) + "\n"
 
     @staticmethod
     def _atomic_write_if_changed(path: Path, content: bytes) -> bool:
@@ -1402,7 +1387,8 @@ class Assembler:
     @staticmethod
     def _write_canonical_manifest(path: Path, names: list[str]) -> None:
         body = "# ai-hats canonical layer manifest. Do not edit.\n"
-        body += "\n".join(names) + "\n"
+        if names:
+            body += "\n".join(names) + "\n"
         Assembler._atomic_write_if_changed(path, body.encode())
 
     # ----- .gitignore management (HATS-317) -----
@@ -1588,6 +1574,15 @@ class Assembler:
             )
         return bool(findings)
 
+    def _check_venv_consistency(self) -> list[str]:
+        """HATS-1234: Thin seam delegating venv consistency check to :func:`health.check_venv_consistency`."""
+        from .health import check_venv_consistency
+
+        warnings = check_venv_consistency(self.project_dir)
+        for w in warnings:
+            print(w, file=sys.stderr)
+        return warnings
+
     def relocate(self, new_dir: str) -> "RelocationResult":
         """Move the framework dir to ``new_dir`` (logic in relocation.py, HATS-715)."""
         from . import relocation
@@ -1595,5 +1590,10 @@ class Assembler:
         return relocation.relocate(self, new_dir)
 
 
-class AssemblyError(Exception):
+class HealthStatus(str, Enum):
+    OK = "OK"
+    MISSING = "Missing"
+
+
+class AssemblyError(RuntimeError):
     pass

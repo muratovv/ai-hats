@@ -2,8 +2,9 @@
 
 This is the check that makes escaping the port impossible to do quietly — a
 write that goes around it happens for real during a dry-run and shows up here.
-Run per (surface × run_mode); the AUTOMATE pairs are where HATS-1207's bypasses
-live, so they are asserted to REPORT the escape rather than to be clean.
+Run per (surface × run_mode). The AUTOMATE pairs used to be where HATS-1207's
+bypasses lived and were asserted to REPORT an escape; since HATS-1207 routed
+both run-paths through the builder they are asserted to be clean instead.
 """
 
 from __future__ import annotations
@@ -81,19 +82,25 @@ def test_automate_dry_run_leaves_the_filesystem_byte_identical(
 
 
 @pytest.mark.parametrize("surface", ["agy", "cline"])
-def test_automate_reports_the_runner_bypass_it_traverses(project: Path, surface: str):
-    """HATS-1207 bypass 2: materialize_runtime_skills takes no port, so it writes.
+def test_automate_no_longer_traverses_the_runner_bypass(project: Path, surface: str):
+    """HATS-1207 S4 closed bypass 2 — this is the promised inversion.
 
-    The dry-run must SAY so rather than quietly produce a clean-looking report.
-    Turning green here is HATS-1207's job — then this assertion inverts.
+    Before: the runner composed the role itself via ``materialize_runtime_skills``,
+    which takes no port and therefore wrote for real. Now the role reaches the
+    sub-agent through the builder, so there is nothing to warn about and nothing
+    escapes: an empty ``escapes`` is the load-bearing half of this assertion.
     """
     report = dry_run_automate(project, provider=surface, task="demo")
 
-    assert any("bypass 2" in n for n in report.notes)
+    assert not any("bypass 2" in n for n in report.notes)
+    assert report.escapes == ()
+    assert "Role body." in " ".join(report.launch)
 
 
-def test_claude_automate_reports_that_the_engine_recomputes(project: Path):
-    """HATS-1207 bypass 1: the values shown are the builder's, not the SDK's."""
+def test_claude_automate_delivers_the_builders_own_values(project: Path):
+    """HATS-1207 S3 closed bypass 1 — the SDK now receives what the builder built."""
     report = dry_run_automate(project, provider="claude", task="demo")
 
-    assert any("bypass 1" in n for n in report.notes)
+    assert not any("bypass 1" in n for n in report.notes)
+    assert report.escapes == ()
+    assert any(arg.startswith("system_prompt=") for arg in report.launch)

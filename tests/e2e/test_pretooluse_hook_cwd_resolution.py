@@ -83,7 +83,19 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
 
 
 def _managed_guard_command(project: Path) -> str:
-    data = json.loads((project / SETTINGS).read_text())
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths import session_cache_dir
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    provider = ClaudeProvider()
+    asm = Assembler(project)
+    result = asm.composer.compose("assistant")
+    provider.build_session_artifacts(
+        project, result, "sid-cwd-res", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+    )
+    cache_settings = session_cache_dir(project, "sid-cwd-res") / "settings.json"
+    data = json.loads(cache_settings.read_text())
     pre = data["hooks"][HOOK_PRE_TOOL_USE]
     guard = [e for e in pre if e.get("_ai_hats_managed") == GUARD_TAG]
     assert len(guard) == 1, f"expected one managed guard entry, got: {pre}"

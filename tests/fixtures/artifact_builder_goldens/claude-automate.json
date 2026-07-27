@@ -1,0 +1,96 @@
+{
+  "cwd": "<worktree, assigned at launch>",
+  "duplicates": [],
+  "env_keys": [],
+  "escapes": [],
+  "launch": [
+    "plugins=[{'type': 'local', 'path': '<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin'}]",
+    "setting_sources=[]",
+    "settings=<project>/.agent/ai-hats/.cache/sessions/dry-run/settings.json",
+    "system_prompt={'type': 'preset', 'preset': 'claude_code', 'append': '## PRIORITIES\\n1. Quality\\n\\nRole body.'}"
+  ],
+  "materialized": [
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+    },
+    {
+      "detail": "",
+      "digest": "2f3755a72609cd3b279158a6d3e7934296f38a5affe39f683eff180504f80ef3",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 81,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/prompt.md"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/.claude-plugin"
+    },
+    {
+      "detail": "",
+      "digest": "01e6b0dc200a024bf1a3eb1b1a827d6d61e3b760485492255dc5e9ba1baaa540",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 49,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/.claude-plugin/plugin.json"
+    },
+    {
+      "detail": "",
+      "digest": null,
+      "file_count": 0,
+      "kind": "mkdir",
+      "size": 0,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/skills"
+    },
+    {
+      "detail": "",
+      "digest": "d9d2988a03189d655e9ea88009328b3f00b82b038d56364e7d830093aeaf6b81",
+      "file_count": 1,
+      "kind": "copy_tree",
+      "size": 38,
+      "source": "<tmp>/lib/skills/s",
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/skills/s"
+    },
+    {
+      "detail": "",
+      "digest": "b22bce1c904427030a26df2c59db7beb11cd8d21becd02d9e9d8ad67b7b8b5c8",
+      "file_count": 1,
+      "kind": "write_text",
+      "size": 326,
+      "source": null,
+      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/settings.json"
+    }
+  ],
+  "notes": [],
+  "policy": {
+    "context": true,
+    "hooks": true,
+    "settings": true
+  },
+  "prompt": "<project>/.agent/ai-hats/.cache/sessions/dry-run/prompt.md",
+  "provider": "claude",
+  "role": "test-role",
+  "run_mode": "automate"
+}

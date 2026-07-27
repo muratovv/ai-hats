@@ -4,7 +4,7 @@ A collection of common tasks you hit when wiring ai-hats into a project: extendi
 
 > Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> All changes to `ai-hats.yaml` are applied with `ai-hats self init` (rebuilds `CLAUDE.md` / `GEMINI.md` and `.claude/*` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
+> All changes to `ai-hats.yaml` are applied with `ai-hats self init` (rebuilds `CLAUDE.md` / `GEMINI.md` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
 >
 > Any overlay edit can be done in two ways:
 > 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. The command writes into `ai-hats.yaml` itself.
@@ -39,7 +39,7 @@ ai-hats config customize sre --add-skill kubernetes-ops
 ai-hats self init
 ```
 
-Verification: after `ai-hats self init` the skill appears in the `## AVAILABLE SKILLS` section of the generated `CLAUDE.md`.
+Verification: after `ai-hats self init` the skill is added to the role composition and available in session executions.
 
 ---
 

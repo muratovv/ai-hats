@@ -19,7 +19,6 @@ import click
 from ai_hats_core import LockTimeoutError, file_lock
 from rich.tree import Tree
 
-from ..constants import ENV_INIT_UPDATED
 from ..paths import PROJECT_CONFIG
 from ._helpers import _assembler, _project_dir, console
 
@@ -145,128 +144,6 @@ def _wizard_harness_prompt(current_channel: str | None = None) -> str:
         )
 
 
-
-def _run_self_update(target_python: str | Path | None = None) -> None:
-    """Install the channel-appropriate ai-hats inline, then re-exec into it.
-
-    Returns ONLY when no install took effect (unresolvable channel, failed uv
-    run, or running under test runner) — init then continues on the current version.
-    Success never returns: HATS-1126 re-execs, since the install just swapped this
-    interpreter's tree.
-
-    Used in the wizard bootstrap path to guarantee newly-onboarded users start
-    on the latest framework version for their harness channel (HATS-764): local
-    → editable working tree, edge → upstream git HEAD, stable → latest PyPI
-    release. Skipped in flag-only (CI) mode and behind ``--no-update``.
-    """
-    import subprocess
-
-    from ..channel import ChannelResolveError, fetch_latest_stable_version
-    from ..models import Channel
-    from .maintenance import (
-        _build_update_cmd,
-        _read_harness,
-        _require_uv,
-        _run_post_install_verify,
-    )
-
-    _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
-
-    from ..self_location import _under_managed_namespace
-
-    is_test_env = "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
-    if is_test_env and target_python is None and not os.environ.get("AI_HATS_ALLOW_SELF_UPDATE_IN_TEST"):
-        console.print("[yellow]Update skipped[/]: running inside test runner environment")
-        return
-
-    if target_python is None:
-        try:
-            from ..paths import venv_path as _venv_path
-            p_venv = _venv_path(_project_dir())
-            p_py = p_venv / "bin" / "python"
-            if p_py.exists():
-                target_python = p_py
-        except Exception:
-            pass
-
-    python_target = str(target_python) if target_python is not None else sys.executable
-    resolved_target = str(Path(python_target).resolve())
-
-    is_sandbox = (
-        target_python is not None
-        or "/tmp/" in resolved_target  # nosec B108
-        or "pytest-of-" in resolved_target
-        or _under_managed_namespace(Path(resolved_target))
-    )
-    if not is_sandbox and not os.environ.get("AI_HATS_ALLOW_SELF_UPDATE_IN_TEST"):
-        console.print("[yellow]Update skipped[/]: target interpreter is unmanaged host environment")
-        return
-
-    _require_uv()  # D2 (HATS-763): fail loud before invoking uv, not a raw traceback
-
-
-    channel, _repo, path = _read_harness(_project_dir())
-    if channel is Channel.LOCAL:
-        cmd = ["uv", "pip", "install", "--python", python_target, "-e", path or "."]
-    elif channel is Channel.STABLE:
-        try:
-            version = fetch_latest_stable_version()
-        except ChannelResolveError as exc:
-            console.print(f"[yellow]Update skipped[/]: {exc}")
-            return
-        cmd = [
-            "uv",
-            "pip",
-            "install",
-            "--python",
-            python_target,
-            "--reinstall",
-            f"ai-hats=={version}",
-        ]
-    else:  # edge
-        cmd = _build_update_cmd(target_python=python_target)
-    run_env = os.environ.copy()
-    run_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    with console.status(
-        "[cyan]Downloading ai-hats …[/] [dim](first run can take a minute on slow links)[/]",
-        spinner="dots",
-    ):
-        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
-
-    if result.returncode != 0:
-        # Don't abort init on update failure — surface and continue with
-        # the currently-installed version. Common cause: offline / no
-        # network access on first-time setup.
-        msg = (result.stderr or result.stdout or "").strip().splitlines()
-        tail = msg[-1] if msg else "see logs"
-        console.print(f"[yellow]Update skipped[/]: {tail}")
-        return
-
-    # HATS-1116: the install landing is not the install working. An uv exit 0
-    # that produced an unusable tree must never reach the success line — and
-    # unlike an offline skip, there is no old version left to continue on.
-    ok, detail = _run_post_install_verify(python_target)
-    if not ok:
-        console.print(
-            f"[red]Install verify failed[/] — ai-hats was installed but cannot run:\n{detail}\n"
-            "The venv is inconsistent; re-run once more, and if it persists rebuild it:\n"
-            "  ai-hats self update --revision master",
-        )
-        raise SystemExit(1)
-
-    console.print("[green]✓[/] ai-hats updated")
-
-    # HATS-1162: under pytest/test environment, do NOT os.execv because it re-executes
-    # pytest arguments via python -m ai_hats, killing the runner.
-    if is_test_env:
-        return
-
-    # HATS-1126: the install just replaced the tree this interpreter is running
-    # from. Modules already imported stay on the old code while anything imported
-    # later is read from the new one, so restart rather than run a split set.
-    os.execv(python_target, [python_target, "-m", "ai_hats", *sys.argv[1:]])
-
-
 def _launch_wizard_session(cmd: list[str]) -> None:
     """Replace the current process with the command prepared by `PrepareExecuteSessionStep`.
 
@@ -357,7 +234,8 @@ def _build_init_pipeline_state(
     "--no-update",
     is_flag=True,
     default=False,
-    help="Skip the `self update` step that wizard-path init normally runs.",
+    help="Deprecated no-op, still accepted: `self init` never runs "
+    "`self update` — run `ai-hats self update` explicitly.",
 )
 @click.option(
     "--channel",
@@ -406,12 +284,7 @@ def init(
         console.print("[red]Error[/]: --harness-path is only valid with --channel local.")
         raise SystemExit(2)
 
-    use_wizard = not no_wizard and _stdin_is_tty() and not (provider and role)
-
-    # Wizard path step 0: ensure the framework itself is up to date (HATS-1126)
-    if use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
-        _run_self_update()
-
+    # HATS-1215: wizard choice moved into the pipeline — no local branch here.
     from ..pipeline.harness import PipelineHarness
     from ..pipeline.keys import KEY_EXECUTE_CMD, PIPELINE_INIT
 
@@ -439,10 +312,6 @@ def init(
         if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
-
-    # HATS-1125: non-wizard init self-update reconciliation
-    if not use_wizard and not no_update and not os.environ.get(ENV_INIT_UPDATED):
-        _run_self_update()
 
     cmd = final.get(KEY_EXECUTE_CMD)
     if cmd:
@@ -682,8 +551,8 @@ def set_role(
         console.print(f"  Skills: {len(result.skills)}")
         console.print(f"  Injections: {len(result.injections)}")
         console.print(
-            "  [dim]💡 Composed per-session. Direct `claude` reads only "
-            "user-rules; use `ai-hats execute` for role-loaded sessions.[/]"
+            "  [dim]💡 Composed per-session. A direct provider session reads no "
+            "ai-hats content — use `ai-hats execute` for role + user-rules.[/]"
         )
 
     console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
@@ -995,16 +864,18 @@ def status():
     # Health — HATS-497: prefixed with install-level diagnostics (version,
     # interpreter, venv, source, library, resolved-via, repo HEAD) so a
     # single ``config status`` answers both project-config and "where does
-    # my ai-hats live" questions. Existing project-side checks
-    # (imports.md, system_prompt) print after, with their OK/Missing icons.
+    # my ai-hats live" questions. The project-side check (system_prompt)
+    # prints after, with its OK/Missing icon.
     from .maintenance import _gather_install_info
+
+    from ..assembler import HealthStatus
 
     console.print("\n[bold]Health:[/]")
     for key, val in _gather_install_info().items():
         console.print(f"  {key}: [dim]{val}[/]", highlight=False)
     if st.get("health"):
         for component, status_val in st["health"].items():
-            icon = "[green]OK[/]" if status_val == "OK" else "[red]Missing[/]"
+            icon = "[green]OK[/]" if status_val == HealthStatus.OK else "[red]Missing[/]"
             console.print(f"  {component}: {icon}", highlight=False)
 
     # HATS-791: stray-shadow detector. WARN (never delete) if any ai-hats on
@@ -1172,8 +1043,8 @@ def do_bump(*, migrate_force: bool, check_branches: bool) -> int:
     else:
         console.print(f"[green]Bumped[/]: {result.name} (hooks re-installed)")
     console.print(
-        "  [dim]💡 Direct `claude` reads only user-rules. "
-        "Run `ai-hats execute [-r ROLE]` for role-loaded sessions.[/]"
+        "  [dim]💡 A direct provider session reads no ai-hats content. "
+        "Run `ai-hats execute [-r ROLE]` for role + user-rules.[/]"
     )
     # HATS-470: surface the trash-bin banner so the user knows where
     # snapshots from this bump live (if any).

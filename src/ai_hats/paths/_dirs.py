@@ -401,6 +401,17 @@ def user_hooks_dir(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / "user-hooks"
 
 
+def user_rules_dir(project_dir: Path) -> Path:
+    """User-owned rules: ``<ai_hats_dir>/user-rules/`` (HATS-1203).
+
+    Sibling of :func:`user_hooks_dir` and equally outside the managed
+    namespace — the DATA-layer landing zone the v0.7 migration points
+    project-wide content at. Read at compose time into the composed
+    prompt's ``## USER RULES`` section.
+    """
+    return ai_hats_dir(project_dir) / "user-rules"
+
+
 # ---------- Framework-root artefacts ----------
 
 
@@ -690,6 +701,7 @@ __all__ = [
     "managed_wt_hook_filename",
     "managed_runtime_hook_filename",
     "user_hooks_dir",
+    "user_rules_dir",
     "last_backup_path",
     "venv_path",
     "versions_root",

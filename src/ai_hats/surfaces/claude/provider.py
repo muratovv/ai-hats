@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 from .sdk_options import build_first_user_message, build_options
 from . import sdk_runner
 
@@ -140,12 +140,15 @@ class ClaudeProvider(Provider):
             if provider_session_id else None,
         )
 
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        return claude_md(project_dir)
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
+        """HATS-1170/1238: Claude uses per-session prompt cache; no root CLAUDE.md managed."""
+        del project_dir
+        return None
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         """HATS-1170: Claude uses session-cache prompt, root CLAUDE.md is untouched."""
-        pass
+        del project_dir, content
+        return None
 
     def rules_dir(self, session_dir: Path) -> Path:
         return session_dir / "rules"
@@ -157,107 +160,93 @@ class ClaudeProvider(Provider):
         # 2-3x duplicate listing (~1.5k tok/session).
         return self._compose_sections(result, include_skills=False)
 
-    def build_category_artifact(
-        self,
-        category: ArtifactCategory,
-        project_dir: Path,
-        result: CompositionResult,
-        session_id: str,
-        *,
-        run_mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        """Materialize a single category of session artifacts for ClaudeProvider (ADR-0018)."""
+    # SETTINGS delivers nothing in either mode — hence no handler for it.
+
+    def _cache_dir(self, project_dir: Path, session_id: str, artifacts: BuiltArtifacts) -> Path:
         cache_dir = session_cache_dir(project_dir, session_id)
         artifacts.port.mkdir(cache_dir)
+        return cache_dir
 
-        if category == ArtifactCategory.CONTEXT:
-            self._build_context_artifact(project_dir, result, cache_dir, run_mode, artifacts)
-        elif category == ArtifactCategory.SKILLS:
-            self._build_skills_artifact(project_dir, result, session_id, cache_dir, run_mode, artifacts)
-        elif category == ArtifactCategory.HOOKS:
-            self._build_hooks_artifact(project_dir, result, cache_dir, run_mode, artifacts)
-        elif category == ArtifactCategory.SETTINGS:
-            self._build_settings_artifact(project_dir, result, cache_dir, run_mode, artifacts)
+    # -- context ---------------------------------------------------------------
 
-    def _build_context_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        cache_dir: Path,
-        mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
+    def _write_prompt_file(self, project_dir: Path, session_id: str, result, artifacts) -> Path:
         prompt_content = self.build_system_prompt(result)
         prompt_content = expand_path_placeholders(prompt_content, project_dir)
         prompt_content = expand_role_catalog(prompt_content, project_dir)
 
-        full_content = self._build_full_content(project_dir, prompt_content)
-        artifacts.full_content = full_content
-
-        override_file = cache_dir / "prompt.md"
-        artifacts.port.write_text(override_file, full_content)
+        artifacts.full_content = self._build_full_content(project_dir, prompt_content)
+        override_file = self._cache_dir(project_dir, session_id, artifacts) / "prompt.md"
+        artifacts.port.write_text(override_file, artifacts.full_content)
         artifacts.materialized.append(override_file)
+        return override_file
 
-        if mode == RunMode.HITL:
-            artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
-        elif mode == RunMode.AUTOMATE:
-            artifacts.sdk_options["system_prompt"] = full_content
+    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        """Marker-wrapped prompt file, handed over with --system-prompt-file."""
+        override_file = self._write_prompt_file(project_dir, session_id, result, artifacts)
+        artifacts.cli_args.extend(["--system-prompt-file", str(override_file)])
 
-    def _build_skills_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        session_id: str,
-        cache_dir: Path,
-        mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
+    def _build_context_automate(self, project_dir, result, session_id, artifacts) -> None:
+        """The SDK's preset+append shape — NOT the marker-wrapped file bytes.
+
+        The file is still written (audit / meta_prompt symmetry), but what the SDK
+        receives is the bare role text appended to the claude_code preset.
+        """
+        self._write_prompt_file(project_dir, session_id, result, artifacts)
+        text = expand_path_placeholders(self.build_system_prompt(result), project_dir)
+        text = expand_role_catalog(text, project_dir)
+        artifacts.sdk_options["system_prompt"] = {
+            "type": "preset", "preset": "claude_code", "append": text,
+        }
+
+    # -- skills ----------------------------------------------------------------
+
+    def _materialize_plugin(self, project_dir: Path, session_id: str, result, artifacts) -> Path:
         # Not via materialize_runtime_skills: that is a published extension point
         # and cannot take the port (HATS-1211 / HATS-1207 R4).
         from .plugin_dir import materialize_plugin_dir
 
+        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         plugin_dir = cache_dir / "plugin"
         materialize_plugin_dir(
             result.name, result.skills, project_dir, plugin_dir, artifacts.port
         )
-        if mode == RunMode.HITL:
-            artifacts.cli_args.extend(["--plugin-dir", str(plugin_dir)])
-        plugin_skills_dir = cache_dir / "plugin" / "skills"
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_skills_dir)
-        artifacts.materialized.append(cache_dir / "plugin")
+        inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_dir / "skills")
+        artifacts.materialized.append(plugin_dir)
+        return plugin_dir
 
-    def _build_hooks_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        cache_dir: Path,
-        mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        desired = self._desired_runtime_entries(project_dir, result)
-        cache_settings = cache_dir / "settings.json"
+    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        plugin_dir = self._materialize_plugin(project_dir, session_id, result, artifacts)
+        artifacts.cli_args.extend(["--plugin-dir", str(plugin_dir)])
+
+    def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
+        plugin_dir = self._materialize_plugin(project_dir, session_id, result, artifacts)
+        artifacts.sdk_options["plugins"] = (
+            [{"type": "local", "path": str(plugin_dir)}] if result.skills else []
+        )
+
+    # -- hooks -----------------------------------------------------------------
+
+    def _write_cache_settings(self, project_dir: Path, session_id: str, result, artifacts) -> Path:
+        cache_settings = self._cache_dir(project_dir, session_id, artifacts) / "settings.json"
         artifacts.port.write_text(
-            cache_settings, json.dumps({self._SETTINGS_HOOKS_KEY: desired}, indent=2)
+            cache_settings,
+            json.dumps(
+                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(project_dir, result)},
+                indent=2,
+            ),
         )
         artifacts.materialized.append(cache_settings)
+        return cache_settings
 
-        if mode == RunMode.HITL:
-            artifacts.cli_args.extend(["--settings", str(cache_settings)])
-        elif mode == RunMode.AUTOMATE:
-            artifacts.sdk_options["settings"] = str(cache_settings)
-            artifacts.sdk_options["setting_sources"] = []
+    def _build_hooks_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        """--settings merges additively; the user's root settings stay untouched."""
+        cache_settings = self._write_cache_settings(project_dir, session_id, result, artifacts)
+        artifacts.cli_args.extend(["--settings", str(cache_settings)])
 
-    def _build_settings_artifact(
-        self,
-        project_dir: Path,
-        result: CompositionResult,
-        cache_dir: Path,
-        mode: RunMode,
-        artifacts: BuiltArtifacts,
-    ) -> None:
-        """Provider settings / permissions category. Currently dormant for ClaudeProvider."""
-        pass
+    def _build_hooks_automate(self, project_dir, result, session_id, artifacts) -> None:
+        cache_settings = self._write_cache_settings(project_dir, session_id, result, artifacts)
+        artifacts.sdk_options["settings"] = str(cache_settings)
+        artifacts.sdk_options["setting_sources"] = []
 
     def build_session_prompt(
         self,
@@ -610,11 +599,15 @@ class ClaudeSubagentEngine(SubagentEngine):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        artifacts: BuiltArtifacts | None = None,
     ) -> ProviderRunResult:
-        artifacts = self._provider.build_session_artifacts(
-            project_dir, result, session_id, run_mode="automate",
-            artifacts=BuiltArtifacts(),
-        )
+        if artifacts is None:
+            artifacts = self._provider.build_session_artifacts(
+                project_dir, result, session_id, run_mode="automate",
+                artifacts=BuiltArtifacts(),
+            )
+        sys_prompt = artifacts.sdk_options.get("system_prompt")
+        plugins = artifacts.sdk_options.get("plugins")
         opts = build_options(
             composition_result=result,
             provider=self._provider,
@@ -625,6 +618,8 @@ class ClaudeSubagentEngine(SubagentEngine):
             settings=artifacts.sdk_options.get("settings"),
             setting_sources=artifacts.sdk_options.get("setting_sources"),
             extra_env=env,
+            system_prompt=sys_prompt,
+            plugins=plugins,
         )
         msg = build_first_user_message(
             task=task,

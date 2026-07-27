@@ -16,8 +16,11 @@ from ai_hats_agy.provider import AgyProvider
 
 
 @pytest.fixture
-def agy_project(tmp_path):
+def agy_project(tmp_path, monkeypatch):
     """Minimal library + role composed for the agy provider."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+
     project = tmp_path / "project"
     project.mkdir()
     lib = tmp_path / "lib"
@@ -149,11 +152,34 @@ def test_get_cli_command() -> None:
     assert provider.get_cli_command(["--foo", "bar"]) == ["agy", "--foo", "bar"]
 
 
+def test_get_cli_launch_args_translates_positional_prompt() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
+        "agy", "-i", "hello world", "--add-dir", "/path/to/rules"
+    ]
+
+
+def test_get_cli_launch_args_preserves_existing_prompt_flag() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "-i", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == base_cmd
+
+
+def test_get_cli_launch_args_with_model_flag_and_positional_prompt() -> None:
+    provider = AgyProvider()
+    base_cmd = ["agy", "--model", "gemini-2.5-pro", "hello world", "--add-dir", "/path/to/rules"]
+    assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
+        "agy", "-i", "hello world", "--model", "gemini-2.5-pro", "--add-dir", "/path/to/rules"
+    ]
+
+
 def test_get_run_command_with_harness_flags() -> None:
     provider = AgyProvider()
     flags = provider.model_flags("gemini-2.5-pro")
     cmd = provider.get_run_command(["agy"] + flags, "task prompt")
     assert cmd == ["agy", "--model", "gemini-2.5-pro", "-p", "task prompt"]
+
 
 
 def test_get_env(tmp_path: Path) -> None:
@@ -164,7 +190,10 @@ def test_get_env(tmp_path: Path) -> None:
     assert env["AI_HATS_DIR"] == str(project / ".agent" / "ai-hats")
 
 
-def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path) -> None:
+def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+
     repo_root = Path(__file__).parent.parent.parent.parent.parent
     asm = Assembler(repo_root)
     result = asm.composer.compose("maintainer")
@@ -179,7 +208,10 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path) -> None:
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
 
 
-def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(tmp_path: Path) -> None:
+def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+
     repo_root = Path(__file__).parent.parent.parent.parent.parent
     asm = Assembler(repo_root)
     result = asm.composer.compose("maintainer")
@@ -206,3 +238,80 @@ def test_agy_provider_detected_home_dirs() -> None:
     provider = AgyProvider()
     assert ".gemini" in provider.detected_home_dirs()
     assert ".agy" in provider.detected_home_dirs()
+
+
+def test_build_session_artifacts_automate_materializes_hooks_and_fires(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """HATS-1223: AUTOMATE mode writes hooks.json and global dispatcher fires session hook."""
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats_agy.hook_dispatcher import dispatch_hook
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+
+    project = tmp_path / "project"
+    project.mkdir()
+    lib = tmp_path / "lib"
+
+    marker = tmp_path / "hook_fired.txt"
+    hook_script_name = "run_hook.sh"
+
+    skill_dir = lib / "skills" / "hook-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: hook-skill\n"
+        "description: skill with hook\n"
+        "ai_hats:\n"
+        "  runtime_hooks:\n"
+        "    PreToolUse:\n"
+        "      - matcher: Edit\n"
+        f"        script: {hook_script_name}\n"
+        "---\n"
+        "# body\n"
+    )
+    script_file = skill_dir / hook_script_name
+    script_file.write_text(f"#!/bin/sh\necho 'FIRED' > '{marker}'\n")
+    script_file.chmod(0o755)
+
+    role_dir = lib / "roles" / "hook-role"
+    role_dir.mkdir(parents=True)
+    (role_dir / "config.yaml").write_text(
+        "name: hook-role\n"
+        "priorities:\n  - Reliability\n"
+        "composition:\n  skills: [hook-skill]\n"
+        "injection: Hook role body.\n"
+    )
+
+    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    result = asm.composer.compose("hook-role")
+
+    provider = AgyProvider()
+    artifacts = BuiltArtifacts()
+    provider.build_session_artifacts(
+        project, result, "sid-auto", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+    )
+
+    # 1. Manifest written in AUTOMATE session cache
+    cache_hooks = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-auto" / "hooks.json"
+    assert cache_hooks.is_file(), "hooks.json must be materialized in session cache under AUTOMATE mode"
+    data = json.loads(cache_hooks.read_text())
+    pre_tool_hooks = data.get("PreToolUse", [])
+    assert any(hook_script_name in str(h.get("command")) for h in pre_tool_hooks)
+
+    # 2. Context contains PRIORITIES and role body
+    assert artifacts.full_content is not None
+    assert "## PRIORITIES" in artifacts.full_content
+    assert "Hook role body." in artifacts.full_content
+
+    # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-auto")
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    res = dispatch_hook("PreToolUse", tool_name="Edit")
+    assert res == 0
+    assert marker.is_file()
+    assert marker.read_text().strip() == "FIRED"
+

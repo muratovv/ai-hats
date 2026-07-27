@@ -40,7 +40,7 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 @pytest.mark.integration
 def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
     """Flag-only `self init` reconciles the venv channel after seeding ai-hats.yaml."""
-    import os
+    from _helpers.env import clean_env
 
     src_repo = tmp_path / "src-repo"
     launcher_dest = tmp_path / "bin" / "ai-hats"
@@ -48,28 +48,15 @@ def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
 
-    import shutil
+    subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True)
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.email", "e2e@test"], check=True)
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.name", "E2E"], check=True)
 
-    shutil.copytree(
-        REPO_ROOT,
-        src_repo,
-        ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "build", "dist", "*.pyc"),
-    )
-    subprocess.run(["git", "init", "--quiet"], cwd=str(src_repo), check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(src_repo), check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.local"], cwd=str(src_repo), check=True
-    )
-    subprocess.run(["git", "add", "."], cwd=str(src_repo), check=True)
-    subprocess.run(["git", "commit", "-m", "initial", "--quiet"], cwd=str(src_repo), check=True)
-
-    env = os.environ.copy()
+    env = clean_env()
     env[ENV_LAUNCHER_DEST] = str(launcher_dest)
     env[ENV_REPO_URL] = str(src_repo)
+    env["AI_HATS_ALLOW_SELF_UPDATE_IN_TEST"] = "1"
     env.pop(ENV_AI_HATS_VENV, None)
-    env.pop(ENV_AI_HATS_INIT_SRC, None)
-    env.pop("PYTHONPATH", None)
-    env.pop("PYTEST_CURRENT_TEST", None)
 
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
@@ -111,9 +98,9 @@ def test_e2e_flag_only_init_reconciles_venv_channel(tmp_path: Path) -> None:
         'raw = distribution("ai-hats").read_text("direct_url.json") or "{}"\n'
         "info = json.loads(raw)\n"
         'is_editable = bool((info.get("dir_info") or {}).get("editable"))\n'
-        'print("EDITABLE" if is_editable else "NOT_EDITABLE")\n'
+        'print(f"RAW={raw.strip()} EDITABLE={is_editable}")\n'
     )
     res = _run([str(proj_venv_python), "-c", probe_code], cwd=project, env=env, timeout=30)
-    assert res.stdout.strip() == "EDITABLE", (
+    assert "EDITABLE=True" in res.stdout.strip(), (
         f"Expected venv to be reconciled to editable channel:local, but probe got: {res.stdout.strip()!r}"
     )

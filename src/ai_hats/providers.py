@@ -102,6 +102,7 @@ class SubagentEngine(abc.ABC):
         env: dict[str, str],
         model: str | None,
         timeout_s: int,
+        artifacts: BuiltArtifacts | None = None,
     ) -> ProviderRunResult:
         pass
 
@@ -125,8 +126,8 @@ class Provider(abc.ABC):
         return []
 
     @abc.abstractmethod
-    def system_prompt_path(self, project_dir: Path) -> Path:
-        """Path to the system prompt file for this provider."""
+    def system_prompt_path(self, project_dir: Path) -> Path | None:
+        """Path to the system prompt file for this provider, or None if omitted."""
 
     @abc.abstractmethod
     def rules_dir(self, session_dir: Path) -> Path:
@@ -154,11 +155,34 @@ class Provider(abc.ABC):
         run_mode: RunMode,
         artifacts: BuiltArtifacts,
     ) -> None:
-        """Build and materialize a single category of session artifacts for this provider.
+        """Materialize one category of session artifacts for this surface (ADR-0018).
 
-        Default is a no-op; provider surfaces override for supported categories.
+        Dispatches to a ``_build_<category>_<run_mode>`` method so a surface never
+        branches on the run mode: HITL delivery (launch flags) and AUTOMATE
+        delivery (inline / SDK) are different jobs that happen to share a name.
+        A combination a surface does not deliver is simply an absent method —
+        visible, unlike an ``else`` that falls through in silence.
         """
-        logger.debug("Provider %s does not handle artifact category %s", self.name, category)
+        handler = getattr(self, f"_build_{category.value}_{RunMode(run_mode).value}", None)
+        if handler is None:
+            logger.debug("Provider %s delivers no %s in %s", self.name, category, run_mode)
+            return
+        handler(project_dir, result, session_id, artifacts)
+
+    def handles_artifact_categories(self) -> bool:
+        """Whether this surface implements the ADR-0018 per-category seam.
+
+        False for a pre-ADR-0018 out-of-tree provider that overrides only
+        ``build_session_prompt``: routing it through the builder would deliver an
+        empty session rather than fail, since the dispatch above finds no handler.
+        """
+        if type(self).build_category_artifact is not Provider.build_category_artifact:
+            return True  # overrides the seam wholesale — its own dispatch
+        return any(
+            hasattr(self, f"_build_{c.value}_{m.value}")
+            for c in ArtifactCategory
+            for m in RunMode
+        )
 
     def build_session_artifacts(
         self,
@@ -177,6 +201,7 @@ class Provider(abc.ABC):
         """
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
+        artifacts.policy = policy
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(
@@ -233,7 +258,7 @@ class Provider(abc.ABC):
         """Assemble the shared system-prompt sections.
 
         Order: PRIORITIES → merged role/trait injection → always-on RULES →
-        optional AVAILABLE SKILLS index.
+        USER RULES → optional AVAILABLE SKILLS index.
 
         ``include_skills`` is the provider-specific toggle (HATS-701). Agy
         passes ``True`` — it has no native skill registry, so this index is
@@ -263,6 +288,22 @@ class Provider(abc.ABC):
                 if body:
                     rules_section += f"\n### {rule.name}\n{body}\n"
             sections.append(rules_section)
+
+        # HATS-1203: project-authored rules, after the framework's own so they
+        # read as the more specific layer. Unfiltered — see discover_user_rules.
+        user_rules_section = "## USER RULES\n"
+        emitted = False
+        user_rules = getattr(result, "user_rules", ())
+        for rule_path in user_rules:
+            try:
+                body = rule_path.read_text()
+            except OSError:
+                continue
+            if body.strip():
+                user_rules_section += f"\n### {rule_path.stem}\n{body}\n"
+                emitted = True
+        if emitted:
+            sections.append(user_rules_section)
 
         # Skills: index only (body loaded on demand via native provider).
         if include_skills and result.skills:
@@ -392,7 +433,7 @@ class Provider(abc.ABC):
         del project_dir, result
         return []
 
-    def update_system_prompt(self, project_dir: Path, content: str) -> None:
+    def update_system_prompt(self, project_dir: Path, content: str) -> Path | None:
         """Write or update the inline system prompt block.
 
         Used by providers without a scaffold (e.g. Agy) to maintain the
@@ -406,6 +447,8 @@ class Provider(abc.ABC):
         from ai_hats_core.safe_delete import replace as _safe_replace
 
         prompt_path = self.system_prompt_path(project_dir)
+        if prompt_path is None:
+            return None
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
 
         if prompt_path.exists():
@@ -414,7 +457,7 @@ class Provider(abc.ABC):
             # the canonical-publish layout — `./CLAUDE.md` is user-owned and
             # the framework injection lives in `.claude/CLAUDE.md`.
             if PUBLISH_AGGREGATOR_START in existing and PUBLISH_AGGREGATOR_END in existing:
-                return
+                return prompt_path
             if INJECTION_START in existing and INJECTION_END in existing:
                 # Update between markers, preserve everything outside
                 before = existing[: existing.index(INJECTION_START)]
@@ -426,7 +469,7 @@ class Provider(abc.ABC):
                     reason="system-prompt",
                     project_dir=project_dir,
                 )
-                return
+                return prompt_path
             if existing.strip():
                 # Existing file without markers — preserve as project context
                 _safe_replace(
@@ -435,7 +478,7 @@ class Provider(abc.ABC):
                     reason="system-prompt",
                     project_dir=project_dir,
                 )
-                return
+                return prompt_path
 
         # Fresh write with markers
         _safe_replace(
@@ -444,6 +487,7 @@ class Provider(abc.ABC):
             reason="system-prompt",
             project_dir=project_dir,
         )
+        return prompt_path
 
 
 _PROVIDER_REGISTRY: dict[str, type[Provider]] = {}

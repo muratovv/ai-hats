@@ -100,7 +100,11 @@ def default_surfaces() -> tuple[Surface, ...]:
         GITHOOKS_DISPATCHER_MARKER,
         GITHOOKS_MANIFEST,
     )
-    from .plugin_dir import drop_legacy_claude_publish, drop_legacy_skills_mirror
+    from .plugin_dir import (
+        drop_legacy_claude_publish,
+        drop_legacy_root_skills_mirrors,
+        drop_legacy_skills_mirror,
+    )
 
     skills_marker = claude_skills_dir(Path(".")) / AI_HATS_MANAGED_MARKER
     publish_marker = claude_dir(Path(".")) / AI_HATS_MANAGED_MARKER
@@ -121,7 +125,13 @@ def default_surfaces() -> tuple[Surface, ...]:
             marker_relpath=str(publish_marker),
             proc=drop_legacy_claude_publish,
         ),
+        ProcSurface(
+            owner_key="root-skills-export",
+            marker_relpath=".agent/ai-hats",
+            proc=drop_legacy_root_skills_mirrors,
+        ),
     )
+
 
 
 def sweep_unclaimed(
@@ -157,7 +167,7 @@ def _sweep_proc(
     project_dir: Path, surface: ProcSurface, *, dry_run: bool = False
 ) -> SurfaceSweep | None:
     marker = project_dir / Path(surface.marker_relpath)
-    if not marker.is_file():
+    if not marker.exists():
         return None
     if owners.is_living(surface.owner_key):
         return None

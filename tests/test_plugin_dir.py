@@ -462,3 +462,38 @@ def test_duplicate_registration_none_when_clean(tmp_path: Path) -> None:
     )
 
     assert found == []
+
+
+# ---------- drop_legacy_root_skills_mirrors (HATS-1172) ----------
+
+
+def test_drop_legacy_root_skills_mirrors_removes_root_dirs(tmp_path: Path) -> None:
+    from ai_hats.plugin_dir import drop_legacy_root_skills_mirrors
+
+    agy_skills = tmp_path / ".agy" / "skills"
+    gemini_skills = tmp_path / ".gemini" / "skills"
+    cline_skills = tmp_path / ".cline" / "skills"
+    agents = tmp_path / ".agents"
+
+    for d in (agy_skills, gemini_skills, cline_skills, agents):
+        d.mkdir(parents=True)
+        (d / "dummy.txt").write_text("test")
+
+    removed = drop_legacy_root_skills_mirrors(tmp_path)
+
+    assert sorted(removed) == [".agents", ".agy/skills", ".cline/skills", ".gemini/skills"]
+    assert not agy_skills.exists()
+    assert not gemini_skills.exists()
+    assert not cline_skills.exists()
+    assert not agents.exists()
+    # Empty parent dirs removed as well
+    assert not (tmp_path / ".agy").exists()
+    assert not (tmp_path / ".gemini").exists()
+    assert not (tmp_path / ".cline").exists()
+
+
+def test_drop_legacy_root_skills_mirrors_noop_when_absent(tmp_path: Path) -> None:
+    from ai_hats.plugin_dir import drop_legacy_root_skills_mirrors
+
+    assert drop_legacy_root_skills_mirrors(tmp_path) == []
+

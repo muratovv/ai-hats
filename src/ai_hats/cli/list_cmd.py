@@ -58,7 +58,9 @@ def list_providers():
 
     for name in sorted(provider_names()):
         provider = get_provider(name)
-        console.print(f"  [cyan]{name}[/]  →  {provider.system_prompt_path(Path('.'))}")
+        sp_path = provider.system_prompt_path(Path("."))
+        sp_str = str(sp_path) if sp_path is not None else "(session cache)"
+        console.print(f"  [cyan]{name}[/]  →  {sp_str}")
 
 
 @list_cmd.command("traits")

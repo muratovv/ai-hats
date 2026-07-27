@@ -1,9 +1,19 @@
-"""E2E: ``self init`` proves the install works before printing success (HATS-1116).
+"""E2E: ``self update`` proves the install works before printing success (HATS-1116).
 
-Value under test: an install that *lands* is not an install that *works*.
-``_run_self_update`` used to check only uv's exit code and then print
-``✓ ai-hats updated``, so a uv exit 0 that produced an unusable tree sent the
-user onward with a green line and a traceback two steps later (HATS-1115).
+Value under test: an install that *lands* is not an install that *works*. The
+updater used to check only uv's exit code and then print ``✓ ai-hats updated``,
+so a uv exit 0 that produced an unusable tree sent the user onward with a green
+line and a traceback two steps later (HATS-1115).
+
+Retargeted from ``self init`` to ``self update`` (HATS-1215): init no longer
+installs anything, so the verify it used to run now lives only on the update
+path (``cli/maintenance.py:_run_post_install_verify``).
+
+**The guarantee is fatal (HATS-1239).** Init's verify was fatal (``SystemExit(1)``);
+update's post-install verify is now also fatal (``SystemExit(1)``) so an install that
+lands but produces an unusable tree exits non-zero, surfacing the failure red.
+This test asserts that update exits non-zero, names the breakage, and never prints
+success.
 
 Setup (real launcher + real uv install, per ``dev_rule_e2e_gate`` — no stubs):
 
@@ -14,22 +24,18 @@ Setup (real launcher + real uv install, per ``dev_rule_e2e_gate`` — no stubs):
     working tree's ``src/`` overlaid (so the test reflects uncommitted work too),
     then drop ``PROVIDER_CLAUDE`` from ``constants.py`` while ``assembler.py``
     still imports it — the exact shape of the incident.
-  - Drive ``<launcher> self init -p claude`` with stdin on a PTY. The wizard path
-    (the one that calls ``_run_self_update``) requires a TTY; ``-p`` without
-    ``-r`` keeps the wizard on while skipping the provider prompt.
 
-Assertion: init exits non-zero, never prints the success line, and names the
+Assertion: update exits non-zero, never prints the success line, and names the
 failure.
 
 Fail-under-revert: drop the ``_run_post_install_verify`` call in
-``cli/assembly.py`` and init prints ``✓ ai-hats updated`` → the
+``cli/maintenance.py`` and update prints ``✓ ai-hats updated`` → the
 absence-assertion fails.
 """
 
 from __future__ import annotations
 
 import os
-import pty
 import shutil
 import subprocess
 from pathlib import Path
@@ -62,7 +68,7 @@ def _broken_install_source(dst: Path) -> Path:
     return src
 
 
-def test_init_does_not_report_success_for_a_broken_install(tmp_path: Path, repo_root: Path):
+def test_update_does_not_report_success_for_a_broken_install(tmp_path: Path, repo_root: Path):
     """uv exit 0 + unusable tree → red diagnosis and a non-zero exit, never ``✓``."""
     from _helpers.project import pin_edge_channel
     from _helpers.venv import build_launcher_venv
@@ -83,20 +89,17 @@ def test_init_does_not_report_success_for_a_broken_install(tmp_path: Path, repo_
         ENV_AI_HATS_VENV: str(venv),
     }
 
-    master, slave = pty.openpty()  # the wizard path that runs the update needs a TTY
     try:
         proc = subprocess.run(
-            [str(launcher), "self", "init", "-p", "claude"],
-            cwd=str(project), env=env, stdin=slave,
+            [str(launcher), "self", "update"],
+            cwd=str(project), env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, timeout=240,
         )
     except subprocess.TimeoutExpired:
-        pytest.fail("init ran past the verify into the wizard — the broken install was accepted")
-    finally:
-        os.close(slave)
-        os.close(master)
+        pytest.fail("update hung instead of failing the verify")
 
     out = proc.stdout + proc.stderr
+    assert proc.returncode != 0, f"update exited 0 for a broken install:\n{out}"
     assert "ai-hats updated" not in out, f"success line printed for a broken install:\n{out}"
-    assert proc.returncode != 0, f"init exited 0 on a broken install:\n{out}"
-    assert "Install verify failed" in out, out
+    assert "Post-install verify failed" in out, f"broken install failure message was not surfaced:\n{out}"
+    assert _MISSING_SYMBOL.split(" =")[0] in out, f"verify did not name the breakage:\n{out}"
