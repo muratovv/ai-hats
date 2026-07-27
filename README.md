@@ -43,7 +43,7 @@ ai-hats answers this with two things:
 roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
                     ├── rules: git_workflow, tdd
                     ├── skills: backlog-manager, git-mastery
-                    └── injection → GEMINI.md / CLAUDE.md
+                    └── injection → composed per session, delivered per surface
 ```
 
 > Names and core terms (role, session, reflect, backlog, …) — see [1].
@@ -139,16 +139,16 @@ Alternative install paths (bash bootstrap from a clone, override venv, developin
 
 Eight top-level groups:
 
-| Group     | What it does                                                            |
-| --------- | ----------------------------------------------------------------------- |
-| `agent`   | Run a role as a sub-agent inside an isolated worktree                   |
-| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback)   |
-| `list`    | Discovery: roles / skills / rules / traits / providers / tokens         |
-| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP          |
-| `self`    | Tool lifecycle: init / update / clean / rollback                 |
-| `session` | Observability: list / show / audit / retro for sessions                 |
+| Group     | What it does                                                               |
+| --------- | -------------------------------------------------------------------------- |
+| `agent`   | Run a role as a sub-agent inside an isolated worktree                      |
+| `config`  | Read / edit `ai-hats.yaml` (provider, role, customizations, feedback)      |
+| `list`    | Discovery: roles / skills / rules / traits / providers / tokens            |
+| `reflect` | Feedback loop — per-session vote and bulk triage of HYP / PROP             |
+| `self`    | Tool lifecycle: init / update / clean / rollback                           |
+| `session` | Observability: list / show / audit / retro for sessions                    |
 | `task`    | Backlog: task / hyp / proposal cards with a state machine — recipes in [4] |
-| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2 |
+| `wt`      | Git worktrees: create / merge / discard / exec / env — recipes in [5] §2   |
 
 Common scenarios:
 
