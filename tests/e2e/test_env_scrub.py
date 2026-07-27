@@ -145,6 +145,40 @@ def test_project_run_scrubs_ambient_env(monkeypatch, tmp_path):
     assert "PYTHONPATH" not in captured_env
 
 
+def test_build_src_clone_is_scrubbed_and_bounded(monkeypatch, tmp_path):
+    """HATS-1247: the per-worker clone must not inherit git plumbing, nor run unbounded.
+
+    GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE are set whenever pytest is spawned from a
+    git process — the pre-commit smoke gate does exactly that (HATS-887) — and would
+    retarget the clone off ``repo_root``.
+    """
+    import _helpers.repo_src as repo_src
+
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+    monkeypatch.setenv("GIT_DIR", "/leak/.git")
+    monkeypatch.setenv("PYTHONPATH", "/leak/src")
+    # Fresh memo: a faked clone must never leave a path nothing created in the real
+    # module-level cache, which the rest of this worker installs from.
+    monkeypatch.setattr(repo_src, "_CACHE", {})
+
+    captured = {}
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        captured.update(kwargs)
+        from types import SimpleNamespace
+
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    repo_src.build_src(tmp_path)
+
+    assert captured.get("env") is not None, "clone must pass an explicit env, not inherit"
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "PYTHONPATH"):
+        assert key not in captured["env"], f"{key} leaked into the clone env"
+    assert captured.get("timeout"), "clone must be bounded so a hang cannot stall a worker"
+
+
 def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
     """HATS-1129: build_launcher_venv must scrub ambient ENV_DENYLIST from os.environ.
 
