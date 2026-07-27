@@ -1,84 +1,188 @@
 #!/usr/bin/env python3
-"""
-Enforces `global_rule_destructive_actions` by blocking dangerous commands 
-(e.g., `rm`, `sed -i`, `drop table`).
+"""Enforces `global_rule_destructive_actions` by blocking destructive commands.
 
-Note: This script strictly focuses on blocking dangerous/destructive actions.
-It does NOT handle git repository hygiene (like blocking direct edits on master) —
-that logic is intentionally kept separate in `wt_gate.py` (worktree-isolation) 
-so that data protection rules remain universally enforced regardless of worktree usage.
+The rule protects PATHS, so this gate matches paths, not binary names: a name
+match cannot tell `rm -rf /tmp/scratch` from `rm -rf /`, and denying both
+contradicts `global_rule_resource_hygiene` (HATS-1253). Not handled here:
+`git push` (pre_bash_shared_state_guard.sh), worktrees (wt_gate.py).
 """
 import json
-import sys
-import re
 import os
+import shlex
+import sys
+
+#: Set to "1" when the supervisor approved a specific destructive command.
+#: Mirrors AI_HATS_PLAN_ACK / AI_HATS_MERGE_ACK.
+DESTRUCTIVE_ACK = "AI_HATS_DESTRUCTIVE_ACK"
+
+PROTECTED_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".sql", ".dump")
+PROTECTED_NAMES = ("terraform.tfstate",)
+PROTECTED_DIRS = ("volumes", "data", "storage")
+
+SQL_CLIENTS = ("psql", "mysql", "mariadb", "sqlite3", "sqlcmd", "mongo", "clickhouse-client")
+
+OPERATORS = (";", "&&", "||", "|", "&")
+WRAPPERS = ("sudo", "env", "nohup", "xargs", "time")
+
 
 def parse_commands(cmd_string: str):
-    # Split by ;, &&, ||, |
-    parts = re.split(r';|&&|\|\||\|', cmd_string)
-    return [p.strip() for p in parts if p.strip()]
+    """Split into logical commands as token lists, honouring quotes.
 
-def get_bin(cmd: str):
-    tokens = cmd.split()
+    A regex split on the operators turns a quoted argument into a phantom
+    command — a ripgrep regex containing ``|git push`` synthesised a push that
+    was never issued (HATS-1253 R5).
+    """
+    try:
+        lexer = shlex.shlex(cmd_string, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return []  # unbalanced quotes — nothing reliable to inspect
+
+    commands, current = [], []
+    for tok in tokens:
+        if tok in OPERATORS:
+            if current:
+                commands.append(current)
+                current = []
+        else:
+            current.append(tok)
+    if current:
+        commands.append(current)
+    return commands
+
+
+def get_bin(tokens):
     for token in tokens:
-        if "=" in token:
+        if "=" in token or token in WRAPPERS:
             continue
-        if token in ("sudo", "env", "nohup", "xargs", "time"):
-            continue
-        return token
+        return os.path.basename(token)
     return ""
 
-def check_sed(cmd: str) -> str:
-    if " -i" in cmd:
+
+def _acked() -> bool:
+    return os.environ.get(DESTRUCTIVE_ACK) == "1"
+
+
+def _ack_hint(reason: str) -> str:
+    return (
+        f"{reason} If the supervisor approved this, re-run the single command as: "
+        f"{DESTRUCTIVE_ACK}=1 <command>"
+    )
+
+
+def _paths(args):
+    return [t for t in args[1:] if not t.startswith("-")]
+
+
+def is_catastrophic(path: str) -> bool:
+    """Filesystem root or the user's home — no consent flag opens these."""
+    expanded = os.path.expandvars(os.path.expanduser(path))
+    if path.rstrip("/*") == "" or expanded.rstrip("/*") == "":
+        return True
+    return expanded.rstrip("/") == os.path.expanduser("~").rstrip("/")
+
+
+def is_protected(path: str) -> bool:
+    """A path `global_rule_destructive_actions` names as protected data."""
+    stripped = path.rstrip("/")
+    base = os.path.basename(stripped)
+    if base in PROTECTED_NAMES or base == ".env" or base.startswith(".env."):
+        return True
+    if any(base.endswith(suffix) for suffix in PROTECTED_SUFFIXES):
+        return True
+    return any(seg in PROTECTED_DIRS for seg in stripped.split("/") if seg)
+
+
+def check_rm(args) -> str:
+    paths = _paths(args)
+    for path in paths:
+        if is_catastrophic(path):
+            return (
+                f"Stopped: `rm` targets {path!r} — refusing to delete the filesystem root "
+                f"or your home directory. No consent flag overrides this."
+            )
+    if _acked():
+        return ""
+    for path in paths:
+        if is_protected(path):
+            return _ack_hint(
+                f"Stopped: `rm` targets protected data ({path}) per "
+                f"global_rule_destructive_actions."
+            )
+    return ""
+
+
+def check_dangerous_bin(cmd_bin: str, args) -> str:
+    # Real invocations are mkfs.ext4 / mkfs.xfs — bare "mkfs" alone never matched.
+    if cmd_bin == "mkfs" or cmd_bin.startswith("mkfs."):
+        return f"Stopped: {cmd_bin} formats a filesystem — no agent use case."
+    if cmd_bin == "dd" and not _acked():
+        for token in args:
+            if token.startswith("of=/dev/"):
+                return _ack_hint(f"Stopped: `dd` writing to a device ({token}) destroys a disk.")
+    return ""
+
+
+def check_sed(args) -> str:
+    if any(tok == "-i" or (tok.startswith("-i") and not tok.startswith("--")) for tok in args):
         return "Stopped: sed with -i flag modifies files. Explicit permission required."
     return ""
 
-def check_git(cmd: str) -> str:
-    tokens = cmd.split()
-    if "push" in tokens:
-        return "Stopped: git push requires explicit permission."
+
+def check_sql(cmd_bin: str, args) -> str:
+    """Scoped to DB clients so a bug report naming the phrase is not a command."""
+    if cmd_bin not in SQL_CLIENTS:
+        return ""
+    joined = " ".join(args).lower()
+    for sub in ("drop table", "drop database"):
+        if sub in joined:
+            return f"Stopped: destructive SQL detected ({sub})."
     return ""
 
-def check_dangerous_bin(cmd_bin: str) -> str:
-    if cmd_bin in ("rm", "mkfs", "truncate", "chown", "dd"):
-        return f"Stopped: potentially destructive binary detected ({cmd_bin})."
+
+def check_self_grant(args) -> str:
+    """The agent must not hand itself YOLO inline; exporting it is the user's call."""
+    for token in args:
+        if token.upper().startswith("AI_HATS_YOLO="):
+            return (
+                "Stopped: AI_HATS_YOLO cannot be granted inline — a guard the agent can "
+                "switch off is not a guard. Export it in the environment instead."
+            )
     return ""
 
-def check_dangerous_substrings(cmd_string: str) -> str:
-    cmd_lower = cmd_string.lower()
-    dangerous = ["drop table", "drop database", "ai_hats_yolo"]
-    for sub in dangerous:
-        if sub in cmd_lower:
-            return f"Stopped: dangerous substring detected ({sub})."
-    return ""
+
+HANDLERS = {"sed": check_sed, "rm": check_rm}
+
 
 def check_command(cmd_string: str) -> str:
-    reason = check_dangerous_substrings(cmd_string)
-    if reason:
-        return reason
-
-    subcommands = parse_commands(cmd_string)
-    handlers = {
-        "sed": check_sed,
-        "git": check_git
-    }
-
-    for subcmd in subcommands:
-        cmd_bin = get_bin(subcmd)
-        if not cmd_bin:
-            continue
-        
-        reason = check_dangerous_bin(cmd_bin)
+    for tokens in parse_commands(cmd_string):
+        reason = check_self_grant(tokens)
         if reason:
             return reason
-            
-        handler = handlers.get(cmd_bin)
+
+        cmd_bin = get_bin(tokens)
+        if not cmd_bin:
+            continue
+
+        args = tokens
+        for i, tok in enumerate(tokens):
+            if os.path.basename(tok) == cmd_bin:
+                args = tokens[i:]
+                break
+
+        reason = check_dangerous_bin(cmd_bin, args) or check_sql(cmd_bin, args)
+        if reason:
+            return reason
+
+        handler = HANDLERS.get(cmd_bin)
         if handler:
-            reason = handler(subcmd)
+            reason = handler(args)
             if reason:
                 return reason
 
     return ""
+
 
 def main() -> int:
     if os.environ.get("AI_HATS_YOLO") == "1":
@@ -94,11 +198,7 @@ def main() -> int:
         tool_call = payload.get("toolCall") or {}
         tool_input = tool_call.get("args") or {}
 
-    cmd = tool_input.get("command") or tool_input.get("CommandLine") or ""
-    if not cmd:
-        return 0
-
-    cmd = cmd.strip()
+    cmd = (tool_input.get("command") or tool_input.get("CommandLine") or "").strip()
     if not cmd:
         return 0
 
@@ -117,6 +217,7 @@ def main() -> int:
             )
         )
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

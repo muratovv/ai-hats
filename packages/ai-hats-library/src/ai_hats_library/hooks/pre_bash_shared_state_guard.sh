@@ -79,7 +79,7 @@ case "$verdict" in
         # Level 2 rule covers `shared`; hook does not interrupt.
         exit 0
         ;;
-    irreversible)
+    gated|irreversible)
         : # fallthrough to gating below
         ;;
     *)
@@ -88,9 +88,9 @@ case "$verdict" in
         ;;
 esac
 
-# --- 4. Irreversible: gate on ack ---------------------------------------
+# --- 4. Gate on ack ------------------------------------------------------
 if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
-    echo "[shared-state-guard] AI_HATS_SHARED_STATE_ACK=1 — allowing irreversible: $cmd" >&2
+    echo "[shared-state-guard] AI_HATS_SHARED_STATE_ACK=1 — allowing $verdict: $cmd" >&2
     exit 0
 fi
 
@@ -99,7 +99,7 @@ fi
 # payload), so stdin is never a TTY here in practice — but we keep the
 # branch for direct CLI testing.
 if [[ -t 0 && -t 2 ]]; then
-    read -r -p "[shared-state-guard] Irreversible command: $cmd
+    read -r -p "[shared-state-guard] $verdict command: $cmd
 Proceed? [y/N] " ans
     case "$ans" in
         y|Y|yes|YES) exit 0 ;;
@@ -108,13 +108,22 @@ Proceed? [y/N] " ans
 fi
 
 # --- 5. Non-TTY: deny ---------------------------------------------------
+if [[ "$verdict" == "gated" ]]; then
+    headline="pushing a shared branch requires explicit ack"
+    detail="This command updates a branch other people build on (HATS-1253):
+  - git push <remote> <branch>"
+else
+    headline="irreversible operation requires explicit ack"
+    detail="This command writes shared state with no undo path (HATS-437):
+  - gh pr merge ...           (PR + master commit; no undo)
+  - git push --force / -f     (overwrites remote history)"
+fi
+
 cat >&2 <<EOF
-[shared-state-guard] BLOCKED — irreversible operation requires explicit ack.
+[shared-state-guard] BLOCKED — $headline.
   command: $cmd
 
-This command writes shared state with no undo path (HATS-437):
-  - gh pr merge ...           (PR + master commit; no undo)
-  - git push --force / -f     (overwrites remote history)
+$detail
 
 Recover without wasting turns (rule_pause_before_shared_state_write):
   1. Do NOT retry, rephrase, or wrap this command — the block is deliberate,
