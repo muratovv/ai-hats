@@ -122,8 +122,45 @@ class Pipeline(Step):
         )
 
 
+def _check_overwrites(steps: tuple[Step, ...]) -> None:
+    """Refuse a producer whose output is overwritten before any step reads it.
+
+    Two steps producing one key is legal — the interleaved shape reads each
+    value before the next overwrites it. Only an *unread* overwrite is a defect,
+    and telling them apart needs step order, which this walk has (HATS-1249).
+
+    "Read" is tracked per producer STEP, not per key: consuming any one of a
+    step's outputs clears all of them, because per-key strictness would reject
+    the legitimate interleaved shape. See ADR-0001 §Update HATS-1249.
+    """
+    owner: dict[str, int] = {}
+    read: set[int] = set()
+    for i, s in enumerate(steps):
+        for k in s.io.requires | s.io.optional:
+            if k in owner:
+                read.add(owner[k])
+        lost: dict[int, list[str]] = {}
+        for k in sorted(s.io.produces):
+            prev = owner.get(k)
+            if prev is not None and prev not in read:
+                lost.setdefault(prev, []).append(k)
+        if lost:
+            detail = "; ".join(
+                f"{keys} produced by {steps[p].io.name!r}"
+                for p, keys in sorted(lost.items())
+            )
+            raise BuildError(
+                f"{s.io.name}: overwrites {detail} — nothing in between reads "
+                f"those keys, so the values would be lost silently. Put a "
+                f"consumer between the two producers, or drop one of them."
+            )
+        for k in s.io.produces:
+            owner[k] = i
+
+
 def build(*steps: Step, name: str = "pipeline") -> Pipeline:
     """Construct a Pipeline. Validation against actual inputs is in ``run``."""
+    _check_overwrites(tuple(steps))
     return Pipeline(steps=tuple(steps), name=name)
 
 
@@ -169,6 +206,8 @@ def _execute_pipeline(
 ) -> dict[str, Any]:
     """Unified execution kernel: pre-flight check, sequential step loop, and cancel handling."""
     del failure_policy  # reserved for future composite policy extensions
+    # Repeated here for a Pipeline constructed directly, bypassing ``build``.
+    _check_overwrites(steps)
     available = set(initial_state.keys())
     produced: set[str] = set()
     for s in steps:

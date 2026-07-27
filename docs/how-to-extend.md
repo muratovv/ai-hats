@@ -451,6 +451,41 @@ the runner from its `finally` block via the `finalize-hitl` /
 your top-level pipeline. `launch_provider` survives as a deprecated
 alias for `provider`, but new pipelines should use the canonical name.
 
+**Two steps producing the same key.** Listing `provider` twice (or `provider`
+plus its `launch_provider` alias) is allowed, but each launch's output must be
+consumed **before** the next launch overwrites it. Interleave the post-steps:
+
+```yaml
+steps:
+  - id: provider          # writes session_id, transcript_path, session_dir, exit_code
+  - id: extract_marker    # reads transcript_path — the first launch's
+    params: {start: BEGIN, end: END, out_key: first}
+  - id: provider          # now free to overwrite those keys
+  - id: extract_marker    # reads transcript_path — the second launch's
+    params: {start: BEGIN, end: END, out_key: second}
+```
+
+Put both `provider` steps first and the build is **refused**:
+
+```
+provider: overwrites ['exit_code', 'session_dir', 'session_id',
+'transcript_path'] produced by 'provider' — nothing in between reads those
+keys, so the values would be lost silently. Put a consumer between the two
+producers, or drop one of them.
+```
+
+That refusal is the point: with both launches up front, every post-step reads
+the second session and the first is simply gone — including its `exit_code`, so
+a failed first launch would be reported as success.
+
+Two limits worth knowing. The check is per producer **step**, not per key:
+reading any one of a launch's outputs (above, `extract_marker` reads only
+`transcript_path`) marks that whole launch consumed, so its `exit_code` can
+still be overwritten unread — read it explicitly if you care. And nothing
+numbers or preserves overwritten values: once a launch is consumed, its keys are
+replaced, so a post-step placed after both launches always sees the second.
+See ADR-0001 [6].
+
 Since HATS-865 pipelines never compose: the launcher composes ONCE via the
 integrator seam and seeds the result under the `composition` initial key —
 `compose_role`, `materialize_system_prompt`, and `provider` all read that
@@ -658,3 +693,4 @@ This pattern works for any removed trait / skill / rule: re-create under
 
 **[5]** — [`docs/wt/`](wt/README.md) — Worktree (wt) documentation hub, architecture overview, and L1–L4 concurrency lock model.
 
+**[6]** — [`docs/adr/0001-pipelines-as-typed-dataflow.md`](adr/0001-pipelines-as-typed-dataflow.md) — ADR-0001, Update HATS-1249: producer binding when several steps produce the same state key.

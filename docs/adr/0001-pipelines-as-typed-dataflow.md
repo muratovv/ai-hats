@@ -16,6 +16,7 @@ Proposed (HATS-261, 2026-05-08)
 Эти куски не композируются между flow, плохо тестируются изолированно (требуют моков всего рантайма), и любая попытка добавить новый сценарий («параллельно прогнать две модели и сравнить», «pre-block X для нового агента») требует правки flow-класса.
 
 Параллельная критика дизайна mutable-envelope варианта (отвергнутого):
+
 - Свободный mutable state не масштабируется на параллельные ветки и нестандартные потоки данных — каждое расширение требует правки центрального dataclass.
 - Mutable state ломает изоляцию тестирования: side-effects накапливаются, тестирование одного step требует моков всей цепочки.
 
@@ -117,17 +118,17 @@ def _run_steps(steps, state, *, parent_policy):
 
 Параллелизм/ветвления выражаются через композитные steps, которые сами реализуют Step (без правки core).
 
-- `Parallel(*children)` — children выполняются concurrently на одном snapshot state. Build-time check на disjoint produces.
+- `Parallel(*children)` — children выполняются concurrently на одном snapshot state. Build-time check на disjoint produces. (Для последовательного pipeline требование слабее — см. Update HATS-1249 ниже: повторный producer легален, если его выход прочитан до перезаписи. Для `Parallel` порядка нет, поэтому «прочитан до» не определено и disjoint-требование остаётся строгим.)
 - `Branch(predicate, then_, else_)` — выбор ветки по predicate(inputs). Build-time check: обе ветки имеют одинаковые produces (иначе downstream зависит от runtime value).
 
 ### 5. failure_policy per step
 
 Каждый step имеет атрибут `failure_policy: "halt" | "continue"`. Default зависит от типа step-а:
 
-| Тип step-а | Default | Reason |
-|---|---|---|
-| AttachRole / Execute / ExtractMarker / Attach*Prompt | halt | без них последующие шаги бессмысленны |
-| AttachTags / AttachTicket / AttachSessionInfo | continue | observability/metadata — потеря не критична для основного flow |
+| Тип step-а                                           | Default  | Reason                                                         |
+| ---------------------------------------------------- | -------- | -------------------------------------------------------------- |
+| AttachRole / Execute / ExtractMarker / Attach*Prompt | halt     | без них последующие шаги бессмысленны                          |
+| AttachTags / AttachTicket / AttachSessionInfo        | continue | observability/metadata — потеря не критична для основного flow |
 
 При raise step-а с `halt` — Pipeline останавливается, исключение propagate-ится. При `continue` — запись в `state["errors"][step.name]` и переход к следующему. `Execute` с `exit_code != 0` НЕ raise — это нормальное завершение, post-блоки решают через `Branch` или зависимостью на `optional={"session_id"}` если хотят пережить.
 
@@ -137,17 +138,17 @@ State — `dict[str, Any]`. **Нет** центральной таблицы к�
 
 Часто встречающиеся ключи built-in steps (cheat sheet, не authoritative):
 
-| Key | Type | Producer | Consumer |
-|---|---|---|---|
-| `project_dir` | `Path` | initial | большинство |
-| `role` / `role_text` | `str \| None` | AttachRole / AttachRoleText | Execute |
-| `provider` | `str \| None` | initial | Execute |
-| `prompt` | `str` | Attach*Prompt-семейство (append-семантика) | Execute |
-| `tags` / `ticket` / `model` / `isolation` | … | initial / AttachTags | Execute |
-| `session_id` / `exit_code` | `str` / `int` | Execute | post-steps |
-| `session_info` | `SessionInfo` | AttachSessionInfo | ExtractMarker |
-| `<artifact_key>` | любой | ExtractMarker / ExecuteToArtifact | Python-код после run() |
-| `errors` | `dict[str, Exception]` | framework (continue-policy) | финальный return / debug |
+| Key                                       | Type                   | Producer                                   | Consumer                 |
+| ----------------------------------------- | ---------------------- | ------------------------------------------ | ------------------------ |
+| `project_dir`                             | `Path`                 | initial                                    | большинство              |
+| `role` / `role_text`                      | `str \| None`          | AttachRole / AttachRoleText                | Execute                  |
+| `provider`                                | `str \| None`          | initial                                    | Execute                  |
+| `prompt`                                  | `str`                  | Attach*Prompt-семейство (append-семантика) | Execute                  |
+| `tags` / `ticket` / `model` / `isolation` | …                      | initial / AttachTags                       | Execute                  |
+| `session_id` / `exit_code`                | `str` / `int`          | Execute                                    | post-steps               |
+| `session_info`                            | `SessionInfo`          | AttachSessionInfo                          | ExtractMarker            |
+| `<artifact_key>`                          | любой                  | ExtractMarker / ExecuteToArtifact          | Python-код после run()   |
+| `errors`                                  | `dict[str, Exception]` | framework (continue-policy)                | финальный return / debug |
 
 ### 7. Lifecycle (не блок)
 
@@ -160,6 +161,7 @@ Final state после `run(...)` содержит artifact-ы как Python-о�
 ### 9. CLI surface — два уровня доступа
 
 **Уровень 1 (Phase 1-3)**: thin CLI wrappers вокруг pure-функций примитивов:
+
 - `ai-hats reflect handoff` — печатает HYP+PROP markdown в stdout
 - `ai-hats session info <sid> [--json]`
 - `ai-hats session evidence <sid>`
@@ -178,6 +180,7 @@ YAML-манифесты — **отвергнуты**: добавляют сло�
 ### A. Mutable envelope (отвергнут)
 
 Single `SessionEnvelope` dataclass со всеми полями, mutable, передаваемый между steps. Отвергнут:
+
 - Любая новая ветвление/параллельность требует правки core dataclass.
 - Mutable state ломает тестирование: для одного step нужны моки всех остальных.
 - Centralized schema конфликтует с пользовательскими расширениями (backward compat).
@@ -185,6 +188,7 @@ Single `SessionEnvelope` dataclass со всеми полями, mutable, пер
 ### B. Stdout-only pre-blocks + bash pipes (отвергнут как primary path)
 
 Pre-blocks как stdout-команды, post-blocks как stdin-команды, всё композируется через bash. Отвергнут как primary:
+
 - Не покрывает случаи, когда pre-block должен пробросить metadata (тэги, выбор модели), а не только content.
 - Pipeline-as-Step (recursive composition) сложно выразить через shell-pipe.
 - Тесты на shell-pipe требуют CLI-моков; на Python-функции — pure dict in/out.
@@ -254,6 +258,26 @@ Acceptance: все 5 LLM-команд внутренне работают чер
 Полные Pipeline-литералы для всех LLM-команд приведены в плане (`<ai_hats_dir>/tracker/backlog/tasks/HATS-261/plan.md`, секции 3.1-3.6). Включают: bare `ai-hats`, `ai-hats execute`, `ai-hats agent`, `ai-hats reflect all`, `ai-hats reflect session` (foreground + `--background`), и иллюстрацию parallel models comparison.
 
 Per-flag CLI mapping (Command → Pipeline reference) — там же.
+
+## Update — HATS-1249 (2026-07-27) отказ от потерянной перезаписи
+
+§3 валидировал только «требуемый ключ кем-то производится». Дубль **producer**-а не проверялся: BUILD делал `produced |= s.io.produces` (union), RUN — `state.update(delta)` (перезапись). Два `provider`-шага объявляют одни и те же `session_id` / `session_dir` / `transcript_path` / `exit_code`, так что второй launch затирал первый — молча, без ошибки и предупреждения.
+
+Ключевое наблюдение: **две формы ведут себя по-разному**, и дефектна только одна.
+
+- `launch → consumer → launch → consumer` (чередование) — **корректен**: каждый post-шаг читает свою сессию до перезаписи. Last-writer-wins здесь — правильная семантика.
+- `launch → launch → consumer` (fan-out) — **теряет** первую сессию: её значения никто не прочитал, а второй launch их затёр.
+
+Поэтому запрет ставится не на «дубль producer-а», а на **потерянную перезапись**: producer, чей выход перезаписан раньше, чем его кто-либо прочитал. Отличить одно от другого можно только зная порядок шагов — и он есть: пре-флайт `_execute_pipeline` уже обходит шаги по порядку. Проверка `_check_overwrites` вызывается из `build()` (раньше всего, ловит и dry-run инспектор `python -m ai_hats.pipeline.loader`) и из пре-флайта (для `Pipeline`, собранного в обход `build`). Судит по ключу, а не по шагу: producer может отдавать несколько ключей, часть из них прочитана, а непрочитанный всё равно теряется.
+
+Ноль ложных срабатываний на всех 12 shipped-pipeline и обоих `presets`.
+
+Рассмотрено и отвергнуто:
+
+- **numbering** (`k#1`, `k#2` + голой `k` как алиас на последнего писателя, потребитель привязан к ближайшему предшествующему producer-у) — было реализовано и снято. Оно делало fan-out «выживающим, но по-прежнему неверным»: все потребители всё равно привязывались к последнему producer-у, `exit_code` в финальном состоянии оставался от последнего запуска (упавший первый рапортовался как успех), а прочитать `k#1` из YAML было нечем. Ценой были 127 строк в ядре, два новых латентных дефекта (коллизия ключей при вложенном `Pipeline`; перехват слота кастомным шагом, объявившим ключ с `#` в имени — `StepIO` не валидирует имена) и незадокументированная смена поведения. Документированное лекарство от fan-out — «переставь шаги» — это ровно то, к чему принуждает отказ, но за 25 строк вместо 127;
+- **list-valued session keys** и **namespacing по step id** — меняют опубликованный контракт шага и `keys.py`-конвенцию «литерал ЕСТЬ объявление контракта».
+
+Реализация — `_check_overwrites` в `src/ai_hats/pipeline/pipeline.py`.
 
 ## Out of scope
 
