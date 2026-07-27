@@ -72,6 +72,23 @@ def test_remedy_message(tmp_path: Path) -> None:
     assert ENV_IGNORE_FOREIGN_CHECKOUT in msg
 
 
+def test_remedy_message_names_the_path_step(tmp_path: Path) -> None:
+    """Provisioning the venv is only half the fix (HATS-1245).
+
+    Hooks resolve 'pytest' through PATH, so a message that stops after the
+    install describes a fix that does not work when followed. Pinned by the
+    exact string an operator copy-pastes — an absolute venv bin dir, so the
+    line is runnable from any cwd, not just the worktree root.
+    """
+    repo_root = tmp_path / "worktree"
+    foreign = tmp_path / "main_repo"
+
+    msg = remedy_message(repo_root, foreign)
+    bin_dir = f"{repo_root}/.venv/bin"
+    assert f'export PATH="{bin_dir}:$PATH"' in msg
+    assert f'PATH="{bin_dir}:$PATH" git commit' in msg
+
+
 def test_check_checkout_integrity_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(ENV_IGNORE_FOREIGN_CHECKOUT, raising=False)
     repo_root = tmp_path / "worktree"

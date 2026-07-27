@@ -61,9 +61,16 @@ def remedy_message(repo_root: Path, foreign: Path) -> str:
         f"  but 'ai_hats' imports from: {foreign}\n\n"
         f"{sys.executable} has an editable install pointing at another "
         f"checkout, so the source under test cannot win.\n\n"
-        f"Fix — create and provision a dedicated worktree venv using uv:\n"
+        f"Fix — step 1, create and provision a dedicated worktree venv using uv:\n"
         f"  uv venv .venv\n"
         f"  VIRTUAL_ENV=.venv uv pip install -e '.[dev]'{pkg_args}\n\n"
+        f"Fix — step 2, put that venv on PATH. Step 1 alone is NOT enough: git\n"
+        f"hooks resolve 'pytest' through PATH, so the pre-commit smoke gate keeps\n"
+        f"spawning the interpreter named above and testing the wrong checkout\n"
+        f"(HATS-1245). Either for this shell:\n"
+        f'  export PATH="{repo_root}/.venv/bin:$PATH"\n'
+        f"or for a single command:\n"
+        f'  PATH="{repo_root}/.venv/bin:$PATH" git commit ...\n\n'
         f"To force execution against the foreign checkout (not recommended):\n"
         f"  export {ENV_IGNORE_FOREIGN_CHECKOUT}=1"
     )
