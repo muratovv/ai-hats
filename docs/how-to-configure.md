@@ -56,7 +56,6 @@ library_paths:                 # extra component sources (last wins)
 | `harness`          | Install-source channel `ai-hats self update` pulls from (HATS-764): `channel: local` (editable working tree, `path:`), `edge` (own repo HEAD, `repo:`), or `stable` (latest PyPI release — the default; omitted from yaml when unset). Set via `ai-hats config set --channel {local\|edge\|stable} [--repo URL] [--path DIR]` — do **not** hand-edit. On a dev host whose ai-hats is an editable clone, `ai-hats self init` auto-seeds `channel: local` (HATS-938; override with `self init --channel …`). `AI_HATS_REPO_URL` overrides the edge repo. See [1]. |
 | `worktree`         | Base ≠ merge-target for the worktree FSM (fork/dogfood workflows, HATS-942). Optional; unset ⇒ today's `master`/`main` behavior. See [The `worktree` block](#1a-the-worktree-block--fork-workflows-base--merge-target) below.                                                                                                                                                                                                                                                                                                                                   |
 
-
 ---
 
 ## 1a. The `worktree` block — fork workflows (base ≠ merge target)
@@ -311,14 +310,17 @@ venv_path: .venv          # an existing project venv at the repo root
 Any edit to `ai-hats.yaml` is applied with one command:
 
 ```bash
-ai-hats self init          # rebuild CLAUDE.md / GEMINI.md and .claude/* from the config
+ai-hats self init          # re-validate the config and refresh the project scaffold
 ai-hats config status      # confirm provider, role, composition, feedback policy
 ```
+
+The role is not written to disk — it is composed per session and delivered from
+the session cache (see [9]).
 
 If you want to see what the bump changed:
 
 ```bash
-git diff CLAUDE.md ai-hats.yaml
+git diff ai-hats.yaml
 ```
 
 Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under `library_paths`. `ai-hats config status` is a health-check — green means the next session will get the composition you expect.
@@ -342,10 +344,10 @@ Rerun `self init` after: yaml edits, `ai-hats self update`, or any change under 
 
 `ai-hats` supports driving and observing interactive HITL sessions via file descriptors passed through environment variables. This allows an outer daemon or wrapper (e.g. a remote PTY relay) to spawn `ai-hats` with connected pipes or sockets:
 
-| Environment Variable | Description |
-| -------------------- | ----------- |
+| Environment Variable | Description                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `AI_HATS_PTY_IN_FD`  | File descriptor from which `ai-hats` reads incoming input (length-prefixed `T_RAW` keystrokes and `T_CTRL` resize frames). |
-| `AI_HATS_PTY_OUT_FD` | File descriptor to which `ai-hats` writes copies of session output (length-prefixed `T_RAW` frames). |
+| `AI_HATS_PTY_OUT_FD` | File descriptor to which `ai-hats` writes copies of session output (length-prefixed `T_RAW` frames).                       |
 
 If only one of `AI_HATS_PTY_IN_FD` or `AI_HATS_PTY_OUT_FD` is set, `ai-hats` uses that single file descriptor for both input and output (for example, a single socketpair descriptor). If neither is set, PTY redirection remains disabled.
 
@@ -368,3 +370,5 @@ If only one of `AI_HATS_PTY_IN_FD` or `AI_HATS_PTY_OUT_FD` is set, `ai-hats` use
 **[7]** — [`ai_hats_library/core/roles/initial-wizard/config.yaml`](../packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml) — wizard source. If §2 drifts from this file, this file is the ground truth.
 
 **[8]** — [`docs/how-to.md#10-recovery-scenarios`](how-to.md#10-recovery-scenarios) — symptom→command recovery table, including the `bootstrap.sh --repair` out-of-band hatch and the stray-shadow case.
+
+**[9]** — [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization) — what `self init` writes vs what each session composes, and where every surface receives it.
