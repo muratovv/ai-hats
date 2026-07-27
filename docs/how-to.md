@@ -4,9 +4,10 @@ A collection of common tasks you hit when wiring ai-hats into a project: extendi
 
 > Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
 
-> All changes to `ai-hats.yaml` are applied with `ai-hats self init` (rebuilds `CLAUDE.md` / `GEMINI.md` from the config). Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
+> Changes to `ai-hats.yaml` apply on the next session by themselves — the config is re-read and the role re-composed at every launch (see [8]). Run `ai-hats self init` to validate the config and refresh the project scaffold, not to make the change take effect. Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
 >
 > Any overlay edit can be done in two ways:
+>
 > 1. **CLI:** `ai-hats config customize <role> --add-skill <name> | --remove-skill <name> | --add-trait <name> | --injection-append "<text>"`. The command writes into `ai-hats.yaml` itself.
 > 2. **By hand:** edit `customizations:` in `ai-hats.yaml` (examples below).
 >
@@ -161,9 +162,8 @@ ai-hats config customize maintainer --add-trait hilt-workflow --global
 ai-hats config customize assistant  --add-trait hilt-workflow --global
 ```
 
-In each project that uses these roles, run `ai-hats self init` once to
-regenerate `CLAUDE.md` / `GEMINI.md`. After that, new sessions automatically
-compose `hilt-workflow` in.
+Nothing to run per project — roles are composed at session launch, so new
+sessions compose `hilt-workflow` in automatically.
 
 **Inspecting layers**:
 
@@ -279,7 +279,7 @@ ai-hats config status      # confirm everything was picked up
 If there are many changes and you just want the diff:
 
 ```bash
-git diff CLAUDE.md ai-hats.yaml
+git diff ai-hats.yaml
 ```
 
 ---
@@ -317,18 +317,18 @@ Moved to the narrative walkthrough — see [2] §6 for default vs override, owne
 
 **Start with the triage.** `ai-hats self update --check` sorts the install into DATA / MANAGED / RUNTIME layers and prints the exact remediation for each broken one — read-only, offline, exit 1 when a layer is broken and 0 when healthy or merely behind. It answers "is this recoverable by a command, or does it need a snapshot?" before you pick a row below; terms — [6].
 
-| Symptom | Command |
-|---|---|
-| Not sure which layer is broken | `ai-hats self update --check` |
-| `ai-hats: command not found` (fresh host) | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (or clone the public repo and run `bash scripts/install-launcher.sh`) |
-| `ai-hats: venv missing at ...` (no venv) | `ai-hats self update` |
-| `ai-hats: venv exists at ... but ai_hats is not importable` | `ai-hats self update` |
-| System Python upgrade (the Proxmox case) | `ai-hats self update` — the launcher auto-recreates the default venv |
-| Import error / corrupted site-packages | `rm -rf .agent/ai-hats/.venv && ai-hats self update` |
-| `refusing to run from a foreign (non-managed) virtualenv` (a stray shadow) | `~/.local/bin/ai-hats <command>` (host launcher by absolute path), then uninstall ai-hats from the offending venv |
-| In-band `self update` can't self-repair (deleted package / dangling interpreter / shadow) | `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh \| bash -s -- --repair` (out-of-band recovery — see below) |
-| Override venv broken | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+https://github.com/muratovv/ai-hats.git'` (user-managed) |
-| Full project wipe (data loss!) | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>` |
+| Symptom                                                                                   | Command                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Not sure which layer is broken                                                            | `ai-hats self update --check`                                                                                                                                        |
+| `ai-hats: command not found` (fresh host)                                                 | `curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh \| bash` (or clone the public repo and run `bash scripts/install-launcher.sh`) |
+| `ai-hats: venv missing at ...` (no venv)                                                  | `ai-hats self update`                                                                                                                                                |
+| `ai-hats: venv exists at ... but ai_hats is not importable`                               | `ai-hats self update`                                                                                                                                                |
+| System Python upgrade (the Proxmox case)                                                  | `ai-hats self update` — the launcher auto-recreates the default venv                                                                                                 |
+| Import error / corrupted site-packages                                                    | `rm -rf .agent/ai-hats/.venv && ai-hats self update`                                                                                                                 |
+| `refusing to run from a foreign (non-managed) virtualenv` (a stray shadow)                | `~/.local/bin/ai-hats <command>` (host launcher by absolute path), then uninstall ai-hats from the offending venv                                                    |
+| In-band `self update` can't self-repair (deleted package / dangling interpreter / shadow) | `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh \| bash -s -- --repair` (out-of-band recovery — see below)                           |
+| Override venv broken                                                                      | `uv venv --python 3.11 <override-path> && uv pip install --python <override-path>/bin/python 'ai-hats @ git+https://github.com/muratovv/ai-hats.git'` (user-managed) |
+| Full project wipe (data loss!)                                                            | `rm -rf .agent/ai-hats/ && ai-hats self update && ai-hats self init -r <role> -p <provider>`                                                                         |
 
 **Out-of-band recovery (`--repair`).** When the managed venv is broken badly enough that in-band `ai-hats self update` can't fix itself — it runs *from* the venv it must repair (the bootstrap paradox) — use `bootstrap.sh --repair`. It is paradox-immune: fetched fresh over `curl`, and it drives the launcher by **absolute path** (`"$LAUNCHER_DEST"`), so no stray shadow on `$PATH` can intercept it. `--repair` force-reinstalls the launcher, removes the framework-managed default venv (`.agent/ai-hats/.venv` + `versions/`, never a user-owned `AI_HATS_VENV` override), then rebuilds via `self update`. Idempotent; it also WARNs about any stray `ai-hats` it finds on `$PATH` (never deletes them). Architecture rationale — [7].
 
@@ -353,3 +353,5 @@ For deeper dives — first-time setup walkthrough [2], the reflect-session / ref
 **[6]** — [`docs/glossary.md`](glossary.md) — **Managed venv / managed-venv invariant**, **self-location guard**, **stray shadow**, **out-of-band recovery**, **Install layers (DATA / MANAGED / RUNTIME)**.
 
 **[7]** — [`docs/adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md`](adr/0010-bootstrap-paradox-self-location-and-forward-safe-config.md) — ADR for the bootstrap paradox, the layered fix, and the absolute-path-immunity insight.
+
+**[8]** — [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization) — what `self init` writes vs what each session composes, and where every surface receives it.

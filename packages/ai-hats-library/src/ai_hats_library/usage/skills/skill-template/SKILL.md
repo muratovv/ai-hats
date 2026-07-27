@@ -78,6 +78,27 @@ A skill's `SKILL.md` frontmatter can also declare **hooks** under a top-level
 `PreToolUse` / `PostToolUse`), and `worktree` (`wt_in` / `wt_out` worktree
 lifecycle hooks). See `docs/how-to-extend.md`.
 
+## When your edit takes effect
+
+**No command.** Roles are composed fresh at every session launch, so editing a
+`SKILL.md` body is live for the next session. The same holds for `ai-hats.yaml`
+— it is re-read at launch, so adding your skill to a trait or role also lands on
+its own. `ai-hats self init` validates the config and refreshes the project
+scaffold; it is not how composition changes take effect.
+
+Skills materialize into the per-session cache under
+`<ai_hats_dir>/.cache/sessions/<sid>/`; the exact subpath is provider-specific
+(claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
+
+**Never `cp` skill files by hand** into `.claude/skills/` or
+`<ai_hats_dir>/library/skills/`. Neither is a mirror of the installed library:
+the first was retired in HATS-294, the second is where components **you** author
+locally live. A hand-made copy drifts from source-of-truth and earns a WARN
+about an orphan `.ai-hats-managed` marker on every run.
+
+Confirm what a launch would actually compose with `ai-hats config status` or
+`ai-hats --dry-run`.
+
 ## Validation scenario (RED → GREEN → REFACTOR)
 
 A skill is not done until one **named baseline scenario** shows it changes

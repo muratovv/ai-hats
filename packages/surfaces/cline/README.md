@@ -9,14 +9,14 @@ Install it alongside `ai-hats` and `cline` appears next to the built-ins:
 
 ```console
 $ ai-hats list providers
-  claude  →  CLAUDE.md
-  gemini  →  GEMINI.md
-  cline   →  CLINE.md
+  agy     →  GEMINI.md
+  claude  →  (session cache)
+  cline   →  (session cache)
 ```
 
-(The `→ CLINE.md` column is nominal — cline takes the role inline via `-s`, so
-no `CLINE.md` file is ever written; it is just this provider's system-prompt
-path label.)
+(The right-hand column is where the role reaches the surface from. Only agy has
+a project-root file; claude and cline receive the composition from the
+per-session cache and write nothing to the root.)
 
 Then compose any role onto cline:
 
