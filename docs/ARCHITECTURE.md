@@ -70,15 +70,40 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
 
-- **Disk materialization** — the primary path: `ai-hats self init` writes `CLAUDE.md` / `GEMINI.md` at the project root, and the provider CLI picks them up automatically at session start.
-- **In-prompt materialization** — for sub-agents and one-shot roles: the same composition is written to a temporary file and passed via `--system-prompt-file`, without landing in the repo.
+<a id="materialization"></a>
 
-### Providers
+### Materialization — where the composition actually goes
 
-- **Gemini** — `GEMINI.md` + session-scoped `--include-directories` memory dir + `.gemini/skills/` mirror (HATS-993)
-- **Claude** — `CLAUDE.md`
+Two different moments, and conflating them is the usual source of confusion:
 
-Switching providers: `ai-hats config set -p claude`. The prompt is rebuilt automatically at session start if the provider changed.
+**1. Config → artifact, at `ai-hats self init` / `ai-hats config set`.** Validates
+and delta-writes `ai-hats.yaml`, runs migrations, creates the `<ai_hats_dir>`
+scaffold, manages `.gitignore`, and installs git hooks. It writes a project-root
+prompt file for **agy only** — the AI-HATS-managed block in `./GEMINI.md`, which
+the Antigravity CLI reads natively. Claude and cline write nothing to the project
+root (ADR-0018 / HATS-1170).
+
+**2. Session launch.** The role is composed **in memory, per session** — framework
+rules and skills are never materialized into the canonical tree — and the
+artifacts are written to `<ai_hats_dir>/.cache/sessions/<sid>/`, then handed to
+the surface by flag:
+
+| Surface    | Context                                       | Skills                          | Hooks                                         |
+| ---------- | --------------------------------------------- | ------------------------------- | --------------------------------------------- |
+| **claude** | `--system-prompt-file <cache>/prompt.md`      | `--plugin-dir <cache>/plugin`   | `--settings <cache>/settings.json` (additive) |
+| **agy**    | `--add-dir <cache>/rules` (`rules/GEMINI.md`) | `<cache>/rules/.agents/skills/` | `<cache>/hooks.json` + global dispatcher      |
+| **cline**  | `--config <cache>`                            | `<cache>/skills`                | `<cache>`                                     |
+
+**What this means in practice.** Editing a `SKILL.md` body requires **no command
+at all** — the next session composes it fresh. Only changes to `ai-hats.yaml`
+need `ai-hats self init` to be re-applied. There is no permanent skill mirror at
+`.claude/skills/` (retired in HATS-294) and none at
+`<ai_hats_dir>/library/skills/` — that directory is the landing spot for
+components **you** author locally, not an export of the installed library.
+
+Design record: [ADR-0018](adr/0018-unified-artifact-builder.md).
+
+Switching providers: `ai-hats config set -p claude`.
 
 ## Session lifecycle
 
@@ -178,7 +203,7 @@ Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — 
 <ai_hats_dir>/sessions/runs/
   session_<ID>/                        # trace.log, audit.md, metrics.json, transcript.txt, meta_prompt.txt
 ai-hats.yaml                           # Project config + role + feedback
-GEMINI.md / CLAUDE.md                  # System prompt
+GEMINI.md                              # agy only — managed block; see Materialization
 ```
 
 ## Library layout
@@ -194,7 +219,7 @@ ai_hats_library/
     skills/         backlog-manager, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
     pipelines/      execute, human, reflect-{session,role,all,issue}
     initial_injections/   initial-wizard, reflect-all, reflect-role
-    templates/      claude/CLAUDE.md.template (provider scaffold)
+    templates/      githooks/ (dispatcher + managed hook scripts)
   usage/                             # curated content catalog — opt-in
     roles/          assistant, dev-python, dev-web, maintainer, architect, sre, go-dev, go-dev-full
     traits/         trait-se-mindset, trait-researcher-mindset, skill-engineer, dev::python, dev::shell, dev::go-*, env::proxmox
