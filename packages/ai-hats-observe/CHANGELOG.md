@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `SessionManager.create_session` mints ids unique across processes. The id was
+  a UTC second plus a per-process counter, so two runs starting in the same
+  second produced the same id and silently shared one session dir — interleaved
+  `trace.log`, last-writer-wins `metrics.json` / `audit.md`. The id now carries
+  the pid, and the counter is process-wide so several managers in one process
+  cannot collide either. Shape: `<YYYYMMDD-HHMMSS>-<counter>-<pid>`; consumers
+  parsing the timestamp prefix are unaffected. (HATS-1248)
+- `session list --json` emits `started_at`. It was gated on a
+  `YYYYMMDDTHHMMSSZ_` id shape this package has never minted, so the field was
+  absent for every real session. (HATS-1248)
+
+### Added
+
+- `ai_hats_observe.artifacts.session_start_dt` — the one parse of a session id's
+  timestamp prefix, so the uniqueness suffix stays free to change. (HATS-1248)
+
 ## [0.3.0]
 
 `usage/v1` behind the transcript-parser adapter (ADR-0014 Phase 1, T15/0.3.0).
