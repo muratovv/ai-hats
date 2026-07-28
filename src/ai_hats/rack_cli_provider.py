@@ -84,11 +84,28 @@ def _render_wt_error(exc: Exception, as_json: bool, task_id: str) -> bool:
     return True
 
 
+def _main_repo_cd() -> list[str]:
+    """The recipe's ``cd`` line — empty when no project root resolves.
+
+    Merge-time recipes run git in the MAIN repo, while the transition that
+    raised is typically invoked from inside the task worktree; the resolver
+    hops linked-worktree → main checkout."""
+    from ai_hats_rack.resolver import find_project_root
+
+    root = find_project_root(Path.cwd())
+    return [f"  cd {root}"] if root is not None else []
+
+
 def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
-    """(error-code, headline, copy-paste recipe) per wt exception kind. Recipes
-    point at rack verbs (the post-cutover surface); ``wt merge`` stays on the
-    ``ai-hats`` binary (the wt engine is not part of the rack)."""
-    from ai_hats_wt import WorktreeMergeConsentError, WorktreeStateLostError
+    """(error-code, headline, lines printed under it) per wt exception kind.
+    Recipes point at rack verbs (the post-cutover surface); ``wt merge`` stays
+    on the ``ai-hats`` binary (the wt engine is not part of the rack)."""
+    from ai_hats_wt import (
+        WorktreeBaseBranchMismatchError,
+        WorktreeDriftError,
+        WorktreeMergeConsentError,
+        WorktreeStateLostError,
+    )
 
     tid = task_id or getattr(exc, "task_id", "") or "<id>"
     branch = getattr(exc, "branch_name", "") or f"task/{tid.lower()}"
@@ -115,8 +132,35 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
                 f"  rack transition {tid} --state done",
             ],
         )
-    # Any other wt-engine refusal (base-branch, mismatch, mid-merge, incomplete,
-    # drift): typed and loud, but no bespoke recipe — the message carries facts.
+    if isinstance(exc, WorktreeDriftError):
+        return (
+            "worktree_drift",
+            f"Worktree drifted vs original branch — cannot merge for {tid}.",
+            [
+                str(exc),
+                "",
+                "Re-verify your changes against the new base, then run:",
+                *_main_repo_cd(),
+                f"  ai-hats wt merge --accept-drift {branch}",
+                f"  rack transition {tid} --state done",
+                "Note: --accept-drift belongs to `wt merge`, not `rack transition`.",
+            ],
+        )
+    if isinstance(exc, WorktreeBaseBranchMismatchError):
+        return (
+            "worktree_base_branch_mismatch",
+            f"Refused (base branch mismatch) — cannot merge for {tid}.",
+            [
+                str(exc),
+                "",
+                "Switch the main repo to the merge target, then retry:",
+                *_main_repo_cd(),
+                f"  git checkout {exc.expected}",
+                f"  rack transition {tid} --state done",
+            ],
+        )
+    # Any other wt-engine refusal (base-branch, mid-merge, incomplete): typed and
+    # loud, but no bespoke recipe — the message carries facts (HATS-1263 Q2).
     return ("worktree_error", f"Refused (worktree) for {tid}: {exc}", [])
 
 

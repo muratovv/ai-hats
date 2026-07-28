@@ -5,6 +5,7 @@ and the post-create STATE.md refresh."""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from ai_hats_wt import WorktreeMergeConsentError, WorktreeStateLostError
 
@@ -38,12 +39,75 @@ def test_state_lost_renders_recovery_recipe(capsys):
     assert "git merge --no-ff task/hats-1" in err
 
 
+def test_drift_renders_accept_drift_recipe(capsys, tmp_path, monkeypatch):
+    from ai_hats_wt import WorktreeDriftError
+
+    (tmp_path / ".agent").mkdir()
+    monkeypatch.chdir(tmp_path)
+    exc = WorktreeDriftError("base 'master' moved:\nlocal: 1 commit\naffected paths:\n  other.txt")
+    handled = CliKernelProvider().handle_error(exc, as_json=False, task_id="HATS-1")
+    assert handled is True
+    err = capsys.readouterr().err
+    assert "drifted" in err
+    assert "other.txt" in err
+    assert f"cd {Path.cwd()}" in err
+    assert "ai-hats wt merge --accept-drift task/hats-1" in err
+    assert "rack transition HATS-1 --state done" in err
+    assert "belongs to `wt merge`, not `rack transition`" in err
+
+
+def test_base_branch_mismatch_renders_checkout_recipe(capsys, tmp_path, monkeypatch):
+    from ai_hats_wt import WorktreeBaseBranchMismatchError
+
+    (tmp_path / ".agent").mkdir()
+    monkeypatch.chdir(tmp_path)
+    exc = WorktreeBaseBranchMismatchError("wandered-feature", "master")
+    handled = CliKernelProvider().handle_error(exc, as_json=False, task_id="HATS-1")
+    assert handled is True
+    err = capsys.readouterr().err
+    assert "base branch mismatch" in err
+    assert "wandered-feature" in err
+    assert f"cd {Path.cwd()}" in err
+    assert "git checkout master" in err
+    assert "rack transition HATS-1 --state done" in err
+
+
+def test_recipe_omits_cd_when_no_project_root(capsys, tmp_path, monkeypatch):
+    from ai_hats_wt import WorktreeBaseBranchMismatchError
+
+    monkeypatch.chdir(tmp_path)  # no `.agent` / ai-hats.yaml anywhere above
+    handled = CliKernelProvider().handle_error(
+        WorktreeBaseBranchMismatchError("wandered-feature", "master"),
+        as_json=False,
+        task_id="HATS-1",
+    )
+    assert handled is True
+    err = capsys.readouterr().err
+    assert "cd " not in err
+    assert "git checkout master" in err
+
+
 def test_merge_consent_json_carries_code(capsys):
     exc = WorktreeMergeConsentError("task/hats-1", "master")
     handled = CliKernelProvider().handle_error(exc, as_json=True, task_id="HATS-1")
     assert handled is True
     payload = json.loads(capsys.readouterr().out)
     assert payload["error"]["code"] == "worktree_merge_consent"
+
+
+def test_new_recipe_errors_carry_distinct_json_codes(capsys):
+    from ai_hats_wt import WorktreeBaseBranchMismatchError, WorktreeDriftError
+
+    provider = CliKernelProvider()
+    provider.handle_error(WorktreeDriftError("moved"), as_json=True, task_id="HATS-1")
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "worktree_drift"
+
+    provider.handle_error(
+        WorktreeBaseBranchMismatchError("wandered", "master"), as_json=True, task_id="HATS-1"
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"]["code"] == "worktree_base_branch_mismatch"
+    assert "wandered" in payload["error"]["message"]
 
 
 def test_unknown_wt_error_is_typed_not_traceback(capsys):
