@@ -1,9 +1,9 @@
-"""End-to-end coverage for HATS-481 L1' + L3' — parallel `ai-hats task
+"""End-to-end coverage for HATS-481 L1' + L3' — parallel `rack
 transition <ID> done` on tasks sharing a base ref must both land cleanly.
 
 Per ``dev_rule_e2e_gate`` (and the precedent of
 ``tests/e2e/test_wt_merge_drift.py`` / ``test_wt_merge_conflict_preserves_review.py``):
-user-visible behavior of ``ai-hats task transition <ID> done`` requires
+user-visible behavior of ``rack transition <ID> done`` requires
 a real-binary e2e test.
 
 The bug we are preventing: two ``transition done`` invocations on
@@ -82,11 +82,11 @@ def _task_state(project: Path, task_id: str) -> str:
 
 
 def _walk_task_to_review(
-    ai_hats, project: Path, task_id: str,
+    rack, project: Path, task_id: str,
     payload_file: str, payload_content: str,
 ) -> None:
     """plan → execute → write commit in worktree → document → review."""
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     # Plan content goes straight into the canonical task tree — no
     # .claude/plans round-trip (HATS-637).
@@ -101,7 +101,7 @@ def _walk_task_to_review(
         "## Steps\n- [ ] write\n\n"
         "## Verification Protocol\nmerge\n"
     )
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute")
 
     # Locate the worktree.
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -130,21 +130,30 @@ def _walk_task_to_review(
         cwd=str(wt_path), check=True,
         capture_output=True, text=True,
     )
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
 
 @pytest.mark.integration
 def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     """Two `transition done` on tasks sharing a base ref both succeed
     cleanly under L1' + L3' — no silent data loss, no flake."""
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, base_env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
+    # plan → execute is consent-gated; the gate is not this test's subject.
+    env = {**base_env, "AI_HATS_PLAN_ACK": "1"}
     project = tmp_path / "project"
     project.mkdir()
 
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
+            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(rack_bin), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
@@ -164,17 +173,17 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
 
     # ---- two tasks, both rooted in `main` ----
     task_a, task_b = "TST-001", "TST-002"
-    ai_hats("task", "create", "Task A", "-d", "First", "--id", task_a)
-    ai_hats("task", "create", "Task B", "-d", "Second", "--id", task_b)
-    _walk_task_to_review(ai_hats, project, task_a, "file-a.txt", "alpha\n")
-    _walk_task_to_review(ai_hats, project, task_b, "file-b.txt", "beta\n")
+    rack("create", "Task A", "--description", "First", "--id", task_a)
+    rack("create", "Task B", "--description", "Second", "--id", task_b)
+    _walk_task_to_review(rack, project, task_a, "file-a.txt", "alpha\n")
+    _walk_task_to_review(rack, project, task_b, "file-b.txt", "beta\n")
 
     # Capture HEAD before the race for the merge-count assertion.
     head_before = _git(project, "rev-parse", "HEAD").stdout.strip()
 
     # ---- the race ----
-    cmd_a = [str(launcher_dest), "task", "transition", task_a, "done"]
-    cmd_b = [str(launcher_dest), "task", "transition", task_b, "done"]
+    cmd_a = [str(rack_bin), "transition", task_a, "done"]
+    cmd_b = [str(rack_bin), "transition", task_b, "done"]
     p1 = subprocess.Popen(
         cmd_a, cwd=str(project), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,

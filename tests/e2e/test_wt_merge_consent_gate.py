@@ -146,17 +146,24 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     Supervisor merges with ack; the agent's retried ack-free ``done``
     then passes via the already-merged short-circuit (HATS-596).
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
 
     ack_env = dict(env)
     deny_env = dict(env)
     deny_env.pop("AI_HATS_MERGE_ACK", None)
+    deny_env["AI_HATS_PLAN_ACK"] = "1"  # plan consent is a different gate
 
     def ai_hats(*args, expect_exit=0, timeout=180, run_env=deny_env):
         return _run(
             [str(launcher_dest), *args],
+            cwd=project, env=run_env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, run_env=deny_env):
+        return _run(
+            [str(venv / "bin" / "rack"), *args],
             cwd=project, env=run_env, timeout=timeout, expect_exit=expect_exit,
         )
 
@@ -169,8 +176,8 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
     ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
 
-    new_res = ai_hats(
-        "task", "create", "consent gate test",
+    new_res = rack(
+        "create", "consent gate test",
         "--description", "exercise the HATS-1019 supervised close",
         "--role", "assistant", "--reviewer", "user",
     )
@@ -183,7 +190,7 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
         / "tasks" / task_id / "plan.md"
@@ -194,7 +201,7 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
         "## Steps\n- [ ] do thing\n\n"
         "## Verification Protocol\npytest\n"
     )
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute")
 
     listing = _git(project, "worktree", "list", "--porcelain").stdout
     wt_path: Path | None = None
@@ -221,11 +228,11 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
         "-c", "commit.gpgsign=false",
         "commit", "-m", "wt-work",
     )
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- 3. agent's `done` without ack: directive refusal, review intact ----
-    res = ai_hats("task", "transition", task_id, "done", expect_exit=1)
+    res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
     assert "AI_HATS_MERGE_ACK" in combined, (
         f"consent env var not named in refusal:\n{combined}"
@@ -235,12 +242,12 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     )
     branches = _git(project, "branch", "--list", task_branch).stdout
     assert task_branch in branches, "refusal must preserve the task branch"
-    show = ai_hats("task", "show", task_id).stdout
-    assert "review" in show, f"card must stay in review after refusal:\n{show}"
+    show = rack("context", task_id).stdout
+    assert "state: review" in show, f"card must stay in review after refusal:\n{show}"
 
     # ---- 4. supervisor merges with ack; agent's ack-free retry closes ----
     ai_hats("wt", "merge", task_branch, run_env=ack_env)
-    ai_hats("task", "transition", task_id, "done", run_env=deny_env)
+    rack("transition", task_id, "done", run_env=deny_env)
 
     log = _git(project, "log", "--pretty=%s", "-n", "10").stdout
     assert "wt-work" in log, f"worktree commit not in base history:\n{log}"

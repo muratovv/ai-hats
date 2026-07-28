@@ -23,6 +23,12 @@ assertions below fail.
 Modelled on ``tests/e2e/test_wt_merge_drift.py``.
 """
 
+# HATS-1263: still on the legacy CLI. Its subject IS the drift recovery recipe
+# (`ai-hats wt merge --accept-drift`, the follow-up transition, and the "belongs
+# to `wt merge`" note). rack collapses every wt refusal except merge-consent and
+# state-lost into the generic `Refused (worktree)` shape with no recipe
+# (rack_cli_provider.py:118-120). Re-point once HATS-1274 lands.
+
 from __future__ import annotations
 
 import subprocess

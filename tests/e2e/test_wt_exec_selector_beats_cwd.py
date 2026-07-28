@@ -30,7 +30,7 @@ _HEAD = ("git", "rev-parse", "--abbrev-ref", "HEAD")
 def _two(main, repo_root):
     """(env, branch_a, path_a, branch_b, path_b) for two managed worktrees."""
     env = child_env(repo_root)
-    branch_a, wt_a = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch_a, wt_a = two_worktrees(main.path, env)
     branches = worktree_branches(main.path)
     branch_b = sorted(branches)[1]
     return env, branch_a, wt_a, branch_b, branches[branch_b]
@@ -85,7 +85,7 @@ def test_selector_beats_the_sole_active_worktree(tmp_project, repo_root):
     main = tmp_project
     env = child_env(repo_root)
     init_repo(main.path)
-    spawn_worktree(main.ai_hats_binary, main.path, "HATS-1", env)
+    spawn_worktree(main.path, "HATS-1", env)
     branch = next(iter(worktree_branches(main.path)))
 
     res = ai_hats(

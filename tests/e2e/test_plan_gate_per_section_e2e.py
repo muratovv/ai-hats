@@ -1,24 +1,15 @@
 """HATS-635 — per-section plan gate at the real CLI boundary.
 
-`ai-hats task transition <ID> execute` must BLOCK when a required plan
-section is empty and NAME the offending section(s). This is the gated
-test for `dev_rule_e2e_gate` (HATS-635 touches `src/ai_hats/state.py`
-+ `src/ai_hats/cli/task.py`).
+`rack transition <ID> execute` must BLOCK when a required plan section is empty
+and NAME the offending section(s) (re-pointed off the legacy CLI, HATS-1263).
 
-Fail-under-revert: under the pre-HATS-635 byte-equality `_is_empty_scaffold`,
-a plan with ANY content (here: Requirements filled, the rest empty) is "not
-the verbatim scaffold" → the gate PASSES (exit 0) → no
-`Empty required section(s)` message. The assertions below then fail. The
-block path needs no git: the gate raises BEFORE `_setup_worktree`.
+Fail-under-revert: under the pre-HATS-635 byte-equality `_is_empty_scaffold`, a
+plan with ANY content (here: Requirements filled, the rest empty) is "not the
+verbatim scaffold" → the gate PASSES → no `Empty required section(s)` message.
+The block path needs no git: the gate raises before worktree setup.
 
-The positive path (all sections filled → gate passes → worktree setup runs)
-is exercised by the sibling e2e tests that now seed a full 4-section plan:
-`test_task_transition_branch_exists.py` and `test_wt_create_base_guard_e2e.py`.
-
-Harness mirrors `test_task_transition_branch_exists.py`: `python -m ai_hats`
-with `PYTHONPATH=<checkout>/src`, so the test exercises the CURRENT checkout
-(worktree-portable — the dev-venv editable `ai-hats` binary points at the main
-checkout's src, NOT a linked worktree's, so it would mask worktree changes).
+`python -m ai_hats_rack` with an explicit PYTHONPATH so the test exercises the
+CURRENT checkout — an editable install resolves the main checkout, not a worktree.
 """
 
 from __future__ import annotations
@@ -42,17 +33,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-def _run_hats(
+def _run_rack(
     project_dir: Path, *args: str, timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``python -m ai_hats <args>`` against the current checkout."""
+    """Run ``python -m ai_hats_rack <args>`` against the current checkout."""
     env = os.environ.copy()
     from _helpers.env import checkout_pythonpath
 
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing_pp)
+    # Consent-gated on rack; this test is about the section gate behind it.
+    env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(
-        [sys.executable, "-m", "ai_hats", *args],
+        [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
         capture_output=True, text=True, env=env, timeout=timeout,
     )
@@ -79,9 +72,9 @@ _PARTIAL_PLAN = (
 
 
 def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> None:
-    r = _run_hats(project, "task", "create", "Probe", "--id", "HATS-001")
+    r = _run_rack(project, "create", "Probe", "--id", "HATS-001")
     assert r.returncode == 0, f"create failed: {r.stderr}"
-    r = _run_hats(project, "task", "transition", "HATS-001", "plan")
+    r = _run_rack(project, "transition", "HATS-001", "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
     plan_path = (
@@ -91,10 +84,12 @@ def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> No
     assert plan_path.exists(), f"expected scaffold at {plan_path}"
     plan_path.write_text(_PARTIAL_PLAN)
 
-    r = _run_hats(project, "task", "transition", "HATS-001", "execute")
+    r = _run_rack(project, "transition", "HATS-001", "execute")
+    # rack renders a subscriber abort on stderr (cli_common.py:70-75).
+    out = r.stdout + r.stderr
     assert r.returncode != 0, (
         "gate must BLOCK execute on a partial plan; got exit 0\n"
-        f"stdout:\n{r.stdout}"
+        f"output:\n{out}"
     )
     # The block message must NAME each empty required section...
     for marker in (
@@ -103,10 +98,10 @@ def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> No
         "Steps",
         "Verification Protocol",
     ):
-        assert marker in r.stdout, (
-            f"missing marker {marker!r} in:\n{r.stdout}"
+        assert marker in out, (
+            f"missing marker {marker!r} in:\n{out}"
         )
     # ...and must NOT list the one section that IS filled.
-    assert "Requirements," not in r.stdout, (
-        f"filled section must not be listed as empty:\n{r.stdout}"
+    assert "Requirements," not in out, (
+        f"filled section must not be listed as empty:\n{out}"
     )

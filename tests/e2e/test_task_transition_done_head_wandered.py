@@ -18,6 +18,10 @@ with a Python traceback in the output instead.
 Modelled on ``tests/e2e/test_task_transition_drift_message.py``.
 """
 
+# HATS-1263: still on the legacy CLI. Asserts the HEAD-wandered recovery recipe
+# (`git checkout <base>` + the follow-up transition), which rack does not render
+# (rack_cli_provider.py:118-120). Re-point once HATS-1274 lands.
+
 from __future__ import annotations
 
 import subprocess

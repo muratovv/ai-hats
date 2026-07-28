@@ -34,7 +34,7 @@ def _seed(wt: Path) -> None:
 def test_subproject_gets_its_own_src(tmp_project, repo_root):
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     _seed(wt)
 
     res = ai_hats(
@@ -57,7 +57,7 @@ def test_subproject_does_not_inherit_the_outer_workspace(tmp_project, repo_root)
     """The no-Franken-mix half: re-rooting REPLACES the outer roots."""
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     _seed(wt)
 
     res = ai_hats(
@@ -77,7 +77,7 @@ def test_plain_subdirectory_keeps_the_worktree_root_env(tmp_project, repo_root):
     workspace must stay on PYTHONPATH (no silent loss for `-C tests`)."""
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     _seed(wt)
 
     res = ai_hats(

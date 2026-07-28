@@ -20,7 +20,7 @@ _PROBE = ("git", "rev-parse", "--show-prefix")
 def test_wt_exec_cd_reaches_a_subdir_from_the_main_checkout(tmp_project, repo_root, flag):
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     (wt / "sub").mkdir()
 
     res = ai_hats(
@@ -41,7 +41,7 @@ def test_wt_exec_cd_overrides_cwd(tmp_project, repo_root):
     """Precedence: an explicit -C wins over the caller's cwd."""
     main = tmp_project
     env = child_env(repo_root)
-    _, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    _, wt = two_worktrees(main.path, env)
     (wt / "sub").mkdir()
     other = wt / "other"
     other.mkdir()
@@ -58,7 +58,7 @@ def test_wt_exec_cd_nonexistent_target_fails_cleanly(tmp_project, repo_root):
     """A typo'd target is a refusal with a readable message, not a traceback."""
     main = tmp_project
     env = child_env(repo_root)
-    branch, _ = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, _ = two_worktrees(main.path, env)
 
     res = ai_hats(
         main.ai_hats_binary, "wt", "exec", branch, "-C", "nope", "--", *_PROBE,

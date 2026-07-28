@@ -1,25 +1,26 @@
-"""e2e: `ai-hats task` ops from inside a linked git worktree route to the
-main checkout's tracker (HATS-524).
+"""e2e: `rack` task ops from inside a linked git worktree route to the
+main checkout's tracker (HATS-524; re-pointed off `ai-hats task`, HATS-1263).
 
 Repro of the original bug: the tracker (`.agent/`) is gitignored and
 `ai-hats.yaml` is untracked, so a linked worktree's checkout carries
 neither. The worktree also lives OUTSIDE the main tree, so walking up
 from the worktree's cwd never reaches the main checkout. Before the fix
-`_project_dir` stopped at the worktree's own `.git` *file* and resolved
+resolution stopped at the worktree's own `.git` *file* and resolved
 the tracker to a non-existent `<worktree>/.agent/` → "Task <ID> not found".
 
 The fix hops from a `.git`-file (linked worktree) to the main worktree
-root via git's commondir, so task ops issued from the worktree cwd act
-on the one live tracker in the main checkout.
+root via git's commondir (`ai_hats_rack/resolver.py::_main_worktree_root`),
+so task ops issued from the worktree cwd act on the one live tracker.
 
-Fail-under-revert: with the old `_project_dir`, `task show` from the
-worktree exits non-zero.
+Fail-under-revert: without the hop, `rack context` from the worktree
+exits non-zero.
 """
 
 from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,9 +34,11 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _rack(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """The backlog CLI (HATS-1263). This tier ships no ``rack`` console script,
+    but the dev venv has the package, so ``python -m`` reaches it."""
     return subprocess.run(
-        [str(binary), *args],
+        [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(cwd),
         env={**os.environ},
         capture_output=True,
@@ -50,7 +53,6 @@ def _task_dir(root: Path, task_id: str) -> Path:
 
 def test_task_ops_from_worktree_route_to_main_tracker(tmp_project, tmp_path):
     main = tmp_project
-    binary = main.ai_hats_binary
 
     # The tracker is gitignored in production — reproduce that so the
     # worktree checkout does NOT carry a snapshot of .agent/.
@@ -62,8 +64,7 @@ def test_task_ops_from_worktree_route_to_main_tracker(tmp_project, tmp_path):
     _git(main.path, "commit", "-m", "init", "--allow-empty")
 
     # Task created in the MAIN checkout's live tracker.
-    created = _ai_hats(binary, "task", "create", "Worktree task", "--id", "HATS-1",
-                       cwd=main.path)
+    created = _rack("create", "Worktree task", "--id", "HATS-1", cwd=main.path)
     assert created.returncode == 0, created.stderr
     assert _task_dir(main.path, "HATS-1").is_dir()
 
@@ -74,19 +75,19 @@ def test_task_ops_from_worktree_route_to_main_tracker(tmp_project, tmp_path):
     assert (wt / ".git").is_file()  # linked worktree → .git is a pointer file
     assert not (wt / ".agent").exists()  # gitignored → absent in the worktree
 
-    # `task show` from the worktree cwd must resolve the main tracker.
-    shown = _ai_hats(binary, "task", "show", "HATS-1", cwd=wt)
+    # `rack context` from the worktree cwd must resolve the main tracker.
+    shown = _rack("context", "HATS-1", cwd=wt)
     assert shown.returncode == 0, (
-        f"task show from worktree must succeed (HATS-524)\n"
+        f"rack context from worktree must succeed (HATS-524)\n"
         f"stdout:\n{shown.stdout}\nstderr:\n{shown.stderr}"
     )
     assert "Worktree task" in shown.stdout, shown.stdout
 
-    # `task log` from the worktree cwd must land in the MAIN tracker, not a
-    # stray `<worktree>/.agent/`.
-    logged = _ai_hats(binary, "task", "log", "HATS-1", "note from worktree", cwd=wt)
+    # A work_log note from the worktree cwd must land in the MAIN tracker, not
+    # a stray `<worktree>/.agent/`. `--log` is rack's `task log`.
+    logged = _rack("transition", "HATS-1", "--log", "note from worktree", cwd=wt)
     assert logged.returncode == 0, logged.stderr
     assert not (wt / ".agent").exists(), "log must not create a tracker in the worktree"
 
-    shown2 = _ai_hats(binary, "task", "show", "HATS-1", cwd=main.path)
+    shown2 = _rack("context", "HATS-1", cwd=main.path)
     assert "note from worktree" in shown2.stdout, shown2.stdout

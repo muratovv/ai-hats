@@ -82,13 +82,22 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     still present, so `transition done` re-runs the merge cleanly and the
     task advances to `done`.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, base_env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
+    # plan → execute is consent-gated; the gate is not this test's subject.
+    env = {**base_env, "AI_HATS_PLAN_ACK": "1"}
     project = tmp_path / "project"
     project.mkdir()
 
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
+            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(rack_bin), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
@@ -109,12 +118,12 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     # ---- create task + walk plan→execute ----
     task_id = "TST-001"
     branch_ref = f"task/{task_id.lower()}"
-    ai_hats(
-        "task", "create", "Failed-merge retry regression",
-        "-d", "Used to verify HATS-481/541 silent-done + HATS-587/F5 retry.",
+    rack(
+        "create", "Failed-merge retry regression",
+        "--description", "Used to verify HATS-481/541 silent-done + HATS-587/F5 retry.",
         "--id", task_id,
     )
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     # Plan content goes straight into the canonical task tree — no
     # .claude/plans round-trip (HATS-637).
@@ -130,7 +139,7 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
         "## Verification Protocol\nmerge twice\n"
     )
 
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute")
 
     # ---- locate worktree (reuses test_wt_merge_drift.py pattern) ----
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -169,12 +178,12 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     (project / "COLLIDE.txt").write_text("untracked-on-main\n")
     # Intentionally NOT staged / committed.
 
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- Attempt 1: must exit non-zero, state must stay `review`. ----
-    res1 = ai_hats(
-        "task", "transition", task_id, "done",
+    res1 = rack(
+        "transition", task_id, "done",
         expect_exit=None, timeout=90,
     )
     assert res1.returncode != 0, (
@@ -205,8 +214,8 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     )
 
     # ---- Attempt 2: clean retry → task advances to `done`. ----
-    res2 = ai_hats(
-        "task", "transition", task_id, "done",
+    res2 = rack(
+        "transition", task_id, "done",
         expect_exit=None, timeout=90,
     )
     assert res2.returncode == 0, (
