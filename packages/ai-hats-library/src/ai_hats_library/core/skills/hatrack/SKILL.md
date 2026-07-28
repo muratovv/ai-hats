@@ -1,6 +1,6 @@
 ---
 name: hatrack
-description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal; it replaces `backlog-manager` for that session.
+description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal.
 ai_hats:
   # ADR-0016: this skill drives the ai-hats-rack `rack` CLI for the whole backlog
   # surface — lifecycle, fields, documents, links, hypotheses, proposals. One
@@ -27,18 +27,7 @@ read it before advancing any card.
 
 ## When to Use
 
-This is the **rack** backlog manager — composed via `hatrack-trait` in place of
-`backlog-manager` (never both: they both own the lifecycle and would conflict).
-Select it per session with:
-
-```bash
-ai-hats config customize <role> --remove-skill backlog-manager --add-trait hatrack-trait --project
-# revert: ai-hats config customize <role> --reset
-```
-
-If a session composes the classic `backlog-manager` instead, use that skill —
-`rack` and the classic tracker CLI share the lock and the same `task.yaml`, so a
-mixed backlog is safe, but one session should drive the backlog through one manager.
+This is the **rack** backlog manager — composed via `hatrack-trait`.
 
 ## Backlog operations — the `rack` CLI
 
@@ -193,7 +182,6 @@ stale, bounce to `brainstorm` instead of building on a dead premise
   (HATS-1047).
 - Driving lifecycle through `ai-hats task transition` in a rack session — the
   rack dispatcher/journal/worktree path is what's being dogfooded; use `rack`.
-- Composing both `backlog-manager` and `hatrack-trait` — two lifecycle owners.
 - Reaching for a `rack update` verb — there is none; field edits are
   `rack transition <ID> --set <field>=<value>` (replace) / `--append` (add to a list).
 - Reaching back to the classic tracker CLI for fields / hyp / proposal — the
