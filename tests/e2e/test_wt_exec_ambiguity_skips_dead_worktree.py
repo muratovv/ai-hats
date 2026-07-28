@@ -31,7 +31,7 @@ def _kill_worktree(main, wt) -> None:
 def test_dead_worktree_drops_out_of_the_ambiguity_set(tmp_project, repo_root):
     main = tmp_project
     env = child_env(repo_root)
-    dead_branch, dead_wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    dead_branch, dead_wt = two_worktrees(main.path, env)
     survivor = next(b for b in worktree_branches(main.path) if b != dead_branch)
     _kill_worktree(main.path, dead_wt)
 

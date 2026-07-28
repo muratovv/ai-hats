@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 PLAN = """# Plan
@@ -50,6 +51,19 @@ def ai_hats(
     )
 
 
+def rack(*args: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run the backlog CLI (HATS-1263). This tier has no ``rack`` console script,
+    but ``child_env`` puts the checkout on PYTHONPATH, so ``python -m`` reaches it."""
+    return subprocess.run(
+        [sys.executable, "-m", "ai_hats_rack", *args],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
 def tracker_tasks(root: Path) -> Path:
     return root / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
 
@@ -77,23 +91,24 @@ def init_repo(main: Path) -> None:
     git(main, "commit", "-m", "init", "--allow-empty")
 
 
-def spawn_worktree(binary: Path, main: Path, task_id: str, env: dict[str, str]) -> None:
-    assert ai_hats(binary, "task", "create", task_id, "--id", task_id, cwd=main, env=env).returncode == 0
-    assert ai_hats(binary, "task", "transition", task_id, "plan", cwd=main, env=env).returncode == 0
+def spawn_worktree(main: Path, task_id: str, env: dict[str, str]) -> None:
+    assert rack("create", task_id, "--id", task_id, cwd=main, env=env).returncode == 0
+    assert rack("transition", task_id, "plan", cwd=main, env=env).returncode == 0
     (tracker_tasks(main) / task_id / "plan.md").write_text(PLAN)
-    r = ai_hats(binary, "task", "transition", task_id, "execute", cwd=main, env=env)
+    # plan->execute is consent-gated on rack; these spawns are scaffolding.
+    r = rack("transition", task_id, "execute", cwd=main, env={**env, "AI_HATS_PLAN_ACK": "1"})
     assert r.returncode == 0, r.stderr
 
 
-def two_worktrees(binary: Path, main: Path, env: dict[str, str]) -> tuple[str, Path]:
+def two_worktrees(main: Path, env: dict[str, str]) -> tuple[str, Path]:
     """Spawn two worktrees; return (branch, path) of the lexically first.
 
     Two, not one: with a sole worktree the resolver's convenience path finds it
     regardless of cwd, which would mask what these tests assert.
     """
     init_repo(main)
-    spawn_worktree(binary, main, "HATS-1", env)
-    spawn_worktree(binary, main, "HATS-2", env)
+    spawn_worktree(main, "HATS-1", env)
+    spawn_worktree(main, "HATS-2", env)
     branches = worktree_branches(main)
     assert len(branches) >= 2, f"expected two linked worktrees, got {branches}"
     branch = sorted(branches)[0]

@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 def test_wt_exec_cd_refuses_to_escape_the_worktree(tmp_project, repo_root, escape):
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     (wt / "sub").mkdir()
 
     res = ai_hats(

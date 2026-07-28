@@ -15,19 +15,9 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.wt import spawn_worktree
+
 pytestmark = pytest.mark.integration
-
-_PLAN = """# Plan
-## Requirements
-do the thing
-## Scope & Out-of-scope
-in: thing; out: other
-## Steps
-1. thing
-## Verification Protocol
-run it
-"""
-
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -44,10 +34,6 @@ def _ai_hats(binary: Path, *args: str, cwd: Path, env=None) -> subprocess.Comple
         text=True,
         timeout=120,
     )
-
-
-def _tracker(root: Path) -> Path:
-    return root / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
 
 
 def _find_worktree(main: Path) -> Path | None:
@@ -70,11 +56,7 @@ def test_wt_exec_strips_ambient_git_env(tmp_project, tmp_path):
     _git(main.path, "commit", "-m", "init", "--allow-empty")
 
     # A managed worktree is born on `transition execute`.
-    assert _ai_hats(binary, "task", "create", "A", "--id", "HATS-1", cwd=main.path).returncode == 0
-    assert _ai_hats(binary, "task", "transition", "HATS-1", "plan", cwd=main.path).returncode == 0
-    (_tracker(main.path) / "HATS-1" / "plan.md").write_text(_PLAN)
-    r = _ai_hats(binary, "task", "transition", "HATS-1", "execute", cwd=main.path)
-    assert r.returncode == 0, r.stderr
+    spawn_worktree(main.path, "HATS-1", {**os.environ})
     wt = _find_worktree(main.path)
     assert wt is not None and wt.is_dir(), "a worktree must exist after execute"
 
