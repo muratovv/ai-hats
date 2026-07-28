@@ -148,25 +148,36 @@ vocabulary rather than one surface's implementation.
 
 Applying it to the HATS-1211 module set:
 
-| Module                                                                 | Provider-agnostic core importers                                                                     | Verdict          |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
-| `materialization.py` (the port, plan, `describe_*`)                    | `session_artifacts`, `session_report`, `dry_run`                                                     | core contract    |
-| `session_artifacts.py` (this section's vocabulary)                     | `providers` (the `Provider` ABC), `wrap_runner`, `dry_run`, `subagent_runner`, `composition_payload` | core contract    |
-| `session_report.py`                                                    | `dry_run`, `subagent_runner`, `wrap_runner` — and no surface importer at all                         | core contract    |
-| `skill_scripts.py` (skills' `scripts/`+`bin/` on PATH)                 | `subagent_runner`, `wrap_runner` (+ all three surfaces)                                              | core contract    |
-| `surfaces/_shared/skills_mirror.py` (ref-counted `.agy/skills` mirror) | none — one surface materializes it                                                                   | surface delivery |
+| Module                                                              | Provider-agnostic core importers                                                                     | Verdict                            |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `materialization.py` (the port, plan, `describe_*`)                 | `session_artifacts`, `session_report`, `dry_run`                                                     | core contract                      |
+| `session_artifacts.py` (this section's vocabulary)                  | `providers` (the `Provider` ABC), `wrap_runner`, `dry_run`, `subagent_runner`, `composition_payload` | core contract                      |
+| `session_report.py`                                                 | `dry_run`, `subagent_runner`, `wrap_runner` — and no surface importer at all                         | core contract                      |
+| `skills_dir.py` — the PATH half (skills' `scripts/`+`bin/` on PATH) | `subagent_runner`, `wrap_runner` (+ all three surfaces)                                              | core contract                      |
+| `skills_dir.materialize_skills_dir` — the copier half               | none — one surface calls it                                                                          | movable, not yet moved (HATS-1271) |
 
-Two structural consequences, both applied by HATS-1217:
+The last row is the honest one. By the test `materialize_skills_dir` belongs to
+the surface layer, and it has simply not been moved: HATS-1271 first converges
+it with cline's byte-for-byte equivalent, and the converged function is what
+gets a home. A verdict table that reported "core contract" here — bending the
+rule to match today's tree — would be worth nothing. The test earns its keep
+precisely by returning answers the tree has not caught up with.
+
+Two structural consequences — the first applied by HATS-1217, the second by
+HATS-1248:
 
 1. **The port owes nothing to a surface.** `materialization.py` took its tree
    hash from a private helper of `plugin_dir.py` — the legacy claude-mirror
    sweep. The hash is now the stdlib leaf `fs_digest.py`, so the chokepoint has
    no edge into surface-specific cleanup code.
-2. **A convention shared by two surfaces is not a surface's property.** The
-   ref-counted skills mirror (`.agy/skills/`, `.cline/skills/`) lives under
-   `src/ai_hats/surfaces/_shared/`, not in the agy package: ADR-0014's
-   dependency rule forbids package-to-package imports, so putting it in one
-   surface would bar the other from reusing it.
+2. **A per-session artifact needs no cross-session reconciliation.** The skills
+   copier was a ref-counted rebuild behind a filelock, guarding one session's
+   skills from another's sweep. Its target is itself keyed by session id, so the
+   guard could only ever engage when two processes minted the *same* id — and
+   then they shared one ref slot and overwrote each other regardless. HATS-1248
+   made session ids unique per process and deleted the machinery. The general
+   rule: reconcile inside a session-scoped artifact only if two sessions can
+   reach it, and if they can, fix the identity rather than the artifact.
 
 `ai_hats.surfaces.*` is not a published extension point — only the
 `ai_hats.providers` entry-point group is (`pyproject.toml`). Moving a module
