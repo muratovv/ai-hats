@@ -1,6 +1,13 @@
 ---
 name: review-session
 description: Single-pass review of one session run, producing a hats-reflect-session/v1 document (summary, observations, one hypothesis verdict per active HYP, proposal actions). Use when running as reflect-session or session-reviewer over a specific session id.
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-rack
+        check: "rack --help"
+        hint: "pip install ai-hats-rack"
+    mcp: []
 license: MIT
 ---
 

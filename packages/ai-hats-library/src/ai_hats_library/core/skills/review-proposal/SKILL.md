@@ -1,6 +1,13 @@
 ---
 name: review-proposal
 description: Triage one improvement opportunity — vote on an existing PROP or create a novel one via `rack proposal`. Use when you spot an improvement (rule/skill/code/process/doc) during a session review, or are sweeping the open proposal inbox for triage.
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-rack
+        check: "rack --help"
+        hint: "pip install ai-hats-rack"
+    mcp: []
 license: MIT
 ---
 
@@ -33,7 +40,7 @@ Boundaries & disambiguation (the description states the trigger):
 ### Step 1 — Read the inbox first
 
 ```bash
-ah task proposal list --status open
+rack ls --backlog proposal --state open
 ```
 
 A proposal is "similar" if it covers the same change (same `category` +
@@ -43,21 +50,19 @@ fragment the signal.
 ### Step 2a — Vote (preferred)
 
 ```bash
-ah task proposal vote --prop PROP-NNN \
-  --session "$SID" --reasoning "<one-line: why you agree>"
+rack proposal vote PROP-NNN \
+  --session-id "$SID" --reasoning "<one-line: why you agree>"
 ```
 
 ### Step 2b — Create only if novel
 
 ```bash
-ah task proposal create \
-  --title "<short imperative title>" \
+rack proposal create "<short imperative title>" \
   --category {rule|skill|code|process|doc} \
   --target "<rule/skill/file/process name>" \
   --description "<what the change is — what, not why>" \
   --rationale "<why — cite session evidence>" \
-  --related-hypotheses HYP-NNN[,HYP-MMM] \
-  --session "$SID"
+  --failed-session-id "$SID"
 ```
 
 The CLI returns the new `PROP-NNN`.
@@ -76,10 +81,10 @@ If you are the role responsible for closing the inbox (typically `judge`),
 flip status after weighing votes/evidence:
 
 ```bash
-ah task proposal status --prop PROP-NNN --status accepted
-ah task proposal status --prop PROP-NNN --status rejected
-ah task proposal status --prop PROP-NNN --status deferred
-ah task proposal status --prop PROP-NNN --status duplicate
+rack transition PROP-NNN accept
+rack transition PROP-NNN reject
+rack transition PROP-NNN defer
+rack transition PROP-NNN duplicate
 ```
 
 **Cost-citation heuristic** — drives *how long* a PROP stays open, not
@@ -102,11 +107,10 @@ instructions conflict — **do NOT silently drop the entry**. File a
 meta-proposal:
 
 ```bash
-ah task proposal create \
+rack proposal create "<one-line: what failed>" \
   --category process --target <your-role> \
-  --title "<one-line: what failed>" \
   --description "<what>" --rationale "<why it blocked you>" \
-  --session "$SID"
+  --failed-session-id "$SID"
 ```
 
 Even if you fail to file the meta-proposal yourself, the runtime

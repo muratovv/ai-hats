@@ -49,8 +49,8 @@ evidence: a HATS-499 child task transitioned plan→execute and filed
 HYP-NNN with a `verification_protocol` field. Verdict:
 
 ```bash
-ah task hyp append-verdict \
-  --hyp HYP-016 --session "$SID" \
+rack hyp append-verdict HYP-016 \
+  --session-id "$SID" \
   --verdict confirmed \
   --evidence "CRITERION: ≥3 of next 4 HATS-499 child tasks land with either a companion HYP that has verification_protocol filled, or a work_log entry no behavior change — pure refactor: <reason>.
 OBSERVED: HATS-543 plan→execute transition; HYP-019 filed with verification_protocol set; commit body references HATS-543/HYP-019.

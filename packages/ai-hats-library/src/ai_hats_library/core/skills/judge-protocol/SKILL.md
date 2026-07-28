@@ -1,6 +1,13 @@
 ---
 name: judge-protocol
 description: HITL protocol for the judge role (Phase 2 of the two-phase judge split) — discuss the Phase 1 draft with the supervisor, ack and execute proposed mutations via CLI, write the final report.
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-rack
+        check: "rack --help"
+        hint: "pip install ai-hats-rack"
+    mcp: []
 license: MIT
 ---
 
@@ -79,17 +86,17 @@ proposed verdict + recommendation to the supervisor, dialogue if
 needed, and on ack execute via CLI:
 
 ```bash
-ah task hyp append-verdict HYP-NNN \
+rack hyp append-verdict HYP-NNN \
   --verdict <confirmed|refuted|inconclusive> \
   --recommendation <close_confirmed|close_refuted|keep|extend_window> \
-  --note "<reason>"
+  --evidence "<reason>"
 ```
 
 When a HYP's window closes (`close_confirmed` / `close_refuted` /
 `stalled`):
 
 ```bash
-ah task hyp set-status HYP-NNN --status <confirmed|refuted|stalled>
+rack transition HYP-NNN <confirmed|refuted|stalled>
 ```
 
 Follow **review-hypothesis** for verdict-choice rules. The draft
@@ -114,7 +121,7 @@ For each accepted PROP, spawn the follow-up task as recommended in the
 draft's `## Proposed mutations` section:
 
 ```bash
-ah task create "<title>" --description "<from PROP body>"
+rack create "<title>" --description "<from PROP body>"
 ```
 
 Follow **review-proposal** for decision rules + the cost-citation

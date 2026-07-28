@@ -150,15 +150,15 @@ class SessionReviewRunner:
             "      prop_id: PROP-NNN\n"
             "  self_problems: [PROP-NNN, ...]\n\n"
             "Before listing a proposal action, USE THE CLI to materialize it:\n"
-            f"  ai-hats task proposal create --title ... --category ... "
-            f"--target ... --description ... --rationale ... --session {sid}\n"
-            f"  ai-hats task proposal vote --prop PROP-NNN --session {sid} "
+            f"  rack proposal create <title> --category ... "
+            f"--target ... --description ... --rationale ... --failed-session-id {sid}\n"
+            f"  rack proposal vote PROP-NNN --session-id {sid} "
             "--reasoning ...\n"
             "If you cannot follow the format or hit a meta-problem, file:\n"
-            "  ai-hats task proposal create --category process --target "
+            "  rack proposal create <title> --category process --target "
             "session-reviewer \\\n"
-            f"    --title <short> --description <what failed> --rationale <why> "
-            f"--session {sid}\n"
+            f"    --description <what failed> --rationale <why> "
+            f"--failed-session-id {sid}\n"
             "and reference the resulting PROP-NNN in `self_problems`. "
             "NEVER silently drop entries."
         )
@@ -229,7 +229,7 @@ class SessionReviewRunner:
         if not open_props:
             return (
                 "## Open proposals\n\n(inbox empty — create new ones with "
-                "`ai-hats task proposal create` if you spot improvements)"
+                "`rack proposal create` if you spot improvements)"
             )
         lines = ["## Open proposals (vote on similar; create only if novel)"]
         for p in open_props:
