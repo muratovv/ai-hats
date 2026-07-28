@@ -72,14 +72,13 @@ def test_subtree_single_level_leaf(capsys):
 
 
 def test_subtree_multilevel_group(capsys):
-    """`--tree task hyp` walks two levels and renders the hyp subgroup."""
-    code, out = _invoke_entry(["ai-hats", "--tree", "task", "hyp"], capsys)
+    """`--tree config feedback` walks two levels and renders the feedback subgroup."""
+    code, out = _invoke_entry(["ai-hats", "--tree", "config", "feedback"], capsys)
     assert code == 0, out
-    assert "ai-hats task hyp" in out
-    assert "append-verdict" in out
-    # Must NOT contain task-level siblings outside hyp.
-    assert "Transition a task" not in out  # task transition's headline
-    assert "proposal" not in out.lower() or "task hyp" in out  # proposal is a sibling group
+    assert "ai-hats config feedback" in out
+    assert "session-retro" in out
+    # Must NOT contain config-level siblings outside feedback.
+    assert "View and update project configuration" not in out
 
 
 def test_subtree_unknown_top_level_errors(capsys):
@@ -92,7 +91,7 @@ def test_subtree_unknown_top_level_errors(capsys):
 
 
 def test_subtree_unknown_nested_errors(capsys):
-    code, out = _invoke_entry(["ai-hats", "--tree", "task", "nonexistent"], capsys)
+    code, out = _invoke_entry(["ai-hats", "--tree", "config", "nonexistent"], capsys)
     assert code == 2, out
     assert "unknown subcommand" in out
     assert "nonexistent" in out

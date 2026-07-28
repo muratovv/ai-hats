@@ -28,7 +28,7 @@ def test_dead_cwd_fails_loud_without_phantom(tmp_project, tmp_path):
 
     # cd into `dead`, remove it, then exec ai-hats from the now-removed cwd.
     # `rmdir` of one's own cwd is permitted on Linux/macOS; skip elsewhere.
-    script = 'cd "$1" && rmdir "$1" && exec "$2" task list'
+    script = 'cd "$1" && rmdir "$1" && exec "$2" wt list'
     try:
         res = subprocess.run(
             ["bash", "-c", script, "_", str(dead), str(binary)],

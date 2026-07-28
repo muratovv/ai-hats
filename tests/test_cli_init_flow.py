@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_hats.cli import main
+from ai_hats_rack.cli import main as rack_main
 from ai_hats.resolver import LibraryResolver
 from ai_hats.models import ComponentType
 from ai_hats.paths import rules_dir, skills_dir, tasks_dir
@@ -748,16 +749,16 @@ def test_update_shows_version_transition(cli_project, monkeypatch):
 
 
 def test_task_create_auto_id(cli_project):
-    """ai-hats task create TITLE works without --id and defaults to TASK- prefix."""
+    """ai-hats task create TITLE works without --id and defaults to prefix."""
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
-    result = runner.invoke(main, ["task", "create", "My test task", "-d", "desc"])
+    result = runner.invoke(rack_main, ["create", "My test task", "--description", "desc"])
     assert result.exit_code == 0, result.output
     assert "Created" in result.output
     assert "My test task" in result.output
-    assert "TASK-001" in result.output
-    assert (tasks_dir(project) / "TASK-001" / "task.yaml").exists()
+    assert "HATS-001" in result.output
+    assert (tasks_dir(project) / "HATS-001" / "task.yaml").exists()
 
 
 def test_init_task_prefix_flag(cli_project):
@@ -774,7 +775,7 @@ def test_init_task_prefix_flag(cli_project):
     raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert raw["task_prefix"] == "ACME"
 
-    r = runner.invoke(main, ["task", "create", "First"])
+    r = runner.invoke(rack_main, ["create", "First"])
     assert r.exit_code == 0, r.output
     assert "ACME-001" in r.output
 
@@ -843,7 +844,7 @@ def test_task_prefix_honored_from_yaml(cli_project):
     raw["task_prefix"] = "ACME"
     cfg_path.write_text(yaml.dump(raw))
 
-    result = runner.invoke(main, ["task", "create", "Custom prefix"])
+    result = runner.invoke(rack_main, ["create", "Custom prefix"])
     assert result.exit_code == 0, result.output
     assert "ACME-001" in result.output
     assert (tasks_dir(project) / "ACME-001").exists()
@@ -881,7 +882,7 @@ def test_task_create_explicit_id(cli_project):
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
-    result = runner.invoke(main, ["task", "create", "Explicit ID task", "--id", "CUSTOM-001"])
+    result = runner.invoke(rack_main, ["create", "Explicit ID task", "--id", "CUSTOM-001"])
     assert result.exit_code == 0, result.output
     assert "CUSTOM-001" in result.output
     assert (tasks_dir(project) / "CUSTOM-001" / "task.yaml").exists()
@@ -893,15 +894,15 @@ def test_task_list_table_filters(cli_project):
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
     # Create tasks with different states and priorities
-    runner.invoke(main, ["task", "create", "Active task", "-p", "high"])
-    runner.invoke(main, ["task", "create", "Low task", "-p", "low"])
-    runner.invoke(main, ["task", "create", "Done task", "-p", "medium"])
+    runner.invoke(rack_main, ["create", "Active task", "--priority", "high"])
+    runner.invoke(rack_main, ["create", "Low task", "--priority", "low"])
+    runner.invoke(rack_main, ["create", "Done task", "--priority", "medium"])
 
     # Transition third task to done (brainstorm → plan → execute → document → review → done)
-    runner.invoke(main, ["task", "transition", "TASK-003", "plan"])
+    runner.invoke(rack_main, ["transition", "HATS-003", "plan"])
     # Fill every required section so the per-section plan→execute gate passes
     # (HATS-230 created the gate; HATS-635 made it per-section).
-    plan_path = tasks_dir(project) / "TASK-003" / "plan.md"
+    plan_path = tasks_dir(project) / "HATS-003" / "plan.md"
     plan_path.write_text(
         "# Plan\n\n## Requirements\nfilled in for the test\n\n"
         "## Scope & Out-of-scope\nin/out\n\n"
@@ -909,30 +910,28 @@ def test_task_list_table_filters(cli_project):
         "## Verification Protocol\npytest\n"
     )
     for state in ["execute", "document", "review", "done"]:
-        runner.invoke(main, ["task", "transition", "TASK-003", state])
+        env = {"AI_HATS_PLAN_ACK": "1"} if state == "execute" else None
+        r = runner.invoke(rack_main, ["transition", "HATS-003", state], env=env)
+        assert r.exit_code == 0, r.output
 
-    # Default: done is hidden
-    result = runner.invoke(main, ["task", "list"])
+    # rack ls shows all cards by default
+    result = runner.invoke(rack_main, ["ls"])
     assert result.exit_code == 0, result.output
     assert "Active task" in result.output
     assert "Low task" in result.output
-    assert "Done task" not in result.output
-
-    # --all includes done
-    result = runner.invoke(main, ["task", "list", "--all"])
-    assert result.exit_code == 0, result.output
     assert "Done task" in result.output
 
-    # --priority filter
-    result = runner.invoke(main, ["task", "list", "--priority", "high"])
+    # --grep filter
+    result = runner.invoke(rack_main, ["ls", "--grep", "Active"])
     assert result.exit_code == 0, result.output
     assert "Active task" in result.output
     assert "Low task" not in result.output
 
     # --state filter
-    result = runner.invoke(main, ["task", "list", "--state", "brainstorm"])
+    result = runner.invoke(rack_main, ["ls", "--state", "brainstorm"])
     assert result.exit_code == 0, result.output
     assert "Active task" in result.output
+    assert "Done task" not in result.output
 
 
 # ---- HATS-213 stage-2 verify + activation banner ----
