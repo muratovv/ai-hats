@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2]
+
 ### Fixed
 
 - **A rebased branch is no longer refused as drifted** (HATS-1307). `_check_drift`
