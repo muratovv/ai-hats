@@ -18,9 +18,11 @@ never act in the turn that announces the action.
 | `git push <remote> :<branch>` / `--delete`       | **irreversible** — ref gone for everyone      | **asks**   |
 | `TaskCreate` (sub-agent fan-out)                 | reversible but costly to cancel mid-flight    | allows     |
 
-"asks" means the hook escalates to the user: interactively you get a permission
-prompt, and in a headless run (`-p`, cron, CI) the call is **blocked**, since
-nobody is there to approve. "allows" means only this rule holds the pause.
+"asks" means the hook refuses to decide on its own and escalates. Where the
+harness supports an interactive decision you get a permission prompt, and when
+nobody can answer — a headless run, cron, CI — the call is **blocked**. On a
+harness with no such channel the hook simply blocks outright. Either way the
+command does not run unattended. "allows" means only this rule holds the pause.
 
 **Never chain** a shared-state write with other commands (no `&&`, `||`,
 `;`, `|`, `$(...)`, backticks) — one Bash call = one shared-state write at
@@ -34,9 +36,9 @@ Consent reaches the hook in exactly two ways, and **neither is available to the
 agent** — that is the point:
 
 1. The user answers the permission prompt the hook raises.
-2. `AI_HATS_SHARED_STATE_ACK=1` is present in the environment that launched
-   Claude Code (the `env` block of `.claude/settings.json`, or an export in the
-   launching shell), pre-approving the whole session.
+2. `AI_HATS_SHARED_STATE_ACK=1` is present in the environment that launched the
+   agent — an export in the launching shell, or the `env` block of whatever
+   settings file your harness reads — pre-approving the whole session.
 
 Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
 command does **nothing**: the hook runs before that command exists as a process,

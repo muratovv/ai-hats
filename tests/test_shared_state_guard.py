@@ -36,13 +36,24 @@ def _classify(command: str) -> str:
     ).stdout.strip()
 
 
-def _run_guard(command: str, *, ack: bool = False) -> subprocess.CompletedProcess[str]:
+def _run_guard(
+    command: str, *, ack: bool = False, claude: bool = True
+) -> subprocess.CompletedProcess[str]:
+    """Drive the guard.
+
+    ``claude`` selects the caller's dialect: Claude Code's PreToolUse payload
+    carries ``hook_event_name``, a plain invocation (cline's surface, a CLI
+    probe) does not.
+    """
     env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
     if ack:
         env["AI_HATS_SHARED_STATE_ACK"] = "1"
+    payload: dict[str, object] = {"tool_input": {"command": command}}
+    if claude:
+        payload["hook_event_name"] = "PreToolUse"
     return subprocess.run(
         [str(GUARD)],
-        input=json.dumps({"tool_input": {"command": command}}),
+        input=json.dumps(payload),
         capture_output=True,
         text=True,
         env=env,
@@ -113,6 +124,25 @@ def test_environment_ack_allows_without_prompting() -> None:
     assert result.stdout.strip() == ""
 
 
+def test_non_claude_caller_gets_the_universal_deny() -> None:
+    """The guard is not Claude-only.
+
+    The cline surface and direct CLI probes invoke it as a plain script and
+    expect ``exit 2`` with BLOCKED on stderr. Answering them with Claude's JSON
+    would be an unparsed blob on stdout and a silently *allowed* command, so the
+    dialect follows what the payload declares.
+    """
+    result = _run_guard("git push --force origin master", claude=False)
+    assert result.returncode == 2
+    assert "BLOCKED" in result.stderr
+    assert result.stdout.strip() == "", "no JSON at a caller that cannot parse it"
+
+
+def test_non_claude_caller_still_passes_safe_commands() -> None:
+    result = _run_guard("echo hello", claude=False)
+    assert result.returncode == 0
+
+
 def test_reason_does_not_advertise_the_unreachable_prefix() -> None:
     """Anti-regression on the defect itself.
 
@@ -124,7 +154,20 @@ def test_reason_does_not_advertise_the_unreachable_prefix() -> None:
     reason = json.loads(_run_guard("git push --force origin master").stdout)
     reason = reason["hookSpecificOutput"]["permissionDecisionReason"]
     assert DEAD_ESCAPE not in reason
-    assert "settings.json" in reason, "the reason must name a channel that works"
+    assert "environment that launched" in reason, "must name a channel that works"
+
+
+@pytest.mark.parametrize("claude", [True, False])
+def test_refusal_text_names_no_specific_provider(claude: bool) -> None:
+    """This guard serves every surface, so its text must not assume one.
+
+    Naming a provider's settings file here would be wrong under the harnesses
+    that also run it.
+    """
+    result = _run_guard("git push --force origin master", claude=claude)
+    text = result.stdout + result.stderr
+    for token in (".claude/", "settings.json", "Claude Code"):
+        assert token not in text, f"provider-specific token leaked: {token}"
 
 
 def test_rule_names_the_dead_prefix_only_to_warn_against_it() -> None:
@@ -137,5 +180,16 @@ def test_rule_names_the_dead_prefix_only_to_warn_against_it() -> None:
     body = RULE.read_text()
     assert DEAD_ESCAPE in body, "name the trap agents fall into"
     assert "does **nothing**" in body, "and mark it as non-functional"
-    assert "settings.json" in body, "and point at a channel that works"
+    assert "environment that launched" in body, "point at a channel that works"
     assert "set it only on a command" not in body, "the old false guidance is gone"
+
+
+def test_rule_stays_provider_agnostic() -> None:
+    """This rule ships to every harness, so it must not name one.
+
+    Reviewer's catch on the first cut: `.claude/settings.json` had leaked into a
+    core rule that gemini and cline sessions read too.
+    """
+    body = RULE.read_text()
+    for token in (".claude/", "Claude Code", "settings.json"):
+        assert token not in body, f"provider-specific token leaked: {token}"

@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
-# HATS-437 — Claude Code PreToolUse hook: pause-before-shared-state-write.
+# HATS-437 — pre-Bash guard: pause-before-shared-state-write.
 #
-# Wired into .claude/settings.json by ClaudeProvider.ensure_runtime_hooks()
-# (matcher: Bash). On every Bash invocation the hook reads the tool-input
-# JSON from stdin, classifies the command via shared_state_classifier.sh,
-# and escalates the risky ones to the user.
+# Reads a tool-input JSON payload on stdin, classifies the command via
+# shared_state_classifier.sh, and refuses the risky ones. Consumed by more than
+# one surface — Claude wires it as a PreToolUse hook via
+# ClaudeProvider.ensure_runtime_hooks() (matcher: Bash); the cline surface and
+# direct CLI probes invoke it as a plain script — so the refusal is emitted in
+# whichever dialect the caller speaks (HATS-1294).
 #
 # Levels of intervention:
 #   classification == safe          -> exit 0 (allow)
 #   classification == shared        -> exit 0 (allow; Level 2 rule covers it)
 #   classification == gated
-#                  | irreversible   -> exit 0 + permissionDecision "ask":
-#                                        the harness prompts the user, and
-#                                        blocks when nobody can answer
-#                                        (headless -p, cron, CI)
-#       - AI_HATS_SHARED_STATE_ACK=1-> allow with stderr breadcrumb
+#                  | irreversible   -> refuse, per caller:
+#       payload has hook_event_name -> exit 0 + permissionDecision "ask"
+#                                      (harness prompts the user; blocks when
+#                                       nobody can answer — headless, cron, CI)
+#       otherwise                   -> exit 2 + BLOCKED on stderr
+#       AI_HATS_SHARED_STATE_ACK=1  -> allow with stderr breadcrumb
 #
-# The ack is read from THIS PROCESS'S environment, so it is set where Claude
-# Code is launched — the `env` block of .claude/settings.json, or an export in
-# the launching shell. It CANNOT be given as a prefix on the agent's command
+# The ack is read from THIS PROCESS'S environment, so it is set wherever the
+# agent is launched (a provider's settings `env` block, or an export in the
+# launching shell). It CANNOT be given as a prefix on the agent's command
 # (`AI_HATS_SHARED_STATE_ACK=1 git push …`): this hook runs before that command
 # exists as a process, so the assignment never reaches us. The hook used to
 # advertise exactly that form and then deny it (HATS-1294) — hence "ask", which
@@ -68,6 +71,30 @@ if [[ -z "$cmd" ]]; then
     exit 0
 fi
 
+# Which protocol is the caller speaking? Claude Code's PreToolUse payload carries
+# `hook_event_name`; a plain `bash guard.sh < payload` (cline's surface test, a
+# direct CLI probe, any future harness) does not. We answer in the caller's own
+# dialect — see the decision section at the bottom.
+extract_hook_event() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '.hook_event_name // empty' <<<"$payload"
+        return
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+print(data.get("hook_event_name") or "")
+' <<<"$payload"
+        return
+    fi
+    echo ""
+}
+hook_event="$(extract_hook_event)"
+
 # --- 3. Classify -------------------------------------------------------
 if [[ ! -f "$CLASSIFIER" ]]; then
     # Classifier missing — emit a stderr breadcrumb and allow. The Level 2
@@ -100,32 +127,55 @@ if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
     exit 0
 fi
 
-# --- 5. Escalate to the user through the harness -------------------------
-# `permissionDecision: ask` hands the call to the harness: it prompts the user
-# interactively, and BLOCKS when nobody can answer (headless `-p`, cron, CI).
-# Measured on Claude Code 2.1.220 (HATS-1294 S1) rather than assumed — neither
-# `--allowedTools Bash` nor `--permission-mode bypassPermissions` defeats it.
-# So the harness owns the interactive/headless split and this hook does not
-# detect which one it is in.
+# --- 5. Refuse, in the caller's own dialect ------------------------------
+# Two audiences, two protocols. Claude Code understands `permissionDecision:
+# "ask"`, which hands the call to the user: it prompts interactively and BLOCKS
+# when nobody can answer (headless `-p`, cron, CI). Measured on 2.1.220
+# (HATS-1294 S1), not assumed — neither `--allowedTools Bash` nor
+# `--permission-mode bypassPermissions` defeats it.
 #
-# The exit code MUST be 0: Claude Code discards a hook's stdout when it exits 2,
-# so the JSON below would never be read. (The old code exited 2, which is why it
-# could only ever hard-deny.)
+# Every other caller — the cline surface, a direct `bash guard.sh < payload`,
+# any future harness — gets the universal convention it already expects:
+# `exit 2` with a BLOCKED message on stderr. Emitting Claude's JSON at them
+# would be an unparsed blob on stdout and a silently ALLOWED command, so the
+# dialect is chosen by what the payload declares, never assumed.
+# Verb phrases: both are consumed as "This command <headline>". Keep them so —
+# and mind that `${var^}`-style case folding is bash 4+, while macOS still ships
+# bash 3.2 at /bin/bash, which a restricted PATH will select.
 if [[ "$verdict" == "gated" ]]; then
-    reason="Updates a shared branch others build on (HATS-1253): ${cmd}"
+    headline="updates a shared branch others build on (HATS-1253)"
 else
-    reason="Irreversible — no undo path (HATS-437): ${cmd}
-Force-push overwrites remote history; \`gh pr merge\` lands a commit on the default branch."
+    headline="is irreversible and has no undo path (HATS-437)"
 fi
 
-reason="${reason}
+# Consent channels, in the order a reader should try them. Deliberately does NOT
+# name a provider-specific file: this text is read under every harness.
+consent="Consent reaches this hook in exactly two ways, and neither is available
+to the agent — that is the point:
+  1. The user approves the prompt this hook raises (where the harness supports
+     an interactive decision).
+  2. AI_HATS_SHARED_STATE_ACK=1 is present in the environment that launched the
+     agent, pre-approving the session.
+Prefixing the assignment onto the agent's own command does nothing: this hook
+runs before that command exists as a process, so it never reaches us."
+
+reason="This command ${headline}:
+  ${cmd}
 
 Approve only if this exact command is what you intended.
 Agent: this is the user's call to make — do not retry, rephrase or re-issue it.
-To pre-approve for a whole session, set AI_HATS_SHARED_STATE_ACK=1 in the
-environment that launches Claude Code (e.g. the \`env\` block of
-.claude/settings.json). A prefix on the command itself cannot work: this hook
-runs before the command exists as a process."
+
+${consent}"
+
+deny_hard() {
+    {
+        echo "[shared-state-guard] BLOCKED — this command ${headline}."
+        echo "  command: $cmd"
+        echo
+        echo "$consent"
+    } >&2
+    exit 2
+}
 
 emit_ask() {
     if command -v jq >/dev/null 2>&1; then
@@ -144,10 +194,13 @@ print(json.dumps({"hookSpecificOutput": {
         return
     fi
     # No JSON tool: fall back to the hard deny rather than allowing through.
-    echo "[shared-state-guard] BLOCKED — $verdict, and no jq/python3 to request approval." >&2
-    echo "  command: $cmd" >&2
-    exit 2
+    deny_hard
 }
 
-emit_ask
-exit 0
+# `hook_event_name` is Claude Code's marker; its absence means the caller does
+# not speak that protocol, so refuse the way it understands.
+if [[ "$hook_event" == "PreToolUse" ]]; then
+    emit_ask
+    exit 0
+fi
+deny_hard
