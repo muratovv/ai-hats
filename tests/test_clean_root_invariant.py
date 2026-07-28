@@ -71,6 +71,7 @@ def test_drop_legacy_root_skills_mirrors_empty_parent_dirs(tmp_path: Path) -> No
 
     removed = drop_legacy_root_skills_mirrors(tmp_path)
 
+    assert removed == []
     assert not (tmp_path / ".agy").exists()
     assert not (tmp_path / ".gemini").exists()
     assert not (tmp_path / ".cline").exists()

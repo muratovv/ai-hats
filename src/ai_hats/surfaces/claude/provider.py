@@ -23,12 +23,10 @@ from . import sdk_runner
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
 from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
-
     AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR,
     CLAUDE_PROJECT_DIR_VAR,
     ai_hats_dir,
-    claude_md,
     claude_settings_json,
     claude_settings_local_json,
     claude_user_settings_json,
