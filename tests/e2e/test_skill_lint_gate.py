@@ -17,6 +17,7 @@ Covers:
 
 Slow only because of git init + subprocess spin-up (~ms each).
 """
+
 from __future__ import annotations
 
 import os
@@ -39,11 +40,7 @@ def _git(cwd: Path, *args: str) -> None:
 
 def _make_stub(path: Path, rc: int, message: str = "") -> Path:
     """A fake agnix: prints `message` then exits with `rc`."""
-    path.write_text(
-        "#!/usr/bin/env bash\n"
-        f"echo {message!r}\n"
-        f"exit {rc}\n"
-    )
+    path.write_text(f"#!/usr/bin/env bash\necho {message!r}\nexit {rc}\n")
     path.chmod(0o755)
     return path
 
@@ -156,9 +153,7 @@ def test_non_library_change_is_noop(repo: Path, tmp_path: Path):
 def test_fail_open_when_agnix_absent(repo: Path):
     """Missing agnix binary → loud no-op (never wedge a commit)."""
     _stage_skill(repo, "library/core/skills/broken/SKILL.md")
-    res = _run_hook(
-        repo, env={"AI_HATS_SKILL_LINT_CMD": "/nonexistent/agnix-xyz"}
-    )
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": "/nonexistent/agnix-xyz"})
     assert res.returncode == 0, res.stderr
     assert "SKIPPED" in res.stderr
 
@@ -186,9 +181,7 @@ def test_ack_override_allows_block(repo: Path, tmp_path: Path):
 def test_blocks_when_skill_missing_license(repo: Path, tmp_path: Path):
     """R1: a staged SKILL.md with no `license:` frontmatter blocks even if agnix passes."""
     stub = _make_stub(tmp_path / "pass.sh", rc=0)
-    _stage_skill(
-        repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY
-    )
+    _stage_skill(repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY)
     res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
     assert res.returncode == 1, res.stderr
     assert "license" in res.stderr.lower()
@@ -198,9 +191,7 @@ def test_blocks_when_skill_missing_license(repo: Path, tmp_path: Path):
 def test_blocks_derived_skill_missing_license_file(repo: Path, tmp_path: Path):
     """R2: a declared-derived skill (`upstream:` in metadata.yaml) without a co-located LICENSE blocks."""
     stub = _make_stub(tmp_path / "pass.sh", rc=0)
-    _stage_derived_skill(
-        repo, "library/usage/skills/derived-nofile", with_license_file=False
-    )
+    _stage_derived_skill(repo, "library/usage/skills/derived-nofile", with_license_file=False)
     res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
     assert res.returncode == 1, res.stderr
     assert "LICENSE" in res.stderr
@@ -233,9 +224,7 @@ def test_allows_licensed_derived_skill(repo: Path, tmp_path: Path):
 def test_ack_override_bypasses_license_block(repo: Path, tmp_path: Path):
     """AI_HATS_SKILL_LINT_ACK=1 bypasses a license-guard block too."""
     stub = _make_stub(tmp_path / "pass.sh", rc=0)
-    _stage_skill(
-        repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY
-    )
+    _stage_skill(repo, "library/core/skills/nolicense/SKILL.md", body=_UNLICENSED_BODY)
     res = _run_hook(
         repo,
         env={

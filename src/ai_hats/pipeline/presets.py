@@ -38,4 +38,3 @@ init_pipeline = build(
     PrepareExecuteSessionStep(),
     name=PIPELINE_INIT,
 )
-

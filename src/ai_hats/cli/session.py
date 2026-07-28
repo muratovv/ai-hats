@@ -30,11 +30,17 @@ __all__ = ["session"]
 @click.argument("session_id", required=False)
 @click.option("--last", "use_last", is_flag=True, help="Use the most recent session")
 @click.option(
-    "--max-retries", type=int, default=1, show_default=True,
+    "--max-retries",
+    type=int,
+    default=1,
+    show_default=True,
     help="LLM retries on validation failure",
 )
-@click.option("--interactive", is_flag=True,
-              help="After generating, hand off to a live `claude` session preloaded with the retro file")
+@click.option(
+    "--interactive",
+    is_flag=True,
+    help="After generating, hand off to a live `claude` session preloaded with the retro file",
+)
 def session_retro(
     session_id: str | None,
     use_last: bool,
@@ -49,9 +55,9 @@ def session_retro(
     project_dir = _project_dir()
 
     if use_last or not session_id:
-        sessions = SessionManager(
-            project_dir, runs_dir=runs_dir(project_dir)
-        ).list_sessions(last_n=1)
+        sessions = SessionManager(project_dir, runs_dir=runs_dir(project_dir)).list_sessions(
+            last_n=1
+        )
         if not sessions:
             console.print("[red]No sessions found[/]")
             sys.exit(1)

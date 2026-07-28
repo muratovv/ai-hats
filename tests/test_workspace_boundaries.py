@@ -69,9 +69,7 @@ def _members() -> dict[str, dict]:
             members[project["name"]] = {
                 "src": member_dir / "src" / _import_root(project["name"]),
                 "deps": [_dep_name(s) for s in project.get("dependencies", [])],
-                "optional_deps": [
-                    _dep_name(s) for specs in optional.values() for s in specs
-                ],
+                "optional_deps": [_dep_name(s) for specs in optional.values() for s in specs],
                 # HATS-956: surface plugins (packages/surfaces/*) are a consumer
                 # tier ABOVE the integrator — the Provider ABC is integrator-bound
                 # (ADR-0014 P0#4), so a surface may depend UP on `ai-hats`.
@@ -99,9 +97,7 @@ def _boundary_offenders(src: Path, allowed: set[str]) -> dict[str, list[str]]:
     offenders: dict[str, list[str]] = {}
     for path in sorted(src.rglob("*.py")):
         roots = _top_level_import_roots(ast.parse(path.read_text()))
-        bad = sorted(
-            r for r in roots if r not in allowed and r not in sys.stdlib_module_names
-        )
+        bad = sorted(r for r in roots if r not in allowed and r not in sys.stdlib_module_names)
         if bad:
             offenders[str(path.relative_to(src))] = bad
     return offenders
@@ -151,8 +147,7 @@ def _topology_offenders(
     modules = set(declared) - surfaces - {CORE, INTEGRATOR}
     first_party = set(declared) | {INTEGRATOR}
     limits = {
-        name: ({CORE, INTEGRATOR} | modules if name in surfaces else {CORE})
-        for name in declared
+        name: ({CORE, INTEGRATOR} | modules if name in surfaces else {CORE}) for name in declared
     }
     limits[CORE] = set()
     limits[INTEGRATOR] = set(declared)
@@ -168,9 +163,7 @@ def test_declared_first_party_topology():
     """Rule 2: the declared dep graph itself respects the ADR-0014 tiers."""
     members = _members()
     declared = {name: member["deps"] for name, member in members.items()}
-    declared[INTEGRATOR] = [
-        _dep_name(s) for s in _project(ROOT / "pyproject.toml")["dependencies"]
-    ]
+    declared[INTEGRATOR] = [_dep_name(s) for s in _project(ROOT / "pyproject.toml")["dependencies"]]
     surfaces = frozenset(n for n, m in members.items() if m["is_surface"])
     problems = _topology_offenders(declared, surfaces)
     assert not problems, f"ADR-0014 tier violations in declared deps: {problems}"

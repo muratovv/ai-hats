@@ -171,7 +171,11 @@ def active_hypothesis_ids(ws: Workspace) -> set[str]:
 
 
 def proposals(
-    ws: Workspace, *, status: str | None = None, category: str | None = None, target: str | None = None
+    ws: Workspace,
+    *,
+    status: str | None = None,
+    category: str | None = None,
+    target: str | None = None,
 ) -> list[PropView]:
     """PROP views filtered by state/category/target (AND-combined)."""
     out = [_prop_view(c) for c in _load_cards(_catalog(ws, "PROP-0"))]
@@ -308,9 +312,13 @@ def create_proposal(
     return _create_card(ws, "PROP", body, {"related_hypotheses": list(related_hypotheses)})
 
 
-def append_verdict(ws: Workspace, hyp_id: str, entry: dict, *, caller_cwd: Path, actor: str = REFLECT_ACTOR):
+def append_verdict(
+    ws: Workspace, hyp_id: str, entry: dict, *, caller_cwd: Path, actor: str = REFLECT_ACTOR
+):
     """Append one validation_log entry to a HYP (io.append_verdict parity)."""
-    return ws.extension("hyp-verdicts").append_verdict(hyp_id, entry, actor=actor, caller_cwd=caller_cwd)
+    return ws.extension("hyp-verdicts").append_verdict(
+        hyp_id, entry, actor=actor, caller_cwd=caller_cwd
+    )
 
 
 def set_proposal_status(
@@ -322,12 +330,18 @@ def set_proposal_status(
     card = kernel.get(prop_id)
     if card is not None and card.state == to_state:
         return None
-    return kernel.transition(prop_id, to_state, actor=actor, caller_cwd=caller_cwd, reason="reflect triage")
+    return kernel.transition(
+        prop_id, to_state, actor=actor, caller_cwd=caller_cwd, reason="reflect triage"
+    )
 
 
-def autoclose_hypotheses(ws: Workspace, *, caller_cwd: Path, k: int, actor: str, dry_run: bool = False):
+def autoclose_hypotheses(
+    ws: Workspace, *, caller_cwd: Path, k: int, actor: str, dry_run: bool = False
+):
     """Run the quorum autoclose sweep; returns the closed :class:`QuorumClosure`s."""
-    return ws.extension("hyp-verdicts").autoclose(caller_cwd=caller_cwd, k=k, actor=actor, dry_run=dry_run)
+    return ws.extension("hyp-verdicts").autoclose(
+        caller_cwd=caller_cwd, k=k, actor=actor, dry_run=dry_run
+    )
 
 
 def hyp_backlog_mounted(ws: Workspace) -> bool:

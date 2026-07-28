@@ -78,18 +78,14 @@ def test_diagnose_includes_session_id(tmp_path: Path):
 
 
 def test_diagnose_surfaces_exit_code_and_timed_out(tmp_path: Path):
-    session = _make_session(
-        tmp_path, {"exit_code": 124, "timed_out": True, "role": "x"}
-    )
+    session = _make_session(tmp_path, {"exit_code": 124, "timed_out": True, "role": "x"})
     diag = diagnose_silent_session(session)
     assert "exit_code=124" in diag
     assert "timed_out=True" in diag
 
 
 def test_diagnose_omits_falsy_optional_fields(tmp_path: Path):
-    session = _make_session(
-        tmp_path, {"exit_code": 0, "timed_out": False, "error": None}
-    )
+    session = _make_session(tmp_path, {"exit_code": 0, "timed_out": False, "error": None})
     diag = diagnose_silent_session(session)
     # exit_code=0 is informational; timed_out=False/error=None must be skipped
     assert "timed_out" not in diag
@@ -97,9 +93,7 @@ def test_diagnose_omits_falsy_optional_fields(tmp_path: Path):
 
 
 def test_diagnose_includes_stderr_tail(tmp_path: Path):
-    session = _make_session(
-        tmp_path, {"exit_code": 1}, stderr="some\nfailure output here"
-    )
+    session = _make_session(tmp_path, {"exit_code": 1}, stderr="some\nfailure output here")
     diag = diagnose_silent_session(session)
     assert "stderr_tail=" in diag
     assert "failure output here" in diag
@@ -137,7 +131,8 @@ def test_guard_noop_when_on_zero_output_ignore(tmp_path: Path):
         {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
     )
     apply_post_run_guard(
-        session, HarnessPolicy(reporting=True, on_zero_output="ignore"),
+        session,
+        HarnessPolicy(reporting=True, on_zero_output="ignore"),
     )
 
 
@@ -162,7 +157,8 @@ def test_guard_zero_output_error_is_reliability_error(tmp_path: Path):
     )
     with pytest.raises(HarnessReliabilityError):
         apply_post_run_guard(
-            session, HarnessPolicy(reporting=True),
+            session,
+            HarnessPolicy(reporting=True),
         )
 
 
@@ -178,8 +174,10 @@ def test_guard_noop_when_timed_out(tmp_path: Path):
     session = _make_session(
         tmp_path,
         {
-            "exit_code": 124, "timed_out": True,
-            "tokens": {"output": 0}, "tool_calls": 0,
+            "exit_code": 124,
+            "timed_out": True,
+            "tokens": {"output": 0},
+            "tool_calls": 0,
         },
     )
     apply_post_run_guard(session, HarnessPolicy(reporting=True))

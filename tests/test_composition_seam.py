@@ -37,10 +37,11 @@ def test_seam_routes_through_facade(tmp_path: Path):
     ``compose_for_role`` (single derivation point)."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
     asm = _fake_assembler(["judge"], tmp_path)
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role",
-               return_value=fake_result) as facade, \
-         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result) as facade,
+        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+    ):
         payload = build_composition_payload(tmp_path, role_override="judge")
     facade.assert_called_once_with(asm, "judge")
     assert payload.result is fake_result
@@ -61,8 +62,10 @@ def test_seam_raises_role_not_found_for_explicit_role(tmp_path: Path):
 def test_seam_raises_on_compose_errors(tmp_path: Path):
     fake_result = MagicMock(errors=["role not found"])
     asm = _fake_assembler(["ghost"], tmp_path)
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+    ):
         with pytest.raises(RuntimeError, match="failed to resolve role"):
             build_composition_payload(tmp_path, role_override="ghost")
 
@@ -72,11 +75,15 @@ def test_seam_lenient_mode_skips_raises(tmp_path: Path):
     HATS-271 owns that failure mode downstream."""
     fake_result = MagicMock(errors=["broken"], merged_injection="")
     asm = _fake_assembler([], tmp_path)
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
-         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+    ):
         payload = build_composition_payload(
-            tmp_path, role_override="ghost", strict=False,
+            tmp_path,
+            role_override="ghost",
+            strict=False,
         )
     assert payload.result is fake_result
 
@@ -92,9 +99,7 @@ def _provider_less_assembler(project_dir: Path) -> MagicMock:
 
 def test_seam_interactive_requires_provider(tmp_path: Path):
     """The former launch-step 'no provider configured' contract, relocated."""
-    with patch(
-        "ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)
-    ):
+    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)):
         with pytest.raises(MissingProviderError) as exc_info:
             build_composition_payload(tmp_path, interactive=True)
     _assert_missing_provider_contract(exc_info.value)
@@ -102,9 +107,7 @@ def test_seam_interactive_requires_provider(tmp_path: Path):
 
 def test_preview_seam_requires_provider(tmp_path: Path):
     """HATS-1224: the dry-run/preview twin raises the same typed error."""
-    with patch(
-        "ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)
-    ):
+    with patch("ai_hats.assembler.Assembler", return_value=_provider_less_assembler(tmp_path)):
         with pytest.raises(MissingProviderError) as exc_info:
             build_preview_payload(tmp_path)
     _assert_missing_provider_contract(exc_info.value)
@@ -135,9 +138,11 @@ def _resolved_provider(tmp_path: Path, **kwargs) -> str:
     """The name ``build_composition_payload`` actually resolves a provider for."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
     asm = _provider_seam_assembler(tmp_path)
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
-         patch("ai_hats.providers.get_provider") as get_provider:
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+        patch("ai_hats.providers.get_provider") as get_provider,
+    ):
         build_composition_payload(tmp_path, role_override="judge", **kwargs)
     return get_provider.call_args.args[0]
 
@@ -149,17 +154,27 @@ def test_seam_explicit_provider_wins_over_cfg(tmp_path: Path, interactive: bool)
     Pre-fix the batch arm hard-read ``cfg.provider``, so ``ai-hats execute -p agy
     --batch`` accepted the flag and ran the configured surface in silence.
     """
-    assert _resolved_provider(
-        tmp_path, provider_name="agy", interactive=interactive,
-    ) == "agy"
+    assert (
+        _resolved_provider(
+            tmp_path,
+            provider_name="agy",
+            interactive=interactive,
+        )
+        == "agy"
+    )
 
 
 @pytest.mark.parametrize("interactive", [False, True])
 def test_seam_absent_override_falls_back_to_cfg(tmp_path: Path, interactive: bool):
     """HATS-1218 R4, other half: no override still resolves ``cfg.provider``."""
-    assert _resolved_provider(
-        tmp_path, provider_name=None, interactive=interactive,
-    ) == "claude"
+    assert (
+        _resolved_provider(
+            tmp_path,
+            provider_name=None,
+            interactive=interactive,
+        )
+        == "claude"
+    )
 
 
 def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
@@ -171,9 +186,11 @@ def test_seam_batch_override_does_not_persist_active_role(tmp_path: Path):
     asm.project_config.provider = "claude"
     asm.project_config.active_role = ""  # would be a first run, were it HITL
     asm.project_config.default_role = "judge"
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
-         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+    ):
         build_composition_payload(tmp_path, provider_name="agy", interactive=False)
     asm.set_role.assert_not_called()
 
@@ -193,9 +210,11 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
 
     asm.set_role.side_effect = _set_role
 
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role", return_value=fake_result), \
-         patch("ai_hats.providers.get_provider", return_value=MagicMock()):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch("ai_hats.materialize.compose_for_role", return_value=fake_result),
+        patch("ai_hats.providers.get_provider", return_value=MagicMock()),
+    ):
         payload = build_composition_payload(tmp_path, interactive=True)
 
     assert any("core.hooksPath is already set" in w for w in payload.startup_warnings)

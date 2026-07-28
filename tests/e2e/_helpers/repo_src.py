@@ -66,7 +66,10 @@ def build_src(repo_root: Path) -> Path:
     # os.environ-derived env here re-leaks the class that guard exists to prevent.
     subprocess.run(
         ["git", "clone", "--shared", "--quiet", str(repo_root), str(src)],
-        check=True, capture_output=True, text=True, timeout=CLONE_TIMEOUT_S,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=CLONE_TIMEOUT_S,
     )
     _CACHE["src"] = src
     return src

@@ -43,55 +43,65 @@ def test_extras_forbidden():
 
 def test_hypothesis_verdict_id_pattern():
     with pytest.raises(ValidationError):
-        ReflectSessionV1.model_validate(_full_payload(
-            hypothesis_verdicts=[{
-                "hyp_id": "bad",
-                "verdict": "confirmed",
-                "evidence": "x",
-            }]
-        ))
+        ReflectSessionV1.model_validate(
+            _full_payload(
+                hypothesis_verdicts=[
+                    {
+                        "hyp_id": "bad",
+                        "verdict": "confirmed",
+                        "evidence": "x",
+                    }
+                ]
+            )
+        )
 
 
 def test_hypothesis_verdict_enum():
     with pytest.raises(ValidationError):
-        ReflectSessionV1.model_validate(_full_payload(
-            hypothesis_verdicts=[{
-                "hyp_id": "HYP-001",
-                "verdict": "maybe",
-                "evidence": "x",
-            }]
-        ))
+        ReflectSessionV1.model_validate(
+            _full_payload(
+                hypothesis_verdicts=[
+                    {
+                        "hyp_id": "HYP-001",
+                        "verdict": "maybe",
+                        "evidence": "x",
+                    }
+                ]
+            )
+        )
 
 
 def test_hypothesis_verdict_evidence_required():
     with pytest.raises(ValidationError):
-        ReflectSessionV1.model_validate(_full_payload(
-            hypothesis_verdicts=[{
-                "hyp_id": "HYP-001",
-                "verdict": "confirmed",
-                "evidence": "",
-            }]
-        ))
+        ReflectSessionV1.model_validate(
+            _full_payload(
+                hypothesis_verdicts=[
+                    {
+                        "hyp_id": "HYP-001",
+                        "verdict": "confirmed",
+                        "evidence": "",
+                    }
+                ]
+            )
+        )
 
 
 def test_proposal_action_pattern():
     with pytest.raises(ValidationError):
-        ReflectSessionV1.model_validate(_full_payload(
-            proposal_actions=[{"action": "created", "prop_id": "bad"}]
-        ))
+        ReflectSessionV1.model_validate(
+            _full_payload(proposal_actions=[{"action": "created", "prop_id": "bad"}])
+        )
 
 
 def test_proposal_action_enum():
     with pytest.raises(ValidationError):
-        ReflectSessionV1.model_validate(_full_payload(
-            proposal_actions=[{"action": "deleted", "prop_id": "PROP-001"}]
-        ))
+        ReflectSessionV1.model_validate(
+            _full_payload(proposal_actions=[{"action": "deleted", "prop_id": "PROP-001"}])
+        )
 
 
 def test_self_problems_list_of_strings():
-    rs = ReflectSessionV1.model_validate(_full_payload(
-        self_problems=["PROP-005", "PROP-006"]
-    ))
+    rs = ReflectSessionV1.model_validate(_full_payload(self_problems=["PROP-005", "PROP-006"]))
     assert rs.self_problems == ["PROP-005", "PROP-006"]
 
 
@@ -118,4 +128,5 @@ def test_full_round_trip():
 
 def test_loader_dispatch_includes_reflect_session():
     from ai_hats.retro.loader import SCHEMA_FAMILY_TO_MODEL
+
     assert SCHEMA_FAMILY_TO_MODEL["hats-reflect-session"] is ReflectSessionV1

@@ -30,9 +30,7 @@ _WRAP_TASKS_THRESHOLD = 2
 _WRAP_DURATION_MIN = 60
 
 
-def evaluate_wrap_up(
-    project_dir: Path, session_id: str
-) -> WrapUpInfo | None:
+def evaluate_wrap_up(project_dir: Path, session_id: str) -> WrapUpInfo | None:
     """Wrap-up nudge: fire when tasks_closed_in_window >= 2 AND duration > 60min.
 
     HATS-214. Source data:

@@ -106,26 +106,39 @@ def _extract_json_envelope(stdout: str) -> dict:
 
 
 def test_golden_path_install_init_execute_batch(
-    tmp_venv_project, requires_claude_auth, tmp_path: Path,
+    tmp_venv_project,
+    requires_claude_auth,
+    tmp_path: Path,
 ) -> None:
     """Real CLI golden-path: ``self init`` → ``show-prompt`` →
     ``execute --batch`` → audit.md + trace.jsonl + JSON output."""
 
     # ---- 1. self init writes provider + composition to disk ----
     tmp_venv_project.run(
-        "self", "init", "-r", "assistant", "-p", "claude",
-        "--no-update", timeout=120,
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--no-update",
+        timeout=120,
     ).expect_ok().expect_stdout_contains(
-        "Default role: assistant", "Provider: claude",
+        "Default role: assistant",
+        "Provider: claude",
     ).expect_file(
-        PROJECT_CONFIG, contains="default_role: assistant",
+        PROJECT_CONFIG,
+        contains="default_role: assistant",
     )
 
     # ---- 2. show-prompt surfaces composed role markers ----
     tmp_venv_project.run(
-        "config", "show-prompt",
+        "config",
+        "show-prompt",
     ).expect_ok().expect_stdout_contains(
-        "Reliability", "Cleanliness", "Velocity",
+        "Reliability",
+        "Cleanliness",
+        "Velocity",
     )
 
     # ---- 3. execute --batch walks the real production pipeline ----
@@ -135,13 +148,19 @@ def test_golden_path_install_init_execute_batch(
     # ``launch_provider`` step's inner branch differs).
     trace_path = tmp_path / "pipeline_trace.jsonl"
     result = tmp_venv_project.run(
-        "execute", "--batch",
-        "-r", "assistant", "-p", "claude",
+        "execute",
+        "--batch",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
         # Explicit cheapest tier — without ``--model`` the provider
         # default kicks in (sonnet on current builds), which roughly
         # 5x's the per-turn cost. Tests must be predictable on $.
-        "--model", "claude-haiku-4-5",
-        "--prompt", "Reply with exactly: OK. No other text.",
+        "--model",
+        "claude-haiku-4-5",
+        "--prompt",
+        "Reply with exactly: OK. No other text.",
         "--json",
         timeout=120,
         extra_env={"AI_HATS_PIPELINE_TRACE": str(trace_path)},
@@ -167,23 +186,22 @@ def test_golden_path_install_init_execute_batch(
     #
     # Independent observability — catches pipeline-DAG drift even if
     # the per-step side effects look fine.
-    events = [
-        json.loads(line)
-        for line in trace_path.read_text().splitlines() if line.strip()
-    ]
+    events = [json.loads(line) for line in trace_path.read_text().splitlines() if line.strip()]
     step_names = [e["step"] for e in events]
     expected_steps = {
-        "check_update_async", "compose_role", "resolve_prompt",
+        "check_update_async",
+        "compose_role",
+        "resolve_prompt",
         # HATS-535: step renamed ``launch_provider`` → ``provider``;
         # the legacy id is kept as a registry alias in
         # ``pipeline/steps/__init__.py`` for back-compat with any
         # external pipeline YAML, but trace.jsonl emits the canonical
         # name.
-        "provider", "render_update_banner",
+        "provider",
+        "render_update_banner",
     }
     assert expected_steps.issubset(set(step_names)), (
-        f"missing pipeline steps; got {step_names}, "
-        f"expected superset of {expected_steps}"
+        f"missing pipeline steps; got {step_names}, expected superset of {expected_steps}"
     )
     errored = [e for e in events if e.get("error")]
     assert not errored, f"pipeline steps errored: {errored}"
@@ -211,7 +229,8 @@ def test_golden_path_install_init_execute_batch(
 
 
 def test_hitl_banners_via_bare_ai_hats(
-    tmp_venv_project, requires_claude_auth,
+    tmp_venv_project,
+    requires_claude_auth,
 ) -> None:
     """Bare ``ai-hats`` HITL — start/end banners survive subprocess capture.
 
@@ -221,14 +240,20 @@ def test_hitl_banners_via_bare_ai_hats(
     """
     # Set up the project (same provider/role as the smoke test).
     tmp_venv_project.run(
-        "self", "init", "-r", "assistant", "-p", "claude",
-        "--no-update", timeout=120,
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--no-update",
+        timeout=120,
     ).expect_ok()
 
     (
         drive_bare_hitl(tmp_venv_project, role="assistant")
         .expect_no_hang()
-        .expect_exit_in({0, 130})   # clean /exit (0) OR Ctrl-C teardown (130)
+        .expect_exit_in({0, 130})  # clean /exit (0) OR Ctrl-C teardown (130)
         .expect_start_banner(role="assistant", provider="claude")
         .expect_end_banner()
     )

@@ -52,7 +52,9 @@ def _divergent_source(dst: Path) -> Path:
     src = dst / "tree-x"
     subprocess.run(
         ["git", "clone", "--shared", "--quiet", str(REPO_ROOT), str(src)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     # Overlay the working tree so a dirty checkout is tested, not the last commit.
     shutil.copytree(REPO_ROOT / "src", src / "src", dirs_exist_ok=True)
@@ -78,9 +80,7 @@ def _stub_ai_hats_on_path(dst: Path) -> Path:
     return bin_dir
 
 
-def test_init_completes_when_the_update_swaps_the_running_tree(
-    tmp_path: Path, repo_root: Path
-):
+def test_init_completes_when_the_update_swaps_the_running_tree(tmp_path: Path, repo_root: Path):
     """The embedded update replaces this interpreter's own package — init must not split."""
     from _helpers.project import pin_edge_channel
     from _helpers.venv import build_launcher_venv
@@ -105,8 +105,12 @@ def test_init_completes_when_the_update_swaps_the_running_tree(
     try:
         proc = subprocess.run(
             [str(launcher), "self", "init", "-p", "claude"],
-            cwd=str(project), env=env, stdin=slave,
-            capture_output=True, text=True, timeout=420,
+            cwd=str(project),
+            env=env,
+            stdin=slave,
+            capture_output=True,
+            text=True,
+            timeout=420,
         )
     except subprocess.TimeoutExpired:
         pytest.fail("init hung after swapping its own tree")

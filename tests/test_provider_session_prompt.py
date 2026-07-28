@@ -116,9 +116,7 @@ def test_build_session_prompt_byte_stable_distinct_session_ids(project_with_libr
 # --------------------------------------------------------------------- #
 
 
-_BASELINE_FIXTURE = (
-    Path(__file__).parent / "fixtures" / "role_baselines" / "v06_default.md"
-)
+_BASELINE_FIXTURE = Path(__file__).parent / "fixtures" / "role_baselines" / "v06_default.md"
 
 
 def test_composed_default_role_covers_canonical_baseline_content(tmp_path):
@@ -297,9 +295,7 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
     description, so build_system_prompt's index would list it."""
     skill_dir = tmp_path / "skills" / "doc-protocol"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\ndescription: doc-protocol skill\n---\n# body\n"
-    )
+    (skill_dir / "SKILL.md").write_text("---\ndescription: doc-protocol skill\n---\n# body\n")
     skill = ResolvedComponent(
         name="doc-protocol",
         component_type=ComponentKind.SKILL,
@@ -309,9 +305,7 @@ def _skill_composition(tmp_path: Path) -> CompositionResult:
     # HATS-700: the always-on body is read on demand from source_path/rule.md.
     rule_dir = tmp_path / "rules" / "dev_rule_tool_call_hygiene"
     rule_dir.mkdir(parents=True)
-    (rule_dir / "rule.md").write_text(
-        "# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash."
-    )
+    (rule_dir / "rule.md").write_text("# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.")
     rule = ResolvedComponent(
         name="dev_rule_tool_call_hygiene",
         component_type=ComponentKind.RULE,
@@ -369,15 +363,11 @@ def _skill_on_disk(tmp_path: Path, name: str, skill_md: str) -> ResolvedComponen
     skill_dir = tmp_path / "skills" / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(skill_md)
-    return ResolvedComponent(
-        name=name, component_type=ComponentKind.SKILL, source_path=skill_dir
-    )
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
 
 
 def test_extract_description_reads_frontmatter(tmp_path):
-    skill = _skill_on_disk(
-        tmp_path, "doc", "---\ndescription: the doc skill\n---\n# body\n"
-    )
+    skill = _skill_on_disk(tmp_path, "doc", "---\ndescription: the doc skill\n---\n# body\n")
     assert _extract_frontmatter_description(skill) == "the doc skill"
 
 
@@ -441,4 +431,3 @@ def test_build_session_prompt_injects_skill_script_paths_to_env(tmp_path):
     _, agy_env, _ = agy_p.build_session_prompt(project, result, "sid-agy")
     assert "PATH" in agy_env
     assert str(skill_dir / "scripts") in agy_env["PATH"]
-

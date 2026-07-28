@@ -72,26 +72,28 @@ def run_batch(
 
     try:
         with PipelineHarness(PIPELINE_EXECUTE, project_dir) as h:
-            final = h.run({
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: False,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(task),
-                KEY_MODEL: model,
-                KEY_ISOLATION: isolation,
-                KEY_TICKET: ticket,
-                KEY_TAGS: tags or None,
-                KEY_COMPOSITION: build_composition_payload(
-                    project_dir,
-                    role_override=role,
-                    provider_name=provider,
-                    interactive=False,
-                ),
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            })
+            final = h.run(
+                {
+                    KEY_ROLE: role,
+                    KEY_INTERACTIVE: False,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_PROMPT_PATH: h.materialize_prompt(task),
+                    KEY_MODEL: model,
+                    KEY_ISOLATION: isolation,
+                    KEY_TICKET: ticket,
+                    KEY_TAGS: tags or None,
+                    KEY_COMPOSITION: build_composition_payload(
+                        project_dir,
+                        role_override=role,
+                        provider_name=provider,
+                        interactive=False,
+                    ),
+                    # HATS-867: the CLI (integrator) injects the observe writer
+                    # handles — runners no longer construct them.
+                    KEY_SESSION_MGR: make_session_manager(project_dir),
+                    KEY_TRACER_FACTORY: SidecarTracer,
+                }
+            )
     except RoleNotFoundError as exc:
         # HATS-545 / HATS-547: friendly stderr + exit 2, never a 9-frame
         # traceback. Shared with the bare-launch surface.

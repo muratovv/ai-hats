@@ -26,8 +26,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -69,7 +73,10 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -83,9 +90,14 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -101,15 +113,13 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     current_path: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith("/task/test-drift"):
                 wt_path = current_path
                 break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"could not locate worktree path:\n{listing}"
-    )
+    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
 
     # ---- 3. main checkout advances the base branch (the drift) ----
     (project / "drift.txt").write_text("from the other agent\n")
@@ -125,9 +135,14 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 5. wt merge refuses with drift message ----
@@ -135,19 +150,16 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     # resolves the venv from `pwd`, and the worktree directory has no
     # `.agent/` of its own.
     res = ai_hats(
-        "wt", "merge", "task/test-drift",
-        expect_exit=1, cwd=project,
+        "wt",
+        "merge",
+        "task/test-drift",
+        expect_exit=1,
+        cwd=project,
     )
     combined = res.stdout + res.stderr
-    assert "drift" in combined.lower(), (
-        f"drift not mentioned in refusal:\n{combined}"
-    )
-    assert "drift.txt" in combined, (
-        f"affected path not listed in refusal:\n{combined}"
-    )
-    assert "--accept-drift" in combined, (
-        f"override flag not advertised:\n{combined}"
-    )
+    assert "drift" in combined.lower(), f"drift not mentioned in refusal:\n{combined}"
+    assert "drift.txt" in combined, f"affected path not listed in refusal:\n{combined}"
+    assert "--accept-drift" in combined, f"override flag not advertised:\n{combined}"
 
     # Worktree branch still exists (refusal preserves it for re-verify).
     branches = _git(project, "branch", "--list", "task/test-drift").stdout
@@ -157,7 +169,10 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
 
     # ---- 6. --accept-drift completes the merge ----
     merge_res = ai_hats(
-        "wt", "merge", "task/test-drift", "--accept-drift",
+        "wt",
+        "merge",
+        "task/test-drift",
+        "--accept-drift",
         cwd=project,
     )
 

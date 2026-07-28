@@ -94,7 +94,9 @@ class SessionReviewRunner:
             facts = compute_facts(self.project_dir, session_id)
             prompt = self._build_prompt(facts)
             analysis = self._run_and_validate(
-                prompt, facts.session_id, max_retries,
+                prompt,
+                facts.session_id,
+                max_retries,
                 harness_policy=harness_policy,
             )
             review = self._merge(facts, analysis)
@@ -107,7 +109,9 @@ class SessionReviewRunner:
         except Exception as exc:  # noqa: BLE001 — surface every failure to harness
             error_msg = f"{type(exc).__name__}: {exc}"
             logger.warning(
-                "session-reviewer failed for %s: %s", session_id, error_msg,
+                "session-reviewer failed for %s: %s",
+                session_id,
+                error_msg,
                 exc_info=True,
             )
             raise SessionReviewError(error_msg) from exc
@@ -162,10 +166,7 @@ class SessionReviewRunner:
             "and reference the resulting PROP-NNN in `self_problems`. "
             "NEVER silently drop entries."
         )
-        sections.append(
-            f"\n{REVIEW_DELIM_START}\n... your YAML here "
-            f"...\n{REVIEW_DELIM_END}\n"
-        )
+        sections.append(f"\n{REVIEW_DELIM_START}\n... your YAML here ...\n{REVIEW_DELIM_END}\n")
         return "\n\n".join(sections)
 
     def _render_active_hypotheses(self) -> str:
@@ -202,9 +203,7 @@ class SessionReviewRunner:
         def _fmt(names: list[str], layer_map: dict) -> str:
             if not names:
                 return "(none)"
-            return ", ".join(
-                f"{n} ({layer_map.get(n, 'built-in')})" for n in names
-            )
+            return ", ".join(f"{n} ({layer_map.get(n, 'built-in')})" for n in names)
 
         lines = [
             "## Effective composition (what actually loaded for this session)",
@@ -234,8 +233,7 @@ class SessionReviewRunner:
         lines = ["## Open proposals (vote on similar; create only if novel)"]
         for p in open_props:
             lines.append(
-                f"- **{p.id}** [{p.category}/{p.target}] {p.title}\n"
-                f"  description: {p.description}"
+                f"- **{p.id}** [{p.category}/{p.target}] {p.title}\n  description: {p.description}"
             )
         return "\n".join(lines)
 
@@ -246,10 +244,7 @@ class SessionReviewRunner:
         if metrics_path.exists():
             try:
                 metrics = json.loads(metrics_path.read_text())
-                parts.append(
-                    f"metrics.json:\n```json\n"
-                    f"{json.dumps(metrics, indent=2)}\n```"
-                )
+                parts.append(f"metrics.json:\n```json\n{json.dumps(metrics, indent=2)}\n```")
             except json.JSONDecodeError:
                 pass
         audit_path = sdir / AUDIT_MD
@@ -308,8 +303,7 @@ class SessionReviewRunner:
             return text
         elided = len(block) - cls._INGESTED_CAP
         bounded = (
-            block[: cls._INGESTED_CAP]
-            + f"\n…[ingested-evidence bounded: {elided} bytes elided]…\n"
+            block[: cls._INGESTED_CAP] + f"\n…[ingested-evidence bounded: {elided} bytes elided]…\n"
         )
         return text[:start] + bounded + text[end:]
 
@@ -326,7 +320,9 @@ class SessionReviewRunner:
         # session-reviewer role surfaces via HATS-271 (empty transcript), not
         # a seam raise.
         payload = build_composition_payload(
-            self.project_dir, role_override="session-reviewer", strict=False,
+            self.project_dir,
+            role_override="session-reviewer",
+            strict=False,
         )
         return SubAgentRunner(
             self.project_dir,
@@ -350,7 +346,7 @@ class SessionReviewRunner:
         except Exception:
             return ""
         sr = cfg.feedback.session_retro
-        return (sr.review_model or sr.reflect_model or "")
+        return sr.review_model or sr.reflect_model or ""
 
     def _run_and_validate(
         self,
@@ -378,9 +374,7 @@ class SessionReviewRunner:
                 harness_policy=harness_policy,
             )
             transcript_path = session.session_dir / TRANSCRIPT_TXT
-            transcript = (
-                transcript_path.read_text() if transcript_path.exists() else ""
-            )
+            transcript = transcript_path.read_text() if transcript_path.exists() else ""
             # HATS-271: empty transcript means the sub-agent itself failed
             # (subprocess timeout, claude CLI error, auth/quota issue) — not
             # a schema mismatch. Retrying with a "fix your YAML" prompt is
@@ -406,9 +400,7 @@ class SessionReviewRunner:
                 # otherwise pass the lenient shape check, return here, then
                 # crash terminally in _merge with no chance to retry.
                 if "observations" in raw:
-                    raw["observations"] = self._coerce_observations(
-                        raw["observations"]
-                    )
+                    raw["observations"] = self._coerce_observations(raw["observations"])
                 return raw
             except (ValidationError, ValueError, yaml.YAMLError) as e:
                 last_error = e
@@ -429,7 +421,7 @@ class SessionReviewRunner:
         if s >= 0:
             e = transcript.find(REVIEW_DELIM_END, s + len(REVIEW_DELIM_START))
             if e > s:
-                body = transcript[s + len(REVIEW_DELIM_START):e].strip()
+                body = transcript[s + len(REVIEW_DELIM_START) : e].strip()
                 return self._strip_code_fence(body)
         return self._strip_code_fence(transcript)
 
@@ -466,9 +458,7 @@ class SessionReviewRunner:
                 f"(facts are runner-injected): {sorted(extras)}"
             )
 
-    def _validate_analysis_shape(
-        self, raw: dict[str, Any], session_id: str
-    ) -> None:
+    def _validate_analysis_shape(self, raw: dict[str, Any], session_id: str) -> None:
         """Validate analysis dict in isolation — fast feedback for retry loop."""
         summary = raw.get("summary")
         if not isinstance(summary, str) or not summary.strip():
@@ -488,8 +478,7 @@ class SessionReviewRunner:
         missing = active_ids - verdict_ids
         if missing:
             raise ValueError(
-                "hypothesis_verdicts missing entries for active HYPs: "
-                f"{sorted(missing)}"
+                f"hypothesis_verdicts missing entries for active HYPs: {sorted(missing)}"
             )
 
     @staticmethod
@@ -521,9 +510,7 @@ class SessionReviewRunner:
             if isinstance(entry, str):
                 coerced.append(entry)
             elif isinstance(entry, dict):
-                coerced.append(
-                    ", ".join(f"{k}: {v}" for k, v in entry.items())
-                )
+                coerced.append(", ".join(f"{k}: {v}" for k, v in entry.items()))
             else:
                 coerced.append(str(entry))
         return coerced
@@ -545,26 +532,26 @@ class SessionReviewRunner:
     # ---- merge + save ----
 
     def _merge(self, facts, analysis: dict[str, Any]) -> SessionReviewV1:
-        return SessionReviewV1.model_validate({
-            "schema": SCHEMA_VERSION,
-            "session_id": facts.session_id,
-            "project": facts.project,
-            "role": facts.role,
-            "date": facts.date,
-            "timestamp": datetime.now(tz=timezone.utc),
-            "metrics": facts.metrics.model_dump(),
-            "artifacts": facts.artifacts.model_dump(),
-            "links": facts.links.model_dump(exclude_none=True),
-            "summary": analysis["summary"],
-            "observations": analysis.get("observations") or [],
-            "hypothesis_verdicts": analysis.get("hypothesis_verdicts") or [],
-            "proposal_actions": analysis.get("proposal_actions") or [],
-            "self_problems": analysis.get("self_problems") or [],
-        })
+        return SessionReviewV1.model_validate(
+            {
+                "schema": SCHEMA_VERSION,
+                "session_id": facts.session_id,
+                "project": facts.project,
+                "role": facts.role,
+                "date": facts.date,
+                "timestamp": datetime.now(tz=timezone.utc),
+                "metrics": facts.metrics.model_dump(),
+                "artifacts": facts.artifacts.model_dump(),
+                "links": facts.links.model_dump(exclude_none=True),
+                "summary": analysis["summary"],
+                "observations": analysis.get("observations") or [],
+                "hypothesis_verdicts": analysis.get("hypothesis_verdicts") or [],
+                "proposal_actions": analysis.get("proposal_actions") or [],
+                "self_problems": analysis.get("self_problems") or [],
+            }
+        )
 
-    def _validate_integrity(
-        self, review: SessionReviewV1, expected_session_id: str
-    ) -> None:
+    def _validate_integrity(self, review: SessionReviewV1, expected_session_id: str) -> None:
         if review.session_id != expected_session_id:
             raise ValueError(
                 f"session_id mismatch: review has {review.session_id!r}, "
@@ -575,8 +562,7 @@ class SessionReviewRunner:
         missing = active_ids - verdict_ids
         if missing:
             raise ValueError(
-                "hypothesis_verdicts missing entries for active HYPs: "
-                f"{sorted(missing)}"
+                f"hypothesis_verdicts missing entries for active HYPs: {sorted(missing)}"
             )
 
     def _save(self, review: SessionReviewV1) -> Path:
@@ -610,10 +596,7 @@ class SessionReviewRunner:
             lines.append("## Hypothesis verdicts")
             lines.append("")
             for v in review.hypothesis_verdicts:
-                lines.append(
-                    f"- **{v.hyp_id}** — {v.verdict} "
-                    f"({v.recommendation}): {v.evidence}"
-                )
+                lines.append(f"- **{v.hyp_id}** — {v.verdict} ({v.recommendation}): {v.evidence}")
             lines.append("")
         if review.proposal_actions:
             lines.append("## Proposal actions")

@@ -35,9 +35,7 @@ class EmitStdout(Step):
         self._key = str(params["key"])
         self._format = str(params.get("format", "text")).lower()
         if self._format not in ("text", "json"):
-            raise ValueError(
-                f"EmitStdout: format must be 'text' or 'json', got {self._format!r}"
-            )
+            raise ValueError(f"EmitStdout: format must be 'text' or 'json', got {self._format!r}")
 
     @property
     def io(self) -> StepIO:

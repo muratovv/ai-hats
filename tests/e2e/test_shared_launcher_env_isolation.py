@@ -65,9 +65,12 @@ def test_absolute_pythonpath_leak_does_not_hide_builtin_roles(
     project = tmp_path / "project"
     project.mkdir()
     res = subprocess.run(
-        [str(launcher), "self", "init", "-r", "assistant", "-p", "claude",
-         "--task-prefix", "TST"],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=180,
+        [str(launcher), "self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST"],
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     assert res.returncode == 0, (
         "🐛 HATS-828 REGRESSION: built-in 'assistant' role vanished under a "

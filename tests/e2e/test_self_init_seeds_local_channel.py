@@ -38,7 +38,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,  # non-TTY → self init takes the no-wizard path
     )
     if result.returncode != expect_exit:
@@ -76,7 +81,9 @@ def test_e2e_self_init_seeds_local_channel_on_editable_host(tmp_path: Path) -> N
     # ai-hats.yaml) so the auto-seed is exercised, not a re-init no-op.
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     cfg = project / PROJECT_CONFIG

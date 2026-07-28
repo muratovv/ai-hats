@@ -43,7 +43,12 @@ pytestmark = pytest.mark.install_heavy
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -77,8 +82,12 @@ def test_e2e_config_status_stable_source(tmp_path):
     # 1. Build the ai-hats wheel from a per-worker private clone (no in-tree race).
     src = build_src(REPO_ROOT)
     wheeldir = tmp_path / "wheels"
-    _run(["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(src)],
-         cwd=tmp_path, env=env, timeout=180)
+    _run(
+        ["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(src)],
+        cwd=tmp_path,
+        env=env,
+        timeout=180,
+    )
     wheels = sorted(wheeldir.glob("ai_hats-*.whl"))
     assert wheels, f"no ai-hats wheel built under {wheeldir}"
     version = _wheel_version(wheels[0])
@@ -91,11 +100,22 @@ def test_e2e_config_status_stable_source(tmp_path):
     #    wins over any released PyPI version — so this exercises THIS code, and the
     #    name-based requirement means uv writes no direct_url.json (the PyPI case).
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)],
-         cwd=tmp_path, env=env, timeout=120)
-    _run(["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
-          "--find-links", str(wheeldir), f"ai-hats=={version}"],
-         cwd=tmp_path, env=env, timeout=300)
+    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
+    _run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv / "bin" / "python"),
+            "--find-links",
+            str(wheeldir),
+            f"ai-hats=={version}",
+        ],
+        cwd=tmp_path,
+        env=env,
+        timeout=300,
+    )
 
     # HATS-790: a by-name install no longer materialises a bin/ai-hats console
     # script — invoke via the venv interpreter and assert the proxy is ABSENT.

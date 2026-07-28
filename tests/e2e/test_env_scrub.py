@@ -71,9 +71,7 @@ def test_merge_ack_inherits_and_defaults(tmp_path):
         {"AI_HATS_MERGE_ACK": "1"}, repo_url="/c", venv="/v", user_home=tmp_path
     )
     assert out["AI_HATS_MERGE_ACK"] == "1"
-    granted = launcher_subprocess_env(
-        {}, repo_url="/c", venv="/v", user_home=tmp_path
-    )
+    granted = launcher_subprocess_env({}, repo_url="/c", venv="/v", user_home=tmp_path)
     assert granted["AI_HATS_MERGE_ACK"] == "1"
 
 
@@ -97,9 +95,7 @@ def test_launcher_subprocess_env_isolates_and_pins(tmp_path):
         "PATH": "/usr/bin",
         "HOME": "/home/me",
     }
-    out = launcher_subprocess_env(
-        base, repo_url="/clone", venv="/venv", user_home=user_home
-    )
+    out = launcher_subprocess_env(base, repo_url="/clone", venv="/venv", user_home=user_home)
 
     # The leak is gone.
     assert "PYTHONPATH" not in out
@@ -202,15 +198,7 @@ def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
             bin_path.write_text("#!/bin/sh\n")
             bin_path.chmod(0o755)
         else:
-            py = (
-                tmp_path
-                / "bootstrap"
-                / ".agent"
-                / "ai-hats"
-                / ".venv"
-                / "bin"
-                / "python"
-            )
+            py = tmp_path / "bootstrap" / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
             py.parent.mkdir(parents=True, exist_ok=True)
             py.write_text("#!/bin/sh\n")
             py.chmod(0o755)
@@ -233,4 +221,3 @@ def test_build_launcher_venv_scrubs_ambient_env(monkeypatch, tmp_path):
         assert env is not None, "build_launcher_venv must pass an explicit env, not inherit"
         assert ENV_AI_HATS_DIR not in env
         assert "PYTHONPATH" not in env
-

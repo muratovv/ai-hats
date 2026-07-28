@@ -91,7 +91,9 @@ def _claude_authenticated() -> bool:
     try:
         r = subprocess.run(
             ["claude", "--print", "--model", PROBE_MODEL, "-p", "."],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except Exception:
         return False
@@ -158,18 +160,25 @@ def _run_probe(
     args, env, _ = provider.build_session_prompt(project, result, session_id)
 
     cmd = [
-        "claude", "--print", "--model", PROBE_MODEL, "-p", PROBE_PROMPT, *args,
+        "claude",
+        "--print",
+        "--model",
+        PROBE_MODEL,
+        "-p",
+        PROBE_PROMPT,
+        *args,
     ]
     proc = subprocess.run(
         cmd,
         cwd=str(project),
-        capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
+        capture_output=True,
+        text=True,
+        timeout=PROBE_TIMEOUT_S,
         env={**os.environ, **env, **(extra_env or {})},
     )
     if proc.returncode != 0:
         raise AssertionError(
-            f"claude probe exited {proc.returncode}\n"
-            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+            f"claude probe exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         )
     if not proc.stdout.strip():
         raise AssertionError(f"empty stdout; stderr:\n{proc.stderr}")
@@ -205,8 +214,7 @@ def _parse_probe(text: str) -> dict[str, str]:
     missing = required - parsed.keys()
     if missing:
         raise AssertionError(
-            f"probe response missing keys {sorted(missing)}\n"
-            f"raw response:\n{text}"
+            f"probe response missing keys {sorted(missing)}\nraw response:\n{text}"
         )
     return parsed
 
@@ -222,9 +230,7 @@ def test_role_override_no_default_leak(auth_gate, project_with_assistant_default
     """
     out = _run_probe(project_with_assistant_default, "judge", "e2e-judge-only")
     assert out["JUDGE_VISIBLE"].upper() == "YES", f"judge role missing: {out}"
-    assert out["DECISIVENESS_VISIBLE"].upper() == "YES", (
-        f"judge priorities missing: {out}"
-    )
+    assert out["DECISIVENESS_VISIBLE"].upper() == "YES", f"judge priorities missing: {out}"
     # F5: no double ROLE block.
     assert out["PRIMARY_ASSISTANT_VISIBLE"].upper() == "NO", (
         f"F5 regression — PRIMARY ASSISTANT leaked into --role judge: {out}"
@@ -236,28 +242,25 @@ def test_role_override_no_default_leak(auth_gate, project_with_assistant_default
 
 
 def test_default_role_session_sees_default_role(
-    auth_gate, project_with_assistant_default,
+    auth_gate,
+    project_with_assistant_default,
 ):
     """Default-role session (no --role override) → agent sees the assistant
     role's PRIMARY ASSISTANT block and Reliability priorities, no judge.
     """
     out = _run_probe(project_with_assistant_default, "assistant", "e2e-default")
-    assert out["PRIMARY_ASSISTANT_VISIBLE"].upper() == "YES", (
-        f"default role content missing: {out}"
-    )
-    assert out["RELIABILITY_VISIBLE"].upper() == "YES", (
-        f"default priorities missing: {out}"
-    )
-    assert out["JUDGE_VISIBLE"].upper() == "NO", (
-        f"judge content leaked into default session: {out}"
-    )
+    assert out["PRIMARY_ASSISTANT_VISIBLE"].upper() == "YES", f"default role content missing: {out}"
+    assert out["RELIABILITY_VISIBLE"].upper() == "YES", f"default priorities missing: {out}"
+    assert out["JUDGE_VISIBLE"].upper() == "NO", f"judge content leaked into default session: {out}"
     assert out["DECISIVENESS_VISIBLE"].upper() == "NO", (
         f"judge priorities leaked into default session: {out}"
     )
 
 
 def test_parallel_different_roles_isolated_with_barrier(
-    auth_gate, project_with_assistant_default, tmp_path,
+    auth_gate,
+    project_with_assistant_default,
+    tmp_path,
 ):
     """Two concurrent ``--role`` invocations (judge + assistant) must each
     see only their own role. Barrier file synchronizes the start so both
@@ -289,8 +292,7 @@ def test_parallel_different_roles_isolated_with_barrier(
 
     # Real concurrency: lifetimes must overlap.
     assert min(t1_a, t1_b) > max(t0_a, t0_b), (
-        f"sessions did not overlap: A=[{t0_a:.1f},{t1_a:.1f}] "
-        f"B=[{t0_b:.1f},{t1_b:.1f}]"
+        f"sessions did not overlap: A=[{t0_a:.1f},{t1_a:.1f}] B=[{t0_b:.1f},{t1_b:.1f}]"
     )
 
     # Judge session sees ONLY judge.
@@ -309,6 +311,7 @@ def test_parallel_different_roles_isolated_with_barrier(
 
     # Each session got a distinct cache dir.
     from ai_hats.paths import session_cache_dir
+
     cache_a = session_cache_dir(project, "e2e-par-judge")
     cache_b = session_cache_dir(project, "e2e-par-assistant")
     assert cache_a != cache_b

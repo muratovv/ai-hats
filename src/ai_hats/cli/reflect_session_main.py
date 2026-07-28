@@ -54,11 +54,13 @@ def main() -> int:
     saved_path: Path | None = None
     try:
         with PipelineHarness(PIPELINE_REFLECT_SESSION, project_dir) as h:
-            final = h.run({
-                KEY_SESSION_ID: session_id,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_MAX_RETRIES: max_retries,
-            })
+            final = h.run(
+                {
+                    KEY_SESSION_ID: session_id,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_MAX_RETRIES: max_retries,
+                }
+            )
             saved_path = final.get(KEY_REVIEW_PATH)
     except HarnessReliabilityError as exc:
         # HATS-378: harness-layer failure (timeout, zero-output guard) →
@@ -77,7 +79,8 @@ def main() -> int:
 
     if harness_error is not None:
         _file_meta_proposal(
-            project_dir, session_id,
+            project_dir,
+            session_id,
             issues=[f"harness: {harness_error}"],
             target=TARGET_HARNESS_INCIDENT,
         )
@@ -86,7 +89,9 @@ def main() -> int:
     issues = _harness_check(project_dir, session_id, runner_error)
     if issues:
         _file_meta_proposal(
-            project_dir, session_id, issues,
+            project_dir,
+            session_id,
+            issues,
             target=TARGET_SESSION_REVIEWER,
         )
         return 2
@@ -99,7 +104,9 @@ def main() -> int:
 
 
 def _harness_check(
-    project_dir: Path, session_id: str, runner_error: str | None,
+    project_dir: Path,
+    session_id: str,
+    runner_error: str | None,
 ) -> list[str]:
     """Return a list of issue strings; empty means pass."""
     from ..paths import retros_dir
@@ -141,16 +148,10 @@ def _harness_check(
         active_ids = set()
 
     if active_ids:
-        verdict_ids = {
-            v.get("hyp_id") for v in verdicts
-            if isinstance(v, dict) and v.get("hyp_id")
-        }
+        verdict_ids = {v.get("hyp_id") for v in verdicts if isinstance(v, dict) and v.get("hyp_id")}
         missing = active_ids - verdict_ids
         if missing:
-            issues.append(
-                "missing verdicts for active HYPs: "
-                + ", ".join(sorted(missing))
-            )
+            issues.append("missing verdicts for active HYPs: " + ", ".join(sorted(missing)))
 
     if runner_error:
         # File otherwise valid but runner raised mid-flight — surface so the
@@ -162,11 +163,11 @@ def _harness_check(
 def _extract_frontmatter(text: str) -> str:
     if not text.startswith("---\n"):
         return text
-    rest = text[len("---\n"):]
+    rest = text[len("---\n") :]
     end = rest.find("\n---\n")
     if end == -1:
         if rest.endswith("\n---"):
-            return rest[:-len("\n---")]
+            return rest[: -len("\n---")]
         raise ValueError("malformed frontmatter: missing closing ---")
     return rest[:end]
 
@@ -203,7 +204,9 @@ def _file_meta_proposal(
             return
 
     title, description, rationale = _build_meta_proposal_body(
-        session_id, issues, target,
+        session_id,
+        issues,
+        target,
     )
     try:
         prop_id = create_proposal(
@@ -224,16 +227,17 @@ def _file_meta_proposal(
 
 
 def _build_meta_proposal_body(
-    session_id: str, issues: list[str], target: str,
+    session_id: str,
+    issues: list[str],
+    target: str,
 ) -> tuple[str, str, str]:
     """Build (title, description, rationale) appropriate for the target."""
     joined = "; ".join(issues)
     if target == TARGET_HARNESS_INCIDENT:
         title = f"harness incident: {session_id}"[:200]
-        description = (
-            f"Harness reliability failure for session {session_id}. "
-            f"Details: {joined}"
-        )[:1000]
+        description = (f"Harness reliability failure for session {session_id}. Details: {joined}")[
+            :1000
+        ]
         rationale = (
             "Runtime safety net: harness detected a failure independent "
             "of the reporting role (subprocess timeout or silent "

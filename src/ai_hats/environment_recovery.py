@@ -71,7 +71,9 @@ def _sweep_orphan_session_caches(
             continue
         try:
             if entry.stat().st_mtime < cutoff:
-                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (TTL sweep)
+                shutil.rmtree(
+                    entry, ignore_errors=True
+                )  # safe-delete: ok session-cache (TTL sweep)
         except OSError:
             pass
 
@@ -108,9 +110,7 @@ class EnvironmentRecovery:
             try:
                 with versions_lock(self.project_dir, timeout=GC_LOCK_TIMEOUT):
                     for residue in sweep_incomplete_versions(self.project_dir):
-                        logger.info(
-                            "reclaimed incomplete version residue: %s", residue.name
-                        )
+                        logger.info("reclaimed incomplete version residue: %s", residue.name)
                     for orphan in reclaim_orphan_versions(self.project_dir):
                         logger.info("reclaimed orphaned version: %s", orphan.name)
             except VersionLockError:

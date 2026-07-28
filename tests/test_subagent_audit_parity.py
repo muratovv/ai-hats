@@ -61,13 +61,12 @@ def _write_minimal_jsonl(jsonl_path: Path, user_text: str, asst_text: str) -> No
             },
         },
     }
-    jsonl_path.write_text(
-        json.dumps(user_entry) + "\n" + json.dumps(asst_entry) + "\n"
-    )
+    jsonl_path.write_text(json.dumps(user_entry) + "\n" + json.dumps(asst_entry) + "\n")
 
 
 def test_subagent_audit_md_contains_user_and_assistant_markers(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     """End-to-end SubAgent parity: ``_finalize_sub_agent`` with
     ``work_dir`` + ``claude_session_id`` → ``audit.md`` carries
@@ -114,8 +113,7 @@ def test_subagent_audit_md_contains_user_and_assistant_markers(
 
     audit_text = session.audit_path.read_text()
     assert "👤 say alpha please" in audit_text, (
-        f"HATS-535 parity regression: SubAgent audit.md missing user "
-        f"marker. Content:\n{audit_text}"
+        f"HATS-535 parity regression: SubAgent audit.md missing user marker. Content:\n{audit_text}"
     )
     assert "👾 alpha" in audit_text, (
         f"HATS-535 parity regression: SubAgent audit.md missing "

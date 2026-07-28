@@ -44,7 +44,8 @@ def test_list_roles_shows_bundled_defaults(tmp_project) -> None:
     """``ai-hats list roles`` falls back to bundled library when
     ``library_paths`` is empty — the well-known defaults must surface."""
     tmp_project.run("list", "roles").expect_ok().expect_stdout_contains(
-        "assistant", "architect",
+        "assistant",
+        "architect",
     )
 
 

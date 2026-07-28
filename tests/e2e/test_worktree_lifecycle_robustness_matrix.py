@@ -31,8 +31,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -44,8 +48,11 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -57,6 +64,7 @@ def _git_clean(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
+
 
 def _bootstrap(ai_hats, project: Path) -> None:
     _git(project, "init", "-b", "main")
@@ -70,9 +78,14 @@ def _bootstrap(ai_hats, project: Path) -> None:
 
 def _create_task(rack) -> str:
     res = rack(
-        "create", "matrix case",
-        "--description", "epic robustness matrix",
-        "--role", "assistant", "--reviewer", "user",
+        "create",
+        "matrix case",
+        "--description",
+        "epic robustness matrix",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     for line in res.stdout.splitlines():
         line = line.strip()
@@ -83,8 +96,7 @@ def _create_task(rack) -> str:
 
 def _fill_plan(project: Path, task_id: str) -> None:
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -99,9 +111,9 @@ def _locate_worktree(project: Path, task_id: str) -> Path:
     current: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current = Path(line[len("worktree "):].strip())
+            current = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current is not None:
-            if line[len("branch "):].strip().endswith(suffix):
+            if line[len("branch ") :].strip().endswith(suffix):
                 return current
     raise AssertionError(f"worktree for {task_id} not found:\n{listing}")
 
@@ -116,14 +128,14 @@ def _walk_to_execute(rack, project: Path) -> tuple[str, Path]:
 
 def _state_json(project: Path, task_id: str) -> Path:
     return (
-        project / ".agent" / "ai-hats" / "sessions" / "worktrees"
-        / f"task-{task_id.lower()}.json"
+        project / ".agent" / "ai-hats" / "sessions" / "worktrees" / f"task-{task_id.lower()}.json"
     )
 
 
 # --------------------------------------------------------------------------- #
 # Scenarios — each takes (ai_hats, project) and asserts one epic invariant
 # --------------------------------------------------------------------------- #
+
 
 def _scenario_already_merged_state_lost(rack, project: Path) -> None:
     """HATS-697: merged branch + lost state → finalize, no false refusal."""
@@ -168,14 +180,18 @@ def _scenario_forced_execute_no_worktree(rack, project: Path) -> None:
     rack("transition", task_id, "plan")
     _fill_plan(project, task_id)
     res = rack(
-        "transition", task_id, "execute",
-        "--force", "--reason", "shipped on master, correcting state",
+        "transition",
+        task_id,
+        "execute",
+        "--force",
+        "--reason",
+        "shipped on master, correcting state",
         expect_exit=0,
     )
     assert "no worktree created (manual override)" in res.stdout, res.stdout
     assert "state: execute" in rack("context", task_id).stdout
     branches = [
-        line[len("branch "):].strip()
+        line[len("branch ") :].strip()
         for line in _git(project, "worktree", "list", "--porcelain").stdout.splitlines()
         if line.startswith("branch ")
     ]
@@ -240,14 +256,19 @@ def test_worktree_lifecycle_robustness(shared_launcher, tmp_path, scenario_id):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(venv / "bin" / "rack"), *args],
-            cwd=cwd, env={**env, "AI_HATS_PLAN_ACK": "1"},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, "AI_HATS_PLAN_ACK": "1"},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     _bootstrap(ai_hats, project)  # `self init` stays on the ai-hats binary

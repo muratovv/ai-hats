@@ -249,8 +249,13 @@ class _StubClient:
     Tests parametrize the message sequence and any failure mode.
     """
 
-    def __init__(self, *, messages: Iterable, raise_on_query: Exception | None = None,
-                 raise_during_stream: Exception | None = None):
+    def __init__(
+        self,
+        *,
+        messages: Iterable,
+        raise_on_query: Exception | None = None,
+        raise_during_stream: Exception | None = None,
+    ):
         self._messages = list(messages)
         self._raise_on_query = raise_on_query
         self._raise_during_stream = raise_during_stream
@@ -330,7 +335,9 @@ class TestRunClaudeSdkBlocking:
         ]
         cap = patch_client(messages=msgs)
         out = run_claude_sdk_blocking(
-            _minimal_options(), "first message", timeout_s=10,
+            _minimal_options(),
+            "first message",
+            timeout_s=10,
         )
         assert isinstance(out, SdkRunResult)
         assert out.exit_code == SDK_EXIT_SUCCESS

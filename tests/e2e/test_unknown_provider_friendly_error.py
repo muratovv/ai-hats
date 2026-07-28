@@ -68,8 +68,7 @@ def test_e2e_unknown_provider_exits_clean_with_provider_list(tmp_project) -> Non
         "ai-hats list providers",
     ):
         assert marker in result.stderr, (
-            f"stderr missing marker {marker!r}\n"
-            f"stderr (tail 800):\n{result.stderr[-800:]}"
+            f"stderr missing marker {marker!r}\nstderr (tail 800):\n{result.stderr[-800:]}"
         )
 
     # No traceback leak in either stream — the whole point of the change.
@@ -93,4 +92,3 @@ def test_unknown_provider_handler_includes_surface_remediation(capsys) -> None:
     assert "Surface provider 'cline' is not installed." in captured.err
     assert "Fix: " in captured.err
     assert "cline" in captured.err
-

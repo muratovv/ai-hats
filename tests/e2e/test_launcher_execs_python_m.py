@@ -81,7 +81,11 @@ def test_launcher_execs_python_m_on_scriptless_venv(tmp_path: Path) -> None:
 
     result = subprocess.run(
         [str(LAUNCHER), "status", "--verbose"],
-        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=30,
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert result.returncode == 0, (
         f"launcher failed on a script-less venv (HATS-790 regression?):\n"

@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
 
-
 import click
 from rich.console import Console
 
@@ -192,8 +191,6 @@ def catch_broken_install():
         if is_broken_install_exception(exc):
             _handle_broken_install_or_die(exc)
         raise
-
-
 
 
 def _project_dir() -> Path:

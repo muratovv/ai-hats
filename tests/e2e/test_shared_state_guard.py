@@ -11,6 +11,7 @@ This file invokes the scripts as a real subprocess to cover:
 
 Slow only because of subprocess spin-up (~ms each, no pip install).
 """
+
 from __future__ import annotations
 
 import os
@@ -21,7 +22,9 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PRETOOL_HOOK = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/hooks/pre_bash_shared_state_guard.sh"
+PRETOOL_HOOK = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/hooks/pre_bash_shared_state_guard.sh"
+)
 PREPUSH_HOOK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh"
@@ -85,8 +88,7 @@ def test_pretool_blocks_force_with_lease():
 def test_pretool_blocks_chained_irreversible():
     """Catches the actual HYP-026/027 incident pattern (compound Bash call)."""
     payload = (
-        '{"tool_input":{"command":'
-        '"git pull && gh pr merge 9 --merge --delete-branch && git push"}}'
+        '{"tool_input":{"command":"git pull && gh pr merge 9 --merge --delete-branch && git push"}}'
     )
     res = _run(PRETOOL_HOOK, stdin=payload)
     assert res.returncode == 2, res.stderr
@@ -159,8 +161,11 @@ def test_pretool_block_carries_recovery_guidance():
 
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), check=True,
-        capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
 
@@ -172,14 +177,10 @@ def repo_with_two_commits(tmp_path: Path) -> Path:
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
     (tmp_path / "a").write_text("1")
     subprocess.run(["git", "add", "a"], cwd=str(tmp_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "one", "--quiet"], cwd=str(tmp_path), check=True
-    )
+    subprocess.run(["git", "commit", "-m", "one", "--quiet"], cwd=str(tmp_path), check=True)
     (tmp_path / "b").write_text("2")
     subprocess.run(["git", "add", "b"], cwd=str(tmp_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "two", "--quiet"], cwd=str(tmp_path), check=True
-    )
+    subprocess.run(["git", "commit", "-m", "two", "--quiet"], cwd=str(tmp_path), check=True)
     return tmp_path
 
 
@@ -190,8 +191,11 @@ def test_prepush_allows_fast_forward(repo_with_two_commits: Path):
     stdin = f"refs/heads/master {local} refs/heads/master {remote}\n"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert res.returncode == 0, res.stderr
 
@@ -205,8 +209,11 @@ def test_prepush_blocks_non_fast_forward(repo_with_two_commits: Path):
     stdin = f"refs/heads/master {older} refs/heads/master {newer}\n"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
         env={**os.environ, "AI_HATS_SHARED_STATE_ACK": ""},
     )
     res.check_returncode if False else None  # silence unused-import linters
@@ -223,8 +230,11 @@ def test_prepush_block_carries_recovery_guidance(repo_with_two_commits: Path):
     stdin = f"refs/heads/master {older} refs/heads/master {newer}\n"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
         env={**os.environ, "AI_HATS_SHARED_STATE_ACK": ""},
     )
     assert res.returncode == 1, res.stderr
@@ -241,8 +251,12 @@ def test_prepush_ack_overrides(repo_with_two_commits: Path):
     env["AI_HATS_SHARED_STATE_ACK"] = "1"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5, env=env,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env=env,
     )
     assert res.returncode == 0, res.stderr
 
@@ -255,8 +269,11 @@ def test_prepush_allows_branch_deletion(repo_with_two_commits: Path):
     stdin = f"refs/heads/foo {zero} refs/heads/foo {head}\n"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert res.returncode == 0, res.stderr
 
@@ -269,8 +286,11 @@ def test_prepush_allows_new_branch(repo_with_two_commits: Path):
     stdin = f"refs/heads/foo {head} refs/heads/foo {zero}\n"
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input=stdin, cwd=str(repo_with_two_commits),
-        capture_output=True, text=True, timeout=5,
+        input=stdin,
+        cwd=str(repo_with_two_commits),
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert res.returncode == 0, res.stderr
 
@@ -279,7 +299,10 @@ def test_prepush_allows_new_branch(repo_with_two_commits: Path):
 def test_prepush_allows_empty_stdin(tmp_path: Path):
     res = subprocess.run(
         ["bash", str(PREPUSH_HOOK)],
-        input="", cwd=str(tmp_path),
-        capture_output=True, text=True, timeout=5,
+        input="",
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert res.returncode == 0

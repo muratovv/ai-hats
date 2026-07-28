@@ -55,7 +55,9 @@ def _broken_install_source(dst: Path) -> Path:
     src = dst / "broken-src"
     subprocess.run(
         ["git", "clone", "--shared", "--quiet", str(REPO_ROOT), str(src)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     # Overlay the working tree so a dirty checkout is tested, not the last commit.
     shutil.copytree(REPO_ROOT / "src", src / "src", dirs_exist_ok=True)
@@ -92,8 +94,12 @@ def test_update_does_not_report_success_for_a_broken_install(tmp_path: Path, rep
     try:
         proc = subprocess.run(
             [str(launcher), "self", "update"],
-            cwd=str(project), env=env, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=240,
+            cwd=str(project),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=240,
         )
     except subprocess.TimeoutExpired:
         pytest.fail("update hung instead of failing the verify")
@@ -101,5 +107,7 @@ def test_update_does_not_report_success_for_a_broken_install(tmp_path: Path, rep
     out = proc.stdout + proc.stderr
     assert proc.returncode != 0, f"update exited 0 for a broken install:\n{out}"
     assert "ai-hats updated" not in out, f"success line printed for a broken install:\n{out}"
-    assert "Post-install verify failed" in out, f"broken install failure message was not surfaced:\n{out}"
+    assert "Post-install verify failed" in out, (
+        f"broken install failure message was not surfaced:\n{out}"
+    )
     assert _MISSING_SYMBOL.split(" =")[0] in out, f"verify did not name the breakage:\n{out}"

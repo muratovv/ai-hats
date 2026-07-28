@@ -82,9 +82,7 @@ def test_touching_an_old_done_card_does_not_count_as_closed(tmp_path: Path) -> N
     _seed_card(project, "TST-1", completed_at=_stamp(long_ago), updated=_stamp(_CLOSED))
 
     assert (
-        tasks_closed_in_window(
-            project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
-        )
+        tasks_closed_in_window(project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1))
         == []
     )
 
@@ -109,16 +107,11 @@ def test_ignores_cards_that_are_not_done(tmp_path: Path) -> None:
     _seed_card(project, "TST-1", state="review", completed_at=_stamp(_CLOSED))
 
     assert (
-        tasks_closed_in_window(
-            project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1)
-        )
+        tasks_closed_in_window(project, _CLOSED - timedelta(hours=1), _CLOSED + timedelta(hours=1))
         == []
     )
 
 
 def test_project_without_a_backlog_is_empty_not_an_error(tmp_path: Path) -> None:
     """A project that never ran `ai-hats self init` has no tasks dir at all."""
-    assert (
-        tasks_closed_in_window(_project(tmp_path), _CLOSED - timedelta(hours=1), _CLOSED)
-        == []
-    )
+    assert tasks_closed_in_window(_project(tmp_path), _CLOSED - timedelta(hours=1), _CLOSED) == []

@@ -44,9 +44,7 @@ class PipelineCancelled(RuntimeError):
     step exception so a deadline/cancel is never mistaken for a logic failure.
     """
 
-    def __init__(
-        self, message: str, *, reason: CancelReason, state: dict[str, Any]
-    ) -> None:
+    def __init__(self, message: str, *, reason: CancelReason, state: dict[str, Any]) -> None:
         super().__init__(message)
         self.reason = reason
         self.state = state
@@ -90,8 +88,8 @@ class Pipeline(Step):
         external_req: set[str] = set()
         external_opt: set[str] = set()
         for s in self.steps:
-            external_req |= (s.io.requires - produced)
-            external_opt |= (s.io.optional - produced - external_req)
+            external_req |= s.io.requires - produced
+            external_opt |= s.io.optional - produced - external_req
             produced |= s.io.produces
         return StepIO(
             name=self.name,
@@ -146,8 +144,7 @@ def _check_overwrites(steps: tuple[Step, ...]) -> None:
                 lost.setdefault(prev, []).append(k)
         if lost:
             detail = "; ".join(
-                f"{keys} produced by {steps[p].io.name!r}"
-                for p, keys in sorted(lost.items())
+                f"{keys} produced by {steps[p].io.name!r}" for p, keys in sorted(lost.items())
             )
             raise BuildError(
                 f"{s.io.name}: overwrites {detail} — nothing in between reads "
@@ -298,8 +295,13 @@ def _run_steps(
             token.cancel(CancelReason.TIMEOUT)
             if on_step is not None:
                 _emit(
-                    on_step, s.io.name, kwargs, {}, duration_ms,
-                    error=to, include_values=trace_values,
+                    on_step,
+                    s.io.name,
+                    kwargs,
+                    {},
+                    duration_ms,
+                    error=to,
+                    include_values=trace_values,
                 )
             _run_on_cancel(s, kwargs, state)
             break
@@ -307,8 +309,13 @@ def _run_steps(
             duration_ms = (time.perf_counter() - t0) * 1000
             if on_step is not None:
                 _emit(
-                    on_step, s.io.name, kwargs, {}, duration_ms,
-                    error=e, include_values=trace_values,
+                    on_step,
+                    s.io.name,
+                    kwargs,
+                    {},
+                    duration_ms,
+                    error=e,
+                    include_values=trace_values,
                 )
             if s.failure_policy == "halt":
                 raise
@@ -323,8 +330,13 @@ def _run_steps(
             )
         if on_step is not None:
             _emit(
-                on_step, s.io.name, kwargs, delta, duration_ms,
-                error=None, include_values=trace_values,
+                on_step,
+                s.io.name,
+                kwargs,
+                delta,
+                duration_ms,
+                error=None,
+                include_values=trace_values,
             )
         _merge_none_filtered(state, delta)
 
@@ -361,9 +373,7 @@ def _run_one(step: Step, kwargs: dict[str, Any]) -> dict[str, Any]:
         pool.shutdown(wait=False)
 
 
-def _run_on_cancel(
-    step: Step, kwargs: dict[str, Any], state: dict[str, Any]
-) -> None:
+def _run_on_cancel(step: Step, kwargs: dict[str, Any], state: dict[str, Any]) -> None:
     """Invoke a step's ``on_cancel`` cleanup and merge its partial delta.
 
     Cleanup must never abort the cancellation path: a raising ``on_cancel``
@@ -375,7 +385,8 @@ def _run_on_cancel(
         delta = step.on_cancel(**kwargs)
     except Exception:  # noqa: BLE001 — cleanup must not crash cancellation
         logger.warning(
-            "on_cancel for step %r raised; ignoring", step.io.name,
+            "on_cancel for step %r raised; ignoring",
+            step.io.name,
             exc_info=True,
         )
         return

@@ -12,7 +12,9 @@ from ai_hats.pipeline.presets import execute_pipeline
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PIPELINES_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines"
+PIPELINES_DIR = (
+    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines"
+)
 
 
 def test_check_update_async_registered():
@@ -61,8 +63,10 @@ def test_presets_execute_pipeline_has_both_steps():
     assert step_names[-1] == "render_update_banner"
 
 
-@pytest.mark.parametrize("yaml_name", ["reflect-session.yaml", "reflect-all.yaml",
-                                       "reflect-role.yaml", "reflect-issue.yaml"])
+@pytest.mark.parametrize(
+    "yaml_name",
+    ["reflect-session.yaml", "reflect-all.yaml", "reflect-role.yaml", "reflect-issue.yaml"],
+)
 def test_reflect_pipelines_unchanged(yaml_name):
     """Sub-pipelines must NOT carry update-check steps — they are not main sessions."""
     pipeline = load_pipeline(PIPELINES_DIR / yaml_name)

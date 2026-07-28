@@ -31,9 +31,7 @@ def parse_session_start(session_id: str) -> datetime:
         raise ValueError(f"Cannot parse session start from {session_id!r}") from e
 
 
-def compute_session_end(
-    session_start: datetime, session_dir: Path, session_id: str
-) -> datetime:
+def compute_session_end(session_start: datetime, session_dir: Path, session_id: str) -> datetime:
     """Read metrics.json:duration_s; fall back to now(UTC) with a log line.
 
     The window upper bound matters: without it artifacts and tasks_closed
@@ -49,16 +47,13 @@ def compute_session_end(
         except (json.JSONDecodeError, ValueError, TypeError):
             pass
     logger.info(
-        "session window upper bound: duration_s missing for %s, "
-        "falling back to now(UTC)",
+        "session window upper bound: duration_s missing for %s, falling back to now(UTC)",
         session_id,
     )
     return datetime.now(timezone.utc)
 
 
-def tasks_closed_in_window(
-    project_dir: Path, since: datetime, until: datetime
-) -> list[str]:
+def tasks_closed_in_window(project_dir: Path, since: datetime, until: datetime) -> list[str]:
     """Return IDs of tasks whose `completed_at` falls in [since, until], state=done.
 
     Loud by design (HATS-1259): a read that cannot be performed raises rather than
@@ -72,8 +67,7 @@ def tasks_closed_in_window(
         ts = parse_task_timestamp(task.completed_at)
         if ts is None:
             logger.warning(
-                "task %s is done with no completed_at stamp — "
-                "not counted in the session window",
+                "task %s is done with no completed_at stamp — not counted in the session window",
                 task.id,
             )
             continue

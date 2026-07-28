@@ -20,12 +20,7 @@ import pytest
 from ai_hats_observe import AuditWriter, Session
 from ai_hats_observe.parsers.claude import ClaudeParser
 
-FIXTURE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "claude_jsonl"
-    / "three_turns_with_tool.jsonl"
-)
+FIXTURE = Path(__file__).parent / "fixtures" / "claude_jsonl" / "three_turns_with_tool.jsonl"
 
 
 @pytest.fixture

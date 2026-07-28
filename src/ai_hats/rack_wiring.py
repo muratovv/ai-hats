@@ -321,9 +321,10 @@ class WorktreeExtension:
         branch = f"task/{task_id.lower()}"
         if not WorktreeManager.branch_exists(repo, branch, timeout=self._budget):
             return None  # nothing outstanding in the task repo
-        if WorktreeManager.branch_merged_into_canonical_base(
-            repo, branch, timeout=self._budget
-        ) is None:
+        if (
+            WorktreeManager.branch_merged_into_canonical_base(repo, branch, timeout=self._budget)
+            is None
+        ):
             raise WorktreeStateLostError(task_id, branch)  # genuinely un-merged there
         WorktreeManager.delete_merged_branch(repo, branch, timeout=self._budget)
         return Delta(work_log=(f"Worktree merged (task repo {repo})",))

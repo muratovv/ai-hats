@@ -80,9 +80,7 @@ def dry_run_hitl(
         session_args=artifacts.cli_args,
         provider_session_id="<assigned at launch>",
     )
-    prompt = next(
-        (p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None
-    )
+    prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,

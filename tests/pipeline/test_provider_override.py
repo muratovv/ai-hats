@@ -72,7 +72,10 @@ def _launched_provider(captured: dict) -> str:
     ],
 )
 def test_batch_surfaces_honour_provider_override(
-    project_dir: Path, mock_runners, stub_provider, argv,
+    project_dir: Path,
+    mock_runners,
+    stub_provider,
+    argv,
 ):
     """R2 + R3: both batch entry-points launch the surface ``-p`` names."""
     res = CliRunner().invoke(main, argv)
@@ -88,12 +91,15 @@ def test_batch_surfaces_honour_provider_override(
             id="execute--batch",
         ),
         pytest.param(
-            ["agent", "session-reviewer", "--task", "ping"], id="agent",
+            ["agent", "session-reviewer", "--task", "ping"],
+            id="agent",
         ),
     ],
 )
 def test_batch_surfaces_fall_back_to_configured_provider(
-    project_dir: Path, mock_runners, argv,
+    project_dir: Path,
+    mock_runners,
+    argv,
 ):
     """The other half of R4: no override still resolves ``ai-hats.yaml``."""
     res = CliRunner().invoke(main, argv)

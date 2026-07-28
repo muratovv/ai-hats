@@ -128,8 +128,7 @@ class Composer:
             skills = kept
             for name in effective_removes - removed_names - role_level_skill_removes:
                 errors.append(
-                    f"Overlay: cannot remove skill '{name}' — "
-                    f"not in the role or any composed trait"
+                    f"Overlay: cannot remove skill '{name}' — not in the role or any composed trait"
                 )
 
         # Add role's own injection last (highest priority).

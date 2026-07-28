@@ -27,8 +27,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -75,14 +79,19 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env={**env, **(extra_env or {})},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, **(extra_env or {})},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -94,22 +103,29 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
-    base_branch = _git(
-        project, "rev-parse", "--abbrev-ref", "HEAD"
-    ).stdout.strip()
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create a task and walk it through to execute ----
     new_res = rack(
-        "create", "wandered head test",
-        "--description", "exercise the ported HATS-533 recipe",
-        "--role", "assistant",
-        "--reviewer", "user",
+        "create",
+        "wandered head test",
+        "--description",
+        "exercise the ported HATS-533 recipe",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     task_id = None
     for line in new_res.stdout.splitlines():
@@ -124,8 +140,7 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     rack("transition", task_id, "plan")
 
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -144,9 +159,9 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     branch_suffix = f"/task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(branch_suffix):
                 wt_path = current_path
                 break
@@ -160,9 +175,14 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 4. simulate HEAD wandering in the main repo ----
@@ -177,15 +197,9 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     combined = res.stdout + res.stderr
 
     # Positive: mismatch refusal surfaced with both branch names.
-    assert "base branch mismatch" in combined.lower(), (
-        f"mismatch refusal not surfaced:\n{combined}"
-    )
-    assert "wandered-feature" in combined, (
-        f"current branch name missing from refusal:\n{combined}"
-    )
-    assert base_branch in combined, (
-        f"expected branch name missing from refusal:\n{combined}"
-    )
+    assert "base branch mismatch" in combined.lower(), f"mismatch refusal not surfaced:\n{combined}"
+    assert "wandered-feature" in combined, f"current branch name missing from refusal:\n{combined}"
+    assert base_branch in combined, f"expected branch name missing from refusal:\n{combined}"
 
     # Positive: the ported recipe — `git checkout <expected>` + retry.
     assert f"git checkout {base_branch}" in combined, (
@@ -194,14 +208,10 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     assert f"rack transition {task_id} --state done" in combined, (
         f"retry step missing from recipe:\n{combined}"
     )
-    assert str(project) in combined, (
-        f"main-repo path missing from the cd hint:\n{combined}"
-    )
+    assert str(project) in combined, f"main-repo path missing from the cd hint:\n{combined}"
 
     # ---- 7. critical safety: NO wrong-branch merge happened ----
-    wandered_log = _git(
-        project, "log", "--oneline", "wandered-feature"
-    ).stdout
+    wandered_log = _git(project, "log", "--oneline", "wandered-feature").stdout
     assert "wt-work" not in wandered_log, (
         f"wandered branch MUST NOT receive the worktree commit "
         f"(this is the HATS-509 live incident shape):\n{wandered_log}"
@@ -225,6 +235,4 @@ def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
         f"task did not reach `done` after recovery:\n{show2.stdout}"
     )
     log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
-    assert "wt-work" in log, (
-        f"worktree commit not in history after recovery:\n{log}"
-    )
+    assert "wt-work" in log, f"worktree commit not in history after recovery:\n{log}"

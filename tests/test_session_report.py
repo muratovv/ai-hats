@@ -66,8 +66,14 @@ def test_duplicate_materialization_is_surfaced(tmp_path: Path):
     port.write_text(tmp_path / "p", "x")
     port.write_text(tmp_path / "p", "x")
     report = SessionReport(
-        role="r", provider="claude", run_mode="automate", policy=SessionPolicy(),
-        launch=["claude"], env={}, prompt=None, plan=port.plan,
+        role="r",
+        provider="claude",
+        run_mode="automate",
+        policy=SessionPolicy(),
+        launch=["claude"],
+        env={},
+        prompt=None,
+        plan=port.plan,
     )
 
     assert report.to_dict()["duplicates"] == [str(tmp_path / "p")]
@@ -80,11 +86,16 @@ def test_materialized_entries_carry_sha256_digests(tmp_path: Path):
     port = PlanMaterializer()
     port.write_text(tmp_path / "test.txt", "hello world")
     report = SessionReport(
-        role="r", provider="claude", run_mode="hitl", policy=SessionPolicy(),
-        launch=["claude"], env={}, prompt=None, plan=port.plan,
+        role="r",
+        provider="claude",
+        run_mode="hitl",
+        policy=SessionPolicy(),
+        launch=["claude"],
+        env={},
+        prompt=None,
+        plan=port.plan,
     )
     mat = report.to_dict()["materialized"]
     assert len(mat) == 1
     expected_digest = hashlib.sha256(b"hello world").hexdigest()
     assert mat[0]["digest"] == expected_digest
-

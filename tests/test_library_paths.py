@@ -208,4 +208,3 @@ def test_ai_hats_project_dir_env_wins_over_cwd(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj_repo"))
 
     assert builtin_library_root() == proj_lib
-

@@ -10,7 +10,13 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 
 
-def _make_project(tmp_path: Path, *, ai_hats_dir: str = ".agent/ai-hats", venv_path: str | None = None, manage_gitignore: bool = True) -> Path:
+def _make_project(
+    tmp_path: Path,
+    *,
+    ai_hats_dir: str = ".agent/ai-hats",
+    venv_path: str | None = None,
+    manage_gitignore: bool = True,
+) -> Path:
     """Build a minimal project with framework state under ai_hats_dir."""
     project = tmp_path / "project"
     project.mkdir()
@@ -107,6 +113,7 @@ def test_relocate_idempotent_partial_recovery(tmp_path):
     # Pre-move library/ to the new location, leave the rest at old.
     (project / ".foo").mkdir()
     import shutil as _sh
+
     _sh.move(str(project / ".agent" / "ai-hats" / "library"), str(project / ".foo" / "library"))
 
     asm = Assembler(project)

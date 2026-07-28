@@ -197,8 +197,11 @@ def test_builderror_path_unchanged() -> None:
 
 def test_on_cancel_partial_delta_merged_on_timeout() -> None:
     step = _OnCancelStep(
-        "slow", timeout=0.05, sleep_s=0.3,
-        produces={"x"}, on_cancel_delta={"x": "partial"},
+        "slow",
+        timeout=0.05,
+        sleep_s=0.3,
+        produces={"x"},
+        on_cancel_delta={"x": "partial"},
     )
     with pytest.raises(PipelineCancelled) as ei:
         run(build(step), {})
@@ -207,8 +210,11 @@ def test_on_cancel_partial_delta_merged_on_timeout() -> None:
 
 def test_on_cancel_undeclared_keys_dropped() -> None:
     step = _OnCancelStep(
-        "slow", timeout=0.05, sleep_s=0.3,
-        produces={"x"}, on_cancel_delta={"y": 1},
+        "slow",
+        timeout=0.05,
+        sleep_s=0.3,
+        produces={"x"},
+        on_cancel_delta={"y": 1},
     )
     with pytest.raises(PipelineCancelled) as ei:
         run(build(step), {})
@@ -217,8 +223,11 @@ def test_on_cancel_undeclared_keys_dropped() -> None:
 
 def test_on_cancel_none_value_filtered() -> None:
     step = _OnCancelStep(
-        "slow", timeout=0.05, sleep_s=0.3,
-        produces={"x"}, on_cancel_delta={"x": None},
+        "slow",
+        timeout=0.05,
+        sleep_s=0.3,
+        produces={"x"},
+        on_cancel_delta={"x": None},
     )
     with pytest.raises(PipelineCancelled) as ei:
         run(build(step), {})
@@ -227,8 +236,11 @@ def test_on_cancel_none_value_filtered() -> None:
 
 def test_on_cancel_raise_is_swallowed() -> None:
     step = _OnCancelStep(
-        "slow", timeout=0.05, sleep_s=0.3,
-        produces={"x"}, on_cancel_raises=True,
+        "slow",
+        timeout=0.05,
+        sleep_s=0.3,
+        produces={"x"},
+        on_cancel_raises=True,
     )
     # Cleanup raising must not crash the cancellation path.
     with pytest.raises(PipelineCancelled) as ei:

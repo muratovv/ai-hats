@@ -151,7 +151,9 @@ def _reject_inert_flags(interactive: bool, extra_args: tuple[str, ...]) -> None:
 @click.option(
     "--isolation",
     default=IsolationMode.DISCARD.value,
-    type=click.Choice([IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]),
+    type=click.Choice(
+        [IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]
+    ),
     help="Worktree isolation (batch only).",
 )
 @click.option("--ticket", default="", help="Ticket id for context (batch only).")
@@ -237,27 +239,29 @@ def execute_cmd(
             # step reads prompt_path → prompt_text and launch_provider then
             # prepends prompt_text to extra_args. We materialize the prompt
             # here so the harness contract (Path-only inputs) is preserved.
-            final = h.run({
-                KEY_ROLE: role,
-                KEY_INTERACTIVE: True,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-                KEY_MODEL: model,
-                KEY_ISOLATION: isolation,
-                KEY_TICKET: ticket,
-                KEY_TAGS: tags or None,
-                KEY_EXTRA_ARGS: list(extra_args),
-                KEY_COMPOSITION: build_composition_payload(
-                    project_dir,
-                    role_override=role,
-                    provider_name=provider,
-                    interactive=True,
-                ),
-                # HATS-867: the CLI (integrator) injects the observe writer
-                # handles — runners no longer construct them.
-                KEY_SESSION_MGR: make_session_manager(project_dir),
-                KEY_TRACER_FACTORY: SidecarTracer,
-            })
+            final = h.run(
+                {
+                    KEY_ROLE: role,
+                    KEY_INTERACTIVE: True,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
+                    KEY_MODEL: model,
+                    KEY_ISOLATION: isolation,
+                    KEY_TICKET: ticket,
+                    KEY_TAGS: tags or None,
+                    KEY_EXTRA_ARGS: list(extra_args),
+                    KEY_COMPOSITION: build_composition_payload(
+                        project_dir,
+                        role_override=role,
+                        provider_name=provider,
+                        interactive=True,
+                    ),
+                    # HATS-867: the CLI (integrator) injects the observe writer
+                    # handles — runners no longer construct them.
+                    KEY_SESSION_MGR: make_session_manager(project_dir),
+                    KEY_TRACER_FACTORY: SidecarTracer,
+                }
+            )
     except RoleNotFoundError as exc:
         # HATS-547 / S-CLI-20: same friendly handler as ``_launch_session``;
         # pre-fix this exception bubbled up as a 9-frame traceback.

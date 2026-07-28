@@ -12,6 +12,7 @@ Fail-under-revert: run ``AI_HATS_DIR=$(mktemp -d) pytest tests/test_env_isolatio
 — green with the fixture, red without it (the second test resolves the judge
 path under the ambient sentinel instead of ``tmp_path``).
 """
+
 from __future__ import annotations
 
 import os

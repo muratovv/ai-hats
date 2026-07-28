@@ -35,9 +35,7 @@ def parse_frontmatter(text: str) -> dict[str, Any]:
     lines = text.splitlines()
     if lines[0].strip() != _FENCE:
         return {}
-    closing = next(
-        (i for i in range(1, len(lines)) if lines[i].strip() == _FENCE), None
-    )
+    closing = next((i for i in range(1, len(lines)) if lines[i].strip() == _FENCE), None)
     if closing is None:
         return {}
     block = "\n".join(lines[1:closing])
@@ -48,9 +46,7 @@ def parse_frontmatter(text: str) -> dict[str, Any]:
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise FrontmatterError(
-            f"frontmatter must be a mapping, got {type(data).__name__}"
-        )
+        raise FrontmatterError(f"frontmatter must be a mapping, got {type(data).__name__}")
     return data
 
 

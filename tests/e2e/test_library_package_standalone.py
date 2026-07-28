@@ -27,7 +27,12 @@ pytestmark = pytest.mark.install_heavy
 
 def _run(cmd, *, cwd, env, timeout):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != 0:
         raise AssertionError(
@@ -57,16 +62,32 @@ def test_e2e_library_package_installs_alone(tmp_path):
 
     # Static version + no vcs → build straight from the in-tree package dir
     # (read-only source; output is per-test, no in-tree race).
-    _run(["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(PACKAGE_DIR)],
-         cwd=tmp_path, env=env, timeout=120)
+    _run(
+        ["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(PACKAGE_DIR)],
+        cwd=tmp_path,
+        env=env,
+        timeout=120,
+    )
     wheels = sorted(wheeldir.glob("ai_hats_library-*.whl"))
     assert wheels, f"no ai-hats-library wheel built under {wheeldir}"
 
     venv = tmp_path / "venv"
     _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
-    _run(["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
-          "--find-links", str(wheeldir), "ai-hats-library"],
-         cwd=tmp_path, env=env, timeout=180)
+    _run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv / "bin" / "python"),
+            "--find-links",
+            str(wheeldir),
+            "ai-hats-library",
+        ],
+        cwd=tmp_path,
+        env=env,
+        timeout=180,
+    )
 
     probe = _run([str(venv / "bin" / "python"), "-c", _PROBE], cwd=tmp_path, env=env, timeout=60)
     assert "LAYERS True" in probe.stdout, f"layer tree not shipped:\n{probe.stdout}"

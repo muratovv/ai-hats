@@ -40,13 +40,19 @@ from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL, HOOK_PRE_TOOL_USE  # noqa: E402
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -83,11 +89,15 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # project venv. No legacy refs yet — just establish the install.
     _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
 
     # Seed a proxmox-style legacy ref: hook file at the legacy path +
@@ -103,17 +113,27 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # during the test's init phase, so the parent isn't guaranteed to
     # exist by the time we write settings.json. Create it explicitly.
     settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text(json.dumps({
-        "hooks": {
-            HOOK_PRE_TOOL_USE: [{
-                "matcher": "Bash",
-                "hooks": [{
-                    "type": "command",
-                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
-                }],
-            }],
-        },
-    }, indent=2) + "\n")
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     # HATS-469: ``heal_external_refs`` is registry step 4 (one-shot gated
     # by ``migration_step``). Post-HATS-469 ``ai-hats self init`` seeds
@@ -121,6 +141,7 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
     # Rewind below step 4 so the subsequent ``self update`` actually
     # replays the heal entry against our planted legacy file.
     import yaml as _yaml
+
     cfg_path = project / PROJECT_CONFIG
     cfg_data = _yaml.safe_load(cfg_path.read_text())
     cfg_data["migration_step"] = 3
@@ -129,45 +150,62 @@ def test_e2e_self_update_heals_legacy_in_one_pass(tmp_path: Path) -> None:
 
     # Initialize git so the healer's git-clean gate can evaluate cleanliness.
     subprocess.run(
-        ["git", "init", "-q"], cwd=str(project), env=env, check=True,
+        ["git", "init", "-q"],
+        cwd=str(project),
+        env=env,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
-        cwd=str(project), env=env, check=True,
+        cwd=str(project),
+        env=env,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=str(project), env=env, check=True,
+        cwd=str(project),
+        env=env,
+        check=True,
     )
     subprocess.run(
-        ["git", "add", "-A"], cwd=str(project), env=env, check=True,
+        ["git", "add", "-A"],
+        cwd=str(project),
+        env=env,
+        check=True,
     )
     subprocess.run(
         ["git", "commit", "-q", "-m", "seed"],
-        cwd=str(project), env=env, check=True,
+        cwd=str(project),
+        env=env,
+        check=True,
     )
 
     # The actual test: ONE invocation of self update should fix everything.
     res = _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     # HATS-549 Phase 4: ``guard.sh`` is user-owned (basename NOT in
     # the ai-hats whitelist) — partition routes it to user-hooks/,
     # healer Phase 4 pre-pass disables the settings.json entry.
-    assert (project / ".agent" / "ai-hats" / "user-hooks" / "guard.sh").is_file(), \
+    assert (project / ".agent" / "ai-hats" / "user-hooks" / "guard.sh").is_file(), (
         f"hook not relocated to user-hooks/. stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
-    assert not (project / ".agent" / "ai-hats" / "library" / "hooks" / "guard.sh").exists(), \
+    )
+    assert not (project / ".agent" / "ai-hats" / "library" / "hooks" / "guard.sh").exists(), (
         "user-owned hook must not land in managed library/hooks/ namespace"
+    )
 
     # settings.json no longer carries the user-owned hook entry —
     # disable behavior (explicit re-enable required).
     raw_settings = settings.read_text()
     assert ".agent/hooks/guard.sh" not in raw_settings
     assert "library/hooks/guard.sh" not in raw_settings
-    assert "user-hooks/guard.sh" not in raw_settings, \
+    assert "user-hooks/guard.sh" not in raw_settings, (
         "Phase 4 disables; entry must be REMOVED, not auto-rewritten"
+    )
 
 
 @pytest.mark.integration
@@ -193,11 +231,15 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
 
     # Locate project's python interpreter inside its ai-hats venv
@@ -206,9 +248,12 @@ def test_e2e_python_dash_m_ai_hats_self_bump_invokable(tmp_path: Path) -> None:
 
     res = _run(
         [str(venv_python), "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
     # Successful bump produces a 'Bumped:' line (per Assembler.bump output flow).
     combined = res.stdout + res.stderr
-    assert "Bumped:" in combined or "No composition changes" in combined or "[heal]" in combined, \
+    assert "Bumped:" in combined or "No composition changes" in combined or "[heal]" in combined, (
         f"unexpected output from python -m ai_hats self bump:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    )

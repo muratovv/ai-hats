@@ -42,8 +42,7 @@ def test_scan_finds_runtime_hook_sidecar(tmp_path: Path) -> None:
         tmp_path,
         "guard",
         sidecar=(
-            "name: guard\nruntime_hooks:\n  PreToolUse:\n"
-            "    - matcher: Bash\n      script: h.sh\n"
+            "name: guard\nruntime_hooks:\n  PreToolUse:\n    - matcher: Bash\n      script: h.sh\n"
         ),
     )
     findings = scan_leftover_hook_sidecars([tmp_path])

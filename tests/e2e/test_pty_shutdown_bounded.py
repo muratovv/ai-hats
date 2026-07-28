@@ -119,6 +119,7 @@ def _import_pty_shutdown(monkeypatch):
         del sys.modules[name]
     try:
         from ai_hats import pty_shutdown
+
         yield pty_shutdown
     finally:
         # Drop whatever the fixture's body imported, then restore the
@@ -154,7 +155,9 @@ def test_e2e_bounded_shutdown_kills_stuck_child(tmp_path, _import_pty_shutdown):
 
     t0 = time.monotonic()
     _import_pty_shutdown.bounded_proc_shutdown(
-        proc, grace_s=0.3, term_s=0.3,
+        proc,
+        grace_s=0.3,
+        term_s=0.3,
     )
     elapsed = time.monotonic() - t0
 
@@ -198,7 +201,9 @@ def test_e2e_bounded_shutdown_fast_path_cooperative(tmp_path, _import_pty_shutdo
 
     t0 = time.monotonic()
     _import_pty_shutdown.bounded_proc_shutdown(
-        proc, grace_s=0.2, term_s=1.0,
+        proc,
+        grace_s=0.2,
+        term_s=1.0,
     )
     elapsed = time.monotonic() - t0
 
@@ -227,9 +232,7 @@ def test_e2e_emit_terminal_reset_writes_to_real_tty(_import_pty_shutdown):
         os.close(master)
         os.close(slave)
 
-    assert data == (
-        b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
-    )
+    assert data == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
 
 
 @pytest.mark.integration
@@ -247,7 +250,8 @@ def test_e2e_emit_terminal_reset_skips_non_tty(tmp_path, _import_pty_shutdown):
 
 @pytest.mark.integration
 def test_e2e_pty_spawn_wired_path_executes_bounded_shutdown(
-    tmp_path, _import_pty_shutdown,
+    tmp_path,
+    _import_pty_shutdown,
 ):
     """Smoke test: WrapRunner._pty_spawn finally block invokes the new wire.
 
@@ -297,7 +301,9 @@ def test_e2e_pty_spawn_wired_path_executes_bounded_shutdown(
 
 @pytest.mark.integration
 def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
-    tmp_path, monkeypatch, _import_pty_shutdown,
+    tmp_path,
+    monkeypatch,
+    _import_pty_shutdown,
 ):
     """HATS-411 Major-1 fix: _pty_spawn returns 124 when shutdown leaves no status.
 
@@ -330,9 +336,7 @@ def test_e2e_pty_spawn_returns_124_when_shutdown_unresolved(
     # The child does exit cleanly, but our stubbed shutdown didn't reap
     # it via WNOHANG, so neither exitstatus nor signalstatus is set
     # before we reach runtime.py:831-839 — exercises the 124 branch.
-    assert exit_code == 124, (
-        f"expected 124 (unresolved shutdown), got {exit_code}"
-    )
+    assert exit_code == 124, f"expected 124 (unresolved shutdown), got {exit_code}"
 
     # Reap any leaked zombies — the stubbed shutdown skipped the WNOHANG
     # reap, so the child sits in the process table until init reparents.

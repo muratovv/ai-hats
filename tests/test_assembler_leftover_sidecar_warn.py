@@ -61,8 +61,7 @@ def test_run_diagnostics_wires_detector(tmp_path, capsys):
     lib = _lib_with_skill(
         tmp_path / "lib",
         "guard",
-        "name: guard\nruntime_hooks:\n  PreToolUse:\n"
-        "    - matcher: Bash\n      script: h.sh\n",
+        "name: guard\nruntime_hooks:\n  PreToolUse:\n    - matcher: Bash\n      script: h.sh\n",
     )
     asm = _assembler(tmp_path)
     asm.library_paths = [lib]

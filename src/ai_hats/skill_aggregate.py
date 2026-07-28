@@ -95,7 +95,9 @@ def _refs_in(text: str, referrer: Path, referrer_pkg: str, skills: dict, rules: 
         if key in found:  # one coupling per (kind, target) per referrer file
             return
         target_pkg = table.get(target)
-        found[key] = Ref(kind, target, str(referrer), referrer_pkg, target_pkg, target_pkg is not None)
+        found[key] = Ref(
+            kind, target, str(referrer), referrer_pkg, target_pkg, target_pkg is not None
+        )
 
     # 1. Strict ``see rule/skill `X` `` — authoritative; the ONLY source of
     #    dangling findings (an unknown target here is a real broken pointer).

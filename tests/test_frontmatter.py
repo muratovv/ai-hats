@@ -73,9 +73,9 @@ def test_empty_block_returns_empty():
 def test_quoted_description_is_unquoted_by_yaml():
     """A quoted value comes back unquoted — the line-scanner stripped quotes by
     hand; the real parser gets it for free."""
-    assert parse_frontmatter('---\ndescription: "alpha skill"\n---\n')[
-        "description"
-    ] == "alpha skill"
+    assert (
+        parse_frontmatter('---\ndescription: "alpha skill"\n---\n')["description"] == "alpha skill"
+    )
 
 
 def test_read_frontmatter_missing_file_returns_empty(tmp_path):

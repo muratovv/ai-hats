@@ -36,8 +36,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -50,15 +54,23 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 def _git(project_dir: Path, *args: str, env: dict[str, str]) -> None:
     """Run a git command in ``project_dir``, raising on non-zero exit."""
     subprocess.run(
-        ["git", *args], cwd=str(project_dir), env=env,
-        check=True, capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(project_dir),
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
 def _git_log_count(project_dir: Path, env: dict[str, str]) -> int:
     out = subprocess.run(
-        ["git", "log", "--oneline"], cwd=str(project_dir), env=env,
-        capture_output=True, text=True, check=True,
+        ["git", "log", "--oneline"],
+        cwd=str(project_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return len([line for line in out.stdout.splitlines() if line.strip()])
 
@@ -181,7 +193,10 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=60, expect_exit=1,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=1,
     )
 
     combined = res.stdout + res.stderr
@@ -202,7 +217,9 @@ def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
     assert _git_log_count(project, env) == before_commits
     diff = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
-        cwd=str(project), env=env, check=False,
+        cwd=str(project),
+        env=env,
+        check=False,
     )
     assert diff.returncode == 0, "expected empty staging area after refusal"
 
@@ -232,7 +249,10 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=0,
     )
 
     # Tier 1 wiped.
@@ -247,8 +267,9 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     # HATS-1203: imports.md is swept, not regenerated — user-rules now ride
     # the composed prompt, so the aggregator has no reader to serve.
     imports_md = paths["canonical_dir"] / "imports.md"
-    assert not imports_md.exists(), \
+    assert not imports_md.exists(), (
         f"retired aggregator survived the heal: {imports_md.read_text()!r}"
+    )
     # MANAGED rewritten empty (modulo a comment header) — nothing is managed.
     managed = paths["canonical_dir"] / "MANAGED"
     assert managed.is_file()
@@ -263,14 +284,16 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
 
     # Yaml hardened on disk by ``_normalize_yaml`` (runs after migration).
     import yaml as _yaml
+
     saved = _yaml.safe_load((project / PROJECT_CONFIG).read_text())
     assert "imports_order" not in saved, saved
     assert saved.get("default_role") == "assistant", saved
 
     # NO auto-commit — bump does not commit. The user reviews and commits
     # via ``git status`` / ``git commit`` at leisure.
-    assert _git_log_count(project, env) == before_commits, \
+    assert _git_log_count(project, env) == before_commits, (
         "bump must not create commits on the user's behalf"
+    )
 
     # stderr WARN per overwritten user-edit file.
     assert "overwriting" in res.stderr
@@ -294,7 +317,10 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
 
     _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=0,
     )
     # Snapshot the canonical dir after first run.
     canonical = project / ".agent" / "ai-hats"
@@ -306,7 +332,10 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--migrate-force"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=0,
     )
 
     # Second pass: no Tier-1 left to sweep, no WARN re-emission.
@@ -317,8 +346,9 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
         for p in canonical.rglob("*")
         if p.is_file()
     }
-    assert after_first_bytes == after_second_bytes, \
+    assert after_first_bytes == after_second_bytes, (
         "second bump --migrate-force changed canonical bytes"
+    )
 
 
 # ----- Test 4: --check-branches surfaces a sibling-branch warning -----
@@ -347,7 +377,10 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal", "--check-branches"],
-        cwd=project, env=env, timeout=60, expect_exit=1,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=1,
     )
 
     # The refusal still fires (seed has a USER-AUTHORED paragraph in role.md);

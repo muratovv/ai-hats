@@ -6,6 +6,7 @@ RED-under-revert: drop a helper's ``env=_scrubbed_git_env()`` (or
 ``scrubbed_git_env()``) and it resolves the decoy's ``.git``. This is the runtime
 counterpart to the static ``test_git_env_hygiene`` src lint.
 """
+
 from __future__ import annotations
 
 import subprocess

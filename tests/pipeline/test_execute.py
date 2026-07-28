@@ -10,13 +10,13 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 
 
-
 def test_execute_interactive_with_prompt(project_dir: Path, mock_runners):
     # Use a real prompt file so _resolve_prompt accepts it
     pf = project_dir / "myprompt.txt"
     pf.write_text("ping")
     res = CliRunner().invoke(
-        main, ["execute", "--role", "judge", "--prompt", str(pf)],
+        main,
+        ["execute", "--role", "judge", "--prompt", str(pf)],
     )
     assert res.exit_code == 0, res.output
     assert len(mock_runners["wrap_calls"]) == 1
@@ -38,8 +38,16 @@ def test_execute_batch_routes_to_subagent(project_dir: Path, mock_runners):
     pf.write_text("ping")
     res = CliRunner().invoke(
         main,
-        ["execute", "--role", "session-reviewer", "--batch",
-         "--prompt", str(pf), "--ticket", "HATS-1"],
+        [
+            "execute",
+            "--role",
+            "session-reviewer",
+            "--batch",
+            "--prompt",
+            str(pf),
+            "--ticket",
+            "HATS-1",
+        ],
     )
     assert res.exit_code == 0, res.output
     assert len(mock_runners["sub_calls"]) == 1
@@ -54,8 +62,7 @@ def test_execute_batch_json_output(project_dir: Path, mock_runners):
     pf.write_text("ping")
     res = CliRunner().invoke(
         main,
-        ["execute", "--role", "session-reviewer", "--batch",
-         "--prompt", str(pf), "--json"],
+        ["execute", "--role", "session-reviewer", "--batch", "--prompt", str(pf), "--json"],
     )
     assert res.exit_code == 0, res.output
     # JSON line in stdout
@@ -76,10 +83,7 @@ def test_execute_path_shape_prompt_fails_fast(project_dir: Path, mock_runners):
         ["execute", "--role", "test-agent", "--batch", "--prompt", "./missing.md"],
     )
     assert res.exit_code != 0
-    assert (
-        "looks like a path" in res.output.lower()
-        or "no such" in res.output.lower()
-    )
+    assert "looks like a path" in res.output.lower() or "no such" in res.output.lower()
     # Pipeline / runner not reached
     assert mock_runners["sub_calls"] == []
     assert mock_runners["wrap_calls"] == []
@@ -88,7 +92,8 @@ def test_execute_path_shape_prompt_fails_fast(project_dir: Path, mock_runners):
 def test_execute_raw_text_prompt(project_dir: Path, mock_runners):
     """``--prompt "ping"`` (plain text) is accepted as raw prompt."""
     res = CliRunner().invoke(
-        main, ["execute", "--role", "test-agent", "--prompt", "ping"],
+        main,
+        ["execute", "--role", "test-agent", "--prompt", "ping"],
     )
     assert res.exit_code == 0, res.output
     call = mock_runners["wrap_calls"][0]

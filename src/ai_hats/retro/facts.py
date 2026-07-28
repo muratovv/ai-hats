@@ -179,28 +179,30 @@ def _git(project_dir: Path, args: list[str]) -> str:
         return ""
 
 
-def _files_changed(
-    project_dir: Path, since: datetime, until: datetime
-) -> list[str]:
-    out = _git(project_dir, [
-        "log",
-        f"--since={since.isoformat()}",
-        f"--until={until.isoformat()}",
-        "--name-only",
-        "--pretty=format:",
-    ])
+def _files_changed(project_dir: Path, since: datetime, until: datetime) -> list[str]:
+    out = _git(
+        project_dir,
+        [
+            "log",
+            f"--since={since.isoformat()}",
+            f"--until={until.isoformat()}",
+            "--name-only",
+            "--pretty=format:",
+        ],
+    )
     return sorted({line for line in out.splitlines() if line.strip()})
 
 
-def _commits_in_window(
-    project_dir: Path, since: datetime, until: datetime
-) -> list[str]:
-    out = _git(project_dir, [
-        "log",
-        f"--since={since.isoformat()}",
-        f"--until={until.isoformat()}",
-        "--pretty=format:%h %s",
-    ])
+def _commits_in_window(project_dir: Path, since: datetime, until: datetime) -> list[str]:
+    out = _git(
+        project_dir,
+        [
+            "log",
+            f"--since={since.isoformat()}",
+            f"--until={until.isoformat()}",
+            "--pretty=format:%h %s",
+        ],
+    )
     return [line for line in out.splitlines() if line.strip()]
 
 

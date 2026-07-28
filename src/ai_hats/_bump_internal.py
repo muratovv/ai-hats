@@ -23,6 +23,7 @@ Exit codes mirror :func:`ai_hats.cli.assembly.do_bump`:
   0  success
   1  AssemblyError (user edits detected, refusal raised)
 """
+
 from __future__ import annotations
 
 import sys

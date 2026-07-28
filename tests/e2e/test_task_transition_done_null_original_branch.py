@@ -33,8 +33,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -76,14 +80,19 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(venv / "bin" / "rack"), *args],
-            cwd=cwd, env={**env, "AI_HATS_PLAN_ACK": "1"},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, "AI_HATS_PLAN_ACK": "1"},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -95,17 +104,26 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- 2. create a task and walk it to review ----
     new_res = rack(
-        "create", "null base test",
-        "--description", "exercise the HATS-714 incomplete-state refusal",
-        "--role", "assistant",
-        "--reviewer", "user",
+        "create",
+        "null base test",
+        "--description",
+        "exercise the HATS-714 incomplete-state refusal",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     task_id = None
     for line in new_res.stdout.splitlines():
@@ -120,8 +138,7 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     rack("transition", task_id, "plan")
 
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -138,12 +155,9 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     # ---- 3. corrupt the state file: original_branch -> null ----
     # Done AFTER reaching review so no intermediate transition rewrites it.
     state_path = (
-        project / ".agent" / "ai-hats" / "sessions" / "worktrees"
-        / f"task-{task_id.lower()}.json"
+        project / ".agent" / "ai-hats" / "sessions" / "worktrees" / f"task-{task_id.lower()}.json"
     )
-    assert state_path.is_file(), (
-        f"worktree state file not found at {state_path}"
-    )
+    assert state_path.is_file(), f"worktree state file not found at {state_path}"
     data = json.loads(state_path.read_text())
     assert data.get("original_branch"), (
         f"precondition: state should start with a real original_branch, "
@@ -154,25 +168,24 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
 
     # ---- 4. transition done refuses cleanly, no traceback ----
     res = rack(
-        "transition", task_id, "done",
-        expect_exit=1, cwd=project,
+        "transition",
+        task_id,
+        "done",
+        expect_exit=1,
+        cwd=project,
     )
     combined = res.stdout + res.stderr
 
     assert "refused (worktree)" in combined.lower(), (
-        f"typed refusal not surfaced on the transition-done surface:\n"
-        f"{combined}"
+        f"typed refusal not surfaced on the transition-done surface:\n{combined}"
     )
     assert "original_branch" in combined, (
         f"refusal must name the missing `original_branch` field:\n{combined}"
     )
     assert "Traceback" not in res.stderr, (
-        f"a Python traceback leaked instead of a typed refusal:\n"
-        f"{res.stderr}"
+        f"a Python traceback leaked instead of a typed refusal:\n{res.stderr}"
     )
-    assert "TypeError" not in combined, (
-        f"the opaque TypeError must be gone:\n{combined}"
-    )
+    assert "TypeError" not in combined, f"the opaque TypeError must be gone:\n{combined}"
 
     # ---- 5. card remains in `review` (HATS-481 fail-loud) ----
     show = rack("context", task_id)

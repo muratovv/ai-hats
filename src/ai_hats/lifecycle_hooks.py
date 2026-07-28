@@ -114,8 +114,7 @@ def _health_check(skill: str, event: str, src: Path) -> bytes:
     label = f"lifecycle_hooks: skill '{skill}', event '{event}', script '{src.name}'"
     if not src.is_file():
         raise LifecycleHookError(
-            f"{label}: declared file not found at {src} — fix the declaration "
-            f"or restore the script"
+            f"{label}: declared file not found at {src} — fix the declaration or restore the script"
         )
     data = src.read_bytes()
     if not data.strip():
@@ -184,8 +183,9 @@ def materialize_lifecycle_hooks(project_dir: Path, library_paths: Sequence[Path]
             mode=0o755,
         )
     for stale in sorted(previous - new_names):
-        _safe_discard(target_dir / stale, reason="materialize-lifecycle-sweep",
-                      project_dir=project_dir)
+        _safe_discard(
+            target_dir / stale, reason="materialize-lifecycle-sweep", project_dir=project_dir
+        )
     for child in target_dir.iterdir():
         if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
             child.rmdir()  # safe-delete: ok empty-dir

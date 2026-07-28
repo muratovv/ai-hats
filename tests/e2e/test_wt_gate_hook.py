@@ -7,6 +7,7 @@ hard deny); a linked-worktree file, a non-trigger file, a gitignored path, a non
 path, the kill switch, and a garbage payload are all silent. Exit is always 0 — the deny
 rides in JSON (a final decision that binds headless too), not a non-zero exit.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +21,10 @@ import pytest
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-HOOK = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/hooks/wt_gate.py"
+HOOK = (
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/hooks/wt_gate.py"
+)
 
 
 def _git(cwd: Path, *args: str) -> None:

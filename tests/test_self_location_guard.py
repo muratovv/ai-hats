@@ -35,10 +35,7 @@ from ai_hats.self_location import classify_invocation
 def test_running_prefix_equals_resolved_is_sanctioned(tmp_path: Path):
     venv = tmp_path / "proj" / ".agent" / "ai-hats" / ".venv"
     venv.mkdir(parents=True)
-    assert (
-        classify_invocation(venv, venv, is_editable_install=False, skip=False)
-        == "sanctioned"
-    )
+    assert classify_invocation(venv, venv, is_editable_install=False, skip=False) == "sanctioned"
 
 
 def test_managed_default_venv_namespace_is_sanctioned(tmp_path: Path):
@@ -48,8 +45,7 @@ def test_managed_default_venv_namespace_is_sanctioned(tmp_path: Path):
     other = tmp_path / "elsewhere" / "venv"
     other.mkdir(parents=True)
     assert (
-        classify_invocation(running, other, is_editable_install=False, skip=False)
-        == "sanctioned"
+        classify_invocation(running, other, is_editable_install=False, skip=False) == "sanctioned"
     )
 
 
@@ -60,8 +56,7 @@ def test_managed_versioned_dir_is_sanctioned(tmp_path: Path):
     other = tmp_path / "proj" / ".agent" / "ai-hats" / ".venv"
     other.mkdir(parents=True)
     assert (
-        classify_invocation(running, other, is_editable_install=False, skip=False)
-        == "sanctioned"
+        classify_invocation(running, other, is_editable_install=False, skip=False) == "sanctioned"
     )
 
 
@@ -72,8 +67,7 @@ def test_editable_host_clone_is_sanctioned(tmp_path: Path):
     resolved = tmp_path / "proj" / ".agent" / "ai-hats" / ".venv"
     resolved.mkdir(parents=True)
     assert (
-        classify_invocation(running, resolved, is_editable_install=True, skip=False)
-        == "sanctioned"
+        classify_invocation(running, resolved, is_editable_install=True, skip=False) == "sanctioned"
     )
 
 
@@ -82,8 +76,7 @@ def test_env_pinned_resolved_matches_running_is_sanctioned(tmp_path: Path):
     pinned = tmp_path / "ci-cache" / "shared-venv"
     pinned.mkdir(parents=True)
     assert (
-        classify_invocation(pinned, pinned, is_editable_install=False, skip=False)
-        == "sanctioned"
+        classify_invocation(pinned, pinned, is_editable_install=False, skip=False) == "sanctioned"
     )
 
 
@@ -91,20 +84,14 @@ def test_yaml_pinned_resolved_matches_running_is_sanctioned(tmp_path: Path):
     """yaml venv_path override resolving to the running venv → sanctioned."""
     venv = tmp_path / "custom" / "venv-path"
     venv.mkdir(parents=True)
-    assert (
-        classify_invocation(venv, venv, is_editable_install=False, skip=False)
-        == "sanctioned"
-    )
+    assert classify_invocation(venv, venv, is_editable_install=False, skip=False) == "sanctioned"
 
 
 def test_unresolved_venv_is_sanctioned_fail_open(tmp_path: Path):
     """No project / resolution error → resolved_venv None → fail open."""
     running = tmp_path / "some" / "venv"
     running.mkdir(parents=True)
-    assert (
-        classify_invocation(running, None, is_editable_install=False, skip=False)
-        == "sanctioned"
-    )
+    assert classify_invocation(running, None, is_editable_install=False, skip=False) == "sanctioned"
 
 
 def test_unknown_running_prefix_is_sanctioned(tmp_path: Path):
@@ -112,13 +99,9 @@ def test_unknown_running_prefix_is_sanctioned(tmp_path: Path):
     resolved = tmp_path / "proj" / ".agent" / "ai-hats" / ".venv"
     resolved.mkdir(parents=True)
     assert (
-        classify_invocation(None, resolved, is_editable_install=False, skip=False)
-        == "sanctioned"
+        classify_invocation(None, resolved, is_editable_install=False, skip=False) == "sanctioned"
     )
-    assert (
-        classify_invocation("", resolved, is_editable_install=False, skip=False)
-        == "sanctioned"
-    )
+    assert classify_invocation("", resolved, is_editable_install=False, skip=False) == "sanctioned"
 
 
 def test_skip_env_overrides_foreign(tmp_path: Path):
@@ -129,12 +112,10 @@ def test_skip_env_overrides_foreign(tmp_path: Path):
     resolved.mkdir(parents=True)
     # Without skip this is foreign (see below); skip flips it.
     assert (
-        classify_invocation(running, resolved, is_editable_install=False, skip=False)
-        == "foreign"
+        classify_invocation(running, resolved, is_editable_install=False, skip=False) == "foreign"
     )
     assert (
-        classify_invocation(running, resolved, is_editable_install=False, skip=True)
-        == "sanctioned"
+        classify_invocation(running, resolved, is_editable_install=False, skip=True) == "sanctioned"
     )
 
 
@@ -146,8 +127,7 @@ def test_foreign_app_venv_is_foreign(tmp_path: Path):
     resolved = tmp_path / "proj" / ".agent" / "ai-hats" / ".venv"
     resolved.mkdir(parents=True)
     assert (
-        classify_invocation(running, resolved, is_editable_install=False, skip=False)
-        == "foreign"
+        classify_invocation(running, resolved, is_editable_install=False, skip=False) == "foreign"
     )
 
 
@@ -194,7 +174,4 @@ def test_skip_env_only_honours_exact_1(skip_val: str, tmp_path: Path):
     resolved.mkdir(parents=True)
     skip = skip_val == "1"  # the wiring's exact comparison
     expected = "sanctioned" if skip else "foreign"
-    assert (
-        classify_invocation(running, resolved, is_editable_install=False, skip=skip)
-        == expected
-    )
+    assert classify_invocation(running, resolved, is_editable_install=False, skip=skip) == expected

@@ -43,10 +43,15 @@ def test_session_show_renders_usage_section(tmp_project):
     sdir = tmp_project.agent_dir / "sessions" / "runs" / session_dirname(sid)
     sdir.mkdir(parents=True)
     (sdir / METRICS_JSON).write_text(
-        json.dumps({
-            "role": "maintainer", "provider": "claude", "exit_code": 0,
-            "turns": 4, "tool_calls": 16,
-        })
+        json.dumps(
+            {
+                "role": "maintainer",
+                "provider": "claude",
+                "exit_code": 0,
+                "turns": 4,
+                "tool_calls": 16,
+            }
+        )
     )
     (sdir / USAGE_JSON).write_text(json.dumps(_USAGE))
 

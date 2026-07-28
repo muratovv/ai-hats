@@ -7,6 +7,7 @@ git calls are covered by the autouse ``_isolate_git_env`` fixture (asserted here
 Known limit: an env built in a distant helper is the runtime repo-integrity
 tripwire's job, not this static lint's. AST-walk precedent: ``test_import_hygiene.py``.
 """
+
 from __future__ import annotations
 
 import ast
@@ -212,14 +213,13 @@ def test_detector_flags_releak_and_ignores_stripped() -> None:
     assert _offends('subprocess.run(["git", "status"], env=os.environ.copy())')
     assert _offends('subprocess.run(["git", "status"], env={**os.environ})')
     assert _offends(
-        'env = os.environ.copy()\n'
+        "env = os.environ.copy()\n"
         'env["PYTHONPATH"] = "x"\n'
         'subprocess.run(["git", "x"], cwd=c, env=env)'
     )
     # test_prepush shape: sets GIT_CONFIG_* but does NOT strip the plumbing vars.
     assert _offends(
-        'subprocess.run(["git", "push"], '
-        'env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null"})'
+        'subprocess.run(["git", "push"], env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null"})'
     )
     # A GITHUB_* filter strips no GIT_* plumbing var → still flagged (not a strip).
     assert _offends(
@@ -233,7 +233,7 @@ def test_detector_flags_releak_and_ignores_stripped() -> None:
         'subprocess.run(["git", "x"], cwd=c, env=env)'
     )
     assert not _offends(
-        'env = os.environ.copy()\n'
+        "env = os.environ.copy()\n"
         'env.pop("GIT_DIR", None)\n'
         'env.pop("GIT_WORK_TREE", None)\n'
         'env.pop("GIT_INDEX_FILE", None)\n'
@@ -251,17 +251,15 @@ def test_isolate_git_env_fixture_intact() -> None:
     all three plumbing vars. RED-under-revert: weaken the fixture and this fails.
     """
     tree = ast.parse((_TESTS_DIR / "conftest.py").read_text())
-    fixtures = {
-        n.name: n
-        for n in ast.walk(tree)
-        if isinstance(n, ast.FunctionDef)
-    }
+    fixtures = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     fn = fixtures.get("_isolate_git_env")
     assert fn is not None, "conftest lost the _isolate_git_env fixture"
 
     autouse = any(
         isinstance(d, ast.Call)
-        and any(kw.arg == "autouse" and getattr(kw.value, "value", None) is True for kw in d.keywords)
+        and any(
+            kw.arg == "autouse" and getattr(kw.value, "value", None) is True for kw in d.keywords
+        )
         for d in fn.decorator_list
     )
     assert autouse, "_isolate_git_env must stay autouse"
@@ -289,8 +287,11 @@ def test_repo_integrity_tripwire_wired() -> None:
     structural guard on the fixture wiring the pytester self-test exercises."""
     tree = ast.parse((_TESTS_DIR / "conftest.py").read_text())
     fn = next(
-        (n for n in ast.walk(tree)
-         if isinstance(n, ast.FunctionDef) and n.name == "_real_repo_integrity_tripwire"),
+        (
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "_real_repo_integrity_tripwire"
+        ),
         None,
     )
     assert fn is not None, "conftest lost the _real_repo_integrity_tripwire fixture"
@@ -353,7 +354,7 @@ def test_src_detector_flags_unsanitized_and_ignores_helper() -> None:
         'env = scrubbed_git_env()\nsubprocess.run(["git", "x"], cwd=c, env=env)'
     )
     assert not _src_offends(  # explicit pop-3 strip still counts
-        'env = os.environ.copy()\n'
+        "env = os.environ.copy()\n"
         'env.pop("GIT_DIR", None)\n'
         'env.pop("GIT_WORK_TREE", None)\n'
         'env.pop("GIT_INDEX_FILE", None)\n'

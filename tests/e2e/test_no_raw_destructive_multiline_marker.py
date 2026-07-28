@@ -11,6 +11,7 @@ Fails-under-revert: with the pre-HATS-757 line-local hook, the marked
 multi-line call (case a) is wrongly flagged → the commit is blocked → the test
 goes RED. The unmarked case (b) guards against over-permissiveness.
 """
+
 from __future__ import annotations
 
 import os
@@ -28,9 +29,7 @@ HOOK = (
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True
-    )
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True)
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -83,9 +82,7 @@ def test_commit_allows_multiline_marked_call(tmp_path: Path):
         "    )  # safe-delete: ok multi-line cleanup\n"
     )
     res = _commit(repo, "marked multi-line call")
-    assert res.returncode == 0, (
-        f"marked multi-line call must commit; hook stderr:\n{res.stderr}"
-    )
+    assert res.returncode == 0, f"marked multi-line call must commit; hook stderr:\n{res.stderr}"
     log = _git(repo, "log", "--oneline")
     assert log.stdout.strip(), "commit did not land"
 
@@ -95,11 +92,7 @@ def test_commit_blocks_unmarked_multiline_call(tmp_path: Path):
     """An unmarked multi-line call must still be blocked (no over-permission)."""
     repo = _make_repo(tmp_path)
     (repo / "src" / "ai_hats" / "cleanup.py").write_text(
-        "import shutil\n"
-        "def f(p):\n"
-        "    shutil.rmtree(\n"
-        "        p, ignore_errors=True\n"
-        "    )\n"
+        "import shutil\ndef f(p):\n    shutil.rmtree(\n        p, ignore_errors=True\n    )\n"
     )
     res = _commit(repo, "unmarked multi-line call")
     assert res.returncode != 0, "unmarked multi-line call must be blocked"

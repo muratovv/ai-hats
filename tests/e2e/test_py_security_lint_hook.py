@@ -7,6 +7,7 @@ Code ``PostToolUse`` payloads on stdin and assert the NON-BLOCKING contract: on 
 silent. It NEVER emits a ``permissionDecision`` and NEVER blocks. Fail-open on any
 error (ruff absent, non-.py, garbage payload).
 """
+
 from __future__ import annotations
 
 import json

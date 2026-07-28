@@ -4,6 +4,7 @@ Fail-under-revert: drop the ``is_relative_to`` containment check in
 ``_effective_dir`` and the command runs OUTSIDE the worktree — the probe then
 exits 0 and reports a path that is not under it.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -21,8 +22,16 @@ def test_wt_exec_cd_refuses_to_escape_the_worktree(tmp_project, repo_root, escap
     (wt / "sub").mkdir()
 
     res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch, "-C", escape, "--", "pwd",
-        cwd=main.path, env=env,
+        main.ai_hats_binary,
+        "wt",
+        "exec",
+        branch,
+        "-C",
+        escape,
+        "--",
+        "pwd",
+        cwd=main.path,
+        env=env,
     )
 
     assert res.returncode != 0, (

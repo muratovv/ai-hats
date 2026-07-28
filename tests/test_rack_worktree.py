@@ -223,9 +223,7 @@ def test_epic_execute_no_worktree_but_childless_still_gets_one(project):
     the same path still gets its worktree (regression guard)."""
     kernel = _kernel(project)
     kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="Epic")
-    kernel.create(
-        actor="test", caller_cwd=project, task_id="T-2", title="Child", parent_task="T-1"
-    )
+    kernel.create(actor="test", caller_cwd=project, task_id="T-2", title="Child", parent_task="T-1")
     _tr(kernel, "T-1", "plan", "execute", cwd=project)  # empty plan: epic is not gated
     assert kernel.get("T-1").state == "execute"
     assert _active(project, "T-1") is None  # epics never get a worktree

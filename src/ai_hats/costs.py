@@ -43,7 +43,9 @@ def count_tokens_approx(text: str) -> int:
     return len(text) // 4
 
 
-def count_tokens_sdk(texts: list[str], model: str = "claude-sonnet-4-5-20241022") -> list[int] | None:
+def count_tokens_sdk(
+    texts: list[str], model: str = "claude-sonnet-4-5-20241022"
+) -> list[int] | None:
     """Count tokens via Anthropic SDK. Returns None if unavailable."""
     try:
         import anthropic
@@ -94,12 +96,17 @@ def analyze_composition(
     errors: list[str] = []
 
     if as_trait:
-        _collect_trait(composer, name, components, errors, visited_rules=set(), visited_skills=set())
+        _collect_trait(
+            composer, name, components, errors, visited_rules=set(), visited_skills=set()
+        )
     else:
         config = composer.resolver.resolve_role_config(name)
         if config is None:
             return CostBreakdown(
-                components=[], total_tokens=0, exact=False, errors=[f"Role '{name}' not found"],
+                components=[],
+                total_tokens=0,
+                exact=False,
+                errors=[f"Role '{name}' not found"],
             )
 
         visited_rules: set[str] = set()
@@ -177,14 +184,16 @@ def _build_breakdown(
             on_demand = full_tok - always_on
         else:  # rule / injection — inlined in the base prompt
             always_on, on_demand = full_tok, 0
-        result_components.append(ComponentCost(
-            name=comp_name,
-            category=category,
-            tokens=full_tok,
-            chars=len(full),
-            always_on_tokens=always_on,
-            on_demand_tokens=on_demand,
-        ))
+        result_components.append(
+            ComponentCost(
+                name=comp_name,
+                category=category,
+                tokens=full_tok,
+                chars=len(full),
+                always_on_tokens=always_on,
+                on_demand_tokens=on_demand,
+            )
+        )
 
     return CostBreakdown(
         components=result_components,

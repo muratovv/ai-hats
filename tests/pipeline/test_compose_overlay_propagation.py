@@ -67,12 +67,9 @@ def _trait_body_marker(trait_name: str) -> str:
     assert injection, f"trait {trait_name!r} has empty injection"
     # Take the first non-blank line as the marker — it's the trait's
     # most stable structural element (usually a Markdown heading).
-    first_line = next(
-        line for line in injection.splitlines() if line.strip()
-    )
+    first_line = next(line for line in injection.splitlines() if line.strip())
     assert len(first_line) > 4, (
-        f"trait {trait_name!r} first-line marker too short to be unique: "
-        f"{first_line!r}"
+        f"trait {trait_name!r} first-line marker too short to be unique: {first_line!r}"
     )
     return first_line
 
@@ -112,30 +109,42 @@ def _setup_project_with_overlays(tmp_path: Path, monkeypatch) -> tuple[Path, dic
     for argv in [
         ["self", "init", "-r", "maintainer", "-p", "claude", "--no-update"],
         [
-            "config", "customize", "maintainer",
-            "--global", "--injection-append", INJ_GLOBAL,
-            "--global", "--add-trait", GLOBAL_TRAIT,
+            "config",
+            "customize",
+            "maintainer",
+            "--global",
+            "--injection-append",
+            INJ_GLOBAL,
+            "--global",
+            "--add-trait",
+            GLOBAL_TRAIT,
         ],
         [
-            "config", "customize", "maintainer",
-            "--injection-append", INJ_PROJECT,
-            "--add-trait", PROJECT_TRAIT,
+            "config",
+            "customize",
+            "maintainer",
+            "--injection-append",
+            INJ_PROJECT,
+            "--add-trait",
+            PROJECT_TRAIT,
         ],
     ]:
         res = runner.invoke(main, argv)
         assert res.exit_code == 0, f"setup {argv}: {res.output}"
 
     markers = {
-        "global  injection_append":   INJ_GLOBAL,
-        "global  add_trait body":     _trait_body_marker(GLOBAL_TRAIT),
-        "project injection_append":   INJ_PROJECT,
-        "project add_trait body":     _trait_body_marker(PROJECT_TRAIT),
+        "global  injection_append": INJ_GLOBAL,
+        "global  add_trait body": _trait_body_marker(GLOBAL_TRAIT),
+        "project injection_append": INJ_PROJECT,
+        "project add_trait body": _trait_body_marker(PROJECT_TRAIT),
     }
     return project, markers
 
 
 def test_pipeline_does_not_feed_subagent_override(
-    tmp_path: Path, monkeypatch, mock_runners,
+    tmp_path: Path,
+    monkeypatch,
+    mock_runners,
 ) -> None:
     """HATS-505 regression catcher: the pipeline MUST NOT pass
     ``system_prompt_override`` into ``SubAgentRunner.run``. The override
@@ -151,9 +160,17 @@ def test_pipeline_does_not_feed_subagent_override(
 
     pf = project / "p.txt"
     pf.write_text("ok")
-    res = CliRunner().invoke(main, [
-        "execute", "--batch", "-r", "maintainer", "--prompt", str(pf),
-    ])
+    res = CliRunner().invoke(
+        main,
+        [
+            "execute",
+            "--batch",
+            "-r",
+            "maintainer",
+            "--prompt",
+            str(pf),
+        ],
+    )
     assert res.exit_code == 0, res.output
 
     sub_calls = mock_runners["sub_calls"]
@@ -170,7 +187,9 @@ def test_pipeline_does_not_feed_subagent_override(
 
 
 def test_seeded_payload_carries_all_overlay_content(
-    tmp_path: Path, monkeypatch, mock_runners,
+    tmp_path: Path,
+    monkeypatch,
+    mock_runners,
 ) -> None:
     """HATS-865 sibling of the HATS-501 catcher: the payload the integrator
     seam composes and the funnel delivers to the runner MUST carry every
@@ -180,9 +199,17 @@ def test_seeded_payload_carries_all_overlay_content(
 
     pf = project / "p.txt"
     pf.write_text("ok")
-    res = CliRunner().invoke(main, [
-        "execute", "--batch", "-r", "maintainer", "--prompt", str(pf),
-    ])
+    res = CliRunner().invoke(
+        main,
+        [
+            "execute",
+            "--batch",
+            "-r",
+            "maintainer",
+            "--prompt",
+            str(pf),
+        ],
+    )
     assert res.exit_code == 0, res.output
 
     sub_calls = mock_runners["sub_calls"]
@@ -196,7 +223,8 @@ def test_seeded_payload_carries_all_overlay_content(
 
 
 def test_runtime_sdk_path_carries_all_overlay_content(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """HATS-501 regression catcher (post-HATS-505): the runtime's own
     compose + SDK-build path — what ``SubAgentRunner._run_attempt``
@@ -219,6 +247,7 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     correctness anymore.
     """
     from ai_hats.surfaces.claude.provider import ClaudeProvider
+
     project, markers = _setup_project_with_overlays(tmp_path, monkeypatch)
 
     asm = Assembler(project)
@@ -245,7 +274,8 @@ def test_runtime_sdk_path_carries_all_overlay_content(
 
 
 def test_hitl_session_prompt_carries_all_overlay_content(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """Lock-in counterpart: ``WrapRunner`` / ``ClaudeProvider.
     build_session_prompt`` already propagates overlay content (verified
@@ -261,12 +291,13 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     asm = Assembler(project)
     result = compose_for_role(asm, "maintainer")
     args, _env, _ = ClaudeProvider().build_session_prompt(
-        project, result, "test-sid-501",
+        project,
+        result,
+        "test-sid-501",
     )
     prompt_md = Path(args[1]).read_text()
 
     missing = [m for m in markers.values() if m not in prompt_md]
     assert not missing, (
-        f"HITL prompt.md missing overlay markers {missing}; "
-        f"prompt.md head:\n{prompt_md[:400]!r}"
+        f"HITL prompt.md missing overlay markers {missing}; prompt.md head:\n{prompt_md[:400]!r}"
     )

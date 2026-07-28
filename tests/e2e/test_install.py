@@ -39,13 +39,19 @@ from _helpers.env import clean_env  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -96,12 +102,11 @@ def test_e2e_install_init_break_heal(tmp_path):
     # the step-7 heal self update. The per-test clone also owns its own build/
     # dir, so concurrent xdist workers never race the in-tree wheel build.
     subprocess.run(
-        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
+        check=True,
     )
-    subprocess.run(["git", "-C", str(src_repo), "config", "user.email", "e2e@test"],
-                   check=True)
-    subprocess.run(["git", "-C", str(src_repo), "config", "user.name", "E2E"],
-                   check=True)
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.email", "e2e@test"], check=True)
+    subprocess.run(["git", "-C", str(src_repo), "config", "user.name", "E2E"], check=True)
 
     env = clean_env()  # HATS-685: drop inherited PYTHONPATH/redirect vars
     env[ENV_LAUNCHER_DEST] = str(launcher_dest)
@@ -111,7 +116,9 @@ def test_e2e_install_init_break_heal(tmp_path):
     # ---- 1. install-launcher.sh ----
     res = _run(
         ["bash", str(INSTALL_LAUNCHER)],
-        cwd=tmp_path, env=env, timeout=30,
+        cwd=tmp_path,
+        env=env,
+        timeout=30,
     )
     assert launcher_dest.is_file(), f"launcher missing after install:\n{res.stdout}\n{res.stderr}"
     assert os.access(launcher_dest, os.X_OK), "launcher not executable"
@@ -119,7 +126,10 @@ def test_e2e_install_init_break_heal(tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180):
         return _run(
             [str(launcher_dest), *args],
-            cwd=project, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=project,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 2. self update — bootstrap path ----
@@ -137,7 +147,8 @@ def test_e2e_install_init_break_heal(tmp_path):
     )
     import_probe = subprocess.run(
         [str(venv / "bin" / "python"), "-c", "import ai_hats"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert import_probe.returncode == 0, (
         f"ai_hats not importable after install: {import_probe.stderr}"
@@ -247,7 +258,10 @@ def test_e2e_fresh_init_heals(tmp_path):
     assert not venv.exists(), "precondition: fresh project has no venv yet"
     res = _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=180, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=180,
+        expect_exit=0,
     )
 
     # Heal ran (launcher recreated the default venv before delegating to init).
@@ -259,7 +273,8 @@ def test_e2e_fresh_init_heals(tmp_path):
     )
     init_probe = subprocess.run(
         [str(venv / "bin" / "python"), "-c", "import ai_hats"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert init_probe.returncode == 0, (
         f"ai_hats not importable after self init: {init_probe.stderr}"

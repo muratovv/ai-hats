@@ -45,8 +45,8 @@ def test_claude_build_session_artifacts_hitl(tmp_path: Path):
     session_id = "20260724-120000-1"
 
     artifacts = provider.build_session_artifacts(
-        project_dir, result, session_id, run_mode="hitl"
-    , artifacts=BuiltArtifacts())
+        project_dir, result, session_id, run_mode="hitl", artifacts=BuiltArtifacts()
+    )
 
     # CLI args assertion
     assert "--system-prompt-file" in artifacts.cli_args
@@ -75,8 +75,8 @@ def test_claude_build_session_artifacts_automate(tmp_path: Path):
     session_id = "20260724-120000-1"
 
     artifacts = provider.build_session_artifacts(
-        project_dir, result, session_id, run_mode="automate"
-    , artifacts=BuiltArtifacts())
+        project_dir, result, session_id, run_mode="automate", artifacts=BuiltArtifacts()
+    )
 
     # HATS-1207 S3: AUTOMATE emits the SDK's preset+append shape — the same value
     # sdk_options.py used to recompute — rather than the marker-wrapped HITL bytes.
@@ -102,8 +102,8 @@ def test_claude_session_policy_hooks_disabled(tmp_path: Path):
 
     policy = SessionPolicy(hooks=False)
     artifacts = provider.build_session_artifacts(
-        project_dir, result, session_id, run_mode="hitl", policy=policy
-    , artifacts=BuiltArtifacts())
+        project_dir, result, session_id, run_mode="hitl", policy=policy, artifacts=BuiltArtifacts()
+    )
 
     assert "--settings" not in artifacts.cli_args
 

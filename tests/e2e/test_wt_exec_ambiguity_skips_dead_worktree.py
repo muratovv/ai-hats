@@ -13,6 +13,7 @@ Fail-under-revert: drop the liveness filter in ``list_active`` and the bare
 ``wt exec`` form goes back to refusing with an ambiguity error naming the dead
 branch.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -36,8 +37,16 @@ def test_dead_worktree_drops_out_of_the_ambiguity_set(tmp_project, repo_root):
     _kill_worktree(main.path, dead_wt)
 
     res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", "--", "git", "rev-parse", "--abbrev-ref", "HEAD",
-        cwd=main.path, env=env,
+        main.ai_hats_binary,
+        "wt",
+        "exec",
+        "--",
+        "git",
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+        cwd=main.path,
+        env=env,
     )
 
     assert res.returncode == 0, (

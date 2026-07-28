@@ -94,7 +94,9 @@ def test_never_deletes_cwd_worktree(tmp_path: Path) -> None:
         ["bash", str(SCRIPT), "--force"],
         cwd=str(live_wt),  # stand INSIDE the worktree
         env={"TMPDIR": str(root), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert cp.returncode == 0, cp.stderr
     assert live_wt.exists(), "the in-use worktree must NOT be deleted"

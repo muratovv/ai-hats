@@ -38,15 +38,34 @@ def test_no_internal_task_ids_in_user_facing_strings():
                         func_name = node.func.attr
 
                     for kw in node.keywords:
-                        if kw.arg in ("help", "description") and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        if (
+                            kw.arg in ("help", "description")
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ):
                             if re.search(r"\bHATS-[0-9]+\b", kw.value.value):
-                                violations.append((relpath, kw.value.lineno, f"help string: {kw.value.value!r}"))
+                                violations.append(
+                                    (relpath, kw.value.lineno, f"help string: {kw.value.value!r}")
+                                )
 
                     # 2. Console prints / user warnings
-                    if func_name in ("echo", "secho", "fail", "ClickException", "UsageError", "BadParameter"):
+                    if func_name in (
+                        "echo",
+                        "secho",
+                        "fail",
+                        "ClickException",
+                        "UsageError",
+                        "BadParameter",
+                    ):
                         for arg in node.args:
-                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and re.search(r"\bHATS-[0-9]+\b", arg.value):
-                                violations.append((relpath, arg.lineno, f"{func_name}: {arg.value!r}"))
+                            if (
+                                isinstance(arg, ast.Constant)
+                                and isinstance(arg.value, str)
+                                and re.search(r"\bHATS-[0-9]+\b", arg.value)
+                            ):
+                                violations.append(
+                                    (relpath, arg.lineno, f"{func_name}: {arg.value!r}")
+                                )
 
                 # 3. Click CLI command docstrings
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

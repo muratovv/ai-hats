@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 
 
 def apply_post_run_guard(
-    session: "Session", policy: "HarnessPolicy | None",
+    session: "Session",
+    policy: "HarnessPolicy | None",
 ) -> None:
     """Validate a finalized session against a step's reliability policy.
 
@@ -55,5 +56,6 @@ def apply_post_run_guard(
         return
     if is_zero_output(metrics):
         raise HarnessZeroOutputError(
-            session.session_id, diagnose_silent_session(session),
+            session.session_id,
+            diagnose_silent_session(session),
         )

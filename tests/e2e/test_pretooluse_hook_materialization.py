@@ -43,8 +43,12 @@ from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -132,7 +136,9 @@ def private_launcher(tmp_path_factory):
     # was the lone <300 outlier on the pip path.
     _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=bootstrap_proj, env=env, timeout=300,
+        cwd=bootstrap_proj,
+        env=env,
+        timeout=300,
     )
     shared_venv = bootstrap_proj / ".agent" / "ai-hats" / ".venv"
     assert shared_venv.is_dir(), "bootstrap did not create shared venv"
@@ -144,9 +150,10 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
     """Wire ai-hats into ``project`` with assistant role + Claude provider."""
     project.mkdir(exist_ok=True)
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "assistant", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"],
+        cwd=project,
+        env=env,
+        timeout=120,
     )
     pin_edge_channel(project)  # HATS-764: edge for the subsequent self update
 
@@ -171,18 +178,14 @@ def _package_hook_source_bytes(name: str) -> bytes:
 
 
 @pytest.mark.integration
-def test_e2e_init_materializes_hooks_executable(
-    installed_launcher, tmp_path
-):
+def test_e2e_init_materializes_hooks_executable(installed_launcher, tmp_path):
     """`self init` writes both hooks +x with package-data bytes + manifest."""
     launcher, env, _venv = installed_launcher
     project = tmp_path / "proj_init_materialize"
     _init_minimal_project(launcher, env, project)
 
     hooks_dir = _materialized_hooks_dir(project)
-    assert hooks_dir.is_dir(), (
-        f"hooks dir missing: {hooks_dir}; init must mkdir + populate"
-    )
+    assert hooks_dir.is_dir(), f"hooks dir missing: {hooks_dir}; init must mkdir + populate"
 
     for name in HOOK_BASENAMES:
         f = hooks_dir / name
@@ -190,8 +193,7 @@ def test_e2e_init_materializes_hooks_executable(
         # 0o755 — executable by all, writable by owner only.
         mode = stat.S_IMODE(f.stat().st_mode)
         assert mode == 0o755, (
-            f"{name} mode is {oct(mode)}, expected 0o755 — "
-            "safe_delete.replace(mode=...) regression"
+            f"{name} mode is {oct(mode)}, expected 0o755 — safe_delete.replace(mode=...) regression"
         )
         # Bytes identical to package data — guarantees we copied from
         # the right source.
@@ -203,9 +205,7 @@ def test_e2e_init_materializes_hooks_executable(
     assert manifest.is_file(), f".manifest missing under {hooks_dir}"
     manifest_text = manifest.read_text()
     for name in HOOK_BASENAMES:
-        assert name in manifest_text, (
-            f"{name} absent from manifest:\n{manifest_text}"
-        )
+        assert name in manifest_text, f"{name} absent from manifest:\n{manifest_text}"
 
 
 # ---------------------- Test B: idempotent re-init ----------------------
@@ -242,9 +242,7 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
 @pytest.mark.quarantine
 @pytest.mark.integration
 @pytest.mark.install_heavy  # HATS-678: private_launcher build is a real uv install
-def test_e2e_self_update_refreshes_hook_after_drift(
-    private_launcher, tmp_path
-):
+def test_e2e_self_update_refreshes_hook_after_drift(private_launcher, tmp_path):
     """Hand-edit a materialized hook → ``self update`` restores it.
 
     Drives the ``Assembler.bump`` → ``_materialize_pretooluse_hooks``
@@ -280,7 +278,9 @@ def test_e2e_self_update_refreshes_hook_after_drift(
     # cheaply. Stays well under the pip-path 300s ceiling above.
     _run(
         [str(launcher), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=180,
+        cwd=project,
+        env=env,
+        timeout=180,
     )
 
     restored = guard.read_bytes()
@@ -295,9 +295,7 @@ def test_e2e_self_update_refreshes_hook_after_drift(
 
 
 @pytest.mark.integration
-def test_e2e_materialized_hook_blocks_irreversible_no_tty(
-    installed_launcher, tmp_path
-):
+def test_e2e_materialized_hook_blocks_irreversible_no_tty(installed_launcher, tmp_path):
     """Materialized hook returns exit 2 for irreversible commands w/o TTY.
 
     This is the proof-of-life contract for HATS-437: without
@@ -322,11 +320,13 @@ def test_e2e_materialized_hook_blocks_irreversible_no_tty(
     # Tool-input JSON the classifier recognises as irreversible.
     # The classifier sees the literal command and matches the
     # PR-merge pattern → "irreversible" → no TTY → exit 2.
-    payload = json.dumps({
-        "tool_input": {
-            "command": "gh pr merge 42 --merge --delete-branch",
-        },
-    })
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "command": "gh pr merge 42 --merge --delete-branch",
+            },
+        }
+    )
 
     env_no_ack = {k: v for k, v in env.items() if k != "AI_HATS_SHARED_STATE_ACK"}
     result = subprocess.run(

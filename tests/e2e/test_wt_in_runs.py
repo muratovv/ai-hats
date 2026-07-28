@@ -37,9 +37,7 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
 
 
 def _git(cwd: Path, *args: str):
-    return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 @pytest.fixture
@@ -66,9 +64,20 @@ def test_wt_in_runs_after_worktree_add(installed_launcher, tmp_path):
     _git(project, "add", "libraries")
     _git(project, "commit", "-m", "lib")
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "e2e-wthook-role", "--no-wizard", "--task-prefix", "TST"],
-        cwd=project, env=env,
+        [
+            str(launcher),
+            "self",
+            "init",
+            "-p",
+            "claude",
+            "-r",
+            "e2e-wthook-role",
+            "--no-wizard",
+            "--task-prefix",
+            "TST",
+        ],
+        cwd=project,
+        env=env,
     )
 
     _run([str(launcher), "wt", "create", "task/seedprobe"], cwd=project, env=env)

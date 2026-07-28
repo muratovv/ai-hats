@@ -43,8 +43,6 @@ class TestPrintStartupNotices:
         assert "Error:" in err and "critical failure" in err
 
 
-
-
 class TestFormatHookHeal:
     def test_groups_by_surface_and_names_kinds(self):
         text = _format_hook_heal(
@@ -66,8 +64,7 @@ class TestFormatHookHeal:
         )
         # one clause, both kinds folded; extension stripped for display
         assert (
-            "runtime-hook markdown-format-post_md_format updated (content drift) + re-wired"
-            in text
+            "runtime-hook markdown-format-post_md_format updated (content drift) + re-wired" in text
         )
         assert text.count("markdown-format-post_md_format") == 1
 

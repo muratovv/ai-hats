@@ -7,6 +7,7 @@ ambient GIT_DIR can still corrupt is the inner ``git`` that ``wt exec`` spawns â
 exactly the fix under test. Fail-under-revert: drop the GIT_* pop in ``wt_exec``
 and the inner ``rev-parse --absolute-git-dir`` returns the main ``.git``.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,10 +20,9 @@ from _helpers.wt import spawn_worktree
 
 pytestmark = pytest.mark.integration
 
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    )
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _ai_hats(binary: Path, *args: str, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
@@ -67,8 +67,15 @@ def test_wt_exec_strips_ambient_git_env(tmp_project, tmp_path):
     # `git` spawned by `wt exec` can still be poisoned â€” which the fix prevents.
     env = {**os.environ, "GIT_DIR": str(main_git_dir), "GIT_WORK_TREE": str(main.path.resolve())}
     res = _ai_hats(
-        binary, "wt", "exec", "--", "git", "rev-parse", "--absolute-git-dir",
-        cwd=main.path, env=env,
+        binary,
+        "wt",
+        "exec",
+        "--",
+        "git",
+        "rev-parse",
+        "--absolute-git-dir",
+        cwd=main.path,
+        env=env,
     )
     assert res.returncode == 0, f"wt exec failed:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
 

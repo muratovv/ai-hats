@@ -94,7 +94,9 @@ def run_worktree_hook(
         # should prevent recording such a carry, but teardown stays fail-closed
         # as the last net for a genuinely vanished script.)
         return HookOutcome(
-            False, None, f"hook script missing: {script} — run 'ai-hats self init' to re-materialize"
+            False,
+            None,
+            f"hook script missing: {script} — run 'ai-hats self init' to re-materialize",
         )
     if not os.access(script, os.X_OK):
         return HookOutcome(False, None, f"hook script not executable: {script}")
@@ -112,9 +114,7 @@ def run_worktree_hook(
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_fh = open(log_path, "wb")
-            log_fh.write(
-                f"# wt-hook event={event} script={script} timeout={timeout}s\n".encode()
-            )
+            log_fh.write(f"# wt-hook event={event} script={script} timeout={timeout}s\n".encode())
             log_fh.flush()
         out_target = log_fh if log_fh is not None else subprocess.DEVNULL
         try:
@@ -128,19 +128,13 @@ def run_worktree_hook(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
-            return HookOutcome(
-                False, None, f"hook timed out after {timeout}s: {script}"
-            )
+            return HookOutcome(False, None, f"hook timed out after {timeout}s: {script}")
         except (FileNotFoundError, OSError) as e:
-            return HookOutcome(
-                False, None, f"hook could not run ({type(e).__name__}): {e}"
-            )
+            return HookOutcome(False, None, f"hook could not run ({type(e).__name__}): {e}")
     finally:
         if log_fh is not None:
             log_fh.close()
 
     if proc.returncode != 0:
-        return HookOutcome(
-            False, proc.returncode, f"hook exited {proc.returncode}: {script}"
-        )
+        return HookOutcome(False, proc.returncode, f"hook exited {proc.returncode}: {script}")
     return HookOutcome(True, 0, "ok")

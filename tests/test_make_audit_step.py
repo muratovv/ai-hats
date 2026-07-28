@@ -48,11 +48,17 @@ def test_io_contract():
     step = MakeAudit()
     io = step.io
     assert io.name == "make_audit"
-    assert io.requires == frozenset({
-        "session_id", "session_dir", "claude_session_id",
-        "project_dir", "exit_code",
-        "session_factory", "audit_writer_factory",
-    })
+    assert io.requires == frozenset(
+        {
+            "session_id",
+            "session_dir",
+            "claude_session_id",
+            "project_dir",
+            "exit_code",
+            "session_factory",
+            "audit_writer_factory",
+        }
+    )
     assert io.produces == frozenset({"audit_path"})
 
 
@@ -105,7 +111,8 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
 
 
 def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     """Resume-mode regression (HATS-272): configured ``claude_session_id``
     points nowhere; ``_discover_claude_jsonl`` picks the most-recent

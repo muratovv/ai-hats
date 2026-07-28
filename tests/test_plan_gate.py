@@ -45,9 +45,7 @@ def test_all_sections_filled_returns_empty(mgr: TaskManager) -> None:
 
 
 def test_blank_scaffold_flags_every_required_section(mgr: TaskManager) -> None:
-    task = _write_plan(
-        mgr, PLAN_SCAFFOLD.format(task_id="HATS-001", title="Probe")
-    )
+    task = _write_plan(mgr, PLAN_SCAFFOLD.format(task_id="HATS-001", title="Probe"))
     assert mgr._unfilled_sections(task) == ALL_REQUIRED
 
 
@@ -134,9 +132,7 @@ def test_approach_and_counter_sits_after_requirements_before_scope() -> None:
 
 
 def test_blank_scaffold_does_not_flag_the_optional_section(mgr: TaskManager) -> None:
-    task = _write_plan(
-        mgr, PLAN_SCAFFOLD.format(task_id="HATS-001", title="Probe")
-    )
+    task = _write_plan(mgr, PLAN_SCAFFOLD.format(task_id="HATS-001", title="Probe"))
     # The scaffold carries an empty `## Approach & counter`, but it is optional.
     assert "Approach & counter" not in mgr._unfilled_sections(task)
 
@@ -163,8 +159,15 @@ def test_all_required_filled_with_empty_optional_passes(mgr: TaskManager) -> Non
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAN_GATE_SKILL = (
-    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
-    / "core" / "skills" / "plan-gate" / "SKILL.md"
+    REPO_ROOT
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "core"
+    / "skills"
+    / "plan-gate"
+    / "SKILL.md"
 )
 
 

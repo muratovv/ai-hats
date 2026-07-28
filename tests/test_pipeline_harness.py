@@ -32,9 +32,7 @@ def test_old_sessions_pruned(tmp_path: Path, monkeypatch):
 
     h = PipelineHarness("execute", tmp_path, session_id="new-sid")
     with h:
-        remaining = sorted(
-            p.name for p in pipeline_root.iterdir() if p.is_dir()
-        )
+        remaining = sorted(p.name for p in pipeline_root.iterdir() if p.is_dir())
     # keep_n=3 → 2 most recent siblings + this run's dir.
     assert "new-sid" in remaining
     # old-03 and old-04 are the 2 newest → kept.
@@ -111,18 +109,18 @@ def test_run_loads_yaml_and_executes(tmp_path: Path):
     ) as MockRunner:
         MockRunner.return_value.run.return_value = fake_path
         with PipelineHarness("reflect-session", tmp_path) as h:
-            final = h.run({
-                "session_id": "x-1",
-                "project_dir": tmp_path,
-            })
+            final = h.run(
+                {
+                    "session_id": "x-1",
+                    "project_dir": tmp_path,
+                }
+            )
     assert final["review_path"] == fake_path
 
 
 def test_namespace_path_layout(tmp_path: Path):
     h = PipelineHarness("my-name", tmp_path, session_id="testsid-001")
-    assert h.namespace == (
-        runs_dir(tmp_path) / "pipeline_runs" / "my-name" / "testsid-001"
-    )
+    assert h.namespace == (runs_dir(tmp_path) / "pipeline_runs" / "my-name" / "testsid-001")
 
 
 # ---- HATS-274: trace-mode env wiring -------------------------------
@@ -230,12 +228,17 @@ def _write_step(steps_dir: Path, name: str, body: str) -> Path:
 
 
 def test_harness_loads_user_steps_on_enter(
-    tmp_path: Path, monkeypatch, _restore_registry,
+    tmp_path: Path,
+    monkeypatch,
+    _restore_registry,
 ):
     """__enter__ → user step is registered and discoverable."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "ping", """
+    _write_step(
+        steps_dir,
+        "ping",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -255,7 +258,8 @@ def test_harness_loads_user_steps_on_enter(
 
 
         register("ping", PingStep)
-    """)
+    """,
+    )
 
     assert "ping" not in registry.names()  # not loaded yet
     with PipelineHarness("any-name", tmp_path):
@@ -263,13 +267,18 @@ def test_harness_loads_user_steps_on_enter(
 
 
 def test_harness_user_step_collision_aborts_before_namespace_setup(
-    tmp_path: Path, monkeypatch, _restore_registry,
+    tmp_path: Path,
+    monkeypatch,
+    _restore_registry,
 ):
     """A user step trying to override a built-in raises BEFORE the
     per-session dir is created. Namespace must not appear on disk."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "evil", """
+    _write_step(
+        steps_dir,
+        "evil",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -289,7 +298,8 @@ def test_harness_user_step_collision_aborts_before_namespace_setup(
 
 
         register("compose_role", Hijack)
-    """)
+    """,
+    )
 
     h = PipelineHarness("any-name", tmp_path, session_id="ssid")
     with pytest.raises(registry.StepRegistryError):

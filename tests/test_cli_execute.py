@@ -84,9 +84,7 @@ def test_resolve_prompt_project_library_ships_custom_injection(
     )
     inj_dir = project / "libraries" / "initial_injections"
     inj_dir.mkdir(parents=True)
-    (inj_dir / "rebalance-long.md").write_text(
-        "Rebalance the long strategy: ...\n"
-    )
+    (inj_dir / "rebalance-long.md").write_text("Rebalance the long strategy: ...\n")
 
     text = _resolve_prompt("rebalance-long", project)
     assert text is not None
@@ -99,8 +97,17 @@ def test_resolve_prompt_project_library_ships_custom_injection(
 def test_execute_help_lists_flags() -> None:
     res = CliRunner().invoke(main, ["execute", "--help"])
     assert res.exit_code == 0
-    for flag in ("--role", "--provider", "--interactive", "--batch",
-                 "--prompt", "--model", "--isolation", "--ticket", "--tag"):
+    for flag in (
+        "--role",
+        "--provider",
+        "--interactive",
+        "--batch",
+        "--prompt",
+        "--model",
+        "--isolation",
+        "--ticket",
+        "--tag",
+    ):
         assert flag in res.output
 
 
@@ -112,9 +119,7 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     pd.mkdir()
     (pd / ".gitlog").mkdir()
-    (pd / PROJECT_CONFIG).write_text(
-        "schema_version: 2\nprovider: claude\nactive_role: primary\n"
-    )
+    (pd / PROJECT_CONFIG).write_text("schema_version: 2\nprovider: claude\nactive_role: primary\n")
     monkeypatch.chdir(pd)
     return pd
 
@@ -130,9 +135,7 @@ class _StubSession:
         self.metrics_path.write_text(json.dumps(metrics))
 
 
-def test_execute_batch_routes_to_subagent_runner(
-    project_dir: Path, monkeypatch
-) -> None:
+def test_execute_batch_routes_to_subagent_runner(project_dir: Path, monkeypatch) -> None:
     captured: dict = {}
 
     class _Runner:
@@ -142,19 +145,30 @@ def test_execute_batch_routes_to_subagent_runner(
 
         def run(self, **kwargs):
             captured["kwargs"] = {
-                "role_name": self._payload.effective_role, **kwargs,
+                "role_name": self._payload.effective_role,
+                **kwargs,
             }
             return _StubSession(
-                project_dir / ".gitlog" / "session_stub-1", {"exit_code": 0},
+                project_dir / ".gitlog" / "session_stub-1",
+                {"exit_code": 0},
             )
 
     import ai_hats.runtime as runtime_mod
+
     monkeypatch.setattr(runtime_mod, "SubAgentRunner", _Runner)
 
     res = CliRunner().invoke(
         main,
-        ["execute", "--role", "session-reviewer", "--batch",
-         "--prompt", "reflect-all", "--ticket", "HATS-001"],
+        [
+            "execute",
+            "--role",
+            "session-reviewer",
+            "--batch",
+            "--prompt",
+            "reflect-all",
+            "--ticket",
+            "HATS-001",
+        ],
     )
     assert res.exit_code == 0, res.output
     kw = captured["kwargs"]
@@ -163,9 +177,7 @@ def test_execute_batch_routes_to_subagent_runner(
     assert kw["ticket_id"] == "HATS-001"
 
 
-def test_execute_interactive_routes_to_wraprunner(
-    project_dir: Path, monkeypatch
-) -> None:
+def test_execute_interactive_routes_to_wraprunner(project_dir: Path, monkeypatch) -> None:
     captured: dict = {}
 
     class _WrapRunner:
@@ -177,16 +189,17 @@ def test_execute_interactive_routes_to_wraprunner(
         def run(self, **kwargs):
             captured.update(kwargs)
             return 0, _StubSession(
-                project_dir / ".gitlog" / "session_wrap-1", {"exit_code": 0},
+                project_dir / ".gitlog" / "session_wrap-1",
+                {"exit_code": 0},
             )
 
     import ai_hats.runtime as runtime_mod
+
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)
 
     res = CliRunner().invoke(
         main,
-        ["execute", "--role", "judge", "--interactive", "--prompt",
-         "reflect-all"],
+        ["execute", "--role", "judge", "--interactive", "--prompt", "reflect-all"],
     )
     assert res.exit_code == 0, res.output
     assert captured["role"] == "judge"
@@ -201,15 +214,18 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     captured: dict = {}
 
     class _WrapRunner:
-        def __init__(self, _pd, _payload, *, session_mgr=None, tracer_factory=None): pass
+        def __init__(self, _pd, _payload, *, session_mgr=None, tracer_factory=None):
+            pass
 
         def run(self, **kwargs):
             captured["extra_args"] = kwargs.get("extra_args")
             return 0, _StubSession(
-                project_dir / ".gitlog" / "session_wrap-1", {"exit_code": 0},
+                project_dir / ".gitlog" / "session_wrap-1",
+                {"exit_code": 0},
             )
 
     import ai_hats.runtime as runtime_mod
+
     monkeypatch.setattr(runtime_mod, "WrapRunner", _WrapRunner)
 
     res = CliRunner().invoke(main, ["execute", "--role", "judge"])
@@ -217,9 +233,7 @@ def test_execute_interactive_no_prompt_passes_empty_extra_args(
     assert captured["extra_args"] == []
 
 
-def test_execute_batch_fail_fast_on_path_shape(
-    project_dir: Path, monkeypatch
-) -> None:
+def test_execute_batch_fail_fast_on_path_shape(project_dir: Path, monkeypatch) -> None:
     """Path-shaped --prompt that doesn't resolve to a file → fail fast."""
     res = CliRunner().invoke(
         main,

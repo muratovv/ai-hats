@@ -28,8 +28,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -41,8 +45,11 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -52,7 +59,7 @@ def _worktree_branches(project: Path) -> list[str]:
     branches: list[str] = []
     for line in listing.splitlines():
         if line.startswith("branch "):
-            branches.append(line[len("branch "):].strip())
+            branches.append(line[len("branch ") :].strip())
     return branches
 
 
@@ -76,13 +83,19 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(venv / "bin" / "rack"), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap ----
@@ -94,17 +107,26 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- 2. create task → plan (scaffold) → fill the plan ----
     new_res = rack(
-        "create", "forced execute no worktree",
-        "--description", "exercise the HATS-697 forced-execute no-worktree path",
-        "--role", "assistant",
-        "--reviewer", "user",
+        "create",
+        "forced execute no worktree",
+        "--description",
+        "exercise the HATS-697 forced-execute no-worktree path",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     task_id = None
     for line in new_res.stdout.splitlines():
@@ -118,8 +140,7 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
 
     rack("transition", task_id, "plan")
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -138,8 +159,12 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
 
     # ---- 3. forced execute MUST NOT create a worktree ----
     res = rack(
-        "transition", task_id, "execute",
-        "--force", "--reason", "shipped on master, correcting state",
+        "transition",
+        task_id,
+        "execute",
+        "--force",
+        "--reason",
+        "shipped on master, correcting state",
         expect_exit=0,
     )
     assert "no worktree created (manual override)" in res.stdout, (
@@ -148,9 +173,7 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
 
     # ---- 4. state advanced, but NO task worktree was registered ----
     show = rack("context", task_id)
-    assert "state: execute" in show.stdout, (
-        f"task did not reach `execute`:\n{show.stdout}"
-    )
+    assert "state: execute" in show.stdout, f"task did not reach `execute`:\n{show.stdout}"
     after = _worktree_branches(project)
     assert not any(b.endswith(f"/{task_branch}") for b in after), (
         f"🐛 forced execute spun a fresh worktree (HATS-697 regression):\n{after}"

@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 
 from ai_hats_core import YamlModel as _YamlModel
 
+
 class FeedbackPolicy(str, Enum):
     OFF = "off"
     ALWAYS = "always"

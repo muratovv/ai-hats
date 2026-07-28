@@ -58,9 +58,7 @@ def test_composition_with_provenance_parsed(tmp_path: Path):
             "skills": {},
         },
     }
-    sdir = _make_session_dir(
-        tmp_path, metrics={"role": "maintainer", "composition": composition}
-    )
+    sdir = _make_session_dir(tmp_path, metrics={"role": "maintainer", "composition": composition})
     parsed = _parse_composition(sdir)
     assert parsed == composition
 

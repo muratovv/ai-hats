@@ -109,10 +109,11 @@ def test_collect_skill_script_paths_and_inject_env(tmp_path: Path) -> None:
 
     env = {"PATH": "/usr/bin:/bin"}
     inject_skill_paths_to_env(env, [alpha, beta], session_skills_dir=mat_dir)
-    expected_prefix = f"{alpha.source_path / 'scripts'}:{alpha.source_path / 'bin'}:{mat_beta / 'scripts'}"
+    expected_prefix = (
+        f"{alpha.source_path / 'scripts'}:{alpha.source_path / 'bin'}:{mat_beta / 'scripts'}"
+    )
     assert env["PATH"].startswith(expected_prefix)
     assert env["PATH"].endswith(":/usr/bin:/bin")
-
 
     # Repeat injection should deduplicate
     inject_skill_paths_to_env(env, [alpha, beta], session_skills_dir=mat_dir)
@@ -146,6 +147,3 @@ def test_collect_skill_script_paths_collision_warning(tmp_path: Path, caplog) ->
     assert s2.source_path / "scripts" in paths
     assert "collision" in caplog.text.lower()
     assert "tool.sh" in caplog.text
-
-
-

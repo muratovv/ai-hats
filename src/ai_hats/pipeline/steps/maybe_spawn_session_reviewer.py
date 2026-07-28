@@ -62,8 +62,10 @@ class MaybeSpawnSessionReviewer(Step):
         try:
             retro_decision = make_decision(project_dir, session_id)
             write_retro_log(
-                project_dir, session_id,
-                "runtime", "decision",
+                project_dir,
+                session_id,
+                "runtime",
+                "decision",
                 f"{retro_decision['action']}: {retro_decision['reason']}",
             )
         except (Exception, KeyboardInterrupt):
@@ -78,7 +80,8 @@ class MaybeSpawnSessionReviewer(Step):
                 _spawn_session_reviewer_background(project_dir, session_id)
             except (Exception, KeyboardInterrupt):
                 logger.warning(
-                    "session-reviewer spawn failed", exc_info=True,
+                    "session-reviewer spawn failed",
+                    exc_info=True,
                 )
 
         if retro_decision is not None:

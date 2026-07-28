@@ -41,8 +41,12 @@ BANNER_PREFIX = "[ai-hats] running migration"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -68,7 +72,9 @@ def _bump(venv: Path, project: Path, env: dict[str, str]):
     """Run ``python -m ai_hats._bump_internal`` from the shared venv."""
     return _run(
         [f"{venv}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
 
 
@@ -78,9 +84,7 @@ def _seed_pre_hats471_yaml(project: Path) -> None:
     """
     project.mkdir(parents=True, exist_ok=True)
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 4\n"
-        "provider: claude\n"
-        "ai_hats_dir: .agent/ai-hats\n"
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n"
     )
 
 
@@ -89,7 +93,8 @@ def _seed_pre_hats471_yaml(project: Path) -> None:
 
 @pytest.mark.integration
 def test_e2e_first_bump_replays_registry_and_persists_step(
-    installed_launcher, tmp_path,
+    installed_launcher,
+    tmp_path,
 ):
     _launcher, env, venv = installed_launcher
     project = tmp_path / "first_bump"
@@ -99,23 +104,23 @@ def test_e2e_first_bump_replays_registry_and_persists_step(
 
     # Banner fired at least once → registry actually advanced.
     assert BANNER_PREFIX in res.stderr, (
-        f"expected registry banner on stderr, got:\nSTDOUT:\n{res.stdout}\n"
-        f"STDERR:\n{res.stderr}"
+        f"expected registry banner on stderr, got:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     )
 
     # yaml persisted with the registry's latest step.
     raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
-    assert "migration_step" in raw, (
-        f"migration_step missing from persisted yaml:\n{raw}"
-    )
+    assert "migration_step" in raw, f"migration_step missing from persisted yaml:\n{raw}"
     # Cross-check the persisted value against the installed package's
     # registry — keeps the test honest if the registry grows.
     latest_step_proc = _run(
         [
-            f"{venv}/bin/python", "-c",
+            f"{venv}/bin/python",
+            "-c",
             "from ai_hats.migrations import latest_step; print(latest_step())",
         ],
-        cwd=project, env=env, timeout=10,
+        cwd=project,
+        env=env,
+        timeout=10,
     )
     expected_latest = int(latest_step_proc.stdout.strip())
     assert raw["migration_step"] == expected_latest, (
@@ -163,7 +168,9 @@ def test_e2e_greenfield_init_seeds_latest_step(installed_launcher, tmp_path):
 
     res = _run(
         [str(launcher), "self", "init", "-p", "claude", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
     # No registry banner — init is greenfield, all entries are skipped.
@@ -175,10 +182,13 @@ def test_e2e_greenfield_init_seeds_latest_step(installed_launcher, tmp_path):
     raw = yaml.safe_load((project / PROJECT_CONFIG).read_text())
     latest_step_proc = _run(
         [
-            f"{venv}/bin/python", "-c",
+            f"{venv}/bin/python",
+            "-c",
             "from ai_hats.migrations import latest_step; print(latest_step())",
         ],
-        cwd=project, env=env, timeout=10,
+        cwd=project,
+        env=env,
+        timeout=10,
     )
     expected_latest = int(latest_step_proc.stdout.strip())
     assert raw.get("migration_step") == expected_latest, (

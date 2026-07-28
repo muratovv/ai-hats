@@ -63,7 +63,6 @@ def _extract_frontmatter_description(skill: ResolvedComponent) -> str:
     return desc if isinstance(desc, str) and desc else skill.name
 
 
-
 @dataclass
 class ProviderRunResult:
     exit_code: int
@@ -120,7 +119,7 @@ class Provider(abc.ABC):
 
     def provider_hints(self) -> list[ProviderHint]:
         """A list of hints for the user about supported parameters and states.
-        
+
         Returned by CLI (e.g. `ai-hats --help`) when this provider is active.
         """
         return []
@@ -179,9 +178,7 @@ class Provider(abc.ABC):
         if type(self).build_category_artifact is not Provider.build_category_artifact:
             return True  # overrides the seam wholesale — its own dispatch
         return any(
-            hasattr(self, f"_build_{c.value}_{m.value}")
-            for c in ArtifactCategory
-            for m in RunMode
+            hasattr(self, f"_build_{c.value}_{m.value}") for c in ArtifactCategory for m in RunMode
         )
 
     def build_session_artifacts(
@@ -577,6 +574,7 @@ def get_provider(name: str) -> Provider:
 
 def _register_builtins() -> None:
     from ai_hats.surfaces.claude.provider import ClaudeProvider
+
     for name, cls in ((PROVIDER_CLAUDE, ClaudeProvider),):
         if name in _PROVIDER_REGISTRY:
             continue
@@ -588,4 +586,3 @@ def _reset_for_tests() -> None:
     _PROVIDER_REGISTRY.clear()
     global _ENTRY_POINTS_LOADED
     _ENTRY_POINTS_LOADED = False
-

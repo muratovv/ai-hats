@@ -13,6 +13,7 @@ and runs the hook as a real subprocess to cover:
 
 The privacy hook had ZERO test coverage before this file.
 """
+
 from __future__ import annotations
 
 import os
@@ -36,9 +37,7 @@ DB_URI_CREDS = "DATABASE_URL=postgres://admin:s3cr3tP4ss@db.internal:5432/app"
 GITHUB_OAUTH = "token=gho_0123456789abcdefghijklmnopqrstuvwxyz"
 GITHUB_PAT = "github_pat_11ABCDEFG0123456789abcdef_GhIjKlMnOpQrStUvWx"
 AWS_SECRET = 'aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"'
-SLACK_WEBHOOK = (
-    "url=https://hooks.slack.com/services/T00000000/B11111111/abcdEFGH1234ijklMNOP5678"
-)
+SLACK_WEBHOOK = "url=https://hooks.slack.com/services/T00000000/B11111111/abcdEFGH1234ijklMNOP5678"
 STRIPE_LIVE = "stripe=sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 SENDGRID = "SENDGRID_API_KEY=SG.ngeVfQFYQlKU0Zcu8XPHvw.Tnl0YtBNZ7w7nP1234567890abcdefghijklmnopqrs"
 NPM_TOKEN = "//registry.npmjs.org/:_authToken=npm_0123456789abcdefghijklmnopqrstuvwxyz"
@@ -148,10 +147,7 @@ def test_same_secret_without_marker_still_blocks(privacy_repo: Path):
 def test_marker_does_not_whitelist_a_different_line(privacy_repo: Path):
     """Marker is line-scoped: a marked FP line must not unblock a real leak on
     another line of the same file."""
-    content = (
-        f"{DB_URI_CREDS}  # ai-hats: allow-secret\n"
-        f"{PRIVATE_KEY}"
-    )
+    content = f"{DB_URI_CREDS}  # ai-hats: allow-secret\n{PRIVATE_KEY}"
     res = _stage_and_run(privacy_repo, content)
     assert res.returncode == 1, res.stderr
 

@@ -6,6 +6,7 @@ meaningfully exercise. We invoke it as a real subprocess, feeding Claude Code
 exit 0 + ``hookSpecificOutput.additionalContext`` on a covered command, and
 NEVER a ``permissionDecision`` (so the command is never blocked or auto-approved).
 """
+
 from __future__ import annotations
 
 import json
@@ -75,14 +76,14 @@ def test_pure_grep_nudges_to_grep_tool():
 @pytest.mark.parametrize(
     "command",
     [
-        "cat a.txt | grep foo",       # covered leading token, but piped
-        "grep foo . && echo done",    # chained with &&
-        "find . -name x ; ls",        # chained with ;
-        "grep foo $(ls)",             # command substitution
-        "cat `which bash`",           # backtick subshell
-        "grep foo file > out.txt",    # redirection
-        "git log --oneline | head",   # non-covered leading token + pipe
-        "make build",                 # build command, not covered
+        "cat a.txt | grep foo",  # covered leading token, but piped
+        "grep foo . && echo done",  # chained with &&
+        "find . -name x ; ls",  # chained with ;
+        "grep foo $(ls)",  # command substitution
+        "cat `which bash`",  # backtick subshell
+        "grep foo file > out.txt",  # redirection
+        "git log --oneline | head",  # non-covered leading token + pipe
+        "make build",  # build command, not covered
     ],
 )
 def test_compound_or_noncovered_gets_no_nudge(command):
@@ -96,10 +97,10 @@ def test_compound_or_noncovered_gets_no_nudge(command):
 @pytest.mark.parametrize(
     "command,tool",
     [
-        ("ls -R", "Glob"),                       # recursive listing
-        ("ls -laR /tmp", "Glob"),                # -R inside a flag cluster
-        ("sed -i 's/a/b/' f.txt", "Edit"),       # in-place edit
-        ("sed -i.bak s/a/b/ f.txt", "Edit"),     # in-place with backup suffix
+        ("ls -R", "Glob"),  # recursive listing
+        ("ls -laR /tmp", "Glob"),  # -R inside a flag cluster
+        ("sed -i 's/a/b/' f.txt", "Edit"),  # in-place edit
+        ("sed -i.bak s/a/b/ f.txt", "Edit"),  # in-place with backup suffix
         ("awk -i inplace '{print}' f.txt", "Edit"),
     ],
 )
@@ -116,8 +117,8 @@ def test_conditional_covered_forms_nudge(command, tool):
 @pytest.mark.parametrize(
     "command",
     [
-        "ls -la",                  # non-recursive listing is fine
-        "sed 's/a/b/' f.txt",      # stream sed (not in-place) is fine
+        "ls -la",  # non-recursive listing is fine
+        "sed 's/a/b/' f.txt",  # stream sed (not in-place) is fine
         "awk '{print $1}' f.txt",  # stream awk is fine
     ],
 )

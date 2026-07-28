@@ -114,8 +114,7 @@ def test_run_pending_advances_counter_and_persists(tmp_path, monkeypatch):
     # Replace every registry entry with a no-op to isolate the runner's
     # bookkeeping from the actual migration bodies.
     noop_migrations = [
-        Migration(step=m.step, run=lambda _a: None, label=m.label)
-        for m in MIGRATIONS
+        Migration(step=m.step, run=lambda _a: None, label=m.label) for m in MIGRATIONS
     ]
     monkeypatch.setattr("ai_hats.migrations.MIGRATIONS", noop_migrations)
 
@@ -156,7 +155,8 @@ def test_run_pending_partial_failure_persists_last_good_step(tmp_path, monkeypat
 
 
 def test_run_pending_rolls_back_in_memory_step_when_persist_fails(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     """Transactional contract: if ``_persist_migration_step`` raises after
     a migration succeeded, the in-memory ``cfg.migration_step`` MUST NOT
@@ -256,8 +256,7 @@ def test_run_pending_emits_via_logger_too(tmp_path, monkeypatch, caplog):
         run_pending(asm)
 
     assert any(
-        "probe-label" in rec.message and "step=1" in rec.message
-        for rec in caplog.records
+        "probe-label" in rec.message and "step=1" in rec.message for rec in caplog.records
     ), f"logger.info channel missing 'probe-label'; got: {[r.message for r in caplog.records]}"
 
 
@@ -322,9 +321,7 @@ def test_existing_project_without_migration_step_seeds_to_zero(tmp_path):
     # Hand-craft a v4 yaml WITHOUT migration_step (representing an
     # upgrade from a release that pre-dates HATS-471).
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-        "provider: agy\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\nprovider: agy\n"
     )
 
     cfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)

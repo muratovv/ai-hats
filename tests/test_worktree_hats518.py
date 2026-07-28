@@ -347,7 +347,10 @@ class TestTransitionExecute:
             assert t.state == TaskState.EXECUTE
             # The wired seam really created the worktree — a silently degraded
             # pure-FSM pass must fail here (HATS-866 review).
-            assert WorktreeManager.load_for_task(master_project, "T-1", state_dir=state_dir) is not None
+            assert (
+                WorktreeManager.load_for_task(master_project, "T-1", state_dir=state_dir)
+                is not None
+            )
         finally:
             wt = WorktreeManager.load_for_task(master_project, "T-1", state_dir=state_dir)
             if wt is not None:

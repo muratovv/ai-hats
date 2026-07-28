@@ -45,16 +45,25 @@ class ComputeUsage(Step):
     def io(self) -> StepIO:
         return StepIO(
             name="compute_usage",
-            requires=frozenset({
-                "session_id", "session_dir", "claude_session_id", "project_dir",
-            }),
+            requires=frozenset(
+                {
+                    "session_id",
+                    "session_dir",
+                    "claude_session_id",
+                    "project_dir",
+                }
+            ),
             # Runner-threaded carve-outs, absent on paths that don't inject them:
             # role + static_cost_analyzer (HATS-865) drive the static cross-check;
             # audit_writer_factory (HATS-953) carries the surface parser (.parser).
-            optional=frozenset({
-                "role", "static_cost_analyzer", "audit_writer_factory",
-                "transcript_resolver",
-            }),
+            optional=frozenset(
+                {
+                    "role",
+                    "static_cost_analyzer",
+                    "audit_writer_factory",
+                    "transcript_resolver",
+                }
+            ),
             produces=frozenset({"usage_path"}),
         )
 
@@ -76,9 +85,7 @@ class ComputeUsage(Step):
         # usage/v1 rides the surface's transcript parser (HATS-953); the seam
         # injects it via audit_writer_factory, standalone defaults to Claude.
         parser = (
-            audit_writer_factory().parser
-            if audit_writer_factory is not None
-            else ClaudeParser()
+            audit_writer_factory().parser if audit_writer_factory is not None else ClaudeParser()
         )
 
         usage_path = session_dir / USAGE_JSON
@@ -86,7 +93,8 @@ class ComputeUsage(Step):
             # HATS-1087: provider owns discovery; no resolver → empty.
             jsonl_path = (
                 transcript_resolver(
-                    project_dir, session_id,
+                    project_dir,
+                    session_id,
                     provider_session_id=claude_session_id or None,
                 )
                 if transcript_resolver is not None
@@ -112,7 +120,9 @@ class ComputeUsage(Step):
 
     @staticmethod
     def _attach_session_meta(
-        report: dict[str, Any], session_dir: Path, funnel_role: str | None,
+        report: dict[str, Any],
+        session_dir: Path,
+        funnel_role: str | None,
     ) -> None:
         """Fill the report's ai-hats session metadata (role / provider / exit_code).
 

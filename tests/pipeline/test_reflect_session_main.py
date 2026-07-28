@@ -18,7 +18,6 @@ from ai_hats.retro.session_review_runner import SessionReviewError
 from ai_hats.paths import proposals_dir
 
 
-
 def _read_proposals(pd: Path) -> list[dict]:
     # Meta-proposals are dir-per-card rack cards post-HATS-1044; category/target/
     # description/failed_session_id ride top-level, so the raw dict still asserts.
@@ -38,12 +37,16 @@ def test_main_happy_no_proposal(project_dir: Path, mock_runners, monkeypatch):
 
 
 def test_main_runner_error_files_proposal(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """SessionReviewError → harness-check sees missing output → meta-proposal."""
 
     class _FailingRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("provider down")
 
@@ -61,17 +64,18 @@ def test_main_runner_error_files_proposal(
 
 
 def test_main_incomplete_yaml_files_proposal(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """Runner succeeds but writes empty/invalid YAML → harness-check fails."""
 
     class _BadRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
-            out = (
-                project_dir / ".agent" / "retrospectives" / "sessions"
-                / f"{sid}.md"
-            )
+            out = project_dir / ".agent" / "retrospectives" / "sessions" / f"{sid}.md"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text("")  # empty
             return out
@@ -87,12 +91,16 @@ def test_main_incomplete_yaml_files_proposal(
 
 
 def test_main_runner_error_dedups_proposal(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """Same failed_session_id → second run does not file duplicate proposal."""
 
     class _FailingRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("fail")
 
@@ -109,17 +117,22 @@ def test_main_runner_error_dedups_proposal(
 
 
 def test_main_harness_timeout_routes_to_harness_incident(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """HarnessTimeoutError → meta-PROP with target=harness-incident, NOT
     session-reviewer (so the inbox doesn't blame the role for a harness
     failure)."""
 
     class _TimingOutRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise HarnessTimeoutError(
-                "sub-1", "exit_code=124; timed_out=True",
+                "sub-1",
+                "exit_code=124; timed_out=True",
             )
 
     monkeypatch.setattr(
@@ -141,16 +154,21 @@ def test_main_harness_timeout_routes_to_harness_incident(
 
 
 def test_main_zero_output_routes_to_harness_incident(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """HarnessZeroOutputError follows the same path as HarnessTimeoutError —
     both subclass HarnessReliabilityError."""
 
     class _ZeroOutputRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise HarnessZeroOutputError(
-                "sub-1", "tokens.output=0; tool_calls=0",
+                "sub-1",
+                "tokens.output=0; tool_calls=0",
             )
 
     monkeypatch.setattr(
@@ -168,14 +186,18 @@ def test_main_zero_output_routes_to_harness_incident(
 
 
 def test_main_harness_incident_dedup_isolated_from_session_reviewer(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """Same session_id under different targets must not dedup against
     each other — they describe different failure facets."""
 
     # First: a session-reviewer error files target=session-reviewer
     class _ValidationRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise SessionReviewError("schema fail")
 
@@ -188,7 +210,9 @@ def test_main_harness_incident_dedup_isolated_from_session_reviewer(
 
     # Then: a harness incident for the same session files target=harness-incident
     class _TimeoutRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise HarnessTimeoutError("sub-1", "timed_out=True")
 
@@ -206,12 +230,16 @@ def test_main_harness_incident_dedup_isolated_from_session_reviewer(
 
 
 def test_main_harness_incident_dedup_same_target(
-    project_dir: Path, mock_runners, monkeypatch,
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
 ):
     """Two harness-incident failures for the same session → only one PROP."""
 
     class _TimingOutRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
+
         def run(self, sid, max_retries=1, harness_policy=None):
             raise HarnessTimeoutError("sub-1", "timed_out=True")
 

@@ -31,7 +31,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,
     )
     if result.returncode != expect_exit:
@@ -76,7 +81,9 @@ def test_e2e_foreign_venv_pin_ignored(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
     _run(
         [str(launcher), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project_b, env=env, timeout=300,
+        cwd=project_b,
+        env=env,
+        timeout=300,
     )
     b_venv = project_b / ".agent" / "ai-hats" / ".venv"
     assert (b_venv / "bin" / "python").exists(), "premise broken: B venv not built by self init"
@@ -103,9 +110,7 @@ def test_e2e_foreign_venv_pin_ignored(tmp_path: Path) -> None:
     bare = dict(env)
     bare[ENV_AI_HATS_VENV] = str(a_venv)
     bare.pop(AI_HATS_PROJECT_DIR_ENV, None)
-    res_b = _run(
-        [str(launcher), "--version"], cwd=project_b, env=bare, timeout=120, expect_exit=1
-    )
+    res_b = _run([str(launcher), "--version"], cwd=project_b, env=bare, timeout=120, expect_exit=1)
     assert "venv missing" in res_b.stderr and str(a_venv) in res_b.stderr, (
         f"bare override must be honored (not re-resolved), got:\n{res_b.stderr}"
     )
@@ -118,6 +123,4 @@ def test_e2e_foreign_venv_pin_ignored(tmp_path: Path) -> None:
     match[ENV_AI_HATS_VENV] = str(b_venv)
     match[AI_HATS_PROJECT_DIR_ENV] = str(project_b)
     res_c = _run([str(launcher), "--version"], cwd=project_b, env=match, timeout=120)
-    assert "foreign to" not in res_c.stderr, (
-        f"guard fired on a same-project pin:\n{res_c.stderr}"
-    )
+    assert "foreign to" not in res_c.stderr, f"guard fired on a same-project pin:\n{res_c.stderr}"

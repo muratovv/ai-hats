@@ -74,8 +74,7 @@ def _main(argv: list[str] | None = None) -> int:
     if not violations:
         return 0
     print(
-        "Rule-delivery contract violated — `see rule X` pointing at a "
-        "rule the agent cannot read:",
+        "Rule-delivery contract violated — `see rule X` pointing at a rule the agent cannot read:",
         file=sys.stderr,
     )
     for v in violations:

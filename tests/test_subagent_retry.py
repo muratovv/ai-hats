@@ -48,7 +48,9 @@ def _make_session(tmp_path: Path, sid: str, *, metrics: dict) -> _FakeSession:
 
 def _timed_out(tmp_path: Path, sid: str) -> _FakeSession:
     return _make_session(
-        tmp_path, sid, metrics={"exit_code": 124, "timed_out": True, "role": "x"},
+        tmp_path,
+        sid,
+        metrics={"exit_code": 124, "timed_out": True, "role": "x"},
     )
 
 
@@ -106,7 +108,8 @@ def test_no_on_timeout_policy_no_retry(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_retries_once_on_first_timeout_then_succeeds(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     sessions = [_timed_out(tmp_path, "s1"), _success(tmp_path, "s2")]
     runner, calls = _make_runner(monkeypatch, sessions, tmp_path)
@@ -126,7 +129,8 @@ def test_retries_once_on_first_timeout_then_succeeds(
 
 
 def test_raises_timeout_error_after_exhausted_retries(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     sessions = [_timed_out(tmp_path, "s1"), _timed_out(tmp_path, "s2")]
     runner, _ = _make_runner(monkeypatch, sessions, tmp_path)
@@ -139,7 +143,8 @@ def test_raises_timeout_error_after_exhausted_retries(
 
 
 def test_timeout_error_is_harness_reliability(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """HarnessTimeoutError must be a HarnessReliabilityError so Phase 3
     routing can match a single base class for harness-incident."""
@@ -152,7 +157,8 @@ def test_timeout_error_is_harness_reliability(
 
 
 def test_retry_zero_means_one_attempt_then_escalate(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """``retry=0`` policy — one attempt only, escalate immediately on timeout."""
     sessions = [_timed_out(tmp_path, "s1")]
@@ -165,7 +171,8 @@ def test_retry_zero_means_one_attempt_then_escalate(
 
 
 def test_success_on_first_attempt_skips_retry(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     sessions = [_success(tmp_path, "s1")]
     runner, calls = _make_runner(monkeypatch, sessions, tmp_path)
@@ -178,7 +185,8 @@ def test_success_on_first_attempt_skips_retry(
 
 
 def test_budget_multiplier_applied_only_to_retries(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """The first attempt always uses base budget; multiplier kicks in on retry."""
     sessions = [
@@ -197,7 +205,8 @@ def test_budget_multiplier_applied_only_to_retries(
 
 
 def test_tags_threaded_through_retries(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """Caller-supplied tags survive into each attempt; retry tag is additive."""
     sessions = [_timed_out(tmp_path, "s1"), _success(tmp_path, "s2")]

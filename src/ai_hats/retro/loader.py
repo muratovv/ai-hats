@@ -50,27 +50,23 @@ def parse(text: str) -> tuple[dict, str]:
         if loaded is None:
             raise ValueError("Empty or invalid YAML content")
         if not isinstance(loaded, dict):
-            raise ValueError(
-                f"Top-level YAML must be a mapping, got {type(loaded).__name__}"
-            )
+            raise ValueError(f"Top-level YAML must be a mapping, got {type(loaded).__name__}")
         return loaded, ""
 
-    rest = text[len("---\n"):]
+    rest = text[len("---\n") :]
     end = rest.find("\n---\n")
     if end == -1:
         # tolerate file ending right after closing marker (no trailing newline)
         if rest.endswith("\n---"):
-            return yaml.safe_load(rest[:-len("\n---")]) or {}, ""
+            return yaml.safe_load(rest[: -len("\n---")]) or {}, ""
         raise ValueError("Malformed frontmatter: missing closing '---'")
     fm_text = rest[:end]
-    body = rest[end + len("\n---\n"):]
+    body = rest[end + len("\n---\n") :]
     loaded = yaml.safe_load(fm_text)
     if loaded is None:
         raise ValueError("Empty frontmatter")
     if not isinstance(loaded, dict):
-        raise ValueError(
-            f"Frontmatter must be a mapping, got {type(loaded).__name__}"
-        )
+        raise ValueError(f"Frontmatter must be a mapping, got {type(loaded).__name__}")
     return loaded, body
 
 

@@ -139,9 +139,7 @@ def _wizard_harness_prompt(current_channel: str | None = None) -> str:
                 return channels[idx - 1]
         except ValueError:
             pass
-        console.print(
-            f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(channels)} or channel name."
-        )
+        console.print(f"[red]Invalid choice[/]: {raw!r}. Enter 1..{len(channels)} or channel name.")
 
 
 def _launch_wizard_session(cmd: list[str]) -> None:
@@ -179,6 +177,7 @@ def _build_init_pipeline_state(
         KEY_TASK_PREFIX,
         KEY_VENV_PATH,
     )
+
     return {
         KEY_PROJECT_DIR: project_dir,
         KEY_PROVIDER: provider,
@@ -309,14 +308,18 @@ def init(
         with PipelineHarness(PIPELINE_INIT, project_dir) as h:
             final = h.run(init_state)
     except BaseException:
-        if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
+        if (
+            not already
+            and not agent_existed_before
+            and agent_dir.exists()
+            and not (project_dir / PROJECT_CONFIG).exists()
+        ):
             shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
         raise
 
     cmd = final.get(KEY_EXECUTE_CMD)
     if cmd:
         _launch_wizard_session(cmd)
-
 
 
 # HATS-833: `self sync-hooks` removed — hook drift healing is session-start only.
