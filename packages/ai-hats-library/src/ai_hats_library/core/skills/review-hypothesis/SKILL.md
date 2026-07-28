@@ -1,6 +1,13 @@
 ---
 name: review-hypothesis
 description: Vote on one active hypothesis (HYP-NNN) against session evidence — pick confirmed/refuted/inconclusive/n-a + a recommendation and persist via `rack hyp`. Use when sweeping active hypotheses during a session review (reflect-session, session-reviewer, or judge).
+ai_hats:
+  requires:
+    cli:
+      - name: ai-hats-rack
+        check: "rack --help"
+        hint: "pip install ai-hats-rack"
+    mcp: []
 license: MIT
 ---
 
@@ -34,7 +41,7 @@ Boundaries & disambiguation (the description already states the trigger):
 ### Step 1 — Read the hypothesis
 
 ```bash
-ah task hyp show HYP-NNN
+rack context HYP-NNN
 ```
 
 Pay attention to `success_criterion`, `observation_window`, `exit_criteria`,
@@ -111,8 +118,8 @@ and write `inconclusive`.
 For verdicts that carry signal (`confirmed`, `refuted`, `inconclusive`):
 
 ```bash
-ah task hyp append-verdict \
-  --hyp HYP-NNN --session "$SID" \
+rack hyp append-verdict HYP-NNN \
+  --session-id "$SID" \
   --verdict {confirmed|refuted|inconclusive} \
   --evidence "<one-line citation from audit.md or metrics.json>" \
   --recommendation {close_confirmed|close_refuted|keep|extend_window}
@@ -127,7 +134,7 @@ When `--recommendation` was `close_confirmed` or `close_refuted` and the
 observation window has filled, flip the status:
 
 ```bash
-ah task hyp set-status --hyp HYP-NNN --status {confirmed|refuted|stalled}
+rack transition HYP-NNN {confirmed|refuted|stalled}
 ```
 
 `append-verdict` does NOT auto-flip status — `set-status` is a separate,
