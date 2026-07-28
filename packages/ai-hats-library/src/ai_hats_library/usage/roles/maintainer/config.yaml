@@ -20,6 +20,10 @@ composition:
     # push target is refs/heads/master. Pure infrastructure (no agent-side
     # decision logic); hard gate, no env-var bypass.
     - maintainer-quality-gate
+    # HATS-1291 — wt_in hook that mints a .venv in each new worktree, so the
+    # first commit clears the smoke gate without hand-provisioning. Pure
+    # infrastructure; warn-continue, never blocks worktree creation.
+    - worktree-venv
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,

@@ -60,5 +60,5 @@ if ! VIRTUAL_ENV=.venv uv pip install "${targets[@]}"; then
     exit 0
 fi
 
-echo "[worktree-venv] provisioned $WORKTREE/.venv (${#targets[@]} editable targets)"
+echo "[worktree-venv] provisioned $WORKTREE/.venv"
 exit 0

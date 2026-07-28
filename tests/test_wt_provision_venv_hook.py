@@ -4,6 +4,7 @@ Runs the real script against a stub `uv` on PATH, so the tests assert the
 hook's contract (where it provisions, what it installs, when it declines)
 without paying a real resolve.
 """
+
 from __future__ import annotations
 
 import os
@@ -12,7 +13,12 @@ from pathlib import Path
 
 SKILL_DIR = (
     Path(__file__).parent.parent
-    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage" / "skills"
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "usage"
+    / "skills"
     / "worktree-venv"
 )
 HOOK_PATH = SKILL_DIR / "hooks" / "provision-venv.sh"
@@ -42,7 +48,9 @@ def _make_worktree(tmp_path: Path, *, packages: tuple[str, ...] = ()) -> Path:
     return worktree
 
 
-def _run_hook(worktree: Path, *, path_dir: Path | None, project_dir: Path) -> subprocess.CompletedProcess:
+def _run_hook(
+    worktree: Path, *, path_dir: Path | None, project_dir: Path
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["AI_HATS_WORKTREE_PATH"] = str(worktree)
     env["AI_HATS_PROJECT_DIR"] = str(project_dir)
@@ -53,7 +61,11 @@ def _run_hook(worktree: Path, *, path_dir: Path | None, project_dir: Path) -> su
     env.pop("VIRTUAL_ENV", None)
     return subprocess.run(
         [str(HOOK_PATH)],
-        cwd=str(project_dir), env=env, capture_output=True, text=True, timeout=60,
+        cwd=str(project_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
 
 

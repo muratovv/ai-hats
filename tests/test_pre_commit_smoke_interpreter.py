@@ -4,6 +4,7 @@ The hook must prefer the checkout being committed (``<git-toplevel>/.venv``)
 over PATH — in a worktree PATH's pytest is MAIN's, and its editable install
 makes the e2e tier test the wrong source.
 """
+
 from __future__ import annotations
 
 import os
@@ -12,8 +13,15 @@ from pathlib import Path
 
 HOOK_PATH = (
     Path(__file__).parent.parent
-    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "skills" / "git-mastery"
-    / "git_hooks" / "pre-commit-smoke.sh"
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "core"
+    / "skills"
+    / "git-mastery"
+    / "git_hooks"
+    / "pre-commit-smoke.sh"
 )
 
 # A stub pytest that records the fact it ran, then reports "no tests collected"
@@ -57,7 +65,10 @@ def _run_hook(cwd: Path, path_dir: Path) -> subprocess.CompletedProcess:
     env["PATH"] = f"{path_dir}{os.pathsep}/usr/bin:/bin"
     return subprocess.run(
         ["bash", str(HOOK_PATH)],
-        cwd=str(cwd), env=env, capture_output=True, text=True,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 
