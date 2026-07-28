@@ -1884,6 +1884,8 @@ class WorktreeManager:
             current_remote is not None
             and current_remote != current_local
             and not self._is_ancestor(current_remote, current_local)
+            # HATS-1307: a branch rebased onto origin/<base> contains it too.
+            and not self._is_ancestor(current_remote, self.branch_name)
         )
 
         if not local_drifted and not remote_drifted:
@@ -1904,10 +1906,10 @@ class WorktreeManager:
                 lines.extend(f"    {p}" for p in paths)
         if remote_drifted:
             assert current_remote is not None
-            n_r, paths_r = self._drift_summary(current_local, current_remote)
+            n_r, paths_r = self._drift_summary(self.branch_name, current_remote)
             lines.append(
                 f"  remote: origin/{self._original_branch} is "
-                f"{n_r} commit{'s' if n_r != 1 else ''} ahead of local"
+                f"{n_r} commit{'s' if n_r != 1 else ''} ahead of the branch"
             )
             if paths_r:
                 lines.append("  affected paths (remote drift):")

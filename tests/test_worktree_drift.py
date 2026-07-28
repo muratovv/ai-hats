@@ -186,6 +186,51 @@ class TestRebasedBranchNotDrift:
         listing = _git(git_project, "branch", "--list", "task/rebased").stdout
         assert listing.strip() == ""
 
+    def test_rebased_onto_remote_base_merges_clean(
+        self, git_project: Path, tmp_path: Path
+    ) -> None:
+        """Rebasing onto `origin/<base>` clears remote drift too."""
+        base = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        origin = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(git_project), str(origin)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        _git(git_project, "remote", "add", "origin", str(origin))
+        _git(git_project, "fetch", "origin")
+        _git(git_project, "branch", "--set-upstream-to", f"origin/{base}", base)
+
+        mgr = WorktreeManager(git_project, branch_name="task/rebased-remote")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # A colleague pushes to origin; local base stays behind.
+        coworker = tmp_path / "coworker"
+        subprocess.run(
+            ["git", "clone", str(origin), str(coworker)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        _git(coworker, "config", "user.email", "co@test")
+        _git(coworker, "config", "user.name", "Co")
+        (coworker / "remote-only.txt").write_text("from remote\n")
+        _git(coworker, "add", "remote-only.txt")
+        _git(coworker, "commit", "-m", "remote: add remote-only.txt")
+        _git(coworker, "push", "origin", "HEAD")
+
+        # Re-verify against what the remote actually has, then rebase onto it.
+        _git(wt_path, "fetch", "origin")
+        _git(wt_path, "rebase", f"origin/{base}")
+
+        mgr.merge()  # no exception
+
+        listing = _git(git_project, "branch", "--list", "task/rebased-remote").stdout
+        assert listing.strip() == ""
+
 
 class TestLegacyStateCompat:
     def test_legacy_state_no_field_skips_check(self, git_project: Path) -> None:
