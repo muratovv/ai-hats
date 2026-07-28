@@ -1,17 +1,19 @@
 """HATS-691: the shared linked-context assembly module.
 
-HATS-689's logic was extracted from ``SubAgentRunner`` into
-``ai_hats_tracker.linked_context`` so ``ai-hats task show`` can reuse the same seam.
-These tests pin the module-level API directly (the runner-level behaviour is
-covered by ``test_runtime_linked_context.py``, which still passes — proving the
-move is behaviour-preserving).
+HATS-689's logic was extracted from ``SubAgentRunner`` into its own module so
+the assembly is one seam. These tests pin the module-level API directly (the
+runner-level behaviour is covered by ``test_runtime_linked_context.py``, which
+still passes — proving the move is behaviour-preserving).
+
+HATS-1258: cards are WRITTEN here with the tracker model and READ by the module
+with the rack one, so a green run is the cross-model on-disk parity proof.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats_tracker.linked_context import load_linked_context, load_ticket
+from ai_hats.linked_context import load_linked_context, load_ticket
 from ai_hats.models import TaskCard, TaskState, WorkLogEntry
 from ai_hats.paths import tasks_dir
 
