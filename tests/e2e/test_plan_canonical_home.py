@@ -1,24 +1,18 @@
 """HATS-637 — canonical plan home at the real CLI boundary.
 
 A plan is ALWAYS a task and ALWAYS lives at the one canonical path
-`tasks/<ID>/plan.md`. The `.claude/plans → plan-sync` second write path is
-removed. This is the gated test for `dev_rule_e2e_gate` (HATS-637 touches
-`src/ai_hats/state.py` + `src/ai_hats/cli/task.py`).
+`tasks/<ID>/plan.md` — re-pointed onto `rack` (HATS-1263).
 
-Two assertions, each fails-under-revert:
+Fail-under-revert: a stray `.claude/plans/<NN>-*.md` present before
+`transition <ID> plan` must stay INERT — the canonical `plan.md` remains the
+empty scaffold. Re-import the stray and the scaffold comparison reds.
 
-* **No import.** A stray `.claude/plans/<NN>-*.md` present before
-  `transition <ID> plan` is INERT — the canonical `plan.md` stays the empty
-  scaffold. Reverting the engine change re-imports the stray (scaffold no
-  longer matches) → assertion reds.
-* **Command gone.** `ai-hats task plan-sync <ID>` exits non-zero ("No such
-  command"). Reverting the CLI change makes the command exist again → the
-  exit-code assertion reds.
+The old `plan-sync is "No such command"` assertion was dropped: it described
+the shape of the legacy Click group, which rack never had. S3's
+`test_legacy_task_cli_removed.py` covers that the group is gone.
 
-Harness mirrors `test_plan_gate_per_section_e2e.py`: `python -m ai_hats` with
-`PYTHONPATH=<checkout>/src`, so the test exercises the CURRENT checkout
-(worktree-portable — the dev-venv editable `ai-hats` binary points at the main
-checkout's src, NOT a linked worktree's, so it would mask worktree changes).
+`python -m ai_hats_rack` with an explicit PYTHONPATH so the test exercises the
+CURRENT checkout — an editable install resolves the main checkout, not a worktree.
 """
 
 from __future__ import annotations
@@ -32,7 +26,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats_tracker.state import PLAN_SCAFFOLD
+from ai_hats_rack.extensions.sections import render_scaffold
 from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
@@ -42,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-def _run_hats(
+def _run_rack(
     project_dir: Path, *args: str, timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:
     """Run ``python -m ai_hats <args>`` against the current checkout."""
@@ -52,7 +46,7 @@ def _run_hats(
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing_pp)
     return subprocess.run(
-        [sys.executable, "-m", "ai_hats", *args],
+        [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
         capture_output=True, text=True, env=env, timeout=timeout,
     )
@@ -76,7 +70,7 @@ def _plan_path(project: Path, task_id: str) -> Path:
 
 
 def test_stray_claude_plan_is_not_imported(project: Path) -> None:
-    r = _run_hats(project, "task", "create", "Probe", "--id", "HATS-001")
+    r = _run_rack(project, "create", "Probe", "--id", "HATS-001")
     assert r.returncode == 0, f"create failed: {r.stderr}"
 
     # A stray Plan-mode artifact in the OLD location, present before the
@@ -87,14 +81,14 @@ def test_stray_claude_plan_is_not_imported(project: Path) -> None:
     stray = plans_dir / "001-stray.md"
     stray.write_text("# STRAY PLAN\n\nThis must never reach the task tree.\n")
 
-    r = _run_hats(project, "task", "transition", "HATS-001", "plan")
+    r = _run_rack(project, "transition", "HATS-001", "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
     plan_path = _plan_path(project, "HATS-001")
     assert plan_path.exists(), f"expected scaffold at {plan_path}"
     # The canonical plan is the untouched empty scaffold — the stray was NOT
     # imported (fails under revert: the detour would overwrite this).
-    assert plan_path.read_text() == PLAN_SCAFFOLD.format(
+    assert plan_path.read_text() == render_scaffold().format(
         task_id="HATS-001", title="Probe"
     )
     assert "STRAY PLAN" not in plan_path.read_text()
@@ -102,15 +96,3 @@ def test_stray_claude_plan_is_not_imported(project: Path) -> None:
     assert stray.exists(), "stray must not be moved out of .claude/plans"
 
 
-def test_plan_sync_command_is_gone(project: Path) -> None:
-    r = _run_hats(project, "task", "create", "Probe", "--id", "HATS-002")
-    assert r.returncode == 0, f"create failed: {r.stderr}"
-
-    # The second write path's entry point no longer exists (fails under
-    # revert: the command would resolve and exit 0/2-on-no-match instead).
-    r = _run_hats(project, "task", "plan-sync", "HATS-002")
-    assert r.returncode != 0, (
-        "plan-sync must no longer be a command; got exit 0\n"
-        f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
-    )
-    assert "No such command" in r.stderr or "no such command" in r.stderr.lower()

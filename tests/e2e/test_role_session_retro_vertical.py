@@ -41,13 +41,16 @@ Deliberate long e2e vertical scenario contract — noqa: comment-length.
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 import yaml
 
+from _helpers.env import clean_env
 from _helpers.project import Project, RunResult
 from _helpers.sessions import (
     read_metrics,
@@ -56,6 +59,8 @@ from _helpers.sessions import (
 )
 from ai_hats_observe.artifacts import AUDIT_MD, META_PROMPT_TXT, TRANSCRIPT_TXT
 from ai_hats.constants import ENV_SKIP_RETRO
+from ai_hats.paths import ENV_AI_HATS_VENV
+from ai_hats.rack_workspace import ensure_backlog
 
 
 pytestmark = pytest.mark.integration
@@ -232,9 +237,9 @@ def phase_setup(project: Project) -> SetupContext:
       ``config customize ... --global``. The
       ``isolated_global_customizations`` pytest fixture backs up the
       original (if any) and restores it post-test.
-    - ``<project>/.agent/ai-hats/tracker/hypotheses/HYP-NNN.yaml`` and
-      ``.../backlog/proposals/PROP-NNN.yaml`` — seeded so the auto-retro
-      reviewer has something to vote on (Phase 5 forcing function).
+    - ``<project>/.agent/ai-hats/tracker/backlog/{hypotheses,proposals}/`` —
+      mounted, then one dir-per-card HYP/PROP seeded through ``rack`` so the
+      auto-retro reviewer has something to vote on (Phase 5 forcing function).
 
     Self-check at end:
 
@@ -302,33 +307,31 @@ def phase_setup(project: Project) -> SetupContext:
         timeout=CMD_TIMEOUT, extra_env=env,
     ).expect_ok()
 
+    # ----- mount the HYP/PROP backlogs — rack only grows the `hyp` / `proposal`
+    # groups once the sibling catalogs carry a backlog.yaml (HATS-1036) -----
+    for backlog in ("hypotheses", "proposals"):
+        ensure_backlog(project.path, backlog)
+
     # ----- pre-seed 1 active HYP — forces reviewer to emit a hypothesis_verdict -----
-    hyp_result = project.run(
-        "task", "hyp", "create",
-        "--title", "test fixture: maintainer overlay claim probe",
+    hyp_id = _rack_created(
+        project, env,
+        "hyp", "create", "test fixture: maintainer overlay claim probe",
         "--hypothesis", (
             "Under HATS-498 e2e fixture, the maintainer role's "
             "project-layer overlay reaches the materialized prompt."
         ),
-        "--source-task", "HATS-498",
-        "--json",
-        timeout=CMD_TIMEOUT, extra_env=env,
-    ).expect_ok()
-    hyp_id = json.loads(hyp_result.stdout.strip().splitlines()[-1])["id"]
+    )
 
     # ----- pre-seed 1 open PROP — forces reviewer to emit a proposal_action -----
-    prop_result = project.run(
-        "task", "proposal", "create",
-        "--title", "test fixture: improve maintainer overlay coverage",
+    prop_id = _rack_created(
+        project, env,
+        "proposal", "create", "test fixture: improve maintainer overlay coverage",
         "--category", "process",
         "--target", "maintainer",
         "--description", "Test-fixture proposal seeded by HATS-498 e2e.",
         "--rationale", "Forces auto-retro reviewer to emit proposal_actions.",
-        "--session", "hats-498-fixture",
-        "--json",
-        timeout=CMD_TIMEOUT, extra_env=env,
-    ).expect_ok()
-    prop_id = json.loads(prop_result.stdout.strip().splitlines()[-1])["id"]
+        "--failed-session-id", "hats-498-fixture",
+    )
 
     # ----- Phase 1 self-check: show-prompt surfaces all 3 customization layers -----
     #
@@ -363,6 +366,27 @@ def _set_review_model(yaml_path: Path, model: str) -> None:
     session_retro = feedback.setdefault("session_retro", {})
     session_retro["review_model"] = model
     yaml_path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+
+def _rack_created(project: Project, extra_env: dict[str, str], *args: str) -> str:
+    """Create one card via the venv's real ``rack`` console script; return its id.
+
+    HYP/PROP live on the ``rack hyp`` / ``rack proposal`` groups since HATS-1263;
+    ``Project.run`` drives ``ai-hats``, so this is the sibling runner for them.
+    """
+    env = clean_env(os.environ)
+    env.update(project.env)
+    env.update(extra_env)
+    rack_bin = Path(project.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
+    res = subprocess.run(
+        [str(rack_bin), *args, "--json"],
+        cwd=str(project.path), env=env, capture_output=True, text=True, timeout=CMD_TIMEOUT,
+    )
+    assert res.returncode == 0, (
+        f"rack {' '.join(args)} failed ({res.returncode})\n"
+        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    )
+    return json.loads(res.stdout)["task"]["id"]
 
 
 # ---------------------------------------------------------------------------

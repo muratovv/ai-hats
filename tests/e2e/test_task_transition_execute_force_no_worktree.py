@@ -1,4 +1,4 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> execute --force``
+"""End-to-end coverage for ``rack transition <ID> execute --force``
 NOT creating a fresh worktree (HATS-697 / PROX-287).
 
 A forced ``→ execute`` is a manual state correction (typically for

@@ -1,4 +1,4 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> done`` when the
+"""End-to-end coverage for ``rack transition <ID> done`` when the
 task branch is ALREADY merged into its base but the worktree STATE is lost
 (HATS-697 — the retrospective shipped-on-master scenario from PROX-287).
 
@@ -16,6 +16,9 @@ This is the exact shape the supervisor hit in PROX-287: work shipped via a
 manual ``git merge --no-ff task/<id>`` into the base AND the auto-worktree
 removed, after which ``transition done`` refused and the only workaround was a
 manual ``git branch -d task/<id>`` before retrying.
+
+Driven through the ``rack`` CLI (HATS-1263); ``self init`` stays on the
+``ai-hats`` launcher.
 
 **Fail-under-revert**: drop the ``branch_merged_into_canonical_base`` check in
 ``state.py:_teardown_worktree`` (raise ``WorktreeStateLostError`` whenever the
@@ -59,7 +62,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.integration
 def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path):
-    """HATS-697 on the `task transition done` surface.
+    """HATS-697 on the `rack transition done` surface.
 
     Scenario (mirrors the PROX-287 incident):
       1. Bootstrap session-shared venv + ``self init``.
@@ -71,12 +74,13 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
       6. Remove the auto-worktree by hand AND delete its ai-hats state JSON
          so `load_for_task` resolves to None (the lost-state condition).
       7. Walk execute → document → review.
-      8. ``ai-hats task transition <ID> done`` MUST exit 0 (finalize without
+      8. ``rack transition <ID> done`` MUST exit 0 (finalize without
          re-merge — NOT a false `worktree state lost` refusal).
       9. Task reaches ``done``; the now-merged branch is cleaned up.
      10. No double-merge: base ref unchanged since the manual merge.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
     project.mkdir()
 
@@ -84,6 +88,13 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
+        return _run(
+            [str(rack_bin), *args],
+            cwd=cwd, env={**env, **(extra_env or {})},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap ----
@@ -105,8 +116,8 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create task → execute (worktree from base) ----
-    new_res = ai_hats(
-        "task", "create", "already merged state-lost test",
+    new_res = rack(
+        "create", "already merged state-lost test",
         "--description", "exercise the HATS-697 state-lost finalize",
         "--role", "assistant",
         "--reviewer", "user",
@@ -121,7 +132,7 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
         / "tasks" / task_id / "plan.md"
@@ -133,7 +144,8 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
         "## Steps\n- [ ] do thing\n\n"
         "## Verification Protocol\npytest\n"
     )
-    ai_hats("task", "transition", task_id, "execute")
+    # plan → execute is consent-gated on rack; the launcher env carries no ack.
+    rack("transition", task_id, "execute", extra_env={"AI_HATS_PLAN_ACK": "1"})
 
     # Locate worktree.
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -189,11 +201,11 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     )
 
     # ---- 6. walk execute → document → review ----
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- 7. transition done MUST SUCCEED (the fix) ----
-    res = ai_hats("task", "transition", task_id, "done", expect_exit=0)
+    res = rack("transition", task_id, "done", expect_exit=0)
     combined = res.stdout + res.stderr
     assert "worktree state lost" not in combined.lower(), (
         f"false state-lost refusal — HATS-697 short-circuit not applied:\n"
@@ -201,7 +213,7 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     )
 
     # ---- 8. task done; merged branch cleaned up ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: done" in show.stdout, (
         f"task did not reach `done`:\n{show.stdout}"
     )

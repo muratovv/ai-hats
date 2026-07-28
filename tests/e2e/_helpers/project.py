@@ -3,7 +3,7 @@
 A subprocess-driven, one-shot ``ai-hats <cmd>`` surface with a fluent
 ``.expect_*`` style: each verb is one assertion, returns ``self`` for
 chaining. Its niche is testing CLI commands that don't spawn an agent
-(e.g. ``ai-hats task list``, ``ai-hats config ...``).
+(e.g. ``ai-hats config ...``; the backlog moved to the `rack` CLI).
 """
 
 from __future__ import annotations

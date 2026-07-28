@@ -1,5 +1,5 @@
-"""HATS-517 — `ai-hats task transition <ID> execute` must handle the case
-where the target branch (``task/<id-lower>``) already exists.
+"""HATS-517 — `rack transition <ID> execute` must handle the case where the
+target branch (``task/<id-lower>``) already exists.
 
 Three sub-cases (see plan + task card):
 
@@ -18,10 +18,11 @@ Three sub-cases (see plan + task card):
   a manual linked-worktree setup that doesn't add coverage at the
   subprocess boundary.
 
-Pattern (subprocess + ``python -m ai_hats``) mirrors
-``tests/e2e/test_wt_merge_ambiguity_guard.py`` — keeps the test
+Pattern (subprocess + ``python -m ai_hats_rack``) mirrors
+``tests/e2e/test_plan_gate_per_section_e2e.py`` — keeps the test
 checkout-independent (works from main repo or a linked worktree, no
-installed ``ai-hats`` binary required).
+console script required). Re-pointed off the legacy ``ai-hats task``
+CLI in HATS-1263.
 
 dev_rule_e2e_gate (HATS-517 touches ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` +
 ``src/ai_hats/cli/task.py``): this file is the gated test. Sanity:
@@ -61,17 +62,19 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run_hats(
+def _run_rack(
     project_dir: Path, *args: str, timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``python -m ai_hats <args>`` against the current checkout."""
+    """Run ``python -m ai_hats_rack <args>`` against the current checkout."""
     env = os.environ.copy()
     from _helpers.env import checkout_pythonpath
 
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing_pp)
+    # Consent-gated on rack; this test is about the worktree path behind it.
+    env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(
-        [sys.executable, "-m", "ai_hats", *args],
+        [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
         capture_output=True, text=True, env=env, timeout=timeout,
     )
@@ -97,10 +100,10 @@ def initialised_git_project(tmp_path: Path) -> Path:
 
 def _create_and_plan(project: Path, task_id: str) -> None:
     """Create task ``task_id`` and walk brainstorm → plan with a non-empty plan."""
-    r = _run_hats(project, "task", "create", "test task",
+    r = _run_rack(project, "create", "test task",
                   "--id", task_id, "--description", "e2e")
-    assert r.returncode == 0, f"task create failed: {r.stderr}"
-    r = _run_hats(project, "task", "transition", task_id, "plan")
+    assert r.returncode == 0, f"create failed: {r.stderr}"
+    r = _run_rack(project, "transition", task_id, "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
     # Overwrite the scaffold so the EmptyPlanError gate in
     # `transition execute` lets us through to the worktree-setup path
@@ -121,22 +124,25 @@ def _create_and_plan(project: Path, task_id: str) -> None:
 def test_case_a_pre_existing_branch_attaches(
     initialised_git_project: Path,
 ) -> None:
-    """Case A: `git branch task/hats-517a` ahead of time; transition succeeds."""
+    """Case A: `git branch task/hats-5171` ahead of time; transition succeeds."""
     proj = initialised_git_project
-    task_id = "HATS-517A"
+    # Numeric suffix, not the old `HATS-517A`: rack routes an id by
+    # `<prefix>-<digits>` only (workspace.py `_ID_RE`), see HATS-1263 report.
+    task_id = "HATS-5171"
     _create_and_plan(proj, task_id)
 
     # Pre-create the branch the transition is about to use.
-    _git(proj, "branch", "task/hats-517a")
+    _git(proj, "branch", "task/hats-5171")
 
-    r = _run_hats(proj, "task", "transition", task_id, "execute")
+    r = _run_rack(proj, "transition", task_id, "execute")
     assert r.returncode == 0, (
         f"Case A must succeed; got exit {r.returncode}\n"
         f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
     )
-    # The transition CLI prints the worktree path + branch on success.
+    # rack surfaces the branch through the worktree dirname it prints
+    # (`branch_name.replace("/", "-")` — manager.py); there is no `Branch:` line.
     combined = r.stdout + r.stderr
-    assert "task/hats-517a" in combined, (
+    assert "task-hats-5171" in combined, (
         f"branch name not surfaced in output: {combined}"
     )
     assert "Worktree:" in combined, (
@@ -145,8 +151,8 @@ def test_case_a_pre_existing_branch_attaches(
 
     # Verify the linked worktree exists and is on the right branch.
     wt_list = _git(proj, "worktree", "list", "--porcelain").stdout
-    assert "branch refs/heads/task/hats-517a" in wt_list, (
-        f"expected linked worktree on task/hats-517a, got:\n{wt_list}"
+    assert "branch refs/heads/task/hats-5171" in wt_list, (
+        f"expected linked worktree on task/hats-5171, got:\n{wt_list}"
     )
 
 
@@ -154,7 +160,7 @@ def test_case_a_pre_existing_branch_attaches(
 # `assert_head_is_canonical_base()` guard inside `state._setup_worktree`
 # — that guard fires BEFORE `WorktreeManager.create()`, so the HATS-517
 # Case B classifier inside `create()` is never reached via the
-# `task transition execute` path. The HATS-517 Case B classifier remains
+# `rack transition <ID> execute` path. The Case B classifier remains
 # in place as defense-in-depth for direct Python-API callers; coverage
 # lives at unit level in
 # `tests/test_worktree.py::TestBranchExistsClassifier::test_case_b_refuse_when_checked_out_in_main`.

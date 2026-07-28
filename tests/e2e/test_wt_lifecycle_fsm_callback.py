@@ -5,7 +5,7 @@ The existing `test_wt_hooks_fail_closed.py` drives the `wt` CLI path
 (`wt create/merge/discard`). This test guards the OTHER pair of injection sites
 introduced by P1 — `state._setup_worktree` (→ `on_created`) and
 `state._teardown_worktree` (→ `before_teardown`) — which the CLI-path e2e never
-exercises. A real `ai-hats task transition execute` then `... done` walks the
+exercises. A real `rack transition execute` then `... done` walks the
 FSM, and we assert both halves of the wiring fired through the real bundle:
 
 - after `execute`: the `wt_in` hook ran (`.seeded`) — the create extension-point
@@ -106,19 +106,22 @@ def _init(launcher: Path, env: dict, project: Path) -> None:
 
 @pytest.mark.integration
 def test_fsm_transition_fires_wt_in_and_wt_out(installed_launcher, tmp_path):
-    launcher, env, _ = installed_launcher
+    launcher, base_env, venv = installed_launcher
+    rack_bin = venv / "bin" / "rack"
+    # plan → execute is consent-gated; the gate is not this test's subject.
+    env = {**base_env, "AI_HATS_PLAN_ACK": "1"}
     project = tmp_path / "proj"
     _init(launcher, env, project)
 
-    def ai(*args, expect_exit=0, timeout=120):
-        return _run([str(launcher), *args], cwd=project, env=env,
+    def rack(*args, expect_exit=0, timeout=120):
+        return _run([str(rack_bin), *args], cwd=project, env=env,
                     timeout=timeout, expect_exit=expect_exit)
 
     task_id = "TST-001"
     branch = f"task/{task_id.lower()}"
-    ai("task", "create", "FSM lifecycle wiring", "-d", "wt_in/wt_out via FSM",
-       "--id", task_id)
-    ai("task", "transition", task_id, "plan")
+    rack("create", "FSM lifecycle wiring", "--description", "wt_in/wt_out via FSM",
+         "--id", task_id)
+    rack("transition", task_id, "plan")
 
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
@@ -134,7 +137,7 @@ def test_fsm_transition_fires_wt_in_and_wt_out(installed_launcher, tmp_path):
     )
 
     # ---- execute: _setup_worktree fires on_created → wt_in (.seeded) ----
-    ai("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute")
     assert (project / ".seeded").exists(), (
         "wt_in did not fire on the FSM execute path — _setup_worktree is not "
         "injecting the hook-running bundle (on_created ran the no-op)"
@@ -150,11 +153,11 @@ def test_fsm_transition_fires_wt_in_and_wt_out(installed_launcher, tmp_path):
     _git(wt, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
          "commit", "-m", "worktree work")
 
-    ai("task", "transition", task_id, "document")
-    ai("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- done: _teardown_worktree fires before_teardown → wt_out (.drained) ----
-    ai("task", "transition", task_id, "done")
+    rack("transition", task_id, "done")
     assert _task_state(project, task_id) == "done"
     drained = project / ".drained"
     assert drained.exists() and "merge" in drained.read_text(), (

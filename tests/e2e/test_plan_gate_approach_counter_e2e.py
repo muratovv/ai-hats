@@ -16,9 +16,9 @@ M3 adds ``Section(name="Approach & counter", required=False)`` to
 literally under the rule's ``cli/**`` trigger. This e2e is added per the task's
 explicit acceptance — the real-binary scaffold is the user-facing contract.
 
-Harness mirrors ``test_plan_gate_per_section_e2e.py`` /
-``test_task_transition_branch_exists.py``: ``python -m ai_hats`` with
-``PYTHONPATH=<checkout>/src`` exercises the CURRENT checkout.
+Harness mirrors ``test_plan_gate_per_section_e2e.py``: ``python -m ai_hats_rack``
+with an explicit ``PYTHONPATH`` exercises the CURRENT checkout (re-pointed off
+the legacy ``ai-hats task`` CLI, HATS-1263).
 """
 
 from __future__ import annotations
@@ -48,17 +48,19 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run_hats(
+def _run_rack(
     project_dir: Path, *args: str, timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``python -m ai_hats <args>`` against the current checkout."""
+    """Run ``python -m ai_hats_rack <args>`` against the current checkout."""
     env = os.environ.copy()
     from _helpers.env import checkout_pythonpath
 
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, existing_pp)
+    # Consent-gated on rack; this test is about the optional section behind it.
+    env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(
-        [sys.executable, "-m", "ai_hats", *args],
+        [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
         capture_output=True, text=True, env=env, timeout=timeout,
     )
@@ -93,12 +95,14 @@ def test_scaffold_contains_approach_counter_in_position_c(git_project: Path) -> 
     """The real binary's plan scaffold carries `## Approach & counter`, between
     Requirements and Scope (fail-under-revert anchor)."""
     proj = git_project
-    r = _run_hats(proj, "task", "create", "Probe", "--id", "HATS-621S")
+    # Numeric suffix, not the old `HATS-621S`: rack routes an id by
+    # `<prefix>-<digits>` only (workspace.py `_ID_RE`), see HATS-1263 report.
+    r = _run_rack(proj, "create", "Probe", "--id", "HATS-6211")
     assert r.returncode == 0, f"create failed: {r.stderr}"
-    r = _run_hats(proj, "task", "transition", "HATS-621S", "plan")
+    r = _run_rack(proj, "transition", "HATS-6211", "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
-    scaffold = _plan_path(proj, "HATS-621S").read_text()
+    scaffold = _plan_path(proj, "HATS-6211").read_text()
     assert "## Approach & counter" in scaffold, (
         f"scaffold missing the conditional stage heading:\n{scaffold}"
     )
@@ -116,15 +120,15 @@ def test_empty_approach_counter_does_not_block_execute(git_project: Path) -> Non
     """All REQUIRED sections filled + an EMPTY `## Approach & counter` still
     transitions to execute (the section is optional, never gate-blocking)."""
     proj = git_project
-    task_id = "HATS-621E"
-    r = _run_hats(proj, "task", "create", "Probe", "--id", task_id,
+    task_id = "HATS-6212"  # numeric suffix — see the sibling test's note
+    r = _run_rack(proj, "create", "Probe", "--id", task_id,
                   "--description", "e2e")
     assert r.returncode == 0, f"create failed: {r.stderr}"
-    r = _run_hats(proj, "task", "transition", task_id, "plan")
+    r = _run_rack(proj, "transition", task_id, "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
     _plan_path(proj, task_id).write_text(
-        "# Plan for HATS-621E: Probe\n\n"
+        f"# Plan for {task_id}: Probe\n\n"
         "## Requirements\nShip the value-counter stage.\n\n"
         "## Approach & counter\n\n"  # deliberately empty — optional
         "## Scope & Out-of-scope\nin/out\n\n"
@@ -132,7 +136,7 @@ def test_empty_approach_counter_does_not_block_execute(git_project: Path) -> Non
         "## Verification Protocol\npytest\n"
     )
 
-    r = _run_hats(proj, "task", "transition", task_id, "execute")
+    r = _run_rack(proj, "transition", task_id, "execute")
     assert r.returncode == 0, (
         "an empty OPTIONAL section must not block execute; got exit "
         f"{r.returncode}\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
