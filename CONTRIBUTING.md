@@ -201,7 +201,7 @@ root in `library/`, split into two layers shipped together inside the
   `auditor-for-role`, …), base traits (`trait-base`, `trait-agent`,
   `trait-analyst-base`, `base-judge`, `base-auditor`,
   `trait-reflect-mode`), global rules, foundational skills
-  (`backlog-manager`, `git-mastery`, `review-*`, `judge-*`, …), all
+  (`hatrack`, `git-mastery`, `review-*`, `judge-*`, …), all
   pipelines + initial injections, and the provider scaffold template.
   Without these the engine cannot bootstrap or run reflect pipelines.
 - **`library/usage/`** — curated content catalog. Opinionated roles
@@ -221,9 +221,9 @@ root in `library/`, split into two layers shipped together inside the
 A skill that *drives an engine tool* still goes in the **library** (core or
 usage) — never inside the engine package. It declares the tool as a dependency
 in its `SKILL.md` frontmatter (`ai_hats.requires.cli`), and the engine ships a
-console entry so the probe resolves on `PATH`. `backlog-manager` is the example:
-it lives in `core/skills/` and declares `requires.cli: ai-hats-tracker`; the
-`ai-hats-tracker` package ships **no** skill and no `ai_hats.skills` entry-point
+console entry so the probe resolves on `PATH`. `hatrack` is the example:
+it lives in `core/skills/` and declares `requires.cli: ai-hats-rack`; the
+`ai-hats-rack` package ships **no** skill and no `ai_hats.skills` entry-point
 (ADR-0016). The dependency arrow is skill → tool, so the skill iterates without
 forcing an engine release.
 
@@ -423,7 +423,7 @@ User-facing docs (`README.md`, `docs/*.md`, `CONTRIBUTING.md`) use one of three 
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
 | Cross-doc, cross-file, or fixture path    | **numbered** — `[N]` in body + a visible `## References` section at the end of the file |
 | In-doc section anchor (`#some-section`)   | **inline** `[text](#anchor)`                                                            |
-| CLI command, env var, file path-as-string | **inline code** — `` `ai-hats task ...` ``, `` `<ai_hats_dir>/...` ``                   |
+| CLI command, env var, file path-as-string | **inline code** — `` `rack transition ...` ``, `` `<ai_hats_dir>/...` ``                |
 
 **Rationale.** Cross-doc links earn a citation slot at the bottom because they survive doc reshuffles, declutter the body, and form a quick "what does this doc depend on" index. Anchors and CLI strings stay inline because they're navigation / identifiers, not citations.
 
@@ -455,4 +455,4 @@ Run `ai-hats reflect all` to start the triage.
 **[3]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal fixture.
 ```
 
-Reference docs already on this style: [`docs/how-to-backlog.md`](docs/how-to-backlog.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
+Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).

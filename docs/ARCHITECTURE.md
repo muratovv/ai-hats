@@ -124,7 +124,7 @@ The `Bridge` node — entry into auto reflect-session (see the next section). Wh
 
 ## Backlog state machines
 
-The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN`), hypotheses (`HYP-NNN`), and proposals (`PROP-NNN`). All three are managed through the `ai-hats task` CLI and serialized as YAML under `.agent/`.
+The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN`), hypotheses (`HYP-NNN`), and proposals (`PROP-NNN`). All three are managed through the `rack` CLI and serialized as YAML under `.agent/`.
 
 <p align="center">
   <img src="assets/diagrams/backlog-task-fsm.svg" alt="Task state machine" width="640">
@@ -143,21 +143,24 @@ The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN
 
 <!-- Sources: docs/assets/diagrams/backlog-{task,hyp,prop}-fsm.d2 -->
 
-- **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), from `review` a rework path back to `execute` for addressing review comments (no worktree merge, unlike `review → done`), and from `done` a reopen path to `execute` is available for finishing epic scope. Shortcuts: `ai-hats task close <id> --resolution "..."` fast-closes a `brainstorm`/`plan` task straight to `done` when the work shipped on master (no worktree theatre); `ai-hats task transition <id> <state> --force --reason "..."` bypasses the FSM guard for corrective overrides (e.g. undo a stray `plan` transition) and records the reason in `work_log`. Cross-references between cards live in `related: []`, `see_also: []`, and `folded_into: <id>` fields, managed via `ai-hats task link`. On the transition to `plan` a `plan.md` scaffold is created; the work log is written with session tracking; a file lock protects against race conditions.
+- **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), from `review` a rework path back to `execute` for addressing review comments (no worktree merge, unlike `review → done`), and from `done` a reopen path to `execute` is available for finishing epic scope. Shortcut: `rack transition <id> --state done --force --reason "..."` fast-closes a `brainstorm`/`plan` task straight to `done` when the work shipped on master (no worktree theatre). `--force` relaxes the FSM arrow **only**, requires a reason, and journals it. Cross-references between cards are typed links — `parent_task`, `depends_on`, `related`, and the derived `children` — managed via `rack transition <id> --link <kind>:<id>`; an unknown kind is a typed refusal listing the legal set. On the transition to `plan` a `plan.md` scaffold is created and `plan → execute` is consent-gated (`AI_HATS_PLAN_ACK=1`); the work log is written with session tracking; a file lock protects against race conditions.
 - **Hypothesis (`HYP-NNN`)** — a claim about system or process behavior. Stays `active` while sessions accumulate verdicts in `validation_log`; closes into `confirmed`, `refuted`, or `stalled` per `exit_criteria`. Verdicts are written by reflect-session (see below).
 - **Proposal (`PROP-NNN`)** — an improvement suggestion: either from reflect-session on self-problem, or filed by hand. Stays `open` until triaged in `reflect all` → `accepted` / `rejected` / `deferred` / `duplicate`.
 
 ### Searching tasks
 
-`--search` accepts a regex (case-insensitive) and matches against id, title, description, tags, parent_task, depends_on, related, see_also, and folded_into:
+Finding cards and explaining one are different verbs. `rack ls` filters a flat scan; `rack ls <ID> --deep N` walks the link graph out from a card; `rack context <ID>` returns the full package for one.
 
 ```bash
-ai-hats task list --search epic              # all epics (by tag or title)
-ai-hats task list --search HATS-092          # epic + children (parent_task) + tasks blocked by it (depends_on)
-ai-hats task list --search docs              # anything mentioning docs (id/title/desc/tags)
-ai-hats task list --search "HATS-09[2-3]"    # regex: two epics at once
-ai-hats task list --search worktree --all    # including done/failed
+rack ls --tag epic                    # all epics (by tag)
+rack ls --grep docs                   # case-insensitive SUBSTRING over title + description
+rack ls --state execute               # exact state match
+rack ls --state done --all            # terminal cards too, without the 30-row cap
+rack ls HATS-092 --deep 1             # epic + children + cards depending on it
+rack ls HATS-092 --deep 1 --link parent_task   # follow one edge kind only
 ```
+
+`--grep` is a literal substring, not a regex. Filters are read-tolerant: a card lacking the field is excluded rather than erroring.
 
 ## Reflection loop
 
@@ -219,7 +222,7 @@ ai_hats_library/
     roles/          initial-wizard, session-reviewer, auditor-for-role, judge, judge-for-role, hypothesis-intake, test-agent
     traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode
     rules/          global_rule_*, rule_backlog_discipline, dev_rule_comment_discipline, dev_rule_tool_call_hygiene
-    skills/         backlog-manager, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
+    skills/         hatrack, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
     pipelines/      execute, human, reflect-{session,role,all,issue}
     initial_injections/   initial-wizard, reflect-all, reflect-role
     templates/      githooks/ (dispatcher + managed hook scripts)
@@ -284,19 +287,19 @@ needs in the same `ai_hats:` frontmatter block, provider-neutral:
 ai_hats:
   requires:
     cli:
-      - name: ai-hats-tracker
-        check: "ai-hats-tracker --version"   # presence probe
-        hint: "pip install ai-hats-tracker"  # actionable install guidance
+      - name: ai-hats-rack
+        check: "rack --help"                 # presence probe
+        hint: "pip install ai-hats-rack"     # actionable install guidance
     mcp: []                                   # neutral command/args/env/transport
 ```
 
 ai-hats verifies `requires` at compose/session time and **warns** with the
 `hint` — it never auto-installs. The engine that satisfies a `requires.cli` is a
 *provided tool*, installed on `PATH` as an ordinary console entry (e.g.
-`ai-hats-tracker` exposes a `[project.scripts]` entry). Engine-owned skills bind
+`ai-hats-rack` exposes a `rack` `[project.scripts]` entry). Engine-owned skills bind
 to their engine via `requires`, **not** by physical co-location inside the engine
-package: `backlog-manager` stays in the library content layer and declares
-`requires.cli: ai-hats-tracker`; `ai-hats-tracker` ships no skill. The
+package: `hatrack` stays in the library content layer and declares
+`requires.cli: ai-hats-rack`; `ai-hats-rack` ships no skill. The
 `ai_hats.skills` entry-point registry remains the discovery seam for out-of-tree
 skill sources (third-party skill packages).
 
@@ -388,7 +391,7 @@ composition:
   rules:
     - dev_rule_git_workflow
   skills:
-    - backlog-manager
+    - hatrack
     - git-mastery
 injection: |
   # ROLE: PRIMARY AUTOMATION ASSISTANT

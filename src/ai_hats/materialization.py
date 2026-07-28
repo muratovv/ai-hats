@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from .plugin_dir import _dir_digest
+from .fs_digest import dir_digest
 
 # A rebuild is a sub-second fs op, so a timeout means a stuck/dead holder (HATS-604).
 LOCK_TIMEOUT = 30.0
@@ -83,7 +83,7 @@ def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
         source=src,
         size=sum(p.stat().st_size for p in files),
         file_count=len(files),
-        digest=_dir_digest(src) if src.is_dir() else None,
+        digest=dir_digest(src) if src.is_dir() else None,
     )
 
 

@@ -34,7 +34,7 @@ Core terms (**session**, **HYP**, **PROP**, **SessionReview**, **JudgeReport**) 
 | `inconclusive` | data exists but is mixed / insufficient      |
 | `n/a`          | the session physically cannot test the HYP   |
 
-The verdict is written into the HYP file atomically via `ai-hats task hyp append-verdict` (filelock-protected). `n/a` is mirrored only into the SessionReview frontmatter and is not written into the HYP file (to keep the observation window clean).
+The verdict is appended to the HYP's `validation_log` atomically under the card's file lock, and walks **no** FSM edge — recording evidence never changes a hypothesis's state. `n/a` is mirrored only into the SessionReview frontmatter and is not written into the HYP file (to keep the observation window clean).
 
 ---
 
@@ -72,7 +72,7 @@ Open the latest `<id>.md` — `summary`, `observations`, `hypothesis_verdicts[]`
 ai-hats reflect all
 # drops you into an interactive chat with the `judge` role
 # the agent inspects each open PROP and active HYP, asks you for decisions,
-# and runs `ai-hats task hyp ...` / `ai-hats task proposal ...` per item
+# and records a verdict / triage decision per item
 ```
 
 At the end of the chat, statuses are bulk-applied in one call (either the agent runs it as its last action, or you run it yourself):
@@ -91,18 +91,19 @@ You're in a session and notice a pattern worth tracking. Just ask the agent duri
 The agent translates your description into a structured HYP and creates it under the hood:
 
 ```bash
-ai-hats task hyp create \
-    --title "Filters break under sub-agent refactors" \
+rack hyp create "Filters break under sub-agent refactors" \
     --hypothesis "Every regression in observe.py filters in the past \
                   month followed a SidecarTracer refactor." \
-    --source-task HATS-029 \
     --observation-window "4 sessions" \
     --success-criterion "zero new filter regressions in the window"
+
+# the originating task is a link, not a create flag
+rack transition HYP-NNN --link source_task:HATS-029
 ```
 
-The card lands at `<ai_hats_dir>/tracker/hypotheses/HYP-NNN.yaml` with `status: active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
+The card lands `active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
 
-Full CLI flags — `ai-hats task hyp create --help`.
+Full CLI flags — `rack hyp create --help`. Backlog recipes — [14].
 
 ---
 
@@ -122,12 +123,12 @@ feedback:
 
 ### Policies for `session_retro.policy`
 
-| Value    | Behavior on `session_end`                                                                            |
-| -------- | ---------------------------------------------------------------------------------------------------- |
-| `off`    | nothing happens                                                                                      |
-| `always` | retro always runs                                                                                    |
-| `smart`  | retro runs when `turns ≥ min_turns` **OR** `tool_calls ≥ min_tool_calls` (either trigger is enough)  |
-| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually"         |
+| Value    | Behavior on `session_end`                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| `off`    | nothing happens                                                                                     |
+| `always` | retro always runs                                                                                   |
+| `smart`  | retro runs when `turns ≥ min_turns` **OR** `tool_calls ≥ min_tool_calls` (either trigger is enough) |
+| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually"        |
 
 The smart-threshold condition is **OR**, not AND — crossing either limit fires the retro.
 
@@ -168,7 +169,7 @@ In words:
 
 1. **`auto_retro.make_decision`** examines the just-finished session's metrics and the configured policy. The outcome is `skip` (do nothing), `hint` (banner to the user), or `run`.
 2. On `run`, **pure-Python `compute_facts`** assembles the factual layer — metrics, files changed, commits, tasks closed — without an LLM.
-3. The **session-reviewer LLM** is spawned (detached background by default). It reads the facts plus the audit and metrics from the session run dir, then for every active HYP issues a verdict via `ai-hats task hyp append-verdict`. On a self-problem it files a meta-proposal via `ai-hats task proposal create --category process --target session-reviewer`.
+3. The **session-reviewer LLM** is spawned (detached background by default). It reads the facts plus the audit and metrics from the session run dir, then for every active HYP appends a verdict to its `validation_log`. On a self-problem it files a meta-proposal (`category: process`, `target: session-reviewer`).
 4. The runner merges facts with the LLM's output and writes one SessionReviewV1 markdown at `<ai_hats_dir>/sessions/retros/sessions/<id>.md` (schema `hats-session-review/v1`).
 5. A **pure-Python harness check** parses the artifact afterwards. If it is missing, unparseable, or doesn't cover every active HYP, a single meta-PROP (`target=session-reviewer`, `failed_session_id=<id>`) is filed and surfaces in `reflect all`.
 
@@ -178,13 +179,13 @@ In words:
 
 - `hypothesis_verdicts[]` contains **exactly one entry per active HYP** — no skipping.
 - If a hypothesis physically cannot be tested from this session — `verdict: n/a`, and **do not call** `append-verdict` (only mirror into frontmatter).
-- Self-problem (the agent didn't understand the HYP, didn't find data) → `ai-hats task proposal create` + `inconclusive` + a reference in `self_problems[]`.
-- On `confirmed/refuted/inconclusive` — the agent must call `ai-hats task hyp append-verdict`.
+- Self-problem (the agent didn't understand the HYP, didn't find data) → file a PROP + `inconclusive` + a reference in `self_problems[]`.
+- On `confirmed/refuted/inconclusive` — the agent must append the verdict onto the HYP.
 
 The role is composed of:
 
 - `review-session` skill [8] — the orchestrator. Defines the four-step procedure (read evidence → sweep HYPs → triage PROPs → self-meta).
-- `review-hypothesis` skill [9] — pick verdict + recommendation + persist via `ai-hats task hyp append-verdict`.
+- `review-hypothesis` skill [9] — pick verdict + recommendation + persist it onto the HYP.
 - `review-proposal` skill [10] — read the open inbox first, vote on similar PROP, or create a novel one.
 
 Role config: [7].
@@ -226,12 +227,12 @@ ai-hats reflect all
 # - writes <ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md
 # - then os.execvp's into claude with the `judge` role
 
-# 2. Inside the chat — the agent inspects items and uses these CLI handles
-ai-hats task hyp show HYP-NNN                                    # full validation_log
-ai-hats task hyp append-verdict --hyp HYP-NNN ...                # add evidence
-ai-hats task proposal show PROP-NNN                              # rationale + votes
-ai-hats task proposal status PROP-NNN <accepted|rejected|deferred|duplicate>
-ai-hats task create ...                                          # spawn a task from a PROP
+# 2. Inside the chat — items get inspected and decided. The same handles by hand:
+rack context HYP-NNN                                  # card + full validation_log
+rack hyp append-verdict HYP-NNN --verdict ... --evidence ...
+rack context PROP-NNN                                 # rationale + votes
+rack transition PROP-NNN <accept|reject|defer|mark-duplicate>
+rack create "..."                                     # spawn a task from a PROP
 
 # 3. Once the chat is done — bulk-flip PROP statuses in one command
 #    (either the agent runs this as its last action, or you run it after exiting)
@@ -265,7 +266,7 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 ### What `reflect all` does NOT do
 
 - **Does not vote on hypotheses automatically** — that's the job of the per-session `session-reviewer`. `reflect all` only displays what has accumulated and helps you make decisions on PROPs / close HYPs.
-- **Does not create new HYPs** — for that, see Quick start (d) above (ask the agent during a session; under the hood it runs `ai-hats task hyp create`).
+- **Does not create new HYPs** — for that, see Quick start (d) above (ask the agent during a session; under the hood it runs `rack hyp create`).
 
 ---
 
@@ -286,13 +287,13 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 ## Troubleshooting checklist
 
-| Symptom                                       | Where to look                                                                                                                                                                |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                     |
-| validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                         |
+| Symptom                                       | Where to look                                                                                                                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                             |
+| validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                                 |
 | meta-PROP with `failed_session_id=...`        | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
-| `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                |
-| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                    |
+| `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                        |
+| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                            |
 
 ---
 
@@ -324,4 +325,4 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 **[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms.
 
-**[14]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+**[14]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.

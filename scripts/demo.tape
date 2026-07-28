@@ -37,7 +37,7 @@ Enter
 Sleep 3.5s
 
 # Repeat — hypotheses the framework formed about its own behaviour
-Type "ai-hats task hyp list --status active"
+Type "rack ls --backlog hyp --state active"
 Sleep 400ms
 Enter
 Sleep 4s

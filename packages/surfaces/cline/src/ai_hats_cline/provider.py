@@ -16,7 +16,6 @@ from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 if TYPE_CHECKING:
     # Workspace-boundary Rule 1 (HATS-869): only first-party root is `ai_hats`.
-    from ai_hats.materialization import Materializer
     from ai_hats.providers import CompositionResult, ProviderHint
     from ai_hats_observe.parsers.base import TranscriptParser
 
@@ -125,11 +124,13 @@ class ClineProvider(Provider):
     # -- skills ----------------------------------------------------------------
 
     def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
-        from ai_hats.skills_dir import inject_skill_paths_to_env
+        from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         skills_dir = cache_dir / "skills"
-        self._materialize_skills_to_cache(skills_dir, result, project_dir, artifacts.port)
+        # Shared with agy (HATS-1271): a private copy drifted and lost the
+        # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
+        materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
         # cline scans <T()>/skills; --config sets T()=cache_dir (spike HATS-1191).
         # CLINE_DATA_DIR (get_env) keeps auth/state off this ephemeral base.
         artifacts.cli_args.extend(["--config", str(cache_dir)])
@@ -141,36 +142,6 @@ class ClineProvider(Provider):
 
     def _build_skills_automate(self, project_dir, result, session_id, artifacts) -> None:
         self._deliver_skills(project_dir, result, session_id, artifacts)
-
-    @staticmethod
-    def _materialize_skills_to_cache(
-        skills_dir: Path,
-        result: CompositionResult,
-        project_dir: Path,
-        port: "Materializer",
-    ) -> None:
-        """Copy the composed role's skills into the per-session cache.
-
-        Session-scoped (`<cache>/sessions/<sid>/skills`) → no lock/refcount:
-        the dir is private to this session and swept with the whole cache dir.
-        """
-        from ai_hats.placeholders import expand_path_placeholders
-
-        port.mkdir(skills_dir)
-        for skill in result.skills:
-            if not skill.source_path.is_dir():
-                continue
-            dest = skills_dir / skill.name
-            port.remove_tree(dest)
-            port.copy_tree(skill.source_path, dest)
-            # Expand <ai_hats_dir> in SKILL.md (HATS-380 parity); assets verbatim.
-            # Read the SOURCE: under a PlanMaterializer the copy does not exist.
-            source_md = skill.source_path / "SKILL.md"
-            if source_md.exists():
-                original = source_md.read_text()
-                expanded = expand_path_placeholders(original, project_dir)
-                if expanded != original:
-                    port.write_text(dest / "SKILL.md", expanded)
 
     def build_session_prompt(
         self,

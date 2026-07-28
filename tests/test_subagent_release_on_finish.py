@@ -14,9 +14,9 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ai_hats import ownership
 from ai_hats.runtime import SubAgentRunner
 from ai_hats.tracker_wiring import tracker_paths
-from ai_hats_tracker import ownership
 
 
 @dataclass

@@ -44,9 +44,10 @@ from ai_hats_rack.extensions import (
 )
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
-from ai_hats_tracker import ownership
-from ai_hats_tracker.constants import ENV_ROOT_PID, ENV_SESSION_ID
+from ai_hats_observe.trace import ENV_SESSION_ID
 
+from . import ownership
+from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
 from .wt_effects import WtWorktreeEffects
 

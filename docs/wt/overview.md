@@ -9,6 +9,7 @@ This document provides a conceptual and architectural overview of `ai-hats-wt`, 
 When an agent or developer starts work on a task (e.g. `rack transition HATS-XXX execute`), `ai-hats` isolates all code and configuration edits inside a dedicated **git worktree**.
 
 Key properties:
+
 - **Isolation by Default:** Code edits in the main repository checkout are prevented/discouraged to keep `master`/`main` clean.
 - **Dedicated Branching:** Worktrees are created on temporary task branches (`task/hats-XXX` or `ai-hats-wt-task-hats-XXX-...`).
 - **Clean Lifecycle Teardown:** Upon task completion, changes are merged back into the target branch (fast-forward or squash merge) or cleanly discarded.
@@ -35,12 +36,12 @@ Project-level worktree behavior (such as setting non-default base branches or me
 
 Concurrent worktree operations (such as parallel subagents creating or merging worktrees on the same repo) are protected against race conditions and git index corruption by a **4-tier concurrency model**:
 
-| Level | Lock Target / Scope | Purpose |
-| ----- | ------------------ | ------- |
-| **L1** | `<project>/.wt/state/<id>.lock` | Per-worktree state lock preventing concurrent mutations on the same worktree instance. |
-| **L2** | `<project>/.wt/manager.lock` | Global process lock serializing worktree creation (`git worktree add`) and removal. |
-| **L3** | `.git/index.lock` retries | Retries around git index lock contention during staging and commits. |
-| **L4** | `.git/refs/heads/<branch>.lock` retries | Retries around git ref lock contention during branch creation and merge operations. |
+| Level  | Lock Target / Scope                     | Purpose                                                                                |
+| ------ | --------------------------------------- | -------------------------------------------------------------------------------------- |
+| **L1** | `<project>/.wt/state/<id>.lock`         | Per-worktree state lock preventing concurrent mutations on the same worktree instance. |
+| **L2** | `<project>/.wt/manager.lock`            | Global process lock serializing worktree creation (`git worktree add`) and removal.    |
+| **L3** | `.git/index.lock` retries               | Retries around git index lock contention during staging and commits.                   |
+| **L4** | `.git/refs/heads/<branch>.lock` retries | Retries around git ref lock contention during branch creation and merge operations.    |
 
 For full concurrency rationale, see [ADR-0006](../adr/0006-worktree-concurrency-layered-defense.md).
 
@@ -78,4 +79,4 @@ The task tracker FSM (`packages/ai-hats-tracker` / `packages/ai-hats-rack`) has 
 - `teardown(task_id, target_state)` → Merges or discards worktree on `→ done`/`failed`/`cancelled`.
 - `assert_canonical_base()` → Refuses execution if HEAD is off `master`/`main`.
 
-For task lifecycle integration and FSM transition rules, see [how-to-backlog.md](../how-to-backlog.md) and [Worktree (wt) Glossary → needs_worktree effect](glossary.md#needs_worktree-effect).
+For task lifecycle integration and FSM transition rules, see [how-to-hatrack.md](../how-to-hatrack.md) and [Worktree (wt) Glossary → needs_worktree effect](glossary.md#needs_worktree-effect).
