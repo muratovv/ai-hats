@@ -1871,7 +1871,9 @@ class WorktreeManager:
         except (subprocess.CalledProcessError, FileNotFoundError):
             current_remote = None
 
-        local_drifted = current_local != self._base_sha_at_create
+        # HATS-1307: containment, not "did the base move since create". A
+        # rebased branch already holds every base commit — nothing is stale.
+        local_drifted = not self._is_ancestor(current_local, self.branch_name)
         # HATS-487: real remote drift means remote has commits NOT in
         # local — equivalent to "remote is NOT an ancestor of local".
         # Unpushed local work (local is ancestor of remote? — no, the
@@ -1887,12 +1889,15 @@ class WorktreeManager:
         if not local_drifted and not remote_drifted:
             return
 
-        lines = [f"Worktree base '{self._original_branch}' drifted since worktree was created."]
+        lines = [
+            f"Worktree base '{self._original_branch}' drifted — branch "
+            f"'{self.branch_name}' does not contain its latest commits."
+        ]
         if local_drifted:
-            n, paths = self._drift_summary(self._base_sha_at_create, current_local)
+            n, paths = self._drift_summary(self.branch_name, current_local)
             lines.append(
-                f"  local: {self._short(self._base_sha_at_create)} → "
-                f"{self._short(current_local)} ({n} commit{'s' if n != 1 else ''} ahead)"
+                f"  local: {self._original_branch} ({self._short(current_local)}) is "
+                f"{n} commit{'s' if n != 1 else ''} ahead of the branch's merge-base"
             )
             if paths:
                 lines.append("  affected paths (local drift):")
@@ -1916,14 +1921,19 @@ class WorktreeManager:
         raise WorktreeDriftError("\n".join(lines))
 
     def _drift_summary(self, base: str, head: str) -> tuple[int, list[str]]:
-        """Return (commit count, capped affected-path list) for base..head."""
+        """Return (commit count, capped affected-path list) for base..head.
+
+        HATS-1307: the path diff is three-dot (from the merge-base) so it
+        lists only what ``head`` added — two-dot also reported ``base``-side
+        work as a reversed change.
+        """
         try:
             n_str = self._git("rev-list", "--count", f"{base}..{head}").stdout.strip()
             n = int(n_str) if n_str else 0
         except (subprocess.CalledProcessError, ValueError):
             n = 0
         try:
-            diff = self._git("diff", "--name-only", f"{base}..{head}").stdout
+            diff = self._git("diff", "--name-only", f"{base}...{head}").stdout
         except subprocess.CalledProcessError:
             diff = ""
         paths = [line for line in diff.splitlines() if line.strip()]

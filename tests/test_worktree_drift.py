@@ -159,6 +159,34 @@ class TestDriftDetection:
         assert "c.txt" in msg
 
 
+class TestRebasedBranchNotDrift:
+    """HATS-1307: drift is *containment*, not "did the base move".
+
+    A branch rebased onto the moved base already contains every base commit —
+    nothing is stale, so a refusal sends the operator to ``--accept-drift``
+    for a no-op. Worse, ``rack transition <id> done`` has no such flag, so the
+    false refusal dead-ends the auto-merge path entirely.
+    """
+
+    def test_rebased_branch_merges_clean(self, git_project: Path) -> None:
+        """`git rebase <base>` in the worktree clears drift without a flag."""
+        base = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        mgr = WorktreeManager(git_project, branch_name="task/rebased")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Another agent's worktree merged first — base moved under us.
+        _make_main_commit(git_project, "other-agent.txt")
+        # The documented remedy: re-verify against the new base, then rebase.
+        _git(wt_path, "rebase", base)
+
+        mgr.merge()  # no exception
+
+        listing = _git(git_project, "branch", "--list", "task/rebased").stdout
+        assert listing.strip() == ""
+
+
 class TestLegacyStateCompat:
     def test_legacy_state_no_field_skips_check(self, git_project: Path) -> None:
         """Pre-HATS-457 state files have no ``base_sha_at_create`` — skip."""
