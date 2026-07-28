@@ -22,9 +22,12 @@ prompt or path reaches the agent / filesystem):
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from .paths import ai_hats_dir
+
+logger = logging.getLogger(__name__)
 
 PLACEHOLDER = "<ai_hats_dir>"
 
@@ -56,39 +59,75 @@ def expand_path_placeholders(text: str, project_dir: Path) -> str:
 FSM_EDGES_TOKEN = "{{backlog_fsm_edges}}"
 
 
-def render_backlog_fsm_edges() -> str:
-    """Render this backlog's FSM edge set as a compact markdown table.
+#: Rendered in place of the table when the project's backlog will not load. Names
+#: the loud channel: every rack verb fails on that same file (HATS-1257).
+FSM_EDGES_UNAVAILABLE = (
+    "_FSM edge table unavailable: this project's `backlog.yaml` did not load. "
+    "Run `rack ls` to see the error._"
+)
 
-    Source of truth: ``TaskState.valid_transitions()`` (topology parity with
-    rack ``fsm.yaml`` is a kernel contract) — no cross-package dependency on
-    ``ai-hats-rack``. Post-HATS-1042 the source swaps to the resolved
-    ``backlog.yaml``; the token and this renderer stay, only the lookup moves.
+
+def render_backlog_fsm_edges(project_dir: Path) -> str:
+    """Render this project's backlog FSM edge set as a compact markdown table.
+
+    Source of truth: the definition rack itself resolves for the tasks catalog —
+    a catalog's own ``backlog.yaml`` wins, packaged default otherwise. The
+    prompt table and the CLI's refusal are then two views of ONE file rather
+    than a mirror kept in sync by a test (HATS-1257 completes HATS-1042).
+
+    An edge carrying a ``name:`` is annotated with it — that name is typeable in
+    place of the target state (``rack transition <ID> reclaim``).
     """
-    from ai_hats.models import TaskState
-
-    transitions = TaskState.valid_transitions()
+    defn = _resolve_backlog(project_dir)
+    if defn is None:
+        return FSM_EDGES_UNAVAILABLE
+    topology = defn.topology
     lines = [
         "| From state | Legal transitions |",
         "| ---------- | ----------------- |",
     ]
-    for state in TaskState:
-        targets = transitions.get(state, [])
-        if targets:
-            cell = ", ".join(f"`{target.value}`" for target in targets)
-        else:
-            cell = "_(terminal — no outgoing edges)_"
-        lines.append(f"| `{state.value}` | {cell} |")
+    for state in topology.states:
+        cell = ", ".join(_edge_cell(defn, state, to) for to in topology.edges.get(state, ()))
+        lines.append(f"| `{state}` | {cell or '_(terminal — no outgoing edges)_'} |")
     return "\n".join(lines)
 
 
-def expand_fsm_edges_token(text: str) -> str:
+def _edge_cell(defn, from_state: str, to_state: str) -> str:
+    name = defn.edge_names.get((from_state, to_state))
+    return f"`{to_state}` ({name})" if name else f"`{to_state}`"
+
+
+def _resolve_backlog(project_dir: Path):
+    """The project's tasks-backlog definition, or ``None`` when it will not load.
+
+    Degrades rather than raising: the prompt must still render for the agent who
+    would fix the broken file, and the failure is already loud on every rack
+    verb. Broad catch on purpose — nothing is swallowed (warning + marker).
+    """
+    from ai_hats_rack.definition import resolve_definition
+
+    from .paths import tasks_dir
+
+    try:
+        return resolve_definition(tasks_dir(project_dir), project_dir=project_dir)
+    except Exception:  # noqa: BLE001 — see docstring
+        logger.warning(
+            "Could not resolve the backlog definition for %s; the FSM edge table "
+            "is omitted from the composed prompt. Run `rack ls` for the error.",
+            project_dir,
+            exc_info=True,
+        )
+        return None
+
+
+def expand_fsm_edges_token(text: str, project_dir: Path) -> str:
     """Replace ``{{backlog_fsm_edges}}`` with the rendered FSM edge table.
 
     Absent token → no-op (a skill that carries no token is returned unchanged).
     Idempotent: after substitution the token is gone, so a second pass is a
     no-op. The renderer is called only when the token is present, so skills
-    without it never pay the model import.
+    without it never pay the resolution.
     """
     if FSM_EDGES_TOKEN not in text:
         return text
-    return text.replace(FSM_EDGES_TOKEN, render_backlog_fsm_edges())
+    return text.replace(FSM_EDGES_TOKEN, render_backlog_fsm_edges(project_dir))
