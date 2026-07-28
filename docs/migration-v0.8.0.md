@@ -1,5 +1,9 @@
 # Migration: v0.7.0 → v0.8.0
 
+> **Historical record.** The commands below are the **v0.8 CLI surface**, kept
+> verbatim so this guide still describes the upgrade it documents. Today's
+> backlog CLI is `rack` — see [how-to-hatrack.md](how-to-hatrack.md).
+
 `v0.8.0` is a MAJOR bump under the pre-1.0 `0.MAJOR.MINOR` scheme: it removes
 two commands from the stable CLI surface. Both removals are mechanical to
 migrate — the underlying capability is preserved or replaced one-to-one.

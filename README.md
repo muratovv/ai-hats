@@ -42,7 +42,7 @@ ai-hats answers this with two things:
 ```
 roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
                     ├── rules: git_workflow, tdd
-                    ├── skills: backlog-manager, git-mastery
+                    ├── skills: hatrack, git-mastery
                     └── injection → composed per session, delivered per surface
 ```
 
@@ -251,7 +251,7 @@ Roles compose from traits + rules + skills, a flat model, a task state machine, 
 
 **[3]** — [`docs/how-to.md`](docs/how-to.md) — `ai-hats.yaml` overlay recipes and alternative install paths.
 
-**[4]** — [`docs/how-to-backlog.md`](docs/how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+**[4]** — [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
 
 **[5]** — [`docs/how-to-advanced.md`](docs/how-to-advanced.md) — advanced flows: custom pipeline steps (§1), worktree workflow (§2).
 

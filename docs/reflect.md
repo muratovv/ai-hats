@@ -31,8 +31,8 @@ session_end (hook → auto_retro)
                    failed_session_id=<sid>; deduped per session)
 
   Side effects during the LLM call (via CLI from inside the sub-Claude):
-    - ai-hats task hyp append-verdict ...      (HYP validation_log)
-    - ai-hats task proposal create | vote ...  (inbox grow / co-sign)
+    - rack hyp append-verdict ...              (HYP validation_log)
+    - rack proposal create | vote ...          (inbox grow / co-sign)
 
   Recursion guard:
     HATS_SKIP_RETRO=1 propagates to the sub-Claude session via
@@ -54,10 +54,12 @@ Per-session `session-reviewer` run. Output is `hats-session-review/v1`
 markdown at `<ai_hats_dir>/sessions/retros/sessions/<id>.md`.
 
 Triggers:
+
 - **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
 Validation contract:
+
 - One `hypothesis_verdicts[]` entry per active HYP (no skipping).
 - Verdict ∈ `{confirmed, refuted, inconclusive, n/a}`.
 - `n/a` only when the session physically cannot test the HYP.
@@ -99,7 +101,7 @@ Manual triage of accumulated backlog. Two stages:
 
 `src/ai_hats/retro/loader.py` routes by `schema:` family:
 
-| Family | Model | Producer |
-|---|---|---|
-| `hats-session-review/v1`  | `SessionReviewV1`  | session-reviewer (current) |
+| Family                    | Model              | Producer                              |
+| ------------------------- | ------------------ | ------------------------------------- |
+| `hats-session-review/v1`  | `SessionReviewV1`  | session-reviewer (current)            |
 | `hats-reflect-session/v1` | `ReflectSessionV1` | historical (pre-HATS-252) — read-only |
