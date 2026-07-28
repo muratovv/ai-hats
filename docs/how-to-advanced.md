@@ -396,7 +396,7 @@ The env var wins over `harness.repo` for that run only; the persisted config is 
 
 **[1]** — [`docs/how-to-configure.md`](how-to-configure.md) — first-time setup, role pick, provider, feedback policy.
 
-**[2]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+**[2]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
 
 **[3]** — [`docs/adr/0001-pipelines-as-typed-dataflow.md`](adr/0001-pipelines-as-typed-dataflow.md) — `Step` / `StepIO` / `Pipeline` contract (ADR-0001).
 

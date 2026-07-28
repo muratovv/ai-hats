@@ -455,4 +455,4 @@ Run `ai-hats reflect all` to start the triage.
 **[3]** — [`tests/fixtures/real_backlog/PROP-001-sample.yaml`](../tests/fixtures/real_backlog/PROP-001-sample.yaml) — synthetic proposal fixture.
 ```
 
-Reference docs already on this style: [`docs/how-to-backlog.md`](docs/how-to-backlog.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
+Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).

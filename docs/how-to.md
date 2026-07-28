@@ -346,7 +346,7 @@ For deeper dives — first-time setup walkthrough [2], the reflect-session / ref
 
 **[3]** — [`docs/how-to-feedback-loop.md`](how-to-feedback-loop.md) — setup and usage of the reflect-session / reflect-all cycle (policies, hypotheses, harness validation).
 
-**[4]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+**[4]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
 
 **[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
 

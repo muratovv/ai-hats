@@ -122,12 +122,12 @@ feedback:
 
 ### Policies for `session_retro.policy`
 
-| Value    | Behavior on `session_end`                                                                            |
-| -------- | ---------------------------------------------------------------------------------------------------- |
-| `off`    | nothing happens                                                                                      |
-| `always` | retro always runs                                                                                    |
-| `smart`  | retro runs when `turns ≥ min_turns` **OR** `tool_calls ≥ min_tool_calls` (either trigger is enough)  |
-| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually"         |
+| Value    | Behavior on `session_end`                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| `off`    | nothing happens                                                                                     |
+| `always` | retro always runs                                                                                   |
+| `smart`  | retro runs when `turns ≥ min_turns` **OR** `tool_calls ≥ min_tool_calls` (either trigger is enough) |
+| `hint`   | checks the threshold but instead of running shows a banner "consider running retro manually"        |
 
 The smart-threshold condition is **OR**, not AND — crossing either limit fires the retro.
 
@@ -286,13 +286,13 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 ## Troubleshooting checklist
 
-| Symptom                                       | Where to look                                                                                                                                                                |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                     |
-| validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                         |
+| Symptom                                       | Where to look                                                                                                                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                             |
+| validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                                 |
 | meta-PROP with `failed_session_id=...`        | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
-| `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                |
-| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                    |
+| `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                        |
+| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                            |
 
 ---
 
@@ -324,4 +324,4 @@ Worked example: the synthetic HYP fixture shows a hypothesis after two appended 
 
 **[13]** — [`docs/glossary.md`](glossary.md) — naming source-of-truth for ai-hats core terms.
 
-**[14]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — day-to-day `ai-hats task` / `task hyp` / `task proposal` recipes.
+**[14]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
