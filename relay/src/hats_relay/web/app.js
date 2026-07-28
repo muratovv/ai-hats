@@ -54,8 +54,10 @@ fit.fit();
 term.focus();
 
 const params = new URLSearchParams(location.search);
-const sid = params.get("sid");
 const token = params.get("token") || "";
+// Which session this page is on. Null is a real state, not an error: a link may carry
+// no sid, and killing the session you are on puts you back into it.
+let current = params.get("sid");
 
 // One connection serves one session: `list` and `kill` are answered and then closed by
 // the broker, and a connection that is already ATTACHED refuses every op but `resize`
@@ -90,7 +92,7 @@ function attach() {
   socket.binaryType = "arraybuffer";
 
   socket.addEventListener("open", () => {
-    const request = { op: "attach", sid, cols: term.cols, rows: term.rows };
+    const request = { op: "attach", sid: current, cols: term.cols, rows: term.rows };
     if (token) request.token = token;
     socket.send(JSON.stringify(request));
   });
@@ -112,8 +114,10 @@ function attach() {
   });
 
   socket.addEventListener("close", () => {
+    // `current` is null when this page killed its own session and already said so.
     // Only speak up if nothing already explained why — an eviction or a dead session
     // has a better message than "closed", and it arrived before this.
+    if (!current) return;
     if (!status.dataset.kind) say("connection closed — reload to re-attach", "ended");
   });
 
@@ -133,6 +137,7 @@ function onControl(text) {
     return;
   }
   if (message.event === "exit") {
+    if (!current) return;
     // A killed session is reaped without a code; "exited (null)" would read as a bug.
     const how = message.returncode === null || message.returncode === undefined
       ? "session ended"
@@ -173,6 +178,9 @@ new ResizeObserver(() => {
 
 // ---------------------------------------------------------------- session drawer
 
+const POLL_MS = 2000;
+let poll = null;
+
 function ago(createdAt) {
   const seconds = Math.max(0, Date.now() / 1000 - createdAt);
   if (seconds < 60) return `${Math.floor(seconds)}s`;
@@ -205,7 +213,7 @@ function disarm() {
 }
 
 function go(target) {
-  if (target === sid) {
+  if (target === current) {
     setMenu(false);
     return;
   }
@@ -213,13 +221,28 @@ function go(target) {
   location.assign(`${location.pathname}?${query}`);
 }
 
+function detach(message) {
+  // Killing the session this page is ON would otherwise leave it staring at a dead
+  // screen. Land where a sid-less link lands, and drop the dead sid from the URL so a
+  // reload does not return to it. `say` comes first: it marks the status as spoken for,
+  // which is what keeps the socket's own close handler quiet.
+  say(message, "ended");
+  current = null;
+  if (socket) socket.close();
+  socket = null;
+  term.reset();
+  history.replaceState({}, "", token ? `${location.pathname}?token=${token}` : location.pathname);
+}
+
 async function kill(target) {
+  const own = target === current;
   try {
     await control("kill", { sid: target });
   } catch (exc) {
     notice(exc.message);
     return;
   }
+  if (own) detach("session killed — pick another from the menu");
   await refresh();
 }
 
@@ -231,7 +254,7 @@ function row(session) {
   const pick = document.createElement("button");
   pick.type = "button";
   pick.className = "pick";
-  if (session.sid === sid) pick.setAttribute("aria-current", "true");
+  if (session.sid === current) pick.setAttribute("aria-current", "true");
   const role = document.createElement("span");
   role.className = "role";
   role.textContent = (session.spec && session.spec.role) || "?";
@@ -262,16 +285,35 @@ function row(session) {
   return item;
 }
 
-async function refresh() {
-  notice("loading…");
+// What a row is built from. Age is deliberately absent: it changes every second, and
+// rebuilding the list on that would drop the armed kill and whatever holds focus.
+function signature(sessions) {
+  return sessions.map((s) => `${s.sid}:${s.exited}:${s.clients}`).join("|");
+}
+
+let rendered = "";
+
+async function refresh(quiet = false) {
+  if (!quiet) notice("loading…");
   let reply;
   try {
     reply = await control("list");
   } catch (exc) {
     notice(exc.message);
+    rendered = "";
     return;
   }
   const sessions = reply.sessions || [];
+  const now = signature(sessions);
+  if (quiet && now === rendered) {
+    // Nothing came or went, so leave the DOM alone and just let the ages tick.
+    for (const session of sessions) {
+      const meta = sessionList.querySelector(`.session[data-sid="${session.sid}"] .meta`);
+      if (meta) meta.textContent = describe(session);
+    }
+    return;
+  }
+  rendered = now;
   if (!sessions.length) {
     notice("no live sessions");
     return;
@@ -288,12 +330,18 @@ function setMenu(open) {
   document.body.classList.toggle("menu-open", open);
   drawer.setAttribute("aria-hidden", String(!open));
   menuToggle.setAttribute("aria-expanded", String(open));
+  clearInterval(poll);
   if (open) {
     // Focus has to leave the terminal, or keystrokes meant for the menu reach the
     // session; the close button is the one target that exists before the list loads.
     document.getElementById("menu-close").focus();
     refresh();
+    // The list is otherwise a snapshot: a session that starts or dies elsewhere leaves
+    // an open drawer showing something that is no longer true.
+    poll = setInterval(() => refresh(true), POLL_MS);
   } else {
+    poll = null;
+    rendered = "";
     disarm();
     term.focus();
   }
@@ -310,7 +358,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-if (sid) {
+if (current) {
   attach();
 } else {
   // A missing sid is not an error: the token is the durable capability and the sid is
