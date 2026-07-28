@@ -126,7 +126,14 @@ def test_link_unknown_kind_is_typed(tasks_dir):
     with pytest.raises(UnknownLinkKindError) as err:
         link(tasks_dir, "T-1", "T-2", "blocks")
     # the refusal names the configured set so the caller can self-correct
-    assert set(err.value.configured) == {"parent_task", "children", "depends_on", "related"}
+    assert set(err.value.configured) == {
+        "parent_task",
+        "children",
+        "depends_on",
+        "related",
+        "see_also",
+        "folded_into",
+    }
 
 
 def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
@@ -313,6 +320,20 @@ def test_scan_filters_and_combine(tasks_dir):
     assert [r.id for r in scan_cards(tasks_dir)] == ["T-1", "T-2", "T-3"]
 
 
+def test_scan_row_carries_completed_at_for_windowing(tasks_dir):
+    # HATS-1279: the only time signal on a listing row. Without it a caller
+    # windowing "closed since T" has to read every card, so `judge-auditor-
+    # protocol` shipped a recipe using a flag that never existed.
+    make_card(tasks_dir, "T-1", state="done", completed_at="2026-07-20T10:00:00Z")
+    make_card(tasks_dir, "T-2", state="execute")
+    rows = {r.id: r for r in scan_cards(tasks_dir)}
+    assert rows["T-1"].completed_at == "2026-07-20T10:00:00Z"
+    assert rows["T-1"].to_dict()["completed_at"] == "2026-07-20T10:00:00Z"
+    # unset stays absent — the row projection is emit-when-set, like backlog/project
+    assert rows["T-2"].completed_at == ""
+    assert "completed_at" not in rows["T-2"].to_dict()
+
+
 def test_scan_skips_corrupt_card(tasks_dir):
     make_card(tasks_dir, "T-1")
     bad = tasks_dir / "T-2" / "task.yaml"
@@ -352,7 +373,8 @@ def test_context_full_package(tasks_dir):
     pkg = build_context(tasks_dir, "T-2")
     assert pkg.task.id == "T-2"
     assert [d.name for d in pkg.documents] == ["notes.md"]
-    # one top-level links map, registry order: parent_task, depends_on, related, children
+    # one top-level links map in registry order; see_also/folded_into are unset
+    # on this card and empty kinds are omitted from the projection
     assert list(pkg.links) == ["parent_task", "depends_on", "related", "children"]
     (parent,) = pkg.links["parent_task"]
     assert parent.id == "T-1"
@@ -377,6 +399,24 @@ def test_context_root_card_rides_in_full(tasks_dir):
     assert head == pkg.task.to_dict()
     assert [e["message"] for e in head["work_log"]] == ["started"]
     assert {"reviewer", "assignee", "role", "created", "updated"} <= set(head)
+
+
+def test_context_surfaces_see_also_and_folded_into(tasks_dir):
+    # HATS-1279: both were typed storage in models.py long before they were
+    # declared kinds, so ten live cards carried edges `context` could not see —
+    # `resolve_links` walks the registry, and an undeclared kind is invisible.
+    make_card(tasks_dir, "T-1", see_also=["T-2"], folded_into="T-3")
+    make_card(tasks_dir, "T-2", title="soft pointer")
+    make_card(tasks_dir, "T-3", title="subsumed by", state="done")
+    (tasks_dir / "T-3" / "summary.md").write_text("where the work went")
+    pkg = build_context(tasks_dir, "T-1")
+    (also,) = pkg.links["see_also"]
+    assert also.id == "T-2"
+    (fold,) = pkg.links["folded_into"]
+    assert fold.id == "T-3"
+    # read_docs earns folded_into its summary path: the pointer exists to answer
+    # "where did this work go".
+    assert [d.name for d in fold.docs] == ["summary.md"]
 
 
 def test_context_dangling_link_is_skipped(tasks_dir):

@@ -418,6 +418,10 @@ class CardRow:
     #: root_id of the project this row came from — set only on a cross-project
     #: scan (`--root`/`--projects`, HATS-1081); empty on a single-project scan.
     project: str = ""
+    #: close timestamp stamped by stamp-lifecycle on a terminal transition
+    #: (HATS-1279) — the only time signal on a row, so a caller can window a
+    #: scan (`--state done` since T) without a read per card. Empty when unset.
+    completed_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         row = {
@@ -432,6 +436,8 @@ class CardRow:
             row["backlog"] = self.backlog
         if self.project:
             row["project"] = self.project
+        if self.completed_at:
+            row["completed_at"] = self.completed_at
         return row
 
 
@@ -494,6 +500,7 @@ def scan_cards(
                 tuple(card.tags),
                 backlog=backlog,
                 project=project,
+                completed_at=card.completed_at,
             )
         )
     return rows

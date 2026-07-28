@@ -55,19 +55,39 @@ def _write(path, **fields):
 
 def test_packaged_default_kinds():
     reg = load_registry()
-    assert reg.names() == ("parent_task", "depends_on", "related", "children")
+    assert reg.names() == (
+        "parent_task",
+        "depends_on",
+        "related",
+        "see_also",
+        "folded_into",
+        "children",
+    )
     assert reg.hierarchy_kind.name == "parent_task"
     assert reg.children_kind.name == "children"
     assert reg.get("depends_on").aliases == ("depends",)
     assert reg.require("depends").name == "depends_on"  # alias resolves
     assert reg.get("related").symmetric is True
+    # HATS-1279: see_also is symmetric like related; folded_into is the one
+    # directional scalar kind — FROM.folded_into = TO, no auto-mirror.
+    assert reg.get("see_also").symmetric is True
+    assert reg.get("folded_into").arity == "one"
+    assert reg.get("folded_into").symmetric is False
+    assert reg.require("fold").name == "folded_into"  # legacy spelling resolves
 
 
 def test_unknown_kind_names_the_configured_set():
     reg = load_registry()
     with pytest.raises(UnknownLinkKindError) as err:
         reg.require("blocks")
-    assert err.value.configured == ("parent_task", "depends_on", "related", "children")
+    assert err.value.configured == (
+        "parent_task",
+        "depends_on",
+        "related",
+        "see_also",
+        "folded_into",
+        "children",
+    )
 
 
 def test_dangling_inverse_is_rejected(tmp_path):

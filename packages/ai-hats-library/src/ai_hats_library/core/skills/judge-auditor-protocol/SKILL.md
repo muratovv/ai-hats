@@ -6,79 +6,70 @@ license: MIT
 
 # Judge Auditor Protocol
 
-Read-only audit protocol for the **judge-auditor** role (Phase 1 of the
-two-phase judge split — HATS-513 / ADR-0007). Runs headless via
-`SubAgentRunner` from `ai-hats reflect hypothesis [--headless]`. Produces
-a **draft** report with proposed verdicts and proposed mutations; the
-HITL `judge` session (Phase 2) consumes it.
+Phase 1 of the two-phase judge split (HATS-513 / ADR-0007). Runs headless via
+`SubAgentRunner` from `ai-hats reflect hypothesis [--headless]`. Produce a
+**draft** — proposed verdicts, proposed mutations — for the HITL `judge` session
+(Phase 2) to consume.
 
 ## When to Use
 
-You were launched as **judge-auditor**. The first user message contains
-a handoff listing active hypotheses and the open proposal inbox. Apply
-this protocol end-to-end and emit a single artifact between
-`BEGIN_JUDGE_DRAFT` / `END_JUDGE_DRAFT` markers.
+You were launched as **judge-auditor**. The first user message hands you the
+active hypotheses and the open proposal inbox. Work Steps 1–4 in order, then
+emit one artifact between `BEGIN_JUDGE_DRAFT` / `END_JUDGE_DRAFT`.
 
-You operate at **L0** (`base-auditor` baseline): no CLI invocations, no
-source-file edits, no mid-run dialogue. Every CLI verb listed in the
-table below names what Phase 2 (`judge`) should execute — never invoke
-it yourself.
+**L0 contract** (`base-auditor` baseline) — the single rule behind every
+"record, do not run" below:
 
-## Step 1 — Read the previous judge report
+- **Mutate nothing.** No state-changing CLI (`rack create`, `rack transition`,
+  `rack hyp …`, `ai-hats reflect commit`), no source edits, no `.agent/**`
+  writes, no `Write` tool — the pipeline persists your draft, not you.
+- **Read freely.** `rack ls`, `rack context`, `git log`, and the Read / Glob
+  tools are inspection, not mutation.
+- **Never open mid-run dialogue.**
+- **Record, do NOT invoke.** Every CLI verb below is Phase 2's to execute.
 
-Use the **Glob** tool with pattern
-`<ai_hats_dir>/sessions/retros/judge/*-report.md`, then **Read** the
-lexicographically last entry (filenames sort by ISO-8601 UTC timestamp,
-so the last one is the most recent). If the directory is empty (first
-run ever), skip this step.
+## Step 1 — Read the previous report
 
-Note prior verdicts and trends — they inform "keep" vs "extend"
-recommendations this run. Extract the prior report's UTC timestamp from
-its filename (e.g. `2026-05-18T14-06-17Z-report.md` →
-`2026-05-18T14:06:17Z`); Step 1.5 needs it as window lower-bound.
+Glob `<ai_hats_dir>/sessions/retros/judge/*-report.md` and Read the
+lexicographically last hit — filenames sort by ISO-8601 UTC, so last is newest.
+Empty directory (first run ever) → skip this step.
 
-> `*-draft.md` files (your own prior drafts) are NOT prior reports —
-> they are pre-Phase-2 artifacts. Read the latest `*-report.md` only.
+Take two things from it:
 
-## Step 1.5 — Inventory deliverables since prior report
+- prior verdicts and trends, which inform "keep" vs "extend" this run;
+- the timestamp in the filename (`2026-05-18T14-06-17Z-report.md` →
+  `2026-05-18T14:06:17Z`) — Step 1.5 needs it as `$PRIOR_TS`.
 
-Before walking HYPs/PROPs, list what was shipped in the window. This
-forces a contrast-first frame: any later "regress / pain" claim is
-compared against an explicit shipped list, not asserted in a vacuum.
+Ignore `*-draft.md`: those are your own pre-Phase-2 artifacts, not reports.
 
-Window:
+## Step 1.5 — Inventory deliverables
 
-- If a prior report exists → `[prior_report_iso_ts, now]` (ts from
-  Step 1).
-- First-run-ever (no prior) → last 7 days.
+List what shipped in the window *before* walking HYPs/PROPs, so any later
+"regress / pain" claim is weighed against an explicit shipped list rather than
+asserted in a vacuum.
 
-Two source-of-truth invocations (run both via **Bash**; you may **read**
-the output but NOT mutate state):
+Window: `[$PRIOR_TS, now]` — or the last 7 days on a first run ever.
 
 ```bash
-# HATS-790: no bin/ai-hats console script — fallback runs the venv module.
-ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-ah task list --state done --updated-since "$PRIOR_TS"
+rack ls --state done --all --json \
+  | jq --arg since "$PRIOR_TS" '[.tasks[] | select(.completed_at >= $since)]'
 git log --since="$PRIOR_TS" --oneline
 ```
 
-`task list` is read-only — it does not violate the L0 CLI-ban. The ban
-covers state-mutating verbs (`task create`, `task hyp ...`,
-`reflect commit`); `list` and `show` are inspection-only and allowed.
+Keep `--all`: the default caps at 30 id-sorted rows and reports
+`"capped": true`, so without it you audit the *oldest* done cards, not the
+window. Cards closed before `completed_at` existed carry no such key and drop
+out of the filter.
 
-Record the result in the draft's `## Deliverables since prior report`
-section. Empty window → `(none)`, but mark this as a signal — see Edge
-Cases.
+Record under `## Deliverables since prior report`; empty window → `(none)`, and
+treat that as signal (see Edge Cases).
 
-## Step 2 — Walk active hypotheses (propose, do NOT persist)
+## Step 2 — Walk active hypotheses
 
-The handoff lists active HYPs with their `success_criterion`,
-`observation_window`, `last_rule_revision_date`, and recent verdicts.
-For each HYP, follow **review-hypothesis** to choose verdict +
-recommendation, then **record the proposed verdict in the draft's
-`## Proposed mutations` section**. Do NOT invoke
-`rack hyp append-verdict` / the status edge — Phase 2 will run
-these after supervisor ack.
+For each active HYP in the handoff — it carries `success_criterion`,
+`observation_window`, `last_rule_revision_date`, and recent verdicts — follow
+**review-hypothesis** to pick a verdict + recommendation, then record it under
+`## Proposed mutations`.
 
 | Decision shorthand | review-hypothesis verdict | recommendation            | Phase-2 CLI (record, do not run)                            |
 | ------------------ | ------------------------- | ------------------------- | ----------------------------------------------------------- |
@@ -89,63 +80,45 @@ these after supervisor ack.
 | `extend`           | (verdict per evidence)    | `extend_window`           | `rack hyp append-verdict ...`                               |
 | `stalled`          | —                         | —                         | `rack transition … stall`                                   |
 
-## Step 3 — Walk open proposals (propose, do NOT persist)
+## Step 3 — Walk open proposals
 
-For each open PROP in the handoff, follow **review-proposal** to decide
-one of `accept | reject | defer | duplicate`. **Record** the proposed
-decisions in the draft; the **bulk commit** (`reflect commit`) is Phase
-2's job.
+For each open PROP, follow **review-proposal** to decide
+`accept | reject | defer | duplicate`, and record it. The bulk
+`ai-hats reflect commit` is Phase 2's.
 
-**Cost-citation heuristic** (symmetric with **review-proposal** Step 3):
+Apply the cost-citation heuristic (symmetric with **review-proposal** Step 3):
 
-- PROP with **cited concrete cost** in `--rationale` → recommend
-  patience; keep open longer, especially for `rule` / `process`
-  categories.
-- PROP with **uncited pain claim** open ≥ 1 sweep cycle → recommend
-  `defer` (if it has ≥1 vote) or `reject` (no votes).
+- Cited concrete cost in `--rationale` → recommend patience; keep it open
+  longer, especially for `rule` / `process`.
+- Uncited pain claim open ≥ 1 sweep cycle → `defer` with ≥1 vote, `reject`
+  with none.
 
-For each PROP you recommend accepting, also record the proposed
-follow-up task title and one-line description in the draft — Phase 2
-runs `rack create` after supervisor confirms.
+For every PROP you recommend accepting, also record a follow-up task title and
+one-line description — Phase 2 runs `rack create` after the supervisor confirms.
 
-## Step 3.5 — Counter-claims pass (devil's advocate)
+## Step 3.5 — Counter-claims pass
 
-Before emitting the draft, draft any negative observations destined for
-`## Notes` (regress / pain / concern / under-delivery) and run each
-through the counter-pass below. The goal is to surface contrast and
-verification **as visible artifacts** in the draft, not as silent
-in-head checks.
+Draft the negative observations destined for `## Notes` (regress / pain /
+concern / under-delivery), then run each through the four checks below. Surface
+the outcome as a visible artifact, not a silent in-head check.
 
-For each drafted negative claim, ask:
+1. **Count check** — measured or assumed? Assumed → re-count, or drop the number.
+2. **Variance vs failure** — a failure mode, or expected variance for the event class?
+3. **Shipped vs in-flight** — a regression in a production contract, or dev work that has not shipped?
+4. **Survivor bias** — weighting 3 problem tickets against zero acknowledgment of N shipped items?
 
-1. **Count check.** Is the number measured or assumed? If assumed —
-   re-count or drop the number.
-2. **Variance vs failure.** Is this a failure mode or expected variance
-   for the event class?
-3. **Shipped vs in-flight.** Does the claim describe a regression in a
-   production contract, or in-flight dev work that hasn't shipped yet?
-4. **Survivor bias.** Am I weighting 3 problem tickets against zero
-   acknowledgment of N shipped items from `## Deliverables`?
-
-Record each drafted claim with one of: `kept (verified: <cite>)`,
-`downgraded to observation`, or `dropped (<reason>)`. Write the result
-to the draft's `## Counter-claims` section.
-
-If you end Step 3.5 with `## Counter-claims = (none)` but `## Notes`
-still contains negative claims — you skipped the pass. Return to it.
+Record each claim under `## Counter-claims` as `kept (verified: <cite>)`,
+`downgraded to observation`, or `dropped (<reason>)`.
 
 ## Step 4 — Emit the draft
 
-Emit the draft as a single block between explicit markers. The pipeline
-`extract_marker` step (Phase 1 pipeline YAML) captures the body between
-the markers and `save_artifact` writes it to
-`<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`. **Do not use the
-`Write` tool** — your L0 baseline forbids direct filesystem writes;
-the pipeline persists the artifact.
+Emit one block between the markers. The pipeline's `extract_marker` step
+captures the body; `save_artifact` writes
+`<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`.
 
-Template (section order is load-bearing — Deliverables before
-Hypotheses; Counter-claims before Notes; Proposed mutations last so
-Phase 2 can scan-and-execute):
+Hold the section order — Deliverables before Hypotheses, Counter-claims before
+Notes, Proposed mutations last so Phase 2 can scan and execute. Empty sections
+are fine: write `(none)`.
 
 ````markdown
 BEGIN_JUDGE_DRAFT
@@ -183,8 +156,8 @@ claims weaken any PROP they source.>
 
 ## Proposed mutations
 
-<one CLI invocation per line — these are recommendations for Phase 2,
-not actions you have taken. Phase 2 runs them after supervisor ack.>
+<one CLI invocation per line — recommendations for Phase 2, not actions
+you have taken. Phase 2 runs them after supervisor ack.>
 
 ```bash
 rack hyp append-verdict HYP-NNN --verdict <verdict> --recommendation <rec> --evidence "<reason>"
@@ -197,31 +170,16 @@ rack create "<title from accepted PROP-NNN>" --description "<from PROP body>"
 END_JUDGE_DRAFT
 ````
 
-Empty sections are fine (use a `(none)` line) — the next judge needs
-this artifact to drive Phase 2.
-
 ## Edge Cases
 
-- **Empty inbox + no active HYPs** — still emit a draft with `(none)`
-  in each section. Phase 2 still opens and supervisor closes in 1 turn.
-- **Empty deliverables window** — `## Deliverables since prior report`
-  shows `(none)`. Treat this as signal in itself: a multi-day gap with
-  zero `state=done` movement is unusual and worth a Counter-claims
-  entry interrogating "was the window real or am I miscomputing it?".
-- **Counter-claims `(none)` but `## Notes` negative** — anti-pattern;
-  Step 3.5 was skipped. Return to it before emitting the draft.
-- **Conflicting PROPs** — recommend accepting one, mark the other
-  `duplicate` in `## Proposed mutations` with a note pointing to the
-  kept PROP.
-- **Tempted to run `rack hyp append-verdict` now** — STOP.
-  L0 baseline forbids state mutations. Record the verdict in the draft
-  under `## Proposed mutations`; Phase 2 will run it.
-
-## Scope
-
-L0 contract (per `base-auditor`): single artifact between
-`BEGIN_JUDGE_DRAFT` / `END_JUDGE_DRAFT` markers; no CLI mutations; no
-source-file edits; no `.agent/**` filesystem writes (the pipeline
-persists the draft, not you). Read-only `ai-hats list` / `ai-hats show`
-and read-only Bash (`git log`, file reads via Read tool) are allowed —
-they are inspection, not mutation.
+- **Empty inbox + no active HYPs** — still emit a draft, `(none)` in each
+  section. Phase 2 opens and the supervisor closes it in one turn.
+- **Empty deliverables window** — a multi-day gap with zero `state=done`
+  movement is unusual. Log a Counter-claims entry asking whether the window is
+  real or miscomputed.
+- **`## Counter-claims = (none)` while `## Notes` carries negative claims** —
+  you skipped Step 3.5. Go back before emitting.
+- **Conflicting PROPs** — recommend accepting one; mark the other `duplicate`
+  in `## Proposed mutations`, pointing at the kept PROP.
+- **Tempted to run `rack hyp append-verdict` now** — STOP. Record it under
+  `## Proposed mutations`; Phase 2 runs it.
