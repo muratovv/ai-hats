@@ -95,14 +95,14 @@ def test_scaffold_contains_approach_counter_in_position_c(git_project: Path) -> 
     """The real binary's plan scaffold carries `## Approach & counter`, between
     Requirements and Scope (fail-under-revert anchor)."""
     proj = git_project
-    # Numeric suffix, not the old `HATS-621S`: rack routes an id by
-    # `<prefix>-<digits>` only (workspace.py `_ID_RE`), see HATS-1263 report.
-    r = _run_rack(proj, "create", "Probe", "--id", "HATS-6211")
+    # A letter-suffixed id on purpose: it is what the real backlog once used, and
+    # rack must route it (HATS-1283 widened `ids._ID_RE`).
+    r = _run_rack(proj, "create", "Probe", "--id", "HATS-621S")
     assert r.returncode == 0, f"create failed: {r.stderr}"
-    r = _run_rack(proj, "transition", "HATS-6211", "plan")
+    r = _run_rack(proj, "transition", "HATS-621S", "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
-    scaffold = _plan_path(proj, "HATS-6211").read_text()
+    scaffold = _plan_path(proj, "HATS-621S").read_text()
     assert "## Approach & counter" in scaffold, (
         f"scaffold missing the conditional stage heading:\n{scaffold}"
     )

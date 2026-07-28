@@ -11,7 +11,6 @@ unqualified routing raises :class:`AmbiguousPrefixError` demanding ``<root>:<id>
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
@@ -22,6 +21,7 @@ from .definition import BacklogDefinition, load_backlog, resolve_definition
 from .dispatch import Subscriber, bind_subscribers, validate_requires_states
 from .errors import RackConfigError
 from .events import LinkMirrorEvent
+from .ids import prefix_of
 from .journal import JsonlJournalSink
 from .kernel import Kernel
 from .linked import card_exists
@@ -29,9 +29,6 @@ from .resolver import RackRoot
 
 #: A root's short identity — the qualifier the CLI accepts as ``<root>:<id>``.
 RootId = str
-
-#: An ``<id>`` is ``<prefix>-<number>``; the prefix routes it to a backlog.
-_ID_RE = re.compile(r"^(?P<prefix>.+)-\d+$")
 
 
 class WorkspaceError(RackConfigError):
@@ -186,7 +183,7 @@ class Workspace:
         unqualified -> :class:`AmbiguousPrefixError`."""
         qual_root, bare = _split_qualifier(item_id)
         want_root = root or qual_root
-        prefix = _prefix_of(bare)
+        prefix = prefix_of(bare)
         matches = [
             i
             for i in self.instances
@@ -269,7 +266,7 @@ class Workspace:
         its prefix routes to (ADR-0017 §2)? Unknown/foreign prefix -> ``False``
         (the caller raises its own not-found), never a routing exception."""
         qual_root, bare = _split_qualifier(item_id)
-        prefix = _prefix_of(bare)
+        prefix = prefix_of(bare)
         for i in self.instances:
             if i.prefix == prefix and (qual_root is None or i.root_id == qual_root):
                 if card_exists(i.catalog, bare):
@@ -428,11 +425,6 @@ def _split_qualifier(item_id: str) -> tuple[RootId | None, str]:
         root_id, _, bare = item_id.partition(":")
         return (root_id or None), bare
     return None, item_id
-
-
-def _prefix_of(item_id: str) -> str:
-    match = _ID_RE.match(item_id)
-    return match.group("prefix") if match else item_id
 
 
 __all__ = [

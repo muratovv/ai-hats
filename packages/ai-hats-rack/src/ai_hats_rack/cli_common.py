@@ -30,6 +30,7 @@ from .kernel import (
     LockTimeoutError,
     TaskExistsError,
     UnknownTaskError,
+    UnroutableIdError,
 )
 from .linked import SelfLinkError
 from .ops import AttachSourceError, OpParseError
@@ -96,6 +97,10 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     OperationAborted: lambda e: ("aborted", {"subscriber": e.subscriber, "reason": e.reason}),
     UnknownTaskError: lambda e: ("unknown_task", {"task_id": e.task_id}),
     TaskExistsError: lambda e: ("task_exists", {"task_id": e.task_id}),
+    UnroutableIdError: lambda e: (
+        "unroutable_id",
+        {"task_id": e.task_id, "prefix": e.prefix},
+    ),
     OpParseError: lambda e: ("invalid_ops", {}),
     AttachSourceError: lambda e: ("attach_source", {"src": e.src}),
     DocumentNameError: lambda e: ("invalid_document_name", {"name": e.name}),

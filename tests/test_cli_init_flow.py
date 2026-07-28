@@ -882,10 +882,10 @@ def test_task_create_explicit_id(cli_project):
     project, runner = cli_project
     runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
 
-    result = runner.invoke(rack_main, ["create", "Explicit ID task", "--id", "CUSTOM-001"])
+    result = runner.invoke(rack_main, ["create", "Explicit ID task", "--id", "HATS-901"])
     assert result.exit_code == 0, result.output
-    assert "CUSTOM-001" in result.output
-    assert (tasks_dir(project) / "CUSTOM-001" / "task.yaml").exists()
+    assert "HATS-901" in result.output
+    assert (tasks_dir(project) / "HATS-901" / "task.yaml").exists()
 
 
 def test_task_list_table_filters(cli_project):

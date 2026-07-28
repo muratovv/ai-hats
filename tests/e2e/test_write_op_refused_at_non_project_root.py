@@ -59,5 +59,5 @@ def test_task_create_refused_at_non_project_root(tmp_path):
 
 def test_task_create_still_works_in_onboarded_project(tmp_project):
     """Complement: a valid onboarded project (tmp_project writes ai-hats.yaml) still creates."""
-    res = _rack("create", "OK", "--id", "OK-1", cwd=tmp_project.path)
+    res = _rack("create", "OK", "--id", "HATS-1", cwd=tmp_project.path)
     assert res.returncode == 0, res.stdout + res.stderr

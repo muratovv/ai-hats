@@ -14,6 +14,7 @@ from ai_hats_rack.kernel import (
     LockTimeoutError,
     TaskExistsError,
     UnknownTaskError,
+    UnroutableIdError,
 )
 
 from rack_testkit import CollectingSink, StubSubscriber, in_lock, make_kernel, post_lock, walk
@@ -116,6 +117,30 @@ def test_create_existing_id_refused(tasks_dir, cwd):
     _create(kernel, cwd)
     with pytest.raises(TaskExistsError):
         _create(kernel, cwd)
+
+
+@pytest.mark.parametrize(
+    "task_id",
+    ["HYP-999", "FOO-1", "T-fix", "proj:T-1"],
+    ids=["foreign-prefix", "unknown-prefix", "no-digits", "root-qualified"],
+)
+def test_create_refuses_an_id_this_catalog_cannot_be_addressed_by(tasks_dir, cwd, task_id):
+    # HATS-1283: the write path must not accept what the read/mutate paths
+    # cannot route back here — `HYP-999` in a T catalog is a card `context`
+    # sends to the hyp backlog and never finds.
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(UnroutableIdError) as err:
+        _create(kernel, cwd, task_id=task_id)
+    assert err.value.task_id == task_id and err.value.prefix == "T"
+    assert not (tasks_dir / task_id).exists()  # refused BEFORE any dir is written
+
+
+def test_create_accepts_a_non_numeric_tail(tasks_dir, cwd):
+    # HATS-1283: `T-621S` routes by its `T` prefix, so it is addressable —
+    # the gate rejects a foreign prefix, not a suffixed id.
+    kernel = make_kernel(tasks_dir)
+    assert _create(kernel, cwd, task_id="T-621S").id == "T-621S"
+    assert kernel.get("T-621S").id == "T-621S"
 
 
 # ---------------------------------------------------------------------------
