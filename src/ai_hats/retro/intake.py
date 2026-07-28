@@ -5,8 +5,8 @@ The `hypothesis-intake` role emits a YAML block between
 pipeline step strips them and this module parses the inner YAML into a typed
 ``IntakeResult`` (Create | Merge) for `ai-hats reflect issue` to act on. Pure
 YAML/pydantic — no storage, no LLM call (that lives in the pipeline's
-`launch_provider` step). Lives on the integrator side so `reflect` no longer
-reaches into ``ai_hats_tracker`` (the retire-gate direction).
+`launch_provider` step). Lives on the integrator side so `reflect` reaches no
+backlog package directly (the retire-gate direction).
 """
 
 from __future__ import annotations

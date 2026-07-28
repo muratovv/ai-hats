@@ -1,9 +1,10 @@
-"""Integrator-side rack workspace facade for the HYP/PROP consumers (HATS-1044 R6).
+"""Integrator-side rack backlog facade for the retro/reflect consumers (HATS-1044 R6).
 
 The reflect / judge / quorum-autoclose / session-review consumers reach the
 HYP and PROP backlogs through the rack :class:`Workspace` here instead of the
-retired ``ai_hats_tracker`` stores. Reads return small views (the fields those
-consumers render); writes go through the field-owning extensions
+retired ``ai_hats_tracker`` stores; the retro session window reads closed task
+cards through :func:`closed_tasks` (HATS-1259). Reads return small views (the
+fields those consumers render); writes go through the field-owning extensions
 (``hyp-verdicts``/``prop-votes``) and named FSM edges. Card CREATE is a direct
 dir-per-card write under the catalog alloc-lock — the kernel's ``create`` cannot
 allocate a card whose required declared fields (``hypothesis``/``category`` …) it
@@ -84,6 +85,20 @@ class PropView:
     votes: tuple[dict, ...]
     related_hypotheses: tuple[str, ...]
     failed_session_id: str | None
+
+
+@dataclass(frozen=True)
+class ClosedTaskView:
+    """A closed task card as the retro session window consumes it (HATS-1259).
+
+    ``completed_at`` is the terminal-transition stamp, not ``updated`` — the
+    latter is re-written by every card edit, so a long-closed task touched during
+    a session would read as closed *in* it. Empty when the card predates the
+    stamp; the caller decides how loudly to say so.
+    """
+
+    id: str
+    completed_at: str
 
 
 def _hyp_view(card) -> HypView:
@@ -171,6 +186,25 @@ def proposals(
 
 def open_proposals(ws: Workspace) -> list[PropView]:
     return proposals(ws, status="open")
+
+
+#: The terminal state the retro counts as "closed work". ``cancelled`` is terminal
+#: too and carries the same stamp, but is administrative closure, not work done.
+_DONE = "done"
+
+
+def closed_tasks(project_dir: Path) -> list[ClosedTaskView]:
+    """Every task card in the terminal ``done`` state, id + close stamp.
+
+    Takes the project rather than a :class:`Workspace`: the tasks catalog *is*
+    the ``RackRoot.tasks_dir``, so routing by id prefix would only re-derive the
+    directory ``tasks_dir`` already names.
+    """
+    return [
+        ClosedTaskView(card.id, card.completed_at)
+        for card in _load_cards(tasks_dir(project_dir))
+        if card.state == _DONE
+    ]
 
 
 # ----- writes -----------------------------------------------------------------
@@ -306,6 +340,7 @@ def hyp_backlog_mounted(ws: Workspace) -> bool:
 
 
 __all__ = [
+    "ClosedTaskView",
     "HypView",
     "PropView",
     "REFLECT_ACTOR",
@@ -313,6 +348,7 @@ __all__ = [
     "active_hypothesis_ids",
     "append_verdict",
     "autoclose_hypotheses",
+    "closed_tasks",
     "create_hypothesis",
     "create_proposal",
     "hyp_backlog_mounted",
