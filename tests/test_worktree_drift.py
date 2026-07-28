@@ -230,11 +230,73 @@ class TestRebasedBranchNotDrift:
         assert listing.strip() == ""
 
 
+class TestForkWorkflowNotDrift:
+    """HATS-942 fork shape: the merge target is *never* an ancestor of the branch.
+
+    With ``base_branch=upstream`` / ``merge_target=trunk`` the worktree is cut
+    from ``upstream``, so ``trunk``'s own commits are legitimately absent from
+    the branch — forever, by design. Containment alone would read that as
+    permanent drift (the HATS-1307 first-cut regression, caught by
+    ``test_wt_fork_base_merge_target_e2e``). Drift needs BOTH terms: the target
+    moved since create AND the branch has not taken the move in.
+    """
+
+    @staticmethod
+    def _fork_shape(project: Path) -> None:
+        """`upstream` = pristine mirror; `trunk` = dev line one commit AHEAD.
+
+        Mirrors the shipped `hunk` fork (main / fork-main). The ahead-ness is
+        what breaks containment: `trunk`'s own commit can never be in a branch
+        cut from `upstream`. HEAD is left on `trunk` (the merge target).
+        """
+        _git(project, "branch", "upstream")
+        _git(project, "checkout", "-b", "trunk")
+        (project / "TRUNK.md").write_text("trunk only\n")
+        _git(project, "add", "TRUNK.md")
+        _git(project, "commit", "-m", "C: trunk only")
+
+    def test_target_not_ancestor_of_branch_is_not_drift(self, git_project: Path) -> None:
+        self._fork_shape(git_project)
+
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/fork",
+            base_branch="upstream",
+            merge_target="trunk",
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        mgr.merge()  # no exception — trunk never moved since create
+
+        listing = _git(git_project, "branch", "--list", "task/fork").stdout
+        assert listing.strip() == ""
+
+    def test_target_moved_after_create_is_still_drift(self, git_project: Path) -> None:
+        """The fork exemption is temporal, not blanket — a moved target refuses."""
+        self._fork_shape(git_project)
+
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/fork-moved",
+            base_branch="upstream",
+            merge_target="trunk",
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        _make_main_commit(git_project, "trunk-moved.txt")
+
+        with pytest.raises(WorktreeDriftError) as exc:
+            mgr.merge()
+        assert "trunk-moved.txt" in str(exc.value)
+
+
 class TestLegacyStateCompat:
-    def test_legacy_state_without_base_sha_still_guarded(self, git_project: Path) -> None:
-        """HATS-1307: a state file carrying the retired ``base_sha_at_create``
-        loads fine, and one missing it no longer silently loses the guard —
-        drift comes from git refs now, not from persisted state."""
+    def test_legacy_state_no_field_skips_check(self, git_project: Path) -> None:
+        """Pre-HATS-457 state files have no ``base_sha_at_create`` — skip."""
         mgr = WorktreeManager(
             git_project,
             branch_name="task/legacy",
@@ -244,22 +306,27 @@ class TestLegacyStateCompat:
         mgr.save_state()
         _commit_in_worktree(wt_path)
 
-        # A pre-1307 state file: the retired key is present and must be ignored.
+        # Rewrite state file the way pre-457 code did — strip the new field.
         state_dir = worktrees_dir(git_project)
         state_file = state_dir / "task-legacy.json"
         data = json.loads(state_file.read_text())
-        assert "base_sha_at_create" not in data
-        data["base_sha_at_create"] = "0" * 40
+        data.pop("base_sha_at_create", None)
         state_file.write_text(json.dumps(data, indent=2))
 
+        # Reload via the public API — _base_sha_at_create stays None.
         reloaded = WorktreeManager.load_for_branch(
             git_project, "task/legacy", state_dir=worktrees_dir(git_project)
         )
         assert reloaded is not None
+        assert reloaded._base_sha_at_create is None
 
+        # Move master while worktree is "out". Pre-457 state → drift check
+        # is a no-op, merge proceeds.
         _make_main_commit(git_project, "moved.txt")
-        with pytest.raises(WorktreeDriftError):
-            reloaded.merge()
+        reloaded.merge()  # no exception
+
+        listing = _git(git_project, "branch", "--list", "task/legacy").stdout
+        assert listing.strip() == ""
 
 
 class TestNoRemoteSwallowed:
@@ -665,6 +732,30 @@ class TestFetchFailureBehaviour:
             f"expected fetch-failure WARNING for FileNotFoundError; "
             f"records: {[(r.levelname, r.message) for r in caplog.records]}"
         )
+
+
+class TestStateRoundtrip:
+    def test_base_sha_persisted(self, git_project: Path) -> None:
+        """``save_state`` writes ``base_sha_at_create``; load restores it."""
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/persist",
+            state_dir=worktrees_dir(git_project),
+        )
+        mgr.create()
+        mgr.save_state()
+
+        state_file = worktrees_dir(git_project) / "task-persist.json"
+        data = json.loads(state_file.read_text())
+        assert "base_sha_at_create" in data
+        assert data["base_sha_at_create"]
+        assert len(data["base_sha_at_create"]) == 40  # full SHA
+
+        reloaded = WorktreeManager.load_for_branch(
+            git_project, "task/persist", state_dir=worktrees_dir(git_project)
+        )
+        assert reloaded is not None
+        assert reloaded._base_sha_at_create == data["base_sha_at_create"]
 
 
 class TestBaseBranchMismatch:

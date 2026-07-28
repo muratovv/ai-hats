@@ -30,8 +30,8 @@ since the latest tag lives under **Unreleased** until the next release.
   Drift was measured against the base SHA snapshotted at `wt create`, so a branch
   rebased onto the moved base was still refused with "N commits ahead" — and the
   only override, `--accept-drift`, lives on `ai-hats wt merge`, which
-  `rack transition` cannot pass. Drift is now containment (is the base an
-  ancestor of the branch), so the rebase every operator reaches for first is what
+  `rack transition` cannot pass. Drift now also asks whether the branch already
+  contains the base, so the rebase every operator reaches for first is what
   actually clears it. Both refusal recipes lead with that rebase and demote
   `--accept-drift` to what it always meant: merging a baseline you knowingly
   leave stale.
