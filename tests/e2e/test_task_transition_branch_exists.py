@@ -126,15 +126,15 @@ def _create_and_plan(project: Path, task_id: str) -> None:
 def test_case_a_pre_existing_branch_attaches(
     initialised_git_project: Path,
 ) -> None:
-    """Case A: `git branch task/hats-5171` ahead of time; transition succeeds."""
+    """Case A: `git branch task/hats-517a` ahead of time; transition succeeds."""
     proj = initialised_git_project
-    # Numeric suffix, not the old `HATS-517A`: rack routes an id by
-    # `<prefix>-<digits>` only (workspace.py `_ID_RE`), see HATS-1263 report.
-    task_id = "HATS-5171"
+    # A letter-suffixed id on purpose: it is what the real backlog once used, and
+    # rack must route it (HATS-1283 widened `ids._ID_RE`).
+    task_id = "HATS-517A"
     _create_and_plan(proj, task_id)
 
     # Pre-create the branch the transition is about to use.
-    _git(proj, "branch", "task/hats-5171")
+    _git(proj, "branch", "task/hats-517a")
 
     r = _run_rack(proj, "transition", task_id, "execute")
     assert r.returncode == 0, (
@@ -143,13 +143,13 @@ def test_case_a_pre_existing_branch_attaches(
     # rack surfaces the branch through the worktree dirname it prints
     # (`branch_name.replace("/", "-")` — manager.py); there is no `Branch:` line.
     combined = r.stdout + r.stderr
-    assert "task-hats-5171" in combined, f"branch name not surfaced in output: {combined}"
+    assert "task-hats-517a" in combined, f"branch name not surfaced in output: {combined}"
     assert "Worktree:" in combined, f"worktree path not surfaced in output: {combined}"
 
     # Verify the linked worktree exists and is on the right branch.
     wt_list = _git(proj, "worktree", "list", "--porcelain").stdout
-    assert "branch refs/heads/task/hats-5171" in wt_list, (
-        f"expected linked worktree on task/hats-5171, got:\n{wt_list}"
+    assert "branch refs/heads/task/hats-517a" in wt_list, (
+        f"expected linked worktree on task/hats-517a, got:\n{wt_list}"
     )
 
 
