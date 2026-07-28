@@ -6,7 +6,7 @@ Add your own roles, traits, rules, skills, and pipelines to ai-hats — without 
 
 When you install ai-hats, two layers ship as built-in content:
 
-- **`library/core/`** — engine fundament. System roles invoked by name from engine code (`initial-wizard`, `session-reviewer`, `auditor-for-role`, `judge`, `judge-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`backlog-manager`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
+- **`library/core/`** — engine fundament. System roles invoked by name from engine code (`initial-wizard`, `session-reviewer`, `auditor-for-role`, `judge`, `judge-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
 - **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
 
 The split is informational — both layers are loaded at runtime. You can override either from your own library path.
@@ -236,19 +236,19 @@ description: When to invoke and what it does.
 ai_hats:
   requires:
     cli:
-      - name: ai-hats-tracker
-        check: "ai-hats-tracker --version"   # presence probe
-        hint: "pip install ai-hats-tracker"  # shown if the probe fails
+      - name: ai-hats-rack
+        check: "rack --help"                 # presence probe
+        hint: "pip install ai-hats-rack"     # shown if the probe fails
     mcp: []
 ---
 ```
 
 ai-hats verifies `requires` at compose/session time and **warns** with the
 `hint` if a tool is missing — it never auto-installs (every provider surface
-gates tool installation behind explicit consent). The shipped `backlog-manager`
-skill is the live example: it declares `requires.cli: ai-hats-tracker` and drives
-the `ai-hats task` CLI, but lives in the library content layer — it is *not*
-bundled inside the `ai-hats-tracker` engine package.
+gates tool installation behind explicit consent). The shipped `hatrack`
+skill is the live example: it declares `requires.cli: ai-hats-rack` and drives
+the `rack` CLI, but lives in the library content layer — it is *not*
+bundled inside the `ai-hats-rack` engine package.
 
 On `self init` the assembler copies each script to
 `<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name

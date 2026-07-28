@@ -42,7 +42,7 @@ ai-hats answers this with two things:
 ```
 roles/dev-python ── trait-base + trait-agent + dev::python + dev::shell
                     ├── rules: git_workflow, tdd
-                    ├── skills: backlog-manager, git-mastery
+                    ├── skills: hatrack, git-mastery
                     └── injection → composed per session, delivered per surface
 ```
 
