@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""HATS-1278 — deny the harness worktree tool, naming the ai-hats flow instead.
+"""HATS-1278 — deny Claude Code's worktree tool, naming the ai-hats flow instead.
 
-ai-hats already owns worktree lifecycle (state, locks, venv provisioning,
-task/<id> branch naming, merge-drift guard). EnterWorktree either creates a
-rival worktree outside all of that, or relocates the permission root and raises
-an approval prompt that no setting can suppress or remember. A bare
-permissions.deny would hide the tool with no explanation, so this denies WITH
-the recipe. Kill switch: AI_HATS_WT_ENTRY_OFF=1. Stdlib-only, fails open.
+Claude-surface only — the tool exists in no other harness, so this gate is inert
+there and the skill stays surface-agnostic. ai-hats already owns worktree
+lifecycle (state, locks, venv, task/<id> branch, drift guard); EnterWorktree
+either builds a rival outside all of it or raises an unsuppressible approval
+prompt. A bare permissions.deny would hide the tool with no explanation, so this
+denies WITH the recipe. Kill switch: AI_HATS_WT_ENTRY_OFF=1. Fails open.
 """
 from __future__ import annotations
 
