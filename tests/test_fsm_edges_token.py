@@ -7,13 +7,16 @@ at skill materialization (same gate as the ``<ai_hats_dir>`` placeholder).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
 
 from ai_hats.models import TaskState
+from ai_hats.paths import tasks_dir
 from ai_hats.placeholders import (
     FSM_EDGES_TOKEN,
+    FSM_EDGES_UNAVAILABLE,
     expand_fsm_edges_token,
     render_backlog_fsm_edges,
 )
@@ -26,67 +29,123 @@ def _row(table: str, state_value: str) -> str:
     return next(line for line in table.splitlines() if line.startswith(prefix))
 
 
+#: A tasks backlog.yaml that is NOT the packaged one — no state name overlaps,
+#: so a rendered row can only have come from this file.
+_CUSTOM_BACKLOG = """\
+name: tasks
+prefix: HATS
+fsm:
+  initial: draft
+  states:
+    - { name: draft }
+    - { name: shipped }
+  edges:
+    - { from: draft, to: shipped, name: ship }
+links:
+  kinds:
+    - { name: parent_task, arity: one }
+"""
+
+
+def _project_with_backlog(project_dir: Path, body: str) -> Path:
+    catalog = tasks_dir(project_dir)
+    catalog.mkdir(parents=True, exist_ok=True)
+    (catalog / "backlog.yaml").write_text(body, encoding="utf-8")
+    return project_dir
+
+
 # ---------- render_backlog_fsm_edges: table is generated from the live FSM ----------
 
 
-def test_render_has_a_row_per_state() -> None:
-    table = render_backlog_fsm_edges()
+def test_render_uses_the_resolved_catalog_definition(tmp_path: Path) -> None:
+    # HATS-1257: the table is the backlog THIS project runs on — a catalog's own
+    # backlog.yaml wins, exactly as `rack transition` resolves its guard.
+    table = render_backlog_fsm_edges(_project_with_backlog(tmp_path, _CUSTOM_BACKLOG))
+    assert "`shipped`" in _row(table, "draft")
+    assert "terminal" in _row(table, "shipped").lower()
+    # The packaged states must NOT leak in when the catalog declares its own.
+    assert "| `brainstorm` |" not in table
+
+
+def test_render_annotates_named_edges(tmp_path: Path) -> None:
+    # A named edge is typeable in place of the target state — the topology knows
+    # the names, so the table stops leaving them to hand-written prose.
+    table = render_backlog_fsm_edges(tmp_path)
+    assert "`execute` (reclaim)" in _row(table, "execute")
+    assert "`execute` (reopen)" in _row(table, "done")
+    # Unnamed edges stay bare — the annotation is not decoration.
+    assert "`document`," in _row(table, "execute")
+
+
+def test_malformed_backlog_yields_marker_not_raise(tmp_path: Path, caplog) -> None:
+    # The prompt must still render for the agent who would FIX the broken file;
+    # the loud channel is `rack ls`, which fails on the very same file.
+    project = _project_with_backlog(tmp_path, "this: is not a backlog\n")
+    with caplog.at_level(logging.WARNING, logger="ai_hats.placeholders"):
+        table = render_backlog_fsm_edges(project)
+    assert table == FSM_EDGES_UNAVAILABLE
+    assert "| From state |" not in table
+    assert "rack ls" in caplog.text
+
+
+def test_render_has_a_row_per_state(tmp_path: Path) -> None:
+    table = render_backlog_fsm_edges(tmp_path)
     for state in TaskState:
         assert f"| `{state.value}` |" in table
 
 
-def test_render_cells_match_valid_transitions() -> None:
-    table = render_backlog_fsm_edges()
+def test_render_cells_match_valid_transitions(tmp_path: Path) -> None:
+    table = render_backlog_fsm_edges(tmp_path)
     for state, targets in TaskState.valid_transitions().items():
         row = _row(table, state.value)
         for target in targets:
             assert f"`{target.value}`" in row, f"{state.value}->{target.value} missing"
 
 
-def test_render_marks_terminal_state() -> None:
+def test_render_marks_terminal_state(tmp_path: Path) -> None:
     # cancelled has no outgoing edges — it must read as terminal, not blank.
-    assert "terminal" in _row(render_backlog_fsm_edges(), "cancelled").lower()
+    assert "terminal" in _row(render_backlog_fsm_edges(tmp_path), "cancelled").lower()
 
 
-def test_render_includes_pragmatic_edges() -> None:
+def test_render_includes_pragmatic_edges(tmp_path: Path) -> None:
     # execute self-loop (HATS-955) + done->execute reopen (HATS-328) — the
     # off-happy-path edges neither skill enumerated before this token.
-    table = render_backlog_fsm_edges()
+    table = render_backlog_fsm_edges(tmp_path)
     assert "`execute`" in _row(table, "execute")  # self-loop
     assert "`execute`" in _row(table, "done")  # reopen
 
 
-def test_render_includes_review_to_execute() -> None:
+def test_render_includes_review_to_execute(tmp_path: Path) -> None:
     # HATS-1052: review->execute (the rework loop-back) is now legal, so the
     # rendered FSM token carries `execute` in the review row — the hatrack skill
     # inherits the live rework edge without a hand-maintained table.
-    assert "`execute`" in _row(render_backlog_fsm_edges(), "review")
+    assert "`execute`" in _row(render_backlog_fsm_edges(tmp_path), "review")
 
 
 # ---------- expand_fsm_edges_token: substitution contract ----------
 
 
-def test_expand_substitutes_the_token() -> None:
-    out = expand_fsm_edges_token(f"## FSM\n\n{FSM_EDGES_TOKEN}\n\nend")
+def test_expand_substitutes_the_token(tmp_path: Path) -> None:
+    out = expand_fsm_edges_token(f"## FSM\n\n{FSM_EDGES_TOKEN}\n\nend", tmp_path)
     assert FSM_EDGES_TOKEN not in out
     assert "| From state | Legal transitions |" in out
 
 
-def test_absent_token_is_identity_same_object() -> None:
+def test_absent_token_is_identity_same_object(tmp_path: Path) -> None:
     # Cheap no-op path: a skill without the token pays no render cost.
     body = "a skill body with no fsm token at all"
-    assert expand_fsm_edges_token(body) is body
+    assert expand_fsm_edges_token(body, tmp_path) is body
 
 
-def test_idempotent() -> None:
-    once = expand_fsm_edges_token(f"x {FSM_EDGES_TOKEN} y")
-    twice = expand_fsm_edges_token(once)
+def test_idempotent(tmp_path: Path) -> None:
+    once = expand_fsm_edges_token(f"x {FSM_EDGES_TOKEN} y", tmp_path)
+    twice = expand_fsm_edges_token(once, tmp_path)
     assert once == twice
     assert FSM_EDGES_TOKEN not in twice
 
 
-def test_multiple_occurrences_all_replaced() -> None:
-    out = expand_fsm_edges_token(f"{FSM_EDGES_TOKEN} ... {FSM_EDGES_TOKEN}")
+def test_multiple_occurrences_all_replaced(tmp_path: Path) -> None:
+    out = expand_fsm_edges_token(f"{FSM_EDGES_TOKEN} ... {FSM_EDGES_TOKEN}", tmp_path)
     assert FSM_EDGES_TOKEN not in out
     assert out.count("| From state | Legal transitions |") == 2
 

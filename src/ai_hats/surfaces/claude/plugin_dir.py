@@ -78,7 +78,7 @@ def _rebuild_plugin_dir(
         if source_md.exists():
             original = source_md.read_text()
             rendered = expand_fsm_edges_token(
-                expand_path_placeholders(original, project_dir)
+                expand_path_placeholders(original, project_dir), project_dir
             )
             if rendered != original:
                 port.write_text(dest / "SKILL.md", rendered)

@@ -139,9 +139,9 @@ live from the FSM, so it is always authoritative:
 {{backlog_fsm_edges}}
 
 `done` and `cancelled` are terminal (`done` = completed; `cancelled` =
-administratively closed). The self-loop `execute → execute` is a reclaim
-(HATS-955, ownership-gated), and `done → execute` reopens for forgotten scope
-(HATS-328) — both are legal but rare; do not walk them by reflex.
+administratively closed). A parenthesised name is that edge's own name, typeable
+in place of the target state (`rack transition <ID> reclaim`); every named edge
+above is legal but rare — do not walk one by reflex.
 
 ### Per-edge policy — trigger → action
 
@@ -161,9 +161,6 @@ completes** — never batch every transition at the end. Finished work left in
 | `brainstorm/plan/execute/document → blocked` | an external dependency stalls progress             | log the blocker (**request-supervisor**), transition `blocked`; return to the prior state when unblocked — NB: `review` has no `blocked` edge (see the table above)                    |
 | `execute/review → failed`                    | the task cannot be completed                       | **self-retrospective** (mandatory — why it failed), then `failed → brainstorm` to re-plan                                                                                              |
 | any non-terminal `→ cancelled`               | won't-fix / duplicate / obsolete                   | requires `--resolution "<why>"` (the audit trail); the worktree is discarded — work is not preserved                                                                                   |
-
-(The self-loop `execute → execute` and the `done → execute` reopen are covered
-by the note above — legal but rare; not agent-driven by reflex.)
 
 **Before `plan → execute`, re-validate the premise:** scan the card for a
 retracted/superseded driver since the plan was authored; if the justification is
