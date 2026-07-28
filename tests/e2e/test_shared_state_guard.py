@@ -14,6 +14,7 @@ Slow only because of subprocess spin-up (~ms each, no pip install).
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -52,15 +53,23 @@ def _run(script: Path, *, stdin: str, env: dict | None = None, timeout: int = 5)
 
 
 @pytest.mark.integration
-def test_pretool_blocks_gh_pr_merge_non_tty():
+def test_pretool_gates_gh_pr_merge_on_a_full_payload():
+    """A real PreToolUse payload gets the JSON answer, not the exit-2 one.
+
+    The hook is dual-mode since HATS-1294: a payload carrying ``hook_event_name``
+    — the only form the harness ever sends — is answered with a
+    ``permissionDecision`` on stdout and exit 0. Reading the exit code here
+    reported the live path as allowed (HATS-1308).
+    """
     payload = (
         '{"hook_event_name":"PreToolUse","tool_name":"Bash",'
         '"tool_input":{"command":"gh pr merge 5 --merge --delete-branch"}}'
     )
     res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-    assert "BLOCKED" in res.stderr
-    assert "gh pr merge" in res.stderr
+    assert res.returncode == 0, res.stderr
+    hso = json.loads(res.stdout)["hookSpecificOutput"]
+    assert hso["permissionDecision"] in {"deny", "ask"}, res.stdout
+    assert "gh pr merge" in hso["permissionDecisionReason"]
 
 
 @pytest.mark.integration
@@ -145,15 +154,26 @@ def test_pretool_allows_non_bash_payload():
 
 @pytest.mark.integration
 def test_pretool_block_carries_recovery_guidance():
-    """HATS-633 — the denial must steer the agent to the recovery, not just
-    block. It names the rule and tells the agent NOT to retry/rephrase."""
-    payload = '{"tool_input":{"command":"gh pr merge 5 --merge"}}'
+    """HATS-633 — a refusal must steer the agent, not just stop it.
+
+    HATS-1294 replaced the rule-name pointer with an explicit account of how
+    consent is actually reached; HATS-1308 restated the invariant to match:
+    the text must name the consent flag and warn off the retry, which is the
+    #1 failure mode after a deliberate refusal.
+
+    Asserted on the full payload — the form the harness sends. The legacy
+    stderr branch carries the consent flag but not the retry warning, and which
+    of the two branches is even reachable is HATS-1311.
+    """
+    payload = (
+        '{"hook_event_name":"PreToolUse","tool_name":"Bash",'
+        '"tool_input":{"command":"gh pr merge 5 --merge"}}'
+    )
     res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-    # Points at the governing rule so the agent can read the full protocol.
-    assert "rule_pause_before_shared_state_write" in res.stderr
-    # Steers away from the #1 failure mode: retrying a deliberate block.
-    assert "Do NOT retry" in res.stderr
+    assert res.returncode == 0, res.stderr
+    reason = json.loads(res.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "AI_HATS_SHARED_STATE_ACK" in reason
+    assert "do not retry" in reason.lower()
 
 
 # --- Git pre-push hook -----------------------------------------------------

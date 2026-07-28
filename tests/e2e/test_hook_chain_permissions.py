@@ -69,8 +69,8 @@ def test_approved_push_completes_with_ack(hooked_project):
 
 
 @pytest.mark.integration
-def test_unapproved_push_is_denied_and_names_its_hatch(hooked_project):
-    """An unapproved push is denied, and the denial says how to proceed.
+def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project):
+    """An unapproved push is gated, and the refusal says how to proceed.
 
     The second half is the deny-names-its-hatch invariant (P4): ``check_git``
     denied with "requires explicit permission" and named no flag, leaving the
@@ -78,9 +78,9 @@ def test_unapproved_push_is_denied_and_names_its_hatch(hooked_project):
     """
     project, env, settings = hooked_project
     verdict = run_chain(project, "git push origin master", settings=settings, env=env)
-    assert verdict.denied, f"an unapproved push must be denied; got {verdict}"
+    assert verdict.gated, f"an unapproved push must be gated; got {verdict}"
     assert verdict.names_ack_flag, (
-        f"denial must name the consent flag that unblocks it; got {verdict}"
+        f"refusal must name the consent flag that unblocks it; got {verdict}"
     )
 
 
@@ -115,11 +115,16 @@ def test_non_mutating_git_commands_pass(hooked_project, command):
     ],
 )
 @pytest.mark.integration
-def test_irreversible_still_denied_without_ack(hooked_project, command):
-    """Loosening regular push must not loosen the irreversible class."""
+def test_irreversible_still_gated_without_ack(hooked_project, command):
+    """Loosening regular push must not loosen the irreversible class.
+
+    ``gated``, not ``denied``: since HATS-1294 the guard escalates to the user
+    (``permissionDecision: ask``) instead of ending the call. Either way the
+    agent cannot proceed alone, which is the invariant under test.
+    """
     project, env, settings = hooked_project
     verdict = run_chain(project, command, settings=settings, env=env)
-    assert verdict.denied, f"{command!r} is irreversible and must stay denied; got {verdict}"
+    assert verdict.gated, f"{command!r} is irreversible and must stay gated; got {verdict}"
 
 
 # --- The rm policy (R-6/R-7) ------------------------------------------------
