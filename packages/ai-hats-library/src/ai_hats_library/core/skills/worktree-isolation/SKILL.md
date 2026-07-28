@@ -6,6 +6,9 @@ ai_hats:
     PreToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/wt_gate.py
+      # Claude-surface tool; inert where it does not exist (HATS-1278).
+      - matcher: EnterWorktree
+        script: hooks/wt_entry_gate.py
 license: MIT
 ---
 
@@ -34,6 +37,12 @@ Isolated development using git worktrees. Each task gets its own working copy �
    ai-hats wt create feat/PROJ-004
    cd <worktree-path>
    ```
+
+   **Claude surface only — enter with `cd`, never the `EnterWorktree` tool.** It
+   builds a rival worktree outside ai-hats (no state, no locks, no venv, wrong
+   branch name), or raises an approval prompt nothing can suppress. The
+   `wt_entry_gate.py` PreToolUse hook denies it and repeats this recipe
+   (HATS-1278). No other surface has the tool — skip this paragraph there.
 
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
    the **main checkout** — interactive and headless (HATS-889; the old nudge was ignored,

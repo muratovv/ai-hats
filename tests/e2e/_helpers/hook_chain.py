@@ -43,14 +43,14 @@ class Verdict:
         return f"deny by {self.hook}: {self.reason.strip()[:200]}"
 
 
-def _matches_bash(matcher: str) -> bool:
-    """True when a settings.json matcher applies to the Bash tool."""
+def _matches_tool(matcher: str, tool: str) -> bool:
+    """True when a settings.json matcher applies to ``tool``."""
     if not matcher or matcher == "*":
         return True
     try:
-        return re.fullmatch(matcher, "Bash") is not None
+        return re.fullmatch(matcher, tool) is not None
     except re.error:
-        return matcher == "Bash"
+        return matcher == tool
 
 
 def build_session_settings(project: Path, role: str = "assistant", session_id: str = "sid-hooks") -> Path:
@@ -72,8 +72,8 @@ def build_session_settings(project: Path, role: str = "assistant", session_id: s
     return session_cache_dir(project, session_id) / "settings.json"
 
 
-def bash_pretooluse_hooks(settings: Path, project: Path) -> list[str]:
-    """Hook commands wired onto Bash in ``settings``, in recorded order.
+def pretooluse_hooks(settings: Path, tool: str = "Bash") -> list[str]:
+    """Hook commands wired onto ``tool`` in ``settings``, in recorded order.
 
     Returned verbatim, ``$CLAUDE_PROJECT_DIR`` unexpanded — the shell resolves
     it exactly as the harness does, so a wiring regression surfaces here.
@@ -84,7 +84,9 @@ def bash_pretooluse_hooks(settings: Path, project: Path) -> list[str]:
     data = json.loads(settings.read_text())
     commands: list[str] = []
     for entry in data.get("hooks", {}).get("PreToolUse", []) or []:
-        if not isinstance(entry, dict) or not _matches_bash(str(entry.get("matcher", "") or "")):
+        if not isinstance(entry, dict) or not _matches_tool(
+            str(entry.get("matcher", "") or ""), tool
+        ):
             continue
         for hook in entry.get("hooks", []) or []:
             if isinstance(hook, dict) and hook.get("command"):
@@ -124,15 +126,16 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
     return Verdict("allow")
 
 
-def run_chain(
+def run_tool_chain(
     project: Path,
-    command: str,
+    tool: str,
+    tool_input: dict,
     *,
     settings: Path,
     env: dict | None = None,
     ack: str | None = None,
 ) -> Verdict:
-    """Run ``command`` through the project's whole Bash PreToolUse chain.
+    """Run one ``tool`` call through the project's whole PreToolUse chain.
 
     ``ack`` names a consent flag to set to ``"1"`` for this run. Every known
     ack flag is stripped first, so an ambient one in the developer's shell can
@@ -146,17 +149,31 @@ def run_chain(
         base_env[ack] = "1"
 
     payload = json.dumps(
-        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}}
+        {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
     )
 
     base_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
 
-    hooks = bash_pretooluse_hooks(settings, project)
+    hooks = pretooluse_hooks(settings, tool)
     if not hooks:
-        raise AssertionError(f"no Bash PreToolUse hooks wired in {settings}")
+        raise AssertionError(f"no {tool} PreToolUse hooks wired in {settings}")
 
     for command_str in hooks:
         verdict = _run_one(command_str, payload, project, base_env)
         if verdict.denied:
             return verdict
     return Verdict("allow")
+
+
+def run_chain(
+    project: Path,
+    command: str,
+    *,
+    settings: Path,
+    env: dict | None = None,
+    ack: str | None = None,
+) -> Verdict:
+    """Run a Bash ``command`` through the whole PreToolUse chain."""
+    return run_tool_chain(
+        project, "Bash", {"command": command}, settings=settings, env=env, ack=ack
+    )
