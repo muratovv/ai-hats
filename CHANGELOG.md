@@ -49,6 +49,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed
 
+- **The breaking-change protocol's warning release is now scoped** (HATS-1272).
+  `docs/RELEASING.md` demanded a runtime `DeprecationWarning` for at least one
+  MINOR release before *any* removal from the stable surface. Pre-1.0, a removal
+  whose consumer set is known and already migrated may now ship without one: the
+  warning release buys an unnoticed consumer a cycle to react, and there is no
+  such consumer to buy it for. The exemption is claimed in writing in the
+  migration doc — naming each consumer and how it was verified migrated — and a
+  consumer set that cannot be enumerated stays ineligible. Steps 2–3 (migration
+  doc, `Migration:`-prefixed CHANGELOG entry) remain unconditional, and the
+  clause expires at `v1.0.0` with the rest of the pre-1.0 caveat.
+
 - **`SubagentEngine.run` accepts optional keyword argument `artifacts`** (HATS-1207). Custom `SubagentEngine` subclasses receive prebuilt session artifacts (`BuiltArtifacts | None = None`) to avoid recomputing system prompt and plugins.
 
 - **`ai-hats wt exec` runs where you stand** (HATS-1205). It is an environment

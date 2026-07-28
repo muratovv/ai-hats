@@ -54,6 +54,15 @@ in the standard SemVer way.
 
 1. **Mark the deprecation.** Emit a runtime warning (`warnings.warn(...,
    DeprecationWarning)`) for at least one MINOR release before removal.
+
+   **Exemption — pre-1.0, enumerable consumers.** The warning release
+   buys an unnoticed consumer one cycle to react. When every consumer
+   of the removed surface is known and already migrated, it buys
+   nothing: the removal ships on steps 2-3 alone. Claim the exemption
+   in writing in the migration doc — name each consumer and how it was
+   verified migrated. A consumer set that cannot be enumerated is not
+   exempt. This clause ends at `v1.0.0` with the pre-1.0 caveat.
+
 2. **Add a migration doc** under `docs/migration-<topic>.md`. The doc
    names: what changed, why, the user-facing migration step, and the
    timeline (which release deprecated, which one removes).
