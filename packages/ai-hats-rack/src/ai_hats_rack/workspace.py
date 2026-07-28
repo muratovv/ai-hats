@@ -11,7 +11,6 @@ unqualified routing raises :class:`AmbiguousPrefixError` demanding ``<root>:<id>
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
@@ -22,6 +21,7 @@ from .definition import BacklogDefinition, load_backlog, resolve_definition
 from .dispatch import Subscriber, bind_subscribers, validate_requires_states
 from .errors import RackConfigError
 from .events import LinkMirrorEvent
+from .ids import prefix_of
 from .journal import JsonlJournalSink
 from .kernel import Kernel
 from .linked import card_exists
@@ -29,9 +29,6 @@ from .resolver import RackRoot
 
 #: A root's short identity — the qualifier the CLI accepts as ``<root>:<id>``.
 RootId = str
-
-#: An ``<id>`` is ``<prefix>-<number>``; the prefix routes it to a backlog.
-_ID_RE = re.compile(r"^(?P<prefix>.+)-\d+$")
 
 
 class WorkspaceError(RackConfigError):
@@ -53,15 +50,20 @@ class DuplicatePrefixError(WorkspaceError):
 
 
 class UnknownPrefixError(WorkspaceError):
-    """An id whose prefix matches no configured backlog — names the prefixes."""
+    """An id no mounted backlog claims — names the prefixes. ``prefix`` is
+    ``None`` when the id has no ``<prefix>-<number>`` form at all; that case gets
+    its own sentence, since "no backlog for prefix 'HATS-fix'" alongside a
+    configured ``HATS`` reads as a contradiction (HATS-1283)."""
 
-    def __init__(self, prefix: str, configured: Sequence[str]) -> None:
+    def __init__(self, prefix: str | None, configured: Sequence[str], item_id: str = "") -> None:
         self.prefix = prefix
         self.configured = tuple(configured)
-        super().__init__(
-            f"no backlog for id prefix {prefix!r}: configured prefixes are "
-            f"{list(self.configured)}"
+        what = (
+            f"id {item_id!r} has no '<prefix>-<number>' form"
+            if prefix is None
+            else f"no backlog for id prefix {prefix!r}"
         )
+        super().__init__(f"{what}: configured prefixes are {list(self.configured)}")
 
 
 class AmbiguousPrefixError(WorkspaceError):
@@ -186,14 +188,14 @@ class Workspace:
         unqualified -> :class:`AmbiguousPrefixError`."""
         qual_root, bare = _split_qualifier(item_id)
         want_root = root or qual_root
-        prefix = _prefix_of(bare)
+        prefix = prefix_of(bare)
         matches = [
             i
             for i in self.instances
             if i.prefix == prefix and (want_root is None or i.root_id == want_root)
         ]
         if not matches:
-            raise UnknownPrefixError(prefix, sorted({i.prefix for i in self.instances}))
+            raise UnknownPrefixError(prefix, sorted({i.prefix for i in self.instances}), bare)
         if len(matches) > 1:
             raise AmbiguousPrefixError(prefix, sorted({i.root_id for i in matches}))
         return matches[0]
@@ -269,7 +271,7 @@ class Workspace:
         its prefix routes to (ADR-0017 §2)? Unknown/foreign prefix -> ``False``
         (the caller raises its own not-found), never a routing exception."""
         qual_root, bare = _split_qualifier(item_id)
-        prefix = _prefix_of(bare)
+        prefix = prefix_of(bare)
         for i in self.instances:
             if i.prefix == prefix and (qual_root is None or i.root_id == qual_root):
                 if card_exists(i.catalog, bare):
@@ -428,11 +430,6 @@ def _split_qualifier(item_id: str) -> tuple[RootId | None, str]:
         root_id, _, bare = item_id.partition(":")
         return (root_id or None), bare
     return None, item_id
-
-
-def _prefix_of(item_id: str) -> str:
-    match = _ID_RE.match(item_id)
-    return match.group("prefix") if match else item_id
 
 
 __all__ = [

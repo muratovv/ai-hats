@@ -156,7 +156,7 @@ def test_is_epic_via_renamed_parent_kind(tmp_path, cwd):
     # STRUCTURALLY, exercising children_of's generic-storage slow path.
     reg = _backlog_registry(tmp_path, RENAMED_KINDS)
     tasks = tmp_path / "tasks"
-    kernel = Kernel(tasks, registry=reg)
+    kernel = Kernel(tasks, prefix="T", registry=reg)
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="epic")
     _write(tasks / "T-2" / "task.yaml", id="T-2", links={"epic_of": ["T-1"]})
     assert kernel.children_of("T-1") == ["T-2"]
@@ -169,7 +169,7 @@ def test_inverse_consistency_parent_children(tmp_path):
     tasks = tmp_path / "tasks"
     _write(tasks / "T-1" / "task.yaml", id="T-1")
     _write(tasks / "T-2" / "task.yaml", id="T-2", parent_task="T-1")
-    kernel = Kernel(tasks, registry=reg)
+    kernel = Kernel(tasks, prefix="T", registry=reg)
     child = TaskCard.from_yaml(tasks / "T-2" / "task.yaml")
     # forward edge on the child and the derived reverse on the parent agree
     assert resolve_links(reg, child)["parent_task"] == ["T-1"]
@@ -181,7 +181,7 @@ def test_inverse_consistency_parent_children(tmp_path):
 def test_derived_children_are_not_stored(tmp_path, cwd):
     reg = load_registry()
     tasks = tmp_path / "tasks"
-    kernel = Kernel(tasks, registry=reg)
+    kernel = Kernel(tasks, prefix="T", registry=reg)
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="epic")
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-2", parent_task="T-1", title="child")
     # children is a computed view — nothing about it is persisted on the parent

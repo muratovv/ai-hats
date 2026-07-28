@@ -104,6 +104,37 @@ def test_instance_for_routes_by_prefix(tmp_path):
     assert ws.instance_for("HATS-1").name == "tasks"
 
 
+@pytest.mark.parametrize(
+    "item_id",
+    ["HATS-1249", "HATS-621S", "HATS-517A", "HATS-1247-fix"],
+    ids=["numeric", "letter-suffix", "letter-suffix-short", "slug-suffix"],
+)
+def test_a_non_numeric_tail_still_routes_by_its_prefix(tmp_path, item_id):
+    # HATS-1283: the tail after `<prefix>-<digits>` is the author's business —
+    # only the leading prefix routes. A greedy `.+-\d+$` stranded these ids.
+    ws = Workspace.discover([_root(tmp_path)])
+    assert ws.instance_for(item_id).name == "tasks"
+
+
+def test_a_hyphenated_prefix_is_preserved(tmp_path):
+    # HATS-1283: `prefix:` is any non-empty string (definition.py), so the
+    # shortest-run rule must not shear `MY-PROJ-42` down to `MY`.
+    ws = Workspace.discover([_root(tmp_path, prefix="MY-PROJ")])
+    assert ws.instance_for("MY-PROJ-42").prefix == "MY-PROJ"
+
+
+def test_an_id_with_no_digits_is_unroutable(tmp_path):
+    # HATS-1283: no `<prefix>-<digit>` split to make — `prefix` is None, not the
+    # whole id posing as one, and the message says so instead of claiming HATS
+    # is unconfigured while listing it.
+    ws = Workspace.discover([_root(tmp_path)])
+    with pytest.raises(UnknownPrefixError) as err:
+        ws.instance_for("HATS-fix")
+    assert err.value.prefix is None
+    assert "no '<prefix>-<number>' form" in str(err.value)
+    assert "no backlog for id prefix" not in str(err.value)
+
+
 def test_unknown_prefix_names_the_configured_set(tmp_path):
     ws = Workspace.discover([_root(tmp_path)])
     with pytest.raises(UnknownPrefixError) as err:

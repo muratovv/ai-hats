@@ -126,12 +126,12 @@ def test_epic_automation_flow_unaffected(tasks_dir, cwd):
     ]
     kernel = make_kernel(tasks_dir, topology=topo, subscribers=[automation, *lifecycle])
     automation.bind(kernel)
-    kernel.create(actor="test", caller_cwd=cwd, task_id="EPIC", title="Epic")
-    walk(kernel, "EPIC", "plan", "execute", cwd=cwd)
-    kernel.create(actor="test", caller_cwd=cwd, task_id="C-1", title="child", parent_task="EPIC")
+    kernel.create(actor="test", caller_cwd=cwd, task_id="T-1", title="Epic")
+    walk(kernel, "T-1", "plan", "execute", cwd=cwd)
+    kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", title="child", parent_task="T-1")
     # Walking the child to done stamps completed_at (a declared-field Set on the
     # delta) and auto-advances the epic — both flow through the validating applier.
-    walk(kernel, "C-1", "plan", "execute", "document", "review", "done", cwd=cwd)
-    child = kernel.get("C-1")
+    walk(kernel, "T-2", "plan", "execute", "document", "review", "done", cwd=cwd)
+    child = kernel.get("T-2")
     assert child.state == "done" and child.completed_at  # stamp-lifecycle Set applied
-    assert kernel.get("EPIC").state == "review"  # epic auto-advanced (work_log delta)
+    assert kernel.get("T-1").state == "review"  # epic auto-advanced (work_log delta)

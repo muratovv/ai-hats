@@ -15,6 +15,10 @@ from rack_testkit import CollectingSink, make_kernel, walk
 
 TOPOLOGY = load_topology()
 
+#: Labels for the cast, spelled as ids this catalog can actually address — a
+#: card's prefix must be its catalog's (HATS-1283), so a bare `EPIC` is refused.
+EPIC, C1, C2, FREE, SOLO, GRAND = "T-1", "T-2", "T-3", "T-4", "T-5", "T-6"
+
 
 def _lifecycle(tasks_dir):
     # The declared stamp/clear handlers (HATS-1043) — completed_at stamping moved
@@ -67,24 +71,24 @@ def _epic_in(kernel, epic_id, state, cwd):
 
 
 def test_epic_auto_advances_to_review_when_all_children_done(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "execute"  # C2 still open
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "execute"  # C2 still open
 
-    _walk_to_done(kernel, "C2", cwd)
-    epic = kernel.get("EPIC")
+    _walk_to_done(kernel, C2, cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "review"
     assert any("Auto-advanced" in e.message for e in epic.work_log)
 
 
 def test_advance_outcome_rides_the_child_journal(kernel, cwd):
     """The journal answers "why did the epic move" (K1 design decision)."""
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    walk(kernel, "C1", "plan", "execute", "document", "review", cwd=cwd)
-    result = kernel.transition("C1", "done", actor="test", caller_cwd=cwd)
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    walk(kernel, C1, "plan", "execute", "document", "review", cwd=cwd)
+    result = kernel.transition(C1, "done", actor="test", caller_cwd=cwd)
 
     outcomes = {o.subscriber: o for o in result.journal[0].outcomes}
     delta = outcomes["epic-automation"].delta
@@ -98,53 +102,53 @@ def test_advance_outcome_rides_the_child_journal(kernel, cwd):
 
 
 def test_epic_auto_advances_from_document_single_hop(kernel, cwd):
-    _epic_in(kernel, "EPIC", "document", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
+    _epic_in(kernel, EPIC, "document", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
 
 
 def test_cancelled_child_does_not_block_advance(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    kernel.transition("C2", "cancelled", actor="test", caller_cwd=cwd, resolution="dropped")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    kernel.transition(C2, "cancelled", actor="test", caller_cwd=cwd, resolution="dropped")
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
 
 
 def test_failed_child_blocks_advance(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    walk(kernel, "C2", "plan", "execute", "failed", cwd=cwd)
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "execute"  # not advanced
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    walk(kernel, C2, "plan", "execute", "failed", cwd=cwd)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "execute"  # not advanced
 
 
 def test_blocked_child_blocks_advance(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    walk(kernel, "C2", "blocked", cwd=cwd)
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "execute"
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    walk(kernel, C2, "blocked", cwd=cwd)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "execute"
 
 
 def test_advance_requires_at_least_one_done(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    kernel.transition("C1", "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
-    kernel.transition("C2", "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
-    assert kernel.get("EPIC").state == "execute"  # all cancelled, none done
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    kernel.transition(C1, "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
+    kernel.transition(C2, "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
+    assert kernel.get(EPIC).state == "execute"  # all cancelled, none done
 
 
 def test_zero_children_epic_not_advanced(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "SOLO")  # unrelated
-    _walk_to_done(kernel, "SOLO", cwd)
-    assert kernel.get("EPIC").state == "execute"
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, SOLO)  # unrelated
+    _walk_to_done(kernel, SOLO, cwd)
+    assert kernel.get(EPIC).state == "execute"
 
 
 # ---------------------------------------------------------------------------
@@ -153,107 +157,107 @@ def test_zero_children_epic_not_advanced(kernel, cwd):
 
 
 def test_child_taken_activates_plan_epic(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    walk(kernel, "C1", "plan", "execute", cwd=cwd)
-    epic = kernel.get("EPIC")
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    walk(kernel, C1, "plan", "execute", cwd=cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "execute"
     assert any("Auto-activated plan -> execute" in e.message for e in epic.work_log)
 
 
 def test_activation_is_idempotent(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    walk(kernel, "C1", "plan", "execute", cwd=cwd)
-    assert kernel.get("EPIC").state == "execute"
-    log_len = len(kernel.get("EPIC").work_log)
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    walk(kernel, C1, "plan", "execute", cwd=cwd)
+    assert kernel.get(EPIC).state == "execute"
+    log_len = len(kernel.get(EPIC).work_log)
 
-    walk(kernel, "C1", "document", cwd=cwd)  # epic already execute → no re-fire
-    assert kernel.get("EPIC").state == "execute"
-    assert len(kernel.get("EPIC").work_log) == log_len
+    walk(kernel, C1, "document", cwd=cwd)  # epic already execute → no re-fire
+    assert kernel.get(EPIC).state == "execute"
+    assert len(kernel.get(EPIC).work_log) == log_len
 
 
 def test_brainstorm_epic_activated(kernel, cwd):
     """HATS-789: an active child proves decomposition — brainstorm epics
     activate via a brainstorm → plan → execute multi-hop."""
-    _create(kernel, cwd, "EPIC", title="Epic")  # stays brainstorm
-    _create(kernel, cwd, "C1", parent="EPIC")
-    walk(kernel, "C1", "plan", "execute", cwd=cwd)
-    epic = kernel.get("EPIC")
+    _create(kernel, cwd, EPIC, title="Epic")  # stays brainstorm
+    _create(kernel, cwd, C1, parent=EPIC)
+    walk(kernel, C1, "plan", "execute", cwd=cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "execute"
     assert any("Auto-activated brainstorm -> execute" in e.message for e in epic.work_log)
 
 
 def test_brainstorm_epic_advances_on_completion(kernel, cwd):
     """HATS-789: activation on the execute hop, advance to review on done."""
-    _create(kernel, cwd, "EPIC", title="Epic")
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
+    _create(kernel, cwd, EPIC, title="Epic")
+    _create(kernel, cwd, C1, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
 
 
 def test_plan_epic_fast_close_advances_to_review(kernel, cwd):
     """The HATS-688 stranding bug: children fast-closed while the epic sat in
     plan used to strand it forever."""
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    _fast_close(kernel, "C1", cwd)
-    _fast_close(kernel, "C2", cwd)
-    epic = kernel.get("EPIC")
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    _fast_close(kernel, C1, cwd)
+    _fast_close(kernel, C2, cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "review"
     assert any("Auto-advanced plan -> review" in e.message for e in epic.work_log)
 
 
 def test_brainstorm_epic_fast_close_advances_to_review(kernel, cwd):
-    _create(kernel, cwd, "EPIC", title="Epic")
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    _fast_close(kernel, "C1", cwd)
-    _fast_close(kernel, "C2", cwd)
-    epic = kernel.get("EPIC")
+    _create(kernel, cwd, EPIC, title="Epic")
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    _fast_close(kernel, C1, cwd)
+    _fast_close(kernel, C2, cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "review"
     assert any("Auto-advanced brainstorm -> review" in e.message for e in epic.work_log)
 
 
 def test_plan_epic_fast_close_mixed_done_cancelled_advances(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    _fast_close(kernel, "C1", cwd)
-    kernel.transition("C2", "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
-    assert kernel.get("EPIC").state == "review"  # >=1 done holds
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    _fast_close(kernel, C1, cwd)
+    kernel.transition(C2, "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
+    assert kernel.get(EPIC).state == "review"  # >=1 done holds
 
 
 def test_plan_epic_all_cancelled_not_advanced(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _create(kernel, cwd, "C2", parent="EPIC")
-    kernel.transition("C1", "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
-    kernel.transition("C2", "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
-    assert kernel.get("EPIC").state == "plan"
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _create(kernel, cwd, C2, parent=EPIC)
+    kernel.transition(C1, "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
+    kernel.transition(C2, "cancelled", actor="test", caller_cwd=cwd, resolution="drop")
+    assert kernel.get(EPIC).state == "plan"
 
 
 def test_create_brainstorm_child_does_not_activate_plan_epic(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")  # brainstorm child, no work yet
-    assert kernel.get("EPIC").state == "plan"
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)  # brainstorm child, no work yet
+    assert kernel.get(EPIC).state == "plan"
 
 
 def test_reparent_active_child_into_plan_epic_activates(kernel, cwd):
-    _epic_in(kernel, "EPIC", "plan", cwd)
-    _create(kernel, cwd, "FREE")
-    walk(kernel, "FREE", "plan", "execute", cwd=cwd)
-    kernel.set_parent("FREE", "EPIC", actor="test", caller_cwd=cwd)
-    assert kernel.get("EPIC").state == "execute"
+    _epic_in(kernel, EPIC, "plan", cwd)
+    _create(kernel, cwd, FREE)
+    walk(kernel, FREE, "plan", "execute", cwd=cwd)
+    kernel.set_parent(FREE, EPIC, actor="test", caller_cwd=cwd)
+    assert kernel.get(EPIC).state == "execute"
 
 
 def test_reparent_active_child_into_brainstorm_epic_activates(kernel, cwd):
-    _create(kernel, cwd, "EPIC", title="Epic")  # brainstorm
-    _create(kernel, cwd, "FREE")
-    walk(kernel, "FREE", "plan", "execute", cwd=cwd)
-    kernel.set_parent("FREE", "EPIC", actor="test", caller_cwd=cwd)
-    epic = kernel.get("EPIC")
+    _create(kernel, cwd, EPIC, title="Epic")  # brainstorm
+    _create(kernel, cwd, FREE)
+    walk(kernel, FREE, "plan", "execute", cwd=cwd)
+    kernel.set_parent(FREE, EPIC, actor="test", caller_cwd=cwd)
+    epic = kernel.get(EPIC)
     assert epic.state == "execute"
     assert any("Auto-activated brainstorm -> execute" in e.message for e in epic.work_log)
 
@@ -264,18 +268,18 @@ def test_reparent_active_child_into_brainstorm_epic_activates(kernel, cwd):
 
 
 def _epic_done_with_child(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
-    kernel.transition("EPIC", "done", actor="test", caller_cwd=cwd)
-    assert kernel.get("EPIC").completed_at != ""
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
+    kernel.transition(EPIC, "done", actor="test", caller_cwd=cwd)
+    assert kernel.get(EPIC).completed_at != ""
 
 
 def test_create_under_done_epic_reopens(kernel, cwd):
     _epic_done_with_child(kernel, cwd)
-    _create(kernel, cwd, "C2", parent="EPIC")  # live child under a done epic
-    epic = kernel.get("EPIC")
+    _create(kernel, cwd, C2, parent=EPIC)  # live child under a done epic
+    epic = kernel.get(EPIC)
     assert epic.state == "execute"
     assert epic.completed_at == ""
     assert any("Auto-reopened" in e.message for e in epic.work_log)
@@ -283,53 +287,53 @@ def test_create_under_done_epic_reopens(kernel, cwd):
 
 def test_reparent_into_done_epic_reopens(kernel, cwd):
     _epic_done_with_child(kernel, cwd)
-    _create(kernel, cwd, "FREE")
-    kernel.set_parent("FREE", "EPIC", actor="test", caller_cwd=cwd)
-    assert kernel.get("EPIC").state == "execute"
+    _create(kernel, cwd, FREE)
+    kernel.set_parent(FREE, EPIC, actor="test", caller_cwd=cwd)
+    assert kernel.get(EPIC).state == "execute"
 
 
 def test_child_reopen_done_to_execute_reopens_epic(kernel, cwd):
     _epic_done_with_child(kernel, cwd)
-    kernel.transition("C1", "execute", actor="test", caller_cwd=cwd)  # child reopened
-    assert kernel.get("EPIC").state == "execute"
+    kernel.transition(C1, "execute", actor="test", caller_cwd=cwd)  # child reopened
+    assert kernel.get(EPIC).state == "execute"
 
 
 def test_fast_close_child_advances_epic(kernel, cwd):
     """HATS-690 D2: a child fast-closed to done completes its epic."""
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _fast_close(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _fast_close(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
 
 
 def test_epic_already_in_review_is_noop(kernel, cwd):
-    _epic_in(kernel, "EPIC", "execute", cwd)
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"
-    log_len = len(kernel.get("EPIC").work_log)
+    _epic_in(kernel, EPIC, "execute", cwd)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"
+    log_len = len(kernel.get(EPIC).work_log)
 
-    _create(kernel, cwd, "C2", parent="EPIC")
-    _fast_close(kernel, "C2", cwd)
-    assert kernel.get("EPIC").state == "review"
-    assert len(kernel.get("EPIC").work_log) == log_len
+    _create(kernel, cwd, C2, parent=EPIC)
+    _fast_close(kernel, C2, cwd)
+    assert kernel.get(EPIC).state == "review"
+    assert len(kernel.get(EPIC).work_log) == log_len
 
 
 def test_no_grandparent_cascade(kernel, cwd):
     """Automation-driven epic hops carry the automation actor and are ignored
     on re-entry — a completed epic never completes its own parent."""
-    _create(kernel, cwd, "GRAND", title="Grandparent")
-    _create(kernel, cwd, "EPIC", title="Epic", parent="GRAND")
-    _create(kernel, cwd, "C1", parent="EPIC")
-    _walk_to_done(kernel, "C1", cwd)
-    assert kernel.get("EPIC").state == "review"  # advanced by its child
-    assert kernel.get("GRAND").state == "brainstorm"  # untouched
+    _create(kernel, cwd, GRAND, title="Grandparent")
+    _create(kernel, cwd, EPIC, title="Epic", parent=GRAND)
+    _create(kernel, cwd, C1, parent=EPIC)
+    _walk_to_done(kernel, C1, cwd)
+    assert kernel.get(EPIC).state == "review"  # advanced by its child
+    assert kernel.get(GRAND).state == "brainstorm"  # untouched
 
 
 def test_dangling_parent_ref_is_noop(kernel, cwd):
-    _create(kernel, cwd, "C1", parent="GHOST-1")  # parent never existed
-    walk(kernel, "C1", "plan", "execute", cwd=cwd)  # must not raise
-    assert kernel.get("C1").state == "execute"
+    _create(kernel, cwd, C1, parent="GHOST-1")  # parent never existed
+    walk(kernel, C1, "plan", "execute", cwd=cwd)  # must not raise
+    assert kernel.get(C1).state == "execute"
 
 
 # ---------------------------------------------------------------------------

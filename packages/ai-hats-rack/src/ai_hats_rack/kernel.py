@@ -29,6 +29,7 @@ from .dispatch import (
 from .errors import RackError
 from .events import EdgeEvent, EpicifyEvent, Event, LinkEvent, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
+from .ids import prefix_of
 from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
 from .registry import LinksRegistry, load_registry
 
@@ -53,6 +54,20 @@ class TaskExistsError(RackError):
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         super().__init__(f"Task '{task_id}' already exists")
+
+
+class UnroutableIdError(RackError):
+    """An explicit create id whose prefix is not this catalog's, so no read or
+    mutate verb could ever route back to the card (HATS-1283)."""
+
+    def __init__(self, task_id: str, prefix: str) -> None:
+        self.task_id = task_id
+        self.prefix = prefix
+        super().__init__(
+            f"Id '{task_id}' does not route to this backlog: expected "
+            f"'{prefix}-<number>'. A card minted here under another prefix is "
+            "unreachable by every other verb."
+        )
 
 
 class ForceRequiresReasonError(RackError):
@@ -276,6 +291,8 @@ class Kernel:
         create path; a name absent from the routed schema is ignored."""
         if not title.strip():
             raise RequiredFieldError("title", "a task requires a non-empty title")
+        if task_id is not None and prefix_of(task_id) != self.prefix:
+            raise UnroutableIdError(task_id, self.prefix)
         if parent_task and parent_task == task_id:
             raise ValueError(f"Task '{task_id}' cannot be its own parent")
         provided: dict[str, Any] = {
