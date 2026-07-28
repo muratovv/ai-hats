@@ -79,13 +79,15 @@ Isolated development using git worktrees. Each task gets its own working copy �
    The supervisor may equally run the merge himself. Yolo-mode is inherited,
    not requested: a supervisor-exported `AI_HATS_MERGE_ACK=1` flows into
    subagents via plain env inheritance.
-   If `wt merge` refuses with `Refused (drift)`, the base branch
-   advanced since `wt create` (another agent's worktree already
-   merged, or `origin/<base>` received commits). Re-verify your
-   changes against the new base (re-run grep-verify, re-check
-   moved/renamed paths), then `ai-hats wt merge --accept-drift`.
-   **Do not** pass `--force` for drift — `--force` only bypasses
-   uncommitted changes; drift has its own override (HATS-457).
+   If `wt merge` refuses with `Refused (drift)`, the base holds commits
+   your branch never took in (another agent's worktree merged, or
+   `origin/<base>` received commits). Re-verify your changes against the
+   new base (re-run grep-verify, re-check moved/renamed paths), then
+   **rebase in the worktree** — `git rebase <base>` clears the guard, no
+   flag needed, so `rack transition <id> done` works again (HATS-1307).
+   `--accept-drift` is for the other case: merging a stale baseline you
+   accept knowingly. **Do not** pass `--force` for drift — `--force` only
+   bypasses uncommitted changes; drift has its own override (HATS-457).
    Neither `--force` nor `--accept-drift` bypasses the consent gate.
 
 4. **Abandon** → discard:
@@ -122,17 +124,18 @@ rack transition <id> done   # ack-free once the branch is merged; do NOT `git me
 ```
 
 The merge itself is review-gated (step 3 above) — never `git merge <task-branch>`
-yourself (a manual pre-merge collides with the FSM merge, HYP-023). If
-the base moved and the close reports drift, accept it explicitly from the main
-repo with `ai-hats wt merge --accept-drift`, then re-run the transition.
+yourself (a manual pre-merge collides with the FSM merge, HYP-023). If the close
+still reports drift, you skipped the rebase above — do it, then re-run the
+transition. Only a baseline you knowingly leave stale needs
+`ai-hats wt merge --accept-drift` from the main repo.
 
 **Skip this for short tasks** (< ~2 hours wall-clock, no review
 rounds). Drift typically only matters on multi-session work; for a
 30-minute task the base hasn't moved.
 
 If you skipped the checklist and hit `WorktreeDriftError` anyway,
-the recovery is the same rebase plus an explicit acceptance flag —
-see the drift block in step 3 of the Workflow above.
+the recovery is the same rebase — see the drift block in step 3 of
+the Workflow above.
 
 ## Commands
 

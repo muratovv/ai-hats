@@ -26,6 +26,16 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **The drift guard no longer dead-ends `rack transition <id> done`** (HATS-1307).
+  Drift was measured against the base SHA snapshotted at `wt create`, so a branch
+  rebased onto the moved base was still refused with "N commits ahead" — and the
+  only override, `--accept-drift`, lives on `ai-hats wt merge`, which
+  `rack transition` cannot pass. Drift is now containment (is the base an
+  ancestor of the branch), so the rebase every operator reaches for first is what
+  actually clears it. Both refusal recipes lead with that rebase and demote
+  `--accept-drift` to what it always meant: merging a baseline you knowingly
+  leave stale.
+
 - **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**
   (HATS-1224). The compose seam raised a bare `RuntimeError` that no CLI arm
   caught, so `ai-hats`, `--dry-run`, `execute --batch` and `agent` all crashed

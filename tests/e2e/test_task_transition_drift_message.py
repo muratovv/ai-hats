@@ -206,9 +206,7 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     # Positive (HATS-1307): the recipe leads with the rebase — the only remedy
     # `rack transition done` can actually complete, since it takes no flags.
     base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    assert f"git rebase {base_branch}" in combined, (
-        f"recipe missing the rebase step:\n{combined}"
-    )
+    assert f"git rebase {base_branch}" in combined, f"recipe missing the rebase step:\n{combined}"
     assert f"cd {wt_path}" in combined, f"recipe missing the worktree cd:\n{combined}"
 
     # Positive: the fallback — full command form pointing at the right surface.

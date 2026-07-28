@@ -1,8 +1,8 @@
 """Drift detection on `wt merge` (HATS-457 / HYP-017).
 
-Covers ``WorktreeManager._check_drift``: snapshot of original-branch
-SHA at create time vs current local + ``origin/<base>`` SHA at merge
-time. Failure surface = silent stale-baseline post-merge breakage
+Covers ``WorktreeManager._check_drift``: is the local base — and
+``origin/<base>`` — contained in the worktree branch (HATS-1307)?
+Failure surface = silent stale-baseline post-merge breakage
 (HATS-361 incident).
 """
 
@@ -106,7 +106,7 @@ class TestDriftDetection:
         assert "--accept-drift" not in msg
 
         # Worktree branch is preserved on drift refusal — user can re-verify
-        # and re-run with --accept-drift.
+        # and rebase onto the new base.
         listing = _git(git_project, "branch", "--list", "task/local-drift").stdout
         assert "task/local-drift" in listing
 
@@ -186,9 +186,7 @@ class TestRebasedBranchNotDrift:
         listing = _git(git_project, "branch", "--list", "task/rebased").stdout
         assert listing.strip() == ""
 
-    def test_rebased_onto_remote_base_merges_clean(
-        self, git_project: Path, tmp_path: Path
-    ) -> None:
+    def test_rebased_onto_remote_base_merges_clean(self, git_project: Path, tmp_path: Path) -> None:
         """Rebasing onto `origin/<base>` clears remote drift too."""
         base = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         origin = tmp_path / "origin.git"
