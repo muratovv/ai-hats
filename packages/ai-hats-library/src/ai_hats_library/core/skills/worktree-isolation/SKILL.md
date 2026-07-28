@@ -6,6 +6,8 @@ ai_hats:
     PreToolUse:
       - matcher: Edit|Write|MultiEdit
         script: hooks/wt_gate.py
+      - matcher: EnterWorktree
+        script: hooks/wt_entry_gate.py
 license: MIT
 ---
 
@@ -34,6 +36,15 @@ Isolated development using git worktrees. Each task gets its own working copy �
    ai-hats wt create feat/PROJ-004
    cd <worktree-path>
    ```
+
+   **Enter with `cd`. Never with the harness `EnterWorktree` tool** — a second
+   PreToolUse gate (`hooks/wt_entry_gate.py`) denies it and repeats this recipe.
+   `EnterWorktree` either creates a rival worktree outside ai-hats (no state file,
+   no lock registry, no per-worktree venv, and a branch name that breaks the
+   card↔branch link), or relocates the session's permission root and raises an
+   approval prompt that no setting can suppress or remember (Claude Code
+   ≥ v2.1.206, HATS-1278). A task transitioned to `execute` already prints the
+   worktree it created for you — `cd` there.
 
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
    the **main checkout** — interactive and headless (HATS-889; the old nudge was ignored,

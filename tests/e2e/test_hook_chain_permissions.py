@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.hook_chain import build_session_settings, run_chain  # noqa: E402
+from _helpers.hook_chain import (  # noqa: E402
+    build_session_settings,
+    run_chain,
+    run_tool_chain,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -241,6 +245,59 @@ def test_every_deny_names_its_hatch(hooked_project, command):
         return
     assert verdict.names_ack_flag, (
         f"{command!r} was denied without naming a consent flag; got {verdict}"
+    )
+
+
+# --- The worktree entry gate (HATS-1278) -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("tool_input", "must_mention"),
+    [
+        pytest.param({"name": "some-feature"}, "ai-hats wt create", id="create-form"),
+        pytest.param({"path": "/tmp/wt-x"}, "cd /tmp/wt-x", id="enter-form"),  # noqa: S108 - payload string, never touched on disk
+    ],
+)
+@pytest.mark.integration
+def test_enter_worktree_is_denied_with_the_ai_hats_recipe(
+    hooked_project, tool_input, must_mention
+):
+    """EnterWorktree is denied, and the denial carries the flow to use instead.
+
+    A bare ``permissions.deny`` would strip the tool silently; the agent that
+    hit this reached for EnterWorktree precisely because it is the natural
+    harness tool, so the refusal has to say what replaces it.
+    """
+    project, env, settings = hooked_project
+    verdict = run_tool_chain(
+        project, "EnterWorktree", tool_input, settings=settings, env=env
+    )
+    assert verdict.denied, f"EnterWorktree must be denied; got {verdict}"
+    assert must_mention in verdict.reason, (
+        f"denial must name the replacement flow ({must_mention!r}); got {verdict}"
+    )
+
+
+@pytest.mark.integration
+def test_worktree_entry_gate_has_a_kill_switch(hooked_project):
+    """Supervisor-only escape, matching wt_gate's AI_HATS_WT_GATE_OFF."""
+    project, env, settings = hooked_project
+    env_off = dict(env)
+    env_off["AI_HATS_WT_ENTRY_OFF"] = "1"
+    verdict = run_tool_chain(
+        project, "EnterWorktree", {"name": "x"}, settings=settings, env=env_off
+    )
+    assert not verdict.denied, f"kill switch must disable the gate; got {verdict}"
+
+
+@pytest.mark.integration
+def test_exit_worktree_is_not_gated(hooked_project):
+    """Denying ExitWorktree would strand a session already inside a worktree."""
+    project, env, settings = hooked_project
+    from _helpers.hook_chain import pretooluse_hooks
+
+    assert not pretooluse_hooks(settings, "ExitWorktree"), (
+        "ExitWorktree must stay ungated — see HATS-1278 out-of-scope"
     )
 
 
