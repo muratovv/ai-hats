@@ -36,6 +36,7 @@ SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 LEAF_MODULES = (
     "constants",
     "paths",  # HATS-862: git_env + safe_delete -> core
+    "fs_digest",  # HATS-1217: shared by the port, the sweeper and the legacy sweep
 )
 
 # HATS-863: schema modules must never regrow the models->providers back-edge —

@@ -131,6 +131,58 @@ A critical distinction governs hook lifecycle:
 - **Session Wiring**: Per-session hook activation emitted by the builder (`<cache>/settings.json` + `--settings` for Claude, `<cache>/hooks.json` + global dispatcher for Agy). This is gated by `SessionPolicy(hooks=False)`.
 - **Project Installation**: Long-lived project setup performed by `sync_hooks` (copying runtime scripts to `<ai_hats_dir>/library/hooks/`, installing worktree hooks in `library/wt-hooks/`, installing git hooks in `.githooks/`). This installation state is shared across sessions and human runs; a `SessionPolicy` gates session wiring ONLY and must NEVER uninstall shared project installation state.
 
+### 2.2 Core Vocabulary vs Surface Implementation (HATS-1217)
+
+The builder's modules were repeatedly re-litigated as "is this a shared contract
+or one surface's private way of putting bytes on disk?" — a question taste cannot
+settle. HATS-1211 moved `plugin_dir`'s materialization half to
+`surfaces/claude/` on that basis; HATS-1217 asked the same of four more modules
+and found the question has a mechanical answer.
+
+**The movability test.** A module belongs to a surface if and only if **no
+provider-agnostic core module imports it.** ADR-0014 §1 [1] places surfaces as
+*"The first consumer tier above the integrator"* — a surface depends **up** on
+`ai_hats`, never the reverse. So a core module importing `ai_hats.surfaces.*`
+inverts the tier, and a core importer is therefore proof the module is shared
+vocabulary rather than one surface's implementation.
+
+Applying it to the HATS-1211 module set:
+
+| Module                                                              | Provider-agnostic core importers                                                                     | Verdict                            |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `materialization.py` (the port, plan, `describe_*`)                 | `session_artifacts`, `session_report`, `dry_run`                                                     | core contract                      |
+| `session_artifacts.py` (this section's vocabulary)                  | `providers` (the `Provider` ABC), `wrap_runner`, `dry_run`, `subagent_runner`, `composition_payload` | core contract                      |
+| `session_report.py`                                                 | `dry_run`, `subagent_runner`, `wrap_runner` — and no surface importer at all                         | core contract                      |
+| `skills_dir.py` — the PATH half (skills' `scripts/`+`bin/` on PATH) | `subagent_runner`, `wrap_runner` (+ all three surfaces)                                              | core contract                      |
+| `skills_dir.materialize_skills_dir` — the copier half               | none — one surface calls it                                                                          | movable, not yet moved (HATS-1271) |
+
+The last row is the honest one. By the test `materialize_skills_dir` belongs to
+the surface layer, and it has simply not been moved: HATS-1271 first converges
+it with cline's byte-for-byte equivalent, and the converged function is what
+gets a home. A verdict table that reported "core contract" here — bending the
+rule to match today's tree — would be worth nothing. The test earns its keep
+precisely by returning answers the tree has not caught up with.
+
+Two structural consequences — the first applied by HATS-1217, the second by
+HATS-1248:
+
+1. **The port owes nothing to a surface.** `materialization.py` took its tree
+   hash from a private helper of `plugin_dir.py` — the legacy claude-mirror
+   sweep. The hash is now the stdlib leaf `fs_digest.py`, so the chokepoint has
+   no edge into surface-specific cleanup code.
+2. **A per-session artifact needs no cross-session reconciliation.** The skills
+   copier was a ref-counted rebuild behind a filelock, guarding one session's
+   skills from another's sweep. Its target is itself keyed by session id, so the
+   guard could only ever engage when two processes minted the *same* id — and
+   then they shared one ref slot and overwrote each other regardless. HATS-1248
+   made session ids unique per process and deleted the machinery. The general
+   rule: reconcile inside a session-scoped artifact only if two sessions can
+   reach it, and if they can, fix the identity rather than the artifact.
+
+`ai_hats.surfaces.*` is not a published extension point — only the
+`ai_hats.providers` entry-point group is (`pyproject.toml`). Moving a module
+between `ai_hats` and `ai_hats.surfaces` therefore changes no external contract.
+
 ### 3. Claude Reference Implementation
 
 Claude is established as the primary reference surface:
@@ -159,3 +211,12 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 - **Pristine Project Trees**: Running ai-hats sessions leaves zero framework role or session materialization directories in the project root (specifically none of `.agy/`, `.agents/`, `.cline/`, `.gemini/`). Clean `git status` alone is a necessary but insufficient condition (gitignored residual framework directories are a violation).
 - **Architectural Uniformity**: Both HITL interactive sessions and Automate SDK sub-agents rely on identical artifact assembly logic.
 - **Foundation for Multi-Surface Expansion**: Unblocks remaining surfaces (Agy in HATS-1166, Cline in HATS-1171) and schema filtering (HATS-1167).
+- **A Settled Placement Rule**: §2.2's movability test replaces taste with an import check, so "core or surface?" is answerable without re-opening the debate per module.
+
+## References
+
+- [1] `docs/adr/0014-composable-component-decomposition.md` §1 — the three-tier
+  dependency model and the HATS-956 amendment adding the surface tier
+  (*"depend UP on the integrator"*, *"The first consumer tier above the
+  integrator"*). Enforced by `tests/test_import_hygiene.py` (intra-package) and
+  `tests/test_workspace_boundaries.py` (cross-package).
