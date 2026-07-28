@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_rack import Kernel, OperationAborted, load_topology
-from ai_hats_tracker import ownership
+from ai_hats import ownership
 from ai_hats.rack_wiring import (
     OwnershipClaim,
     OwnershipRelease,

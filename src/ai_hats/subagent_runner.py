@@ -453,8 +453,7 @@ class SubAgentRunner:
         result nor skip the session-cache sweep.
         """
         try:
-            from ai_hats_tracker import ownership
-
+            from . import ownership
             from .tracker_wiring import tracker_paths
 
             registry = tracker_paths(self.project_dir).tasks_dir.parent / "ownership.json"
