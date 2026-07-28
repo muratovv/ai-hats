@@ -50,6 +50,8 @@ links:
     - { name: parent_task, arity: one, inverse: children, read: [{ name: parent-context }], read_docs: [plan.md] }
     - { name: depends_on, arity: many, aliases: [depends], read_docs: [summary.md, retro.md] }
     - { name: related, arity: many, inverse: related, read_docs: [summary.md, retro.md] }
+    - { name: see_also, arity: many, inverse: see_also, read_docs: [summary.md, retro.md] }
+    - { name: folded_into, arity: one, aliases: [fold], read_docs: [summary.md] }
     - { name: children, derived: true, inverse: parent_task }
 
 fields:

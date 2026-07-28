@@ -301,9 +301,22 @@ rack transition HATS-042 --unlink HATS-040             # kind optional
 ```
 
 Configured kinds on the tasks backlog: `parent_task`, `depends_on`, `related`,
-and the derived `children`. An unknown kind is a typed refusal listing the legal
-set. Cross-backlog kinds (`source_task` on a HYP, `related_hypotheses` on a
-PROP) mirror automatically.
+`see_also`, `folded_into`, and the derived `children`. An unknown kind is a
+typed refusal listing the legal set. Cross-backlog kinds (`source_task` on a
+HYP, `related_hypotheses` on a PROP) mirror automatically.
+
+`related` and `see_also` are both symmetric soft pointers — reach for `related`
+by default and keep `see_also` for the weaker "worth a look" nod. `folded_into`
+is the only directional kind: it records that a card was **subsumed** by
+another, for when you find a duplicate after both have history worth keeping.
+It takes a single target, and `--link fold:<ID>` is accepted as a spelling.
+
+```bash
+rack transition HATS-042 --link folded_into:HATS-040   # 042 was subsumed by 040
+```
+
+Cancelling with a `--resolution` string says the same thing in prose;
+`folded_into` says it in a field, so the pointer survives as data.
 
 ### Documents
 

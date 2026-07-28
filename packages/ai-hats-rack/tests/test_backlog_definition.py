@@ -57,7 +57,14 @@ def test_topology_matches_the_golden_fold():
 
 def test_links_match_the_golden_kinds():
     defn = load_backlog()
-    assert defn.links_registry.names() == ("parent_task", "depends_on", "related", "children")
+    assert defn.links_registry.names() == (
+        "parent_task",
+        "depends_on",
+        "related",
+        "see_also",
+        "folded_into",
+        "children",
+    )
     assert defn.links_registry.hierarchy_kind.name == "parent_task"
     assert defn.links_registry.children_kind.name == "children"
     assert defn.links_registry.get("depends_on").aliases == ("depends",)
