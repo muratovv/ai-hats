@@ -326,15 +326,44 @@ function menuIsOpen() {
   return document.body.classList.contains("menu-open");
 }
 
-function setMenu(open) {
+// Wide enough to give the drawer its own column: there the terminal yields the space
+// instead of hiding behind it. The breakpoint is the same one the stylesheet uses.
+const wide = window.matchMedia("(min-width: 700px)");
+
+function docked() {
+  return wide.matches;
+}
+
+// Switching sessions is a NAVIGATION, so without remembering this a drawer you closed
+// would reopen every single time you switched.
+const MENU_KEY = "hats-relay.menu";
+
+function menuPreference() {
+  try {
+    return localStorage.getItem(MENU_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
+
+function setMenu(open, remember = true) {
   document.body.classList.toggle("menu-open", open);
   drawer.setAttribute("aria-hidden", String(!open));
   menuToggle.setAttribute("aria-expanded", String(open));
+  if (remember) {
+    try {
+      localStorage.setItem(MENU_KEY, open ? "open" : "closed");
+    } catch {
+      // A browser that refuses storage still gets a working drawer, just a forgetful one.
+    }
+  }
   clearInterval(poll);
   if (open) {
-    // Focus has to leave the terminal, or keystrokes meant for the menu reach the
-    // session; the close button is the one target that exists before the list loads.
-    document.getElementById("menu-close").focus();
+    // Docked, the drawer takes none of the terminal's space, so the keyboard stays where
+    // the user wants it. Overlaid, focus MUST leave the terminal or keystrokes meant for
+    // the menu reach the session; the close button is the one target that exists before
+    // the list loads.
+    if (!docked()) document.getElementById("menu-close").focus();
     refresh();
     // The list is otherwise a snapshot: a session that starts or dies elsewhere leaves
     // an open drawer showing something that is no longer true.
@@ -351,8 +380,10 @@ menuToggle.addEventListener("click", () => setMenu(!menuIsOpen()));
 document.getElementById("menu-close").addEventListener("click", () => setMenu(false));
 document.getElementById("backdrop").addEventListener("click", () => setMenu(false));
 document.addEventListener("keydown", (event) => {
-  // Esc is load-bearing INSIDE the session, so it may only be taken while the menu is up.
-  if (event.key === "Escape" && menuIsOpen()) {
+  // Esc is load-bearing INSIDE the session. A docked drawer covers nothing, so the key
+  // belongs to the session — taking it there would break Esc for the whole default
+  // layout. Only an overlay, which makes the terminal unusable, may claim it.
+  if (event.key === "Escape" && menuIsOpen() && !docked()) {
     event.preventDefault();
     setMenu(false);
   }
@@ -360,9 +391,10 @@ document.addEventListener("keydown", (event) => {
 
 if (current) {
   attach();
+  setMenu(menuPreference(), false);
 } else {
   // A missing sid is not an error: the token is the durable capability and the sid is
   // disposable, so a bookmarked link outlives the session it was minted for.
   say("no session attached — pick one from the menu", "ended");
-  setMenu(true);
+  setMenu(true, false);
 }

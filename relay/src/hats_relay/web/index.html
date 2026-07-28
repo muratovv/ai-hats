@@ -6,6 +6,9 @@
     <title>hats-relay</title>
     <link rel="stylesheet" href="/vendor/xterm.css" />
     <style>
+      :root {
+        --drawer: 300px;
+      }
       html,
       body {
         margin: 0;
@@ -17,6 +20,8 @@
       body {
         display: flex;
         flex-direction: column;
+        box-sizing: border-box;
+        transition: padding-left 160ms ease;
       }
       #terminal {
         flex: 1;
@@ -58,15 +63,16 @@
       #menu-toggle:hover {
         background: #1c1c22;
       }
-      /* The drawer OVERLAYS the terminal instead of shrinking it: a narrower grid makes
-         fit() send a resize, and every resize repaints the live TUI on the other end. */
+      /* Narrow, the drawer OVERLAYS: on a phone a docked column would leave no terminal,
+         and shrinking the grid makes fit() send a resize into a live TUI. Wide, it docks
+         instead — see the media query below. */
       #drawer {
         position: fixed;
         inset: 0 auto 0 0;
         z-index: 2;
         display: flex;
         flex-direction: column;
-        width: min(300px, 82vw);
+        width: min(var(--drawer), 82vw);
         background: #101014;
         border-right: 1px solid #333;
         transform: translateX(-100%);
@@ -153,6 +159,19 @@
       .kill[data-armed="true"] {
         background: #3b1111;
         color: #ffb4b4;
+      }
+      /* Wide screens: the drawer gets its own column and the terminal gives up the
+         space, so nothing sits behind it. The grid narrows, which sends ONE resize to
+         the session — the same thing dragging the window does. The backdrop has nothing
+         left to dim, and the toggle is what gives the width back. */
+      @media (min-width: 700px) {
+        body.menu-open {
+          padding-left: var(--drawer);
+        }
+        body.menu-open #backdrop {
+          opacity: 0;
+          pointer-events: none;
+        }
       }
     </style>
   </head>
