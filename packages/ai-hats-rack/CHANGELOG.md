@@ -3,6 +3,10 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.1.3
+
+- Zero-residue docstring fix in `plan_extract.py` (HATS-1262).
+
 ## 0.1.2
 
 - Declare `see_also` and `folded_into` as link kinds on the tasks backlog

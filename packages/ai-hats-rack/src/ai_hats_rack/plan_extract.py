@@ -1,6 +1,6 @@
 """Parse plan.md and surface subtask candidates (HATS-1054 R4).
 
-Ported verbatim from ``ai_hats_tracker.plan_extract`` (HATS-231): rack forbids a
+Ported verbatim from legacy plan_extract (HATS-231): rack forbids a
 first-party tracker import (import-hygiene pin), and the parser is pure. Priority
 Subtasks bullets > Steps checklist > numbered ``### N.`` / ``### Phase|Step N``
 headings; lines already carrying a ``<!-- HATS-NNN -->`` marker are skipped.

@@ -125,7 +125,7 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-tracker`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-rack`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-rack`)
 
 The workspace packages under `packages/*` (and surface plugins under
 `packages/surfaces/*`, e.g. `ai-hats-cline`) carry their own **static** versions
@@ -133,7 +133,7 @@ The workspace packages under `packages/*` (and surface plugins under
 publish through a separate workflow,
 [`release-packages.yml`](../.github/workflows/release-packages.yml) — build each
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
-the `wt`, `tracker`, and `observe` packages that depend on it and the data-only
+the `wt` and `observe` packages that depend on it and the data-only
 `library` package, which has no ordering constraint, then the `cline` surface
 that depends on `observe`). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
@@ -148,7 +148,7 @@ release fails loud instead of shipping a DOA remote channel.
 environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
-(`pypi-core` / `pypi-wt` / `pypi-tracker` / `pypi-observe` / `pypi-library` /
+(`pypi-core` / `pypi-wt` / `pypi-observe` / `pypi-library` /
 `pypi-cline` / `pypi-rack`) — separate from the `pypi` environment the main
 `ai-hats` release uses.
 
@@ -159,7 +159,6 @@ the disambiguator, so each package's publish job runs in its own environment
    ```bash
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-core
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-wt
-   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-tracker
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-observe
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-library
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-cline
@@ -175,7 +174,6 @@ the disambiguator, so each package's publish job runs in its own environment
    | ----------------- | ---------------- |
    | `ai-hats-core`    | `pypi-core`      |
    | `ai-hats-wt`      | `pypi-wt`        |
-   | `ai-hats-tracker` | `pypi-tracker`   |
    | `ai-hats-observe` | `pypi-observe`   |
    | `ai-hats-library` | `pypi-library`   |
    | `ai-hats-cline`   | `pypi-cline`     |

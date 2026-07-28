@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + tracker + observe + library + cline + rack)
+    name: build (core + wt + observe + library + cline + rack)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -35,7 +35,6 @@ jobs:
         run: |
           uv build packages/ai-hats-core -o dist-core
           uv build packages/ai-hats-wt -o dist-wt
-          uv build packages/ai-hats-tracker -o dist-tracker
           uv build packages/ai-hats-observe -o dist-observe
           uv build packages/ai-hats-library -o dist-library
           uv build packages/surfaces/cline -o dist-cline
@@ -47,7 +46,6 @@ jobs:
           path: |
             dist-core/
             dist-wt/
-            dist-tracker/
             dist-observe/
             dist-library/
             dist-cline/
@@ -95,28 +93,9 @@ jobs:
           packages-dir: dist-wt/
           skip-existing: true
 
-  publish-tracker:
-    name: publish ai-hats-tracker (PyPI trusted publishing)
-    # Core first — ai-hats-tracker depends on it (parallel with publish-wt).
-    needs: publish-core
-    runs-on: ubuntu-latest
-    environment: pypi-tracker
-    permissions:
-      id-token: write
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: packages-dist
-      - name: Publish ai-hats-tracker to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist-tracker/
-          skip-existing: true
-
   publish-observe:
     name: publish ai-hats-observe (PyPI trusted publishing)
-    # Core first — ai-hats-observe depends on it (parallel with publish-wt/tracker).
+    # Core first — ai-hats-observe depends on it (parallel with publish-wt).
     needs: publish-core
     runs-on: ubuntu-latest
     environment: pypi-observe
@@ -154,7 +133,7 @@ jobs:
 
   publish-rack:
     name: publish ai-hats-rack (PyPI trusted publishing)
-    # Kernel is first-party-free (no core/tracker/wt — import-hygiene pin) — no
+    # Kernel is first-party-free (no core/wt — import-hygiene pin) — no
     # ordering constraint; publishes straight off build like ai-hats-library.
     needs: build
     runs-on: ubuntu-latest
@@ -198,7 +177,7 @@ jobs:
     # HATS-937 crashed on. Fails a skewed release loudly instead of DOA installs.
     # Retries tolerate PyPI CDN propagation lag right after upload.
     name: verify remote-channel install (post-publish)
-    needs: [publish-wt, publish-tracker, publish-observe, publish-library]
+    needs: [publish-wt, publish-observe, publish-library]
     runs-on: ubuntu-latest
     steps:
       - name: Install uv
@@ -219,4 +198,4 @@ jobs:
           done
           test -n "$ok" || { echo "remote install never succeeded" >&2; exit 1; }
           /tmp/verify-venv/bin/python -c \
-            "import ai_hats_core.migrations; import ai_hats_tracker; import ai_hats_observe; import ai_hats_library; import ai_hats; print('remote-channel OK')"
+            "import ai_hats_core.migrations; import ai_hats_observe; import ai_hats_library; import ai_hats; print('remote-channel OK')"
