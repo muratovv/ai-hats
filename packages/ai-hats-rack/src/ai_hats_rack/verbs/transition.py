@@ -118,11 +118,15 @@ def transition(
     Ops run in argv order under ONE task lock with a single persist:
     --state <s>, --attach <src>[:name], --freeze <name>, --rm <name>,
     --log <msg>, --link <kind>:<id>, --unlink [<kind>:]<id>,
-    --set <field>=<value>, --append <field>=<json>. Effects of earlier ops are
-    visible to later ops; any op aborting rolls the whole sequence back. Old form
-    `transition <ID> <state>` is sugar for `--state <state>`, where <state> may
-    be a named edge (e.g. `reopen`) resolved against the card's current state.
-    """
+    --set <field>=<value>, --append <field>=<value|json>. Effects of earlier ops
+    are visible to later ops; any op aborting rolls the whole sequence back. Old
+    form `transition <ID> <state>` is sugar for `--state <state>`, where <state>
+    may be a named edge (e.g. `reopen`) resolved against the card's current state.
+
+    A field payload is JSON when it parses and plain text otherwise. --append
+    adds EACH entry of a JSON array (never the array itself); --set replaces a
+    list field, and takes a JSON array there.
+    """  # comment-length: allow — this docstring IS the --help contract
     caller_cwd = Path.cwd()
     provider = _provider()
     try:

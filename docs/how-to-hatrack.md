@@ -264,16 +264,22 @@ child policy there, not in the description.
 
 There is no `update` verb on the tasks backlog. Field edits are ops on
 `transition`, schema-validated on the same lock as a state move — a bad choice
-or type is a typed refusal that persists nothing. Scalars take `--set`, list
-fields take `--append`, whose value is JSON:
+or type is a typed refusal that persists nothing. `--set` replaces a field,
+`--append` adds to a list one; a payload is JSON when it parses and plain text
+otherwise, and a JSON array adds its **entries**, never itself:
 
 ```bash
 rack transition HATS-042 --set priority=high --set reviewer=@lead
 rack transition HATS-042 --set title="Sharper title"
 rack transition HATS-042 --set description="$(cat body.md)"
-rack transition HATS-042 --append tags='"dx"'
+rack transition HATS-042 --append tags=dx                # one entry
+rack transition HATS-042 --append 'tags=["dx","rack"]'   # each entry
+rack transition HATS-042 --set 'tags=["dx"]'             # replace the list
 rack transition HATS-042 --set parent_task=HATS-014      # re-parent
 ```
+
+A write that would produce a card the reader cannot load back is refused at the
+persist step, so no field op can strand a card behind its own validation.
 
 The `hyp` and `proposal` groups *do* carry an `update` verb for scalar fields;
 it maps onto these same `--set` ops.
