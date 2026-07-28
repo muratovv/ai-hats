@@ -233,8 +233,10 @@ class TestRebasedBranchNotDrift:
 
 
 class TestLegacyStateCompat:
-    def test_legacy_state_no_field_skips_check(self, git_project: Path) -> None:
-        """Pre-HATS-457 state files have no ``base_sha_at_create`` — skip."""
+    def test_legacy_state_without_base_sha_still_guarded(self, git_project: Path) -> None:
+        """HATS-1307: a state file carrying the retired ``base_sha_at_create``
+        loads fine, and one missing it no longer silently loses the guard —
+        drift comes from git refs now, not from persisted state."""
         mgr = WorktreeManager(
             git_project,
             branch_name="task/legacy",
@@ -244,27 +246,22 @@ class TestLegacyStateCompat:
         mgr.save_state()
         _commit_in_worktree(wt_path)
 
-        # Rewrite state file the way pre-457 code did — strip the new field.
+        # A pre-1307 state file: the retired key is present and must be ignored.
         state_dir = worktrees_dir(git_project)
         state_file = state_dir / "task-legacy.json"
         data = json.loads(state_file.read_text())
-        data.pop("base_sha_at_create", None)
+        assert "base_sha_at_create" not in data
+        data["base_sha_at_create"] = "0" * 40
         state_file.write_text(json.dumps(data, indent=2))
 
-        # Reload via the public API — _base_sha_at_create stays None.
         reloaded = WorktreeManager.load_for_branch(
             git_project, "task/legacy", state_dir=worktrees_dir(git_project)
         )
         assert reloaded is not None
-        assert reloaded._base_sha_at_create is None
 
-        # Move master while worktree is "out". Pre-457 state → drift check
-        # is a no-op, merge proceeds.
         _make_main_commit(git_project, "moved.txt")
-        reloaded.merge()  # no exception
-
-        listing = _git(git_project, "branch", "--list", "task/legacy").stdout
-        assert listing.strip() == ""
+        with pytest.raises(WorktreeDriftError):
+            reloaded.merge()
 
 
 class TestNoRemoteSwallowed:
@@ -670,30 +667,6 @@ class TestFetchFailureBehaviour:
             f"expected fetch-failure WARNING for FileNotFoundError; "
             f"records: {[(r.levelname, r.message) for r in caplog.records]}"
         )
-
-
-class TestStateRoundtrip:
-    def test_base_sha_persisted(self, git_project: Path) -> None:
-        """``save_state`` writes ``base_sha_at_create``; load restores it."""
-        mgr = WorktreeManager(
-            git_project,
-            branch_name="task/persist",
-            state_dir=worktrees_dir(git_project),
-        )
-        mgr.create()
-        mgr.save_state()
-
-        state_file = worktrees_dir(git_project) / "task-persist.json"
-        data = json.loads(state_file.read_text())
-        assert "base_sha_at_create" in data
-        assert data["base_sha_at_create"]
-        assert len(data["base_sha_at_create"]) == 40  # full SHA
-
-        reloaded = WorktreeManager.load_for_branch(
-            git_project, "task/persist", state_dir=worktrees_dir(git_project)
-        )
-        assert reloaded is not None
-        assert reloaded._base_sha_at_create == data["base_sha_at_create"]
 
 
 class TestBaseBranchMismatch:

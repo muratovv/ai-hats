@@ -610,7 +610,6 @@ class WorktreeManager:
         self.branch_name = branch_name or f"agent/{role_name}/{session_id}"
         self._is_git = False
         self._original_branch: str | None = None
-        self._base_sha_at_create: str | None = None  # HATS-457
         # HATS-823: create-time carry {wt_in/wt_out: [{skill, script, on}]},
         # persisted to state and replayed at teardown (never recomposed).
         self._wt_hooks: dict[str, list[dict[str, Any]]] = {}
@@ -670,13 +669,6 @@ class WorktreeManager:
         # create-start. Configured value wins; else the default = current HEAD.
         self._resolved_base_branch = self._base_branch or get_default_base_branch(self.project_dir)
         self._original_branch = self._merge_target or get_default_merge_branch(self.project_dir)
-        # HATS-457: snapshot the base SHA so `wt merge` can detect drift if the
-        # original branch advances between create and merge (concurrent agent
-        # worktrees, manual `git pull`, etc.).
-        try:
-            self._base_sha_at_create = self._git("rev-parse", self._original_branch).stdout.strip()
-        except subprocess.CalledProcessError:
-            self._base_sha_at_create = None
 
         # HATS-479 — L1 + L2 + L4. See module docstring "Create-time concurrency".
         with _acquire_create_lock(self._state_dir):
@@ -1173,7 +1165,6 @@ class WorktreeManager:
             "branch": self.branch_name,
             "worktree_path": str(self.worktree_path),
             "original_branch": self._original_branch,
-            "base_sha_at_create": self._base_sha_at_create,  # HATS-457
             "wt_hooks": self._wt_hooks,  # HATS-823: create-time hooks for teardown
         }
         with _acquire(state_path):
@@ -1433,9 +1424,6 @@ class WorktreeManager:
         )
         mgr.worktree_path = wt_path
         mgr._original_branch = data.get("original_branch")
-        # HATS-457: legacy state files (pre-457) omit this key — graceful
-        # degradation, drift check becomes a no-op.
-        mgr._base_sha_at_create = data.get("base_sha_at_create")
         # HATS-823: absent key = pre-upgrade worktree (legacy WARN at teardown).
         mgr._wt_hooks = data.get("wt_hooks") or {}
         mgr._wt_hooks_legacy = "wt_hooks" not in data
@@ -1804,14 +1792,17 @@ class WorktreeManager:
     _DRIFT_PATH_LIMIT = 50  # max paths printed inline; overflow → "… N more"
 
     def _check_drift(self) -> None:
-        """Raise WorktreeDriftError if the original branch moved since create.
+        """Raise WorktreeDriftError if the base holds commits the branch lacks.
+
+        HATS-1307: the question is *containment*, not "did the base move
+        since create" — a rebased branch has nothing stale to re-verify.
 
         Drift sources:
           * local: another worktree's `wt merge` advanced the local
-            original branch.
-          * remote: someone pushed commits to ``origin/<base>`` that the
-            local branch has not pulled — i.e. ``origin/<base>`` is NOT
-            an ancestor of local. ``current_remote != current_local`` is
+            original branch and the worktree branch never took it in.
+          * remote: someone pushed commits to ``origin/<base>`` that
+            neither local nor the branch has — i.e. ``origin/<base>`` is
+            an ancestor of neither. ``current_remote != current_local`` is
             insufficient: that condition also fires for normal unpushed
             local work (HATS-487 false-positive).
 
@@ -1820,11 +1811,8 @@ class WorktreeManager:
         immediately, so a swallowed fetch error can hide a real
         remote-side push that we'd otherwise catch. Not raise — offline
         / no-remote setups must still be able to merge.
-
-        Skips silently when the saved ``base_sha_at_create`` is missing
-        (legacy state file from before HATS-457).
         """
-        if self._base_sha_at_create is None or self._original_branch is None:
+        if self._original_branch is None:
             return
 
         # HATS-489 / B-04: fetch failure escalated DEBUG → WARNING.

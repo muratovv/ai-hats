@@ -221,7 +221,6 @@ class TestWorktreeBaseAndMergeTarget:
             assert _git(wt, "rev-parse", "HEAD").stdout.strip() == upstream_sha
             # Merge lands on `trunk` (merge_target), not the base.
             assert mgr._original_branch == "trunk"
-            assert mgr._base_sha_at_create == _git(git_project, "rev-parse", "trunk").stdout.strip()
         finally:
             mgr.cleanup()
 
