@@ -335,16 +335,9 @@ function docked() {
 }
 
 // Switching sessions is a NAVIGATION, so without remembering this a drawer you closed
-// would reopen every single time you switched.
+// would reopen every single time you switched. The value is READ by the boot script in
+// index.html, which applies it before the first paint; this is only the write side.
 const MENU_KEY = "hats-relay.menu";
-
-function menuPreference() {
-  try {
-    return localStorage.getItem(MENU_KEY) !== "closed";
-  } catch {
-    return true;
-  }
-}
 
 function setMenu(open, remember = true) {
   document.body.classList.toggle("menu-open", open);
@@ -391,10 +384,16 @@ document.addEventListener("keydown", (event) => {
 
 if (current) {
   attach();
-  setMenu(menuPreference(), false);
+  // Adopt what the boot script already put on the page — this only adds the side
+  // effects (the list, the poll), so nothing moves and nothing animates.
+  setMenu(menuIsOpen(), false);
 } else {
   // A missing sid is not an error: the token is the durable capability and the sid is
   // disposable, so a bookmarked link outlives the session it was minted for.
   say("no session attached — pick one from the menu", "ended");
   setMenu(true, false);
 }
+
+// Only now may the layout animate. Two frames, not one: a class added inside the first
+// rAF still lands in the frame being composed, and the restore would slide after all.
+requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));

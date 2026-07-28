@@ -21,7 +21,24 @@
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
-        transition: padding-left 160ms ease;
+      }
+      /* Transitions belong to what the USER does, never to the restore. `ready` is set
+         after the first paint: before it, the drawer is simply already where it belongs,
+         so a switch does not replay the slide and the terminal is measured once. */
+      body.ready,
+      body.ready #drawer,
+      body.ready #backdrop {
+        transition-duration: 160ms;
+        transition-timing-function: ease;
+      }
+      body.ready {
+        transition-property: padding-left;
+      }
+      body.ready #drawer {
+        transition-property: transform;
+      }
+      body.ready #backdrop {
+        transition-property: opacity;
       }
       #terminal {
         flex: 1;
@@ -76,7 +93,6 @@
         background: #101014;
         border-right: 1px solid #333;
         transform: translateX(-100%);
-        transition: transform 160ms ease;
       }
       body.menu-open #drawer {
         transform: none;
@@ -88,7 +104,6 @@
         background: rgba(0, 0, 0, 0.55);
         opacity: 0;
         pointer-events: none;
-        transition: opacity 160ms ease;
       }
       body.menu-open #backdrop {
         opacity: 1;
@@ -189,6 +204,24 @@
       </header>
       <div id="sessions"></div>
     </aside>
+    <script>
+      // Restore the drawer BEFORE the first paint, and before the parser blocks on the
+      // vendor bundles below. Switching sessions is a full navigation, so a drawer that
+      // app.js opens after paint slides in again on every switch — and the terminal
+      // fits twice, once for a window it never actually had.
+      (function () {
+        var open = true;
+        try {
+          open = localStorage.getItem("hats-relay.menu") !== "closed";
+        } catch (e) {
+          // A browser that refuses storage still gets the default layout.
+        }
+        if (!open) return;
+        document.body.classList.add("menu-open");
+        document.getElementById("drawer").setAttribute("aria-hidden", "false");
+        document.getElementById("menu-toggle").setAttribute("aria-expanded", "true");
+      })();
+    </script>
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-fit.js"></script>
     <script src="/app.js"></script>
