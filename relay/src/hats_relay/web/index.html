@@ -6,6 +6,9 @@
     <title>hats-relay</title>
     <link rel="stylesheet" href="/vendor/xterm.css" />
     <style>
+      :root {
+        --drawer: 300px;
+      }
       html,
       body {
         margin: 0;
@@ -17,15 +20,40 @@
       body {
         display: flex;
         flex-direction: column;
+        box-sizing: border-box;
+      }
+      /* Transitions belong to what the USER does, never to the restore. `ready` is set
+         after the first paint: before it, the drawer is simply already where it belongs,
+         so a switch does not replay the slide and the terminal is measured once. */
+      body.ready,
+      body.ready #drawer,
+      body.ready #backdrop {
+        transition-duration: 160ms;
+        transition-timing-function: ease;
+      }
+      body.ready {
+        transition-property: padding-left;
+      }
+      body.ready #drawer {
+        transition-property: transform;
+      }
+      body.ready #backdrop {
+        transition-property: opacity;
       }
       #terminal {
         flex: 1;
         min-height: 0;
       }
-      #status {
-        padding: 4px 8px;
+      #statusbar {
+        display: flex;
+        align-items: stretch;
         background: #111;
         border-top: 1px solid #333;
+      }
+      #status {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 8px;
         white-space: pre-wrap;
       }
       #status[data-kind="error"] {
@@ -36,11 +64,164 @@
         background: #1d1d2b;
         color: #b9b9ff;
       }
+      button {
+        background: none;
+        border: 0;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      #menu-toggle {
+        padding: 4px 12px;
+        border-right: 1px solid #333;
+        font-size: 15px;
+        line-height: 1;
+      }
+      #menu-toggle:hover {
+        background: #1c1c22;
+      }
+      /* Narrow, the drawer OVERLAYS: on a phone a docked column would leave no terminal,
+         and shrinking the grid makes fit() send a resize into a live TUI. Wide, it docks
+         instead — see the media query below. */
+      #drawer {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        width: min(var(--drawer), 82vw);
+        background: #101014;
+        border-right: 1px solid #333;
+        transform: translateX(-100%);
+      }
+      body.menu-open #drawer {
+        transform: none;
+      }
+      #backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        background: rgba(0, 0, 0, 0.55);
+        opacity: 0;
+        pointer-events: none;
+      }
+      body.menu-open #backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #drawer header {
+        display: flex;
+        align-items: center;
+        padding: 10px 6px 10px 12px;
+        border-bottom: 1px solid #26262e;
+        color: #8a8a96;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      #drawer header span {
+        flex: 1;
+      }
+      #menu-close {
+        padding: 4px 10px;
+      }
+      #sessions {
+        flex: 1;
+        overflow-y: auto;
+        color: #8a8a96;
+      }
+      .notice {
+        padding: 12px;
+      }
+      .session {
+        display: flex;
+        align-items: stretch;
+        border-bottom: 1px solid #1b1b21;
+      }
+      .pick {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 9px 12px;
+        text-align: left;
+        color: #ddd;
+      }
+      .pick:hover {
+        background: #17171d;
+      }
+      .pick[aria-current="true"] {
+        background: #1d1d2b;
+        color: #b9b9ff;
+        box-shadow: inset 2px 0 0 #6d6dff;
+      }
+      .role {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .meta {
+        color: #7a7a86;
+        font-size: 11px;
+      }
+      .kill {
+        padding: 0 12px;
+      }
+      .kill:hover {
+        color: #ffb4b4;
+      }
+      .kill[data-armed="true"] {
+        background: #3b1111;
+        color: #ffb4b4;
+      }
+      /* Wide screens: the drawer gets its own column and the terminal gives up the
+         space, so nothing sits behind it. The grid narrows, which sends ONE resize to
+         the session — the same thing dragging the window does. The backdrop has nothing
+         left to dim, and the toggle is what gives the width back. */
+      @media (min-width: 700px) {
+        body.menu-open {
+          padding-left: var(--drawer);
+        }
+        body.menu-open #backdrop {
+          opacity: 0;
+          pointer-events: none;
+        }
+      }
     </style>
   </head>
   <body>
     <div id="terminal"></div>
-    <div id="status" role="status" aria-live="polite">connecting…</div>
+    <div id="statusbar">
+      <button id="menu-toggle" type="button" title="sessions" aria-controls="drawer" aria-expanded="false">☰</button>
+      <div id="status" role="status" aria-live="polite">connecting…</div>
+    </div>
+    <div id="backdrop"></div>
+    <aside id="drawer" aria-label="Sessions" aria-hidden="true">
+      <header>
+        <span>Sessions</span>
+        <button id="menu-close" type="button" title="close">✕</button>
+      </header>
+      <div id="sessions"></div>
+    </aside>
+    <script>
+      // Restore the drawer BEFORE the first paint, and before the parser blocks on the
+      // vendor bundles below. Switching sessions is a full navigation, so a drawer that
+      // app.js opens after paint slides in again on every switch — and the terminal
+      // fits twice, once for a window it never actually had.
+      (function () {
+        var open = true;
+        try {
+          open = localStorage.getItem("hats-relay.menu") !== "closed";
+        } catch (e) {
+          // A browser that refuses storage still gets the default layout.
+        }
+        if (!open) return;
+        document.body.classList.add("menu-open");
+        document.getElementById("drawer").setAttribute("aria-hidden", "false");
+        document.getElementById("menu-toggle").setAttribute("aria-expanded", "true");
+      })();
+    </script>
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-fit.js"></script>
     <script src="/app.js"></script>
