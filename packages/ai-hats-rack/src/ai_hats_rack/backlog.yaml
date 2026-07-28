@@ -61,7 +61,10 @@ fields:
   - { name: reviewer, type: str, default: user }
   - { name: role, type: str, default: "" }
   - { name: tags, type: list, default: [] }
-  - { name: resolution, type: str, default: "", emit: when-set }
+  # HATS-1275: the two state-conditional gates. An administrative close must
+  # record why (the audit trail rule_backlog_discipline reads); the review
+  # accomplished-work summary is meaningless on any other edge.
+  - { name: resolution, type: str, default: "", emit: when-set, required_on: [cancelled] }
   - { name: completed_at, type: str, default: "", emit: when-set }
-  - { name: final_state, type: str, default: "", emit: when-set }
+  - { name: final_state, type: str, default: "", emit: when-set, write_on: [review] }
   - { name: work_policy, type: str, default: "", emit: when-set }

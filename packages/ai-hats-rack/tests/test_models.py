@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
-from ai_hats_rack.models import DeltaFieldError, TaskCard
+from ai_hats_rack.models import DeltaFieldError, TaskCard, UnreadableWriteError
 
 OLD_CARD = """\
 id: HATS-402
@@ -122,6 +123,65 @@ def test_empty_work_policy_not_emitted(tmp_path):
     out = tmp_path / "task.yaml"
     card.save(out)
     assert "work_policy" not in yaml.safe_load(out.read_text())
+
+
+# ----- read tolerance: a type-violating card still loads (HATS-1299) ----------
+
+
+def test_non_str_list_entries_coerce_on_load_instead_of_bricking(tmp_path):
+    # ADR-0017: reads are tolerant — a stored type violation is a warning, never
+    # a load failure. `--append tags=["x"]` used to nest the array and strand the
+    # card: from_yaml raised, so every repair verb died before it could mutate.
+    path = tmp_path / "task.yaml"
+    path.write_text("id: T-1\ntitle: t\ntags:\n- alpha\n- - delegate-ok\n")
+
+    card = TaskCard.from_yaml(path)
+
+    assert card.tags == ["alpha", "['delegate-ok']"]
+    assert card.load_warnings == ("tags[1]: non-str entry coerced to str (['delegate-ok'])",)
+
+
+def test_strict_validate_still_refuses_what_the_loader_tolerates():
+    # The split this card rests on: from_yaml is the tolerant READ, model_validate
+    # stays the strict gate the WRITE path validates against.
+    with pytest.raises(ValidationError):
+        TaskCard.model_validate({"id": "T-1", "tags": ["alpha", ["delegate-ok"]]})
+
+
+def test_clean_card_reports_no_load_warnings(tmp_path):
+    path = tmp_path / "task.yaml"
+    path.write_text("id: T-1\ntitle: t\ntags: [alpha]\n")
+    assert TaskCard.from_yaml(path).load_warnings == ()
+
+
+# ----- write gate: a write never outruns the read (HATS-1299) -----------------
+
+
+def test_save_refuses_a_card_the_reader_could_not_load(tmp_path):
+    # The class of defect, not the flag: pydantic does not validate list mutation,
+    # so any writer (CLI flag, subscriber delta) could persist an unreadable card.
+    card = TaskCard(id="T-1", title="t", tags=["alpha"])
+    card.tags.append(["delegate-ok"])  # what --append 'tags=["delegate-ok"]' did
+    out = tmp_path / "task.yaml"
+
+    with pytest.raises(UnreadableWriteError) as exc:
+        card.save(out)
+
+    assert "tags" in str(exc.value)
+    assert not out.exists(), "a refused write must leave no file behind"
+
+
+def test_save_gate_reports_the_task_id_and_leaves_a_prior_file_intact(tmp_path):
+    out = tmp_path / "task.yaml"
+    TaskCard(id="T-1", title="good", tags=["alpha"]).save(out)
+    before = out.read_text()
+
+    card = TaskCard(id="T-1", title="bad")
+    card.tags.append({"not": "a string"})
+    with pytest.raises(UnreadableWriteError, match="T-1"):
+        card.save(out)
+
+    assert out.read_text() == before
 
 
 def test_log_work_actor_prefix():

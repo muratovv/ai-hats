@@ -267,6 +267,59 @@ def test_context_unknown_task_is_typed(runner, tmp_path):
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
 
 
+def test_context_on_an_unloadable_card_reports_the_failure_not_absence(runner, tmp_path):
+    # HATS-1299: a card that exists but does not parse used to answer "not found",
+    # so the agent saw absence where the file (and the fix) were right there.
+    _family(tmp_path)
+    path = tmp_path / "tasks" / "HATS-2" / "task.yaml"
+    path.write_text("id: HATS-2\ntitle: t\nlinks: [not, a, mapping]\n")
+
+    result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
+
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "card_load_failed"
+    assert error["task_id"] == "HATS-2"
+    assert str(path) in error["message"]
+
+
+def test_context_surfaces_what_the_loader_had_to_coerce(runner, tmp_path):
+    # Coercion is not free: the next save persists the coerced value, so a silent
+    # tolerance would normalise the card behind the agent's back (ADR-0017: a
+    # stored type violation is a WARNING surfaced by context).
+    _family(tmp_path)
+    path = tmp_path / "tasks" / "HATS-2" / "task.yaml"
+    path.write_text("id: HATS-2\ntitle: t\ntags:\n- alpha\n- - nested\n")
+
+    plain = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path)])
+    as_json = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
+
+    assert plain.exit_code == 0, plain.output
+    assert "warnings:" in plain.output
+    assert "tags[1]" in plain.output
+    assert json.loads(as_json.output)["warnings"] == [
+        "tags[1]: non-str entry coerced to str (['nested'])"
+    ]
+
+
+def test_clean_card_context_json_carries_no_warnings_key(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
+    assert "warnings" not in json.loads(result.output)
+
+
+def test_a_broken_neighbour_still_does_not_sink_the_package(runner, tmp_path):
+    # The other half of the same rule: only the READ'S OWN card raises; a linked
+    # card that fails to load is skipped exactly as a dangling id is.
+    _family(tmp_path)
+    (tmp_path / "tasks" / "HATS-3" / "task.yaml").write_text("id: HATS-3\nlinks: [broken]\n")
+
+    result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["task"]["id"] == "HATS-2"
+
+
 # ----- context --attr work_log (audit is exercised in test_cli_audit.py) ----------
 
 

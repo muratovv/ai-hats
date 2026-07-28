@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence
 
 if TYPE_CHECKING:
     from filelock import FileLock
@@ -339,61 +339,23 @@ class Kernel:
     ) -> KernelResult:
         """Move a task along an FSM edge.
 
+        Delegates to :meth:`transition_ops` via a single :class:`~ai_hats_rack.ops.StateOp`.
         ``force`` relaxes ONLY the FSM arrow (never subscriber safety) and
         requires a reason. ``resolution`` / ``final_state`` ride the same lock
         window as the state change — a raise anywhere before the single
         persist leaves zero bytes changed on disk (HATS-723/481).
         """
-        from filelock import Timeout
+        from .ops import StateOp
 
-        self.topology.require_state(to_state)
-        if force and not reason.strip():
-            raise ForceRequiresReasonError()
-        if not self._task_path(task_id).exists():
-            raise UnknownTaskError(task_id)
-
-        outcomes: list[SubscriberOutcome] = []
-        events: list[EdgeEvent] = []
-        lock = self._task_lock(task_id)
-        try:
-            with lock:
-                task = self._load(task_id)
-                from_state = self._apply_edge(
-                    task,
-                    to_state,
-                    actor=actor,
-                    caller_cwd=caller_cwd,
-                    force=force,
-                    reason=reason,
-                    resolution=resolution,
-                    final_state=final_state,
-                    outcomes=outcomes,
-                    events=events,
-                )
-                self._persist(task)  # the SINGLE persist, always last
-        except Timeout as exc:
-            raise LockTimeoutError(
-                self.tasks_dir / task_id / ".lock", f"transition of {task_id}", self._lock_timeout
-            ) from exc
-        except Exception:
-            if events:  # dispatch began → the refusal stays auditable
-                self._finish_record(
-                    events[-1], task_id, actor, force, reason, outcomes, result="aborted"
-                )
-            raise
-
-        event = events[-1]
-        ctx = self._ctx_factory(
-            event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
-        )
-        self._dispatcher.run_reactions(event, ctx, outcomes)
-        record = self._finish_record(
-            event, task_id, actor, force, reason, outcomes, result="persisted"
-        )
-        return KernelResult(
-            task=task,
-            transitions=(TaskTransition(task_id, from_state, to_state, reason),),
-            journal=(record,),
+        return self.transition_ops(
+            task_id,
+            [StateOp(to_state)],
+            actor=actor,
+            caller_cwd=caller_cwd,
+            force=force,
+            reason=reason,
+            resolution=resolution,
+            final_state=final_state,
         )
 
     def _apply_edge(
@@ -461,6 +423,19 @@ class Kernel:
             if frm == current:
                 return to
         return candidates[0][1]
+
+    def _gate_values(self, task: TaskCard) -> dict[str, Any]:
+        return {f.name: _field_value(task, f.name) for f in self._schema.fields}
+
+    def _check_state_gates(
+        self, task: TaskCard, entered: Iterable[str], before: Mapping[str, Any]
+    ) -> None:
+        """Run the declared state-conditional gates against the RESULTING card
+        (HATS-1275). Called by BOTH transition paths immediately before their
+        single persist — a kwarg-side check would leave the ``--set`` path open."""
+        self._schema.check_state_gates(
+            entered=frozenset(entered), before=before, after=self._gate_values(task)
+        )
 
     def _delta_applier(self, task: TaskCard, actor: str) -> Callable[[Delta], None]:
         """In-memory application of an in-lock delta (work_log + declared-field
@@ -531,6 +506,8 @@ class Kernel:
         try:
             with lock:
                 task = self._load(task_id)
+                before = self._gate_values(task)
+                entered: list[str] = []
                 txn = OpTxn(
                     task_id=task_id,
                     card=task,
@@ -562,6 +539,7 @@ class Kernel:
                         transitions.append(
                             TaskTransition(task_id, from_state, to_state, reason)
                         )
+                        entered.append(to_state)
                         txn.results.append(
                             {"op": "state", "from": from_state, "to": to_state}
                         )
@@ -573,6 +551,7 @@ class Kernel:
                         txn.results.append({"op": "fields", "names": sorted(op.fields)})
                     else:
                         apply_non_state_op(txn, op)
+                self._check_state_gates(task, entered, before)
                 self._persist(task)  # the SINGLE persist, always last
         except Timeout as exc:
             raise LockTimeoutError(

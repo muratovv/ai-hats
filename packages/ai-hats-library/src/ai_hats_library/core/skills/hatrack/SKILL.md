@@ -1,6 +1,6 @@
 ---
 name: hatrack
-description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal; it replaces `backlog-manager` for that session.
+description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal.
 ai_hats:
   # ADR-0016: this skill drives the ai-hats-rack `rack` CLI for the whole backlog
   # surface — lifecycle, fields, documents, links, hypotheses, proposals. One
@@ -27,18 +27,7 @@ read it before advancing any card.
 
 ## When to Use
 
-This is the **rack** backlog manager — composed via `hatrack-trait` in place of
-`backlog-manager` (never both: they both own the lifecycle and would conflict).
-Select it per session with:
-
-```bash
-ai-hats config customize <role> --remove-skill backlog-manager --add-trait hatrack-trait --project
-# revert: ai-hats config customize <role> --reset
-```
-
-If a session composes the classic `backlog-manager` instead, use that skill —
-`rack` and the classic tracker CLI share the lock and the same `task.yaml`, so a
-mixed backlog is safe, but one session should drive the backlog through one manager.
+This is the **rack** backlog manager — composed via `hatrack-trait`.
 
 ## Backlog operations — the `rack` CLI
 
@@ -85,15 +74,21 @@ field travels — put per-stage child policy there, not in the whole card.
 
 There is no `update` verb: field edits ride the one mutating `transition` as
 `--set`/`--append` ops, schema-validated on the same lock as a state move (a bad
-choice/type is a typed refusal). Scalars use `--set`, list fields `--append`:
+choice/type is a typed refusal). `--set` replaces a field, `--append` adds to a
+list one; a payload is JSON when it parses and plain text otherwise:
 
 ```bash
 rack transition PROJ-042 --set priority=high --set reviewer=@lead
 rack transition PROJ-042 --set title="Sharper title" --set role=implementer
 rack transition PROJ-042 --set description="$(cat body.md)"   # verbatim body
-rack transition PROJ-042 --append tags='"dx"'                 # add one tag
+rack transition PROJ-042 --append tags=dx                     # add one tag
+rack transition PROJ-042 --append 'tags=["dx","rack"]'        # add each entry
+rack transition PROJ-042 --set 'tags=["dx"]'                  # replace the list
 rack transition PROJ-042 --set parent_task=PROJ-014           # re-parent
 ```
+
+A JSON array adds its **entries**, never itself — a list nested inside a list
+field is not a card any reader can load (HATS-1299).
 
 State and field ops compose in one call — `rack transition PROJ-042 --state
 execute --set role=implementer` is one lock, one persist.
@@ -187,9 +182,8 @@ stale, bounce to `brainstorm` instead of building on a dead premise
   (HATS-1047).
 - Driving lifecycle through `ai-hats task transition` in a rack session — the
   rack dispatcher/journal/worktree path is what's being dogfooded; use `rack`.
-- Composing both `backlog-manager` and `hatrack-trait` — two lifecycle owners.
 - Reaching for a `rack update` verb — there is none; field edits are
-  `rack transition <ID> --set <field>=<value>` (scalars) / `--append` (lists).
+  `rack transition <ID> --set <field>=<value>` (replace) / `--append` (add to a list).
 - Reaching back to the classic tracker CLI for fields / hyp / proposal — the
   whole surface is on `rack` now (`--set`, `rack hyp`, `rack proposal`).
 - Inlining a document's body from `context` output — read it by the printed path.

@@ -268,6 +268,15 @@ def _load_card(tasks_dir: Path, task_id: str) -> TaskCard | None:
         return None
 
 
+def _load_subject_card(tasks_dir: Path, task_id: str) -> TaskCard:
+    """The read's OWN card — a load failure surfaces as itself (CardLoadError),
+    never folded into "not found" the way a broken neighbour is (HATS-1299)."""
+    path = tasks_dir / task_id / "task.yaml"
+    if not path.exists():
+        raise UnknownTaskError(task_id)
+    return TaskCard.from_yaml(path)
+
+
 def _direction(kind: LinkKind) -> str:
     """How the edge points from the node it was resolved on: ``both`` symmetric,
     ``in`` for a derived reverse (the target links back), else ``out``."""
@@ -352,8 +361,7 @@ def walk_neighborhood(
     direction, depth, and chain.
     """
     reg = registry if registry is not None else load_registry()
-    if _load_card(tasks_dir, root_id) is None:
-        raise UnknownTaskError(root_id)
+    _load_subject_card(tasks_dir, root_id)  # the walk's root gets the same diagnosis
     kernel = Kernel(tasks_dir, registry=reg)
     follow: Matcher | None = compile_matcher(link_patterns) if link_patterns else None
 
@@ -591,6 +599,8 @@ class ContextPackage:
         # in --json (HATS-1064 regression guard).
         if self.enrichments:
             out["enrichments"] = [{"name": e.name, "body": e.body} for e in self.enrichments]
+        if self.task.load_warnings:
+            out["warnings"] = list(self.task.load_warnings)
         return out
 
 
@@ -621,9 +631,7 @@ def build_context(
     salient) kind is not repeated.
     """
     reg = registry if registry is not None else load_registry()
-    card = _load_card(tasks_dir, task_id)
-    if card is None:
-        raise UnknownTaskError(task_id)
+    card = _load_subject_card(tasks_dir, task_id)
     documents = tuple(DocStore(tasks_dir).scan(task_id))
 
     kernel = Kernel(tasks_dir, registry=reg)

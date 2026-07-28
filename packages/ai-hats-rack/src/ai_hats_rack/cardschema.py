@@ -43,6 +43,15 @@ class RequiredFieldError(FieldValidationError):
         super().__init__(field, message or "is required")
 
 
+class StateGateError(FieldValidationError):
+    """A state-conditional field gate refused a transition (HATS-1275): a
+    ``required_on`` field left empty on entering its state, or a ``write_on``
+    field changed on a transition that entered none of its declared states."""
+
+    def __init__(self, field: str, message: str, details: Mapping[str, Any] | None = None) -> None:
+        super().__init__(field, message, details)
+
+
 class ExtrasForbiddenError(RackError):
     """A write targets an undeclared key on a backlog with ``extras: forbid`` — a
     user-facing refusal. Reads stay tolerant; only writes are gated (ADR-0017 §1)."""
@@ -80,6 +89,8 @@ class ResolvedField:
     choices: tuple[Any, ...] | None
     validator: Validator | None
     emit: str
+    required_on: tuple[str, ...] = ()
+    write_on: tuple[str, ...] = ()
 
     def default_value(self) -> Any:
         base = self.default if self.has_default else _TYPE_ZERO.get(self.type)
@@ -133,6 +144,30 @@ class CardSchema:
             except ValueError as exc:
                 raise FieldValidationError(name, str(exc)) from exc
 
+    def check_state_gates(
+        self, *, entered: frozenset[str], before: Mapping[str, Any], after: Mapping[str, Any]
+    ) -> None:
+        """The state-conditional gate (HATS-1275), judged on the RESULTING card so
+        every write path is covered — the bespoke kwarg and a generic ``--set``
+        alike. ``entered`` is the set of states this transition moved INTO."""
+        for f in self._fields:
+            if f.required_on and entered.intersection(f.required_on) and not after.get(f.name):
+                raise StateGateError(
+                    f.name,
+                    f"is required when entering {sorted(entered.intersection(f.required_on))[0]!r} "
+                    "(record why: duplicate, won't-fix, obsolete, etc.)",
+                    {"required_on": list(f.required_on), "entered": sorted(entered)},
+                )
+            if not f.write_on or before.get(f.name) == after.get(f.name):
+                continue
+            if not entered.intersection(f.write_on):
+                raise StateGateError(
+                    f.name,
+                    f"may only be set on a transition entering {list(f.write_on)}; "
+                    f"this transition entered {sorted(entered) or 'no state'}",
+                    {"write_on": list(f.write_on), "entered": sorted(entered)},
+                )
+
     def emit_filter(self, mapping: Mapping[str, Any]) -> dict[str, Any]:
         """Persist-time emit gate (ADR-0017 §1): drop a declared field with
         ``emit: when-set`` whose value is empty from the persisted mapping —
@@ -185,6 +220,8 @@ def build_card_schema(
             choices=f.choices,
             validator=_bind_validator(f.validator, f.name, registry),
             emit=f.emit,
+            required_on=f.required_on,
+            write_on=f.write_on,
         )
         for f in defn.fields
     ]

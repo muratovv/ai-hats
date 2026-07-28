@@ -18,10 +18,18 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Mapping, get_origin
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from . import fastyaml
-from .errors import RackConfigError
+from .errors import RackConfigError, RackError
 
 
 #: task.yaml fields holding link ids in dedicated storage: a registry kind whose
@@ -32,8 +40,45 @@ LINK_STORAGE_FIELDS: frozenset[str] = frozenset(
 )
 
 
+#: Card fields stored as a list of plain strings (ids, labels). Read tolerance
+#: coerces a stray non-str entry here instead of failing the load (HATS-1299).
+STR_LIST_FIELDS: tuple[str, ...] = ("tags", "subtasks", "depends_on", "related", "see_also")
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _first_violation(exc: ValidationError) -> str:
+    """``field.index: message (got value)`` for the first error — a card refusal
+    names one concrete violation, not a multi-line pydantic dump."""
+    first = exc.errors()[0]
+    where = ".".join(str(part) for part in first["loc"])
+    return f"{where}: {first['msg']} (got {first['input']!r})"
+
+
+def coerce_str_lists(data: Mapping[str, Any]) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Read tolerance (ADR-0017 §validation): stringify non-str entries of the
+    str-list fields and report each one, so a card that violates its own type
+    still loads and stays repairable through the CLI.
+
+    Strict validation stays on ``model_validate`` — that split is the contract:
+    the READ tolerates what the WRITE gate refuses to persist."""
+    out = dict(data)
+    warnings: list[str] = []
+    for name in STR_LIST_FIELDS:
+        value = out.get(name)
+        if not isinstance(value, list) or all(isinstance(v, str) for v in value):
+            continue
+        coerced = []
+        for index, entry in enumerate(value):
+            if isinstance(entry, str):
+                coerced.append(entry)
+                continue
+            coerced.append(str(entry))
+            warnings.append(f"{name}[{index}]: non-str entry coerced to str ({entry})")
+        out[name] = coerced
+    return out, tuple(warnings)
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -60,6 +105,36 @@ class DeltaFieldError(RackConfigError):
     def __init__(self, name: str, message: str) -> None:
         self.field_name = name
         super().__init__(f"field {name!r}: {message}")
+
+
+class UnreadableWriteError(RackError):
+    """A write would persist a card the reader cannot load back (HATS-1299).
+
+    The invariant is the whole point: pydantic validates construction, not list
+    mutation, so any writer — a CLI flag, a subscriber delta — could otherwise
+    strand a card behind its own read validation. Refused at the single persist
+    chokepoint, so nothing reaches disk."""
+
+    def __init__(self, task_id: str, reason: str) -> None:
+        self.task_id = task_id
+        self.reason = reason
+        super().__init__(
+            f"refusing to write '{task_id}': the result would not load back — {reason}. "
+            "Nothing was written; fix the value and retry."
+        )
+
+
+class CardLoadError(RackError):
+    """A card file exists but does not parse into a card (HATS-1299).
+
+    Reported as itself so the read never answers "not found" for a card that is
+    right there — absence and corruption need different fixes."""
+
+    def __init__(self, task_id: str, path: Path, reason: str) -> None:
+        self.task_id = task_id
+        self.path = path
+        self.reason = reason
+        super().__init__(f"card '{task_id}' exists but does not load — {reason}. File: {path}")
 
 
 class WorkLogEntry(BaseModel):
@@ -143,6 +218,9 @@ class TaskCard(BaseModel):
     updated: str = ""
     completed_at: str = ""
     extras: dict[str, Any] = Field(default_factory=dict)
+
+    #: set by from_yaml only — a card built in memory has nothing to warn about.
+    _load_warnings: tuple[str, ...] = PrivateAttr(default=())
 
     @field_validator("work_log", mode="before")
     @classmethod
@@ -266,9 +344,33 @@ class TaskCard(BaseModel):
                 d[k] = v
         return d
 
+    @property
+    def load_warnings(self) -> tuple[str, ...]:
+        """What :meth:`from_yaml` had to coerce to load this card — empty for a
+        clean one. Surfaced by ``context`` so a tolerated violation is visible
+        before the next save normalises it on disk (HATS-1299)."""
+        return self._load_warnings
+
+    def _assert_readable(self, mapping: Mapping[str, Any]) -> None:
+        """Read-back gate: what is about to hit disk must load back through the
+        strict model, or nothing is written (HATS-1299)."""
+        try:
+            type(self).model_validate(dict(mapping))
+        except ValidationError as exc:
+            raise UnreadableWriteError(self.id, _first_violation(exc)) from exc
+
     @classmethod
     def from_yaml(cls, path: Path) -> TaskCard:
-        return cls.model_validate(fastyaml.load(path.read_text(encoding="utf-8")) or {})
+        """The tolerant read: coerce what a stored card got wrong, then validate.
+        What tolerance cannot absorb is a named refusal, not a raw pydantic dump."""
+        raw = fastyaml.load(path.read_text(encoding="utf-8")) or {}
+        data, warnings = coerce_str_lists(raw) if isinstance(raw, Mapping) else (raw, ())
+        try:
+            card = cls.model_validate(data)
+        except ValidationError as exc:
+            raise CardLoadError(path.parent.name, path, _first_violation(exc)) from exc
+        card._load_warnings = warnings
+        return card
 
     def save(
         self,
@@ -282,6 +384,7 @@ class TaskCard(BaseModel):
         mapping: Mapping[str, Any] = self.to_dict()
         if transform is not None:
             mapping = transform(dict(mapping))
+        self._assert_readable(mapping)
         atomic_write_text(
             path,
             yaml.dump(mapping, default_flow_style=False, allow_unicode=True, sort_keys=False),

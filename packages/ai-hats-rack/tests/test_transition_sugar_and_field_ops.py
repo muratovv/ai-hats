@@ -126,7 +126,9 @@ def test_set_and_append_parse_to_field_ops_preserving_argv_order():
     assert [type(o).__name__ for o in parsed] == ["FieldsOp", "StateOp", "FieldsOp"]
     assert parsed[0] == FieldsOp({"priority": Set("high")})
     assert parsed[1] == StateOp("execute")
-    assert parsed[2] == FieldsOp({"tags": Append(["x"])})
+    # HATS-1299: a JSON array adds its ENTRIES. It used to nest the array as one
+    # entry — Append(["x"]) — which no reader could load back.
+    assert parsed[2] == FieldsOp({"tags": Append("x")})
 
 
 def test_set_int_field_coerces_via_field_types():
@@ -140,9 +142,63 @@ def test_malformed_set_append_are_typed_op_parse_errors():
     with pytest.raises(OpParseError):
         parse_ops(["--set", "noequals"])
     with pytest.raises(OpParseError):
-        parse_ops(["--append", "tags=notjson"])
-    with pytest.raises(OpParseError):
         parse_ops(["--set", "budget=x"], field_types={"budget": "int"})
+
+
+# ----- --append/--set payload grammar (HATS-1299) ------------------------------
+# JSON when it parses, plain string otherwise; a list field takes an array
+# element-wise (--append) or wholesale (--set).
+
+
+def test_append_bare_text_is_a_string_not_a_json_refusal():
+    assert parse_ops(["--append", "tags=delegate-ok"]) == [
+        FieldsOp({"tags": Append("delegate-ok")})
+    ]
+    # the JSON-quoted form keeps working — same result, no second grammar
+    assert parse_ops(["--append", 'tags="delegate-ok"']) == [
+        FieldsOp({"tags": Append("delegate-ok")})
+    ]
+
+
+def test_append_array_becomes_one_op_per_entry_in_order():
+    assert parse_ops(["--append", 'tags=["a","b"]']) == [
+        FieldsOp({"tags": Append("a")}),
+        FieldsOp({"tags": Append("b")}),
+    ]
+
+
+def test_append_empty_array_is_a_no_op():
+    assert parse_ops(["--append", "tags=[]"]) == []
+
+
+def test_append_onto_a_declared_non_list_field_is_typed():
+    # Without this the bare-string fallback would DOWNGRADE today's error: an
+    # "invalid JSON" refusal at parse would become an internal marker deeper in.
+    with pytest.raises(OpParseError, match="not a list"):
+        parse_ops(["--append", "priority=high"], field_types={"priority": "str"})
+    # anchor fields are typed by the model, not the backlog schema — same refusal
+    with pytest.raises(OpParseError, match="not a list"):
+        parse_ops(["--append", "title=Renamed"])
+
+
+def test_set_replaces_a_list_field_with_a_json_array():
+    assert parse_ops(["--set", 'tags=["a","b"]'], field_types={"tags": "list"}) == [
+        FieldsOp({"tags": Set(["a", "b"])})
+    ]
+
+
+def test_set_non_array_payload_on_a_list_field_names_the_form():
+    with pytest.raises(OpParseError, match="JSON array"):
+        parse_ops(["--set", "tags=solo"], field_types={"tags": "list"})
+
+
+def test_set_on_a_str_field_never_parses_json():
+    # A str field takes the payload verbatim — a description that happens to look
+    # like JSON must not silently become a list (or an int, or null).
+    assert parse_ops(["--set", 'description=["a"]'], field_types={"description": "str"}) == [
+        FieldsOp({"description": Set('["a"]')})
+    ]
+    assert parse_ops(["--set", "title=42"]) == [FieldsOp({"title": Set("42")})]
 
 
 def test_set_append_refuse_structural_fields():
@@ -200,6 +256,42 @@ def test_append_writes_a_list_field(tmp_path):
     out = runner.invoke(main, ["transition", "HATS-001", "--append", 'tags="urgent"', *_args(tmp_path), "--json"])
     assert out.exit_code == 0, out.output
     assert json.loads(out.output)["task"]["tags"] == ["urgent"]
+
+
+def test_the_array_form_no_longer_strands_the_card(tmp_path):
+    # HATS-1299 regression, verbatim: this exact call used to write
+    # tags: [alpha, [delegate-ok]] and every later verb answered "not found".
+    runner = CliRunner()
+    _create(runner, tmp_path)
+    runner.invoke(main, ["transition", "HATS-001", "--append", "tags=alpha", *_args(tmp_path)])
+
+    out = runner.invoke(
+        main,
+        ["transition", "HATS-001", "--append", 'tags=["delegate-ok"]', *_args(tmp_path), "--json"],
+    )
+    assert out.exit_code == 0, out.output
+    assert json.loads(out.output)["task"]["tags"] == ["alpha", "delegate-ok"]
+
+    # the card is still addressable — the half of the defect that hurt most
+    read = runner.invoke(main, ["context", "HATS-001", *_args(tmp_path), "--json"])
+    assert read.exit_code == 0, read.output
+    assert json.loads(read.output)["task"]["tags"] == ["alpha", "delegate-ok"]
+
+
+def test_a_card_already_broken_on_disk_is_repairable_through_the_cli(tmp_path):
+    # The escape hatch: cards stranded before this fix (or by a foreign writer)
+    # must not need a hand-edited task.yaml, which rule_backlog_discipline forbids.
+    runner = CliRunner()
+    _create(runner, tmp_path)
+    card = tmp_path / "tasks" / "HATS-001" / "task.yaml"
+    card.write_text(card.read_text() + "tags:\n- alpha\n- - delegate-ok\n", encoding="utf-8")
+
+    repair = runner.invoke(
+        main, ["transition", "HATS-001", "--set", 'tags=["alpha"]', *_args(tmp_path), "--json"]
+    )
+
+    assert repair.exit_code == 0, repair.output
+    assert json.loads(repair.output)["task"]["tags"] == ["alpha"]
 
 
 def test_set_int_field_coerces_end_to_end_over_a_custom_catalog(tmp_path):

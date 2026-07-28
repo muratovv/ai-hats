@@ -144,7 +144,9 @@ class FieldSpec:
     """One declared card-field (ADR-0017 §1): the schema of everything beyond
     the kernel anchor. ``has_default`` records whether ``default`` was declared
     (vs a required/no-default field); ``validator`` is a bare name resolved
-    against the open registry at composition, never a check hidden in code."""
+    against the open registry at composition, never a check hidden in code.
+    ``required_on``/``write_on`` are the state-conditional gates (HATS-1275);
+    empty means unconstrained."""
 
     name: str
     type: str = "str"
@@ -154,6 +156,8 @@ class FieldSpec:
     choices: tuple[Any, ...] | None = None
     validator: str | None = None
     emit: str = "always"
+    required_on: tuple[str, ...] = ()
+    write_on: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -343,6 +347,18 @@ def _collect_links(
     return kinds_raw, kind_handlers, kind_read_handlers
 
 
+def _parse_state_gate(raw: Any, field_name: str, key: str, source: str) -> tuple[str, ...]:
+    """Parse a ``required_on``/``write_on`` list. Membership against the topology
+    is checked later, once the states are known (:func:`_validate_state_gates`)."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(s, str) for s in raw):
+        raise BacklogDefinitionError(
+            f"{source}: field {field_name!r} {key} must be a list of state names (got {raw!r})"
+        )
+    return tuple(raw)
+
+
 def _collect_field(raw: Any, source: str) -> FieldSpec:
     """Parse one ``fields[]`` entry, fail-closed on unknown keys and bad enums."""
     if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) or not raw["name"]:
@@ -380,6 +396,8 @@ def _collect_field(raw: Any, source: str) -> FieldSpec:
         choices=tuple(choices_raw) if choices_raw is not None else None,
         validator=validator,
         emit=emit,
+        required_on=_parse_state_gate(raw.get("required_on"), name, "required_on", source),
+        write_on=_parse_state_gate(raw.get("write_on"), name, "write_on", source),
     )
 
 
@@ -425,6 +443,19 @@ def _validate_edge_names(
     for name in edge_names.values():
         if name in states:
             raise EdgeNameStateCollisionError(name, source)
+
+
+def _validate_state_gates(fields: tuple[FieldSpec, ...], states: set[str], source: str) -> None:
+    """Fail-closed (HATS-1275): a gate naming a state the FSM does not declare
+    would silently never fire — the silent-failure class the gates exist to close."""
+    for spec in fields:
+        for key, declared in (("required_on", spec.required_on), ("write_on", spec.write_on)):
+            for state in declared:
+                if state not in states:
+                    raise BacklogDefinitionError(
+                        f"{source}: field {spec.name!r} {key} names unknown state "
+                        f"{state!r} (declared states: {sorted(states)})"
+                    )
 
 
 def _parse_extras(raw: Any, source: str) -> str:
@@ -475,6 +506,7 @@ def _build(raw: Any, source: str) -> BacklogDefinition:
     registry = _validate_registry({"kinds": kinds_raw}, source)
     _validate_stored_inverses(registry, kind_handlers, source)
     _validate_edge_names(fsm.edge_names, set(topology.states), source)
+    _validate_state_gates(fields, set(topology.states), source)
     bindings = Bindings(
         state_on_enter=MappingProxyType(fsm.state_on_enter),
         state_on_exit=MappingProxyType(fsm.state_on_exit),

@@ -127,7 +127,7 @@ network call, sub-agent invocation, or filesystem writes outside `.agent/`.
 # Harness bash lacks an activated venv — resolve a runner first (HATS-790: no
 # bin/ai-hats console script, so the fallback runs the venv interpreter's module):
 ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-rack transition <ID> --append tags='"integration"'
+rack transition <ID> --append tags=integration
 ```
 
 ### Override
