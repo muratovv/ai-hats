@@ -44,6 +44,13 @@ Isolated development using git worktrees. Each task gets its own working copy �
    `wt_entry_gate.py` PreToolUse hook denies it and repeats this recipe
    (HATS-1278). No other surface has the tool — skip this paragraph there.
 
+   **Claude surface only — delegate with `ai-hats agent --isolation`, never the
+   Agent tool's `isolation: "worktree"`.** A subagent that writes leaves its
+   worktree on disk on a `worktree-agent-<hex>` branch — registered in git,
+   invisible to `ai-hats wt list` (measured, HATS-1285). A read-only subagent
+   needs no isolation at all. No other surface has the parameter — skip this
+   paragraph there.
+
    A **PreToolUse gate** (`hooks/wt_gate.py`) **hard-denies** a code/config Edit/Write in
    the **main checkout** — interactive and headless (HATS-889; the old nudge was ignored,
    PROX-375). On a deny, move into a worktree and re-apply: `ai-hats wt status` for an
