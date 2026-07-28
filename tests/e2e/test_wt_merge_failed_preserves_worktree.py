@@ -38,8 +38,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -84,7 +88,10 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -96,9 +103,14 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- 2. create worktree on a task branch ----
@@ -109,15 +121,13 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     current_path: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith("/task/preserve-probe"):
                 wt_path = current_path
                 break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"could not locate worktree path:\n{listing}"
-    )
+    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
 
     # ---- 3. worktree branch commits a NEW file ----
     _git(wt_path, "config", "user.email", "e2e@test")
@@ -125,9 +135,14 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     (wt_path / "COLLIDE.txt").write_text("from-worktree\n")
     _git(wt_path, "add", "COLLIDE.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "worktree adds COLLIDE.txt",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "worktree adds COLLIDE.txt",
     )
 
     # ---- 4. untracked collision on main (no commit → no drift) ----
@@ -135,8 +150,11 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
 
     # ---- 5. wt merge fails, worktree + branch PRESERVED ----
     res = ai_hats(
-        "wt", "merge", "task/preserve-probe",
-        expect_exit=None, cwd=project,
+        "wt",
+        "merge",
+        "task/preserve-probe",
+        expect_exit=None,
+        cwd=project,
     )
     assert res.returncode != 0, (
         f"wt merge unexpectedly succeeded despite the untracked collision\n"
@@ -161,13 +179,8 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     ai_hats("wt", "merge", "task/preserve-probe", cwd=project)
     branches = _git(project, "branch", "--list", "task/preserve-probe").stdout
     assert branches.strip() == "", (
-        f"worktree branch should be deleted after a successful retry:\n"
-        f"{branches!r}"
+        f"worktree branch should be deleted after a successful retry:\n{branches!r}"
     )
-    assert not wt_path.is_dir(), (
-        "worktree directory should be gone after a successful merge"
-    )
+    assert not wt_path.is_dir(), "worktree directory should be gone after a successful merge"
     log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
-    assert "worktree adds COLLIDE.txt" in log, (
-        f"worktree commit not in history after retry:\n{log}"
-    )
+    assert "worktree adds COLLIDE.txt" in log, f"worktree commit not in history after retry:\n{log}"

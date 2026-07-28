@@ -63,12 +63,14 @@ def provider_less_project(tmp_project):
         ),
         pytest.param(("agent", "maintainer", "--task", "ping"), id="agent"),
         pytest.param(
-            ("agent", "maintainer", "--task", "ping", "--dry-run"), id="agent--dry-run",
+            ("agent", "maintainer", "--task", "ping", "--dry-run"),
+            id="agent--dry-run",
         ),
     ],
 )
 def test_e2e_missing_provider_exits_clean_with_remediation(
-    provider_less_project, argv,
+    provider_less_project,
+    argv,
 ) -> None:
     """Every launch/preview surface → exit 2, friendly, no traceback."""
     result = provider_less_project.run(*argv, timeout=30.0)
@@ -89,8 +91,7 @@ def test_e2e_missing_provider_exits_clean_with_remediation(
         "claude",
     ):
         assert marker in result.stderr, (
-            f"stderr missing marker {marker!r}\n"
-            f"stderr (tail 800):\n{result.stderr[-800:]}"
+            f"stderr missing marker {marker!r}\nstderr (tail 800):\n{result.stderr[-800:]}"
         )
 
     # No traceback leak in either stream — the whole point of the change.

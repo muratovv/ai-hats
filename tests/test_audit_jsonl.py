@@ -75,10 +75,13 @@ def tool_result_msg(tool_use_id: str, result: str, ts: str = "2026-03-27T18:15:0
 
 def test_jsonl_extracts_user_message(tmp_path):
     session = make_session(tmp_path)
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("привет, как дела?"),
-        assistant_msg([{"type": "text", "text": "Привет! Всё хорошо."}]),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("привет, как дела?"),
+            assistant_msg([{"type": "text", "text": "Привет! Всё хорошо."}]),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()
@@ -89,14 +92,19 @@ def test_jsonl_extracts_user_message(tmp_path):
 
 def test_jsonl_extracts_tool_calls(tmp_path):
     session = make_session(tmp_path)
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("найди файл"),
-        assistant_msg([
-            {"type": "tool_use", "id": "t1", "name": "Grep", "input": {"pattern": "TODO"}},
-        ]),
-        tool_result_msg("t1", "src/main.py:42: TODO fix this"),
-        assistant_msg([{"type": "text", "text": "Нашёл TODO в main.py."}]),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("найди файл"),
+            assistant_msg(
+                [
+                    {"type": "tool_use", "id": "t1", "name": "Grep", "input": {"pattern": "TODO"}},
+                ]
+            ),
+            tool_result_msg("t1", "src/main.py:42: TODO fix this"),
+            assistant_msg([{"type": "text", "text": "Нашёл TODO в main.py."}]),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()
@@ -107,13 +115,18 @@ def test_jsonl_extracts_tool_calls(tmp_path):
 
 def test_jsonl_extracts_thinking(tmp_path):
     session = make_session(tmp_path)
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("сложный вопрос"),
-        assistant_msg([
-            {"type": "thinking", "thinking": "Давайте подумаем об этом..."},
-            {"type": "text", "text": "Вот ответ."},
-        ]),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("сложный вопрос"),
+            assistant_msg(
+                [
+                    {"type": "thinking", "thinking": "Давайте подумаем об этом..."},
+                    {"type": "text", "text": "Вот ответ."},
+                ]
+            ),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()
@@ -124,13 +137,16 @@ def test_jsonl_extracts_thinking(tmp_path):
 
 def test_jsonl_token_stats(tmp_path):
     session = make_session(tmp_path)
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("привет"),
-        assistant_msg(
-            [{"type": "text", "text": "Привет!"}],
-            usage={"input_tokens": 500, "output_tokens": 200},
-        ),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("привет"),
+            assistant_msg(
+                [{"type": "text", "text": "Привет!"}],
+                usage={"input_tokens": 500, "output_tokens": 200},
+            ),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()
@@ -142,12 +158,15 @@ def test_jsonl_token_stats(tmp_path):
 
 def test_jsonl_multiple_turns(tmp_path):
     session = make_session(tmp_path)
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("вопрос 1", ts="2026-03-27T18:15:00Z"),
-        assistant_msg([{"type": "text", "text": "ответ 1"}], ts="2026-03-27T18:15:05Z"),
-        user_msg("вопрос 2", ts="2026-03-27T18:16:00Z"),
-        assistant_msg([{"type": "text", "text": "ответ 2"}], ts="2026-03-27T18:16:05Z"),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("вопрос 1", ts="2026-03-27T18:15:00Z"),
+            assistant_msg([{"type": "text", "text": "ответ 1"}], ts="2026-03-27T18:15:05Z"),
+            user_msg("вопрос 2", ts="2026-03-27T18:16:00Z"),
+            assistant_msg([{"type": "text", "text": "ответ 2"}], ts="2026-03-27T18:16:05Z"),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
     audit = session.audit_path.read_text()
@@ -164,8 +183,7 @@ def test_fallback_to_trace_when_no_jsonl(tmp_path):
     """When jsonl_path is None, falls back to trace.log parsing."""
     session = make_session(tmp_path)
     session.trace_path.write_text(
-        '18:15:00.000 [SYS] Session started\n'
-        '18:15:10.000 [REQ] test request\n'
+        "18:15:00.000 [SYS] Session started\n18:15:10.000 [REQ] test request\n"
     )
 
     AuditWriter().build(session, jsonl_path=None)
@@ -181,10 +199,13 @@ def test_jsonl_path_deletes_trace(tmp_path):
     """When JSONL is available, trace.log must be deleted after build."""
     session = make_session(tmp_path)
     session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("привет"),
-        assistant_msg([{"type": "text", "text": "Привет!"}]),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("привет"),
+            assistant_msg([{"type": "text", "text": "Привет!"}]),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl)
 
@@ -196,8 +217,7 @@ def test_fallback_path_deletes_trace(tmp_path):
     """When no JSONL, trace.log must still be deleted after successful audit."""
     session = make_session(tmp_path)
     session.trace_path.write_text(
-        '18:15:00.000 [SYS] Session started\n'
-        '18:15:10.000 [REQ] test request\n'
+        "18:15:00.000 [SYS] Session started\n18:15:10.000 [REQ] test request\n"
     )
 
     AuditWriter().build(session, jsonl_path=None)
@@ -210,10 +230,13 @@ def test_keep_raw_preserves_trace_jsonl(tmp_path):
     """keep_raw=True preserves trace.log even with JSONL."""
     session = make_session(tmp_path)
     session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
-    jsonl = make_jsonl(tmp_path, [
-        user_msg("привет"),
-        assistant_msg([{"type": "text", "text": "Привет!"}]),
-    ])
+    jsonl = make_jsonl(
+        tmp_path,
+        [
+            user_msg("привет"),
+            assistant_msg([{"type": "text", "text": "Привет!"}]),
+        ],
+    )
 
     AuditWriter().build(session, jsonl_path=jsonl, keep_raw=True)
 
@@ -225,8 +248,7 @@ def test_keep_raw_preserves_trace_fallback(tmp_path):
     """keep_raw=True preserves trace.log in fallback path."""
     session = make_session(tmp_path)
     session.trace_path.write_text(
-        '18:15:00.000 [SYS] Session started\n'
-        '18:15:10.000 [REQ] test request\n'
+        "18:15:00.000 [SYS] Session started\n18:15:10.000 [REQ] test request\n"
     )
 
     AuditWriter().build(session, jsonl_path=None, keep_raw=True)

@@ -48,7 +48,11 @@ def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
     rack_bin = Path(proj.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
     return subprocess.run(
         [str(rack_bin), *args],
-        cwd=str(proj.path), env=env, capture_output=True, text=True, timeout=180,
+        cwd=str(proj.path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
 
 
@@ -99,18 +103,13 @@ def test_wt_create_refuses_on_feature_branch(tmp_venv_project) -> None:
 
     # --- Refusal path ---
     result = proj.run("wt", "create", "task/probe")
-    (
-        result
-        .expect_failure()
-        .expect_stdout_contains("Refused", "feat/parking", "master")
-    )
+    (result.expect_failure().expect_stdout_contains("Refused", "feat/parking", "master"))
 
     # No leaked worktree directory: only the main repo's worktree should
     # be listed. `git worktree list` first line is the main worktree.
     wt_list = _git(project, "worktree", "list").stdout.strip().splitlines()
     assert len(wt_list) == 1, (
-        f"Refusal should not create a worktree; got {len(wt_list)} entries:\n"
-        + "\n".join(wt_list)
+        f"Refusal should not create a worktree; got {len(wt_list)} entries:\n" + "\n".join(wt_list)
     )
 
     # --- Happy path (sanity: guard didn't break the normal flow) ---
@@ -120,8 +119,7 @@ def test_wt_create_refuses_on_feature_branch(tmp_venv_project) -> None:
 
     wt_list = _git(project, "worktree", "list").stdout.strip().splitlines()
     assert len(wt_list) == 2, (
-        f"Expected 2 worktrees after happy-path create; got {len(wt_list)}:\n"
-        + "\n".join(wt_list)
+        f"Expected 2 worktrees after happy-path create; got {len(wt_list)}:\n" + "\n".join(wt_list)
     )
 
     # Cleanup the worktree we just created so we don't leak directories
@@ -160,8 +158,7 @@ def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> 
     # guard fires. Fill every required section so the per-section gate
     # passes and execution proceeds to the guard (HATS-635).
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.exists(), f"expected plan scaffold at {plan_path}"
     plan_path.write_text(
@@ -191,6 +188,5 @@ def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> 
     # No worktree leak — only the main repo's worktree listed.
     wt_list = _git(project, "worktree", "list").stdout.strip().splitlines()
     assert len(wt_list) == 1, (
-        f"Refused transition must not create a worktree; got {len(wt_list)}:\n"
-        + "\n".join(wt_list)
+        f"Refused transition must not create a worktree; got {len(wt_list)}:\n" + "\n".join(wt_list)
     )

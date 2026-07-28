@@ -225,8 +225,10 @@ def test_trace_values_on_includes_truncated_repr():
     captured: list[TraceEvent] = []
     p = build(_EchoStep())
     run_pipeline(
-        p, {"payload": "y" * 500},
-        on_step=captured.append, trace_values=True,
+        p,
+        {"payload": "y" * 500},
+        on_step=captured.append,
+        trace_values=True,
     )
     ev = captured[0]
     assert ev.requires_values is not None

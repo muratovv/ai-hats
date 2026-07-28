@@ -45,9 +45,7 @@ def test_editable_host_greenfield_seeds_local(tmp_path, monkeypatch):
 def test_non_editable_host_keeps_stable(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
-    monkeypatch.setattr(
-        "ai_hats.cli.maintenance._is_editable_install", lambda: (False, None)
-    )
+    monkeypatch.setattr("ai_hats.cli.maintenance._is_editable_install", lambda: (False, None))
 
     Assembler(project).init(provider="claude")
 
@@ -58,9 +56,7 @@ def test_init_src_env_beats_in_init_detection(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     # Interpreter is NOT editable, but the launcher exported a source path.
-    monkeypatch.setattr(
-        "ai_hats.cli.maintenance._is_editable_install", lambda: (False, None)
-    )
+    monkeypatch.setattr("ai_hats.cli.maintenance._is_editable_install", lambda: (False, None))
     monkeypatch.setenv(ENV_AI_HATS_INIT_SRC, "/monorepo/ai-hats")
 
     Assembler(project).init(provider="claude")

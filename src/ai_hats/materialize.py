@@ -65,7 +65,8 @@ def compose_for_role(assembler: "Assembler", role: str) -> CompositionResult:
     ``result.errors`` and decide locally.
     """
     result = assembler.composer.compose(
-        role, overlays=assembler._get_overlays(role),
+        role,
+        overlays=assembler._get_overlays(role),
     )
     # HATS-1203: the composer sees library_paths only, so user-rules attach
     # here — the one funnel — and reach every consumer. Discovery is delegated

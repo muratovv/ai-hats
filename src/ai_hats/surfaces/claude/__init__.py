@@ -1,3 +1,3 @@
 from .provider import ClaudeProvider
 
-__all__ = ['ClaudeProvider']
+__all__ = ["ClaudeProvider"]

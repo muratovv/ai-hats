@@ -41,21 +41,29 @@ def test_execute_preset_interactive_threads_flat_keys(tmp_path: Path):
     runner = MagicMock()
     runner.run.return_value = (0, sess)
 
-    with patch(
-        "ai_hats.runtime.WrapRunner", return_value=runner,
-    ), patch(
-        "ai_hats.models.ProjectConfig.from_yaml",
-        return_value=SimpleNamespace(provider="claude"),
-    ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
-        state = run(execute_pipeline, {
-            "interactive": True,
-            "role": None,
-            "project_dir": tmp_path,
-            "extra_args": [],
-            "composition": _fake_payload(),
-            "session_mgr": MagicMock(name="session_mgr"),
-            "tracer_factory": MagicMock(name="tracer_factory"),
-        })
+    with (
+        patch(
+            "ai_hats.runtime.WrapRunner",
+            return_value=runner,
+        ),
+        patch(
+            "ai_hats.models.ProjectConfig.from_yaml",
+            return_value=SimpleNamespace(provider="claude"),
+        ),
+        patch("subprocess.Popen", return_value=MagicMock(pid=1)),
+    ):
+        state = run(
+            execute_pipeline,
+            {
+                "interactive": True,
+                "role": None,
+                "project_dir": tmp_path,
+                "extra_args": [],
+                "composition": _fake_payload(),
+                "session_mgr": MagicMock(name="session_mgr"),
+                "tracer_factory": MagicMock(name="tracer_factory"),
+            },
+        )
 
     assert state["exit_code"] == 0
     assert state["session_id"] == "sid-test"
@@ -74,18 +82,25 @@ def test_execute_preset_batch_reads_metrics(tmp_path: Path):
     runner = MagicMock()
     runner.run.return_value = sess
 
-    with patch(
-        "ai_hats.runtime.SubAgentRunner", return_value=runner,
-    ), patch("subprocess.Popen", return_value=MagicMock(pid=2)):
-        state = run(execute_pipeline, {
-            "interactive": False,
-            "role": None,
-            "project_dir": tmp_path,
-            "ticket": "HATS-267",
-            "composition": _fake_payload(),
-            "session_mgr": MagicMock(name="session_mgr"),
-            "tracer_factory": MagicMock(name="tracer_factory"),
-        })
+    with (
+        patch(
+            "ai_hats.runtime.SubAgentRunner",
+            return_value=runner,
+        ),
+        patch("subprocess.Popen", return_value=MagicMock(pid=2)),
+    ):
+        state = run(
+            execute_pipeline,
+            {
+                "interactive": False,
+                "role": None,
+                "project_dir": tmp_path,
+                "ticket": "HATS-267",
+                "composition": _fake_payload(),
+                "session_mgr": MagicMock(name="session_mgr"),
+                "tracer_factory": MagicMock(name="tracer_factory"),
+            },
+        )
 
     assert state["exit_code"] == 7
     assert state["session_id"] == "sid-test"
@@ -96,17 +111,24 @@ def test_execute_preset_batch_missing_metrics_defaults_to_one(tmp_path: Path):
     runner = MagicMock()
     runner.run.return_value = sess
 
-    with patch(
-        "ai_hats.runtime.SubAgentRunner", return_value=runner,
-    ), patch("subprocess.Popen", return_value=MagicMock(pid=3)):
-        state = run(execute_pipeline, {
-            "interactive": False,
-            "role": None,
-            "project_dir": tmp_path,
-            "composition": _fake_payload(),
-            "session_mgr": MagicMock(name="session_mgr"),
-            "tracer_factory": MagicMock(name="tracer_factory"),
-        })
+    with (
+        patch(
+            "ai_hats.runtime.SubAgentRunner",
+            return_value=runner,
+        ),
+        patch("subprocess.Popen", return_value=MagicMock(pid=3)),
+    ):
+        state = run(
+            execute_pipeline,
+            {
+                "interactive": False,
+                "role": None,
+                "project_dir": tmp_path,
+                "composition": _fake_payload(),
+                "session_mgr": MagicMock(name="session_mgr"),
+                "tracer_factory": MagicMock(name="tracer_factory"),
+            },
+        )
 
     assert state["exit_code"] == 1
 
@@ -147,20 +169,28 @@ def test_execute_preset_log_steps_print(tmp_path: Path, capsys):
     runner = MagicMock()
     runner.run.return_value = (0, sess)
 
-    with patch(
-        "ai_hats.runtime.WrapRunner", return_value=runner,
-    ), patch(
-        "ai_hats.models.ProjectConfig.from_yaml",
-        return_value=SimpleNamespace(provider="claude"),
-    ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
-        run(execute_pipeline, {
-            "interactive": True,
-            "role": None,
-            "project_dir": tmp_path,
-            "composition": _fake_payload(),
-            "session_mgr": MagicMock(name="session_mgr"),
-            "tracer_factory": MagicMock(name="tracer_factory"),
-        })
+    with (
+        patch(
+            "ai_hats.runtime.WrapRunner",
+            return_value=runner,
+        ),
+        patch(
+            "ai_hats.models.ProjectConfig.from_yaml",
+            return_value=SimpleNamespace(provider="claude"),
+        ),
+        patch("subprocess.Popen", return_value=MagicMock(pid=1)),
+    ):
+        run(
+            execute_pipeline,
+            {
+                "interactive": True,
+                "role": None,
+                "project_dir": tmp_path,
+                "composition": _fake_payload(),
+                "session_mgr": MagicMock(name="session_mgr"),
+                "tracer_factory": MagicMock(name="tracer_factory"),
+            },
+        )
 
     err = capsys.readouterr().err
     assert "pre_log fires" in err

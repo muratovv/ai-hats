@@ -55,6 +55,7 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.chdir(project)
     # bootstrap_or_die does a self-update probe — stub for offline / CI.
     import ai_hats._bootstrap as boot
+
     monkeypatch.setattr(boot, "bootstrap_or_die", lambda: None)
     return project
 
@@ -76,9 +77,7 @@ def test_show_prompt_text_mode_active_role(project_with_maintainer):
     # Injection bodies between PRIORITIES and RULES (the HATS-452 fix).
     assert "E2E gate" in out, "ai-hats-maintainer trait injection missing"
     assert "Agent Protocol" in out, "trait-agent injection missing"
-    assert "primary development assistant for the" in out, (
-        "role maintainer's own injection missing"
-    )
+    assert "primary development assistant for the" in out, "role maintainer's own injection missing"
     # Layout: injection sits in the PRIORITIES..RULES band.
     pri = out.find("## PRIORITIES")
     rules = out.find("## RULES")
@@ -109,6 +108,7 @@ def test_show_prompt_stats_mode_emits_json(project_with_maintainer):
     assert payload["injection_chars"] > 1000  # the bug produced 0 here
     assert payload["prompt_chars"] > payload["injection_chars"]
     # New rule wired in via Phase 3.
-    assert "rule_composition_value_contract" in payload.get(
-        "trait_names", []
-    ) or payload.get("rule_count", 0) >= 10
+    assert (
+        "rule_composition_value_contract" in payload.get("trait_names", [])
+        or payload.get("rule_count", 0) >= 10
+    )

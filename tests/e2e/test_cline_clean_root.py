@@ -48,16 +48,29 @@ def test_cline_session_leaves_project_root_clean(
     }
 
     tmp_project.run(
-        "self", "init", "-r", "assistant", "-p", "cline", "--no-update",
-        timeout=120, extra_env=checkout_env,
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "cline",
+        "--no-update",
+        timeout=120,
+        extra_env=checkout_env,
     ).expect_ok()
 
     result = tmp_project.run(
-        "execute", "--batch",
-        "-r", "assistant", "-p", "cline",
-        "--prompt", "Reply with exactly: OK. No other text.",
+        "execute",
+        "--batch",
+        "-r",
+        "assistant",
+        "-p",
+        "cline",
+        "--prompt",
+        "Reply with exactly: OK. No other text.",
         "--json",
-        timeout=120, extra_env=checkout_env,
+        timeout=120,
+        extra_env=checkout_env,
     ).expect_ok()
 
     data = json.loads(result.stdout.strip().splitlines()[-1])

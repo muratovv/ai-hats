@@ -29,9 +29,7 @@ class _StubSession:
         self.trace_path = self.session_dir / TRACE_LOG
         self.trace_path.write_text("(stub)")
         self.metrics_path = self.session_dir / METRICS_JSON
-        self.metrics_path.write_text(
-            json.dumps({"exit_code": 0, "role": "test-agent"})
-        )
+        self.metrics_path.write_text(json.dumps({"exit_code": 0, "role": "test-agent"}))
 
 
 class _StubRunner:
@@ -61,6 +59,7 @@ def project_dir(tmp_path: Path) -> Path:
 def stub_runner(monkeypatch, project_dir):
     """Replace SubAgentRunner with _StubRunner and cwd into the fake project."""
     import ai_hats.runtime as runtime_mod
+
     monkeypatch.setattr(runtime_mod, "SubAgentRunner", _StubRunner)
     monkeypatch.chdir(project_dir)
     _StubRunner.last_kwargs = None
@@ -80,20 +79,31 @@ def test_run_without_tags_passes_none(stub_runner):
 
 def test_run_single_tag(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "test-agent", "--task", "t", "--tag", "alert_fp=abc123"],
+        main,
+        ["agent", "test-agent", "--task", "t", "--tag", "alert_fp=abc123"],
     )
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] == {"alert_fp": "abc123"}
 
 
 def test_run_multiple_tags(stub_runner):
-    result = CliRunner().invoke(main, [
-        "agent", "test-agent", "--task", "t",
-        "--tag", "alert_fp=abc", "--tag", "client=home-lab",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "agent",
+            "test-agent",
+            "--task",
+            "t",
+            "--tag",
+            "alert_fp=abc",
+            "--tag",
+            "client=home-lab",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert stub_runner.last_kwargs["tags"] == {
-        "alert_fp": "abc", "client": "home-lab",
+        "alert_fp": "abc",
+        "client": "home-lab",
     }
 
 
@@ -112,7 +122,8 @@ def test_run_tag_missing_equals_fails(stub_runner):
 
 def test_run_tag_reserved_key_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "test-agent", "--tag", "role=hacker"],
+        main,
+        ["agent", "test-agent", "--tag", "role=hacker"],
     )
     assert result.exit_code == 2
     assert "is reserved" in result.output
@@ -121,7 +132,8 @@ def test_run_tag_reserved_key_fails(stub_runner):
 
 def test_run_tag_invalid_key_format_fails(stub_runner):
     result = CliRunner().invoke(
-        main, ["agent", "test-agent", "--tag", "1bad=v"],
+        main,
+        ["agent", "test-agent", "--tag", "1bad=v"],
     )
     assert result.exit_code == 2
     assert "must match" in result.output

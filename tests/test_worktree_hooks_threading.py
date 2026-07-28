@@ -46,9 +46,9 @@ def _project_with_wt_role(tmp_path: Path, *, with_script: bool = True):
         "name: wt-role\npriorities: [Quality]\n"
         "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
     )
-    ProjectConfig(
-        provider="agy", library_paths=[str(lib)], active_role="wt-role"
-    ).save(project / PROJECT_CONFIG)
+    ProjectConfig(provider="agy", library_paths=[str(lib)], active_role="wt-role").save(
+        project / PROJECT_CONFIG
+    )
     return project, lib
 
 
@@ -59,9 +59,7 @@ def test_serialize_drops_empty_on_for_wt_in():
     }
     out = serialize_collected_hooks(collected)
     assert out["wt_in"] == [{"skill": "seeder", "script": "seed.sh"}]
-    assert out["wt_out"] == [
-        {"skill": "drainer", "script": "drain.sh", "on": ["merge", "discard"]}
-    ]
+    assert out["wt_out"] == [{"skill": "drainer", "script": "drain.sh", "on": ["merge", "discard"]}]
 
 
 def test_serialize_skips_empty_kinds():

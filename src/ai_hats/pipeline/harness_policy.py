@@ -91,22 +91,17 @@ def parse_harness_policy(raw: Any) -> HarnessPolicy:
     (reporting=False) and is treated as a no-op.
     """
     if not isinstance(raw, dict):
-        raise HarnessPolicyError(
-            f"harness must be a mapping, got {type(raw).__name__}"
-        )
+        raise HarnessPolicyError(f"harness must be a mapping, got {type(raw).__name__}")
 
     unknown = set(raw.keys()) - _HARNESS_KEYS
     if unknown:
         raise HarnessPolicyError(
-            f"unknown keys {sorted(unknown)} "
-            f"(allowed: {sorted(_HARNESS_KEYS)})"
+            f"unknown keys {sorted(unknown)} (allowed: {sorted(_HARNESS_KEYS)})"
         )
 
     reporting_raw = raw.get("reporting", False)
     if not isinstance(reporting_raw, bool):
-        raise HarnessPolicyError(
-            f"reporting must be bool, got {type(reporting_raw).__name__}"
-        )
+        raise HarnessPolicyError(f"reporting must be bool, got {type(reporting_raw).__name__}")
 
     on_zero_output_raw = raw.get("on_zero_output")
     if on_zero_output_raw is not None and on_zero_output_raw not in (
@@ -114,8 +109,7 @@ def parse_harness_policy(raw: Any) -> HarnessPolicy:
         "ignore",
     ):
         raise HarnessPolicyError(
-            f"on_zero_output must be 'harness_incident' or 'ignore', "
-            f"got {on_zero_output_raw!r}"
+            f"on_zero_output must be 'harness_incident' or 'ignore', got {on_zero_output_raw!r}"
         )
 
     on_timeout = _parse_timeout(raw.get("on_timeout"))
@@ -131,34 +125,24 @@ def _parse_timeout(raw: Any) -> TimeoutPolicy | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        raise HarnessPolicyError(
-            f"on_timeout must be a mapping, got {type(raw).__name__}"
-        )
+        raise HarnessPolicyError(f"on_timeout must be a mapping, got {type(raw).__name__}")
     unknown = set(raw.keys()) - _TIMEOUT_KEYS
     if unknown:
         raise HarnessPolicyError(
-            f"on_timeout: unknown keys {sorted(unknown)} "
-            f"(allowed: {sorted(_TIMEOUT_KEYS)})"
+            f"on_timeout: unknown keys {sorted(unknown)} (allowed: {sorted(_TIMEOUT_KEYS)})"
         )
     retry = raw.get("retry", 1)
     if not isinstance(retry, int) or isinstance(retry, bool) or retry < 0:
-        raise HarnessPolicyError(
-            f"on_timeout.retry must be a non-negative int, got {retry!r}"
-        )
+        raise HarnessPolicyError(f"on_timeout.retry must be a non-negative int, got {retry!r}")
     multiplier = raw.get("budget_multiplier", 2.0)
     if not isinstance(multiplier, (int, float)) or isinstance(multiplier, bool):
         raise HarnessPolicyError(
-            f"on_timeout.budget_multiplier must be a number, got "
-            f"{type(multiplier).__name__}"
+            f"on_timeout.budget_multiplier must be a number, got {type(multiplier).__name__}"
         )
     multiplier = float(multiplier)
     if multiplier < 1.0:
-        raise HarnessPolicyError(
-            f"on_timeout.budget_multiplier must be >= 1.0, got {multiplier}"
-        )
+        raise HarnessPolicyError(f"on_timeout.budget_multiplier must be >= 1.0, got {multiplier}")
     then = raw.get("then", "harness_incident")
     if then != "harness_incident":
-        raise HarnessPolicyError(
-            f"on_timeout.then must be 'harness_incident', got {then!r}"
-        )
+        raise HarnessPolicyError(f"on_timeout.then must be 'harness_incident', got {then!r}")
     return TimeoutPolicy(retry=retry, budget_multiplier=multiplier, then=then)

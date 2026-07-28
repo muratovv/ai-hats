@@ -27,6 +27,7 @@ def pipe_with(data: bytes) -> int:
 
 # --- unit tests ---
 
+
 def test_master_read_logs_res_and_returns_data(tmp_path):
     session = make_test_session(tmp_path)
     tracer = SidecarTracer(session)
@@ -119,6 +120,7 @@ def test_stdin_read_strips_zellij_prefix(tmp_path):
 
 
 # --- integration test ---
+
 
 @pytest.mark.integration
 def test_wrap_runner_pty_spawn_writes_trace(tmp_path):
@@ -248,7 +250,6 @@ def test_raw_dump_disabled_by_default(tmp_path):
     assert not session.pty_raw_path.exists()
 
 
-
 # --- HATS-442: composition snapshot ---
 
 
@@ -277,6 +278,7 @@ def test_init_audit_without_composition_is_backwards_compatible(tmp_path):
     assert "## Composition" not in body
     session.finalize_audit({"turns": 1, "tool_calls": 0})
     import json
+
     metrics = json.loads(session.metrics_path.read_text())
     assert "composition" not in metrics
 
@@ -306,6 +308,7 @@ def test_finalize_audit_includes_composition_in_metrics(tmp_path):
     session.init_audit(role="maintainer", provider="claude", composition=composition)
     session.finalize_audit({"turns": 3, "tool_calls": 12})
     import json
+
     metrics = json.loads(session.metrics_path.read_text())
     assert metrics["composition"] == composition
     # Existing fields preserved.
@@ -362,7 +365,9 @@ def test_audit_writer_preserves_composition_after_rebuild(tmp_path, monkeypatch)
     session = make_test_session(tmp_path)
     composition = _sample_composition()
     session.init_audit(role="maintainer", provider="claude", composition=composition)
-    session.finalize_audit({"role": "maintainer", "provider": "claude", "turns": 1, "tool_calls": 0})
+    session.finalize_audit(
+        {"role": "maintainer", "provider": "claude", "turns": 1, "tool_calls": 0}
+    )
 
     # Sanity — metrics.json carries the composition before rebuild.
     metrics = json.loads(session.metrics_path.read_text())
@@ -390,7 +395,9 @@ def test_build_folds_transcript_when_no_turns(tmp_path):
     session.init_audit(role="hypothesis-intake", provider="claude")
     session.finalize_audit({"role": "hypothesis-intake", "provider": "claude"})
 
-    draft = "BEGIN_INTAKE_RESULT\naction: create\ndraft: editable install mismatch\nEND_INTAKE_RESULT"
+    draft = (
+        "BEGIN_INTAKE_RESULT\naction: create\ndraft: editable install mismatch\nEND_INTAKE_RESULT"
+    )
     (session.session_dir / TRANSCRIPT_TXT).write_text(draft)
     session.trace_path.write_text("")  # empty trace → no parseable turns
 
@@ -461,7 +468,9 @@ def test_extract_user_text_filters_skill_body_injection():
     )
     assert ClaudeParser._extract_user_text(skill_body) is None
     # A real user message is untouched.
-    assert ClaudeParser._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
+    assert (
+        ClaudeParser._extract_user_text("давай возьмем 666 задачку") == "давай возьмем 666 задачку"
+    )
 
 
 def test_format_audit_preserves_full_user_input(tmp_path):
@@ -482,6 +491,7 @@ def test_format_audit_preserves_full_user_input(tmp_path):
 
 
 # --- HATS-735: metrics.json guarded reads + atomic write ---
+
 
 def test_audit_build_survives_corrupt_metrics_json(tmp_path):
     """A torn/corrupt metrics.json must not crash the audit build.
@@ -523,7 +533,6 @@ def test_finalize_audit_metrics_write_is_atomic(tmp_path, monkeypatch):
 
     assert session.metrics_path.read_text() == original  # never truncated
     orphans = [
-        f for f in session.metrics_path.parent.iterdir()
-        if f.name.startswith(".metrics.json.")
+        f for f in session.metrics_path.parent.iterdir() if f.name.startswith(".metrics.json.")
     ]
     assert orphans == []

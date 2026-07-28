@@ -53,9 +53,7 @@ def test_agy_surface_is_discovered_by_the_binary(
     agy_src = str(repo_root / _AGY_PKG / "src")
 
     env = os.environ.copy()  # PYTHONPATH already scrubbed by _scrub_redirect_env
-    env["PYTHONPATH"] = os.pathsep.join(
-        [checkout_pythonpath(repo_root), agy_src, str(dist_dir)]
-    )
+    env["PYTHONPATH"] = os.pathsep.join([checkout_pythonpath(repo_root), agy_src, str(dist_dir)])
 
     result = subprocess.run(
         [str(ai_hats_shim), "list", "providers"],

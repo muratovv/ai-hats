@@ -55,16 +55,31 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
         if isinstance(h, dict)
     ), "wt_gate.py PreToolUse matcher in agy hooks.json must include Create"
 
-    hook_script = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate" / "rules" / ".agents" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
+    hook_script = (
+        main
+        / ".agent"
+        / "ai-hats"
+        / ".cache"
+        / "sessions"
+        / "sid-agy-gate"
+        / "rules"
+        / ".agents"
+        / "skills"
+        / "worktree-isolation"
+        / "hooks"
+        / "wt_gate.py"
+    )
     assert hook_script.is_file(), "wt_gate.py must be materialized in session cache dir"
 
     # Test payload targeting code file in MAIN checkout
-    payload = json.dumps({
-        "hook_event_name": HOOK_PRE_TOOL_USE,
-        "tool_name": "Write",
-        "tool_input": {"file_path": str(main / "main_code.py")},
-        "cwd": str(main),
-    })
+    payload = json.dumps(
+        {
+            "hook_event_name": HOOK_PRE_TOOL_USE,
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(main / "main_code.py")},
+            "cwd": str(main),
+        }
+    )
 
     env = os.environ.copy()
     env.pop("AI_HATS_WT_GATE_OFF", None)
@@ -101,15 +116,30 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     provider.materialize_runtime_skills(main, result, "sid-agy-gate-create")
     provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate-create")
 
-    hook_script = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate-create" / "rules" / ".agents" / "skills" / "worktree-isolation" / "hooks" / "wt_gate.py"
+    hook_script = (
+        main
+        / ".agent"
+        / "ai-hats"
+        / ".cache"
+        / "sessions"
+        / "sid-agy-gate-create"
+        / "rules"
+        / ".agents"
+        / "skills"
+        / "worktree-isolation"
+        / "hooks"
+        / "wt_gate.py"
+    )
 
     # Test AGY tool 'Create' with TargetFile payload key
-    payload = json.dumps({
-        "hook_event_name": HOOK_PRE_TOOL_USE,
-        "tool_name": "Create",
-        "tool_input": {"TargetFile": str(main / "new_module.py")},
-        "cwd": str(main),
-    })
+    payload = json.dumps(
+        {
+            "hook_event_name": HOOK_PRE_TOOL_USE,
+            "tool_name": "Create",
+            "tool_input": {"TargetFile": str(main / "new_module.py")},
+            "cwd": str(main),
+        }
+    )
 
     env = os.environ.copy()
     env.pop("AI_HATS_WT_GATE_OFF", None)
@@ -127,4 +157,3 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     hook_output = data.get("hookSpecificOutput", {})
     assert hook_output.get("permissionDecision") == "deny"
     assert "worktree-isolation" in hook_output.get("permissionDecisionReason", "")
-

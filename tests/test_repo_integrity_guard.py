@@ -4,6 +4,7 @@ Detection logic proven against a throwaway repo (never the real one). The
 staged-deletion case is the RED-under-revert proof that the snapshot covers the
 INDEX, not just the HEAD tree.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -20,9 +21,7 @@ _CONFTEST = Path(__file__).resolve().parent / "conftest.py"
 def _git(root: Path, *args: str) -> str:
     # No env= — relies on the autouse `_isolate_git_env` conftest strip (the
     # sanctioned 285-site pattern), so this helper is not a re-leak vector.
-    proc = subprocess.run(
-        ["git", *args], cwd=str(root), capture_output=True, text=True, check=True
-    )
+    proc = subprocess.run(["git", *args], cwd=str(root), capture_output=True, text=True, check=True)
     return proc.stdout
 
 

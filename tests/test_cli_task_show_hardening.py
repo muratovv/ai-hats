@@ -29,7 +29,11 @@ def _null_payload(**kw):
 
     return CompositionPayload(
         result=CompositionResult(
-            name="t", priorities=[], rules=[], skills=[], injections=[],
+            name="t",
+            priorities=[],
+            rules=[],
+            skills=[],
+            injections=[],
         ),
         provider=None,
         effective_role="t",
@@ -120,7 +124,9 @@ def test_show_long_linked_emits_short_hint(project_dir: Path):
 
 
 def test_show_short_linked_has_no_hint(project_dir: Path):
-    _write(project_dir, TaskCard(id="HATS-900", title="Epic", state=TaskState.EXECUTE, description="e"))
+    _write(
+        project_dir, TaskCard(id="HATS-900", title="Epic", state=TaskState.EXECUTE, description="e")
+    )
     _write(
         project_dir,
         TaskCard(id="HATS-902", title="child", state=TaskState.EXECUTE, parent_task="HATS-900"),
@@ -148,11 +154,14 @@ def test_cli_and_subagent_share_assembler(project_dir: Path):
     assert body  # sanity
 
     # Sub-agent path uses the very same seam (HATS-691 extraction).
-    assert SubAgentRunner(
-        project_dir,
-        _null_payload(),
-        session_mgr=SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
-    )._load_linked_context("HATS-902") == body
+    assert (
+        SubAgentRunner(
+            project_dir,
+            _null_payload(),
+            session_mgr=SessionManager(project_dir, runs_dir=runs_dir(project_dir)),
+        )._load_linked_context("HATS-902")
+        == body
+    )
 
     # CLI path renders that exact assembler output verbatim.
     res = CliRunner().invoke(task, ["show", "HATS-902"])

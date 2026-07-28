@@ -59,21 +59,22 @@ def _seed(project_path: Path) -> None:
 
 @pytest.mark.integration
 def test_self_update_warns_on_leftover_hook_sidecar(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     _seed(tmp_venv_project.path)
     pin_edge_channel(tmp_venv_project.path)  # edge so self update resolves the local source
 
     result = tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
     result.expect_ok()  # orphan is not composed → update succeeds
     assert "orphan-hook" in result.stderr, (
-        f"detector did not name the skill; stderr (tail 800):\n"
-        f"{result.stderr[-800:]}"
+        f"detector did not name the skill; stderr (tail 800):\n{result.stderr[-800:]}"
     )
     assert "metadata.yaml still carries" in result.stderr
     assert "ai_hats:" in result.stderr

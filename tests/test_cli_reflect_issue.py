@@ -173,12 +173,7 @@ def test_empty_marker_block_triggers_fail_loud(project_dir, monkeypatch):
 def test_preview_mode_shows_draft_and_can_abort(project_dir, monkeypatch):
     _mock_pipeline(
         monkeypatch,
-        result_text=(
-            "action: create\n"
-            "draft:\n"
-            "  title: t\n"
-            "  hypothesis: h\n"
-        ),
+        result_text=("action: create\ndraft:\n  title: t\n  hypothesis: h\n"),
     )
     res = CliRunner().invoke(reflect, ["issue", "x", "--preview"], input="n\n")
     assert res.exit_code == 0
@@ -190,12 +185,7 @@ def test_preview_mode_shows_draft_and_can_abort(project_dir, monkeypatch):
 def test_preview_mode_writes_on_yes(project_dir, monkeypatch):
     _mock_pipeline(
         monkeypatch,
-        result_text=(
-            "action: create\n"
-            "draft:\n"
-            "  title: t\n"
-            "  hypothesis: h\n"
-        ),
+        result_text=("action: create\ndraft:\n  title: t\n  hypothesis: h\n"),
     )
     res = CliRunner().invoke(reflect, ["issue", "x", "--preview"], input="y\n")
     assert res.exit_code == 0
@@ -207,11 +197,7 @@ def test_merge_unknown_target_fails_loud(project_dir, monkeypatch):
     _write_active_hyp(project_dir, "HYP-001")
     _mock_pipeline(
         monkeypatch,
-        result_text=(
-            "action: merge\n"
-            "target_id: HYP-999\n"
-            "evidence: hallucinated\n"
-        ),
+        result_text=("action: merge\ntarget_id: HYP-999\nevidence: hallucinated\n"),
     )
     res = CliRunner().invoke(reflect, ["issue", "x"])
     assert res.exit_code != 0
@@ -221,12 +207,7 @@ def test_merge_unknown_target_fails_loud(project_dir, monkeypatch):
 def test_task_id_overrides_source_task(project_dir, monkeypatch):
     _mock_pipeline(
         monkeypatch,
-        result_text=(
-            "action: create\n"
-            "draft:\n"
-            "  title: t\n"
-            "  hypothesis: h\n"
-        ),
+        result_text=("action: create\ndraft:\n  title: t\n  hypothesis: h\n"),
     )
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
@@ -234,7 +215,8 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
 
 
 def test_background_spawns_detached_subprocess_and_returns(
-    project_dir, monkeypatch,
+    project_dir,
+    monkeypatch,
 ):
     """--bg invokes subprocess.Popen and returns without running the pipeline."""
     import ai_hats.cli.reflect as mod
@@ -260,9 +242,7 @@ def test_background_spawns_detached_subprocess_and_returns(
 
     monkeypatch.setattr(mod, "_run_intake_pipeline", boom)
 
-    res = CliRunner().invoke(
-        reflect, ["issue", "обс", "--bg", "--task", "HATS-304"]
-    )
+    res = CliRunner().invoke(reflect, ["issue", "обс", "--bg", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
     assert "spawned (pid=4242, bg)" in res.output
 
@@ -282,9 +262,7 @@ def test_background_spawns_detached_subprocess_and_returns(
 
 
 def test_bg_and_preview_are_mutually_exclusive(project_dir):
-    res = CliRunner().invoke(
-        reflect, ["issue", "obs", "--bg", "--preview"]
-    )
+    res = CliRunner().invoke(reflect, ["issue", "obs", "--bg", "--preview"])
     assert res.exit_code != 0
     assert "mutually exclusive" in res.output
 
@@ -306,10 +284,16 @@ def test_build_intake_prompt_includes_recent_evidence(project_dir):
         observation_window=None,
         verification_protocol=None,
         validation_log=(
-            {"date": "2026-05-02", "verdict": "inconclusive",
-             "evidence": "agent forgot to remove comments after addressing"},
-            {"date": "2026-05-03", "verdict": "inconclusive",
-             "evidence": "agent skipped user feedback in plan.md iteration"},
+            {
+                "date": "2026-05-02",
+                "verdict": "inconclusive",
+                "evidence": "agent forgot to remove comments after addressing",
+            },
+            {
+                "date": "2026-05-03",
+                "verdict": "inconclusive",
+                "evidence": "agent skipped user feedback in plan.md iteration",
+            },
         ),
     )
     text = _build_intake_prompt("new observation", [h])

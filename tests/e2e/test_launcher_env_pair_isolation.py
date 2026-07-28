@@ -23,9 +23,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_launcher_drops_foreign_ai_hats_dir_on_repin(
-    shared_launcher, tmp_path: Path
-) -> None:
+def test_launcher_drops_foreign_ai_hats_dir_on_repin(shared_launcher, tmp_path: Path) -> None:
     launcher, base_env, _venv = shared_launcher
 
     foreign = tmp_path / "other-project"
@@ -41,7 +39,11 @@ def test_launcher_drops_foreign_ai_hats_dir_on_repin(
 
     res = subprocess.run(  # noqa: S603 — fixed argv, launcher under test
         [str(launcher), "self", "init", "-p", "claude"],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=300,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     out = res.stdout + res.stderr
 
@@ -56,6 +58,4 @@ def test_launcher_drops_foreign_ai_hats_dir_on_repin(
     assert (project / ".agent" / "ai-hats" / "library").is_dir(), (
         f"init did not materialize into the project's own namespace:\n{out}"
     )
-    assert "dropping it" in res.stderr, (
-        f"expected the launcher to announce the dropped pin:\n{out}"
-    )
+    assert "dropping it" in res.stderr, f"expected the launcher to announce the dropped pin:\n{out}"

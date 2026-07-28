@@ -121,7 +121,8 @@ def test_init_with_both_flags_skips_wizard(fresh_project):
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         # stdin TTY behavior is irrelevant when both flags are present.
         result = runner.invoke(
-            main, ["self", "init", "-p", "claude", "-r", "assistant"],
+            main,
+            ["self", "init", "-p", "claude", "-r", "assistant"],
         )
     assert result.exit_code == 0, result.output
     assert (fresh_project / PROJECT_CONFIG).exists()
@@ -132,7 +133,8 @@ def test_init_no_wizard_flag_skips_wizard(fresh_project):
     runner = CliRunner()
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(
-            main, ["self", "init", "-p", "claude", "--no-wizard"],
+            main,
+            ["self", "init", "-p", "claude", "--no-wizard"],
         )
     assert result.exit_code == 0, result.output
     launch.assert_not_called()
@@ -155,7 +157,9 @@ def test_init_wizard_invokes_launch_after_provider_prompt(fresh_project, monkeyp
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(
-            main, ["self", "init", "--no-update"], input="1\nclaude\n",
+            main,
+            ["self", "init", "--no-update"],
+            input="1\nclaude\n",
         )
     assert result.exit_code == 0, result.output
     assert "Choose harness channel" in result.output
@@ -169,7 +173,8 @@ def test_init_wizard_with_provider_flag_skips_cli_prompts(fresh_project, monkeyp
     monkeypatch.setattr("ai_hats.cli.assembly._stdin_is_tty", lambda: True)
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         result = runner.invoke(
-            main, ["self", "init", "-p", "agy", "--no-update"],
+            main,
+            ["self", "init", "-p", "agy", "--no-update"],
         )
     assert result.exit_code == 0, result.output
     assert "Choose harness channel" not in result.output
@@ -216,11 +221,12 @@ def test_init_flag_only_path_does_not_self_update(fresh_project):
         patch("ai_hats.cli.assembly._launch_wizard_session") as launch,
         patch("ai_hats.cli.maintenance._build_update_cmd") as build_cmd,
     ):
-        result = runner.invoke(main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-update"])
+        result = runner.invoke(
+            main, ["self", "init", "-p", "claude", "-r", "assistant", "--no-update"]
+        )
     assert result.exit_code == 0, result.output
     build_cmd.assert_not_called()
     launch.assert_not_called()
-
 
 
 def test_init_flag_only_persists_paths(fresh_project):
@@ -232,10 +238,16 @@ def test_init_flag_only_persists_paths(fresh_project):
         result = runner.invoke(
             main,
             [
-                "self", "init",
-                "-p", "claude", "-r", "assistant",
-                "--ai-hats-dir", "agents/",
-                "--venv", "~/.venvs/x",
+                "self",
+                "init",
+                "-p",
+                "claude",
+                "-r",
+                "assistant",
+                "--ai-hats-dir",
+                "agents/",
+                "--venv",
+                "~/.venvs/x",
                 "--no-manage-gitignore",
             ],
         )

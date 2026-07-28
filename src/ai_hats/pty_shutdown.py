@@ -49,13 +49,7 @@ _POLL_INTERVAL_S = 0.05
 #   ?1003l  — any-event mouse tracking off
 #   ?1006l  — SGR extended mouse mode off
 #   ?1015l  — urxvt extended mouse mode off
-_DECRST_MOUSE_RESET = (
-    "\x1b[?1000l"
-    "\x1b[?1002l"
-    "\x1b[?1003l"
-    "\x1b[?1006l"
-    "\x1b[?1015l"
-)
+_DECRST_MOUSE_RESET = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
 
 
 def _env_float(name: str, default: float) -> float:

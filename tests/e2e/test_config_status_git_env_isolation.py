@@ -8,6 +8,7 @@ it. Fail-under-revert: drop that strip and the decoy sentinel appears. Like
 ``test_wt_exec_git_env_isolation``, the shim execs the dev-venv ``python -m
 ai_hats``, so GREEN only at the MAIN checkout whose editable src carries the fix.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -35,7 +36,11 @@ def _init_repo(path: Path, *, branch: str) -> Path:
 def _config_status(binary: Path, cwd: Path, env) -> str:
     res = subprocess.run(
         [str(binary), "config", "status"],
-        cwd=str(cwd), env=env, capture_output=True, text=True, timeout=120,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert res.returncode == 0, f"config status failed:\n{res.stdout}\n{res.stderr}"
     return res.stdout + res.stderr

@@ -74,6 +74,7 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.chdir(project)
     # bootstrap_or_die does a self-update probe — stub for offline / CI.
     import ai_hats._bootstrap as boot
+
     monkeypatch.setattr(boot, "bootstrap_or_die", lambda: None)
     return project
 
@@ -100,7 +101,12 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", _capture)
 
     # HATS-707: session start re-heals git hooks; stub it (no .githooks/ here).
-    monkeypatch.setattr(rt.WrapRunner, "_resync_managed_hooks", lambda self, session=None, result=None: [], raising=False)
+    monkeypatch.setattr(
+        rt.WrapRunner,
+        "_resync_managed_hooks",
+        lambda self, session=None, result=None: [],
+        raising=False,
+    )
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
 
@@ -117,12 +123,9 @@ def _extract_session_block_body(text: str) -> str:
     """
     start_idx = text.find(INJECTION_START)
     end_idx = text.find(INJECTION_END)
-    assert start_idx >= 0, (
-        f"INJECTION_START marker missing from session file:\n{text[:500]}..."
-    )
+    assert start_idx >= 0, f"INJECTION_START marker missing from session file:\n{text[:500]}..."
     assert end_idx > start_idx, (
-        f"INJECTION_END missing or before START in session file "
-        f"(start={start_idx}, end={end_idx})"
+        f"INJECTION_END missing or before START in session file (start={start_idx}, end={end_idx})"
     )
     body = text[start_idx + len(INJECTION_START) : end_idx]
     return body.strip("\n")
@@ -133,9 +136,7 @@ def _extract_session_block_body(text: str) -> str:
 # --------------------------------------------------------------------- #
 
 
-def test_show_prompt_block_matches_session_prompt_block(
-    project_with_maintainer: Path, monkeypatch
-):
+def test_show_prompt_block_matches_session_prompt_block(project_with_maintainer: Path, monkeypatch):
     """The AI-HATS injection block in ``ai-hats config show-prompt`` output
     MUST be byte-equal to the AI-HATS block in the file ``ai-hats``
     (bare) hands to the agent via ``--system-prompt-file``, after
@@ -180,9 +181,7 @@ def test_show_prompt_block_matches_session_prompt_block(
     # ``click.testing.CliRunner`` appends a trailing newline that does
     # not appear inside the session file's marker block — strip both
     # sides before comparing.
-    show_body = expand_path_placeholders(
-        show_prompt_text, project_with_maintainer
-    ).strip("\n")
+    show_body = expand_path_placeholders(show_prompt_text, project_with_maintainer).strip("\n")
 
     # The smoking-gun assertion: the injection block — composed of role
     # injection + trait injections + rule bodies + skill list — must be

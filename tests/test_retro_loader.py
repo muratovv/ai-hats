@@ -16,21 +16,23 @@ from ai_hats.retro.writer import dump
 
 
 def _make_session_review() -> SessionReviewV1:
-    return SessionReviewV1.model_validate({
-        "schema": REVIEW_VERSION,
-        "session_id": "session_test",
-        "project": "test",
-        "role": "go-dev",
-        "date": "2026-04-08",
-        "timestamp": "2026-04-08T12:00:00Z",
-        "metrics": {"exit_code": 0, "turns": 5, "tool_calls": 12},
-        "links": {"audit": "a.md"},
-        "summary": "Test session",
-        "observations": [],
-        "hypothesis_verdicts": [],
-        "proposal_actions": [],
-        "self_problems": [],
-    })
+    return SessionReviewV1.model_validate(
+        {
+            "schema": REVIEW_VERSION,
+            "session_id": "session_test",
+            "project": "test",
+            "role": "go-dev",
+            "date": "2026-04-08",
+            "timestamp": "2026-04-08T12:00:00Z",
+            "metrics": {"exit_code": 0, "turns": 5, "tool_calls": 12},
+            "links": {"audit": "a.md"},
+            "summary": "Test session",
+            "observations": [],
+            "hypothesis_verdicts": [],
+            "proposal_actions": [],
+            "self_problems": [],
+        }
+    )
 
 
 # --- parse() ---

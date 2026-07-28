@@ -10,12 +10,10 @@ from click.testing import CliRunner
 from ai_hats.cli import main
 
 
-
 def test_agent_routes_to_subagent(project_dir: Path, mock_runners):
     res = CliRunner().invoke(
         main,
-        ["agent", "session-reviewer", "--task", "do something",
-         "--ticket", "HATS-1"],
+        ["agent", "session-reviewer", "--task", "do something", "--ticket", "HATS-1"],
     )
     assert res.exit_code == 0, res.output
     assert len(mock_runners["sub_calls"]) == 1

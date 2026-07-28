@@ -18,7 +18,12 @@ from ai_hats.pipeline.loader import load_pipeline
 
 PIPELINES = (
     Path(__file__).resolve().parent.parent
-    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines"
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "core"
+    / "pipelines"
 )
 
 

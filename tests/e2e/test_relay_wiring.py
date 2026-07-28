@@ -107,9 +107,7 @@ def test_relay_fd_wiring_end_to_end(tmp_path):
 
     src_roots = checkout_pythonpath(_REPO_ROOT).split(os.pathsep)
     driver = tmp_path / "driver.py"
-    driver.write_text(
-        _DRIVER.format(src_roots=src_roots, child=_CHILD_INTERACTIVE)
-    )
+    driver.write_text(_DRIVER.format(src_roots=src_roots, child=_CHILD_INTERACTIVE))
     proc = subprocess.run(
         [sys.executable, str(driver)],
         stdin=subprocess.DEVNULL,
@@ -119,5 +117,9 @@ def test_relay_fd_wiring_end_to_end(tmp_path):
     )
     err = proc.stderr
     assert "__RC__=0" in err, f"child did not exit cleanly:\n{err[-500:]}"
-    assert "__CLIENT_GOT_HELLO__=True" in err, f"relay client did not get echoed output:\n{err[-500:]}"
-    assert "__AUDIT_COUNT__" in err and not err.endswith("__AUDIT_COUNT__=0"), f"audit logs missing:\n{err[-500:]}"
+    assert "__CLIENT_GOT_HELLO__=True" in err, (
+        f"relay client did not get echoed output:\n{err[-500:]}"
+    )
+    assert "__AUDIT_COUNT__" in err and not err.endswith("__AUDIT_COUNT__=0"), (
+        f"audit logs missing:\n{err[-500:]}"
+    )

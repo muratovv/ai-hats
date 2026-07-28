@@ -212,7 +212,11 @@ def main() -> None:
 
     if os.environ.get(ENV_SKIP_RETRO) == "1":
         write_retro_log(
-            project_dir, session_id, "auto_retro", "skip", "recursion-guard",
+            project_dir,
+            session_id,
+            "auto_retro",
+            "skip",
+            "recursion-guard",
         )
         return
 
@@ -247,7 +251,8 @@ def _run_foreground(project_dir: Path, session_id: str) -> None:
 
 
 def _spawn_session_reviewer_background(
-    project_dir: Path, session_id: str,
+    project_dir: Path,
+    session_id: str,
 ) -> None:
     """Detach session-reviewer sub-process; never blocks caller.
 
@@ -267,8 +272,10 @@ def _spawn_session_reviewer_background(
             proc = sp.Popen(
                 [
                     sys.executable,
-                    "-m", "ai_hats.cli.reflect_session_main",
-                    session_id, "1",
+                    "-m",
+                    "ai_hats.cli.reflect_session_main",
+                    session_id,
+                    "1",
                 ],
                 cwd=str(project_dir),
                 stdout=f,
@@ -277,12 +284,18 @@ def _spawn_session_reviewer_background(
                 env=env,
             )
         write_retro_log(
-            project_dir, session_id, "session-reviewer", "spawn",
+            project_dir,
+            session_id,
+            "session-reviewer",
+            "spawn",
             f"pid={proc.pid} bg",
         )
     except Exception as exc:
         write_retro_log(
-            project_dir, session_id, "session-reviewer", "spawn-failed",
+            project_dir,
+            session_id,
+            "session-reviewer",
+            "spawn-failed",
             repr(exc),
         )
 
@@ -296,8 +309,11 @@ def _run_background(project_dir: Path, session_id: str) -> None:
     with open(log_path, "a") as f:
         proc = sp.Popen(
             [
-                sys.executable, "-m", "ai_hats.retro.auto_retro",
-                "--foreground", session_id,
+                sys.executable,
+                "-m",
+                "ai_hats.retro.auto_retro",
+                "--foreground",
+                session_id,
             ],
             cwd=str(project_dir),
             stdout=f,
@@ -305,7 +321,11 @@ def _run_background(project_dir: Path, session_id: str) -> None:
             start_new_session=True,
         )
     write_retro_log(
-        project_dir, session_id, "hook", "spawn", f"pid={proc.pid} bg",
+        project_dir,
+        session_id,
+        "hook",
+        "spawn",
+        f"pid={proc.pid} bg",
     )
 
 

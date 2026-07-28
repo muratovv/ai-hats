@@ -40,12 +40,7 @@ def test_parser_subtasks_block() -> None:
 
 
 def test_parser_steps_checklist() -> None:
-    text = (
-        "## Steps\n"
-        "- [ ] Do thing one\n"
-        "- [x] Already done\n"
-        "- [ ] Do thing two\n"
-    )
+    text = "## Steps\n- [ ] Do thing one\n- [x] Already done\n- [ ] Do thing two\n"
     cands = extract_candidates(text)
     titles = [c.title for c in cands]
     assert titles == ["Do thing one", "Already done", "Do thing two"]
@@ -69,22 +64,13 @@ def test_parser_numbered_phase_headings() -> None:
 
 
 def test_parser_skips_already_marked_lines() -> None:
-    text = (
-        "## Subtasks\n"
-        "- First <!-- HATS-001 -->\n"
-        "- Second\n"
-    )
+    text = "## Subtasks\n- First <!-- HATS-001 -->\n- Second\n"
     cands = extract_candidates(text)
     assert [c.title for c in cands] == ["Second"]
 
 
 def test_parser_priority_subtasks_over_steps() -> None:
-    text = (
-        "## Subtasks\n"
-        "- only this should be returned\n"
-        "## Steps\n"
-        "- [ ] not picked up\n"
-    )
+    text = "## Subtasks\n- only this should be returned\n## Steps\n- [ ] not picked up\n"
     cands = extract_candidates(text)
     assert [c.title for c in cands] == ["only this should be returned"]
 
@@ -200,9 +186,7 @@ def test_plan_extract_auto_creates_all_and_marks(
     assert len(children_after) == 2  # unchanged
 
 
-def test_plan_extract_json_output(
-    tmp_path: Path, runner: CliRunner, monkeypatch
-) -> None:
+def test_plan_extract_json_output(tmp_path: Path, runner: CliRunner, monkeypatch) -> None:
     project = _setup_project(tmp_path)
     plan_body = "## Steps\n- [ ] First\n- [ ] Second\n"
     _seed_task_with_plan(project, "TST-001", plan_body)
@@ -241,9 +225,7 @@ def test_plan_extract_empty_scaffold_exits_nonzero(
     assert "scaffold" in result.output.lower()
 
 
-def test_plan_extract_no_candidates(
-    tmp_path: Path, runner: CliRunner, monkeypatch
-) -> None:
+def test_plan_extract_no_candidates(tmp_path: Path, runner: CliRunner, monkeypatch) -> None:
     project = _setup_project(tmp_path)
     plan_body = "# Plan\n\nJust prose, no structure.\n"
     _seed_task_with_plan(project, "TST-001", plan_body)

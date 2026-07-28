@@ -64,9 +64,7 @@ def test_retro_validate_fails_on_malformed_yaml(tmp_path: Path, runner: CliRunne
     assert "FAIL" in result.output
 
 
-def test_retro_validate_fails_on_missing_required_field(
-    tmp_path: Path, runner: CliRunner
-) -> None:
+def test_retro_validate_fails_on_missing_required_field(tmp_path: Path, runner: CliRunner) -> None:
     """Pydantic ValidationError must produce FAIL + exit 1."""
     incomplete = _write(
         tmp_path / "incomplete.md",

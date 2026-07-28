@@ -166,7 +166,9 @@ def take(
             raise OwnershipRefused(
                 task_id, reason="held by a live agent", holder=current.get("session_id", "")
             )
-        others = [t for t, r in owners.items() if r.get("session_id") == session_id and t != task_id]
+        others = [
+            t for t, r in owners.items() if r.get("session_id") == session_id and t != task_id
+        ]
         if others:
             raise OwnershipRefused(
                 task_id, reason=f"session already holds {sorted(others)}; finish it first"

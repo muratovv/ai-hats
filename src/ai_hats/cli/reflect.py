@@ -78,15 +78,21 @@ def reflect():
 
 @reflect.command("session")
 @click.option(
-    "--session", "session_id", required=True,
+    "--session",
+    "session_id",
+    required=True,
     help="Session id (YYYYMMDD-HHMMSS-N) to reflect on",
 )
 @click.option(
-    "--background", is_flag=True,
+    "--background",
+    is_flag=True,
     help="Run as detached background process (used by auto-trigger).",
 )
 @click.option(
-    "--max-retries", type=int, default=1, show_default=True,
+    "--max-retries",
+    type=int,
+    default=1,
+    show_default=True,
 )
 def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
     """Run session-reviewer on one session and validate output.
@@ -104,11 +110,13 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
     project_dir = _project_dir()
     try:
         with PipelineHarness(PIPELINE_REFLECT_SESSION, project_dir) as h:
-            final = h.run({
-                KEY_SESSION_ID: session_id,
-                KEY_PROJECT_DIR: project_dir,
-                KEY_MAX_RETRIES: max_retries,
-            })
+            final = h.run(
+                {
+                    KEY_SESSION_ID: session_id,
+                    KEY_PROJECT_DIR: project_dir,
+                    KEY_MAX_RETRIES: max_retries,
+                }
+            )
     except SessionReviewError as exc:
         console.print(
             f"[yellow]session-reviewer failed for {session_id}:[/yellow] {exc}\n"
@@ -117,9 +125,7 @@ def reflect_session_cmd(session_id: str, background: bool, max_retries: int):
         )
         sys.exit(2)
     else:
-        console.print(
-            f"[green]✓[/green] session review saved to {final[KEY_REVIEW_PATH]}"
-        )
+        console.print(f"[green]✓[/green] session review saved to {final[KEY_REVIEW_PATH]}")
 
 
 def _spawn_detached(session_id: str, max_retries: int) -> None:
@@ -135,7 +141,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
         proc = subprocess.Popen(
             [
                 sys.executable,
-                "-m", "ai_hats.cli.reflect_session_main",
+                "-m",
+                "ai_hats.cli.reflect_session_main",
                 session_id,
                 str(max_retries),
             ],
@@ -152,7 +159,8 @@ def _spawn_detached(session_id: str, max_retries: int) -> None:
 
 @reflect.command("all")
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Build pre-flight handoff but do not exec claude.",
 )
 def reflect_all_cmd(dry_run: bool):
@@ -181,22 +189,24 @@ def reflect_all_cmd(dry_run: bool):
     handoff_text = handoff_path.read_text()
     combined = f"{preamble}\n\n---\n\n{handoff_text}"
 
-    console.print(
-        f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]"
-    )
+    console.print(f"[cyan]→ Launching judge for reflect-all triage: {handoff_path}[/]")
     with PipelineHarness(PIPELINE_REFLECT_ALL, project_dir) as h:
-        final = h.run({
-            KEY_ROLE: "judge",
-            KEY_INTERACTIVE: True,
-            KEY_PROJECT_DIR: project_dir,
-            KEY_PROMPT_PATH: h.materialize_prompt(combined),
-            KEY_EXTRA_ARGS: [],
-            KEY_COMPOSITION: build_composition_payload(
-                project_dir, role_override="judge", interactive=True,
-            ),
-            KEY_SESSION_MGR: make_session_manager(project_dir),
-            KEY_TRACER_FACTORY: SidecarTracer,
-        })
+        final = h.run(
+            {
+                KEY_ROLE: "judge",
+                KEY_INTERACTIVE: True,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(combined),
+                KEY_EXTRA_ARGS: [],
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override="judge",
+                    interactive=True,
+                ),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
     sys.exit(int(final.get(KEY_EXIT_CODE, 1)))
 
 
@@ -205,11 +215,13 @@ def reflect_all_cmd(dry_run: bool):
 
 @reflect.command("hypothesis")
 @click.option(
-    "--headless", is_flag=True,
+    "--headless",
+    is_flag=True,
     help="Phase 1 only — produce draft, exit. No HITL session.",
 )
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Build pre-flight handoff but do not exec.",
 )
 def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
@@ -249,22 +261,23 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     handoff_text = handoff_path.read_text()
     combined1 = f"{preamble1}\n\n---\n\n{handoff_text}"
 
-    console.print(
-        "[cyan]→ Phase 1 — judge-auditor (headless audit)[/]"
-    )
+    console.print("[cyan]→ Phase 1 — judge-auditor (headless audit)[/]")
     with PipelineHarness(PIPELINE_REFLECT_HYPOTHESIS_PHASE1, project_dir) as h1:
-        r1 = h1.run({
-            KEY_ROLE: "judge-auditor",
-            KEY_INTERACTIVE: False,
-            KEY_PROJECT_DIR: project_dir,
-            KEY_PROMPT_PATH: h1.materialize_prompt(combined1),
-            KEY_EXTRA_ARGS: [],
-            KEY_COMPOSITION: build_composition_payload(
-                project_dir, role_override="judge-auditor",
-            ),
-            KEY_SESSION_MGR: make_session_manager(project_dir),
-            KEY_TRACER_FACTORY: SidecarTracer,
-        })
+        r1 = h1.run(
+            {
+                KEY_ROLE: "judge-auditor",
+                KEY_INTERACTIVE: False,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h1.materialize_prompt(combined1),
+                KEY_EXTRA_ARGS: [],
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override="judge-auditor",
+                ),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
 
     # Fail closed: Phase 1 errored OR did not produce a usable draft.
     # `save_artifact` always emits `saved_path` (even on empty content),
@@ -273,9 +286,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     # from the transcript, which would leave a zero-byte draft on disk and
     # mislead a Phase 2 session into discussing nothing.
     if int(r1.get(KEY_EXIT_CODE, 1)) != 0 or KEY_SAVED_PATH not in r1:
-        console.print(
-            "[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted."
-        )
+        console.print("[red]✗[/] Phase 1 (judge-auditor) failed — Phase 2 aborted.")
         sys.exit(int(r1.get(KEY_EXIT_CODE, 1)) or 1)
 
     draft_path = Path(r1[KEY_SAVED_PATH])
@@ -301,22 +312,24 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
     preamble2 = preamble2_path.read_text()
     combined2 = preamble2.replace("{draft_body}", draft_path.read_text())
 
-    console.print(
-        "[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]"
-    )
+    console.print("[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]")
     with PipelineHarness(PIPELINE_REFLECT_HYPOTHESIS_PHASE2, project_dir) as h2:
-        r2 = h2.run({
-            KEY_ROLE: "judge",
-            KEY_INTERACTIVE: True,
-            KEY_PROJECT_DIR: project_dir,
-            KEY_PROMPT_PATH: h2.materialize_prompt(combined2),
-            KEY_EXTRA_ARGS: [],
-            KEY_COMPOSITION: build_composition_payload(
-                project_dir, role_override="judge", interactive=True,
-            ),
-            KEY_SESSION_MGR: make_session_manager(project_dir),
-            KEY_TRACER_FACTORY: SidecarTracer,
-        })
+        r2 = h2.run(
+            {
+                KEY_ROLE: "judge",
+                KEY_INTERACTIVE: True,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h2.materialize_prompt(combined2),
+                KEY_EXTRA_ARGS: [],
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override="judge",
+                    interactive=True,
+                ),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
     sys.exit(int(r2.get(KEY_EXIT_CODE, 1)))
 
 
@@ -345,9 +358,7 @@ def reflect_roles_cmd():
         console.print("[yellow]No roles found in library.[/yellow]")
         sys.exit(1)
 
-    console.print(
-        f"[cyan]→ {len(names)} role(s) to audit: {', '.join(names)}[/]"
-    )
+    console.print(f"[cyan]→ {len(names)} role(s) to audit: {', '.join(names)}[/]")
     worst_exit = 0
     for n in names:
         console.print(f"\n[bold cyan]── reflect role {n} ──[/]")
@@ -387,9 +398,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
     # ``src/ai_hats/pipeline/`` only and this file is under ``cli/``.
     composition = composer.compose(target_role)
     if composition.errors:
-        raise click.ClickException(
-            f"Cannot compose role {target_role!r}: {composition.errors}"
-        )
+        raise click.ClickException(f"Cannot compose role {target_role!r}: {composition.errors}")
 
     preamble_path = assembler.resolver.resolve_injection("reflect-role")
     if preamble_path is None:
@@ -399,31 +408,35 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
         )
     preamble_template = preamble_path.read_text()
 
-    console.print(
-        f"[cyan]→ Launching judge-for-role to audit: {target_role}[/]"
-    )
+    console.print(f"[cyan]→ Launching judge-for-role to audit: {target_role}[/]")
     with PipelineHarness(PIPELINE_REFLECT_ROLE, project_dir) as h:
         composed_dir = _materialize_target_composition(
-            h.namespace / "composed", composition, target_role,
+            h.namespace / "composed",
+            composition,
+            target_role,
         )
         preamble = preamble_template.format(
             target_role=target_role,
             composed_dir=composed_dir,
             project_dir=project_dir,
         )
-        final = h.run({
-            KEY_ROLE: "judge-for-role",
-            "target_role": target_role,
-            KEY_INTERACTIVE: True,
-            KEY_PROJECT_DIR: project_dir,
-            KEY_PROMPT_PATH: h.materialize_prompt(preamble),
-            KEY_EXTRA_ARGS: [],
-            KEY_COMPOSITION: build_composition_payload(
-                project_dir, role_override="judge-for-role", interactive=True,
-            ),
-            KEY_SESSION_MGR: make_session_manager(project_dir),
-            KEY_TRACER_FACTORY: SidecarTracer,
-        })
+        final = h.run(
+            {
+                KEY_ROLE: "judge-for-role",
+                "target_role": target_role,
+                KEY_INTERACTIVE: True,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(preamble),
+                KEY_EXTRA_ARGS: [],
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override="judge-for-role",
+                    interactive=True,
+                ),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
     saved = final.get(KEY_SAVED_PATH)
     if saved:
         console.print(f"[green]✓[/green] reflect saved to {saved}")
@@ -431,7 +444,9 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
 
 
 def _materialize_target_composition(
-    base_dir: Path, composition, target_role: str,
+    base_dir: Path,
+    composition,
+    target_role: str,
 ) -> Path:
     """Write the composition's layered breakdown to ``base_dir/<role>/``.
 
@@ -472,13 +487,9 @@ def _materialize_target_composition(
     )
 
     if composition.role_injection:
-        (target_dir / "role-injection.md").write_text(
-            composition.role_injection
-        )
+        (target_dir / "role-injection.md").write_text(composition.role_injection)
     if composition.overlay_injection:
-        (target_dir / "overlay-injection.md").write_text(
-            composition.overlay_injection
-        )
+        (target_dir / "overlay-injection.md").write_text(composition.overlay_injection)
 
     if composition.trait_injections:
         traits_dir = target_dir / "traits"
@@ -530,9 +541,7 @@ def _build_intake_prompt(text: str, active_hyps: list) -> str:
             "title": h.title,
             "hypothesis": h.hypothesis,
         }
-        recent = [
-            e.get("evidence") for e in h.validation_log[-3:] if e.get("evidence")
-        ]
+        recent = [e.get("evidence") for e in h.validation_log[-3:] if e.get("evidence")]
         if recent:
             item["recent_evidence"] = recent
         payload.append(item)
@@ -546,7 +555,8 @@ def _build_intake_prompt(text: str, active_hyps: list) -> str:
 
 
 def _run_intake_pipeline(
-    project_dir: Path, prompt_text: str,
+    project_dir: Path,
+    prompt_text: str,
 ) -> tuple[str, int]:
     """Invoke `reflect-issue` pipeline; return (intake_result_text, exit_code).
 
@@ -559,18 +569,21 @@ def _run_intake_pipeline(
     from ..pipeline.harness import PipelineHarness
 
     with PipelineHarness(PIPELINE_REFLECT_ISSUE, project_dir) as h:
-        final = h.run({
-            KEY_ROLE: "hypothesis-intake",
-            KEY_INTERACTIVE: False,
-            KEY_PROJECT_DIR: project_dir,
-            KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
-            KEY_MODEL: INTAKE_MODEL,
-            KEY_COMPOSITION: build_composition_payload(
-                project_dir, role_override="hypothesis-intake",
-            ),
-            KEY_SESSION_MGR: make_session_manager(project_dir),
-            KEY_TRACER_FACTORY: SidecarTracer,
-        })
+        final = h.run(
+            {
+                KEY_ROLE: "hypothesis-intake",
+                KEY_INTERACTIVE: False,
+                KEY_PROJECT_DIR: project_dir,
+                KEY_PROMPT_PATH: h.materialize_prompt(prompt_text),
+                KEY_MODEL: INTAKE_MODEL,
+                KEY_COMPOSITION: build_composition_payload(
+                    project_dir,
+                    role_override="hypothesis-intake",
+                ),
+                KEY_SESSION_MGR: make_session_manager(project_dir),
+                KEY_TRACER_FACTORY: SidecarTracer,
+            }
+        )
     return (
         final.get(KEY_INTAKE_RESULT, "") or "",
         int(final.get(KEY_EXIT_CODE, 1)),
@@ -666,7 +679,9 @@ def _write_intake(
 
 
 def _spawn_intake_detached(
-    text: str, session_id: str | None, task_id: str | None,
+    text: str,
+    session_id: str | None,
+    task_id: str | None,
 ) -> tuple[int, Path]:
     """Re-invoke ``ai-hats reflect issue`` as a detached process.
 
@@ -688,9 +703,12 @@ def _spawn_intake_detached(
     log_path = log_dir / f"{ts}-bg.log"
 
     cmd = [
-        sys.executable, "-c",
+        sys.executable,
+        "-c",
         "from ai_hats.cli import main_entry; main_entry()",
-        "reflect", "issue", text,
+        "reflect",
+        "issue",
+        text,
     ]
     if session_id:
         cmd += ["--session", session_id]
@@ -714,19 +732,29 @@ def _spawn_intake_detached(
 @reflect.command("issue")
 @click.argument("text")
 @click.option(
-    "--preview", "-n", "preview_mode", is_flag=True,
+    "--preview",
+    "-n",
+    "preview_mode",
+    is_flag=True,
     help="Show the intake draft and prompt before writing.",
 )
 @click.option(
-    "--bg", "--background", "background", is_flag=True,
+    "--bg",
+    "--background",
+    "background",
+    is_flag=True,
     help="Run detached; return immediately. Output goes to .gitlog/reflect-issue/.",
 )
 @click.option(
-    "--session", "session_id", default=None,
+    "--session",
+    "session_id",
+    default=None,
     help="Source session id (YYYYMMDD-HHMMSS-N) — recorded on merge.",
 )
 @click.option(
-    "--task", "task_id", default=None,
+    "--task",
+    "task_id",
+    default=None,
     help="Originating task id; defaults to 'supervisor-observation'.",
 )
 def reflect_issue_cmd(
@@ -749,15 +777,11 @@ def reflect_issue_cmd(
     from ..retro.intake import IntakeParseError, parse_intake_yaml
 
     if background and preview_mode:
-        raise click.ClickException(
-            "--bg and --preview are mutually exclusive"
-        )
+        raise click.ClickException("--bg and --preview are mutually exclusive")
 
     if background:
         pid, log_path = _spawn_intake_detached(text, session_id, task_id)
-        console.print(
-            f"[dim]reflect issue spawned (pid={pid}, bg) → {log_path}[/dim]"
-        )
+        console.print(f"[dim]reflect issue spawned (pid={pid}, bg) → {log_path}[/dim]")
         return
 
     project_dir = _project_dir()
@@ -772,13 +796,10 @@ def reflect_issue_cmd(
     try:
         intake_text, exit_code = _run_intake_pipeline(project_dir, prompt_text)
         if exit_code != 0:
-            raise RuntimeError(
-                f"reflect-issue pipeline exited non-zero ({exit_code})"
-            )
+            raise RuntimeError(f"reflect-issue pipeline exited non-zero ({exit_code})")
         if not intake_text:
             raise RuntimeError(
-                "reflect-issue pipeline did not emit "
-                "BEGIN_INTAKE_RESULT/END_INTAKE_RESULT block"
+                "reflect-issue pipeline did not emit BEGIN_INTAKE_RESULT/END_INTAKE_RESULT block"
             )
         action = parse_intake_yaml(intake_text)
     except (RuntimeError, IntakeParseError) as exc:
@@ -808,15 +829,17 @@ def reflect_issue_cmd(
             return
 
     hyp_id = _write_intake(
-        project_dir, ws, action,
-        text=text, session_id=session_id, task_id=task_id,
+        project_dir,
+        ws,
+        action,
+        text=text,
+        session_id=session_id,
+        task_id=task_id,
     )
     from ..retro.intake import MergeAction
 
     if isinstance(action, MergeAction):
-        console.print(
-            f"[green]✓[/green] merged into {hyp_id} (validation_log +1)"
-        )
+        console.print(f"[green]✓[/green] merged into {hyp_id} (validation_log +1)")
     else:
         console.print(f"[green]✓[/green] created {hyp_id} (status=active)")
 
@@ -826,16 +849,24 @@ def reflect_issue_cmd(
 
 @reflect.command("commit")
 @click.option(
-    "--accept", multiple=True, help="PROP-NNN to mark accepted (repeatable)",
+    "--accept",
+    multiple=True,
+    help="PROP-NNN to mark accepted (repeatable)",
 )
 @click.option(
-    "--reject", multiple=True, help="PROP-NNN to mark rejected (repeatable)",
+    "--reject",
+    multiple=True,
+    help="PROP-NNN to mark rejected (repeatable)",
 )
 @click.option(
-    "--defer", multiple=True, help="PROP-NNN to mark deferred (repeatable)",
+    "--defer",
+    multiple=True,
+    help="PROP-NNN to mark deferred (repeatable)",
 )
 @click.option(
-    "--duplicate", multiple=True, help="PROP-NNN to mark duplicate (repeatable)",
+    "--duplicate",
+    multiple=True,
+    help="PROP-NNN to mark duplicate (repeatable)",
 )
 def reflect_commit_cmd(accept, reject, defer, duplicate):
     """Bulk-update proposal statuses (called at end of interactive chat)."""
@@ -843,7 +874,7 @@ def reflect_commit_cmd(accept, reject, defer, duplicate):
     ws = rack_workspace(project_dir)
     changes = 0
     for pid, to_state in (
-        *(( p, "accepted") for p in accept),
+        *((p, "accepted") for p in accept),
         *((p, "rejected") for p in reject),
         *((p, "deferred") for p in defer),
         *((p, "duplicate") for p in duplicate),
@@ -876,10 +907,7 @@ def _build_handoff(project_dir: Path) -> Path:
 
     parts: list[str] = []
     parts.append(f"# reflect-all handoff — {ts}\n")
-    parts.append(
-        f"Active hypotheses: {len(active)} · "
-        f"Open proposals: {len(open_props)}\n"
-    )
+    parts.append(f"Active hypotheses: {len(active)} · Open proposals: {len(open_props)}\n")
 
     parts.append("## Active hypotheses\n")
     if active:
@@ -894,17 +922,13 @@ def _build_handoff(project_dir: Path) -> Path:
             # so multi-line protocols stay verbatim for judge consumption.
             vp = h.verification_protocol
             if vp:
-                indented = "\n".join(
-                    f"    {line}" for line in str(vp).splitlines()
-                )
+                indented = "\n".join(f"    {line}" for line in str(vp).splitlines())
                 parts.append(f"- verification_protocol: |\n{indented}")
             recent = h.validation_log[-3:]
             if recent:
                 parts.append("  Recent verdicts:")
                 for e in recent:
-                    parts.append(
-                        f"  - {e.get('date')} · {e.get('verdict')} · {e.get('evidence')}"
-                    )
+                    parts.append(f"  - {e.get('date')} · {e.get('verdict')} · {e.get('evidence')}")
             parts.append("")
     else:
         parts.append("(no active hypotheses)\n")
@@ -920,9 +944,7 @@ def _build_handoff(project_dir: Path) -> Path:
                 f"- related_hypotheses: {list(p.related_hypotheses)}\n"
             )
             if p.failed_session_id:
-                parts.append(
-                    f"- **meta-proposal** failed_session_id: {p.failed_session_id}"
-                )
+                parts.append(f"- **meta-proposal** failed_session_id: {p.failed_session_id}")
             parts.append("")
     else:
         parts.append("(inbox empty)\n")

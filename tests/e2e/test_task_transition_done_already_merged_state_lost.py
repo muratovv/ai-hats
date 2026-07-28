@@ -42,8 +42,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -55,8 +59,11 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -87,14 +94,19 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env={**env, **(extra_env or {})},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, **(extra_env or {})},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap ----
@@ -106,21 +118,28 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
-    base_branch = _git(
-        project, "rev-parse", "--abbrev-ref", "HEAD"
-    ).stdout.strip()
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create task → execute (worktree from base) ----
     new_res = rack(
-        "create", "already merged state-lost test",
-        "--description", "exercise the HATS-697 state-lost finalize",
-        "--role", "assistant",
-        "--reviewer", "user",
+        "create",
+        "already merged state-lost test",
+        "--description",
+        "exercise the HATS-697 state-lost finalize",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     task_id = None
     for line in new_res.stdout.splitlines():
@@ -134,8 +153,7 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
 
     rack("transition", task_id, "plan")
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -154,9 +172,9 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     branch_suffix = f"/task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(branch_suffix):
                 wt_path = current_path
                 break
@@ -171,20 +189,29 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 4. INCIDENT setup: merge branch into base (work integrated) ----
     _git(
-        project, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "merge", "--no-ff", "--no-edit", task_branch,
+        project,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        task_branch,
     )
-    base_sha_after_merge = _git(
-        project, "rev-parse", base_branch
-    ).stdout.strip()
+    base_sha_after_merge = _git(project, "rev-parse", base_branch).stdout.strip()
 
     # ---- 5. lose the worktree state: remove the worktree by hand AND
     #         delete its ai-hats state JSON so load_for_task → None. ----
@@ -208,23 +235,16 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     res = rack("transition", task_id, "done", expect_exit=0)
     combined = res.stdout + res.stderr
     assert "worktree state lost" not in combined.lower(), (
-        f"false state-lost refusal — HATS-697 short-circuit not applied:\n"
-        f"{combined}"
+        f"false state-lost refusal — HATS-697 short-circuit not applied:\n{combined}"
     )
 
     # ---- 8. task done; merged branch cleaned up ----
     show = rack("context", task_id)
-    assert "state: done" in show.stdout, (
-        f"task did not reach `done`:\n{show.stdout}"
-    )
+    assert "state: done" in show.stdout, f"task did not reach `done`:\n{show.stdout}"
     branches = _git(project, "branch", "--list", task_branch).stdout.strip()
-    assert branches == "", (
-        f"already-merged branch not cleaned up by finalize: {branches!r}"
-    )
+    assert branches == "", f"already-merged branch not cleaned up by finalize: {branches!r}"
 
     # ---- 9. no double-merge: base ref unchanged ----
-    assert _git(
-        project, "rev-parse", base_branch
-    ).stdout.strip() == base_sha_after_merge, (
+    assert _git(project, "rev-parse", base_branch).stdout.strip() == base_sha_after_merge, (
         "base branch was re-merged — finalize should NOT run git merge"
     )

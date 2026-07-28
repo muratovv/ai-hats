@@ -48,7 +48,10 @@ def _run_rack(
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
-        capture_output=True, text=True, env=env, timeout=timeout,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
     )
 
 
@@ -63,10 +66,7 @@ def project(tmp_path: Path) -> Path:
 
 
 def _plan_path(project: Path, task_id: str) -> Path:
-    return (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
-    )
+    return project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
 
 
 def test_stray_claude_plan_is_not_imported(project: Path) -> None:
@@ -88,11 +88,7 @@ def test_stray_claude_plan_is_not_imported(project: Path) -> None:
     assert plan_path.exists(), f"expected scaffold at {plan_path}"
     # The canonical plan is the untouched empty scaffold — the stray was NOT
     # imported (fails under revert: the detour would overwrite this).
-    assert plan_path.read_text() == render_scaffold().format(
-        task_id="HATS-001", title="Probe"
-    )
+    assert plan_path.read_text() == render_scaffold().format(task_id="HATS-001", title="Probe")
     assert "STRAY PLAN" not in plan_path.read_text()
     # The stray is left where it was — the engine no longer touches it.
     assert stray.exists(), "stray must not be moved out of .claude/plans"
-
-

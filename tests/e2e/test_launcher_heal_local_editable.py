@@ -42,7 +42,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,  # non-TTY → self init takes the no-wizard path
     )
     if result.returncode != expect_exit:
@@ -87,7 +92,9 @@ def test_e2e_launcher_heal_channel_local_is_editable(tmp_path: Path) -> None:
     # reinstall to mask the heal.
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     ai_hats_dir = project / ".agent" / "ai-hats"
@@ -100,7 +107,8 @@ def test_e2e_launcher_heal_channel_local_is_editable(tmp_path: Path) -> None:
     )
     import_probe = subprocess.run(
         [str(venv / "bin" / "python"), "-c", "import ai_hats"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert import_probe.returncode == 0, (
         f"ai_hats not importable in healed .venv: {import_probe.stderr}"

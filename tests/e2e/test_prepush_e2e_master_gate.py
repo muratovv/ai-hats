@@ -17,6 +17,7 @@ We never invoke the real gated suite here — we stub ``pytest`` on PATH with a
 tiny shell script whose exit code we control, and assert the hook's branching
 on stdin shape / argv / child exit code / marker side effects.
 """
+
 from __future__ import annotations
 
 import os
@@ -508,7 +509,8 @@ def test_run_mode_explains_fail_closed_venv_skip(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub_emitting(
-        bindir, exit_code=1,
+        bindir,
+        exit_code=1,
         message="E venv-tier required (AI_HATS_E2E_REQUIRE_VENV=1) but unavailable",
     )
 
@@ -525,7 +527,9 @@ def test_run_mode_generic_failure_omits_fail_closed_explanation(tmp_path: Path):
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
     _make_pytest_stub_emitting(
-        bindir, exit_code=1, message="E   assert 1 == 2  # an unrelated test bug",
+        bindir,
+        exit_code=1,
+        message="E   assert 1 == 2  # an unrelated test bug",
     )
 
     res = _run(bindir, cwd=repo)
@@ -596,10 +600,7 @@ def _seed_sweep_recorder(repo: Path) -> Path:
     scripts = repo / "scripts"
     scripts.mkdir(parents=True, exist_ok=True)
     sweep = scripts / "clean-tmp-cruft.sh"
-    sweep.write_text(
-        "#!/usr/bin/env bash\n"
-        f'printf "%s\\n" "$@" > "{repo}/sweep_argv"\n'
-    )
+    sweep.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/sweep_argv"\n')
     sweep.chmod(0o755)
     return sweep
 
@@ -662,11 +663,7 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
     hookdir = repo / ".githooks" / "pre-push.d"
     hookdir.mkdir(parents=True)
     recorder = hookdir / "maintainer-quality-gate-pre-push-e2e-master.sh"
-    recorder.write_text(
-        "#!/usr/bin/env bash\n"
-        f'printf "%s\\n" "$@" > "{repo}/hook_argv"\n'
-        "exit 0\n"
-    )
+    recorder.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/hook_argv"\nexit 0\n')
     recorder.chmod(0o755)
 
     res = subprocess.run(

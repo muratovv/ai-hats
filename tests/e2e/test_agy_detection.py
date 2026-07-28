@@ -53,9 +53,7 @@ def test_agy_detected_via_gemini_home_dir(repo_root: Path, tmp_path: Path):
 
     env = os.environ.copy()
     env["HOME"] = str(home_dir)
-    env["PYTHONPATH"] = os.pathsep.join(
-        [checkout_pythonpath(repo_root), agy_src, str(dist_dir)]
-    )
+    env["PYTHONPATH"] = os.pathsep.join([checkout_pythonpath(repo_root), agy_src, str(dist_dir)])
 
     cmd = [
         "python3",

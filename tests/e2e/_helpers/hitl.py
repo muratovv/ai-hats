@@ -75,7 +75,12 @@ DEFAULT_EXIT_PAYLOAD = "/exit\n\x03\x03"
 #: a sane default. ``LANG`` / ``LC_*`` keep unicode glyphs (✨ etc.)
 #: rendering correctly so banner assertions hit.
 DEFAULT_ENV_ALLOWLIST: tuple[str, ...] = (
-    "PATH", "HOME", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
+    "PATH",
+    "HOME",
+    "TERM",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
 )
 
 
@@ -98,11 +103,11 @@ class HitlResult:
 
     cmd: tuple[str, ...]
     exit_code: int
-    stdout: str             # raw, ANSI included
+    stdout: str  # raw, ANSI included
     stderr: str
-    stdout_plain: str       # ANSI-stripped, what assertions match against
+    stdout_plain: str  # ANSI-stripped, what assertions match against
     duration_s: float
-    timed_out: bool         # True if subprocess hit the timeout
+    timed_out: bool  # True if subprocess hit the timeout
 
     # ----- core verbs -----
 
@@ -117,7 +122,10 @@ class HitlResult:
         return self
 
     def expect_start_banner(
-        self, *, role: str, provider: str,
+        self,
+        *,
+        role: str,
+        provider: str,
     ) -> "HitlResult":
         """The HITL session-start banner must be present in stdout.
 
@@ -145,8 +153,7 @@ class HitlResult:
         runs even if claude crashed, so this should fire whenever the
         ai-hats process actually entered the launch step.
         """
-        if "✨ Session" not in self.stdout_plain \
-                or "complete!" not in self.stdout_plain:
+        if "✨ Session" not in self.stdout_plain or "complete!" not in self.stdout_plain:
             raise AssertionError(
                 "end banner '✨ Session ... complete!' not observed.\n"
                 f"exit: {self.exit_code}\n"
@@ -318,10 +325,16 @@ def drive_bare_hitl(
         exit_code = -1
         raw_stdout = exc.stdout
         raw_stderr = exc.stderr
-        stdout = raw_stdout.decode(errors="replace") \
-            if isinstance(raw_stdout, bytes) else (raw_stdout or "")
-        stderr = raw_stderr.decode(errors="replace") \
-            if isinstance(raw_stderr, bytes) else (raw_stderr or "")
+        stdout = (
+            raw_stdout.decode(errors="replace")
+            if isinstance(raw_stdout, bytes)
+            else (raw_stdout or "")
+        )
+        stderr = (
+            raw_stderr.decode(errors="replace")
+            if isinstance(raw_stderr, bytes)
+            else (raw_stderr or "")
+        )
 
     duration = time.monotonic() - t0
     return HitlResult(

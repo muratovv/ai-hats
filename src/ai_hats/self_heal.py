@@ -40,7 +40,6 @@ def is_broken_install_exception(exc: Exception) -> bool:
     return False
 
 
-
 @dataclass(frozen=True)
 class BrokenProvider:
     """A provider entry point whose module does not resolve in this venv."""
@@ -162,10 +161,19 @@ def _uv_reinstall_editable(package_dir: Path) -> None:
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     subprocess.run(
         [
-            "uv", "pip", "install", "--no-deps",
-            "--python", sys.executable, "-e", str(package_dir),
+            "uv",
+            "pip",
+            "install",
+            "--no-deps",
+            "--python",
+            sys.executable,
+            "-e",
+            str(package_dir),
         ],
-        check=True, capture_output=True, text=True, env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 
@@ -176,10 +184,13 @@ def _module_imports_in_subprocess(module: str) -> bool:
     a hostile entry-point value can't reach the ``-c`` snippet."""
     if not module.isidentifier():
         return False
-    return subprocess.run(
-        [sys.executable, "-c", f"import {module}"],
-        capture_output=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def heal_surface_editables(
@@ -204,29 +215,35 @@ def heal_surface_editables(
     for bp in broken:
         canonical = mapping.get(bp.module)
         if canonical is None:
-            warned.append(Warned(
-                bp,
-                reason=f"module {bp.module!r} has no packages/surfaces/* member",
-                fix=f"reinstall it from its source: uv pip install -e <path-to-{bp.module}>",
-            ))
+            warned.append(
+                Warned(
+                    bp,
+                    reason=f"module {bp.module!r} has no packages/surfaces/* member",
+                    fix=f"reinstall it from its source: uv pip install -e <path-to-{bp.module}>",
+                )
+            )
             continue
         try:
             installer(canonical)
         except Exception as exc:  # noqa: BLE001 - surface any installer failure as a warning
-            warned.append(Warned(
-                bp,
-                reason=f"re-point failed: {exc}",
-                fix=f"uv pip install --no-deps -e {canonical}",
-            ))
+            warned.append(
+                Warned(
+                    bp,
+                    reason=f"re-point failed: {exc}",
+                    fix=f"uv pip install --no-deps -e {canonical}",
+                )
+            )
             continue
         if verifier(bp.module):
             healed.append(Healed(bp, canonical))
         else:
-            warned.append(Warned(
-                bp,
-                reason=f"{bp.module!r} still unimportable after re-point",
-                fix=f"uv pip install -e {canonical}  # (retry with deps)",
-            ))
+            warned.append(
+                Warned(
+                    bp,
+                    reason=f"{bp.module!r} still unimportable after re-point",
+                    fix=f"uv pip install -e {canonical}  # (retry with deps)",
+                )
+            )
     return HealResult(healed=healed, warned=warned)
 
 
@@ -272,10 +289,17 @@ def _uv_install_surface_package(package_name: str) -> None:
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     subprocess.run(
         [
-            "uv", "pip", "install",
-            "--python", sys.executable, package_name,
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            sys.executable,
+            package_name,
         ],
-        check=True, capture_output=True, text=True, env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 
@@ -312,7 +336,6 @@ def ensure_surface_plugin_installed(
     return is_surface_installed(provider_name)
 
 
-
 __all__ = [
     "PROVIDER_ENTRY_POINT_GROUP",
     "SURFACES_SUBPATH",
@@ -329,4 +352,3 @@ __all__ = [
     "run_editable_heal",
     "surface_editable_map",
 ]
-

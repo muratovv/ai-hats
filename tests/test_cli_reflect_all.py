@@ -33,16 +33,17 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
 
 def _make_hyp(pd: Path, hyp_id: str, status="active"):
     body = {
-        "id": hyp_id, "title": f"hyp-{hyp_id}",
-        "status": status, "created": "2026-01-01",
-        "source_task": "HATS-001", "hypothesis": "h",
+        "id": hyp_id,
+        "title": f"hyp-{hyp_id}",
+        "status": status,
+        "created": "2026-01-01",
+        "source_task": "HATS-001",
+        "hypothesis": "h",
         "validation_log": [],
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
-        yaml.safe_dump(body)
-    )
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
     migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
 
 
@@ -50,13 +51,15 @@ def _make_prop(pd: Path, pid: str, status="open"):
     body = {
         "id": pid,
         "created": datetime(2026, 5, 4, tzinfo=timezone.utc).isoformat(),
-        "title": f"title-{pid}", "category": "rule", "target": "x",
-        "description": "d", "rationale": "r",
-        "votes": [], "status": status,
+        "title": f"title-{pid}",
+        "category": "rule",
+        "target": "x",
+        "description": "d",
+        "rationale": "r",
+        "votes": [],
+        "status": status,
     }
-    (proposals_dir(pd) / f"{pid}.yaml").write_text(
-        yaml.safe_dump(body)
-    )
+    (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
     migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
 
 
@@ -76,9 +79,12 @@ def test_dry_run_builds_handoff(project_dir: Path):
 def _make_hyp_with_protocol(pd: Path, hyp_id: str, protocol: str):
     """HATS-534 — make a HYP carrying verification_protocol via extra='allow'."""
     body = {
-        "id": hyp_id, "title": f"hyp-{hyp_id}",
-        "status": "active", "created": "2026-05-26",
-        "source_task": "HATS-001", "hypothesis": "h",
+        "id": hyp_id,
+        "title": f"hyp-{hyp_id}",
+        "status": "active",
+        "created": "2026-05-26",
+        "source_task": "HATS-001",
+        "hypothesis": "h",
         "validation_log": [],
         "success_criterion": "x",
         "observation_window": "5 sessions",
@@ -92,21 +98,16 @@ def test_dry_run_handoff_surfaces_verification_protocol(project_dir: Path):
     """HATS-534 — verification_protocol on a HYP must render into the
     `reflect all` judge handoff so the auditor can follow Step 1.5."""
     protocol = (
-        "STRICT — auditor evidence MUST be exactly three lines:\n"
-        "Line 1: CRITERION: <verbatim>"
+        "STRICT — auditor evidence MUST be exactly three lines:\nLine 1: CRITERION: <verbatim>"
     )
     _make_hyp_with_protocol(project_dir, "HYP-501", protocol)
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0, res.output
-    text = list(
-        (retros_dir(project_dir) / "reflect-all").glob("*-handoff.md")
-    )[0].read_text()
+    text = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))[0].read_text()
     assert "verification_protocol: |" in text, (
         "judge handoff missing verification_protocol literal-block header"
     )
-    assert (
-        "    STRICT — auditor evidence MUST be exactly three lines:" in text
-    )
+    assert "    STRICT — auditor evidence MUST be exactly three lines:" in text
     assert "    Line 1: CRITERION: <verbatim>" in text
 
 
@@ -118,9 +119,7 @@ def test_dry_run_handoff_omits_verification_protocol_when_absent(
     _make_hyp(project_dir, "HYP-001")
     res = CliRunner().invoke(reflect, ["all", "--dry-run"])
     assert res.exit_code == 0
-    text = list(
-        (retros_dir(project_dir) / "reflect-all").glob("*-handoff.md")
-    )[0].read_text()
+    text = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))[0].read_text()
     assert "HYP-001" in text
     assert "verification_protocol" not in text
 
@@ -142,9 +141,12 @@ def test_commit_changes_status(project_dir: Path):
         reflect,
         [
             "commit",
-            "--accept", "PROP-001",
-            "--reject", "PROP-002",
-            "--defer", "PROP-003",
+            "--accept",
+            "PROP-001",
+            "--reject",
+            "PROP-002",
+            "--defer",
+            "PROP-003",
         ],
     )
     assert res.exit_code == 0, res.output

@@ -30,8 +30,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -43,16 +47,18 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
 def _task_state(project: Path, task_id: str) -> str:
     """Read state field from on-disk task.yaml — no CLI involved."""
     yaml_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
-        / task_id / "task.yaml"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "task.yaml"
     )
     text = yaml_path.read_text()
     for line in text.splitlines():
@@ -73,14 +79,19 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env={**env, **(extra_env or {})},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, **(extra_env or {})},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- bootstrap project ----
@@ -92,17 +103,25 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- create task + walk plan→execute ----
     task_id = "TST-001"
     rack(
-        "create", "Conflict test",
-        "--description", "Used to verify HATS-481 L4'.",
-        "--id", task_id,
+        "create",
+        "Conflict test",
+        "--description",
+        "Used to verify HATS-481 L4'.",
+        "--id",
+        task_id,
     )
     rack("transition", task_id, "plan")
 
@@ -110,8 +129,7 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     # strict_plan_check on transition execute). Write it straight into the
     # canonical task tree — no .claude/plans round-trip (HATS-637).
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         "# TST-001 plan\n\n"
@@ -131,9 +149,9 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     branch_ref = f"task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current = Path(line[len("worktree "):].strip())
+            current = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(f"/{branch_ref}"):
                 wt_path = current
                 break
@@ -148,9 +166,14 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     (wt_path / "CONFLICT.txt").write_text("from-worktree\n")
     _git(wt_path, "add", "CONFLICT.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "worktree change",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "worktree change",
     )
 
     # Main side: change CONFLICT.txt to "from-master" — irreconcilable
@@ -159,9 +182,14 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     (project / "CONFLICT.txt").write_text("from-master\n")
     _git(project, "add", "CONFLICT.txt")
     _git(
-        project, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "master change",
+        project,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "master change",
     )
 
     # ---- walk task to review ----
@@ -170,8 +198,11 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
 
     # ---- the contended transition done — MUST exit non-zero ----
     res = rack(
-        "transition", task_id, "done",
-        expect_exit=None, timeout=90,
+        "transition",
+        task_id,
+        "done",
+        expect_exit=None,
+        timeout=90,
     )
     assert res.returncode != 0, (
         f"transition done exited 0 despite merge conflict — "
@@ -185,12 +216,9 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
 
     # ---- on-disk task state must remain `review` ----
     assert _task_state(project, task_id) == "review", (
-        "task moved out of `review` despite merge failure — "
-        "silent data loss regression"
+        "task moved out of `review` despite merge failure — silent data loss regression"
     )
 
     # ---- worktree branch preserved for retry ----
     branches = _git(project, "branch", "--list", branch_ref).stdout
-    assert branch_ref in branches, (
-        f"worktree branch must be preserved for retry:\n{branches}"
-    )
+    assert branch_ref in branches, f"worktree branch must be preserved for retry:\n{branches}"

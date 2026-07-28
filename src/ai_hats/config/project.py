@@ -30,9 +30,11 @@ from .worktree import WorktreeConfig
 logger = logging.getLogger(__name__)
 
 
-_DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset({
-    "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
-})
+_DEPRECATED_PROJECT_FIELDS: frozenset[str] = frozenset(
+    {
+        "imports_order",  # HATS-290 planned but reverted; ghost in some v0.6 yamls.
+    }
+)
 
 
 # HATS-792: highest ai-hats.yaml ``schema_version`` this binary understands.
@@ -68,7 +70,9 @@ class ProjectConfig(_YamlModel):
     active_role: str = ""
     schema_version: int = 4
     migration_step: int = 0  # HATS-471: one-shot-migration counter, orthogonal to schema_version
-    ai_hats_dir: str = ".agent/ai-hats"  # HATS-316: default is bootstrap-only; v4 yaml must carry it
+    ai_hats_dir: str = (
+        ".agent/ai-hats"  # HATS-316: default is bootstrap-only; v4 yaml must carry it
+    )
     venv_path: str | None = None  # HATS-334: user-owned venv override; None → <ai_hats_dir>/.venv
     library_paths: list[str] = Field(default_factory=list)
     customizations: dict[str, OverlayConfig] = Field(default_factory=dict)
@@ -240,8 +244,7 @@ class ProjectConfig(_YamlModel):
         if active and not default:
             data["default_role"] = active
             print(
-                f"WARN: {path}: healed default_role := active_role "
-                f"({active!r}).",
+                f"WARN: {path}: healed default_role := active_role ({active!r}).",
                 file=sys.stderr,
             )
 

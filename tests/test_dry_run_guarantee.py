@@ -70,9 +70,7 @@ def test_hitl_dry_run_leaves_the_filesystem_byte_identical(project: Path, surfac
 
 
 @pytest.mark.parametrize("surface", SURFACES)
-def test_automate_dry_run_leaves_the_filesystem_byte_identical(
-    project: Path, surface: str
-):
+def test_automate_dry_run_leaves_the_filesystem_byte_identical(project: Path, surface: str):
     """Escapes are undone, so the fs is clean either way — that is the promise."""
     before = _fingerprint(project)
 

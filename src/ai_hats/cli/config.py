@@ -28,9 +28,13 @@ def config_feedback_show():
 
     console.print("[bold]Feedback config[/]")
     console.print(f"  session_retro.policy:               {sr.policy.value}")
-    console.print(f"  session_retro.threshold:            turns={sr.smart_threshold.min_turns}, tool_calls={sr.smart_threshold.min_tool_calls}")
+    console.print(
+        f"  session_retro.threshold:            turns={sr.smart_threshold.min_turns}, tool_calls={sr.smart_threshold.min_tool_calls}"
+    )
     console.print(f"  session_retro.background:           {sr.background}")
-    console.print(f"  session_retro.review_model:         {sr.review_model or '(provider default)'}")
+    console.print(
+        f"  session_retro.review_model:         {sr.review_model or '(provider default)'}"
+    )
 
 
 @config_feedback.command("session-retro")
@@ -51,9 +55,7 @@ def config_feedback_session_retro(
 
     nothing_to_do = policy is None and threshold is None and background is None
     if nothing_to_do:
-        console.print(
-            "[red]Specify a policy and/or options (--threshold, --background)[/]"
-        )
+        console.print("[red]Specify a policy and/or options (--threshold, --background)[/]")
         raise SystemExit(1)
 
     if policy:

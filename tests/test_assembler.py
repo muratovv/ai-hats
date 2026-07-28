@@ -1306,8 +1306,11 @@ def _subagent_payload(result):
     from ai_hats.providers import get_provider
 
     return CompositionPayload(
-        result=result, provider=get_provider("claude"), effective_role=result.name,
+        result=result,
+        provider=get_provider("claude"),
+        effective_role=result.name,
     )
+
 
 def test_subagent_meta_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,

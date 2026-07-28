@@ -33,7 +33,10 @@ from ai_hats.cli import main
     ],
 )
 def test_batch_only_flag_is_refused_under_interactive(
-    project_dir: Path, mock_runners, flag, expected,
+    project_dir: Path,
+    mock_runners,
+    flag,
+    expected,
 ):
     res = CliRunner().invoke(main, ["execute", "--role", "judge", *flag])
     assert res.exit_code == 2, res.output
@@ -44,7 +47,8 @@ def test_batch_only_flag_is_refused_under_interactive(
 
 def test_extra_args_are_refused_under_batch(project_dir: Path, mock_runners):
     res = CliRunner().invoke(
-        main, ["execute", "--role", "session-reviewer", "--batch", "--resume"],
+        main,
+        ["execute", "--role", "session-reviewer", "--batch", "--resume"],
     )
     assert res.exit_code == 2, res.output
     assert "interactive-only" in res.output
@@ -56,13 +60,13 @@ def test_extra_args_are_refused_under_batch(project_dir: Path, mock_runners):
     [
         pytest.param(["execute", "--role", "judge"], id="bare-interactive"),
         pytest.param(["execute", "--role", "judge", "--resume"], id="extra-args-ok"),
-        pytest.param(
-            ["execute", "--role", "judge", "--tag", "k=v"], id="tag-works-in-both"
-        ),
+        pytest.param(["execute", "--role", "judge", "--tag", "k=v"], id="tag-works-in-both"),
     ],
 )
 def test_interactive_launches_when_no_batch_only_flag_is_passed(
-    project_dir: Path, mock_runners, argv,
+    project_dir: Path,
+    mock_runners,
+    argv,
 ):
     """Defaults must not read as passed — ``--isolation`` defaults to ``discard``."""
     res = CliRunner().invoke(main, argv)
@@ -80,10 +84,13 @@ def test_interactive_launches_when_no_batch_only_flag_is_passed(
     ],
 )
 def test_the_same_flags_are_accepted_under_batch(
-    project_dir: Path, mock_runners, flag,
+    project_dir: Path,
+    mock_runners,
+    flag,
 ):
     res = CliRunner().invoke(
-        main, ["execute", "--role", "session-reviewer", "--batch", *flag],
+        main,
+        ["execute", "--role", "session-reviewer", "--batch", *flag],
     )
     assert res.exit_code == 0, res.output
     assert len(mock_runners["sub_calls"]) == 1

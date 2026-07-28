@@ -30,7 +30,11 @@ def _null_payload(**kw):
 
     return CompositionPayload(
         result=CompositionResult(
-            name="t", priorities=[], rules=[], skills=[], injections=[],
+            name="t",
+            priorities=[],
+            rules=[],
+            skills=[],
+            injections=[],
         ),
         provider=None,
         effective_role="t",

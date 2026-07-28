@@ -17,6 +17,7 @@ catches hand-edited settings.json with typos or stale paths.
 Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
 Fail-under-revert against commit ``eaa3294`` (Phase 3).
 """
+
 from __future__ import annotations
 
 import json
@@ -64,16 +65,28 @@ def _seed_stuck_state(project_path: Path) -> None:
     # there normally; we'll corrupt that AFTER the bump in the test
     # to simulate post-hoc damage. For this fixture we just write the
     # settings entry and let the test path delete the file).
-    (claude / "settings.json").write_text(json.dumps({
-        "hooks": {HOOK_PRE_TOOL_USE: [{
-            "matcher": "Bash",
-            "_ai_hats_managed": "ai-hats:hats-437",
-            "hooks": [{
-                "type": "command",
-                "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
-            }],
-        }]},
-    }, indent=2) + "\n")
+    (claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     for cmd in (
         ["git", "init", "-q"],
@@ -87,24 +100,27 @@ def _seed_stuck_state(project_path: Path) -> None:
 
 @pytest.mark.integration
 def test_bump_fails_loud_when_settings_points_at_missing_hook(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """AC5: end-of-bump smoke-assert raises AssemblyError that lists
     the broken entry and carries the backup-path recovery one-liner."""
     _seed_stuck_state(tmp_venv_project.path)
-    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
+    pin_edge_channel(
+        tmp_venv_project.path
+    )  # HATS-764: edge so self update resolves the local source
     backup_dir = tmp_path / "backups"
 
     # First bump succeeds — it materializes pre_bash_shared_state_guard.sh
     # into .agent/ai-hats/library/hooks/ as part of provider hook setup.
     ok = tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
     assert ok.exit_code == 0, (
-        f"first bump (greenfield-ish) should succeed:\n"
-        f"stdout:\n{ok.stdout}\nstderr:\n{ok.stderr}"
+        f"first bump (greenfield-ish) should succeed:\nstdout:\n{ok.stdout}\nstderr:\n{ok.stderr}"
     )
 
     # Now corrupt the post-bump state: delete the materialized hook
@@ -115,19 +131,30 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
     # AFTER materialization by editing settings.json to point at a
     # path that materialization will never write.)
     (tmp_venv_project.path / ".claude" / "settings.json").write_text(
-        json.dumps({
-            "hooks": {HOOK_PRE_TOOL_USE: [{
-                "matcher": "Bash",
-                "hooks": [{
-                    "type": "command",
-                    "command": ".agent/ai-hats/library/hooks/lost_hook.sh",
-                }],
-            }]},
-        }, indent=2) + "\n"
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": ".agent/ai-hats/library/hooks/lost_hook.sh",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+        + "\n"
     )
 
     fail = tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
@@ -149,19 +176,16 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
     )
     assert "do not resolve to an existing file" in combined
     # Per-entry line lists the broken command path verbatim.
-    assert "lost_hook.sh" in combined, (
-        "broken entry's command path must appear in the error"
-    )
+    assert "lost_hook.sh" in combined, "broken entry's command path must appear in the error"
     # Recovery one-liner with the actual backup path.
     assert "Recovery: tar -xzf" in combined
     backup_match = re.search(
-        r"Recovery: tar -xzf (\S+\.tar\.gz)", combined,
+        r"Recovery: tar -xzf (\S+\.tar\.gz)",
+        combined,
     )
     assert backup_match, "recovery one-liner missing backup path"
     backup_path = Path(backup_match.group(1))
-    assert backup_path.is_file(), (
-        f"recovery-hinted tarball doesn't exist at {backup_path}"
-    )
+    assert backup_path.is_file(), f"recovery-hinted tarball doesn't exist at {backup_path}"
     assert str(backup_dir) in str(backup_path), (
         f"tarball outside isolated backup dir: {backup_path} vs {backup_dir}"
     )
@@ -169,7 +193,8 @@ def test_bump_fails_loud_when_settings_points_at_missing_hook(
 
 @pytest.mark.integration
 def test_bump_passes_smoke_assert_on_clean_state(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """Negative control: a project whose settings.json hook paths
     all resolve must NOT trigger the smoke-assert. This guards the
@@ -196,14 +221,14 @@ def test_bump_passes_smoke_assert_on_clean_state(
         subprocess.run(cmd, cwd=str(tmp_venv_project.path), check=True)
 
     res = tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
     assert res.exit_code == 0, (
-        f"healthy bump should pass smoke-assert:\n"
-        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+        f"healthy bump should pass smoke-assert:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     )
     # And the smoke-assert's failure-mode signature should NOT
     # appear in the output of a clean run.

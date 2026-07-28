@@ -55,7 +55,6 @@ _BUILTIN_CLASSES = (
 )
 
 
-
 def _step_name(cls: type) -> str:
     return getattr(cls, "_NAME", None) or cls().io.name
 
@@ -102,4 +101,3 @@ __all__ = [
     "PrepareExecuteSessionStep",
     "SpawnSessionReview",
 ]
-

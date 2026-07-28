@@ -54,18 +54,22 @@ def _make_session(tmp_path: Path) -> Session:
 
 def _write_run_policy_yaml(tmp_path: Path) -> None:
     """Force the policy decision to ``run`` so the dispatch branch fires."""
-    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {
-            "session_retro": {
-                "policy": "always",
-                "mode": "programmatic",
-                "background": True,
-            },
-        },
-    }))
+    (tmp_path / PROJECT_CONFIG).write_text(
+        yaml.dump(
+            {
+                "schema_version": 2,
+                "provider": "claude",
+                "active_role": "primary",
+                "feedback": {
+                    "session_retro": {
+                        "policy": "always",
+                        "mode": "programmatic",
+                        "background": True,
+                    },
+                },
+            }
+        )
+    )
 
 
 def _run_step(tmp_path: Path) -> None:
@@ -122,27 +126,29 @@ def test_recursion_guard_suppresses_dispatch(tmp_path, monkeypatch, capsys):
 
     _run_step(tmp_path)
 
-    assert spawned == [], (
-        "HATS_SKIP_RETRO=1 must short-circuit dispatch to avoid spawn-loop"
-    )
+    assert spawned == [], "HATS_SKIP_RETRO=1 must short-circuit dispatch to avoid spawn-loop"
     capsys.readouterr()
 
 
 @pytest.mark.smoke
 def test_skip_action_does_not_dispatch(tmp_path, monkeypatch, capsys):
     """Policy=off → action=skip → no spawn (negative control)."""
-    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {
-            "session_retro": {
-                "policy": "off",
-                "mode": "programmatic",
-                "background": True,
-            },
-        },
-    }))
+    (tmp_path / PROJECT_CONFIG).write_text(
+        yaml.dump(
+            {
+                "schema_version": 2,
+                "provider": "claude",
+                "active_role": "primary",
+                "feedback": {
+                    "session_retro": {
+                        "policy": "off",
+                        "mode": "programmatic",
+                        "background": True,
+                    },
+                },
+            }
+        )
+    )
     spawned: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",

@@ -35,11 +35,13 @@ def test_single_tag_parsed():
 
 
 def test_multiple_tags_parsed_in_order():
-    result = parse_tags([
-        "alert_fp=abc123",
-        "alertname=ImmichContainerDown",
-        "client=home-lab",
-    ])
+    result = parse_tags(
+        [
+            "alert_fp=abc123",
+            "alertname=ImmichContainerDown",
+            "client=home-lab",
+        ]
+    )
     assert result == {
         "alert_fp": "abc123",
         "alertname": "ImmichContainerDown",
@@ -59,10 +61,22 @@ def test_value_may_contain_spaces_and_punctuation():
     assert result == {"title": "Immich container went down!"}
 
 
-@pytest.mark.parametrize("key", [
-    "a", "A", "_", "_foo", "x", "alert_fp", "alert.name", "client-id",
-    "Path.To.Value", "a1", "K123_foo.bar-baz",
-])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "a",
+        "A",
+        "_",
+        "_foo",
+        "x",
+        "alert_fp",
+        "alert.name",
+        "client-id",
+        "Path.To.Value",
+        "a1",
+        "K123_foo.bar-baz",
+    ],
+)
 def test_valid_key_characters(key):
     assert parse_tags([f"{key}=x"]) == {key: "x"}
 
@@ -87,16 +101,19 @@ def test_empty_value_raises():
         parse_tags(["key="])
 
 
-@pytest.mark.parametrize("bad_key", [
-    "1starts_with_digit",
-    "-starts-with-dash",
-    ".starts.with.dot",
-    "has space",
-    "has/slash",
-    "has:colon",
-    "has+plus",
-    "кириллица",
-])
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        "1starts_with_digit",
+        "-starts-with-dash",
+        ".starts.with.dot",
+        "has space",
+        "has/slash",
+        "has:colon",
+        "has+plus",
+        "кириллица",
+    ],
+)
 def test_invalid_key_characters_raise(bad_key):
     with pytest.raises(TagValidationError, match="must match"):
         parse_tags([f"{bad_key}=v"])

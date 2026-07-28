@@ -87,9 +87,7 @@ def test_save_round_trip(tmp_path: Path):
     p = tmp_path / "customizations.yaml"
     cfg = UserConfig(
         customizations={
-            "maintainer": OverlayConfig(
-                add_traits=["hilt-workflow"], injection_append="extra"
-            )
+            "maintainer": OverlayConfig(add_traits=["hilt-workflow"], injection_append="extra")
         }
     )
     cfg.save(p)

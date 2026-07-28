@@ -77,9 +77,7 @@ def test_results_are_name_sorted(tmp_path: Path):
 
 
 def _bare_result() -> CompositionResult:
-    return CompositionResult(
-        name="r", priorities=[], rules=[], skills=[], injections=[]
-    )
+    return CompositionResult(name="r", priorities=[], rules=[], skills=[], injections=[])
 
 
 def test_with_user_rules_defaults_to_empty():

@@ -51,7 +51,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -61,8 +63,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     """Run a subprocess; assert exit code matches ``expect_exit``."""
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != expect_exit:
         raise AssertionError(
@@ -108,7 +114,9 @@ def test_e2e_self_update_completes_via_uv(tmp_path: Path) -> None:
     # added in HATS-496) and break follow-up invocations.
     sha_probe = subprocess.run(
         ["git", "-C", str(src_repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     pinned_ref = sha_probe.stdout.strip()
 
@@ -122,23 +130,27 @@ def test_e2e_self_update_completes_via_uv(tmp_path: Path) -> None:
 
     # ----- bootstrap: install launcher + first self update -----
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
-    _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
+    _run(
+        [str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=300
+    )  # HATS-675: 300s = -n8 gate suite norm
 
     # Switch to git+file:// so --revision is reachable.
     env[ENV_REPO_URL] = f"git+file://{src_repo}"
 
     # ----- assertion 1: production code path exits 0 -----
     _run(
-        [str(launcher_dest), "self", "update",
-         "--revision", pinned_ref, "--force"],
-        cwd=project, env=env, timeout=300,
+        [str(launcher_dest), "self", "update", "--revision", pinned_ref, "--force"],
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     # ----- assertion 2: the installed binary still runs -----
     version_result = _run(
         [str(launcher_dest), "--version"],
-        cwd=project, env=env, timeout=30,
+        cwd=project,
+        env=env,
+        timeout=30,
     )
     assert version_result.stdout.strip(), (
         f"ai-hats --version printed empty stdout after self update:\n"

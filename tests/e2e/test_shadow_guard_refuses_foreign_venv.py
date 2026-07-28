@@ -39,7 +39,9 @@ import pytest
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
-pytestmark = pytest.mark.install_heavy  # real wheel build + install at call time → capped via conftest
+pytestmark = (
+    pytest.mark.install_heavy
+)  # real wheel build + install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -77,12 +79,27 @@ def _foreign_venv(tmp_path: Path, env: dict) -> Path:
     venv = tmp_path / "foreign" / "venv"
     subprocess.run(
         ["uv", "venv", "--python", "3.11", str(venv)],
-        check=True, capture_output=True, text=True, env=env, timeout=120,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
     )
     install = subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
-         "--find-links", str(wheel.parent), str(wheel)],
-        capture_output=True, text=True, env=env, timeout=300,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv / "bin" / "python"),
+            "--find-links",
+            str(wheel.parent),
+            str(wheel),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,
     )
     assert install.returncode == 0, f"foreign install failed:\n{install.stdout}\n{install.stderr}"
     return venv
@@ -115,13 +132,21 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     managed = project / ".agent" / "ai-hats" / ".venv"
     subprocess.run(
         ["uv", "venv", "--python", "3.11", str(managed)],
-        check=True, capture_output=True, text=True, env=env, timeout=120,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
     )
 
     # --- 1. guard ON → refuse-and-instruct + nonzero ---
     refused = subprocess.run(
         [str(foreign_python), "-m", "ai_hats", "config", "status"],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=60,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     combined = refused.stdout + refused.stderr
     assert refused.returncode != 0, (
@@ -140,7 +165,11 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     skip_env["AI_HATS_SKIP_SELF_LOCATION_GUARD"] = "1"
     skipped = subprocess.run(
         [str(foreign_python), "-m", "ai_hats", "config", "status"],
-        cwd=str(project), env=skip_env, capture_output=True, text=True, timeout=60,
+        cwd=str(project),
+        env=skip_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     skipped_combined = skipped.stdout + skipped.stderr
     assert "refusing to run from a foreign" not in skipped_combined, (

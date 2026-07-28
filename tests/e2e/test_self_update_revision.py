@@ -56,7 +56,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -66,8 +68,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 def _run(cmd, *, cwd, env, timeout, expect_exit=0, check_returncode=True):
     """Run subprocess; assert exit code on demand."""
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if check_returncode and result.returncode != expect_exit:
         raise AssertionError(
@@ -83,9 +89,7 @@ def _find_direct_url(venv_dir: Path) -> Path:
     Raises ``AssertionError`` if absent — a clean ai-hats install always
     writes one (PEP 610).
     """
-    matches = list(
-        venv_dir.glob("lib/python*/site-packages/ai_hats-*.dist-info/direct_url.json")
-    )
+    matches = list(venv_dir.glob("lib/python*/site-packages/ai_hats-*.dist-info/direct_url.json"))
     assert matches, f"direct_url.json missing under {venv_dir}"
     return matches[0]
 
@@ -101,7 +105,9 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     project = tmp_path / "project"
     launcher_dest.parent.mkdir(parents=True)
     project.mkdir()
-    pin_edge_channel(project)  # HATS-764: edge so the bootstrap self update resolves the local source
+    pin_edge_channel(
+        project
+    )  # HATS-764: edge so the bootstrap self update resolves the local source
 
     # ----- fixture: src-repo (clone of REPO_ROOT, carries all tags) -----
     subprocess.run(
@@ -114,7 +120,8 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     # release line; ``describe --abbrev=0`` follows the live tag tip.
     tag_probe = subprocess.run(
         ["git", "-C", str(src_repo), "describe", "--tags", "--abbrev=0"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if tag_probe.returncode != 0 or not tag_probe.stdout.strip():
         pytest.skip("no git tags available in src-repo")
@@ -132,8 +139,9 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     env.pop("PYTHONPATH", None)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
+    _run(
+        [str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=300
+    )  # HATS-675: 300s = -n8 gate suite norm
 
     venv_dir = project / ".agent" / "ai-hats" / ".venv"
     assert venv_dir.is_dir(), f"venv missing at {venv_dir}"
@@ -146,11 +154,15 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     assert venv_python.is_file(), f"project venv python missing at {venv_python}"
     subprocess.run(
         ["uv", "pip", "uninstall", "--python", str(venv_python), "ai-hats"],
-        env=env, check=True, timeout=60,
+        env=env,
+        check=True,
+        timeout=60,
     )
     subprocess.run(
         ["uv", "pip", "install", "--python", str(venv_python), "-e", str(src_repo)],
-        env=env, check=True, timeout=180,
+        env=env,
+        check=True,
+        timeout=180,
     )
     # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/
     # + current pointer; drop it so the launcher resolves the now-editable .venv
@@ -173,16 +185,16 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
     # ----- assertion 1: D2 — editable + --revision WITHOUT --force → refuse -----
     a1 = _run(
         [str(launcher_dest), "self", "update", "--revision", pinned_tag],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
         expect_exit=2,
     )
     combined1 = a1.stdout + a1.stderr
     assert "editable install" in combined1, (
         f"D2 refusal message missing 'editable install':\n{combined1}"
     )
-    assert "--force" in combined1, (
-        f"D2 refusal missing --force hint:\n{combined1}"
-    )
+    assert "--force" in combined1, f"D2 refusal missing --force hint:\n{combined1}"
 
     # Install state unchanged (still editable — pip never ran).
     state_after_a1 = json.loads(_find_direct_url(venv_dir).read_text())
@@ -192,9 +204,17 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
 
     # ----- assertion 2: pre-flight ref validation — bogus ref + --force → refuse -----
     a2 = _run(
-        [str(launcher_dest), "self", "update",
-         "--revision", "definitely-not-a-ref-xyz123", "--force"],
-        cwd=project, env=env, timeout=60,
+        [
+            str(launcher_dest),
+            "self",
+            "update",
+            "--revision",
+            "definitely-not-a-ref-xyz123",
+            "--force",
+        ],
+        cwd=project,
+        env=env,
+        timeout=60,
         expect_exit=2,
     )
     combined2 = a2.stdout + a2.stderr
@@ -210,25 +230,22 @@ def test_e2e_self_update_revision(tmp_path: Path) -> None:
 
     # ----- assertion 3: happy path — --revision <tag> --force → pinned install -----
     a3 = _run(
-        [str(launcher_dest), "self", "update",
-         "--revision", pinned_tag, "--force"],
-        cwd=project, env=env, timeout=300,
+        [str(launcher_dest), "self", "update", "--revision", pinned_tag, "--force"],
+        cwd=project,
+        env=env,
+        timeout=300,
     )
     combined3 = a3.stdout + a3.stderr
-    assert "--revision bypasses" in combined3, (
-        f"D1 WARN missing from output:\n{combined3}"
-    )
+    assert "--revision bypasses" in combined3, f"D1 WARN missing from output:\n{combined3}"
 
     # direct_url.json now records the pinned ref + a resolved SHA (PEP 610).
     state_after_a3 = json.loads(_find_direct_url(venv_dir).read_text())
     assert state_after_a3.get("dir_info", {}).get("editable") is not True, (
-        f"editable install was not replaced by the pinned install: "
-        f"{state_after_a3!r}"
+        f"editable install was not replaced by the pinned install: {state_after_a3!r}"
     )
     vcs = state_after_a3.get("vcs_info") or {}
     assert vcs.get("requested_revision") == pinned_tag, (
-        f"requested_revision mismatch: "
-        f"got {vcs.get('requested_revision')!r}, want {pinned_tag!r}"
+        f"requested_revision mismatch: got {vcs.get('requested_revision')!r}, want {pinned_tag!r}"
     )
     assert vcs.get("commit_id"), (
         f"vcs_info.commit_id missing from pinned install: {state_after_a3!r}"

@@ -57,7 +57,7 @@ def _summary_from_injection(injection: str) -> str:
         if stripped.startswith("#"):
             label = stripped.lstrip("#").strip()
             if label.upper().startswith("ROLE:"):
-                label = label[len("ROLE:"):].strip()
+                label = label[len("ROLE:") :].strip()
             if label:
                 return label
     for line in lines:

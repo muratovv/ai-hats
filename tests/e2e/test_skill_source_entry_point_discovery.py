@@ -39,9 +39,7 @@ def _write_skill_plugin_dist(root: Path) -> Path:
     (dist_info / "METADATA").write_text(
         "Metadata-Version: 2.1\nName: acme-hats-skills\nVersion: 0.1\n"
     )
-    (dist_info / "entry_points.txt").write_text(
-        "[ai_hats.skills]\nacme = acme_skills_pkg\n"
-    )
+    (dist_info / "entry_points.txt").write_text("[ai_hats.skills]\nacme = acme_skills_pkg\n")
     return root
 
 

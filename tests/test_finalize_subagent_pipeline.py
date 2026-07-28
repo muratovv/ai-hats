@@ -36,7 +36,14 @@ from ai_hats.paths import PROJECT_CONFIG
 # Locate the worktree's library/ — the test file lives in <wt>/tests/.
 WORKTREE_ROOT = Path(__file__).resolve().parent.parent
 FINALIZE_SUBAGENT_YAML = (
-    WORKTREE_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines" / "finalize-subagent.yaml"
+    WORKTREE_ROOT
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "core"
+    / "pipelines"
+    / "finalize-subagent.yaml"
 )
 
 
@@ -48,22 +55,26 @@ def _seed_project_with_retro_policy(
     metrics: dict,
 ) -> Path:
     """Write ai-hats.yaml + metrics.json under runs_dir; return session_dir."""
-    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {
-            "session_retro": {
-                "policy": "smart",
-                "smart_threshold": {
-                    "min_turns": min_turns,
-                    "min_tool_calls": min_tool_calls,
+    (tmp_path / PROJECT_CONFIG).write_text(
+        yaml.dump(
+            {
+                "schema_version": 2,
+                "provider": "claude",
+                "active_role": "primary",
+                "feedback": {
+                    "session_retro": {
+                        "policy": "smart",
+                        "smart_threshold": {
+                            "min_turns": min_turns,
+                            "min_tool_calls": min_tool_calls,
+                        },
+                        "mode": "programmatic",
+                        "background": True,
+                    },
                 },
-                "mode": "programmatic",
-                "background": True,
-            },
-        },
-    }))
+            }
+        )
+    )
     session_dir = runs_dir(tmp_path) / "session_test"
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
@@ -82,7 +93,9 @@ def test_pipeline_wires_make_audit_then_spawn(tmp_path, monkeypatch):
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
     step_names = [s.io.name for s in pipe.steps]
     assert step_names == [
-        "make_audit", "compute_usage", "maybe_spawn_session_reviewer",
+        "make_audit",
+        "compute_usage",
+        "maybe_spawn_session_reviewer",
     ], f"finalize-subagent step order drifted: {step_names}"
 
 
@@ -121,15 +134,18 @@ def test_pipeline_run_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
-    final = run_pipeline(pipe, initial={
-        "session_id": "test",
-        "session_dir": session_dir,
-        "claude_session_id": "fake-cid",  # make_audit's JSONL discovery fails gracefully (failure_policy=continue)
-        "project_dir": tmp_path,
-        "exit_code": 0,
-        "session_factory": Session,
-        "audit_writer_factory": AuditWriter,
-    })
+    final = run_pipeline(
+        pipe,
+        initial={
+            "session_id": "test",
+            "session_dir": session_dir,
+            "claude_session_id": "fake-cid",  # make_audit's JSONL discovery fails gracefully (failure_policy=continue)
+            "project_dir": tmp_path,
+            "exit_code": 0,
+            "session_factory": Session,
+            "audit_writer_factory": AuditWriter,
+        },
+    )
 
     assert spawned == [(tmp_path, "test")], (
         f"finalize-subagent did not spawn reviewer; spawned={spawned}"
@@ -155,15 +171,18 @@ def test_pipeline_run_no_spawn_below_threshold(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
-    final = run_pipeline(pipe, initial={
-        "session_id": "test",
-        "session_dir": session_dir,
-        "claude_session_id": "fake-cid",
-        "project_dir": tmp_path,
-        "exit_code": 0,
-        "session_factory": Session,
-        "audit_writer_factory": AuditWriter,
-    })
+    final = run_pipeline(
+        pipe,
+        initial={
+            "session_id": "test",
+            "session_dir": session_dir,
+            "claude_session_id": "fake-cid",
+            "project_dir": tmp_path,
+            "exit_code": 0,
+            "session_factory": Session,
+            "audit_writer_factory": AuditWriter,
+        },
+    )
 
     assert spawned == [], "no spawn must happen below threshold"
     assert final.get("retro_decision", {}).get("action") == "skip"
@@ -195,14 +214,17 @@ def test_pipeline_run_recursion_guard_blocks_spawn(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
     pipe = load_pipeline(FINALIZE_SUBAGENT_YAML)
-    run_pipeline(pipe, initial={
-        "session_id": "test",
-        "session_dir": session_dir,
-        "claude_session_id": "fake-cid",
-        "project_dir": tmp_path,
-        "exit_code": 0,
-        "session_factory": Session,
-        "audit_writer_factory": AuditWriter,
-    })
+    run_pipeline(
+        pipe,
+        initial={
+            "session_id": "test",
+            "session_dir": session_dir,
+            "claude_session_id": "fake-cid",
+            "project_dir": tmp_path,
+            "exit_code": 0,
+            "session_factory": Session,
+            "audit_writer_factory": AuditWriter,
+        },
+    )
 
     assert spawned == [], "HATS_SKIP_RETRO must block spawn in pipeline run"

@@ -49,7 +49,12 @@ pytestmark = pytest.mark.install_heavy  # HATS-678: real index install → cappe
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -116,7 +121,9 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
     # stable channel (the documented greenfield default — no harness block).
     _run(
         [str(launcher), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=600,
+        cwd=project,
+        env=env,
+        timeout=600,
     )
 
     # The live stable path: resolve <published> from the real PyPI index and
@@ -124,7 +131,10 @@ def test_e2e_stable_self_update_installs_published_wheel(tmp_path: Path) -> None
     # a 404 failure is distinguished from any other non-zero exit.
     res = _run(
         [str(launcher), "self", "update"],
-        cwd=project, env=env, timeout=600, expect_exit=None,
+        cwd=project,
+        env=env,
+        timeout=600,
+        expect_exit=None,
     )
     out = res.stdout + res.stderr
 

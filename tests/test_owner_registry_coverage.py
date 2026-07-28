@@ -109,8 +109,6 @@ def test_every_surface_location_has_adapter():
             ),
         ), surface
         assert surface.owner_key.strip(), surface
-    proc_owners = {
-        s.owner_key for s in surfaces if isinstance(s, sweeper.ProcSurface)
-    }
+    proc_owners = {s.owner_key for s in surfaces if isinstance(s, sweeper.ProcSurface)}
     overlap = proc_owners & set(MATERIALIZERS)
     assert not overlap, f"ProcSurface is for DEAD mechanisms, but {overlap} is listed living"

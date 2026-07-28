@@ -31,7 +31,7 @@ def port(request) -> Materializer:
 def _skill_src(root: Path) -> Path:
     src = root / "src-skill"
     (src / "scripts").mkdir(parents=True)
-    (src / "SKILL.md").write_text("body")            # 4 bytes
+    (src / "SKILL.md").write_text("body")  # 4 bytes
     (src / "scripts" / "run.sh").write_text("echo")  # 4 bytes
     return src
 
@@ -112,9 +112,7 @@ def test_mkdir_after_remove_is_recorded_again(port: Materializer, tmp_path: Path
     assert [e.kind for e in port.plan.entries] == [WriteKind.REMOVE_TREE, WriteKind.MKDIR]
 
 
-def test_write_text_does_not_make_its_parent_a_separate_mkdir(
-    port: Materializer, tmp_path: Path
-):
+def test_write_text_does_not_make_its_parent_a_separate_mkdir(port: Materializer, tmp_path: Path):
     """Both create parents implicitly; neither may report an extra MKDIR for it."""
     nested = tmp_path / "cache" / "rules"
     port.write_text(nested / "GEMINI.md", "x")

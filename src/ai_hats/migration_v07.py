@@ -63,10 +63,12 @@ _TIER2_PARENTS_FILE_MODE: dict[str, tuple[str, tuple[str, ...]]] = {
 # Files inside Tier-2 mirror dirs that we treat as out-of-band (the marker
 # itself, dotfiles) — they are deleted with the parent dir but never raise
 # a user-edit flag because they are framework bookkeeping.
-_TIER2_BOOKKEEPING_NAMES: frozenset[str] = frozenset({
-    ".library_rules",         # v0.6 marker (pre-HATS-294) listing library rules
-    ".ai-hats-managed",       # v0.6 marker (skills / hooks)
-})
+_TIER2_BOOKKEEPING_NAMES: frozenset[str] = frozenset(
+    {
+        ".library_rules",  # v0.6 marker (pre-HATS-294) listing library rules
+        ".ai-hats-managed",  # v0.6 marker (skills / hooks)
+    }
+)
 
 
 # ---------- Dataclasses ----------
@@ -179,11 +181,7 @@ def collect_tier2(canonical_dir: Path) -> list[tuple[Path, str]]:
         if not parent.is_dir():
             continue
         for entry in sorted(parent.iterdir()):
-            if (
-                entry.is_file()
-                and entry.suffix in suffixes
-                and not entry.name.startswith(".")
-            ):
+            if entry.is_file() and entry.suffix in suffixes and not entry.name.startswith("."):
                 out.append((entry, kind))
     return out
 
@@ -335,8 +333,7 @@ def render_tier2_dir_baseline(
     if source_root is None or not source_root.is_dir():
         return None
     actual_files = sorted(
-        p for p in mirror_dir.rglob("*")
-        if p.is_file() and p.name not in _TIER2_BOOKKEEPING_NAMES
+        p for p in mirror_dir.rglob("*") if p.is_file() and p.name not in _TIER2_BOOKKEEPING_NAMES
     )
     if not actual_files:
         return ""  # empty dir matches empty baseline → safe to delete
@@ -382,8 +379,7 @@ def render_tier2_hook_file_baseline(
 def render_tier2_dir_actual(mirror_dir: Path) -> str:
     """Mirror of ``render_tier2_dir_baseline`` for the on-disk side."""
     actual_files = sorted(
-        p for p in mirror_dir.rglob("*")
-        if p.is_file() and p.name not in _TIER2_BOOKKEEPING_NAMES
+        p for p in mirror_dir.rglob("*") if p.is_file() and p.name not in _TIER2_BOOKKEEPING_NAMES
     )
     if not actual_files:
         return ""
@@ -447,6 +443,7 @@ def plan_migration(
         )
         if baseline is not None and project_dir is not None:
             from .placeholders import expand_path_placeholders
+
             baseline = expand_path_placeholders(baseline, project_dir)
         actual = _safe_read(path)
         edited = is_user_edit(actual, baseline)
@@ -524,6 +521,7 @@ def _safe_read(path: Path) -> bytes:
 
 # ---------- Yaml change detection ----------
 
+
 # Mirrors models._DEPRECATED_PROJECT_FIELDS but referenced directly so a
 # rename on the models side surfaces here too.
 def detect_yaml_changes(raw_yaml: dict, config: ProjectConfig) -> list[str]:
@@ -561,10 +559,17 @@ def check_branches_modify_paths(
     try:
         result = subprocess.run(
             [
-                "git", "-C", str(project_dir),
-                "for-each-ref", "--format=%(refname:short)", "refs/heads/",
+                "git",
+                "-C",
+                str(project_dir),
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads/",
             ],
-            capture_output=True, text=True, timeout=timeout, check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
             env=scrubbed_git_env(),
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -576,7 +581,10 @@ def check_branches_modify_paths(
     try:
         head = subprocess.run(
             ["git", "-C", str(project_dir), "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=timeout, check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
             env=scrubbed_git_env(),
         )
         current = head.stdout.strip() if head.returncode == 0 else ""
@@ -598,9 +606,20 @@ def check_branches_modify_paths(
             continue
         try:
             diff = subprocess.run(
-                ["git", "-C", str(project_dir), "diff", "--name-only",
-                 f"HEAD..{branch}", "--", *rel_paths],
-                capture_output=True, text=True, timeout=timeout, check=False,
+                [
+                    "git",
+                    "-C",
+                    str(project_dir),
+                    "diff",
+                    "--name-only",
+                    f"HEAD..{branch}",
+                    "--",
+                    *rel_paths,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
                 env=scrubbed_git_env(),
             )
         except subprocess.TimeoutExpired:
@@ -720,9 +739,7 @@ def migration_guidance(tier: int, kind: str, path_name: str) -> str:
                 f"[bold].agent/ai-hats/library/usage/hooks/{path_name}[/] "
                 "or delete after confirming."
             )
-        return (
-            f"Move overrides to [bold].agent/ai-hats/library/usage/{bucket}/{path_name}/...[/]."
-        )
+        return f"Move overrides to [bold].agent/ai-hats/library/usage/{bucket}/{path_name}/...[/]."
     return ""
 
 
@@ -742,9 +759,7 @@ def empty_composition() -> CompositionResult:
     )
 
 
-def render_user_edits_refusal(
-    user_edits: list[TierFinding], project_dir: Path
-) -> str:
+def render_user_edits_refusal(user_edits: list[TierFinding], project_dir: Path) -> str:
     """Render the ``AssemblyError`` message body for a user-edits refusal.
 
     Used by ``Assembler._run_v07_migration`` to surface the same per-file
@@ -764,8 +779,7 @@ def render_user_edits_refusal(
             rel = f.path
         lines.append(f"  [yellow]{rel}[/]")
         lines.append(
-            f"    → tier {f.tier} ({f.kind}). "
-            + migration_guidance(f.tier, f.kind, f.path.name)
+            f"    → tier {f.tier} ({f.kind}). " + migration_guidance(f.tier, f.kind, f.path.name)
         )
         lines.append("")
     lines.append(

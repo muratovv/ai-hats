@@ -89,9 +89,7 @@ def test_e2e_global_overlay_picked_up_by_composer(
     """CLI --global write → composer compose() returns the global trait."""
     # Write via CLI exactly as a user would.
     runner = CliRunner()
-    res = runner.invoke(
-        customize_cmd, ["worker", "--add-trait", "hilt-workflow", "--global"]
-    )
+    res = runner.invoke(customize_cmd, ["worker", "--add-trait", "hilt-workflow", "--global"])
     assert res.exit_code == 0, res.output
     # File must exist at the user-canonical path.
     user_file = isolated_home / ".ai-hats" / "customizations.yaml"
@@ -155,9 +153,7 @@ def test_e2e_reset_global_leaves_project_alone(
     assert "PROJECT_DEBUG_TEXT" in result.injections
 
 
-def test_e2e_layered_reorder_via_in_layer_add_remove(
-    monkeypatch, tmp_path: Path
-):
+def test_e2e_layered_reorder_via_in_layer_add_remove(monkeypatch, tmp_path: Path):
     """Within a single layer, ``add: X`` + ``remove: X`` moves X to that
     layer's tail — verified by injection order in the composed result.
 

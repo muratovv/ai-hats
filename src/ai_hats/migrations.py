@@ -74,6 +74,7 @@ def _recorded_move(src: "Path", dst: "Path", *, reason: str, project_dir: "Path"
     shutil.copy2(str(src), str(dst))
     _safe_discard(src, reason=reason, project_dir=project_dir)
 
+
 # Stable banner format — the E2E gate test (HATS-471) greps stderr for
 # this prefix to assert the registry actually advanced (or didn't).
 # Do not change without updating ``tests/e2e/test_migration_registry_gate.py``

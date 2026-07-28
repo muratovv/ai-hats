@@ -36,8 +36,12 @@ AI_HATS_SUB = Path(".agent") / "ai-hats"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
     result = subprocess.run(
-        [str(c) for c in cmd], cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        [str(c) for c in cmd],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if check and result.returncode != 0:
         raise AssertionError(
@@ -72,16 +76,35 @@ def _seed_flat_catalogs(ai_hats_dir: Path) -> None:
     prop = ai_hats_dir / "tracker" / "backlog" / "proposals"
     hyp.mkdir(parents=True, exist_ok=True)
     prop.mkdir(parents=True, exist_ok=True)
-    (hyp / "HYP-001.yaml").write_text(yaml.safe_dump({
-        "id": "HYP-001", "title": "sandbox hyp", "status": "active",
-        "created": "2026-01-01", "source_task": "SBX-001", "hypothesis": "h",
-        "validation_log": [],
-    }))
-    (prop / "PROP-001.yaml").write_text(yaml.safe_dump({
-        "id": "PROP-001", "created": "2026-01-01T00:00:00Z", "title": "sandbox prop",
-        "category": "rule", "target": "x", "description": "d", "rationale": "r",
-        "related_hypotheses": [], "votes": [], "status": "open",
-    }))
+    (hyp / "HYP-001.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "HYP-001",
+                "title": "sandbox hyp",
+                "status": "active",
+                "created": "2026-01-01",
+                "source_task": "SBX-001",
+                "hypothesis": "h",
+                "validation_log": [],
+            }
+        )
+    )
+    (prop / "PROP-001.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "PROP-001",
+                "created": "2026-01-01T00:00:00Z",
+                "title": "sandbox prop",
+                "category": "rule",
+                "target": "x",
+                "description": "d",
+                "rationale": "r",
+                "related_hypotheses": [],
+                "votes": [],
+                "status": "open",
+            }
+        )
+    )
 
 
 def test_default_composition_flip(shared_launcher, tmp_path: Path):
@@ -98,11 +121,21 @@ def test_default_composition_flip(shared_launcher, tmp_path: Path):
     # ============ Part 1: the composition flip (R1/R11) ============
     proj = tmp_path / "compose"
     proj.mkdir()
-    _run([launcher, "self", "init", "-p", "claude", "-r", "assistant"],
-         cwd=proj, env=env, timeout=120, check=True)
+    _run(
+        [launcher, "self", "init", "-p", "claude", "-r", "assistant"],
+        cwd=proj,
+        env=env,
+        timeout=120,
+        check=True,
+    )
 
-    tokens = _run([launcher, "list", "tokens", "assistant", "--approx"],
-                  cwd=proj, env=env_wide, timeout=60, expect_exit=0)
+    tokens = _run(
+        [launcher, "list", "tokens", "assistant", "--approx"],
+        cwd=proj,
+        env=env_wide,
+        timeout=60,
+        expect_exit=0,
+    )
     listed = tokens.stdout + tokens.stderr
     # Fail-under-revert: with the trait-agent swap reverted, `hatrack` drops out
     # and `backlog-manager` comes back — both assertions flip to red.
@@ -119,15 +152,25 @@ def test_default_composition_flip(shared_launcher, tmp_path: Path):
     _init_git_project(sbx)
     ai_hats_dir = sbx / AI_HATS_SUB
 
-    created = _run([rack, "create", "sandbox task", "--role", "assistant"],
-                   cwd=sbx, env=env, timeout=90, expect_exit=0)
+    created = _run(
+        [rack, "create", "sandbox task", "--role", "assistant"],
+        cwd=sbx,
+        env=env,
+        timeout=90,
+        expect_exit=0,
+    )
     assert "SBX-001" in created.stdout, created.stdout
 
     # Seed flat HYP/PROP, then migrate them into the normalized catalogs via the
     # real migrator (dogfood): HYP → tracker/backlog/hypotheses, PROP in-place.
     _seed_flat_catalogs(ai_hats_dir)
-    _run([py, "-m", "ai_hats_rack.migration", str(ai_hats_dir)],
-         cwd=sbx, env=env, timeout=60, expect_exit=0)
+    _run(
+        [py, "-m", "ai_hats_rack.migration", str(ai_hats_dir)],
+        cwd=sbx,
+        env=env,
+        timeout=60,
+        expect_exit=0,
+    )
     assert (ai_hats_dir / "tracker" / "backlog" / "hypotheses" / "HYP-001" / "task.yaml").is_file()
     assert (ai_hats_dir / "tracker" / "backlog" / "proposals" / "PROP-001" / "task.yaml").is_file()
 
@@ -139,7 +182,9 @@ def test_default_composition_flip(shared_launcher, tmp_path: Path):
     # `rack --help` lists the per-backlog groups once the siblings are mounted.
     help_out = _run([rack, "--help"], cwd=sbx, env=env, timeout=60, expect_exit=0)
     assert "hyp" in help_out.stdout, f"`rack --help` must list the hyp group:\n{help_out.stdout}"
-    assert "proposal" in help_out.stdout, f"`rack --help` must list the proposal group:\n{help_out.stdout}"
+    assert "proposal" in help_out.stdout, (
+        f"`rack --help` must list the proposal group:\n{help_out.stdout}"
+    )
 
     # Each group resolves and exposes its verbs on the migrated data (the per-backlog
     # groups carry create/update + extension verbs — HATS-1036 — not a base `ls`).

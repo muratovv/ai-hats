@@ -48,7 +48,9 @@ def test_bold_prose_ref_is_reported_cross_package(tmp_path):
     _skill(trk, "backlog-manager")
     report = agg.aggregate_report([lib, trk])
     assert not report.dangling  # bold mention of a known skill is not dangling
-    assert any(r.target == "backlog-manager" and r.referrer_pkg == "library" for r in report.cross_package)
+    assert any(
+        r.target == "backlog-manager" and r.referrer_pkg == "library" for r in report.cross_package
+    )
 
 
 def test_bold_mention_of_unknown_token_is_not_dangling(tmp_path):

@@ -41,14 +41,15 @@ def load_pty_tap_factory() -> PtyTapFactory | None:
             factory = eps[0].load()
             if callable(factory):
                 return factory
-            logger.warning("ai_hats.pty_tap entry point '%s' did not return a callable", eps[0].name)
+            logger.warning(
+                "ai_hats.pty_tap entry point '%s' did not return a callable", eps[0].name
+            )
         except Exception as exc:
             logger.warning("Failed to load ai_hats.pty_tap entry point '%s': %s", eps[0].name, exc)
 
     from .pty_relay import make_fd_pty_tap
 
     return make_fd_pty_tap
-
 
 
 @runtime_checkable

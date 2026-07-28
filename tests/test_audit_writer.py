@@ -25,8 +25,9 @@ def make_session(tmp_path, trace_content: str = "") -> Session:
 
 # --- parsing ---
 
+
 def test_parse_trace_entry():
-    line = '17:32:34.581 [SYS] Session started: role=assistant'
+    line = "17:32:34.581 [SYS] Session started: role=assistant"
     entry = TraceParser._parse_line(line)
     assert entry.timestamp == "17:32:34.581"
     assert entry.tag == "SYS"
@@ -34,7 +35,7 @@ def test_parse_trace_entry():
 
 
 def test_parse_trace_entry_with_res():
-    line = '17:32:35.253 [RES] ⏺Привет! Ответ модели.'
+    line = "17:32:35.253 [RES] ⏺Привет! Ответ модели."
     entry = TraceParser._parse_line(line)
     assert entry.tag == "RES"
     assert entry.content == "⏺Привет! Ответ модели."
@@ -46,6 +47,7 @@ def test_parse_malformed_line():
 
 
 # --- noise filtering ---
+
 
 def test_is_noise_spinner():
     assert TraceParser._is_noise("✢")
@@ -78,6 +80,7 @@ def test_not_noise_response():
 
 # --- tool extraction ---
 
+
 def test_extract_tool_search():
     assert TraceParser._extract_tool("⏺Searching for 1 pattern…") == "Search: 1 pattern"
 
@@ -98,6 +101,7 @@ def test_extract_tool_returns_none_for_response():
 
 # --- thinking detection ---
 
+
 def test_thinking_duration():
     entries = [
         TraceEntry("17:32:34.000", "RES", "(thinking with high effort)"),
@@ -110,6 +114,7 @@ def test_thinking_duration():
 
 
 # --- integration: real trace ---
+
 
 @pytest.mark.integration
 def test_build_on_real_trace(tmp_path):

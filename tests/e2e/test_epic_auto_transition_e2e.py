@@ -46,10 +46,7 @@ def _git_init_on_master(project: Path) -> None:
 
 
 def _plan_path(project: Path, task_id: str) -> Path:
-    return (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
-    )
+    return project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
 
 
 def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
@@ -66,7 +63,11 @@ def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
     rack_bin = Path(proj.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
     return subprocess.run(
         [str(rack_bin), *args],
-        cwd=str(proj.path), env=env, capture_output=True, text=True, timeout=180,
+        cwd=str(proj.path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
 
 
@@ -119,18 +120,41 @@ def test_epic_auto_advance_and_reopen_e2e(tmp_venv_project) -> None:
     _ok(_rack(proj, "transition", epic, "execute"))
 
     # Fast-close both children; the SECOND completes the epic → auto-advance.
-    _ok(_rack(proj, "transition", child1, "--state", "done",
-              "--force", "--reason", "fast-close", "--resolution", "shipped"))
-    closed = _ok(_rack(proj, "transition", child2, "--state", "done",
-                       "--force", "--reason", "fast-close", "--resolution", "shipped"))
+    _ok(
+        _rack(
+            proj,
+            "transition",
+            child1,
+            "--state",
+            "done",
+            "--force",
+            "--reason",
+            "fast-close",
+            "--resolution",
+            "shipped",
+        )
+    )
+    closed = _ok(
+        _rack(
+            proj,
+            "transition",
+            child2,
+            "--state",
+            "done",
+            "--force",
+            "--reason",
+            "fast-close",
+            "--resolution",
+            "shipped",
+        )
+    )
     # rack echoes the epic work_log delta (cli_kernel.py:_echo_deltas); the
     # legacy `Epic auto-transition:` line has no rack equivalent.
     for marker in (f"epic {epic}:", "advance", "review"):
         assert marker in closed.stdout, f"missing {marker!r}:\n{closed.stdout}"
     show = _ok(_rack(proj, "context", epic))
     assert "state: review" in show.stdout, (
-        f"epic should be in review after all children resolved; got:\n"
-        f"{show.stdout[-400:]}"
+        f"epic should be in review after all children resolved; got:\n{show.stdout[-400:]}"
     )
 
     # Reviewer closes the epic.
@@ -142,6 +166,5 @@ def test_epic_auto_advance_and_reopen_e2e(tmp_venv_project) -> None:
         assert marker in reopened.stdout, f"missing {marker!r}:\n{reopened.stdout}"
     show = _ok(_rack(proj, "context", epic))
     assert "state: execute" in show.stdout, (
-        f"epic should reopen to execute after new child; got:\n"
-        f"{show.stdout[-400:]}"
+        f"epic should reopen to execute after new child; got:\n{show.stdout[-400:]}"
     )

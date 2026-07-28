@@ -75,9 +75,7 @@ class SessionReport:
         d = self.to_dict()
         lines = [
             f"role      {d['role']} -> {d['provider']}   run_mode={d['run_mode']}",
-            "policy    " + " ".join(
-                f"{k}={'on' if v else 'off'}" for k, v in d["policy"].items()
-            ),
+            "policy    " + " ".join(f"{k}={'on' if v else 'off'}" for k, v in d["policy"].items()),
         ]
         if d["cwd"]:
             lines.append(f"cwd       {d['cwd']}")

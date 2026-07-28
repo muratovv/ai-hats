@@ -108,9 +108,7 @@ def _run_driver(tmp_path: Path, *, raise_factory: bool, child: str) -> str:
 
     src_roots = checkout_pythonpath(_REPO_ROOT).split(os.pathsep)
     driver = tmp_path / "driver.py"
-    driver.write_text(
-        _DRIVER.format(src_roots=src_roots, raise_factory=raise_factory, child=child)
-    )
+    driver.write_text(_DRIVER.format(src_roots=src_roots, raise_factory=raise_factory, child=child))
     proc = subprocess.run(  # noqa: S603 — fixed argv, our own driver
         [sys.executable, str(driver)],
         stdin=subprocess.DEVNULL,

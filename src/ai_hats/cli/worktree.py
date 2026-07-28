@@ -265,8 +265,7 @@ def wt_create(branch: str):
     "--skip-hooks",
     is_flag=True,
     default=False,
-    help="Force teardown even if a wt_out hook fails — accepts losing "
-    "unharvested gitignored data.",
+    help="Force teardown even if a wt_out hook fails — accepts losing unharvested gitignored data.",
 )
 def wt_merge(
     branch: str | None,
@@ -453,8 +452,7 @@ def wt_merge(
     "--skip-hooks",
     is_flag=True,
     default=False,
-    help="Force teardown even if a wt_out hook fails — accepts losing "
-    "unharvested gitignored data.",
+    help="Force teardown even if a wt_out hook fails — accepts losing unharvested gitignored data.",
 )
 def wt_discard(branch: str | None, force: bool, force_remove: bool, skip_hooks: bool):
     """Discard worktree changes and clean up.
@@ -620,7 +618,9 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
     run_dir = _effective_dir(wt_path, subdir)
     # HATS-913: src alone Franken-mixes — packages/*/src must come from the
     # worktree. HATS-1205: rooted at whichever project owns run_dir.
-    env["PYTHONPATH"] = workspace_pythonpath(_owner_root(run_dir, wt_path), env.get("PYTHONPATH", ""))
+    env["PYTHONPATH"] = workspace_pythonpath(
+        _owner_root(run_dir, wt_path), env.get("PYTHONPATH", "")
+    )
 
     try:
         result = subprocess.run(args, cwd=str(run_dir), env=env)

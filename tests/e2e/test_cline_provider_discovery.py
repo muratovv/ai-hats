@@ -53,9 +53,7 @@ def test_cline_surface_is_discovered_by_the_binary(
     cline_src = str(repo_root / _CLINE_PKG / "src")
 
     env = os.environ.copy()  # PYTHONPATH already scrubbed by _scrub_redirect_env
-    env["PYTHONPATH"] = os.pathsep.join(
-        [checkout_pythonpath(repo_root), cline_src, str(dist_dir)]
-    )
+    env["PYTHONPATH"] = os.pathsep.join([checkout_pythonpath(repo_root), cline_src, str(dist_dir)])
 
     result = subprocess.run(
         [str(ai_hats_shim), "list", "providers"],

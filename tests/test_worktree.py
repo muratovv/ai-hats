@@ -458,9 +458,7 @@ class TestMergeConsentGate:
         )
         assert result.stdout.strip() != "", "worktree branch should be preserved"
 
-    def test_ack_allows_merge(
-        self, git_project: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ack_allows_merge(self, git_project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
         mgr = WorktreeManager(git_project, "tester", "sess-1019b", IsolationMode.SQUASH)
         wt = mgr.create()

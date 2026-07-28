@@ -27,9 +27,7 @@ from ..step import Step, StepIO
 def _parse_template_keys(template: str) -> frozenset[str]:
     """Return named placeholders in ``template`` (excluding ``ts``)."""
     return frozenset(
-        name
-        for _, name, _, _ in string.Formatter().parse(template)
-        if name and name != "ts"
+        name for _, name, _, _ in string.Formatter().parse(template) if name and name != "ts"
     )
 
 

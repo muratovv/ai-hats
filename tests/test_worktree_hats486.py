@@ -32,7 +32,11 @@ pytestmark = pytest.mark.integration
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -122,9 +126,7 @@ class TestStaleIndexLockAge:
         with patch.object(wt_mod.subprocess, "run", side_effect=boom):
             assert _stale_index_lock_age(git_project) is None
 
-    def test_linked_worktree_resolves_to_common_index_lock(
-        self, git_project: Path
-    ) -> None:
+    def test_linked_worktree_resolves_to_common_index_lock(self, git_project: Path) -> None:
         """From inside a linked worktree, probe finds the common .git/index.lock.
 
         Linked worktrees don't have their own index.lock — git serializes
@@ -169,23 +171,29 @@ class TestRetryGitMergeStaleProbe:
             # Mock git runner: raises retriable error first attempt, then
             # succeeds. Tests both the probe AND that retry still works.
             attempts = []
+
             def mock_runner(*args):
                 attempts.append(args)
                 if len(attempts) == 1:
                     raise subprocess.CalledProcessError(
-                        128, ["git", *args],
+                        128,
+                        ["git", *args],
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
             with caplog.at_level(logging.WARNING, logger="ai_hats_wt.manager"):
                 _retry_git_merge(
-                    mock_runner, "merge", "--no-ff", "task/foo",
+                    mock_runner,
+                    "merge",
+                    "--no-ff",
+                    "task/foo",
                     sleep=lambda _: None,  # no real sleep in tests
                     project_dir=git_project,
                 )
 
             warnings = [
-                r for r in caplog.records
+                r
+                for r in caplog.records
                 if r.levelno == logging.WARNING and "index.lock" in r.message
             ]
             assert warnings, (
@@ -207,25 +215,33 @@ class TestRetryGitMergeStaleProbe:
         lock.write_text("fresh\n")  # mtime = now → under threshold
         try:
             attempts = []
+
             def mock_runner(*args):
                 attempts.append(args)
                 if len(attempts) == 1:
                     raise subprocess.CalledProcessError(
-                        128, ["git", *args],
+                        128,
+                        ["git", *args],
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
             with caplog.at_level(logging.WARNING, logger="ai_hats_wt.manager"):
                 _retry_git_merge(
-                    mock_runner, "merge", "--no-ff", "task/foo",
+                    mock_runner,
+                    "merge",
+                    "--no-ff",
+                    "task/foo",
                     sleep=lambda _: None,
                     project_dir=git_project,
                 )
 
             stale_warnings = [
-                r for r in caplog.records
-                if r.levelno == logging.WARNING and "stale" in r.message.lower()
-                or "index.lock" in r.message and "rm -f" in r.message
+                r
+                for r in caplog.records
+                if r.levelno == logging.WARNING
+                and "stale" in r.message.lower()
+                or "index.lock" in r.message
+                and "rm -f" in r.message
             ]
             assert not stale_warnings, (
                 f"unexpected stale-lock WARNING for fresh lock: {stale_warnings}"
@@ -244,28 +260,32 @@ class TestRetryGitMergeStaleProbe:
             _backdate(lock, seconds_ago=STALE_INDEX_LOCK_THRESHOLD_S + 30)
 
             attempts = []
+
             def mock_runner(*args):
                 attempts.append(args)
                 if len(attempts) == 1:
                     raise subprocess.CalledProcessError(
-                        128, ["git", *args],
+                        128,
+                        ["git", *args],
                         stderr="fatal: Another git process seems to be running\n",
                     )
 
             with caplog.at_level(logging.WARNING, logger="ai_hats_wt.manager"):
                 _retry_git_merge(
-                    mock_runner, "merge", "--no-ff", "task/foo",
+                    mock_runner,
+                    "merge",
+                    "--no-ff",
+                    "task/foo",
                     sleep=lambda _: None,
                     # project_dir omitted — backwards-compat path.
                 )
 
             stale_warnings = [
-                r for r in caplog.records
+                r
+                for r in caplog.records
                 if r.levelno == logging.WARNING and "index.lock" in r.message
             ]
-            assert not stale_warnings, (
-                f"probe ran despite project_dir=None: {stale_warnings}"
-            )
+            assert not stale_warnings, f"probe ran despite project_dir=None: {stale_warnings}"
         finally:
             if lock.exists():
                 lock.unlink()
@@ -282,22 +302,28 @@ class TestRetryGitMergeStaleProbe:
             # Always fail with retriable — exhausts MERGE_RETRY_MAX (8).
             def always_fail(*args):
                 raise subprocess.CalledProcessError(
-                    128, ["git", *args],
+                    128,
+                    ["git", *args],
                     stderr="fatal: Another git process seems to be running\n",
                 )
 
             with caplog.at_level(logging.WARNING, logger="ai_hats_wt.manager"):
                 with pytest.raises(subprocess.CalledProcessError):
                     _retry_git_merge(
-                        always_fail, "merge", "--no-ff", "task/foo",
+                        always_fail,
+                        "merge",
+                        "--no-ff",
+                        "task/foo",
                         sleep=lambda _: None,
                         project_dir=git_project,
                     )
 
             stale_warnings = [
-                r for r in caplog.records
+                r
+                for r in caplog.records
                 if r.levelno == logging.WARNING
-                and "index.lock" in r.message and "rm -f" in r.message
+                and "index.lock" in r.message
+                and "rm -f" in r.message
             ]
             assert len(stale_warnings) == 1, (
                 f"expected exactly 1 stale-lock WARNING across 8 retries, "

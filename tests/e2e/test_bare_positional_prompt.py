@@ -15,7 +15,9 @@ def test_bare_positional_prompt_does_not_fail_with_no_such_command(tmp_project) 
     from _helpers.env import checkout_pythonpath
 
     result = tmp_project.run(
-        "-p", "nonexistent_provider_1202", "hello world",
+        "-p",
+        "nonexistent_provider_1202",
+        "hello world",
         extra_env={"PYTHONPATH": checkout_pythonpath(_REPO_ROOT)},
         timeout=10.0,
     ).expect_failure()

@@ -94,7 +94,9 @@ def fresh_project(tmp_path):
     project.mkdir()
     subprocess.run(
         ["git", "init", "-q"],
-        cwd=str(project), check=True, capture_output=True,
+        cwd=str(project),
+        check=True,
+        capture_output=True,
     )
     return project
 
@@ -105,8 +107,12 @@ def _run(cmd, *, cwd, expect_exit=0, timeout=60):
     # want under test.
     env["AI_HATS_NO_UPDATE"] = "1"
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -130,8 +136,7 @@ def test_init_writes_yaml_and_user_rules_dir_only(fresh_project):
     project = fresh_project
 
     _run(
-        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
-         "--no-wizard", "--no-update"],
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard", "--no-update"],
         cwd=project,
     )
 
@@ -141,7 +146,7 @@ def test_init_writes_yaml_and_user_rules_dir_only(fresh_project):
     body = yaml_path.read_text()
     assert "default_role: assistant" in body, body
     # active_role is the runtime cache — empty until first session_start.
-    assert "active_role: ''" in body or "active_role: \"\"" in body, body
+    assert "active_role: ''" in body or 'active_role: ""' in body, body
 
     # HATS-1170 clean-root invariant: no scaffold in the project root.
     assert not (project / "CLAUDE.md").exists(), "root CLAUDE.md must not be created"
@@ -184,8 +189,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     in ai-hats.yaml without touching the canonical tree or .last_backup."""
     project = fresh_project
     _run(
-        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
-         "--no-wizard", "--no-update"],
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard", "--no-update"],
         cwd=project,
     )
 
@@ -203,7 +207,7 @@ def test_config_set_role_is_yaml_only(fresh_project):
     # default_role flipped; active_role stays empty (runtime cache).
     body = (project / PROJECT_CONFIG).read_text()
     assert "default_role: sre" in body, body
-    assert "active_role: ''" in body or "active_role: \"\"" in body, body
+    assert "active_role: ''" in body or 'active_role: ""' in body, body
 
     # Canonical tree unchanged — config set must not regenerate anything.
     assert sorted(p.name for p in canon.iterdir()) == initial_canonical
@@ -230,8 +234,7 @@ def test_bump_leaves_user_rules_unmaterialized(fresh_project):
     """
     project = fresh_project
     _run(
-        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
-         "--no-wizard", "--no-update"],
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard", "--no-update"],
         cwd=project,
     )
 
@@ -246,13 +249,12 @@ def test_bump_leaves_user_rules_unmaterialized(fresh_project):
     # subprocess hook `self update` uses internally). The bump banner
     # still prints "Bumped".
     import sys as _sys
+
     res = _run([_sys.executable, "-m", "ai_hats._bump_internal"], cwd=project)
     assert "Bumped" in res.stdout, res.stdout
 
     # The rule survives verbatim and no aggregator is built for it.
-    assert (user_rules / "my-rule.md").read_text() == (
-        "# my rule\n\nProject-specific guidance.\n"
-    )
+    assert (user_rules / "my-rule.md").read_text() == ("# my rule\n\nProject-specific guidance.\n")
     assert not (canon / "imports.md").exists(), "imports.md aggregator was retired"
 
     # No role-content materialization (HATS-407 contract).
@@ -275,14 +277,14 @@ def test_self_rollback_command_removed(fresh_project):
     must surface a 'no such command' error from click."""
     project = fresh_project
     _run(
-        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant",
-         "--no-wizard", "--no-update"],
+        [*AI_HATS, "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard", "--no-update"],
         cwd=project,
     )
 
     res = _run(
         [*AI_HATS, "self", "rollback"],
-        cwd=project, expect_exit=None,
+        cwd=project,
+        expect_exit=None,
     )
     assert res.returncode != 0, "self rollback should not exist post-HATS-407"
     blob = (res.stdout + res.stderr).lower()

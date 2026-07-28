@@ -30,8 +30,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -77,7 +81,10 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -89,13 +96,16 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
-    base_branch = _git(
-        project, "rev-parse", "--abbrev-ref", "HEAD"
-    ).stdout.strip()
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create worktree on a task branch ----
@@ -105,15 +115,13 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     current_path: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith("/task/already-probe"):
                 wt_path = current_path
                 break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"could not locate worktree path:\n{listing}"
-    )
+    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
 
     # ---- 3. worktree branch gets its own commit ----
     _git(wt_path, "config", "user.email", "e2e@test")
@@ -121,20 +129,29 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 4. merge the branch into base in the main repo ----
     _git(
-        project, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "merge", "--no-ff", "--no-edit", "task/already-probe",
+        project,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        "task/already-probe",
     )
-    base_sha_after_merge = _git(
-        project, "rev-parse", base_branch
-    ).stdout.strip()
+    base_sha_after_merge = _git(project, "rev-parse", base_branch).stdout.strip()
 
     # ---- 5. simulate HEAD wandering + uncommitted WIP in the main repo ----
     _git(project, "checkout", "-b", "wandered-feature")
@@ -144,21 +161,16 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     res = ai_hats("wt", "merge", "task/already-probe", expect_exit=0)
     combined = res.stdout + res.stderr
     assert "base branch mismatch" not in combined.lower(), (
-        f"false mismatch refusal — HATS-596 short-circuit not applied:\n"
-        f"{combined}"
+        f"false mismatch refusal — HATS-596 short-circuit not applied:\n{combined}"
     )
 
     # ---- 7. worktree + branch torn down ----
     assert not wt_path.exists(), f"worktree dir not removed: {wt_path}"
-    branches = _git(
-        project, "branch", "--list", "task/already-probe"
-    ).stdout.strip()
+    branches = _git(project, "branch", "--list", "task/already-probe").stdout.strip()
     assert branches == "", f"task branch not deleted: {branches!r}"
 
     # main checkout untouched: still wandered, WIP intact
-    head_now = _git(
-        project, "rev-parse", "--abbrev-ref", "HEAD"
-    ).stdout.strip()
+    head_now = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     assert head_now == "wandered-feature", (
         f"main checkout HEAD moved (should be untouched): {head_now}"
     )
@@ -167,8 +179,6 @@ def test_e2e_wt_merge_already_merged_head_wandered(shared_launcher, tmp_path):
     )
 
     # no double-merge: base ref unchanged
-    assert _git(
-        project, "rev-parse", base_branch
-    ).stdout.strip() == base_sha_after_merge, (
+    assert _git(project, "rev-parse", base_branch).stdout.strip() == base_sha_after_merge, (
         "base branch was re-merged — short-circuit should NOT run git merge"
     )

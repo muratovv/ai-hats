@@ -72,8 +72,7 @@ def test_self_sync_hooks_command_removed(tmp_path: Path):
         timeout=60,
     )
     assert cp.returncode != 0, (
-        "`self sync-hooks` should be GONE but exited 0:\n"
-        f"{cp.stdout}\n{cp.stderr}"
+        f"`self sync-hooks` should be GONE but exited 0:\n{cp.stdout}\n{cp.stderr}"
     )
     combined = (cp.stdout + cp.stderr).lower()
     assert "no such command" in combined or "usage" in combined, (
@@ -152,7 +151,9 @@ def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
     # is emitted to stdout even in the non-tty CliRunner.
     from ai_hats import runtime as rt
 
-    monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0)
+    monkeypatch.setattr(
+        rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0
+    )
     monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0.05")
     monkeypatch.chdir(project)
 

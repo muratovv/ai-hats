@@ -8,6 +8,7 @@ misreport as a test mutation. HEAD + index catch the incident class (a commit
 onto the checkout, or the staged −178393 tree delete) while staying immune to
 that concurrent external ref churn. Split out pure for unit-testability.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -35,8 +35,14 @@ class _StubSession:
         self.trace_path.write_text("(trace)")
         self.metrics_path = self.session_dir / METRICS_JSON
         self.metrics_path.write_text(
-            json.dumps({"exit_code": exit_code, "session_id": session_id,
-                        "role": "test", "duration_s": 0.1})
+            json.dumps(
+                {
+                    "exit_code": exit_code,
+                    "session_id": session_id,
+                    "role": "test",
+                    "duration_s": 0.1,
+                }
+            )
         )
 
 
@@ -88,12 +94,14 @@ def mock_runners(monkeypatch, project_dir, captured):
             self._payload = payload
 
         def run(self, **kwargs):
-            cap["wrap_calls"].append({
-                "payload": self._payload,
-                "role": self._payload.effective_role,
-                "provider": self._payload.provider.name,
-                **kwargs,
-            })
+            cap["wrap_calls"].append(
+                {
+                    "payload": self._payload,
+                    "role": self._payload.effective_role,
+                    "provider": self._payload.provider.name,
+                    **kwargs,
+                }
+            )
             return 0, _StubSession(pd, "wrap-1")
 
     class _SubAgentRunner:
@@ -101,15 +109,18 @@ def mock_runners(monkeypatch, project_dir, captured):
             self._payload = payload
 
         def run(self, **kwargs):
-            cap["sub_calls"].append({
-                "payload": self._payload,
-                "role_name": self._payload.effective_role,
-                **kwargs,
-            })
+            cap["sub_calls"].append(
+                {
+                    "payload": self._payload,
+                    "role_name": self._payload.effective_role,
+                    **kwargs,
+                }
+            )
             return _StubSession(pd, "sub-1")
 
     class _SessionReviewRunner:
-        def __init__(self, _pd): pass
+        def __init__(self, _pd):
+            pass
 
         def run(self, sid, max_retries=1, harness_policy=None):
             del harness_policy  # accepted for API parity, unused by stubs
@@ -117,30 +128,28 @@ def mock_runners(monkeypatch, project_dir, captured):
             out = retros_dir(pd) / "sessions" / f"{sid}.md"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(
-                "---\n"
-                "session_id: " + sid + "\n"
-                "summary: ok\n"
-                "hypothesis_verdicts: []\n"
-                "---\n\nbody\n"
+                "---\nsession_id: " + sid + "\nsummary: ok\nhypothesis_verdicts: []\n---\n\nbody\n"
             )
             return out
 
     import ai_hats.retro.session_review_runner as srr
     import ai_hats.runtime as rt
+
     monkeypatch.setattr(rt, "WrapRunner", _WrapRunner)
     monkeypatch.setattr(rt, "SubAgentRunner", _SubAgentRunner)
     monkeypatch.setattr(srr, "SessionReviewRunner", _SessionReviewRunner)
 
     def _popen_stub(*args, **kwargs):
-        cap["popen_calls"].append({"args": args[0] if args else None,
-                                    "kwargs": kwargs})
+        cap["popen_calls"].append({"args": args[0] if args else None, "kwargs": kwargs})
         return MagicMock(pid=999)
 
     import subprocess
+
     monkeypatch.setattr(subprocess, "Popen", _popen_stub)
 
     # bootstrap_or_die for bare ai-hats
     import ai_hats._bootstrap as boot
+
     monkeypatch.setattr(boot, "bootstrap_or_die", lambda: None)
 
     return cap

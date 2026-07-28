@@ -111,7 +111,9 @@ def test_automate_subagent_persists_role_materialization_json(
     )
 
     payload = build_composition_payload(project_with_maintainer_default, role_override="maintainer")
-    session_mgr = SessionManager(project_with_maintainer_default, runs_dir=runs_dir(project_with_maintainer_default))
+    session_mgr = SessionManager(
+        project_with_maintainer_default, runs_dir=runs_dir(project_with_maintainer_default)
+    )
     runner = SubAgentRunner(project_with_maintainer_default, payload, session_mgr=session_mgr)
     session = runner.run(task="test task", isolation_mode="none")
 
@@ -128,4 +130,3 @@ def test_automate_subagent_persists_role_materialization_json(
 
     for entry in data["materialized"]:
         assert "digest" in entry
-

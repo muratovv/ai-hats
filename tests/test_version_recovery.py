@@ -129,9 +129,7 @@ def _write_ref(project_dir, sha, *, pid, start_time, name=None):
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{name or pid}.json"
     f.write_text(
-        json.dumps(
-            {"run_id": "test", "root_pid": pid, "start_time": start_time, "sha": sha}
-        ),
+        json.dumps({"run_id": "test", "root_pid": pid, "start_time": start_time, "sha": sha}),
         encoding="utf-8",
     )
     return f
@@ -266,9 +264,7 @@ def test_reclaim_keep_shas_protects_target(tmp_path):
     _set_current(tmp_path, "cafef00d")
     target = _mk_version(tmp_path, "newtarget", complete=True)
     other = _mk_version(tmp_path, "0ld0c0de", complete=True)
-    removed = version_recovery.reclaim_orphan_versions(
-        tmp_path, keep_shas={"newtarget"}
-    )
+    removed = version_recovery.reclaim_orphan_versions(tmp_path, keep_shas={"newtarget"})
     assert removed == [other]
     assert target.exists()
     assert not other.exists()
@@ -289,9 +285,7 @@ def _mk_legacy_venv(project_dir):
     return legacy
 
 
-def test_reclaim_legacy_venv_removed_when_running_from_versioned(
-    tmp_path, monkeypatch
-):
+def test_reclaim_legacy_venv_removed_when_running_from_versioned(tmp_path, monkeypatch):
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: "cafef00d")
     reclaimed = version_recovery.reclaim_legacy_venv(tmp_path)
@@ -299,9 +293,7 @@ def test_reclaim_legacy_venv_removed_when_running_from_versioned(
     assert not legacy.exists()
 
 
-def test_reclaim_legacy_venv_kept_when_not_running_from_versioned(
-    tmp_path, monkeypatch
-):
+def test_reclaim_legacy_venv_kept_when_not_running_from_versioned(tmp_path, monkeypatch):
     """current_run_sha None (running from .venv / override / editable) → keep."""
     legacy = _mk_legacy_venv(tmp_path)
     monkeypatch.setattr(version_recovery, "current_run_sha", lambda _p: None)

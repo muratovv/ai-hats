@@ -64,6 +64,7 @@ class UserConfig(_YamlModel):
         without overriding ``HOME`` (which would break claude auth).
         """
         from ..paths import user_home
+
         return user_home() / ".ai-hats" / "customizations.yaml"
 
     @classmethod

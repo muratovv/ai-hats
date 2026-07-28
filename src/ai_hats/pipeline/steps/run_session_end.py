@@ -76,9 +76,7 @@ def _print_retro_banner(retro: dict) -> None:
     """
     rem = retro.get("reminder")
     if rem:
-        print(
-            f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m"
-        )
+        print(f"\033[33m  Reflect the project through {rem['count']} sessions:\033[0m")
         print(f"     \033[36m{rem['command']}\033[0m")
 
     wrap = retro.get("wrap_up")

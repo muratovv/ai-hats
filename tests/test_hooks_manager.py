@@ -106,4 +106,3 @@ def test_materialize_skips_when_binary_behind_source(tmp_path, monkeypatch):
 
     assert not called, "expected materialize to skip when binary_behind_source() is True"
     assert any("behind upstream" in w for w in sink)
-

@@ -41,13 +41,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
     """Run subprocess; optionally assert exit code."""
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if check and result.returncode != 0:
         raise AssertionError(
-            f"{cmd} exit {result.returncode}\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"{cmd} exit {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -58,9 +61,7 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
 
 
 @pytest.mark.integration
-def test_e2e_config_status_install_diagnostics(
-    shared_launcher, tmp_path: Path
-) -> None:
+def test_e2e_config_status_install_diagnostics(shared_launcher, tmp_path: Path) -> None:
     """End-to-end: install Health fields appear with and without an active role.
 
     HATS-582: reuses the session-shared venv (no per-test launcher install +
@@ -78,36 +79,34 @@ def test_e2e_config_status_install_diagnostics(
     env.pop("PYTHONPATH", None)
 
     # ----- sub-case 1: role-less project -----
-    sc1 = _run([str(launcher_dest), "config", "status"],
-               cwd=project, env=env, timeout=30, expect_exit=0)
-    out1 = sc1.stdout + sc1.stderr
-    assert "No role active" in out1, (
-        f"role-less project should announce missing role:\n{out1}"
+    sc1 = _run(
+        [str(launcher_dest), "config", "status"], cwd=project, env=env, timeout=30, expect_exit=0
     )
+    out1 = sc1.stdout + sc1.stderr
+    assert "No role active" in out1, f"role-less project should announce missing role:\n{out1}"
     # Install Health fields MUST be present even without a role.
-    for key in ("Version:", "Interpreter:", "Venv:", "Source:",
-                "Library:", "Resolved via:"):
-        assert key in out1, (
-            f"install Health field {key!r} missing from role-less output:\n{out1}"
-        )
+    for key in ("Version:", "Interpreter:", "Venv:", "Source:", "Library:", "Resolved via:"):
+        assert key in out1, f"install Health field {key!r} missing from role-less output:\n{out1}"
 
     # ----- sub-case 2: role-initialized project -----
-    _run([str(launcher_dest), "self", "init",
-          "-p", "claude", "-r", "assistant"],
-         cwd=project, env=env, timeout=60, check=True)
+    _run(
+        [str(launcher_dest), "self", "init", "-p", "claude", "-r", "assistant"],
+        cwd=project,
+        env=env,
+        timeout=60,
+        check=True,
+    )
 
-    sc2 = _run([str(launcher_dest), "config", "status"],
-               cwd=project, env=env, timeout=30, expect_exit=0)
+    sc2 = _run(
+        [str(launcher_dest), "config", "status"], cwd=project, env=env, timeout=30, expect_exit=0
+    )
     out2 = sc2.stdout + sc2.stderr
     assert "Role:" in out2 and "assistant" in out2, (
         f"role section missing from initialized output:\n{out2}"
     )
     # Install Health fields again — same set as sub-case 1.
-    for key in ("Version:", "Interpreter:", "Venv:", "Source:",
-                "Library:", "Resolved via:"):
-        assert key in out2, (
-            f"install Health field {key!r} missing from role-init output:\n{out2}"
-        )
+    for key in ("Version:", "Interpreter:", "Venv:", "Source:", "Library:", "Resolved via:"):
+        assert key in out2, f"install Health field {key!r} missing from role-init output:\n{out2}"
     # HATS-1238: Claude provider uses per-session prompt cache; no root prompt file is managed.
     assert "system_prompt:" not in out2, (
         f"claude provider should not report root system_prompt health (HATS-1238):\n{out2}"

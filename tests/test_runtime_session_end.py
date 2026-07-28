@@ -67,9 +67,7 @@ def test_format_tokens_happy_path(tmp_path):
 def test_format_tokens_zero_cache(tmp_path):
     """Cache fields default to 0 when missing."""
     session = make_session(tmp_path)
-    session.metrics_path.write_text(
-        json.dumps({"tokens": {"input": 100, "output": 50}})
-    )
+    session.metrics_path.write_text(json.dumps({"tokens": {"input": 100, "output": 50}}))
 
     line = _format_tokens(session)
 
@@ -201,11 +199,14 @@ def test_print_session_end_without_retro(tmp_path, capsys):
     assert "📝 Retro" not in out
 
 
-@pytest.mark.parametrize("action,expected_fragment", [
-    ("run", "generating"),
-    ("skip", "skipped"),
-    ("hint", "hint — ai-hats session retro"),
-])
+@pytest.mark.parametrize(
+    "action,expected_fragment",
+    [
+        ("run", "generating"),
+        ("skip", "skipped"),
+        ("hint", "hint — ai-hats session retro"),
+    ],
+)
 def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expected_fragment):
     """``retro=<decision>`` → one ``📝 Retro:`` line per action; the
     reminder/wrap-up banner LINES no longer print here (moved to
@@ -213,7 +214,8 @@ def test_print_session_end_with_retro_one_line(tmp_path, capsys, action, expecte
     session = make_session(tmp_path)
     decision = {
         "action": action,
-        "reason": "threshold met (turns=9, tool_calls=155)" if action != "skip"
+        "reason": "threshold met (turns=9, tool_calls=155)"
+        if action != "skip"
         else "below threshold (turns=0<1, tool_calls=0<1)",
         "mode": "llm",
         "background": True,
@@ -264,7 +266,8 @@ def _set_mtime(path: Path, ts: float) -> None:
 
 
 def test_discover_claude_jsonl_picks_most_recent_after_session_start(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     """In resume mode our generated UUID never reaches Claude, so the
     JSONL ends up under Claude's own uuid. The discoverer must locate
@@ -299,7 +302,9 @@ def test_discover_claude_jsonl_returns_none_when_no_match(tmp_path, monkeypatch)
     old.write_text("{}")
     _set_mtime(old, calendar.timegm((2026, 5, 7, 10, 0, 0, 0, 0, 0)))
 
-    found = discover_recent_by_mtime(claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1")
+    found = discover_recent_by_mtime(
+        claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1"
+    )
     assert found is None
 
 
@@ -309,7 +314,9 @@ def test_discover_claude_jsonl_returns_none_when_dir_missing(tmp_path, monkeypat
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
 
-    found = discover_recent_by_mtime(claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1")
+    found = discover_recent_by_mtime(
+        claude_transcripts_dir(project_dir), "*.jsonl", "20260507-154102-1"
+    )
     assert found is None
 
 
@@ -363,10 +370,13 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
         # HATS-865: compose at the seam (as the CLI does) and inject.
         payload = build_composition_payload(
-            project, provider_name="claude", interactive=True,
+            project,
+            provider_name="claude",
+            interactive=True,
         )
         runner = WrapRunner(
-            project, payload,
+            project,
+            payload,
             session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
             tracer_factory=SidecarTracer,
         )
@@ -385,6 +395,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
         )
 
         if finalize_hitl_exc is not None:
+
             def _exploding_finalize_hitl(*args, **kwargs):
                 raise finalize_hitl_exc
 
@@ -399,7 +410,8 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
 
 def test_wrap_runner_finally_prints_summary_on_happy_path(
-    wrap_runner_factory, capsys,
+    wrap_runner_factory,
+    capsys,
 ):
     """Happy path: _pty_spawn returns 0, finalize-hitl runs cleanly,
     _print_session_end fires the green summary."""
@@ -413,7 +425,8 @@ def test_wrap_runner_finally_prints_summary_on_happy_path(
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(
-    wrap_runner_factory, capsys,
+    wrap_runner_factory,
+    capsys,
 ):
     """HATS-086 invariant (HATS-535 refactor preserves it): a crash inside
     the finalize-hitl sub-pipeline MUST NOT prevent _print_session_end
@@ -436,7 +449,8 @@ def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_keyboard_interrupt(
-    wrap_runner_factory, capsys,
+    wrap_runner_factory,
+    capsys,
 ):
     """A second Ctrl+C raised from inside finalize-hitl (modelling SIGINT
     landing in the sub-pipeline run) MUST NOT escape the runner — the

@@ -36,9 +36,7 @@ def library(tmp_path):
     trait_base = lib / "traits" / "trait-base"
     trait_base.mkdir(parents=True)
     (trait_base / "config.yaml").write_text(
-        "name: trait-base\n"
-        "injection: |\n"
-        "  Base injection text.\n"
+        "name: trait-base\ninjection: |\n  Base injection text.\n"
     )
 
     # trait-with-rule: injection 30 chars + test_rule

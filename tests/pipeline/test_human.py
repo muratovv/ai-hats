@@ -16,7 +16,6 @@ from ai_hats.paths import runs_dir
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG
 
 
-
 def test_human_no_role(project_dir: Path, mock_runners):
     res = CliRunner().invoke(main, [])
 

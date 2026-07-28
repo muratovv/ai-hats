@@ -11,12 +11,18 @@ def test_claude_model_flags() -> None:
     assert p.model_flags("claude-haiku-4-5") == ["--model", "claude-haiku-4-5"]
     assert p.model_flags("") == ["--model", ""]
 
+
 def test_claude_get_run_command() -> None:
     p = ClaudeProvider()
     assert p.get_run_command(["claude"], "hello") == ["claude", "--print", "-p", "hello"]
     # With flags appended by harness
     assert p.get_run_command(["claude", "--model", "claude-haiku-4-5"], "hello") == [
-        "claude", "--model", "claude-haiku-4-5", "--print", "-p", "hello",
+        "claude",
+        "--model",
+        "claude-haiku-4-5",
+        "--print",
+        "-p",
+        "hello",
     ]
 
 
@@ -25,7 +31,11 @@ def test_agy_get_run_command() -> None:
     assert p.get_run_command(["agy"], "hi") == ["agy", "-p", "hi"]
     # With flags appended by harness
     assert p.get_run_command(["agy", "--model", "agy-2.0-flash"], "hi") == [
-        "agy", "--model", "agy-2.0-flash", "-p", "hi",
+        "agy",
+        "--model",
+        "agy-2.0-flash",
+        "-p",
+        "hi",
     ]
 
 
@@ -45,7 +55,9 @@ def test_non_claude_provider_has_launch_args_default() -> None:
 def test_claude_still_injects_session_id() -> None:
     p = ClaudeProvider()
     assert p.get_cli_launch_args(["claude"], "sid-123", False) == [
-        "claude", "--session-id", "sid-123",
+        "claude",
+        "--session-id",
+        "sid-123",
     ]
     assert p.get_cli_launch_args(["claude"], "sid-123", True) == ["claude"]
 

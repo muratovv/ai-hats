@@ -15,16 +15,17 @@ from ai_hats_rack.migration import migrate_catalog
 
 def _make_hyp(pd: Path, hyp_id: str):
     body = {
-        "id": hyp_id, "title": f"hyp-{hyp_id}",
-        "status": "active", "created": "2026-01-01",
-        "source_task": "HATS-001", "hypothesis": "h",
+        "id": hyp_id,
+        "title": f"hyp-{hyp_id}",
+        "status": "active",
+        "created": "2026-01-01",
+        "source_task": "HATS-001",
+        "hypothesis": "h",
         "validation_log": [],
         "success_criterion": "x",
         "observation_window": "5 sessions",
     }
-    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(
-        yaml.safe_dump(body)
-    )
+    (hypotheses_dir(pd) / f"{hyp_id}.yaml").write_text(yaml.safe_dump(body))
     migrate_catalog(hypotheses_dir(pd), "hypotheses")  # flat → dir-per-card
 
 
@@ -32,18 +33,21 @@ def _make_prop(pd: Path, pid: str):
     body = {
         "id": pid,
         "created": datetime(2026, 5, 4, tzinfo=timezone.utc).isoformat(),
-        "title": f"title-{pid}", "category": "rule", "target": "x",
-        "description": "d", "rationale": "r",
-        "votes": [], "status": "open",
+        "title": f"title-{pid}",
+        "category": "rule",
+        "target": "x",
+        "description": "d",
+        "rationale": "r",
+        "votes": [],
+        "status": "open",
     }
-    (proposals_dir(pd) / f"{pid}.yaml").write_text(
-        yaml.safe_dump(body)
-    )
+    (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
     migrate_catalog(proposals_dir(pd), "proposals")  # flat → dir-per-card
 
 
 def test_reflect_all_dry_run_writes_handoff_no_pipeline(
-    project_dir: Path, mock_runners,
+    project_dir: Path,
+    mock_runners,
 ):
     _make_hyp(project_dir, "HYP-001")
     _make_prop(project_dir, "PROP-001")
@@ -52,11 +56,7 @@ def test_reflect_all_dry_run_writes_handoff_no_pipeline(
     assert res.exit_code == 0, res.output
 
     # Handoff written
-    handoff_files = list(
-        (retros_dir(project_dir) / "reflect-all").glob(
-            "*-handoff.md"
-        )
-    )
+    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
     assert len(handoff_files) == 1, "handoff file expected after dry-run"
 
     # Pipeline NOT launched
@@ -65,7 +65,8 @@ def test_reflect_all_dry_run_writes_handoff_no_pipeline(
 
 
 def test_reflect_all_full_routes_to_judge(
-    project_dir: Path, mock_runners,
+    project_dir: Path,
+    mock_runners,
 ):
     _make_hyp(project_dir, "HYP-001")
     _make_prop(project_dir, "PROP-001")
@@ -74,11 +75,7 @@ def test_reflect_all_full_routes_to_judge(
     assert res.exit_code == 0, res.output
 
     # Handoff + judge launch
-    handoff_files = list(
-        (retros_dir(project_dir) / "reflect-all").glob(
-            "*-handoff.md"
-        )
-    )
+    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
     assert len(handoff_files) >= 1
 
     assert len(mock_runners["wrap_calls"]) == 1
@@ -92,7 +89,8 @@ def test_reflect_all_full_routes_to_judge(
 
 
 def test_reflect_all_observable_markers(
-    project_dir: Path, mock_runners,
+    project_dir: Path,
+    mock_runners,
 ):
     """Observable: stdout has user-facing UX strings."""
     _make_hyp(project_dir, "HYP-001")
@@ -104,7 +102,8 @@ def test_reflect_all_observable_markers(
 
 
 def test_reflect_all_dry_run_observable(
-    project_dir: Path, mock_runners,
+    project_dir: Path,
+    mock_runners,
 ):
     res = CliRunner().invoke(main, ["reflect", "all", "--dry-run"])
     assert res.exit_code == 0

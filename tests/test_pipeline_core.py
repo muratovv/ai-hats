@@ -34,9 +34,7 @@ class _FakeStep(Step):
         failure_policy: str = "halt",
         raises: Exception | None = None,
     ) -> None:
-        self._io = StepIO(
-            name=name, requires=requires, optional=optional, produces=produces
-        )
+        self._io = StepIO(name=name, requires=requires, optional=optional, produces=produces)
         self._delta = delta if delta is not None else {}
         self._capture = capture
         self.failure_policy = failure_policy  # type: ignore[assignment]
@@ -155,9 +153,7 @@ def test_run_validates_unexpected_delta_keys() -> None:
 
 def test_run_allows_partial_delta_subset_of_produces() -> None:
     # Step declares produces={x, y} but only emits x — that's allowed.
-    a = _FakeStep(
-        "a", produces=frozenset({"x", "y"}), delta={"x": 1}
-    )
+    a = _FakeStep("a", produces=frozenset({"x", "y"}), delta={"x": 1})
     pipe = build(a)
     state = run(pipe, {})
     assert state["x"] == 1
@@ -210,9 +206,7 @@ def test_run_missing_runtime_required_continue_records_and_advances() -> None:
     events: list = []
     capture: list = []
     producer = _FakeStep("producer", produces=frozenset({"k"}), delta={})
-    consumer = _FakeStep(
-        "consumer", requires=frozenset({"k"}), failure_policy="continue"
-    )
+    consumer = _FakeStep("consumer", requires=frozenset({"k"}), failure_policy="continue")
     tail = _FakeStep("tail", capture=capture)
     pipe = build(producer, consumer, tail)
     state = run(pipe, {}, on_step=lambda e: events.append(e))
@@ -237,7 +231,9 @@ def test_pipeline_is_a_step_instance() -> None:
 
 
 def test_pipeline_run_direct_call_validates_and_executes() -> None:
-    a = _FakeStep("a", requires=frozenset({"req1"}), produces=frozenset({"out1"}), delta={"out1": "val1"})
+    a = _FakeStep(
+        "a", requires=frozenset({"req1"}), produces=frozenset({"out1"}), delta={"out1": "val1"}
+    )
     pipe = build(a, name="my_pipe")
     # Pre-flight check fails if required key missing
     with pytest.raises(BuildError, match="req1"):
@@ -249,7 +245,9 @@ def test_pipeline_run_direct_call_validates_and_executes() -> None:
 
 
 def test_pipeline_run_accepts_initial_dict_and_kwargs() -> None:
-    a = _FakeStep("a", requires=frozenset({"k1", "k2"}), produces=frozenset({"out"}), delta={"out": "ok"})
+    a = _FakeStep(
+        "a", requires=frozenset({"k1", "k2"}), produces=frozenset({"out"}), delta={"out": "ok"}
+    )
     pipe = build(a)
     res = pipe.run(initial={"k1": "v1"}, k2="v2")
     assert res["out"] == "ok"
@@ -274,4 +272,3 @@ def test_pipeline_run_supports_on_step_and_cancel_token() -> None:
     assert res["x"] == 10
     assert len(events) == 1
     assert events[0].step == "a"
-

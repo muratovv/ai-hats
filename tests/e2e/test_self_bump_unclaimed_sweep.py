@@ -22,8 +22,12 @@ from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 def _run(cmd, *, cwd, env, timeout=60, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != expect_exit:
         raise AssertionError(
@@ -35,15 +39,23 @@ def _run(cmd, *, cwd, env, timeout=60, expect_exit=0):
 
 def _git(project_dir: Path, *args: str, env: dict[str, str]) -> None:
     subprocess.run(
-        ["git", *args], cwd=str(project_dir), env=env,
-        check=True, capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(project_dir),
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
 def _git_log_count(project_dir: Path, env: dict[str, str]) -> int:
     out = subprocess.run(
-        ["git", "log", "--oneline"], cwd=str(project_dir), env=env,
-        capture_output=True, text=True, check=True,
+        ["git", "log", "--oneline"],
+        cwd=str(project_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return len([line for line in out.stdout.splitlines() if line.strip()])
 
@@ -61,9 +73,7 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     touches the seeded surfaces — only the generic sweeper acts on them.
     """
     (project / PROJECT_CONFIG).write_text(
-        "schema_version: 4\n"
-        "provider: agy\n"
-        "ai_hats_dir: .agent/ai-hats\n"
+        "schema_version: 4\nprovider: agy\nai_hats_dir: .agent/ai-hats\n"
     )
     (project / ".agent" / "ai-hats").mkdir(parents=True)
 
@@ -86,21 +96,27 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
     # the sweeper must skip this file entirely (byte-identical after bump).
     settings = project / ".claude" / "settings.json"
     settings.parent.mkdir()
-    settings.write_text(json.dumps({
-        "hooks": {
-            HOOK_PRE_TOOL_USE: [
-                {
-                    "matcher": "Bash",
-                    "_ai_hats_managed": "ai-hats:hats-437",
-                    "hooks": [{"type": "command", "command": "guard.sh"}],
-                },
-                {
-                    "matcher": "*",
-                    "hooks": [{"type": "command", "command": "user-own.sh"}],
-                },
-            ]
-        }
-    }, indent=2) + "\n")
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "hooks": [{"type": "command", "command": "guard.sh"}],
+                        },
+                        {
+                            "matcher": "*",
+                            "hooks": [{"type": "command", "command": "user-own.sh"}],
+                        },
+                    ]
+                }
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     _git(project, "init", "-q", "-b", "main", env=env)
     _git(project, "config", "user.email", "test@example.com", env=env)
@@ -133,9 +149,18 @@ def test_e2e_bump_sweeps_dead_owner_marker(swept_env, repo_root, tmp_path):
     # builtin — install it into the shared launcher venv so the seed resolves
     # via the entry-point registry (HATS-1093).
     subprocess.run(
-        ["uv", "pip", "install", "--python", f"{env[ENV_AI_HATS_VENV]}/bin/python",
-         "-e", str(repo_root / "packages" / "surfaces" / "agy")],
-        check=True, capture_output=True, text=True,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            f"{env[ENV_AI_HATS_VENV]}/bin/python",
+            "-e",
+            str(repo_root / "packages" / "surfaces" / "agy"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
     project = tmp_path / "proj"
     project.mkdir()
@@ -145,7 +170,8 @@ def test_e2e_bump_sweeps_dead_owner_marker(swept_env, repo_root, tmp_path):
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env,
+        cwd=project,
+        env=env,
     )
 
     # Content-proven victim: gone from disk, recoverable from trash.
@@ -183,20 +209,31 @@ def test_e2e_second_bump_repeats_warn_for_contested_entry(swept_env, tmp_path, r
     paths = _seed_project(project, env)
 
     subprocess.run(
-        ["uv", "pip", "install", "--python", f"{env[ENV_AI_HATS_VENV]}/bin/python",
-         "-e", str(repo_root / "packages" / "surfaces" / "agy")],
-        check=True, capture_output=True, text=True,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            f"{env[ENV_AI_HATS_VENV]}/bin/python",
+            "-e",
+            str(repo_root / "packages" / "surfaces" / "agy"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
     _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env,
+        cwd=project,
+        env=env,
     )
     marker_after_first = paths["marker"].read_bytes()
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env,
+        cwd=project,
+        env=env,
     )
 
     assert "edited.sh" in res.stderr, res.stderr

@@ -26,12 +26,15 @@ SCAFFOLD = "<!-- ai-hats:start -->\n@./.agent/ai-hats/imports.md\n<!-- ai-hats:e
 def _bump(venv: Path, project: Path, env: dict[str, str]):
     result = subprocess.run(
         [f"{venv}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=60,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if result.returncode != 0:
         raise AssertionError(
-            f"bump failed ({result.returncode})\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"bump failed ({result.returncode})\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
 

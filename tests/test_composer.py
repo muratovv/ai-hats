@@ -544,8 +544,17 @@ def _all_library_roles() -> list[str]:
 
 # The 11 roles that compose trait-agent — each inherits the flipped default.
 _AGENT_ROLES = [
-    "assistant", "maintainer", "role-curator", "dev-python", "dev-web",
-    "architect", "sre", "go-dev", "go-dev-full", "judge", "test-agent",
+    "assistant",
+    "maintainer",
+    "role-curator",
+    "dev-python",
+    "dev-web",
+    "architect",
+    "sre",
+    "go-dev",
+    "go-dev-full",
+    "judge",
+    "test-agent",
 ]
 
 
@@ -563,7 +572,8 @@ def test_no_library_role_composes_backlog_manager():
     roles — the single trait-agent swap is the only attachment site."""
     comp = _real_composer()
     offenders = [
-        r for r in _all_library_roles()
+        r
+        for r in _all_library_roles()
         if "backlog-manager" in {s.name for s in comp.compose(r).skills}
     ]
     assert offenders == [], f"roles still composing backlog-manager: {offenders}"
