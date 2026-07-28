@@ -254,6 +254,25 @@ def test_materialize_sessions_are_isolated(tmp_path) -> None:
     assert (session_cache_dir(tmp_path, "sid-2") / "skills" / "skill-b").exists()
 
 
+def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
+    """HATS-1271: cline's private copier had drifted and lost this expansion.
+
+    The token is carried by a CORE library skill (hatrack), so a surface that
+    skips it ships a SKILL.md whose own prose calls the missing table
+    authoritative. Delivery is what this pins — the renderer is tested upstream.
+    """
+    skill = _make_skill(tmp_path, "fsm-skill", body="edges:\n\n{{backlog_fsm_edges}}\n")
+    ClineProvider().materialize_runtime_skills(
+        tmp_path, _fake_result(skills=[skill]), "sid-1"
+    )
+
+    delivered = (
+        session_cache_dir(tmp_path, "sid-1") / "skills" / "fsm-skill" / "SKILL.md"
+    ).read_text()
+    assert "{{backlog_fsm_edges}}" not in delivered
+    assert "brainstorm" in delivered  # a real FSM state reached the file
+
+
 # ---- guard script sanity (SurfaceGuard's bash guard, HATS-1105) -------------
 
 
