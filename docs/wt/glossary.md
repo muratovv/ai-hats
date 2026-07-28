@@ -34,6 +34,7 @@ The seam that keeps the task FSM (tracker) free of any worktree dependency (ADR-
 ## Layered file-locking (L1–L4 locks)
 
 The 4-tier concurrency control model that prevents race conditions and repository corruption during parallel worktree operations:
+
 - **L1 (State Lock):** Per-worktree lock (`<project>/.wt/state/<id>.lock`) protecting state metadata mutations.
 - **L2 (Manager Lock):** Global process-level lock (`<project>/.wt/manager.lock`) serializing worktree creation and removal.
 - **L3 (Git Index Retries):** Retries around `.git/index.lock` contention during git operations.
@@ -44,6 +45,7 @@ See [ADR-0006](../adr/0006-worktree-concurrency-layered-defense.md) for full con
 ## IsolationMode
 
 Enum defining the lifecycle and merge strategy for a linked worktree:
+
 - `BRANCH` — Create a linked worktree on a dedicated branch, fast-forward merge on completion.
 - `SQUASH` — Create a linked worktree on a dedicated branch, squash merge into target branch on completion.
 - `DISCARD` — Create a temporary linked worktree, discard all changes and branch on teardown.

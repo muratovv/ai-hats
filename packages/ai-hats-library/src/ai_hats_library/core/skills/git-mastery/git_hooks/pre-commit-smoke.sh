@@ -42,8 +42,18 @@ for f in $active_files; do
 done
 $has_integration || exit 0
 
-# Ensure pytest is available.
-if ! command -v pytest &>/dev/null; then
+# HATS-1291: prefer the interpreter of the checkout being committed. PATH's
+# pytest belongs to whatever venv is active, which in a worktree is MAIN — and
+# its editable install makes the e2e tier (PYTHONPATH-stripped by design,
+# HATS-685) test the wrong source, tripping the HATS-1242 guard.
+# Deliberately --show-toplevel, NOT the --git-common-dir root resolved above:
+# that one points at MAIN from inside a worktree, which is the bug itself.
+_toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$_toplevel" && -x "$_toplevel/.venv/bin/pytest" ]]; then
+    PYTEST="$_toplevel/.venv/bin/pytest"
+elif command -v pytest &>/dev/null; then
+    PYTEST="pytest"
+else
     echo "[smoke] pytest not found — skipping smoke gate" >&2
     exit 0
 fi
@@ -53,7 +63,7 @@ fi
 # hook can't leak GIT_DIR into pytest and retarget a test's git off cwd onto real
 # .git (the child `env -u` does not affect the parent commit).
 output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
-    pytest -m smoke -q --tb=line --no-header -p no:cacheprovider 2>&1)
+    "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider 2>&1)
 rc=$?
 
 if [[ $rc -eq 5 ]]; then
