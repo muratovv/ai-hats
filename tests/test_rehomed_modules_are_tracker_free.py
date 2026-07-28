@@ -5,8 +5,8 @@ it would break on *that* card, silently, so the boundary is pinned on this one.
 AST-level like the tracker's own ``test_tracker_boundary`` — a deferred or
 ``TYPE_CHECKING`` import must not hide from the check.
 
-The rest of ``src/ai_hats`` still imports the tracker on purpose: ``retro/window``
-(S2), ``cli/`` (S3), ``models`` (S5). This guard grows as those cards land.
+The rest of ``src/ai_hats`` still imports the tracker on purpose: ``cli/`` (S3),
+``models`` (S5). This guard grows as those cards land.
 """
 
 from __future__ import annotations
@@ -20,12 +20,14 @@ FORBIDDEN = "ai_hats_tracker"
 
 #: Re-homed by HATS-1258, plus the two rack-path modules whose consumers were
 #: flipped onto them — together, everything the modern path needs.
+#: ``retro/window.py`` joined at HATS-1259 (the retro read moved onto the rack facade).
 GUARDED = (
     "ownership.py",
     "linked_context.py",
     "tracker_wiring.py",
     "rack_wiring.py",
     "subagent_runner.py",
+    "retro/window.py",
 )
 
 
