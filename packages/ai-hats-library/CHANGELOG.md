@@ -3,6 +3,16 @@
 All notable changes to this package are documented here. Versioning is semantic,
 on the library **format schema** (see README § Versioning).
 
+## 0.4.1
+
+- **`hatrack` stops hand-maintaining the named edges** (HATS-1257). The rendered
+  `{{backlog_fsm_edges}}` table now annotates an edge that carries a `name:`,
+  so the prose under it no longer re-lists `reclaim` and `reopen` — it states
+  the mechanism instead: a parenthesised name is typeable in place of the target
+  state (`rack transition <ID> reclaim`). The third mention, a back-reference
+  under the per-edge policy table, is gone. Any named edge a backlog declares
+  now reaches the prompt on its own, including ones added after this release.
+
 ## 0.4.0
 
 - **`safety-guard` matches paths and subcommands, not bare tokens** (HATS-1253).
