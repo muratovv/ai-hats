@@ -7,6 +7,7 @@ at skill materialization (same gate as the ``<ai_hats_dir>`` placeholder).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
@@ -15,6 +16,7 @@ from ai_hats.models import TaskState
 from ai_hats.paths import tasks_dir
 from ai_hats.placeholders import (
     FSM_EDGES_TOKEN,
+    FSM_EDGES_UNAVAILABLE,
     expand_fsm_edges_token,
     render_backlog_fsm_edges,
 )
@@ -63,6 +65,27 @@ def test_render_uses_the_resolved_catalog_definition(tmp_path: Path) -> None:
     assert "terminal" in _row(table, "shipped").lower()
     # The packaged states must NOT leak in when the catalog declares its own.
     assert "| `brainstorm` |" not in table
+
+
+def test_render_annotates_named_edges(tmp_path: Path) -> None:
+    # A named edge is typeable in place of the target state — the topology knows
+    # the names, so the table stops leaving them to hand-written prose.
+    table = render_backlog_fsm_edges(tmp_path)
+    assert "`execute` (reclaim)" in _row(table, "execute")
+    assert "`execute` (reopen)" in _row(table, "done")
+    # Unnamed edges stay bare — the annotation is not decoration.
+    assert "`document`," in _row(table, "execute")
+
+
+def test_malformed_backlog_yields_marker_not_raise(tmp_path: Path, caplog) -> None:
+    # The prompt must still render for the agent who would FIX the broken file;
+    # the loud channel is `rack ls`, which fails on the very same file.
+    project = _project_with_backlog(tmp_path, "this: is not a backlog\n")
+    with caplog.at_level(logging.WARNING, logger="ai_hats.placeholders"):
+        table = render_backlog_fsm_edges(project)
+    assert table == FSM_EDGES_UNAVAILABLE
+    assert "| From state |" not in table
+    assert "rack ls" in caplog.text
 
 
 def test_render_has_a_row_per_state(tmp_path: Path) -> None:
