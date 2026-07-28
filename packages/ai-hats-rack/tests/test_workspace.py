@@ -124,10 +124,15 @@ def test_a_hyphenated_prefix_is_preserved(tmp_path):
 
 
 def test_an_id_with_no_digits_is_unroutable(tmp_path):
-    # HATS-1283: no `<prefix>-<digit>` split to make — loud, never a guess.
+    # HATS-1283: no `<prefix>-<digit>` split to make — `prefix` is None, not the
+    # whole id posing as one, and the message says so instead of claiming HATS
+    # is unconfigured while listing it.
     ws = Workspace.discover([_root(tmp_path)])
-    with pytest.raises(UnknownPrefixError):
+    with pytest.raises(UnknownPrefixError) as err:
         ws.instance_for("HATS-fix")
+    assert err.value.prefix is None
+    assert "no '<prefix>-<number>' form" in str(err.value)
+    assert "no backlog for id prefix" not in str(err.value)
 
 
 def test_unknown_prefix_names_the_configured_set(tmp_path):

@@ -50,15 +50,20 @@ class DuplicatePrefixError(WorkspaceError):
 
 
 class UnknownPrefixError(WorkspaceError):
-    """An id whose prefix matches no configured backlog — names the prefixes."""
+    """An id no mounted backlog claims — names the prefixes. ``prefix`` is
+    ``None`` when the id has no ``<prefix>-<number>`` form at all; that case gets
+    its own sentence, since "no backlog for prefix 'HATS-fix'" alongside a
+    configured ``HATS`` reads as a contradiction (HATS-1283)."""
 
-    def __init__(self, prefix: str, configured: Sequence[str]) -> None:
+    def __init__(self, prefix: str | None, configured: Sequence[str], item_id: str = "") -> None:
         self.prefix = prefix
         self.configured = tuple(configured)
-        super().__init__(
-            f"no backlog for id prefix {prefix!r}: configured prefixes are "
-            f"{list(self.configured)}"
+        what = (
+            f"id {item_id!r} has no '<prefix>-<number>' form"
+            if prefix is None
+            else f"no backlog for id prefix {prefix!r}"
         )
+        super().__init__(f"{what}: configured prefixes are {list(self.configured)}")
 
 
 class AmbiguousPrefixError(WorkspaceError):
@@ -190,7 +195,7 @@ class Workspace:
             if i.prefix == prefix and (want_root is None or i.root_id == want_root)
         ]
         if not matches:
-            raise UnknownPrefixError(prefix, sorted({i.prefix for i in self.instances}))
+            raise UnknownPrefixError(prefix, sorted({i.prefix for i in self.instances}), bare)
         if len(matches) > 1:
             raise AmbiguousPrefixError(prefix, sorted({i.root_id for i in matches}))
         return matches[0]

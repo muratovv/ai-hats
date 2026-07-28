@@ -14,11 +14,12 @@ import re
 _ID_RE = re.compile(r"^(?P<prefix>.+?)-\d")
 
 
-def prefix_of(item_id: str) -> str:
-    """The routing prefix of an id — the whole id when it has no ``-<digit>``
-    split to make, which every caller then reports as unroutable."""
+def prefix_of(item_id: str) -> str | None:
+    """The routing prefix of an id, or ``None`` when it has no ``-<digit>`` split
+    to make — "unparseable" is its own answer, never the whole id posing as a
+    prefix (which read back as ``no backlog for prefix 'HATS-fix'``)."""
     match = _ID_RE.match(item_id)
-    return match.group("prefix") if match else item_id
+    return match.group("prefix") if match else None
 
 
 __all__ = ["prefix_of"]
