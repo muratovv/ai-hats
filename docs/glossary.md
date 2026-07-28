@@ -60,7 +60,7 @@ Catalog — `ai-hats list {rules,skills}`. Formats — see [3]; library layout a
 
 ## Backlog
 
-Three kinds of cards with strict state machines. **All operations go through the `ai-hats task …` CLI** — direct access to `<ai_hats_dir>/tracker/**` is forbidden.
+Three kinds of cards with strict state machines. **All operations go through the `rack` CLI** — direct access to `<ai_hats_dir>/tracker/**` is forbidden.
 
 | Kind                 | ID         | Lifecycle                                                                                          |
 | -------------------- | ---------- | -------------------------------------------------------------------------------------------------- |
@@ -68,11 +68,11 @@ Three kinds of cards with strict state machines. **All operations go through the
 | **HYP** (hypothesis) | `HYP-NNN`  | `active → confirmed` / `refuted` / `stalled` — accumulates verdicts in `validation_log`            |
 | **PROP** (proposal)  | `PROP-NNN` | `open → accepted` / `rejected` / `deferred` / `duplicate`                                          |
 
-State-machine diagrams — see [4]. Day-to-day workflow — see [7] (HATS-358, not yet written).
+State-machine diagrams — see [4]. Day-to-day workflow — see [7].
 
 **Plan home.** A Task's plan lives at exactly one canonical path —
 `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` — authored directly there via
-Write/Edit after `task transition <ID> plan`. `.claude/plans` is **not** a plan
+Write/Edit after `rack transition <ID> plan`. `.claude/plans` is **not** a plan
 home: ai-hats ignores it (the import path was removed in HATS-637), so any file
 there is inert plan-mode scratch, not the plan. Discipline + draft→tracker
 procedure — skill `plan-discipline`; readiness routing — skill `plan-gate`;
@@ -80,22 +80,54 @@ per-section enforcement — the engine gate (HATS-635).
 
 - **Task ownership registry** — a single local, gitignored file recording which live session is *executing* each task, so a second agent can safely reclaim a task left mid-flight by a dead owner (`transition <id> execute` again — the `execute → execute` reclaim self-loop) and a live owner is never stolen (HATS-955). Reclaim-on-certain-death (owner pid + OS start-time, no TTL), single-slot per agent, ownership orthogonal to task state and anchored on `AI_HATS_ROOT_PID`. Full design — see [ADR-0015](adr/0015-task-ownership.md).
 
-## Rack (`ai-hats-rack`)
+## Rack — `ai-hats-rack` / `rack` / `hatrack`
 
-The minimal backlog **kernel** built parallel to the production tracker (epic HATS-1014; the name = hatrack). Same `task.yaml` format and layout, new engine: FSM topology from an in-package `fsm.yaml` (SSOT), a transactional `transition` (FileLock → guard → in-memory mutation → two-phase subscriber dispatch → single persist last), a structural lock model, and a dispatch journal with actor identity. Everything beyond that — worktree, ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is an extension subscribing to kernel events, not kernel code. CLI namespace during the comparison period: `rack`. The old tracker is feature-frozen until the K6 cutover decision. Source: `packages/ai-hats-rack/`.
+Three names for one thing, distinguished by layer. Use the one that names the
+layer you mean:
+
+| Name               | Layer                                                        | Where it lives                                       |
+| ------------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
+| **`ai-hats-rack`** | the Python **package** — the backlog kernel                  | `packages/ai-hats-rack/`                             |
+| **`rack`**         | the **CLI** the package ships — the backlog surface you type | on `PATH` after install (`rack --help`)              |
+| **`hatrack`**      | the **skill** that teaches a composed role to drive `rack`   | `core/skills/hatrack/`, composed via `hatrack-trait` |
+
+The kernel is a light FSM plus transactional machinery (epic HATS-1014): FSM
+topology declared in `backlog.yaml` (SSOT — [ADR-0017](adr/0017-backlog-yaml-single-definition.md)),
+a transactional `transition` (FileLock → guard → in-memory mutation → two-phase
+subscriber dispatch → single persist last), a structural lock model, and a
+dispatch journal with actor identity. Everything beyond that — worktree,
+ownership, scaffold, plan-gate, epic-automation, doc store, consumer hooks — is
+an **extension** subscribing to kernel events, not kernel code.
+
+`rack transition` is the single mutating verb: an ordered composite of ops
+(`--state`, `--set`, `--log`, `--link`, `--attach`, `--freeze`, `--rm`) run in
+argv order under one task lock with one persist, so any abort rolls the whole
+sequence back. Day-to-day recipes — see [7]; engine reference —
+[`packages/ai-hats-rack/README.md`](../packages/ai-hats-rack/README.md).
 
 ## Behavior experiment (A/B)
 
 A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it: `1 scenario × N arms × N identical runs`, scored mechanically (HATS-1053). Lives under `experiments/`. Term definitions (arm, scenario, score scripts, runs capture) and the authoring guide — see [10].
 
-## Attachment
+## Document (task document)
 
-A file attached to a Task via `ai-hats task attach add`. Blob lives in
-`<ai_hats_dir>/tracker/backlog/tasks/<ID>/attachments/<name>`; the manifest
-entry — `name`, `digest` (12-char SHA-256 prefix), `added`, `note` — is stored
-in `task.yaml::attachments[]`. A pre-commit hook (HATS-402) refuses commits
-that add or modify files under `attachments/` without a corresponding
-manifest entry; the only legal path is the CLI.
+A file that belongs to a Task — `plan.md`, `summary.md`, a diagram, a sample
+input. The store is **fs-as-truth**: the only way to write a document is to put
+a file into `<ai_hats_dir>/tracker/backlog/tasks/<ID>/`. There is no `put` verb
+and no manifest to keep in sync — `rack context <ID>` live-scans the directory
+and digests on the fly, so a file written directly is visible immediately.
+
+`rack context` reports each document as name + absolute path + mtime; `--json`
+adds size and a `sha256:<12hex>` digest. Content is never inlined without an
+explicit `--with <glob>` — the agent reads by the printed path.
+
+**Frozen pins.** `rack transition <ID> --freeze <name>` pins `{name, digest}`
+into `task.yaml::documents[]`, marking the file as evidence. The
+frozen-integrity extension then aborts *any* transition whose pinned document
+changed or vanished, naming both digests and the recovery recipe — no waivers,
+including forced edges. Re-pinning drifted content or removing a pinned
+document requires `--ack-frozen`. `--rm` trashes to `$TMPDIR` (recoverable),
+never hard-deletes.
 
 ## Reflect
 
@@ -236,7 +268,7 @@ Single point of truth for destructive filesystem ops in ai-hats core (HATS-470).
 
 **[6]** — [`docs/how-to-configure.md`](how-to-configure.md) — full configuration walkthrough (provider, role, customizations, feedback policy, venv).
 
-**[7]** — [`docs/how-to-backlog.md`](how-to-backlog.md) — `ai-hats task` / `task hyp` / `task proposal` day-to-day workflow.
+**[7]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — `rack` / `rack hyp` / `rack proposal` day-to-day workflow.
 
 **[8]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture and schema dispatch.
 
