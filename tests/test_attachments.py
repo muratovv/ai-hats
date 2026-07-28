@@ -18,7 +18,7 @@ from ai_hats_tracker.attachments import (
     reconcile,
     verify_manifest,
 )
-from ai_hats.models import Attachment, TaskCard
+from ai_hats_tracker.models import Attachment, TaskCard
 
 
 def _make_card(*, attachments: list[Attachment] | None = None) -> TaskCard:

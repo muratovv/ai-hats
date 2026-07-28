@@ -851,31 +851,9 @@ def test_task_prefix_honored_from_yaml(cli_project):
     assert (tasks_dir(project) / "ACME-001").exists()
 
 
-def test_task_prefix_auto_detected_from_legacy_tasks(cli_project):
-    """A project with pre-existing HATS-* tasks (and no task_prefix in yaml)
-    keeps using HATS instead of resetting to TASK."""
-    import yaml
-
-    project, runner = cli_project
-    runner.invoke(main, ["config", "set", "-r", "assistant", "-p", "claude"])
-
-    # Simulate a legacy tasks dir and strip any task_prefix from the yaml.
-    legacy_id = "HATS-042"
-    (tasks_dir(project) / legacy_id).mkdir(parents=True)
-    (tasks_dir(project) / legacy_id / "task.yaml").write_text(
-        "id: HATS-042\ntitle: Legacy\nstate: done\npriority: low\ncreated: 2025-01-01T00:00:00Z\nupdated: 2025-01-01T00:00:00Z\n"
-    )
-    cfg_path = project / PROJECT_CONFIG
-    raw = yaml.safe_load(cfg_path.read_text()) or {}
-    raw.pop("task_prefix", None)
-    cfg_path.write_text(yaml.dump(raw))
-
-    result = runner.invoke(main, ["task", "create", "Next legacy"])
-    assert result.exit_code == 0, result.output
-    assert "HATS-043" in result.output
-    # Auto-detected prefix must be persisted to yaml for subsequent runs.
-    raw_after = yaml.safe_load(cfg_path.read_text())
-    assert raw_after.get("task_prefix") == "HATS"
+# HATS-1260: prefix auto-detection from legacy task dirs was a tracker-CLI
+# feature (ProjectConfig.resolve_task_prefix); rack reads task_prefix from yaml
+# only — recorded behavior change, migration note owned by HATS-1273.
 
 
 def test_task_create_explicit_id(cli_project):

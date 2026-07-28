@@ -4,7 +4,6 @@ import pytest
 
 from ai_hats.models import (
     KNOWN_SCHEMA_VERSION,
-    Attachment,
     ComponentConfig,
     Composition,
     FeedbackConfig,
@@ -16,10 +15,11 @@ from ai_hats.models import (
     SessionRetroConfig,
     SkillMetadata,
     SmartThreshold,
-    TaskCard,
-    TaskState,
     resolve_namespace,
 )
+
+# HATS-1260: tracker models come from the package directly (facade re-export dropped).
+from ai_hats_tracker.models import Attachment, TaskCard, TaskState
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
@@ -1079,16 +1079,11 @@ def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
 
 def test_facade_surface_parity():
     """HATS-863: the pre-split public surface of ``ai_hats.models`` stays
-    importable through the facade until T16/T18 dismantle it (wt schema
-    deliberately excluded — it moved to ``ai_hats_wt.carry``)."""
+    importable through the facade until T18 dismantles it (wt schema moved to
+    ``ai_hats_wt.carry``; tracker re-exports dropped in HATS-1260)."""
     import ai_hats.models as facade
 
     expected = {
-        # tracker
-        "Attachment",
-        "TaskCard",
-        "TaskState",
-        "WorkLogEntry",
         # library
         "GIT_HOOK_EVENTS",
         "RUNTIME_HOOK_EVENTS",

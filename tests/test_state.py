@@ -5,7 +5,7 @@ import subprocess
 import pytest
 from pathlib import Path
 
-from ai_hats.models import TaskState
+from ai_hats_tracker.models import TaskState
 from ai_hats.paths import worktrees_dir
 from ai_hats_tracker.state import EmptyPlanError, TaskManager
 from ai_hats.tracker_wiring import tracker_paths

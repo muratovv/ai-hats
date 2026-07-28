@@ -3,9 +3,9 @@ kernel factory (HATS-1022, epic HATS-1014 K3).
 
 The rack never imports the integrator (import-hygiene pin); THIS module is
 the one-directional binding of the rack dispatcher to the production
-ownership registry and the wt engine. ``build_rack_kernel`` mirrors
-``cli/_helpers._task_manager`` and preserves the tracker's side-effect
-order: single-slot guard → plan-gate → claim → worktree; teardown → release.
+ownership registry and the wt engine. ``build_rack_kernel`` preserves the
+tracker's side-effect order (HATS-1260: its legacy-CLI mirror is gone):
+single-slot guard → plan-gate → claim → worktree; teardown → release.
 """
 
 from __future__ import annotations
@@ -394,8 +394,7 @@ def build_rack_kernel(
     links_registry: LinksRegistry | None = None,
     extra_subscribers: Sequence = (),
 ) -> Kernel:
-    """Assemble the integrator kernel: K1 core + every K3 stock extension
-    (mirror of ``cli/_helpers._task_manager`` for the rack stack).
+    """Assemble the integrator kernel: K1 core + every K3 stock extension.
 
     ``sections=None`` (the default) resolves to the stock ``DEFAULT_PLAN_SECTIONS``
     catalog via ``stock_factories`` — scaffold and gate read one catalog, so

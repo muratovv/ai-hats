@@ -10,6 +10,20 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Removed
+
+- **The legacy `ai-hats task` CLI is unmounted** (HATS-1260, epic HATS-1159).
+  The four command groups — `task`, `task hyp`, `task proposal`, `task attach`
+  (28 verbs) — are gone from the `ai-hats` surface; `rack` is the only backlog
+  CLI. Migration: `docs/migration-v0.14.0.md` (ships with the release). An
+  unrecognized leading word now follows the standard bare-positional-prompt
+  rule (HATS-087), so `ai-hats task …` no longer errors — it starts a session
+  with that text as the prompt. Recorded behavior change: `task_prefix`
+  auto-detection from pre-existing task folders (with persist-back to
+  `ai-hats.yaml`) was a feature of the removed CLI path; rack reads
+  `task_prefix` from `ai-hats.yaml` only — legacy projects should set it
+  explicitly.
+
 ### Fixed
 
 - **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**

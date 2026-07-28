@@ -3,8 +3,8 @@
 ADR-0014 P0 #3 / HATS-866: the tracker FSM (:class:`ai_hats_tracker.state.TaskManager`)
 emits worktree side-effects through the :class:`ai_hats_tracker.state.WorktreeEffects`
 protocol; THIS module is the only binding of those effects to :mod:`ai_hats_wt`.
-``cli/_helpers._task_manager`` injects it; a ``TaskManager`` without a handler
-is a pure FSM (no worktree is created or torn down).
+``rack_wiring.build_rack_kernel`` injects it (HATS-1260: the legacy CLI seam
+is gone); a ``TaskManager`` without a handler is a pure FSM (no worktree).
 """
 
 from __future__ import annotations
