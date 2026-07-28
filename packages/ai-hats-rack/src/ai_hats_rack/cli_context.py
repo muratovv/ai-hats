@@ -128,6 +128,9 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
         click.echo(f"  tags: {', '.join(card.tags)}")
     if card.resolution:
         click.echo(f"  resolution: {card.resolution}")
+    # HATS-1275: the read-back the write_on gate is verified against.
+    if card.final_state:
+        click.echo(f"  final_state: {card.final_state}")
     if card.updated:
         click.echo(f"  updated: {card.updated}")
     if card.description:

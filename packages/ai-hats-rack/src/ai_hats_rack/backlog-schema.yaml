@@ -19,7 +19,11 @@ keys:
   kind: [name, arity, inverse, derived, aliases, handlers, targets, read, read_docs]
   # A card-field entry (HATS-1035): `type` is str|int|list|any; a complex shape
   # is `type: any` + a mandatory `validator`. `emit` is always|when-set.
-  field: [name, type, default, required, choices, validator, emit]
+  # State-conditional gates (HATS-1275), each a list of state names, enforced by
+  # the kernel post-sequence: `required_on` — entering one of these states with
+  # the field empty is refused; `write_on` — the field may only CHANGE on a
+  # transition entering one of them. Undeclared means unconstrained.
+  field: [name, type, default, required, choices, validator, emit, required_on, write_on]
 
 # A handler reference is a bare name or a {name, ...} mapping. The universal keys
 # are interpreted by the composition root; ANY other key is handler-specific config
