@@ -56,15 +56,21 @@ Two source-of-truth invocations (run both via **Bash**; you may **read**
 the output but NOT mutate state):
 
 ```bash
-# HATS-790: no bin/ai-hats console script — fallback runs the venv module.
-ah() { if command -v ai-hats >/dev/null 2>&1; then ai-hats "$@"; else ./.venv/bin/python -m ai_hats "$@"; fi; }
-ah task list --state done --updated-since "$PRIOR_TS"
+rack ls --state done --all --json \
+  | jq --arg since "$PRIOR_TS" '[.tasks[] | select(.completed_at >= $since)]'
 git log --since="$PRIOR_TS" --oneline
 ```
 
-`task list` is read-only — it does not violate the L0 CLI-ban. The ban
-covers state-mutating verbs (`task create`, `task hyp ...`,
-`reflect commit`); `list` and `show` are inspection-only and allowed.
+`--all` is load-bearing: without it the scan caps at 30 rows and reports
+`"capped": true`, and rows are id-sorted — so you would silently audit
+the *oldest* done cards, not the window. `completed_at` is stamped on the
+terminal transition; a card closed before it existed has no such key and
+drops out of the filter.
+
+`rack ls` is read-only — it does not violate the L0 CLI-ban. The ban
+covers state-mutating verbs (`rack create`, `rack transition`,
+`rack hyp …`, `reflect commit`); `ls` and `context` are inspection-only
+and allowed.
 
 Record the result in the draft's `## Deliverables since prior report`
 section. Empty window → `(none)`, but mark this as a signal — see Edge
