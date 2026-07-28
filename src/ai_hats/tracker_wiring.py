@@ -4,7 +4,7 @@
 — it always wires ``ensure_base`` to the validated creator, so the HATS-839
 phantom-tracker guard cannot be dropped by hand-building the value. NOT in
 ``ai_hats.paths``: that package is a dependency-free leaf.
-HATS-1258 moved the dataclass here so it outlives ``ai_hats_tracker``.
+HATS-1258 moved the dataclass here so it outlives the tracker package.
 """
 
 from __future__ import annotations
