@@ -71,6 +71,17 @@ friction, not data loss. Every declining path exits 0 with a note:
 Each leaves a worktree without `.venv` — the pre-HATS-1291 status quo, never
 worse. Cost when it does run is small: measured at ~1–2s on a warm uv cache.
 
+## Known limitation — dev-tool version drift
+
+The install resolves fresh, so a worktree venv can carry *newer* dev tools than
+a long-lived main venv. Observed during HATS-1291: main had `ruff 0.15.22`, the
+new worktree got `0.16.0`, and `ruff format --check` disagreed across hundreds
+of files purely from the version gap. `uv sync --frozen` would pin this, but
+this repo gitignores `uv.lock` by policy ("local dev tool artifact") and
+`pyproject.toml` leaves dev tools unpinned (`ruff>=0.4`), so there is no lock to
+respect. Run repo-wide format/lint checks with the main checkout's tool when the
+two disagree, or pin the tool in `pyproject.toml`.
+
 ## Why a separate skill
 
 Per `rule_core_vs_usage_split`, `uv` and editable installs are Python-specific,
