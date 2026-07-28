@@ -193,26 +193,38 @@ class WorktreeStateIncompleteError(Exception):
 
 
 class WorktreeDriftError(Exception):
-    """Raised when the worktree's original branch moved between create and merge.
+    """Raised when the base holds commits the worktree branch never took in.
 
-    HATS-457 / HYP-017: the base branch SHA captured at ``wt create`` no
-    longer matches the current local (or remote) tip, which means another
-    agent's worktree merge — or an explicit ``git pull`` — landed commits
-    that the current worktree's pre-merge verification never saw.
-
-    Default ``wt merge`` refuses to proceed; the user re-verifies against
-    the new base and re-runs with ``--accept-drift``.
+    HATS-457 / HYP-017: another agent's worktree merge — or an explicit
+    ``git pull`` — landed commits on the base that this worktree's
+    pre-merge verification never saw. HATS-1307: the test is *containment*
+    (is the base an ancestor of the branch), so rebasing clears it; only a
+    consciously accepted stale baseline still needs ``--accept-drift``.
 
     **Body contract (HATS-509)**: the exception message carries
     **facts only** — the drift summary built by ``_check_drift``
     (header, ``local:`` / ``remote:`` sections, ``affected paths:``
     listings). It MUST NOT include user-facing recipe text such as
     "re-run with ``--accept-drift``". The recipe is owned by CLI
-    handlers (``cli/worktree.py wt_merge``, ``cli/task.py
-    task_transition``) so each command surface can name its own flags
-    — historically the literal trailer leaked into ``task transition
-    done``, where the flag does NOT exist.
+    handlers (``cli/worktree.py wt_merge``, ``ai_hats/rack_cli_provider.py``)
+    so each command surface can name its own flags — historically the
+    literal trailer leaked into ``task transition done``, where the flag
+    does NOT exist. The attributes below let those handlers name concrete
+    refs without parsing the body.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        branch_name: str | None = None,
+        base_branch: str | None = None,
+        worktree_path: Path | None = None,
+    ) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        self.worktree_path = worktree_path
+        super().__init__(message)
 
 
 class WorktreeMergeConsentError(Exception):
@@ -1908,7 +1920,12 @@ class WorktreeManager:
         # cli/task.py task_transition) so each command names the correct
         # surface — historically the literal trailer leaked into
         # `task transition done`, where the flag does NOT exist.
-        raise WorktreeDriftError("\n".join(lines))
+        raise WorktreeDriftError(
+            "\n".join(lines),
+            branch_name=self.branch_name,
+            base_branch=self._original_branch,
+            worktree_path=self.worktree_path,
+        )
 
     def _drift_summary(self, base: str, head: str) -> tuple[int, list[str]]:
         """Return (commit count, capped affected-path list) for base..head.

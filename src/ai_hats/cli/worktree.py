@@ -393,12 +393,20 @@ def wt_merge(
 
         console.print(f"[red]Refused (drift)[/]:\n{_escape(str(e))}")
         # HATS-509: the recipe (full command form) lives here, not in the
-        # exception body, so the sibling `task transition done` handler
+        # exception body, so the sibling `rack transition done` handler
         # can name its own surface without inheriting a misleading
         # `--accept-drift` hint that points at the wrong command.
+        base = _escape(e.base_branch or "<base>")
+        if e.worktree_path:
+            console.print(f"  [cyan]cd {_escape(str(e.worktree_path))}[/]", soft_wrap=True)
+        console.print(f"  [cyan]git rebase {base}[/]", soft_wrap=True)
+        # HATS-1307: the rebase IS the fix — drift is containment, so a rebased
+        # branch passes the guard. --accept-drift stays for a stale baseline
+        # the operator merges knowingly.
         console.print(
-            "Re-verify your changes against the new base, "
-            "then re-run with [cyan]ai-hats wt merge --accept-drift[/]."
+            "Re-verify against the new base, then re-run this merge. "
+            "To merge the stale baseline on purpose instead, re-run with "
+            "[cyan]--accept-drift[/]."
         )
         sys.exit(1)
     except WorktreeRemoveError as e:

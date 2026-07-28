@@ -39,21 +39,46 @@ def test_state_lost_renders_recovery_recipe(capsys):
     assert "git merge --no-ff task/hats-1" in err
 
 
-def test_drift_renders_accept_drift_recipe(capsys, tmp_path, monkeypatch):
+def test_drift_renders_rebase_first_recipe(capsys, tmp_path, monkeypatch):
+    """HATS-1307: the recipe leads with the remedy `rack transition` can use."""
     from ai_hats_wt import WorktreeDriftError
 
     (tmp_path / ".agent").mkdir()
     monkeypatch.chdir(tmp_path)
-    exc = WorktreeDriftError("base 'master' moved:\nlocal: 1 commit\naffected paths:\n  other.txt")
+    wt_path = tmp_path / "wt-hats-1"
+    exc = WorktreeDriftError(
+        "base 'master' moved:\nlocal: 1 commit\naffected paths:\n  other.txt",
+        branch_name="task/hats-1",
+        base_branch="master",
+        worktree_path=wt_path,
+    )
     handled = CliKernelProvider().handle_error(exc, as_json=False, task_id="HATS-1")
     assert handled is True
     err = capsys.readouterr().err
     assert "drifted" in err
     assert "other.txt" in err
+    assert f"cd {wt_path}" in err
+    assert "git rebase master" in err
     assert f"cd {Path.cwd()}" in err
-    assert "ai-hats wt merge --accept-drift task/hats-1" in err
     assert "rack transition HATS-1 --state done" in err
+    # --accept-drift demoted to conscious acceptance, still on its own surface.
+    assert "ai-hats wt merge --accept-drift task/hats-1" in err
     assert "belongs to `wt merge`, not `rack transition`" in err
+
+
+def test_drift_recipe_without_refs_uses_placeholders(capsys, tmp_path, monkeypatch):
+    """A drift error raised without ref attributes still renders a shaped recipe."""
+    from ai_hats_wt import WorktreeDriftError
+
+    (tmp_path / ".agent").mkdir()
+    monkeypatch.chdir(tmp_path)
+    handled = CliKernelProvider().handle_error(
+        WorktreeDriftError("moved"), as_json=False, task_id="HATS-1"
+    )
+    assert handled is True
+    err = capsys.readouterr().err
+    assert "cd <worktree>" in err
+    assert "git rebase <base>" in err
 
 
 def test_base_branch_mismatch_renders_checkout_recipe(capsys, tmp_path, monkeypatch):
