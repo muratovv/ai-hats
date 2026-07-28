@@ -23,6 +23,14 @@ The mechanism by which **gitignored** data crosses the `ai-hats wt` boundary in 
 
 See [how-to-extend → Worktree lifecycle hooks](../how-to-extend.md#worktree-lifecycle-hooks) for the author contract (declaration, lifecycle, `.env` / secrets) and [ADR-0012](../adr/0012-worktree-data-transfer.md) for the design (hooks-first, resolution map, creds boundary D5).
 
+## Worktree venv provisioning
+
+The `worktree-venv` skill (usage layer, attached to the `maintainer` role) — the first *shipped* consumer of the `wt_in` hook form. Its `hooks/provision-venv.sh` runs after `git worktree add` and mints a `.venv` inside the new worktree (`uv venv` + one editable `uv pip install` over the root project and every `packages/**/pyproject.toml`), so the checkout can be tested and committed without hand-provisioning (HATS-1291).
+
+Why it must exist: the e2e tier spawns `sys.executable` with `PYTHONPATH` stripped *by design* (HATS-685), so — unlike the in-process tier, which `[tool.pytest.ini_options] pythonpath` already redirects — it resolves `ai_hats` through the interpreter's own editable install. Without a worktree-local venv that is MAIN's checkout, and the HATS-1242 guard aborts the commit. The paired half is the `git-mastery` smoke hook preferring `<git-toplevel>/.venv/bin/pytest` over PATH; **neither half alone changes anything** (HATS-1245).
+
+Inherits `wt_in`'s **warn-continue** policy (ADR-0012 D3/D7): a missing `uv`, a cold cache exceeding the 45s hook budget, or any other trouble degrades to a WARN and a worktree without `.venv` — i.e. exactly the pre-HATS-1291 state, never worse. The script is idempotent, so a re-run finishes an interrupted provision.
+
 ## wt core / extraction boundary
 
 The in-tree module boundary that splits the git-worktree **engine** (create / merge / discard / cleanup, the L1–L4 locks, drift / base-branch guards, git plumbing) from the **ai-hats accretions** layered on top (composition, the lifecycle-hook layer, FSM auto-create/auto-merge, the tracker redirect, error-recipe translation). The engine is **hook-agnostic**: it owns *where* the lifecycle points fire and *that a callback raising aborts teardown* (fail-closed); it does **not** know what runs there. ai-hats plugs behavior in through a **lifecycle extension-point** — a callback bundle (`on_created` / `before_teardown(event, ctx)`, default no-op) injected at construction, so the whole worktree-data-transfer hook layer (ADR-0012) stays an accretion. The boundary is **one-directional**: `ai_hats → ai_hats_wt`, never back, enforced by the package-boundary import-lint (`packages/ai-hats-wt/tests/test_boundary.py`, HATS-882).
@@ -34,6 +42,7 @@ The seam that keeps the task FSM (tracker) free of any worktree dependency (ADR-
 ## Layered file-locking (L1–L4 locks)
 
 The 4-tier concurrency control model that prevents race conditions and repository corruption during parallel worktree operations:
+
 - **L1 (State Lock):** Per-worktree lock (`<project>/.wt/state/<id>.lock`) protecting state metadata mutations.
 - **L2 (Manager Lock):** Global process-level lock (`<project>/.wt/manager.lock`) serializing worktree creation and removal.
 - **L3 (Git Index Retries):** Retries around `.git/index.lock` contention during git operations.
@@ -44,6 +53,7 @@ See [ADR-0006](../adr/0006-worktree-concurrency-layered-defense.md) for full con
 ## IsolationMode
 
 Enum defining the lifecycle and merge strategy for a linked worktree:
+
 - `BRANCH` — Create a linked worktree on a dedicated branch, fast-forward merge on completion.
 - `SQUASH` — Create a linked worktree on a dedicated branch, squash merge into target branch on completion.
 - `DISCARD` — Create a temporary linked worktree, discard all changes and branch on teardown.
