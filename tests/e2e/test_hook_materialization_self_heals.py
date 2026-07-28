@@ -19,7 +19,6 @@ Guarantees, each with a fail-under-revert property:
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -32,7 +31,6 @@ from ai_hats.assembler import Assembler
 from ai_hats.cli import main
 from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
-from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
