@@ -133,6 +133,12 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
         click.echo(f"  final_state: {card.final_state}")
     if card.updated:
         click.echo(f"  updated: {card.updated}")
+    # What the tolerant load had to fix — the next write persists the coerced
+    # value, so the read says so out loud (HATS-1299).
+    if card.load_warnings:
+        click.echo("  warnings:")
+        for warning in card.load_warnings:
+            click.echo(f"    {warning}")
     if card.description:
         click.echo("  description:")
         for line in card.description.rstrip().splitlines():

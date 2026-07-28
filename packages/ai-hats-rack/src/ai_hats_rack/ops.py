@@ -156,15 +156,45 @@ def _check_settable(field_name: str, flag: str) -> None:
         raise OpParseError(f"{flag} cannot target the structural field {field_name!r}; {hint}")
 
 
+def _parse_payload(raw: str) -> Any:
+    """A field payload is JSON when it parses and a plain string otherwise, so
+    the bare form an agent reaches for first is not a refusal (HATS-1299)."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _declared_type(field_name: str, field_types: Mapping[str, str] | None) -> str | None:
+    """The field's declared type: the routed backlog's schema first, else the
+    card model's own column — or ``None`` when nothing types the name (extras)."""
+    declared = (field_types or {}).get(field_name)
+    if declared is not None:
+        return declared
+    if field_name in TaskCard._KNOWN_FIELDS:
+        return "list" if TaskCard._field_type(field_name) is list else "scalar"
+    return None
+
+
 def _coerce_set_value(field_name: str, value: str, field_types: Mapping[str, str] | None) -> Any:
-    """``--set`` values are plain strings; an ``int``-typed field coerces, every
-    other type stays a string (create options coerce the same — the schema
-    validates the rest). A non-integer for an int field is a typed refusal."""
-    if field_types is not None and field_types.get(field_name) == "int":
+    """``--set`` values are plain strings; an ``int``-typed field coerces and a
+    ``list``-typed one takes a JSON array (the only way to replace a list). Every
+    other type stays a string VERBATIM — a description that looks like JSON is a
+    description. A payload the declared type cannot hold is a typed refusal."""
+    declared = _declared_type(field_name, field_types)
+    if declared == "int":
         try:
             return int(value)
         except ValueError as exc:
             raise OpParseError(f"--set {field_name}={value!r}: expected an integer") from exc
+    if declared == "list":
+        payload = _parse_payload(value)
+        if not isinstance(payload, list):
+            raise OpParseError(
+                f"--set {field_name}={value!r}: {field_name!r} is a list field — pass a JSON "
+                f"array (--set '{field_name}=[\"a\",\"b\"]'), or --append to add one entry"
+            )
+        return payload
     return value
 
 
@@ -208,11 +238,16 @@ def parse_ops(tokens: Sequence[str], *, field_types: Mapping[str, str] | None = 
             elif tok == "--append":
                 field_name, raw = _split_assignment(value, "--append")
                 _check_settable(field_name, "--append")
-                try:
-                    payload = json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    raise OpParseError(f"--append {field_name}=<json>: invalid JSON ({exc})") from exc
-                ops.append(FieldsOp({field_name: Append(payload)}))
+                if _declared_type(field_name, field_types) not in (None, "list", "any"):
+                    raise OpParseError(
+                        f"--append {field_name}={raw!r}: {field_name!r} is not a list field; "
+                        "use --set to replace its value"
+                    )
+                payload = _parse_payload(raw)
+                # An array adds its ENTRIES: nesting a list inside a list field is
+                # never a readable card, so one op per entry in argv order.
+                entries = payload if isinstance(payload, list) else [payload]
+                ops.extend(FieldsOp({field_name: Append(entry)}) for entry in entries)
             else:  # --unlink
                 kind, target = _split_edge(value)
                 ops.append(UnlinkOp(kind, target))
