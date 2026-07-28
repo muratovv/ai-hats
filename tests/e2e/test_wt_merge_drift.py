@@ -51,6 +51,25 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _git_no_hooks(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Linked worktrees inherit the parent repo's hooks; `self init` installs
+    privacy/pre-commit ones that would reject these synthetic commits."""
+    return _git(cwd, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *args)
+
+
+def _locate_worktree(project: Path, branch: str) -> Path:
+    listing = _git(project, "worktree", "list", "--porcelain").stdout
+    current_path: Path | None = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            current_path = Path(line[len("worktree ") :].strip())
+        elif line.startswith("branch ") and current_path is not None:
+            if line[len("branch ") :].strip().endswith(f"/{branch}"):
+                assert current_path.is_dir(), f"worktree path missing: {current_path}"
+                return current_path
+    raise AssertionError(f"could not locate worktree for {branch}:\n{listing}")
+
+
 @pytest.mark.integration
 def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     """HATS-457 drift guard, real subprocess.
@@ -106,20 +125,7 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     # ---- 2. create worktree on a task branch ----
     ai_hats("wt", "create", "task/test-drift")
 
-    # Locate the worktree path via `git worktree list` (one path per line,
-    # no rich-console width wrapping to fight).
-    listing = _git(project, "worktree", "list", "--porcelain").stdout
-    wt_path = None
-    current_path: Path | None = None
-    for line in listing.splitlines():
-        if line.startswith("worktree "):
-            current_path = Path(line[len("worktree ") :].strip())
-        elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch ") :].strip()
-            if ref.endswith("/task/test-drift"):
-                wt_path = current_path
-                break
-    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
+    wt_path = _locate_worktree(project, "task/test-drift")
 
     # ---- 3. main checkout advances the base branch (the drift) ----
     (project / "drift.txt").write_text("from the other agent\n")
@@ -127,23 +133,11 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "main: advance base after worktree create")
 
     # ---- 4. worktree branch gets its own commit ----
-    # Linked worktrees share the parent repo's hooks; disable them for
-    # this test commit so privacy / pre-commit installed by `self init`
-    # doesn't reject it.
     _git(wt_path, "config", "user.email", "e2e@test")
     _git(wt_path, "config", "user.name", "E2E")
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
-    _git(
-        wt_path,
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "-m",
-        "wt-work",
-    )
+    _git_no_hooks(wt_path, "commit", "-m", "wt-work")
 
     # ---- 5. wt merge refuses with drift message ----
     # Run from the main project (not the linked worktree) — the launcher
@@ -160,6 +154,10 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
     assert "drift" in combined.lower(), f"drift not mentioned in refusal:\n{combined}"
     assert "drift.txt" in combined, f"affected path not listed in refusal:\n{combined}"
     assert "--accept-drift" in combined, f"override flag not advertised:\n{combined}"
+    # HATS-1307: the recipe leads with the remedy that clears the guard.
+    assert f"git rebase {base_branch}" in combined, (
+        f"rebase-first recipe missing from refusal:\n{combined}"
+    )
 
     # Worktree branch still exists (refusal preserves it for re-verify).
     branches = _git(project, "branch", "--list", "task/test-drift").stdout
@@ -192,3 +190,69 @@ def test_e2e_wt_merge_drift_guard(shared_launcher, tmp_path):
         f"--- merge stdout ---\n{merge_res.stdout}\n"
         f"--- merge stderr ---\n{merge_res.stderr}"
     )
+
+
+@pytest.mark.integration
+def test_e2e_rebased_branch_merges_without_accept_drift(shared_launcher, tmp_path):
+    """HATS-1307: rebasing clears the guard — the flag-free path must work.
+
+    Pre-1307 the guard compared a create-time snapshot, so a branch sitting
+    exactly on the moved base was still refused and the only exit was
+    ``--accept-drift`` — a flag ``rack transition done`` cannot pass, which
+    dead-ended the auto-merge path.
+
+    **Fail-under-revert**: restore the snapshot comparison in
+    ``WorktreeManager._check_drift`` → the flag-free merge below exits 1.
+    """
+    launcher_dest, env, _venv = shared_launcher
+    project = tmp_path / "project"
+    project.mkdir()
+
+    def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(launcher_dest), *args],
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
+        )
+
+    _git(project, "init", "-b", "main")
+    _git(project, "config", "user.email", "e2e@test")
+    _git(project, "config", "user.name", "E2E")
+    (project / "README.md").write_text("# e2e\n")
+    _git(project, "add", "README.md")
+    _git(project, "commit", "-m", "init")
+
+    ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+
+    ai_hats("wt", "create", "task/test-rebase")
+    wt_path = _locate_worktree(project, "task/test-rebase")
+
+    # Base moves under the worktree (another agent merged first).
+    (project / "drift.txt").write_text("from the other agent\n")
+    _git(project, "add", "drift.txt")
+    _git(project, "commit", "-m", "main: advance base after worktree create")
+
+    _git(wt_path, "config", "user.email", "e2e@test")
+    _git(wt_path, "config", "user.name", "E2E")
+    (wt_path / "wt-work.txt").write_text("wt change\n")
+    _git(wt_path, "add", "wt-work.txt")
+    _git_no_hooks(wt_path, "commit", "-m", "wt-work")
+
+    # The remedy the refusal recommends — after this the branch holds every
+    # base commit, so there is nothing stale left to re-verify.
+    _git_no_hooks(wt_path, "rebase", base_branch)
+
+    merge_res = ai_hats("wt", "merge", "task/test-rebase", cwd=project)
+
+    branches = _git(project, "branch", "--list", "task/test-rebase").stdout
+    assert branches.strip() == "", (
+        f"rebased branch should merge flag-free:\n{branches!r}\n"
+        f"--- merge stdout ---\n{merge_res.stdout}\n"
+        f"--- merge stderr ---\n{merge_res.stderr}"
+    )
+    log = _git(project, "log", base_branch, "--pretty=%s", "-n", "10").stdout
+    assert "wt-work" in log, f"worktree commit not in base history:\n{log}"
+    assert (project / "drift.txt").exists(), "base commit lost by the merge"
