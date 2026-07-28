@@ -1,26 +1,21 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> done``
-HEAD-wandered guard (HATS-533).
+"""End-to-end coverage for the ``rack transition <ID> done`` HEAD-wandered
+recovery recipe (HATS-533 on the legacy CLI, ported to rack by HATS-1274).
 
-Sibling to ``test_wt_merge_head_wandered.py`` covering the
-``task transition done`` surface specifically — per
-``dev_rule_e2e_gate`` each CLI surface touched needs its own
-real-subprocess test. This is the exact scenario that fired live in
-the HATS-509 session: worktree created from master, peer agent moved
-main-repo HEAD to a different branch, ``transition done`` merged into
-the wrong branch.
+Sibling to ``test_wt_merge_head_wandered.py``, covering the transition surface
+specifically — per ``dev_rule_e2e_gate`` each CLI surface needs its own
+real-subprocess test. This is the scenario that fired live in the HATS-509
+session: worktree created from master, peer agent moved main-repo HEAD to a
+different branch, the done-transition merged into the wrong branch.
 
-**Fail-under-revert**: remove the ``except
-WorktreeBaseBranchMismatchError`` handler in ``cli/task.py
-task_transition`` (Step 4 of the HATS-533 plan) → the exception
-propagates as an unhandled error, the recipe assertions below fail
-with a Python traceback in the output instead.
+**Fail-under-revert**: remove the ``WorktreeBaseBranchMismatchError`` branch
+from ``rack_cli_provider._wt_error_shape`` → the refusal collapses to the
+generic ``Refused (worktree)`` shape with an empty recipe, and the
+``git checkout <base>`` assertions below fail.
 
-Modelled on ``tests/e2e/test_task_transition_drift_message.py``.
+Driven through the ``rack`` CLI; ``self init`` stays on the ``ai-hats``
+launcher.
 """
-
-# HATS-1263: still on the legacy CLI. Asserts the HEAD-wandered recovery recipe
-# (`git checkout <base>` + the follow-up transition), which rack does not render
-# (rack_cli_provider.py:118-120). Re-point once HATS-1274 lands.
+# comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 
 from __future__ import annotations
 
@@ -28,9 +23,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -57,27 +49,26 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.integration
-def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
-    """HATS-533 on the `task transition done` surface.
+def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
+    """HATS-1274: the base-branch-mismatch refusal on rack carries the
+    `git checkout <base>` recovery recipe.
 
     Scenario (mirrors the HATS-509 incident):
-      1. Bootstrap session-shared venv + ``self init``.
-      2. ``git init``, initial commit.
-      3. Create a task, walk brainstorm → plan → execute (worktree
-         created from master, `_original_branch=master`).
-      4. Commit work on the worktree branch.
-      5. In the main repo, ``git checkout -b wandered-feature``
-         (HATS-509 live trigger).
-      6. Walk execute → document → review.
-      7. ``ai-hats task transition <ID> done`` MUST exit 1 with the
-         mismatch message + the `git checkout master` recipe.
-      8. Master is untouched (the bug we're guarding); wandered-feature
-         is untouched too.
-      9. Task remains in ``review`` (HATS-481 fail-loud).
-     10. Recovery: ``git checkout master; ai-hats task transition done``
-         succeeds.
+      1. Bootstrap + ``git init``, initial commit.
+      2. Create a task, walk brainstorm → plan → execute (worktree
+         created from base, `_original_branch=<base>`).
+      3. Commit work on the worktree branch.
+      4. In the main repo, ``git checkout -b wandered-feature``.
+      5. Walk execute → document → review.
+      6. ``rack transition <ID> done`` MUST exit 1 with the mismatch
+         message + the `git checkout <base>` recipe.
+      7. Base is untouched (the bug being guarded); so is
+         wandered-feature.
+      8. Task remains in ``review`` (HATS-481 fail-loud).
+      9. Recovery: ``git checkout <base>`` then the transition succeeds.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
     project.mkdir()
 
@@ -85,6 +76,13 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
+        return _run(
+            [str(rack_bin), *args],
+            cwd=cwd, env={**env, **(extra_env or {})},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -107,9 +105,9 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create a task and walk it through to execute ----
-    new_res = ai_hats(
-        "task", "create", "wandered head test",
-        "--description", "exercise the HATS-533 mismatch translation",
+    new_res = rack(
+        "create", "wandered head test",
+        "--description", "exercise the ported HATS-533 recipe",
         "--role", "assistant",
         "--reviewer", "user",
     )
@@ -123,7 +121,7 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
@@ -137,7 +135,7 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
         "## Verification Protocol\npytest\n"
     )
 
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute", extra_env={"AI_HATS_PLAN_ACK": "1"})
 
     # Locate worktree.
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -171,14 +169,11 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
     _git(project, "checkout", "-b", "wandered-feature")
 
     # ---- 5. walk execute → document → review ----
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- 6. transition done MUST refuse ----
-    res = ai_hats(
-        "task", "transition", task_id, "done",
-        expect_exit=1, cwd=project,
-    )
+    res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
 
     # Positive: mismatch refusal surfaced with both branch names.
@@ -192,16 +187,15 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
         f"expected branch name missing from refusal:\n{combined}"
     )
 
-    # Positive: HATS-533 recipe — `git checkout <expected>` + retry.
+    # Positive: the ported recipe — `git checkout <expected>` + retry.
     assert f"git checkout {base_branch}" in combined, (
-        f"recovery `git checkout {base_branch}` missing from recipe:\n"
-        f"{combined}"
+        f"recovery `git checkout {base_branch}` missing from recipe:\n{combined}"
     )
-    assert f"ai-hats task transition {task_id} done" in combined, (
+    assert f"rack transition {task_id} --state done" in combined, (
         f"retry step missing from recipe:\n{combined}"
     )
     assert str(project) in combined, (
-        f"main-repo path missing from cd hint:\n{combined}"
+        f"main-repo path missing from the cd hint:\n{combined}"
     )
 
     # ---- 7. critical safety: NO wrong-branch merge happened ----
@@ -214,21 +208,19 @@ def test_e2e_task_transition_done_head_wandered(shared_launcher, tmp_path):
     )
     base_log = _git(project, "log", "--oneline", base_branch).stdout
     assert "wt-work" not in base_log, (
-        f"base branch unexpectedly received the worktree commit:\n"
-        f"{base_log}"
+        f"base branch unexpectedly received the worktree commit:\n{base_log}"
     )
 
     # ---- 8. card remains in `review` (HATS-481 fail-loud) ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: review" in show.stdout, (
-        f"task should remain in `review` after mismatch refusal:\n"
-        f"{show.stdout}"
+        f"task should remain in `review` after mismatch refusal:\n{show.stdout}"
     )
 
-    # ---- 9. recovery: switch back, transition done succeeds ----
+    # ---- 9. recovery: switch back, the transition succeeds ----
     _git(project, "checkout", base_branch)
-    ai_hats("task", "transition", task_id, "done")
-    show2 = ai_hats("task", "show", task_id)
+    rack("transition", task_id, "done")
+    show2 = rack("context", task_id)
     assert "state: done" in show2.stdout, (
         f"task did not reach `done` after recovery:\n{show2.stdout}"
     )

@@ -1,33 +1,20 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> done`` drift
-message (HATS-509).
+"""End-to-end coverage for the ``rack transition <ID> done`` drift recovery
+recipe (HATS-509 on the legacy CLI, ported to rack by HATS-1274).
 
-The inner ``wt merge`` invoked by ``transition done`` historically raised
-a ``WorktreeDriftError`` whose message ended with "re-run with
-``--accept-drift``". Users copy-pasted that as ``ai-hats task transition
-<ID> done --accept-drift``, which fails with ``No such option`` — the
-flag lives on ``wt merge``, not ``task transition``. HATS-509 moves the
-recipe out of the exception body into CLI handlers and translates it
-specifically for ``task transition done``.
+``WorktreeDriftError``'s body is facts-only by contract, so the recipe is
+owned by the CLI handler — on rack, ``rack_cli_provider._wt_error_shape``.
+It advertises ``--accept-drift``, which lives on ``ai-hats wt merge`` and NOT
+on ``rack transition``, where copy-pasting it fails with ``No such option``.
 
-Per ``dev_rule_e2e_gate``: this changes ``src/ai_hats/cli/task.py``,
-so a real-subprocess e2e test is mandatory. Pipeline / CliRunner tests
-do NOT satisfy the gate.
+**Fail-under-revert**: remove the ``WorktreeDriftError`` branch from
+``_wt_error_shape`` → the refusal collapses back to the generic
+``Refused (worktree) for <id>: <exc>`` shape with an empty recipe, and the
+recipe assertions below fail.
 
-**Fail-under-revert**: remove the ``except WorktreeDriftError`` handler
-in ``cli/task.py task_transition`` (Step 1 of HATS-509 plan) → the
-generic handler at the end of ``task_transition`` no longer applies
-either (the exception bubbles up to Click → exit code differs and the
-message is the raw Python traceback / generic error). The recipe
-assertions below fail.
-
-Modelled on ``tests/e2e/test_wt_merge_drift.py``.
+Driven through the ``rack`` CLI; ``self init`` stays on the ``ai-hats``
+launcher.
 """
-
-# HATS-1263: still on the legacy CLI. Its subject IS the drift recovery recipe
-# (`ai-hats wt merge --accept-drift`, the follow-up transition, and the "belongs
-# to `wt merge`" note). rack collapses every wt refusal except merge-consent and
-# state-lost into the generic `Refused (worktree)` shape with no recipe
-# (rack_cli_provider.py:118-120). Re-point once HATS-1274 lands.
+# comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 
 from __future__ import annotations
 
@@ -35,9 +22,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -64,9 +48,9 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.integration
-def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
-    """HATS-509: drift message on ``task transition done`` names the
-    correct command surface and gives a copy-pasteable two-step recipe.
+def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
+    """HATS-1274: the drift refusal on rack names the correct command surface
+    and gives a copy-pasteable recipe.
 
     Scenario:
       1. Bootstrap session-shared venv + ``self init``.
@@ -77,14 +61,14 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
       5. In the main repo, advance the base branch (simulates drift —
          another agent merged).
       6. Walk the task execute → document → review.
-      7. ``ai-hats task transition <ID> done`` — must exit 1 with a
-         message naming the correct command (``ai-hats wt merge
-         --accept-drift``) and the main-repo path, NOT advertising
-         ``--accept-drift`` on ``task transition``.
+      7. ``rack transition <ID> done`` — must exit 1 with a message naming
+         ``ai-hats wt merge --accept-drift`` and the main-repo path, NOT
+         advertising ``--accept-drift`` on ``rack transition``.
       8. Task remains in ``review`` (fail-loud: HATS-481 keeps the card
          out of ``done`` until merge succeeds).
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
     project.mkdir()
 
@@ -92,6 +76,13 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
+        return _run(
+            [str(rack_bin), *args],
+            cwd=cwd, env={**env, **(extra_env or {})},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -109,13 +100,13 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
     )
 
     # ---- 2. create a task and walk it through to execute ----
-    new_res = ai_hats(
-        "task", "create", "drift message test",
-        "--description", "exercise the HATS-509 translated message",
+    new_res = rack(
+        "create", "drift message test",
+        "--description", "exercise the ported drift recipe",
         "--role", "assistant",
         "--reviewer", "user",
     )
-    # `task create` prints `Created: TST-NNN — <title> [...] (...)`
+    # `rack create` prints `Created: TST-NNN — <title> [...] (...)`
     task_id = None
     for line in new_res.stdout.splitlines():
         line = line.strip()
@@ -126,7 +117,7 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     # Fill the plan scaffold so the plan→execute transition is allowed.
     plan_path = (
@@ -141,7 +132,7 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
         "## Verification Protocol\npytest\n"
     )
 
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute", extra_env={"AI_HATS_PLAN_ACK": "1"})
 
     # Locate the worktree.
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -177,14 +168,11 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "main: advance base while task was open")
 
     # ---- 5. walk execute → document → review ----
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
-    # ---- 6. transition done MUST fail with the translated message ----
-    res = ai_hats(
-        "task", "transition", task_id, "done",
-        expect_exit=1, cwd=project,
-    )
+    # ---- 6. transition done MUST fail with the ported recipe ----
+    res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
 
     # Positive: drift summary preserved (commits + affected path).
@@ -195,40 +183,35 @@ def test_e2e_task_transition_done_drift_message(shared_launcher, tmp_path):
         f"affected path not listed in refusal:\n{combined}"
     )
 
-    # Positive: HATS-509 recipe — full command form pointing at the
-    # right surface.
-    assert "ai-hats wt merge --accept-drift" in combined, (
-        f"recipe missing the full `wt merge --accept-drift` command:\n"
-        f"{combined}"
+    # Positive: the recipe — full command form pointing at the right surface.
+    assert f"ai-hats wt merge --accept-drift task/{task_id.lower()}" in combined, (
+        f"recipe missing the full `wt merge --accept-drift` command:\n{combined}"
     )
     assert str(project) in combined, (
-        f"main-repo path missing from cd hint:\n{combined}"
+        f"main-repo path missing from the cd hint:\n{combined}"
     )
-    # The recipe must also point back at the original transition command
-    # so the user has a complete two-step path.
-    assert f"ai-hats task transition {task_id} done" in combined, (
+    # The recipe must also point back at the rack transition so the operator
+    # has a complete two-step path.
+    assert f"rack transition {task_id} --state done" in combined, (
         f"recipe missing the retry step:\n{combined}"
     )
 
-    # Negative guard: the misleading suggestion that --accept-drift is a
-    # `task transition` flag MUST NOT appear (this is the regression
-    # being fixed).
-    assert f"task transition {task_id} done --accept-drift" not in combined, (
-        f"misleading `task transition ... --accept-drift` form leaked:\n"
-        f"{combined}"
+    # Negative guard: --accept-drift MUST NOT be advertised as a rack
+    # transition flag — the regression this recipe exists to prevent.
+    assert "--state done --accept-drift" not in combined, (
+        f"misleading `rack transition ... --accept-drift` form leaked:\n{combined}"
     )
 
-    # Positive: the disambiguation Note must be present so the operator
-    # who skims the recipe still gets a direct callout that
-    # `--accept-drift` belongs to a sibling command. Pins the
-    # clarification in place against future copy edits.
-    assert "belongs to `wt merge`" in combined, (
-        f"disambiguation note missing — operator may still try the flag "
-        f"on `task transition`:\n{combined}"
+    # Positive: the disambiguation Note must be present so an operator who
+    # skims the recipe still gets a direct callout that `--accept-drift`
+    # belongs to a sibling command. Pins it against future copy edits.
+    assert "belongs to `wt merge`, not `rack transition`" in combined, (
+        f"disambiguation note missing — operator may still try the flag on "
+        f"`rack transition`:\n{combined}"
     )
 
     # ---- 7. card remains in `review` (HATS-481 fail-loud) ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: review" in show.stdout, (
         f"task should remain in `review` after drift refusal:\n{show.stdout}"
     )
