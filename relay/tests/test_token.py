@@ -105,14 +105,20 @@ def test_a_tokenless_broker_refuses_to_start(web_client):
     asyncio.run(scenario())
 
 
-def test_the_cli_refuses_too_rather_than_traceback():
+def test_the_cli_refuses_too_rather_than_traceback(monkeypatch, capsys):
     from hats_relay.__main__ import build_parser, main
 
     parser = build_parser()
     assert parser.parse_args(["--host", "127.0.0.1"]).token == ""
+
+    # main() re-parses sys.argv, which under pytest is PYTEST's — argparse then dies on an
+    # unrecognised argument, and an exit code alone cannot tell that apart from the refusal
+    # this test is named after. Asserting the reason is what keeps it pointed at the guard.
+    monkeypatch.setattr(sys, "argv", ["hats-relay", "--host", "127.0.0.1"])
     with pytest.raises(SystemExit) as exit_info:
         main()
     assert exit_info.value.code != 0
+    assert "--token is required" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
