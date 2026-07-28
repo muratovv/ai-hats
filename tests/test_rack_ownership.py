@@ -76,9 +76,7 @@ def as_agent_a(monkeypatch):
 
 
 def _create(kernel: Kernel, cwd: Path, task_id: str, title: str = "t", parent: str = "") -> str:
-    kernel.create(
-        actor="test", caller_cwd=cwd, task_id=task_id, title=title, parent_task=parent
-    )
+    kernel.create(actor="test", caller_cwd=cwd, task_id=task_id, title=title, parent_task=parent)
     return task_id
 
 

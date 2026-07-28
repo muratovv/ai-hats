@@ -25,8 +25,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout=120):
     return subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -56,6 +60,4 @@ def test_self_clean_command_removed(shared_launcher, tmp_path):
         for ln in help_res.stdout.splitlines()
         if ln.startswith("  ") and ln.strip() and not ln.strip().startswith("-")
     ]
-    assert "clean" not in listed, (
-        f"`clean` still listed as a `self` subcommand:\n{help_res.stdout}"
-    )
+    assert "clean" not in listed, f"`clean` still listed as a `self` subcommand:\n{help_res.stdout}"

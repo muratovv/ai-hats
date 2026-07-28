@@ -61,9 +61,7 @@ def project_with_two_roles(tmp_path: Path) -> tuple[Path, Path]:
         "injection: Guest injection.\n"
     )
 
-    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     return project, lib
 
 
@@ -74,9 +72,7 @@ def test_claude_materialize_runtime_skills_returns_plugin_dir_arg(tmp_path):
 
     skill_src = tmp_path / "lib" / "guest-only-skill"
     skill_src.mkdir(parents=True)
-    (skill_src / "SKILL.md").write_text(
-        "---\nname: guest-only-skill\ndescription: x\n---\n"
-    )
+    (skill_src / "SKILL.md").write_text("---\nname: guest-only-skill\ndescription: x\n---\n")
 
     result_skills = [
         ResolvedComponent(
@@ -121,9 +117,7 @@ def test_agy_materialize_runtime_skills_is_noop(tmp_path):
     assert AgyProvider().materialize_runtime_skills(tmp_path, result, "test-sid") == []
 
 
-def test_subagent_runner_threads_plugin_dir_to_sdk_options(
-    project_with_two_roles, monkeypatch
-):
+def test_subagent_runner_threads_plugin_dir_to_sdk_options(project_with_two_roles, monkeypatch):
     """End-to-end: SubAgentRunner.run('guest') reaches the SDK with a
     ``plugins=[{type: local, path: <dir>}]`` entry, and the on-disk
     plugin-dir contains the guest role's unique skill. After the attempt
@@ -154,9 +148,7 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
             captured["plugin_dir"] = pd
             skills_root = pd / "skills"
             captured["plugin_skills"] = (
-                sorted(p.name for p in skills_root.iterdir())
-                if skills_root.exists()
-                else []
+                sorted(p.name for p in skills_root.iterdir()) if skills_root.exists() else []
             )
         return SdkRunResult(
             exit_code=0,
@@ -170,13 +162,11 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
             error=None,
         )
 
-
-
     monkeypatch.setattr(runtime_mod, "_cleanup_session_cache", lambda *a, **kw: None)
     monkeypatch.setattr(
-        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking", _fake_sdk,
+        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
+        _fake_sdk,
     )
-
 
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats_observe import SessionManager
@@ -184,10 +174,11 @@ def test_subagent_runner_threads_plugin_dir_to_sdk_options(
 
     payload = build_composition_payload(project, role_override="guest")
     runner = runtime_mod.SubAgentRunner(
-        project, payload, session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
+        project,
+        payload,
+        session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
     runner.run(task="hi", isolation_mode="none")
-
 
     assert len(captured["plugins"]) == 1, captured["plugins"]
     plugin = captured["plugins"][0]

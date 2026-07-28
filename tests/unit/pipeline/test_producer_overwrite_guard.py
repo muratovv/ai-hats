@@ -29,9 +29,7 @@ class _FakeStep(Step):
         produces: frozenset[str] = frozenset(),
         delta: dict[str, Any] | None = None,
     ) -> None:
-        self._io = StepIO(
-            name=name, requires=requires, optional=optional, produces=produces
-        )
+        self._io = StepIO(name=name, requires=requires, optional=optional, produces=produces)
         self._delta = delta or {}
 
     @property
@@ -96,33 +94,37 @@ def test_two_producers_with_no_consumer_at_all_are_refused() -> None:
 
 
 def test_a_key_read_only_as_optional_counts_as_read() -> None:
-    _check_overwrites((
-        _provider("A"),
-        _FakeStep("peek", optional=frozenset({"session_id"})),
-        _provider("B"),
-    ))
+    _check_overwrites(
+        (
+            _provider("A"),
+            _FakeStep("peek", optional=frozenset({"session_id"})),
+            _provider("B"),
+        )
+    )
 
 
 def test_three_producers_are_fine_when_each_is_read() -> None:
-    _check_overwrites((
-        _provider("A"),
-        _FakeStep("r1", requires=frozenset({"session_id"})),
-        _provider("B"),
-        _FakeStep("r2", requires=frozenset({"session_id"})),
-        _provider("C"),
-        _FakeStep("r3", requires=frozenset({"session_id"})),
-    ))
+    _check_overwrites(
+        (
+            _provider("A"),
+            _FakeStep("r1", requires=frozenset({"session_id"})),
+            _provider("B"),
+            _FakeStep("r2", requires=frozenset({"session_id"})),
+            _provider("C"),
+            _FakeStep("r3", requires=frozenset({"session_id"})),
+        )
+    )
 
 
 def test_a_step_that_reads_and_rewrites_one_key_is_fine() -> None:
     """The append-prompt shape: requires and produces the same key."""
-    _check_overwrites((
-        _FakeStep("seed", produces=frozenset({"prompt"})),
-        _FakeStep("append", requires=frozenset({"prompt"}),
-                  produces=frozenset({"prompt"})),
-        _FakeStep("append2", requires=frozenset({"prompt"}),
-                  produces=frozenset({"prompt"})),
-    ))
+    _check_overwrites(
+        (
+            _FakeStep("seed", produces=frozenset({"prompt"})),
+            _FakeStep("append", requires=frozenset({"prompt"}), produces=frozenset({"prompt"})),
+            _FakeStep("append2", requires=frozenset({"prompt"}), produces=frozenset({"prompt"})),
+        )
+    )
 
 
 def test_a_single_producer_read_by_nobody_is_fine() -> None:
@@ -131,9 +133,7 @@ def test_a_single_producer_read_by_nobody_is_fine() -> None:
 
 
 def test_a_key_from_initial_state_is_not_a_producer() -> None:
-    _check_overwrites((
-        _FakeStep("writes_seeded", produces=frozenset({"seeded"})),
-    ))
+    _check_overwrites((_FakeStep("writes_seeded", produces=frozenset({"seeded"})),))
 
 
 # ---------- every shipped pipeline stays legal ----------

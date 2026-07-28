@@ -618,8 +618,8 @@ def test_migrate_cleanup_ignores_last_backup_outside_project_dir(tmp_path, monke
     # Clean up temp payload created for test
     if backup_payload.exists():
         import shutil
-        shutil.rmtree(backup_payload, ignore_errors=True)
 
+        shutil.rmtree(backup_payload, ignore_errors=True)
 
 
 def test_update_command_uses_uv_reinstall():
@@ -710,8 +710,9 @@ def test_update_command_reports_failure(cli_project, monkeypatch):
     # HATS-718: a failed install must be machine-detectable — exit non-zero so
     # scripted chains (`self update && self init`) and CI stop instead of
     # proceeding against a half-updated environment.
-    assert result.exit_code == 1, \
+    assert result.exit_code == 1, (
         f"expected exit 1 on failed update, got {result.exit_code}; output:\n{result.output}"
+    )
 
 
 def test_update_shows_version_transition(cli_project, monkeypatch):
@@ -1181,8 +1182,14 @@ def test_init_cline_surface_auto_installs(cli_project, monkeypatch):
 
     def fake_ensure(provider_name, repo_root=None):
         if provider_name == "cline":
-            monkeypatch.setattr("ai_hats.surfaces_registry.is_surface_installed", lambda p: p == "cline" or p == "claude")
-            monkeypatch.setattr("ai_hats.providers.get_provider", lambda p: mock_inst if p == "cline" else Provider())
+            monkeypatch.setattr(
+                "ai_hats.surfaces_registry.is_surface_installed",
+                lambda p: p == "cline" or p == "claude",
+            )
+            monkeypatch.setattr(
+                "ai_hats.providers.get_provider",
+                lambda p: mock_inst if p == "cline" else Provider(),
+            )
             return True
         return False
 
@@ -1192,5 +1199,3 @@ def test_init_cline_surface_auto_installs(cli_project, monkeypatch):
     assert r.exit_code == 0, r.output
     assert (project / PROJECT_CONFIG).exists()
     assert "provider: cline" in (project / PROJECT_CONFIG).read_text()
-
-

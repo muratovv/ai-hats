@@ -33,6 +33,7 @@ def _invoke_entry(argv: list[str], capsys) -> tuple[int, str]:
 
 # ---------- Full tree (via click callback, CliRunner-friendly) ----------
 
+
 def test_full_tree_lists_all_top_level_groups():
     code, out = _invoke_main(["--tree"])
     assert code == 0, out
@@ -58,6 +59,7 @@ def test_full_tree_includes_option_help_text():
 
 # ---------- Subtree (via main_entry shim, requires real argv) ----------
 
+
 def test_subtree_single_level_leaf(capsys):
     """`--tree agent` renders only `agent` (a leaf command), no other groups."""
     code, out = _invoke_entry(["ai-hats", "--tree", "agent"], capsys)
@@ -65,8 +67,8 @@ def test_subtree_single_level_leaf(capsys):
     assert "ai-hats agent" in out
     # Must NOT contain headlines of sibling groups.
     assert "View and update project configuration" not in out  # config
-    assert "Manage git worktrees" not in out                  # wt
-    assert "Manage task cards" not in out                     # task
+    assert "Manage git worktrees" not in out  # wt
+    assert "Manage task cards" not in out  # task
     # Should still show options of agent.
     assert "--ticket" in out
 
@@ -107,6 +109,7 @@ def test_subtree_full_tree_when_no_path(capsys):
 
 
 # ---------- Pure unit tests on the argv parser ----------
+
 
 @pytest.mark.parametrize(
     "argv,expected",

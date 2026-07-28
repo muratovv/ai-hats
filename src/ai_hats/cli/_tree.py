@@ -150,9 +150,9 @@ def _render_as_root(cmd: click.Command, display_name: str, console: Console) -> 
     # with it (e.g. `ai-hats — AI agent ...`).
     lname = display_name.lower()
     if headline.lower().startswith(f"{lname} — "):
-        headline = headline[len(display_name) + 3:].lstrip()
+        headline = headline[len(display_name) + 3 :].lstrip()
     elif headline.lower().startswith(lname):
-        headline = headline[len(display_name):].lstrip(" —-")
+        headline = headline[len(display_name) :].lstrip(" —-")
 
     sig = _root_signature(cmd, ctx, display_name)
     label = f"[bold]{sig}[/bold]"

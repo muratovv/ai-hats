@@ -6,6 +6,7 @@ Fail-under-revert wiring proof: drop the SKILL.md ``runtime_hooks`` block or the
 wiring itself is covered generically by ``test_assembler_runtime_hooks.py``; the
 hook's runtime behaviour is covered by ``tests/e2e/test_wt_gate_hook.py``.
 """
+
 import importlib.util
 import json
 from pathlib import Path
@@ -16,10 +17,14 @@ from ai_hats.models import RuntimeHook, SkillMetadata
 from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILL_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation"
+SKILL_DIR = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation"
+)
 HOOK = SKILL_DIR / "hooks/wt_gate.py"
 EXTS_JSON = SKILL_DIR / "hooks/code_extensions.json"
-TRAIT_CFG = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/traits/trait-agent/config.yaml"
+TRAIT_CFG = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/traits/trait-agent/config.yaml"
+)
 
 
 def _load_hook_module():
@@ -32,9 +37,9 @@ def _load_hook_module():
 def test_declares_pretooluse_hook():
     meta = SkillMetadata.from_skill_dir(SKILL_DIR)
     pre = meta.runtime_hooks.get(HOOK_PRE_TOOL_USE, [])
-    assert (
-        RuntimeHook(matcher="Edit|Write|MultiEdit", script="hooks/wt_gate.py") in pre
-    ), f"worktree-isolation must declare its PreToolUse gate; got {pre!r}"
+    assert RuntimeHook(matcher="Edit|Write|MultiEdit", script="hooks/wt_gate.py") in pre, (
+        f"worktree-isolation must declare its PreToolUse gate; got {pre!r}"
+    )
 
 
 def test_hook_script_present_and_executable():
@@ -69,9 +74,9 @@ def test_extensions_json_is_grouped_by_language():
     assert langs, "code_extensions.json must list at least one language group"
     for lang, exts in langs.items():
         assert isinstance(exts, list) and exts, f"{lang} must be a non-empty list"
-        assert all(
-            isinstance(e, str) and e.startswith(".") for e in exts
-        ), f"{lang} extensions must be dotted strings; got {exts!r}"
+        assert all(isinstance(e, str) and e.startswith(".") for e in exts), (
+            f"{lang} extensions must be dotted strings; got {exts!r}"
+        )
     # Config files are in scope (HATS-857 review): concurrent main-checkout edits
     # of shared config corrupt each other.
     assert ".yaml" in langs.get("config", []), "config group must include .yaml"

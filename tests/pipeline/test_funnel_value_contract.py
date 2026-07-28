@@ -35,9 +35,9 @@ class _Producer(Step):
 
     def run(self, **_: Any) -> dict[str, Any]:
         return {
-            "absent_key": None,        # MUST be filtered out
-            "present_key": "hello",    # MUST flow through
-            "empty_string_key": "",    # MUST flow through (valid value)
+            "absent_key": None,  # MUST be filtered out
+            "present_key": "hello",  # MUST flow through
+            "empty_string_key": "",  # MUST flow through (valid value)
         }
 
 

@@ -30,7 +30,10 @@ class ResolvePrompt(Step):
         )
 
     def run(
-        self, *, prompt_path: Path | None = None, **_: Any,
+        self,
+        *,
+        prompt_path: Path | None = None,
+        **_: Any,
     ) -> dict[str, Any]:
         if prompt_path is not None:
             return {"prompt_text": Path(prompt_path).read_text()}

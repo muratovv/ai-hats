@@ -54,8 +54,12 @@ EMPTY_AGENT_NOTE_FRAGMENT = ".agent/ holds only the managed ai-hats/ namespace"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -83,7 +87,9 @@ def _init(launcher: Path, project: Path, env: dict[str, str], *args: str):
     project.mkdir(parents=True, exist_ok=True)
     return _run(
         [str(launcher), "self", "init", *args],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
 
 
@@ -92,7 +98,8 @@ def _init(launcher: Path, project: Path, env: dict[str, str], *args: str):
 
 @pytest.mark.integration
 def test_e2e_greenfield_init_silent_registry_and_diagnostics(
-    installed_launcher, tmp_path,
+    installed_launcher,
+    tmp_path,
 ):
     """Greenfield ``ai-hats self init -p claude`` MUST install all
     artefacts but NOT print the migration banner (R2 seed-invariant) and
@@ -106,8 +113,7 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
     # Registry didn't fire — R2 invariant (migration_step seeded BEFORE
     # _refresh).
     assert MIGRATION_BANNER not in res.stderr, (
-        f"Greenfield init replayed registry (R2 invariant broken):\n"
-        f"{res.stderr}"
+        f"Greenfield init replayed registry (R2 invariant broken):\n{res.stderr}"
     )
     assert ORPHAN_WARN_FRAGMENT not in res.stderr
 
@@ -123,7 +129,9 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
     )
 
     # Sanity: static hooks materialized.
-    guard_script = project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    guard_script = (
+        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    )
     assert guard_script.exists(), "static hooks not installed"
 
 
@@ -132,7 +140,8 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
 
 @pytest.mark.integration
 def test_e2e_reinit_replays_registry_once_and_runs_diagnostics(
-    installed_launcher, tmp_path,
+    installed_launcher,
+    tmp_path,
 ):
     """Project at ``migration_step=0`` re-init'd: registry banner fires
     on the FIRST re-init, NOT on the second (R6: init is now the auto-
@@ -183,7 +192,9 @@ def test_no_residual_bump_call_sites_in_src():
     src = REPO_ROOT / "src"
     res = subprocess.run(
         ["git", "grep", "-n", r"\.bump(", "--", str(src)],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
     )
     # rc=0 → at least one hit; rc=1 → no hits (acceptable).
     # rc>1 → grep error.
@@ -209,9 +220,8 @@ def test_no_residual_bump_call_sites_in_src():
         # Anything else is an executable call site → fail.
         offenders.append(line)
 
-    assert offenders == [], (
-        "HATS-469: residual ``.bump(`` call sites in src/:\n"
-        + "\n".join(offenders)
+    assert offenders == [], "HATS-469: residual ``.bump(`` call sites in src/:\n" + "\n".join(
+        offenders
     )
 
 
@@ -220,7 +230,8 @@ def test_no_residual_bump_call_sites_in_src():
 
 @pytest.mark.integration
 def test_e2e_set_role_bootstrap_silent_on_stderr(
-    installed_launcher, tmp_path,
+    installed_launcher,
+    tmp_path,
 ):
     """Runtime first-session bootstrap MUST NOT print migration banner or
     diagnostics. Subprocess invokes the installed wheel's ``Assembler.
@@ -267,17 +278,17 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
 
     # Set_role MUST be silent on registry banner (install_time=False).
     assert MIGRATION_BANNER not in res.stderr, (
-        f"set_role replayed registry (install_time=False contract broken):"
-        f"\n{res.stderr}"
+        f"set_role replayed registry (install_time=False contract broken):\n{res.stderr}"
     )
     # Diagnostics MUST stay silent (R3).
     assert ORPHAN_WARN_FRAGMENT not in res.stderr, (
-        f"set_role surfaced orphan diagnostic (HATS-469 R3 broken):\n"
-        f"{res.stderr}"
+        f"set_role surfaced orphan diagnostic (HATS-469 R3 broken):\n{res.stderr}"
     )
 
     # Static hooks (D1: always-fire) ARE installed.
-    guard_script = project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    guard_script = (
+        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+    )
     assert guard_script.exists(), (
         f"set_role failed to install static hooks (D1 broken — "
         f"materialize_runtime_hooks must always fire in _refresh):\n"

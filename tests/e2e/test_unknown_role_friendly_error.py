@@ -71,7 +71,9 @@ _BOGUS = "definitely-not-a-real-role"
     ids=("bare", "execute-batch", "execute-interactive", "agent"),
 )
 def test_e2e_unknown_role_exits_clean_with_role_list(
-    tmp_project, case_id: str, argv: tuple[str, ...],
+    tmp_project,
+    case_id: str,
+    argv: tuple[str, ...],
 ) -> None:
     """``ai-hats <argv-with-bogus-role>`` → exit 2, friendly message, no traceback.
 

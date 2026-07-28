@@ -33,7 +33,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -42,8 +44,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != expect_exit:
         raise AssertionError(
@@ -54,14 +60,15 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -75,7 +82,8 @@ def _bootstrap(tmp_path: Path):
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     subprocess.run(
-        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
+        check=True,
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)
@@ -103,8 +111,9 @@ def test_e2e_self_update_writes_complete_sentinel(tmp_path: Path) -> None:
 
     assert (versions / "current").read_text().strip() == sha_a
     # HATS-648: completeness is the .complete sentinel, written last.
-    assert (versions / sha_a / ".complete").is_file(), \
+    assert (versions / sha_a / ".complete").is_file(), (
         "versions/<shaA>/.complete sentinel not written on a successful install"
+    )
     # The launcher resolves the complete current end-to-end (no env pin).
     clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)

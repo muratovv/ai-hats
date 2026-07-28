@@ -78,8 +78,7 @@ class MissingProviderError(RuntimeError):
     def __init__(self, available: list[str]) -> None:
         self.available = available
         super().__init__(
-            "no provider configured in ai-hats.yaml. "
-            "Run: ai-hats config set -p <provider>"
+            "no provider configured in ai-hats.yaml. Run: ai-hats config set -p <provider>"
         )
 
 
@@ -107,9 +106,7 @@ def _compose_validated(asm, effective_role, *, explicit_role: str | None, label:
             raise RoleNotFoundError(explicit_role, available)
     result = compose_for_role(asm, effective_role)
     if explicit_role and result.errors:
-        raise RuntimeError(
-            f"{label}: failed to resolve role {explicit_role!r}: {result.errors}"
-        )
+        raise RuntimeError(f"{label}: failed to resolve role {explicit_role!r}: {result.errors}")
     return result
 
 
@@ -163,8 +160,12 @@ def build_composition_payload(
 
     startup_warnings: list[str] = []
     cfg = _maybe_sync_active_role(
-        asm, cfg, effective_role, eff_provider,
-        interactive=interactive, role_override=role_override,
+        asm,
+        cfg,
+        effective_role,
+        eff_provider,
+        interactive=interactive,
+        role_override=role_override,
         warnings_sink=startup_warnings,
     )
 
@@ -180,9 +181,7 @@ def build_composition_payload(
         # HATS-867: observe factories threaded runner→finalize pipelines.
         # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,
-        audit_writer_factory=partial(
-            AuditWriter, parser=provider.transcript_parser()
-        ),
+        audit_writer_factory=partial(AuditWriter, parser=provider.transcript_parser()),
         # HATS-1087: the provider knows WHERE its transcript lives; the parser
         # (above) knows HOW to read it. Both ride the payload to the finalize steps.
         transcript_resolver=provider.resolve_transcript,
@@ -216,8 +215,7 @@ def build_preview_payload(
     result = compose_for_role(asm, eff_role)
     if result.errors:
         raise RuntimeError(
-            f"materialize_system_prompt: compose errors for role "
-            f"{eff_role!r}: {result.errors}"
+            f"materialize_system_prompt: compose errors for role {eff_role!r}: {result.errors}"
         )
     return CompositionPayload(
         result=result,
@@ -321,6 +319,7 @@ def _static_cost_analyzer(project_dir: Path):
         }
 
     return analyze
+
 
 def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
     """Best-effort provider resolution for CLI help (e.g., ai-hats --help)."""

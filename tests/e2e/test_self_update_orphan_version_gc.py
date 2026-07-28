@@ -31,7 +31,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -40,8 +42,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != expect_exit:
         raise AssertionError(
@@ -52,20 +58,23 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
 def _lstart(pid: int) -> str:
     out = subprocess.run(
-        ["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True,
+        ["ps", "-o", "lstart=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
     )
     return out.stdout.strip()
 
@@ -87,10 +96,11 @@ def _mk_complete(versions: Path, sha: str) -> Path:
 
 def _ref(refs: Path, sha: str, pid: int, start_time: str, name: str) -> Path:
     import json
+
     f = refs / f"{name}.json"
-    f.write_text(json.dumps(
-        {"run_id": name, "root_pid": pid, "start_time": start_time, "sha": sha}
-    ))
+    f.write_text(
+        json.dumps({"run_id": name, "root_pid": pid, "start_time": start_time, "sha": sha})
+    )
     return f
 
 
@@ -103,7 +113,8 @@ def _bootstrap(tmp_path: Path):
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     subprocess.run(
-        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
+        check=True,
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)

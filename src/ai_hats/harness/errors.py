@@ -23,9 +23,8 @@ class HarnessReliabilityError(RuntimeError):
         super().__init__(self._format())
 
     def _format(self) -> str:
-        return (
-            f"{type(self).__name__}: sub-session={self.session_id}; "
-            f"{self.diagnostic}".rstrip("; ")
+        return f"{type(self).__name__}: sub-session={self.session_id}; {self.diagnostic}".rstrip(
+            "; "
         )
 
 

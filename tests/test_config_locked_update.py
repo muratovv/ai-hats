@@ -49,8 +49,7 @@ def _write_marker(config_path: Path) -> None:
 def _assert_marker_alive(config_path: Path) -> None:
     on_disk = ProjectConfig.from_yaml(config_path)
     assert on_disk.customizations["marker-role"].add_traits == ["marker-trait"], (
-        f"concurrent customization lost by a stale whole-object save:\n"
-        f"{config_path.read_text()}"
+        f"concurrent customization lost by a stale whole-object save:\n{config_path.read_text()}"
     )
 
 

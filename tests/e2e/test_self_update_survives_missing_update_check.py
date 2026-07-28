@@ -50,13 +50,19 @@ from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -105,7 +111,8 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
 
     # Isolate from the developer's global config (mirrors test_self_update_resilient_config).
     env = {
-        k: v for k, v in os.environ.items()
+        k: v
+        for k, v in os.environ.items()
         if not k.startswith("AI_HATS_")
         and k not in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "PYTHONPATH")
     }
@@ -115,10 +122,17 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     env["AI_HATS_BUMP_BACKUP_DIR"] = str(backups)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    _run([str(launcher_dest), "self", "update", "--force-downgrade"], cwd=project, env=env, timeout=300)  # HATS-675
+    _run(
+        [str(launcher_dest), "self", "update", "--force-downgrade"],
+        cwd=project,
+        env=env,
+        timeout=300,
+    )  # HATS-675
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
     pin_edge_channel(project)  # HATS-764: `self init` reset the harness block → re-pin edge
     return launcher_dest, project, env
@@ -144,7 +158,9 @@ def test_self_update_survives_missing_update_check(tmp_path: Path) -> None:
 
     res = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=300,  # HATS-675
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675
     )
 
     # Primary: the degrade must exit 0 (fail-under-revert discriminator).

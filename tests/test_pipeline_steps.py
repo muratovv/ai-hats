@@ -25,6 +25,7 @@ from ai_hats_observe.artifacts import RETRO_LOG
 
 # ---------------- compose_role ----------------
 
+
 def test_compose_role_omits_key_when_no_composition(tmp_path: Path):
     """HATS-452 / П3 + HATS-865: without a seeded ``composition`` payload the
     step OMITS ``system_prompt`` entirely (rather than emitting ``""``)."""
@@ -42,9 +43,7 @@ def test_compose_role_projects_seeded_payload():
     the import side; this pins the value contract)."""
     payload = MagicMock(name="composition_payload")
     payload.result.merged_injection = "ROLE PROMPT"
-    assert ComposeRole().run(composition=payload) == {
-        "system_prompt": "ROLE PROMPT"
-    }
+    assert ComposeRole().run(composition=payload) == {"system_prompt": "ROLE PROMPT"}
 
 
 def test_compose_role_empty_injection_omits_key():
@@ -56,6 +55,7 @@ def test_compose_role_empty_injection_omits_key():
 
 
 # ---------------- resolve_prompt ----------------
+
 
 def test_resolve_prompt_reads_path(tmp_path: Path):
     f = tmp_path / "p.txt"
@@ -76,6 +76,7 @@ def test_resolve_prompt_default_empty():
 
 # ---------------- build_handoff ----------------
 
+
 def test_build_handoff_delegates(tmp_path: Path):
     expected = tmp_path / "handoff.md"
     with patch("ai_hats.cli.reflect._build_handoff", return_value=expected) as m:
@@ -85,6 +86,7 @@ def test_build_handoff_delegates(tmp_path: Path):
 
 
 # ---------------- pre_log / post_log ----------------
+
 
 def test_pre_log_prints_known_keys(capsys):
     step = PreLog({"keys": ["a", "b"]})
@@ -129,6 +131,7 @@ def test_log_failure_policy_continue():
 
 # ---------------- extract_marker ----------------
 
+
 def test_extract_marker_happy(tmp_path: Path):
     f = tmp_path / "t.log"
     f.write_text("noise BEGIN_X content here END_X tail")
@@ -160,6 +163,7 @@ def test_extract_marker_missing_param():
 
 
 # ---------------- save_artifact ----------------
+
 
 def test_save_artifact_writes_file(tmp_path: Path):
     template = str(tmp_path / "out" / "{ts}-x.txt")
@@ -259,19 +263,19 @@ def test_save_artifact_template_without_placeholder_skips_project_dir(tmp_path: 
 
 # ---------------- spawn_session_review ----------------
 
+
 def test_spawn_session_review_returns_pid(tmp_path: Path):
     fake_proc = MagicMock(pid=12345)
     with patch("subprocess.Popen", return_value=fake_proc) as m:
         out = SpawnSessionReview({"max_retries": 2}).run(
-            session_id="20260101-010101-1", project_dir=tmp_path,
+            session_id="20260101-010101-1",
+            project_dir=tmp_path,
         )
     assert out == {"review_pid": 12345}
     cmd = m.call_args[0][0]
     assert "ai_hats.cli.reflect_session_main" in cmd
     assert "2" in cmd  # max_retries
-    log_path = (
-        runs_dir(tmp_path) / "session_20260101-010101-1" / RETRO_LOG
-    )
+    log_path = runs_dir(tmp_path) / "session_20260101-010101-1" / RETRO_LOG
     assert log_path.parent.exists()
 
 
@@ -280,6 +284,7 @@ def test_spawn_session_review_failure_policy_continue():
 
 
 # ---------------- run_session_review ----------------
+
 
 def test_run_session_review_delegates(tmp_path: Path):
     expected = tmp_path / "review.md"
@@ -290,11 +295,14 @@ def test_run_session_review_delegates(tmp_path: Path):
         return_value=fake_runner,
     ):
         out = RunSessionReview({"max_retries": 3}).run(
-            session_id="sid", project_dir=tmp_path,
+            session_id="sid",
+            project_dir=tmp_path,
         )
     assert out == {"review_path": expected}
     fake_runner.run.assert_called_once_with(
-        "sid", max_retries=3, harness_policy=None,
+        "sid",
+        max_retries=3,
+        harness_policy=None,
     )
 
 

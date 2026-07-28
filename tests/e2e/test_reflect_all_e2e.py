@@ -66,11 +66,15 @@ def test_reflect_all_builds_handoff_and_launches_judge(
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
 ) -> None:
     """User-way smoke: handoff on disk + clean PTY exit."""
-    result = drive_bare_hitl(
-        tmp_project,
-        subcommand_args=("reflect", "all"),
-        timeout=REFLECT_ALL_TIMEOUT,
-    ).expect_no_hang().expect_exit_in({0, 130})
+    result = (
+        drive_bare_hitl(
+            tmp_project,
+            subcommand_args=("reflect", "all"),
+            timeout=REFLECT_ALL_TIMEOUT,
+        )
+        .expect_no_hang()
+        .expect_exit_in({0, 130})
+    )
 
     # ---- Pre-flight artefact (deterministic, Python-side) ----
     plain = strip_ansi(result.stdout)
@@ -80,17 +84,12 @@ def test_reflect_all_builds_handoff_and_launches_judge(
         f"stdout (tail 800):\n{plain[-800:]}"
     )
 
-    handoff_dir = (
-        tmp_project.agent_dir / "sessions" / "retros" / "reflect-all"
-    )
+    handoff_dir = tmp_project.agent_dir / "sessions" / "retros" / "reflect-all"
     handoffs = list(handoff_dir.glob("*-handoff.md"))
     assert len(handoffs) == 1, (
-        f"expected exactly one handoff under {handoff_dir}, "
-        f"got {len(handoffs)}: {handoffs}"
+        f"expected exactly one handoff under {handoff_dir}, got {len(handoffs)}: {handoffs}"
     )
-    assert handoffs[0].stat().st_size > 0, (
-        f"handoff file is empty: {handoffs[0]}"
-    )
+    assert handoffs[0].stat().st_size > 0, f"handoff file is empty: {handoffs[0]}"
 
     # ---- Pin that we actually got past the pre-flight into PTY ----
     # Without this assertion the test would silently pass if
@@ -110,6 +109,5 @@ def test_reflect_all_builds_handoff_and_launches_judge(
 
     # ---- Defensive: no traceback leak ----
     assert "Traceback" not in plain, (
-        f"traceback leaked to user-facing output:\n"
-        f"stdout (tail 800):\n{plain[-800:]}"
+        f"traceback leaked to user-facing output:\nstdout (tail 800):\n{plain[-800:]}"
     )

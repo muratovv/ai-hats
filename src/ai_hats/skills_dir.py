@@ -39,7 +39,9 @@ def find_skill_script_collisions(
     for skill in skills:
         dirs_to_check: list[Path] = []
         if session_skills_dir is not None:
-            dirs_to_check.extend([session_skills_dir / skill.name / sub for sub in ("scripts", "bin")])
+            dirs_to_check.extend(
+                [session_skills_dir / skill.name / sub for sub in ("scripts", "bin")]
+            )
         if hasattr(skill, "source_path") and skill.source_path and skill.source_path.is_dir():
             dirs_to_check.extend([skill.source_path / sub for sub in ("scripts", "bin")])
 
@@ -77,7 +79,9 @@ def collect_skill_script_paths(
     for skill in skills:
         dirs_to_check: list[Path] = []
         if session_skills_dir is not None:
-            dirs_to_check.extend([session_skills_dir / skill.name / sub for sub in ("scripts", "bin")])
+            dirs_to_check.extend(
+                [session_skills_dir / skill.name / sub for sub in ("scripts", "bin")]
+            )
         if hasattr(skill, "source_path") and skill.source_path and skill.source_path.is_dir():
             dirs_to_check.extend([skill.source_path / sub for sub in ("scripts", "bin")])
 
@@ -85,8 +89,6 @@ def collect_skill_script_paths(
             if p.is_dir() and p not in paths:
                 paths.append(p)
     return paths
-
-
 
 
 def inject_skill_paths_to_env(
@@ -106,7 +108,6 @@ def inject_skill_paths_to_env(
         return
 
     env["PATH"] = ":".join(new_parts + existing_parts)
-
 
 
 def materialize_skills_dir(

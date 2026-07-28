@@ -100,9 +100,7 @@ def test_project_dir_hops_from_git_file_to_main_root(monkeypatch, tmp_path: Path
     main = tmp_path / "main"
     main.mkdir()
 
-    monkeypatch.setattr(
-        wt_mod.WorktreeManager, "main_worktree_root", staticmethod(lambda _p: main)
-    )
+    monkeypatch.setattr(wt_mod.WorktreeManager, "main_worktree_root", staticmethod(lambda _p: main))
     monkeypatch.chdir(wt)
     assert _project_dir() == main
 
@@ -119,9 +117,7 @@ def test_project_dir_git_file_hop_failure_falls_back_to_worktree(
     wt.mkdir()
     (wt / ".git").write_text("gitdir: /elsewhere\n")
 
-    monkeypatch.setattr(
-        wt_mod.WorktreeManager, "main_worktree_root", staticmethod(lambda _p: None)
-    )
+    monkeypatch.setattr(wt_mod.WorktreeManager, "main_worktree_root", staticmethod(lambda _p: None))
     monkeypatch.chdir(wt)
     assert _project_dir() == wt
 
@@ -134,9 +130,7 @@ def test_project_dir_main_repo_never_spawns_git(monkeypatch, repo_with_agent: Pa
     def _boom(_p):
         raise AssertionError("main_worktree_root must not be called for a main repo")
 
-    monkeypatch.setattr(
-        wt_mod.WorktreeManager, "main_worktree_root", staticmethod(_boom)
-    )
+    monkeypatch.setattr(wt_mod.WorktreeManager, "main_worktree_root", staticmethod(_boom))
     monkeypatch.chdir(repo_with_agent)
     assert _project_dir() == repo_with_agent
 
@@ -158,9 +152,7 @@ def test_project_dir_dead_cwd_raises_when_getcwd_errors(monkeypatch) -> None:
         _project_dir()
 
 
-def test_project_dir_dead_cwd_raises_when_path_missing(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_project_dir_dead_cwd_raises_when_path_missing(monkeypatch, tmp_path: Path) -> None:
     """Linux variant: `os.getcwd()` can return a stale path string for a
     removed directory instead of raising. A returned-but-nonexistent cwd must
     fail the same way — never fall through to Pass-4 + a phantom `.agent/`."""

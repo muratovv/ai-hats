@@ -75,10 +75,7 @@ def test_library_has_no_legacy_path_refs() -> None:
                 offenders.append((rel, lineno, match.group(0)))
 
     if offenders:
-        formatted = "\n".join(
-            f"  {file}:{line} — '{substr}'"
-            for file, line, substr in offenders
-        )
+        formatted = "\n".join(f"  {file}:{line} — '{substr}'" for file, line, substr in offenders)
         raise AssertionError(
             f"Legacy-path refs found in library/ ({len(offenders)} hit(s)):\n"
             f"{formatted}\n\n"

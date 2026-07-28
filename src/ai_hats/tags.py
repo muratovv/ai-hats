@@ -18,22 +18,24 @@ from typing import Iterable
 # Metrics-dict keys that ai-hats owns. Users cannot shadow them via tags —
 # otherwise ``metrics.get("role")`` vs ``metrics["tags"]["role"]`` creates a
 # confusing two-source-of-truth situation.
-RESERVED_TAG_KEYS: frozenset[str] = frozenset({
-    "role",
-    "provider",
-    "exit_code",
-    "model",
-    "timed_out",
-    "error",
-    "isolation_mode",
-    "turns",
-    "tokens",
-    "models",
-    "tool_calls",
-    "session_id",
-    "session_dir",
-    "started_at",
-})
+RESERVED_TAG_KEYS: frozenset[str] = frozenset(
+    {
+        "role",
+        "provider",
+        "exit_code",
+        "model",
+        "timed_out",
+        "error",
+        "isolation_mode",
+        "turns",
+        "tokens",
+        "models",
+        "tool_calls",
+        "session_id",
+        "session_dir",
+        "started_at",
+    }
+)
 
 TAG_KEY_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.\-]*$")
 MAX_TAG_KEY_LEN = 64
@@ -67,8 +69,7 @@ def _validate_pair(key: str, value: str, *, allow_reserved: bool) -> None:
         raise TagValidationError(f"tag value for key {key!r} must not be empty")
     if len(value) > MAX_TAG_VALUE_LEN:
         raise TagValidationError(
-            f"tag value for {key!r} exceeds {MAX_TAG_VALUE_LEN} chars "
-            f"(got {len(value)})"
+            f"tag value for {key!r} exceeds {MAX_TAG_VALUE_LEN} chars (got {len(value)})"
         )
 
 
@@ -77,9 +78,7 @@ def _parse_pairs(raw: Iterable[str]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for item in raw:
         if "=" not in item:
-            raise TagValidationError(
-                f"tag {item!r} missing '=' separator (expected k=v)"
-            )
+            raise TagValidationError(f"tag {item!r} missing '=' separator (expected k=v)")
         key, value = item.split("=", 1)
         pairs.append((key, value))
     return pairs
@@ -94,9 +93,7 @@ def parse_tags(raw: Iterable[str]) -> dict[str, str]:
     """
     pairs = _parse_pairs(raw)
     if len(pairs) > MAX_TAGS_PER_SESSION:
-        raise TagValidationError(
-            f"too many tags: {len(pairs)} > max {MAX_TAGS_PER_SESSION}"
-        )
+        raise TagValidationError(f"too many tags: {len(pairs)} > max {MAX_TAGS_PER_SESSION}")
     out: dict[str, str] = {}
     for key, value in pairs:
         _validate_pair(key, value, allow_reserved=False)

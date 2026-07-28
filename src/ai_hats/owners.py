@@ -16,9 +16,7 @@ class OwnerRegistryError(KeyError):
 
 def register_owner(key: str, *, module: str) -> None:
     if key in _REGISTRY:
-        raise OwnerRegistryError(
-            f"owner already registered: {key!r} (by {_REGISTRY[key]})"
-        )
+        raise OwnerRegistryError(f"owner already registered: {key!r} (by {_REGISTRY[key]})")
     _REGISTRY[key] = module
 
 

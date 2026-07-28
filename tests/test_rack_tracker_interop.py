@@ -25,10 +25,17 @@ def _project(tmp_path: Path) -> tuple[Path, Path]:
     hyp_catalog = ai / "tracker" / "hypotheses"
     hyp_catalog.mkdir(parents=True)
     (hyp_catalog / "HYP-001.yaml").write_text(
-        yaml.safe_dump({
-            "id": "HYP-001", "title": "t", "status": "active", "created": "2026-01-01",
-            "source_task": "HATS-001", "hypothesis": "h", "validation_log": [],
-        })
+        yaml.safe_dump(
+            {
+                "id": "HYP-001",
+                "title": "t",
+                "status": "active",
+                "created": "2026-01-01",
+                "source_task": "HATS-001",
+                "hypothesis": "h",
+                "validation_log": [],
+            }
+        )
     )
     migrate_catalog(hyp_catalog, "hypotheses")
     return tmp_path, hyp_catalog
@@ -63,8 +70,12 @@ def test_interleaved_rack_and_shim_appends_no_lost_updates(tmp_path: Path):
         try:
             ws.extension("hyp-verdicts").append_verdict(
                 "HYP-001",
-                {"date": "2026-05-04", "verdict": "inconclusive", "evidence": f"rack{i}",
-                 "session_id": f"r{i}"},
+                {
+                    "date": "2026-05-04",
+                    "verdict": "inconclusive",
+                    "evidence": f"rack{i}",
+                    "session_id": f"r{i}",
+                },
                 actor="rack:test",
                 caller_cwd=project_dir,
             )
@@ -75,7 +86,9 @@ def test_interleaved_rack_and_shim_appends_no_lost_updates(tmp_path: Path):
         try:
             store.append_verdict(
                 "HYP-001",
-                ValidationLogEntry(date=date(2026, 5, 4), verdict="inconclusive", evidence=f"shim{i}"),
+                ValidationLogEntry(
+                    date=date(2026, 5, 4), verdict="inconclusive", evidence=f"shim{i}"
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             errors.append(exc)

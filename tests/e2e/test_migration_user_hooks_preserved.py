@@ -16,6 +16,7 @@ Validates the partition + healer-disable behaviour:
 Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
 Fail-under-revert against commit ``89e5eab`` (Phase 4).
 """
+
 from __future__ import annotations
 
 import json
@@ -48,15 +49,27 @@ def _seed(project_path: Path) -> None:
     (hooks / "tests" / "smoke.sh").write_text("#!/bin/sh\nexit 0\n")
     claude = project_path / ".claude"
     claude.mkdir()
-    (claude / "settings.json").write_text(json.dumps({
-        "hooks": {HOOK_PRE_TOOL_USE: [{
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/user_guard.py",
-            }],
-        }]},
-    }, indent=2) + "\n")
+    (claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/user_guard.py",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     for cmd in (
         ["git", "init", "-q"],
@@ -70,26 +83,25 @@ def _seed(project_path: Path) -> None:
 
 @pytest.mark.integration
 def test_user_owned_hook_relocates_to_user_hooks(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """AC6 part 1: user-authored hook ends up under
     ``<ai_hats_dir>/user-hooks/`` with content + mode preserved."""
     _seed(tmp_venv_project.path)
-    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
-    original_body = (
-        tmp_venv_project.path / ".agent" / "hooks" / "user_guard.py"
-    ).read_bytes()
+    pin_edge_channel(
+        tmp_venv_project.path
+    )  # HATS-764: edge so self update resolves the local source
+    original_body = (tmp_venv_project.path / ".agent" / "hooks" / "user_guard.py").read_bytes()
 
     tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
-    user_hook = (
-        tmp_venv_project.path / ".agent" / "ai-hats" / "user-hooks"
-        / "user_guard.py"
-    )
+    user_hook = tmp_venv_project.path / ".agent" / "ai-hats" / "user-hooks" / "user_guard.py"
     assert user_hook.is_file(), (
         f"user-owned hook missing from user-hooks/; "
         f".agent/ai-hats/ contents: "
@@ -102,49 +114,53 @@ def test_user_owned_hook_relocates_to_user_hooks(
     )
     # Subdir also relocated as a unit.
     assert (
-        tmp_venv_project.path / ".agent" / "ai-hats" / "user-hooks"
-        / "tests" / "smoke.sh"
+        tmp_venv_project.path / ".agent" / "ai-hats" / "user-hooks" / "tests" / "smoke.sh"
     ).is_file()
 
 
 @pytest.mark.integration
 def test_user_owned_hook_not_in_managed_namespace(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """AC6 part 2: managed ``library/hooks/`` must remain ai-hats-only.
     A user .py landing there would be at risk of future framework
     sweeps mistaking it for managed content."""
     _seed(tmp_venv_project.path)
-    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
+    pin_edge_channel(
+        tmp_venv_project.path
+    )  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
-    managed = (
-        tmp_venv_project.path / ".agent" / "ai-hats" / "library" / "hooks"
-    )
+    managed = tmp_venv_project.path / ".agent" / "ai-hats" / "library" / "hooks"
     # The framework's own .sh hooks live here; the user .py must NOT.
     assert not (managed / "user_guard.py").exists(), (
-        f"user-owned hook leaked into managed namespace: "
-        f"{sorted(managed.iterdir())}"
+        f"user-owned hook leaked into managed namespace: {sorted(managed.iterdir())}"
     )
 
 
 @pytest.mark.integration
 def test_settings_json_entry_disabled_not_rewritten(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """The hook entry must be REMOVED from settings.json — not
     auto-rewritten to user-hooks/. Phase 4's explicit-disable
     contract: user must re-enable manually after reviewing."""
     _seed(tmp_venv_project.path)
-    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
+    pin_edge_channel(
+        tmp_venv_project.path
+    )  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
@@ -162,24 +178,26 @@ def test_settings_json_entry_disabled_not_rewritten(
 
 @pytest.mark.integration
 def test_stage_b_inventory_carries_reenable_snippet(
-    tmp_venv_project, tmp_path: Path,
+    tmp_venv_project,
+    tmp_path: Path,
 ) -> None:
     """The Stage B audit-md must include a copy-paste JSON snippet
     pointing at the new ``user-hooks/`` path. That's the entire UX
     payload of explicit-disable: the user needs a one-line snippet
     to put the hook back if they decide they want it."""
     _seed(tmp_venv_project.path)
-    pin_edge_channel(tmp_venv_project.path)  # HATS-764: edge so self update resolves the local source
+    pin_edge_channel(
+        tmp_venv_project.path
+    )  # HATS-764: edge so self update resolves the local source
 
     tmp_venv_project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(tmp_path / "backups")},
     )
 
-    audits = (
-        tmp_venv_project.path / ".agent" / "ai-hats" / "sessions" / "audits"
-    )
+    audits = tmp_venv_project.path / ".agent" / "ai-hats" / "sessions" / "audits"
     audit_files = list(audits.glob("*-legacy-refs.md"))
     assert audit_files, (
         f"no Stage B inventory produced; audits dir contents: "

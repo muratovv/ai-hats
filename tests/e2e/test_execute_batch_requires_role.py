@@ -24,8 +24,12 @@ def test_execute_batch_without_role_fails_clean(tmp_project) -> None:
     prompt.write_text("ping\n")
 
     result = tmp_project.run(
-        "execute", "--batch", "--isolation", "discard",
-        "--prompt", str(prompt),
+        "execute",
+        "--batch",
+        "--isolation",
+        "discard",
+        "--prompt",
+        str(prompt),
         extra_env={"PYTHONPATH": checkout_pythonpath(_REPO_ROOT)},
     ).expect_failure()
 

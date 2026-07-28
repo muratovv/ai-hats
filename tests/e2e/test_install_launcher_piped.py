@@ -44,8 +44,11 @@ def test_e2e_install_launcher_piped_from_file_url(tmp_path: Path) -> None:
     result = subprocess.run(
         ["bash"],
         input=INSTALL_LAUNCHER.read_text(),
-        cwd=str(tmp_path), env=env,
-        capture_output=True, text=True, timeout=30,
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f"piped install failed:\n{combined}"
@@ -53,9 +56,9 @@ def test_e2e_install_launcher_piped_from_file_url(tmp_path: Path) -> None:
     assert "fetching" in combined, f"piped curl branch not taken:\n{combined}"
     # R1: the installed launcher defaults to the anonymous git+https source.
     installed = dest.read_text()
-    assert 'REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"' in installed, (
-        "installed launcher does not carry the git+https default"
-    )
+    assert (
+        'REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"' in installed
+    ), "installed launcher does not carry the git+https default"
 
 
 def test_install_launcher_html_guard_removed() -> None:

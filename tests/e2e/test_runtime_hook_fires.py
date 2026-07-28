@@ -40,8 +40,12 @@ FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "runtime_hook_lib"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -71,9 +75,10 @@ def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     shutil.copytree(FIXTURE_LIB, project / "libraries")
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "e2e-rthook-role", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "e2e-rthook-role", "--no-wizard"],
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
 
@@ -123,15 +128,21 @@ def test_e2e_runtime_hook_body_runs_for_both_events(installed_launcher, tmp_path
     # Feed the script the exact payload shape Claude's hook channel sends,
     # once per event. The hook appends hook_event_name to the marker.
     for event, command in ((HOOK_PRE_TOOL_USE, pre_cmd), (HOOK_POST_TOOL_USE, post_cmd)):
-        payload = json.dumps({
-            "hook_event_name": event,
-            "tool_name": "Bash",
-            "tool_input": {"command": "ls -la"},
-        })
+        payload = json.dumps(
+            {
+                "hook_event_name": event,
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls -la"},
+            }
+        )
         result = subprocess.run(
             ["bash", str(project / strip_claude_project_dir(command))],
-            input=payload, cwd=str(project), env=hook_env,
-            capture_output=True, text=True, timeout=10,
+            input=payload,
+            cwd=str(project),
+            env=hook_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         assert result.returncode == 0, (
             f"{event}: benign payload must exit 0; got {result.returncode}\n"

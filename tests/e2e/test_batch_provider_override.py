@@ -49,7 +49,8 @@ _BOGUS = "definitely-not-a-real-provider"
             id="execute--batch",
         ),
         pytest.param(
-            ("agent", "maintainer", "--task", "ping", "-p", _BOGUS), id="agent",
+            ("agent", "maintainer", "--task", "ping", "-p", _BOGUS),
+            id="agent",
         ),
         pytest.param(
             ("agent", "maintainer", "--task", "ping", "-p", _BOGUS, "--dry-run"),
@@ -71,8 +72,7 @@ def test_e2e_batch_surface_resolves_the_requested_provider(tmp_project, argv) ->
     # batch path composed the CONFIGURED provider and never saw this string.
     for marker in (_BOGUS, "Available providers:", "claude", "ai-hats list providers"):
         assert marker in result.stderr, (
-            f"stderr missing marker {marker!r}\n"
-            f"stderr (tail 800):\n{result.stderr[-800:]}"
+            f"stderr missing marker {marker!r}\nstderr (tail 800):\n{result.stderr[-800:]}"
         )
 
     combined = result.stdout + result.stderr

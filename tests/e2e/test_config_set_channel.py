@@ -22,7 +22,12 @@ from ai_hats.paths import PROJECT_CONFIG
 
 def _run(cmd, *, cwd, env, timeout=120):
     return subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -49,7 +54,8 @@ def test_e2e_config_set_channel_roundtrips(shared_launcher, tmp_path):
     # local + path round-trips.
     loc = _run(
         [str(launcher), "config", "set", "--channel", "local", "--path", "."],
-        cwd=project, env=env,
+        cwd=project,
+        env=env,
     )
     assert loc.returncode == 0, f"set --channel local failed:\n{loc.stdout}\n{loc.stderr}"
     assert yaml.safe_load(yaml_path.read_text())["harness"] == {"channel": "local", "path": "."}
@@ -62,7 +68,8 @@ def test_e2e_config_set_channel_roundtrips(shared_launcher, tmp_path):
     # --repo is edge-only → rejected with a non-zero exit on a non-edge channel.
     bad = _run(
         [str(launcher), "config", "set", "--channel", "local", "--repo", "https://x/y.git"],
-        cwd=project, env=env,
+        cwd=project,
+        env=env,
     )
     assert bad.returncode != 0, "expected --repo on a non-edge channel to fail"
     assert "--repo is only valid with --channel edge" in (bad.stdout + bad.stderr)

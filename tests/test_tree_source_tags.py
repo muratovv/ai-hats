@@ -91,9 +91,9 @@ def test_built_in_only(isolated_home, project, fixture_library):
 def test_global_overlay_tags_added_trait(isolated_home, project, fixture_library):
     # Write a global overlay via UserConfig directly.
     user_path = isolated_home / ".ai-hats" / "customizations.yaml"
-    UserConfig(
-        customizations={"demo": OverlayConfig(add_traits=["trait-global-only"])}
-    ).save(user_path)
+    UserConfig(customizations={"demo": OverlayConfig(add_traits=["trait-global-only"])}).save(
+        user_path
+    )
     asm = _assembler(project, fixture_library)
     st = asm.status()
     tree = st["tree"]
@@ -105,9 +105,9 @@ def test_global_overlay_tags_added_trait(isolated_home, project, fixture_library
 
 def test_project_overlay_overrides_global_provenance(isolated_home, project, fixture_library):
     # Both layers add the same trait → project wins on provenance label.
-    UserConfig(
-        customizations={"demo": OverlayConfig(add_traits=["trait-project-only"])}
-    ).save(isolated_home / ".ai-hats" / "customizations.yaml")
+    UserConfig(customizations={"demo": OverlayConfig(add_traits=["trait-project-only"])}).save(
+        isolated_home / ".ai-hats" / "customizations.yaml"
+    )
     # Project layer also adds it (rewrites ai-hats.yaml with customizations)
     pcfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     pcfg.customizations["demo"] = OverlayConfig(add_traits=["trait-project-only"])
@@ -119,9 +119,9 @@ def test_project_overlay_overrides_global_provenance(isolated_home, project, fix
 
 def test_remove_drops_provenance(isolated_home, project, fixture_library):
     # Global removes trait-base — it should disappear from the effective list.
-    UserConfig(
-        customizations={"demo": OverlayConfig(remove_traits=["trait-base"])}
-    ).save(isolated_home / ".ai-hats" / "customizations.yaml")
+    UserConfig(customizations={"demo": OverlayConfig(remove_traits=["trait-base"])}).save(
+        isolated_home / ".ai-hats" / "customizations.yaml"
+    )
     asm = _assembler(project, fixture_library)
     st = asm.status()
     assert "trait-base" not in st["tree"]["traits"]
@@ -130,9 +130,9 @@ def test_remove_drops_provenance(isolated_home, project, fixture_library):
 
 def test_project_re_adds_what_global_removed(isolated_home, project, fixture_library):
     """global remove + project add → trait survives, tagged as project."""
-    UserConfig(
-        customizations={"demo": OverlayConfig(remove_traits=["trait-base"])}
-    ).save(isolated_home / ".ai-hats" / "customizations.yaml")
+    UserConfig(customizations={"demo": OverlayConfig(remove_traits=["trait-base"])}).save(
+        isolated_home / ".ai-hats" / "customizations.yaml"
+    )
     pcfg = ProjectConfig.from_yaml(project / PROJECT_CONFIG)
     pcfg.customizations["demo"] = OverlayConfig(add_traits=["trait-base"])
     pcfg.save(project / PROJECT_CONFIG)

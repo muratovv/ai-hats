@@ -215,7 +215,7 @@ class SetupContext:
     env: dict[str, str]
     hyp_id: str
     prop_id: str
-    magic_token: str               # per-run random; see _new_magic_token()
+    magic_token: str  # per-run random; see _new_magic_token()
     global_trait: str = GLOBAL_TRAIT
     project_trait: str = PROJECT_TRAIT
     review_model: str = REVIEW_MODEL
@@ -270,17 +270,30 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- self init: write ai-hats.yaml + create .agent/ai-hats/ tree -----
     project.run(
-        "self", "init", "-r", "maintainer", "-p", "claude", "--no-update",
-        timeout=SELF_INIT_TIMEOUT, extra_env=env,
+        "self",
+        "init",
+        "-r",
+        "maintainer",
+        "-p",
+        "claude",
+        "--no-update",
+        timeout=SELF_INIT_TIMEOUT,
+        extra_env=env,
     ).expect_ok().expect_stdout_contains(
-        "Default role: maintainer", "Provider: claude",
+        "Default role: maintainer",
+        "Provider: claude",
     )
 
     # ----- lower auto-retro threshold so a 1-turn HITL triggers it -----
     project.run(
-        "config", "feedback", "session-retro", "smart",
-        "--threshold", "turns=1,tool_calls=0",
-        timeout=CMD_TIMEOUT, extra_env=env,
+        "config",
+        "feedback",
+        "session-retro",
+        "smart",
+        "--threshold",
+        "turns=1,tool_calls=0",
+        timeout=CMD_TIMEOUT,
+        extra_env=env,
     ).expect_ok()
 
     # ----- pin reviewer model via direct yaml edit (no CLI flag) -----
@@ -288,23 +301,36 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- global-layer trait (writes to <tmp_home>/.ai-hats/customizations.yaml) -----
     project.run(
-        "config", "customize", "maintainer",
-        "--add-trait", GLOBAL_TRAIT, "--global",
-        timeout=CMD_TIMEOUT, extra_env=env,
+        "config",
+        "customize",
+        "maintainer",
+        "--add-trait",
+        GLOBAL_TRAIT,
+        "--global",
+        timeout=CMD_TIMEOUT,
+        extra_env=env,
     ).expect_ok()
 
     # ----- project-layer trait (writes to <project>/ai-hats.yaml customizations:) -----
     project.run(
-        "config", "customize", "maintainer",
-        "--add-trait", PROJECT_TRAIT,
-        timeout=CMD_TIMEOUT, extra_env=env,
+        "config",
+        "customize",
+        "maintainer",
+        "--add-trait",
+        PROJECT_TRAIT,
+        timeout=CMD_TIMEOUT,
+        extra_env=env,
     ).expect_ok()
 
     # ----- project-layer injection_append (the claim #3 magic-word vehicle) -----
     project.run(
-        "config", "customize", "maintainer",
-        "--injection-append", injection_text,
-        timeout=CMD_TIMEOUT, extra_env=env,
+        "config",
+        "customize",
+        "maintainer",
+        "--injection-append",
+        injection_text,
+        timeout=CMD_TIMEOUT,
+        extra_env=env,
     ).expect_ok()
 
     # ----- mount the HYP/PROP backlogs — rack only grows the `hyp` / `proposal`
@@ -314,9 +340,13 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- pre-seed 1 active HYP — forces reviewer to emit a hypothesis_verdict -----
     hyp_id = _rack_created(
-        project, env,
-        "hyp", "create", "test fixture: maintainer overlay claim probe",
-        "--hypothesis", (
+        project,
+        env,
+        "hyp",
+        "create",
+        "test fixture: maintainer overlay claim probe",
+        "--hypothesis",
+        (
             "Under HATS-498 e2e fixture, the maintainer role's "
             "project-layer overlay reaches the materialized prompt."
         ),
@@ -324,13 +354,21 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- pre-seed 1 open PROP — forces reviewer to emit a proposal_action -----
     prop_id = _rack_created(
-        project, env,
-        "proposal", "create", "test fixture: improve maintainer overlay coverage",
-        "--category", "process",
-        "--target", "maintainer",
-        "--description", "Test-fixture proposal seeded by HATS-498 e2e.",
-        "--rationale", "Forces auto-retro reviewer to emit proposal_actions.",
-        "--failed-session-id", "hats-498-fixture",
+        project,
+        env,
+        "proposal",
+        "create",
+        "test fixture: improve maintainer overlay coverage",
+        "--category",
+        "process",
+        "--target",
+        "maintainer",
+        "--description",
+        "Test-fixture proposal seeded by HATS-498 e2e.",
+        "--rationale",
+        "Forces auto-retro reviewer to emit proposal_actions.",
+        "--failed-session-id",
+        "hats-498-fixture",
     )
 
     # ----- Phase 1 self-check: show-prompt surfaces all 3 customization layers -----
@@ -339,8 +377,10 @@ def phase_setup(project: Project) -> SetupContext:
     # Assembler / customizations resolver is broken and there's no
     # value in spending $$ on the HITL turn.
     project.run(
-        "config", "show-prompt",
-        timeout=CMD_TIMEOUT, extra_env=env,
+        "config",
+        "show-prompt",
+        timeout=CMD_TIMEOUT,
+        extra_env=env,
     ).expect_ok().expect_stdout_contains(
         magic_token,
         GLOBAL_TRAIT_MARKER,
@@ -380,7 +420,11 @@ def _rack_created(project: Project, extra_env: dict[str, str], *args: str) -> st
     rack_bin = Path(project.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
     res = subprocess.run(
         [str(rack_bin), *args, "--json"],
-        cwd=str(project.path), env=env, capture_output=True, text=True, timeout=CMD_TIMEOUT,
+        cwd=str(project.path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=CMD_TIMEOUT,
     )
     assert res.returncode == 0, (
         f"rack {' '.join(args)} failed ({res.returncode})\n"
@@ -440,10 +484,16 @@ def phase_drive(project: Project, ctx: SetupContext) -> DriveResult:
       (claim #3 behavioural source of truth — magic-word echo).
     """
     result = project.run(
-        "execute", "--batch",
-        "-r", "maintainer", "-p", "claude",
-        "--model", DRIVE_MODEL,
-        "--prompt", DRIVE_PROMPT,
+        "execute",
+        "--batch",
+        "-r",
+        "maintainer",
+        "-p",
+        "claude",
+        "--model",
+        DRIVE_MODEL,
+        "--prompt",
+        DRIVE_PROMPT,
         "--json",
         timeout=DRIVE_TIMEOUT,
         extra_env=ctx.env,
@@ -497,14 +547,15 @@ class DriveSession:
 
     session_id: str
     session_dir: Path
-    metrics: dict             # parsed metrics.json
-    meta_prompt: str          # meta_prompt.txt content
-    transcript: str           # transcript.txt content
-    audit_md: str             # audit.md content
+    metrics: dict  # parsed metrics.json
+    meta_prompt: str  # meta_prompt.txt content
+    transcript: str  # transcript.txt content
+    audit_md: str  # audit.md content
 
 
 def phase_assert_drive_session(
-    drive: DriveResult, ctx: SetupContext,
+    drive: DriveResult,
+    ctx: SetupContext,
 ) -> DriveSession:
     """[Phase 3] Verify role + customization layering + prompt-reaches-claude.
 
@@ -541,12 +592,10 @@ def phase_assert_drive_session(
     # Claim #2 — provenance per layer
     prov = composition.get("provenance", {}).get("traits", {})
     assert prov.get(ctx.global_trait) == "global", (
-        f"trait {ctx.global_trait!r} not tagged as 'global' in provenance: "
-        f"{prov}"
+        f"trait {ctx.global_trait!r} not tagged as 'global' in provenance: {prov}"
     )
     assert prov.get(ctx.project_trait) == "project", (
-        f"trait {ctx.project_trait!r} not tagged as 'project' in provenance: "
-        f"{prov}"
+        f"trait {ctx.project_trait!r} not tagged as 'project' in provenance: {prov}"
     )
     # Claim #2 — injection_append landed in materialized prompt
     assert ctx.magic_token in meta_prompt, (
@@ -590,12 +639,16 @@ class ReviewerSession:
 # (priorities header rendered into the system_prompt). If the role's
 # priorities change, this list must follow.
 _REVIEWER_PROMPT_MARKERS = (
-    "Completeness", "Hypothesis-fidelity", "Format-strictness",
+    "Completeness",
+    "Hypothesis-fidelity",
+    "Format-strictness",
 )
 
 
 def phase_invoke_reviewer(
-    project: Project, ctx: SetupContext, drive: DriveResult,
+    project: Project,
+    ctx: SetupContext,
+    drive: DriveResult,
 ) -> ReviewerSession:
     """[Phase 4] Manually invoke session-reviewer + assert correct role.
 
@@ -624,21 +677,25 @@ def phase_invoke_reviewer(
     # by coercing non-string observations, so retries no longer mask it.
     # Three cheap haiku attempts keep the test deterministic.
     project.run(
-        "session", "retro", drive.session_id,
-        "--max-retries", "3",
-        timeout=RETRO_TIMEOUT, extra_env=ctx.env,
+        "session",
+        "retro",
+        drive.session_id,
+        "--max-retries",
+        "3",
+        timeout=RETRO_TIMEOUT,
+        extra_env=ctx.env,
     ).expect_ok()
 
     reviewer_dir = wait_for_new_session_dir(
-        snapshot, role="session-reviewer",
-        timeout=5.0, interval=0.2,  # session retro is synchronous; dir exists immediately on return
+        snapshot,
+        role="session-reviewer",
+        timeout=5.0,
+        interval=0.2,  # session retro is synchronous; dir exists immediately on return
     )
     metrics = read_metrics(reviewer_dir)
     meta_prompt = (reviewer_dir / META_PROMPT_TXT).read_text()
     # Claim #6 — config layer (role at top-level of metrics, see Phase 3 note)
-    assert metrics["role"] == "session-reviewer", (
-        f"reviewer metrics.role={metrics['role']!r}"
-    )
+    assert metrics["role"] == "session-reviewer", f"reviewer metrics.role={metrics['role']!r}"
     # Claim #6 — prompt layer (priorities markers reached child SDK)
     for marker in _REVIEWER_PROMPT_MARKERS:
         assert marker in meta_prompt, (
@@ -686,8 +743,13 @@ def phase_assert_retro_artefacts(
       ``reviewer.metrics.total_cost_usd`` stays under ``COST_CAP_USD``.
     """
     retro_path = (
-        project.path / ".agent" / "ai-hats" / "sessions" / "retros"
-        / "sessions" / f"{drive.session_id}.md"
+        project.path
+        / ".agent"
+        / "ai-hats"
+        / "sessions"
+        / "retros"
+        / "sessions"
+        / f"{drive.session_id}.md"
     )
     assert retro_path.exists() and retro_path.stat().st_size > 0, (
         f"retro.md missing or empty at {retro_path}"
@@ -701,12 +763,9 @@ def phase_assert_retro_artefacts(
 
     # Claim #4 — HYP verdict
     verdicts = frontmatter.get("hypothesis_verdicts") or []
-    verdict_hyp_ids = {
-        v.get("hyp_id") for v in verdicts if isinstance(v, dict)
-    }
+    verdict_hyp_ids = {v.get("hyp_id") for v in verdicts if isinstance(v, dict)}
     assert ctx.hyp_id in verdict_hyp_ids, (
-        f"reviewer did not emit a verdict for seeded hyp {ctx.hyp_id!r}; "
-        f"verdicts: {verdicts}"
+        f"reviewer did not emit a verdict for seeded hyp {ctx.hyp_id!r}; verdicts: {verdicts}"
     )
 
     # Claim #4 — PROP wiring (deterministic). Acting on an open proposal
@@ -724,13 +783,11 @@ def phase_assert_retro_artefacts(
     # Schema-shape only (does NOT require the seed): any emitted action
     # must be a well-formed {action, prop_id} mapping.
     actions = frontmatter.get("proposal_actions") or []
-    assert isinstance(actions, list), (
-        f"proposal_actions is not a list: {actions!r}"
-    )
+    assert isinstance(actions, list), f"proposal_actions is not a list: {actions!r}"
     for a in actions:
-        assert (
-            isinstance(a, dict) and a.get("action") and a.get("prop_id")
-        ), f"malformed proposal_action entry: {a!r}"
+        assert isinstance(a, dict) and a.get("action") and a.get("prop_id"), (
+            f"malformed proposal_action entry: {a!r}"
+        )
 
     # Cost cap
     reviewer_cost = float(reviewer.metrics.get("total_cost_usd", 0.0) or 0.0)
@@ -749,11 +806,11 @@ def _extract_frontmatter(text: str) -> str:
     """
     if not text.startswith("---\n"):
         return text
-    rest = text[len("---\n"):]
+    rest = text[len("---\n") :]
     end = rest.find("\n---\n")
     if end == -1:
         if rest.endswith("\n---"):
-            return rest[:-len("\n---")]
+            return rest[: -len("\n---")]
         raise ValueError("retro.md: malformed frontmatter (missing closing ---)")
     return rest[:end]
 

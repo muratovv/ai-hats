@@ -78,8 +78,12 @@ def test_env_and_cwd(tmp_path):
         f'"$AI_HATS_PROJECT_DIR" "$(pwd -P)" > "{res}"\n',
     )
     out = _run(
-        s, tmp_path, event="discard", branch="task/y",
-        wt=tmp_path / "mywt", proj=proj,
+        s,
+        tmp_path,
+        event="discard",
+        branch="task/y",
+        wt=tmp_path / "mywt",
+        proj=proj,
     )
     assert out.ok
     parts = res.read_text().split("|")

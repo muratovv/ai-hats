@@ -13,18 +13,12 @@ from ai_hats.hook_collection import collect_worktree_hooks
 def _skill(base: Path, name: str, body: str) -> ResolvedComponent:
     d = base / name
     d.mkdir(parents=True, exist_ok=True)
-    (d / "SKILL.md").write_text(
-        f"---\nname: {name}\nai_hats:\n  worktree:\n{body}---\n# {name}\n"
-    )
-    return ResolvedComponent(
-        name=name, component_type=ComponentKind.SKILL, source_path=d
-    )
+    (d / "SKILL.md").write_text(f"---\nname: {name}\nai_hats:\n  worktree:\n{body}---\n# {name}\n")
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=d)
 
 
 def _result(skills: list[ResolvedComponent]) -> CompositionResult:
-    return CompositionResult(
-        name="r", priorities=[], rules=[], skills=skills, injections=[]
-    )
+    return CompositionResult(name="r", priorities=[], rules=[], skills=skills, injections=[])
 
 
 def test_groups_by_kind_with_skill_attribution(tmp_path: Path) -> None:
@@ -53,7 +47,5 @@ def test_skill_without_carry_skipped(tmp_path: Path) -> None:
     plain = tmp_path / "plain"
     plain.mkdir()
     (plain / "SKILL.md").write_text("---\nname: plain\n---\n# plain\n")
-    rc = ResolvedComponent(
-        name="plain", component_type=ComponentKind.SKILL, source_path=plain
-    )
+    rc = ResolvedComponent(name="plain", component_type=ComponentKind.SKILL, source_path=plain)
     assert collect_worktree_hooks(_result([rc])) == {}

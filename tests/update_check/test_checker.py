@@ -37,7 +37,8 @@ def test_detect_installed_sha_via_git_rev_parse():
     # __init__.py`` first to confirm pkg_dir is tracked by the enclosing
     # repo before trusting its HEAD. Mock both subprocess calls in order.
     with patch.object(
-        subprocess, "run",
+        subprocess,
+        "run",
         side_effect=[_ok(), _ok("deadbeef\n")],
     ):
         assert detect_installed_sha() == "deadbeef"
@@ -53,6 +54,7 @@ def test_detect_installed_sha_skips_foreign_git(monkeypatch):
     """
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="cafebabe")
     try:
         # ls-files returns non-zero (foreign repo doesn't track pkg's __init__.py).
@@ -68,6 +70,7 @@ def test_detect_installed_sha_falls_back_to_version_module():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not a repo")
     import sys
     import types
+
     # HATS-458: setuptools-scm 8+ writes ``__commit_id__`` (with leading
     # ``g`` prefix per git-describe convention). ``detect_installed_sha``
     # must strip the prefix.
@@ -85,6 +88,7 @@ def test_detect_installed_sha_accepts_legacy_commit_attr():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="deadbeef")
     try:
         with patch.object(subprocess, "run", return_value=fail):
@@ -98,6 +102,7 @@ def test_detect_installed_sha_prefers_commit_id_over_commit():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(
         __commit_id__="gnewer123",
         __commit__="legacy456",
@@ -113,6 +118,7 @@ def test_detect_installed_sha_returns_none_when_both_fail():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(__commit__="unknown")
     try:
         with patch.object(subprocess, "run", return_value=fail):
@@ -127,6 +133,7 @@ def test_detect_installed_sha_from_version_local_segment_hatch_vcs():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(
         __commit_id__=None,
         commit_id=None,
@@ -144,6 +151,7 @@ def test_detect_installed_sha_version_local_segment_clean_edge():
     fail = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
     import sys
     import types
+
     sys.modules["ai_hats._version"] = types.SimpleNamespace(
         __version__="0.13.3.dev5+ge67dbdbbf",
     )
@@ -158,6 +166,7 @@ def test_detect_installed_sha_handles_git_missing():
     with patch.object(subprocess, "run", side_effect=FileNotFoundError):
         # Without _version module loadable, should return None.
         import sys
+
         sys.modules.pop("ai_hats._version", None)
         # If the real _version exists in the installed pkg, this falls through
         # to whatever it returns — accept any string OR None.
@@ -168,13 +177,19 @@ def test_detect_installed_sha_handles_git_missing():
 # ---------- _coerce_to_https ----------
 
 
-@pytest.mark.parametrize("inp,expected", [
-    ("git+ssh://git@github.com/foo/bar.git", "https://github.com/foo/bar.git"),
-    ("git@github.com:foo/bar.git", "https://github.com/foo/bar.git"),
-    ("github.com/foo/bar.git", "https://github.com/foo/bar.git"),
-    ("https://github.com/foo/bar.git", "https://github.com/foo/bar.git"),
-    ("git+https://github.com/foo/bar.git", "https://github.com/foo/bar.git"),
-])
+@pytest.mark.parametrize(
+    "inp,expected",
+    [
+        (
+            "git+ssh://git@github.com/foo/bar.git",  # ai-hats: allow-secret
+            "https://github.com/foo/bar.git",
+        ),
+        ("git@github.com:foo/bar.git", "https://github.com/foo/bar.git"),  # ai-hats: allow-secret
+        ("github.com/foo/bar.git", "https://github.com/foo/bar.git"),
+        ("https://github.com/foo/bar.git", "https://github.com/foo/bar.git"),
+        ("git+https://github.com/foo/bar.git", "https://github.com/foo/bar.git"),
+    ],
+)
 def test_coerce_to_https(inp, expected):
     assert _coerce_to_https(inp) == expected
 
@@ -183,7 +198,9 @@ def test_coerce_to_https(inp, expected):
 
 
 def test_detect_remote_url_env_override(monkeypatch):
+    # fmt: off
     monkeypatch.setenv(ENV_REPO_URL, "git+ssh://git@github.com/fork/ai-hats.git")  # ai-hats: allow-secret
+    # fmt: on
     assert detect_remote_url() == "https://github.com/fork/ai-hats.git"
 
 
@@ -227,8 +244,10 @@ def test_detect_remote_url_from_metadata_source(monkeypatch):
 
 def test_fetch_latest_sha_parses_ls_remote_output():
     fake = subprocess.CompletedProcess(
-        args=[], returncode=0,
-        stdout="abc123\trefs/heads/master\n", stderr="",
+        args=[],
+        returncode=0,
+        stdout="abc123\trefs/heads/master\n",
+        stderr="",
     )
     with patch.object(subprocess, "run", return_value=fake):
         assert fetch_latest_sha("https://example.git") == "abc123"
@@ -262,12 +281,14 @@ def test_fetch_latest_sha_returns_none_on_empty_output():
 def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     monkeypatch.delenv(ENV_REPO_URL, raising=False)
-    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
-         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
-         patch.object(checker, "_fetch_into_pkg", return_value=True), \
-         patch.object(checker, "_count_ahead_behind", return_value=(0, 19)), \
-         patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]):
+    with (
+        patch.object(checker, "detect_installed_sha", return_value="a" * 40),
+        patch.object(checker, "detect_remote_url", return_value="https://example.git"),
+        patch.object(checker, "fetch_latest_sha", return_value="b" * 40),
+        patch.object(checker, "_fetch_into_pkg", return_value=True),
+        patch.object(checker, "_count_ahead_behind", return_value=(0, 19)),
+        patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]),
+    ):
         entry = run_check(tmp_path)
     assert entry is not None
     assert entry.installed_sha == "a" * 40
@@ -279,6 +300,7 @@ def test_run_check_writes_cache_on_success(tmp_path, monkeypatch):
     assert entry.has_update is True
     # Cache file must exist and round-trip.
     from ai_hats.update_check.cache import cache_path, read_cache
+
     assert cache_path(tmp_path).exists()
     loaded = read_cache(tmp_path)
     assert loaded is not None and loaded.behind == 19 and loaded.ahead == 0
@@ -290,13 +312,15 @@ def test_run_check_persists_unknown_counts_when_git_fails(tmp_path, monkeypatch)
     """
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     monkeypatch.delenv(ENV_REPO_URL, raising=False)
-    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
-         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
-         patch.object(checker, "_fetch_into_pkg", return_value=False), \
-         patch.object(checker, "_ensure_probe_mirror", return_value=None), \
-         patch.object(checker, "_count_ahead_behind", return_value=None), \
-         patch.object(checker, "_describe", return_value=None):
+    with (
+        patch.object(checker, "detect_installed_sha", return_value="a" * 40),
+        patch.object(checker, "detect_remote_url", return_value="https://example.git"),
+        patch.object(checker, "fetch_latest_sha", return_value="b" * 40),
+        patch.object(checker, "_fetch_into_pkg", return_value=False),
+        patch.object(checker, "_ensure_probe_mirror", return_value=None),
+        patch.object(checker, "_count_ahead_behind", return_value=None),
+        patch.object(checker, "_describe", return_value=None),
+    ):
         entry = run_check(tmp_path)
     assert entry is not None
     assert entry.behind is None
@@ -315,14 +339,18 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
     monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
 
-    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
-         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
-         patch.object(checker, "_fetch_into_pkg", return_value=False), \
-         patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror) as mock_init, \
-         patch.object(checker, "_fetch_into_mirror", return_value=True) as mock_fetch, \
-         patch.object(checker, "_count_ahead_behind", return_value=(0, 19)) as mock_count, \
-         patch.object(checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]) as mock_describe:
+    with (
+        patch.object(checker, "detect_installed_sha", return_value="a" * 40),
+        patch.object(checker, "detect_remote_url", return_value="https://example.git"),
+        patch.object(checker, "fetch_latest_sha", return_value="b" * 40),
+        patch.object(checker, "_fetch_into_pkg", return_value=False),
+        patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror) as mock_init,
+        patch.object(checker, "_fetch_into_mirror", return_value=True) as mock_fetch,
+        patch.object(checker, "_count_ahead_behind", return_value=(0, 19)) as mock_count,
+        patch.object(
+            checker, "_describe", side_effect=["v0.6.0", "v0.6.0-19-gabcdef0"]
+        ) as mock_describe,
+    ):
         entry = run_check(tmp_path)
 
     assert entry is not None
@@ -335,8 +363,9 @@ def test_run_check_falls_back_to_mirror_when_pkg_path_unusable(tmp_path, monkeyp
     # NOT fetched separately (it's typically reachable from master's
     # history; if not, rev-list returns None and axes stay None).
     assert mock_init.call_count == 1
-    assert mock_fetch.call_count == 1, \
+    assert mock_fetch.call_count == 1, (
         f"expected single master fetch, got {mock_fetch.call_args_list}"
+    )
     fetch_ref = mock_fetch.call_args_list[0].args[2]
     assert fetch_ref == "master", fetch_ref
 
@@ -357,14 +386,16 @@ def test_run_check_mirror_fetch_failure_records_none_axes(tmp_path, monkeypatch)
     monkeypatch.delenv(ENV_REPO_URL, raising=False)
     fake_mirror = tmp_path / "ai-hats-data" / ".cache" / "probe-mirror"
 
-    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
-         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value="b" * 40), \
-         patch.object(checker, "_fetch_into_pkg", return_value=False), \
-         patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror), \
-         patch.object(checker, "_fetch_into_mirror", return_value=False), \
-         patch.object(checker, "_count_ahead_behind") as mock_count, \
-         patch.object(checker, "_describe") as mock_describe:
+    with (
+        patch.object(checker, "detect_installed_sha", return_value="a" * 40),
+        patch.object(checker, "detect_remote_url", return_value="https://example.git"),
+        patch.object(checker, "fetch_latest_sha", return_value="b" * 40),
+        patch.object(checker, "_fetch_into_pkg", return_value=False),
+        patch.object(checker, "_ensure_probe_mirror", return_value=fake_mirror),
+        patch.object(checker, "_fetch_into_mirror", return_value=False),
+        patch.object(checker, "_count_ahead_behind") as mock_count,
+        patch.object(checker, "_describe") as mock_describe,
+    ):
         entry = run_check(tmp_path)
 
     assert entry is not None
@@ -482,12 +513,15 @@ def test_run_check_skips_when_installed_unknown(tmp_path, monkeypatch):
 
 def test_run_check_skips_when_remote_unreachable(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
-    with patch.object(checker, "detect_installed_sha", return_value="a" * 40), \
-         patch.object(checker, "detect_remote_url", return_value="https://example.git"), \
-         patch.object(checker, "fetch_latest_sha", return_value=None):
+    with (
+        patch.object(checker, "detect_installed_sha", return_value="a" * 40),
+        patch.object(checker, "detect_remote_url", return_value="https://example.git"),
+        patch.object(checker, "fetch_latest_sha", return_value=None),
+    ):
         assert run_check(tmp_path) is None
     # No cache should be written.
     from ai_hats.update_check.cache import cache_path
+
     assert not cache_path(tmp_path).exists()
 
 
@@ -509,7 +543,9 @@ def test_count_ahead_behind_handles_diverged():
 
 
 def test_count_ahead_behind_returns_none_on_unknown_sha():
-    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal: bad revision")
+    fail = subprocess.CompletedProcess(
+        args=[], returncode=128, stdout="", stderr="fatal: bad revision"
+    )
     with patch.object(subprocess, "run", return_value=fail):
         assert checker._count_ahead_behind("a", "b") is None
 
@@ -531,7 +567,8 @@ def test_count_ahead_behind_returns_none_when_git_missing():
 def test_fetch_into_pkg_true_on_success():
     # HATS-441: ls-files tracked-check runs first; fetch second.
     with patch.object(
-        subprocess, "run",
+        subprocess,
+        "run",
         side_effect=[_ok(), _ok()],
     ):
         assert checker._fetch_into_pkg("https://example.git") is True
@@ -540,7 +577,8 @@ def test_fetch_into_pkg_true_on_success():
 def test_fetch_into_pkg_false_on_nonzero():
     fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal")
     with patch.object(
-        subprocess, "run",
+        subprocess,
+        "run",
         side_effect=[_ok(), fail],
     ):
         assert checker._fetch_into_pkg("https://example.git") is False
@@ -549,7 +587,8 @@ def test_fetch_into_pkg_false_on_nonzero():
 def test_fetch_into_pkg_false_on_timeout():
     # Tracked-check succeeds; the actual fetch raises timeout.
     with patch.object(
-        subprocess, "run",
+        subprocess,
+        "run",
         side_effect=[_ok(), subprocess.TimeoutExpired("git", 10)],
     ):
         assert checker._fetch_into_pkg("https://example.git") is False
@@ -565,14 +604,18 @@ def test_fetch_into_pkg_false_when_pkg_not_tracked():
 
 
 def test_describe_returns_label():
-    fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="v0.6.0-19-gabcdef0\n", stderr="")
+    fake = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="v0.6.0-19-gabcdef0\n", stderr=""
+    )
     with patch.object(subprocess, "run", return_value=fake):
         assert checker._describe("abcdef0") == "v0.6.0-19-gabcdef0"
 
 
 def test_describe_returns_none_when_no_tags():
     # ``git describe`` exits non-zero when no annotated tags reach the SHA.
-    fail = subprocess.CompletedProcess(args=[], returncode=128, stdout="", stderr="fatal: No names found")
+    fail = subprocess.CompletedProcess(
+        args=[], returncode=128, stdout="", stderr="fatal: No names found"
+    )
     with patch.object(subprocess, "run", return_value=fail):
         assert checker._describe("abcdef0") is None
 

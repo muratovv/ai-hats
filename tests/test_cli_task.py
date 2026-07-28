@@ -73,9 +73,7 @@ def test_transition_cancelled_blank_resolution_rejected(cli, project_dir):
     `--resolution ""` slipping through as 'set but empty'."""
     _seed_task(project_dir)
 
-    result = cli.invoke(
-        main, ["task", "transition", "T-1", "cancelled", "--resolution", "   "]
-    )
+    result = cli.invoke(main, ["task", "transition", "T-1", "cancelled", "--resolution", "   "])
     assert result.exit_code == 1, result.output
     assert "resolution" in result.output.lower()
 
@@ -118,13 +116,22 @@ def test_create_with_parent_and_depends_flags(cli, project_dir):
     mgr.create_task("T-9", "Blocker A")
     mgr.create_task("T-8", "Blocker B")
 
-    result = cli.invoke(main, [
-        "task", "create", "Child",
-        "--id", "T-1",
-        "--parent-task", "T-0",
-        "--depends-on", "T-9",
-        "--depends-on", "T-8",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Child",
+            "--id",
+            "T-1",
+            "--parent-task",
+            "T-0",
+            "--depends-on",
+            "T-9",
+            "--depends-on",
+            "T-8",
+        ],
+    )
     assert result.exit_code == 0, result.output
 
     t = _mgr(project_dir).get_task("T-1")
@@ -134,12 +141,20 @@ def test_create_with_parent_and_depends_flags(cli, project_dir):
 
 def test_create_warns_on_missing_refs(cli, project_dir):
     """Unknown refs MUST warn on stdout but MUST NOT abort the create."""
-    result = cli.invoke(main, [
-        "task", "create", "Forward ref",
-        "--id", "T-1",
-        "--parent-task", "T-NOPE",
-        "--depends-on", "T-99",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Forward ref",
+            "--id",
+            "T-1",
+            "--parent-task",
+            "T-NOPE",
+            "--depends-on",
+            "T-99",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert "warning" in result.output.lower()
     assert "T-NOPE" in result.output
@@ -156,11 +171,18 @@ def test_create_duplicate_id_rejected(cli, project_dir):
     mgr = _mgr(project_dir)
     mgr.create_task("T-1", "Original", description="keep me")
 
-    result = cli.invoke(main, [
-        "task", "create", "Overwriter",
-        "--id", "T-1",
-        "--description", "should not land",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Overwriter",
+            "--id",
+            "T-1",
+            "--description",
+            "should not land",
+        ],
+    )
     assert result.exit_code == 1, result.output
     assert "already exists" in result.output.lower()
 
@@ -170,11 +192,18 @@ def test_create_duplicate_id_rejected(cli, project_dir):
 
 
 def test_create_self_reference_rejected(cli, project_dir):
-    result = cli.invoke(main, [
-        "task", "create", "Self parent",
-        "--id", "T-1",
-        "--parent-task", "T-1",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Self parent",
+            "--id",
+            "T-1",
+            "--parent-task",
+            "T-1",
+        ],
+    )
     assert result.exit_code == 1, result.output
     assert "own parent" in result.output.lower()
     assert _mgr(project_dir).get_task("T-1") is None
@@ -196,11 +225,17 @@ def test_update_set_and_clear_parent(cli, project_dir):
 
 def test_update_parent_and_clear_parent_mutually_exclusive(cli, project_dir):
     _mgr(project_dir).create_task("T-1", "Sample")
-    result = cli.invoke(main, [
-        "task", "update", "T-1",
-        "--parent-task", "T-0",
-        "--clear-parent",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "update",
+            "T-1",
+            "--parent-task",
+            "T-0",
+            "--clear-parent",
+        ],
+    )
     assert result.exit_code == 1, result.output
     assert "mutually exclusive" in result.output.lower()
 
@@ -212,11 +247,18 @@ def test_update_add_remove_depends(cli, project_dir):
     mgr.create_task("T-7", "Dep C")
     mgr.create_task("T-1", "Blocked", depends_on=["T-9", "T-8"])
 
-    result = cli.invoke(main, [
-        "task", "update", "T-1",
-        "--add-depends", "T-7",
-        "--remove-depends", "T-9",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "update",
+            "T-1",
+            "--add-depends",
+            "T-7",
+            "--remove-depends",
+            "T-9",
+        ],
+    )
     assert result.exit_code == 0, result.output
 
     t = _mgr(project_dir).get_task("T-1")
@@ -267,9 +309,7 @@ def test_close_requires_resolution_option(cli, project_dir):
 
 def test_close_from_brainstorm(cli, project_dir):
     _seed_task(project_dir)
-    result = cli.invoke(
-        main, ["task", "close", "T-1", "--resolution", "shipped in 6e7ddd5"]
-    )
+    result = cli.invoke(main, ["task", "close", "T-1", "--resolution", "shipped in 6e7ddd5"])
     assert result.exit_code == 0, result.output
     assert "Closed" in result.output
     t = _mgr(project_dir).get_task("T-1")
@@ -285,8 +325,13 @@ def test_force_transition_with_reason(cli, project_dir):
     result = cli.invoke(
         main,
         [
-            "task", "transition", "T-1", "brainstorm",
-            "--force", "--reason", "plan started by mistake",
+            "task",
+            "transition",
+            "T-1",
+            "brainstorm",
+            "--force",
+            "--reason",
+            "plan started by mistake",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -300,9 +345,7 @@ def test_force_without_reason_rejected(cli, project_dir):
     mgr = _mgr(project_dir, strict_plan_check=False)
     mgr.transition("T-1", TaskState.PLAN)
 
-    result = cli.invoke(
-        main, ["task", "transition", "T-1", "brainstorm", "--force"]
-    )
+    result = cli.invoke(main, ["task", "transition", "T-1", "brainstorm", "--force"])
     assert result.exit_code == 1
     assert "reason" in result.output.lower()
 
@@ -358,9 +401,7 @@ def test_unlink_removes_relation(cli, project_dir):
 # ---------------------------------------------------------------------------
 
 
-def test_transition_done_lost_state_prints_recovery_hint(
-    cli, project_dir, monkeypatch
-):
+def test_transition_done_lost_state_prints_recovery_hint(cli, project_dir, monkeypatch):
     """HATS-541: the CLI handler must surface a recovery recipe instead of
     leaking a raw stack trace when ``WorktreeStateLostError`` fires.
 
@@ -402,13 +443,7 @@ def test_transition_done_lost_state_prints_recovery_hint(
 # Content that mangles `-d "$(cat <<EOF ...)"`: backticks, $(...), an
 # unbalanced paren, a nested ``` fence, and a bare `EOF` terminator line.
 _GNARLY_DESC = (
-    "## Repro\n"
-    "```python\n"
-    "x = `backtick` + $(whoami)\n"
-    "y = (unbalanced\n"
-    "```\n"
-    "EOF\n"
-    "field: value\n"
+    "## Repro\n```python\nx = `backtick` + $(whoami)\ny = (unbalanced\n```\nEOF\nfield: value\n"
 )
 
 
@@ -431,10 +466,20 @@ def test_create_description_file_mutually_exclusive_with_d(cli, project_dir):
     desc = project_dir / "desc.md"
     desc.write_text("from file")
 
-    result = cli.invoke(main, [
-        "task", "create", "Clash", "--id", "T-1",
-        "-d", "inline", "--description-file", str(desc),
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Clash",
+            "--id",
+            "T-1",
+            "-d",
+            "inline",
+            "--description-file",
+            str(desc),
+        ],
+    )
     assert result.exit_code == 2, result.output
     assert "mutually exclusive" in result.output.lower()
     # Resolution happens before any write — no card leaks.
@@ -443,10 +488,18 @@ def test_create_description_file_mutually_exclusive_with_d(cli, project_dir):
 
 def test_create_description_file_missing_is_friendly(cli, project_dir):
     """Unreadable path → friendly UsageError naming the flag + path, no traceback."""
-    result = cli.invoke(main, [
-        "task", "create", "Ghost", "--id", "T-1",
-        "--description-file", str(project_dir / "nope.md"),
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Ghost",
+            "--id",
+            "T-1",
+            "--description-file",
+            str(project_dir / "nope.md"),
+        ],
+    )
     assert result.exit_code == 2, result.output
     assert "--description-file" in result.output
     assert "nope.md" in result.output
@@ -458,9 +511,18 @@ def test_create_description_file_empty_yields_empty(cli, project_dir):
     empty = project_dir / "empty.md"
     empty.write_text("")
 
-    result = cli.invoke(main, [
-        "task", "create", "Blank", "--id", "T-1", "--description-file", str(empty),
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "task",
+            "create",
+            "Blank",
+            "--id",
+            "T-1",
+            "--description-file",
+            str(empty),
+        ],
+    )
     assert result.exit_code == 0, result.output
 
     t = _mgr(project_dir).get_task("T-1")

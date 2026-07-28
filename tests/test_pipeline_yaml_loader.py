@@ -21,9 +21,7 @@ _BUILTIN_DIR = (
 )
 
 
-@pytest.mark.parametrize(
-    "name", ["human", "execute", "reflect-all", "reflect-session"]
-)
+@pytest.mark.parametrize("name", ["human", "execute", "reflect-all", "reflect-session"])
 def test_load_each_builtin(name: str):
     p = load_pipeline(_BUILTIN_DIR / f"{name}.yaml")
     assert p.io.name == name
@@ -68,11 +66,7 @@ def test_load_step_missing_id(tmp_path: Path):
 def test_load_invalid_step_params(tmp_path: Path):
     f = tmp_path / "p.yaml"
     # extract_marker requires start/end/out_key
-    f.write_text(
-        "name: x\nsteps:\n"
-        "  - id: extract_marker\n"
-        "    params: {start: A}\n"
-    )
+    f.write_text("name: x\nsteps:\n  - id: extract_marker\n    params: {start: A}\n")
     with pytest.raises(PipelineYamlError, match="missing param"):
         load_pipeline(f)
 
@@ -89,10 +83,7 @@ def test_load_top_level_not_mapping(tmp_path: Path):
 
 def test_load_step_without_harness_block_has_none_policy(tmp_path: Path):
     f = tmp_path / "p.yaml"
-    f.write_text(
-        "name: x\nsteps:\n"
-        "  - id: pre_log\n"
-    )
+    f.write_text("name: x\nsteps:\n  - id: pre_log\n")
     p = load_pipeline(f)
     assert p.steps[0].harness_policy is None
 
@@ -122,12 +113,7 @@ def test_load_step_with_harness_block_attaches_policy(tmp_path: Path):
 
 def test_load_step_with_invalid_harness_block_raises(tmp_path: Path):
     f = tmp_path / "p.yaml"
-    f.write_text(
-        "name: x\nsteps:\n"
-        "  - id: pre_log\n"
-        "    harness:\n"
-        "      reporting: maybe\n"
-    )
+    f.write_text("name: x\nsteps:\n  - id: pre_log\n    harness:\n      reporting: maybe\n")
     with pytest.raises(PipelineYamlError, match="harness:.*reporting must be bool"):
         load_pipeline(f)
 
@@ -171,9 +157,7 @@ def test_load_core_pipeline_use_cache_false_bypasses_memo():
         clear_core_pipeline_cache()
 
 
-def test_core_pipeline_cache_absorbs_on_disk_drift(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_core_pipeline_cache_absorbs_on_disk_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Faithful reproduction of HATS-566: an editable-install YAML rewrite
     mid-session must NOT crash the finalize pipeline.
 
@@ -211,9 +195,7 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(
 
         # 2. Mid-session working-tree update introduces a step the
         #    in-memory registry has never heard of.
-        yaml_file.write_text(
-            "name: finalize-hitl\nsteps:\n  - id: nonexistent_step\n"
-        )
+        yaml_file.write_text("name: finalize-hitl\nsteps:\n  - id: nonexistent_step\n")
 
         # 3. Cache absorbs the drift — same object, NO exception.
         assert load_core_pipeline("finalize-hitl") is preloaded
@@ -230,14 +212,13 @@ def test_core_pipeline_cache_absorbs_on_disk_drift(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(
-    "name", ["human", "execute", "reflect-all", "reflect-session"]
-)
+@pytest.mark.parametrize("name", ["human", "execute", "reflect-all", "reflect-session"])
 def test_loader_main_inspects_each_builtin(name: str):
     proc = subprocess.run(
-        [sys.executable, "-m", "ai_hats.pipeline.loader",
-         str(_BUILTIN_DIR / f"{name}.yaml")],
-        capture_output=True, text=True, check=False,
+        [sys.executable, "-m", "ai_hats.pipeline.loader", str(_BUILTIN_DIR / f"{name}.yaml")],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr
     assert f"Pipeline: {name}" in proc.stdout

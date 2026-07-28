@@ -34,9 +34,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
-def _rack(
-    *args: str, cwd: Path, session: str, root_pid: int
-) -> subprocess.CompletedProcess[str]:
+def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.CompletedProcess[str]:
     """Run the backlog CLI (HATS-1263). No ``rack`` console script on this tier;
     PYTHONPATH puts the checkout in reach of ``python -m``."""
     from _helpers.env import checkout_pythonpath
@@ -50,7 +48,11 @@ def _rack(
     env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],
-        cwd=str(cwd), env=env, capture_output=True, text=True, timeout=120,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
 
@@ -74,8 +76,14 @@ def _init_repo(main: Path) -> None:
 
 def _execute_task(main: Path, tid: str, session: str, root_pid: int) -> None:
     """create → plan (fill) → execute, as one agent that ends up owning ``tid``."""
-    assert _rack("create", tid, "--id", tid, cwd=main, session=session, root_pid=root_pid).returncode == 0
-    assert _rack("transition", tid, "plan", cwd=main, session=session, root_pid=root_pid).returncode == 0
+    assert (
+        _rack("create", tid, "--id", tid, cwd=main, session=session, root_pid=root_pid).returncode
+        == 0
+    )
+    assert (
+        _rack("transition", tid, "plan", cwd=main, session=session, root_pid=root_pid).returncode
+        == 0
+    )
     (_tracker(main) / tid / "plan.md").write_text(_PLAN)
     res = _rack("transition", tid, "execute", cwd=main, session=session, root_pid=root_pid)
     assert res.returncode == 0, res.stdout + res.stderr
@@ -134,7 +142,12 @@ def test_single_slot_blocks_second_task(tmp_project, live_pid):
     _execute_task(main, "HATS-1", session="sess-a", root_pid=live_pid)
 
     # It cannot advance a *second* task while still holding HATS-1.
-    assert _rack("create", "HATS-2", "--id", "HATS-2", cwd=main, session="sess-a", root_pid=live_pid).returncode == 0
+    assert (
+        _rack(
+            "create", "HATS-2", "--id", "HATS-2", cwd=main, session="sess-a", root_pid=live_pid
+        ).returncode
+        == 0
+    )
     res = _rack("transition", "HATS-2", "plan", cwd=main, session="sess-a", root_pid=live_pid)
     assert res.returncode != 0
     assert "holds" in (res.stdout + res.stderr).lower()

@@ -38,7 +38,9 @@ import pytest
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # real launcher build + self update at call time → capped via conftest
+pytestmark = (
+    pytest.mark.install_heavy
+)  # real launcher build + self update at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BOOTSTRAP = REPO_ROOT / "scripts" / "bootstrap.sh"
@@ -99,7 +101,9 @@ def test_bootstrap_repair_rebuilds_broken_venv(tmp_path: Path) -> None:
     # --- sanity: the freshly-built venv imports ai_hats ---
     pre = subprocess.run(
         [str(venv_python), "-c", "import ai_hats"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert pre.returncode == 0, f"venv broken before corruption:\n{pre.stderr}"
 
@@ -120,7 +124,9 @@ def test_bootstrap_repair_rebuilds_broken_venv(tmp_path: Path) -> None:
     assert corrupted, "no site-packages/ai_hats located to corrupt"
     broken = subprocess.run(
         [str(venv_python), "-c", "import ai_hats"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert broken.returncode != 0, "package still importable after deletion — corruption failed"
 
@@ -138,7 +144,11 @@ def test_bootstrap_repair_rebuilds_broken_venv(tmp_path: Path) -> None:
 
     repair = subprocess.run(
         ["bash", str(BOOTSTRAP), "--repair"],
-        cwd=str(bootstrap_dir), env=env, capture_output=True, text=True, timeout=600,
+        cwd=str(bootstrap_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     combined = repair.stdout + repair.stderr
     assert repair.returncode == 0, f"`bootstrap.sh --repair` failed:\n{combined}"
@@ -150,7 +160,11 @@ def test_bootstrap_repair_rebuilds_broken_venv(tmp_path: Path) -> None:
     # NOT used, so this also exercises the absolute-path recovery contract.
     post = subprocess.run(
         [str(launcher), "--version"],
-        cwd=str(bootstrap_dir), env=env, capture_output=True, text=True, timeout=120,
+        cwd=str(bootstrap_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert post.returncode == 0, (
         f"launcher must run after repair (venv rebuilt):\n{post.stdout}\n{post.stderr}"

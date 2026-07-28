@@ -37,7 +37,10 @@ def resolve_ai_hats_init(env: dict[str, str]) -> Path | None:
     """Where ``sys.executable -m ai_hats`` would import ``ai_hats`` from."""
     proc = subprocess.run(
         [sys.executable, "-c", _PROBE],
-        capture_output=True, text=True, env=env, check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
     )
     if proc.returncode != 0 or not proc.stdout.strip():
         return None

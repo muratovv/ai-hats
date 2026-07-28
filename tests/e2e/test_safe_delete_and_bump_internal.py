@@ -34,8 +34,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -61,9 +65,10 @@ def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
     """Wire ai-hats into ``project`` with assistant role + Claude provider."""
     project.mkdir(exist_ok=True)
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "assistant", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"],
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
 
@@ -83,7 +88,10 @@ def test_e2e_self_bump_cli_removed(installed_launcher, tmp_path):
 
     res = _run(
         [str(launcher), "self", "bump"],
-        cwd=project, env=env, timeout=30, expect_exit=None,
+        cwd=project,
+        env=env,
+        timeout=30,
+        expect_exit=None,
     )
     assert res.returncode != 0, (
         f"`self bump` must fail post-HATS-470, got exit 0\n"
@@ -114,13 +122,19 @@ def test_e2e_bump_internal_invokable(installed_launcher, tmp_path):
 
     res = _run(
         [str(venv_python), "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=0,
     )
     # First run should mention bump artefacts; idempotent rerun must
     # also succeed.
     res2 = _run(
         [str(venv_python), "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=60, expect_exit=0,
+        cwd=project,
+        env=env,
+        timeout=60,
+        expect_exit=0,
     )
     # Sanity: both runs report on the same project consistently.
     assert "Bumped" in res.stdout or "refreshed" in res.stdout or "hooks" in res.stdout, (
@@ -139,7 +153,10 @@ def test_e2e_bump_internal_rejects_unknown_args(installed_launcher, tmp_path):
 
     res = _run(
         [str(venv_python), "-m", "ai_hats._bump_internal", "--bogus-flag"],
-        cwd=project, env=env, timeout=30, expect_exit=2,
+        cwd=project,
+        env=env,
+        timeout=30,
+        expect_exit=2,
     )
     assert "unknown args" in res.stderr.lower()
     assert "--bogus-flag" in res.stderr
@@ -181,13 +198,17 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     legacy_settings = {
         "hooks": {
-            HOOK_PRE_TOOL_USE: [{
-                "matcher": "Bash",
-                "hooks": [{
-                    "type": "command",
-                    "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
-                }],
-            }],
+            HOOK_PRE_TOOL_USE: [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
+                        }
+                    ],
+                }
+            ],
         },
     }
     settings_path.write_text(json.dumps(legacy_settings, indent=2) + "\n")
@@ -200,6 +221,7 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     # legacy ref, rewind ``migration_step`` below step 4 so the next
     # registry pass replays ``heal_external_refs``.
     import yaml as _yaml
+
     cfg_path = project / PROJECT_CONFIG
     cfg_data = _yaml.safe_load(cfg_path.read_text())
     cfg_data["migration_step"] = 3
@@ -208,9 +230,10 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     # Re-run init: idempotent on yaml, triggers bump (HATS-470 ergonomics
     # fix) which runs heal_external_refs.
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "assistant", "--no-wizard"],
-        cwd=project, env=env_with_trash, timeout=60,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"],
+        cwd=project,
+        env=env_with_trash,
+        timeout=60,
     )
 
     # Verify the settings.json was actually healed (legacy substring gone).
@@ -220,8 +243,7 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     )
 
     # Find the trash session dir (single child of the isolated base).
-    sessions = [p for p in isolated_trash.iterdir() if p.is_dir()
-                and p.name.startswith("trash-")]
+    sessions = [p for p in isolated_trash.iterdir() if p.is_dir() and p.name.startswith("trash-")]
     assert sessions, (
         f"safe_delete must create a trash session under {isolated_trash}, "
         f"contents: {[p.name for p in isolated_trash.iterdir()]}"
@@ -235,9 +257,7 @@ def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
         f"{[str(p.relative_to(session)) for p in session.rglob('*')]}"
     )
     manifest_text = manifest.read_text()
-    assert "heal-json" in manifest_text, (
-        f"MANIFEST must tag the heal op; got:\n{manifest_text}"
-    )
+    assert "heal-json" in manifest_text, f"MANIFEST must tag the heal op; got:\n{manifest_text}"
 
     # The snapshot copy preserves the original (pre-heal) bytes —
     # recovery is `cp -r <session>/.claude/settings.json <project>/...`.

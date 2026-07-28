@@ -23,6 +23,7 @@ The companion ``test_marker_hook_fires_when_first`` is a control: it has no
 drainer ahead of the marker, so it stays GREEN under the revert — proving the
 main test's failure is the fan-out, not the marker logic.
 """
+
 from __future__ import annotations
 
 import os
@@ -62,8 +63,11 @@ exit 0
 
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd), check=True,
-        capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
 
@@ -107,7 +111,10 @@ def _push(work: Path, marker: Path) -> subprocess.CompletedProcess[str]:
     env["AI_HATS_TEST_MARKER"] = str(marker)
     return subprocess.run(
         ["git", "push", "origin", "master"],
-        cwd=str(work), capture_output=True, text=True, timeout=30,
+        cwd=str(work),
+        capture_output=True,
+        text=True,
+        timeout=30,
         env=env,
     )
 

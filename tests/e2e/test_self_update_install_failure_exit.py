@@ -44,7 +44,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -54,8 +56,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     """Run a subprocess; assert exit code matches ``expect_exit``."""
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != expect_exit:
         raise AssertionError(
@@ -66,14 +72,15 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -90,7 +97,8 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
 
     # ----- fixture: local src-repo (the non-editable install source) -----
     subprocess.run(
-        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
+        check=True,
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)
@@ -125,17 +133,19 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     # ----- 3. second self update → install build fails → exit 1, current stays -----
     failed = _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=300, expect_exit=1,
+        cwd=project,
+        env=env,
+        timeout=300,
+        expect_exit=1,
     )
     combined = failed.stdout + failed.stderr
-    assert "Update failed" in combined, (
-        f"missing failure text; combined output:\n{combined}"
-    )
+    assert "Update failed" in combined, f"missing failure text; combined output:\n{combined}"
     # AC: current is NOT flipped — the tool still resolves the old, working sha.
     assert current.read_text().strip() == sha_a, (
         f"current flipped to a half-installed version: {current.read_text().strip()!r}"
     )
     # HATS-790: the surviving version dir's completeness is bin/python (the
     # launcher's usability signal), not the removed bin/ai-hats console script.
-    assert (versions / sha_a / "bin" / "python").is_file(), \
+    assert (versions / sha_a / "bin" / "python").is_file(), (
         "previous working version dir was damaged by the failed update"
+    )

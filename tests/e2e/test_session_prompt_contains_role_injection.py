@@ -109,7 +109,12 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
 
     # HATS-707: the wrapper re-heals git hooks at session start (replacing the
     # old SessionStart lifecycle-hook dispatch). Stub it — no .githooks/ here.
-    monkeypatch.setattr(rt.WrapRunner, "_resync_managed_hooks", lambda self, session=None, result=None: [], raising=False)
+    monkeypatch.setattr(
+        rt.WrapRunner,
+        "_resync_managed_hooks",
+        lambda self, session=None, result=None: [],
+        raising=False,
+    )
 
     # Suppress the "(re-)assembling …" stdout chatter from
     # Assembler.set_role and friends — keeps test output clean.

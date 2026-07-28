@@ -39,6 +39,5 @@ def test_no_bash4_only_builtins_in_shipped_git_hooks():
                     offenders.append(f"{hook.name}:{lineno}: {label} — {raw.strip()}")
 
     assert not offenders, (
-        "bash-4-only builtins break macOS system bash 3.2 (HATS-939):\n"
-        + "\n".join(offenders)
+        "bash-4-only builtins break macOS system bash 3.2 (HATS-939):\n" + "\n".join(offenders)
     )

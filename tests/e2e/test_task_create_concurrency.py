@@ -44,8 +44,13 @@ def test_parallel_task_create_allocates_distinct_ids(tmp_project) -> None:
     procs = [
         subprocess.Popen(
             [
-                sys.executable, "-m", "ai_hats_rack",
-                "create", f"race-{i}", "--description", f"body {i}",
+                sys.executable,
+                "-m",
+                "ai_hats_rack",
+                "create",
+                f"race-{i}",
+                "--description",
+                f"body {i}",
             ],
             cwd=str(tmp_project.path),
             env=env,

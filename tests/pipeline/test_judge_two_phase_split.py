@@ -16,6 +16,7 @@ These are static-shape assertions on the YAML configs / SKILL.md / pipeline
 YAML — no subprocess, no real session. The E2E gate is covered by
 `tests/e2e/test_reflect_hypothesis_e2e.py`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,30 +46,37 @@ def _composer() -> Composer:
 
 
 def test_judge_auditor_role_exists() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml"
+    )
     assert role.name == "judge-auditor"
 
 
 def test_judge_auditor_composes_base_auditor() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml"
+    )
     trait_names = list(role.composition.traits)
     assert "base-auditor" in trait_names, (
         "judge-auditor must compose base-auditor (L0 baseline) per ADR-0007 §П1"
     )
     assert "base-judge" not in trait_names, (
-        "judge-auditor must NOT compose base-judge (L0, not L1) — "
-        "ADR-0007 §П1"
+        "judge-auditor must NOT compose base-judge (L0, not L1) — ADR-0007 §П1"
     )
 
 
 def test_judge_auditor_skill_declared() -> None:
-    role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml")
+    role = _load(
+        "packages/ai-hats-library/src/ai_hats_library/core/roles/judge-auditor/config.yaml"
+    )
     skill_names = list(role.composition.skills)
     assert "judge-auditor-protocol" in skill_names
 
 
 def test_judge_auditor_protocol_skill_exists() -> None:
-    body = _read("packages/ai-hats-library/src/ai_hats_library/core/skills/judge-auditor-protocol/SKILL.md")
+    body = _read(
+        "packages/ai-hats-library/src/ai_hats_library/core/skills/judge-auditor-protocol/SKILL.md"
+    )
     assert "BEGIN_JUDGE_DRAFT" in body
     assert "END_JUDGE_DRAFT" in body
     # L0 baseline must not invite state-mutating CLI invocations
@@ -86,8 +94,7 @@ def test_judge_role_composes_base_judge() -> None:
     symmetric with judge-for-role (ADR-0007 §П1)."""
     role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge/config.yaml")
     assert "base-judge" in list(role.composition.traits), (
-        "judge must now compose base-judge (fixes asymmetry with "
-        "judge-for-role; HATS-513 issue #1)"
+        "judge must now compose base-judge (fixes asymmetry with judge-for-role; HATS-513 issue #1)"
     )
 
 
@@ -133,8 +140,7 @@ def test_judge_composition_resolves() -> None:
 
 
 def test_reflect_hypothesis_phase1_pipeline_loads() -> None:
-    p = load_pipeline(LIBRARY / "core" / "pipelines"
-                      / "reflect-hypothesis-phase1.yaml")
+    p = load_pipeline(LIBRARY / "core" / "pipelines" / "reflect-hypothesis-phase1.yaml")
     step_names = [s.io.name for s in p.steps]
     assert step_names == [
         "compose_role",
@@ -152,8 +158,7 @@ def test_reflect_hypothesis_phase1_pipeline_loads() -> None:
 
 
 def test_reflect_hypothesis_phase2_pipeline_loads() -> None:
-    p = load_pipeline(LIBRARY / "core" / "pipelines"
-                      / "reflect-hypothesis-phase2.yaml")
+    p = load_pipeline(LIBRARY / "core" / "pipelines" / "reflect-hypothesis-phase2.yaml")
     step_names = [s.io.name for s in p.steps]
     assert step_names == [
         "compose_role",
@@ -173,8 +178,7 @@ def test_reflect_hypothesis_phase2_pipeline_loads() -> None:
 
 def test_initial_injections_exist() -> None:
     p1 = LIBRARY / "core" / "initial_injections" / "reflect-hypothesis.md"
-    p2 = (LIBRARY / "core" / "initial_injections"
-          / "reflect-hypothesis-interactive.md")
+    p2 = LIBRARY / "core" / "initial_injections" / "reflect-hypothesis-interactive.md"
     assert p1.is_file(), f"missing {p1}"
     assert p2.is_file(), f"missing {p2}"
     # Phase 2 preamble must carry the {draft_body} placeholder the CLI
@@ -197,8 +201,10 @@ def test_preambles_do_not_contain_marker_literals() -> None:
         path = LIBRARY / "core" / "initial_injections" / f"{stem}.md"
         body = path.read_text()
         for marker in (
-            "BEGIN_JUDGE_DRAFT", "END_JUDGE_DRAFT",
-            "BEGIN_JUDGE", "END_JUDGE",
+            "BEGIN_JUDGE_DRAFT",
+            "END_JUDGE_DRAFT",
+            "BEGIN_JUDGE",
+            "END_JUDGE",
         ):
             assert marker not in body, (
                 f"{path.name} contains literal marker {marker!r} — "

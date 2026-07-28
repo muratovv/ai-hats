@@ -40,6 +40,5 @@ def test_discovery_and_registry_agree() -> None:
     registered = set(provider_names())
     silently_dropped = discovered - registered
     assert not silently_dropped, (
-        "provider(s) discovered but not registered (failed to load): "
-        f"{sorted(silently_dropped)}"
+        f"provider(s) discovered but not registered (failed to load): {sorted(silently_dropped)}"
     )

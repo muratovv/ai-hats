@@ -60,7 +60,9 @@ def test_approved_push_completes_with_ack(hooked_project):
     exactly the reported bug (supervisor approved, agent still could not push).
     """
     project, env, settings = hooked_project
-    verdict = run_chain(project, "git push origin master", settings=settings, env=env, ack=SHARED_ACK)
+    verdict = run_chain(
+        project, "git push origin master", settings=settings, env=env, ack=SHARED_ACK
+    )
     assert not verdict.denied, (
         f"an approved push must pass the chain with {SHARED_ACK}=1; got {verdict}"
     )
@@ -182,9 +184,7 @@ def test_catastrophic_targets_deny_even_with_ack(hooked_project, command):
     project, env, settings = hooked_project
     for ack in (None, DESTRUCTIVE_ACK, SHARED_ACK):
         verdict = run_chain(project, command, settings=settings, env=env, ack=ack)
-        assert verdict.denied, (
-            f"{command!r} must be denied even with ack={ack}; got {verdict}"
-        )
+        assert verdict.denied, f"{command!r} must be denied even with ack={ack}; got {verdict}"
 
 
 # --- Binaries that are not data-destructive --------------------------------
@@ -259,9 +259,7 @@ def test_every_deny_names_its_hatch(hooked_project, command):
     ],
 )
 @pytest.mark.integration
-def test_enter_worktree_is_denied_with_the_ai_hats_recipe(
-    hooked_project, tool_input, must_mention
-):
+def test_enter_worktree_is_denied_with_the_ai_hats_recipe(hooked_project, tool_input, must_mention):
     """EnterWorktree is denied, and the denial carries the flow to use instead.
 
     A bare ``permissions.deny`` would strip the tool silently; the agent that
@@ -269,9 +267,7 @@ def test_enter_worktree_is_denied_with_the_ai_hats_recipe(
     harness tool, so the refusal has to say what replaces it.
     """
     project, env, settings = hooked_project
-    verdict = run_tool_chain(
-        project, "EnterWorktree", tool_input, settings=settings, env=env
-    )
+    verdict = run_tool_chain(project, "EnterWorktree", tool_input, settings=settings, env=env)
     assert verdict.denied, f"EnterWorktree must be denied; got {verdict}"
     assert must_mention in verdict.reason, (
         f"denial must name the replacement flow ({must_mention!r}); got {verdict}"

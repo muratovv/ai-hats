@@ -63,25 +63,26 @@ def project(tmp_path: Path) -> Path:
     return proj
 
 
-def test_parallel_global_customize_keeps_all_additions(
-    project: Path, tmp_path: Path
-) -> None:
+def test_parallel_global_customize_keeps_all_additions(project: Path, tmp_path: Path) -> None:
     user_home = tmp_path / "user-home"
     extra_env = {"AI_HATS_USER_HOME": str(user_home)}
 
     procs = [
         _spawn_hats(
-            project, "config", "customize", f"role-{i}",
-            "--add-trait", f"trait-{i}", "--global",
+            project,
+            "config",
+            "customize",
+            f"role-{i}",
+            "--add-trait",
+            f"trait-{i}",
+            "--global",
             extra_env=extra_env,
         )
         for i in range(N)
     ]
     _drain(procs)
 
-    on_disk = yaml.safe_load(
-        (user_home / ".ai-hats" / "customizations.yaml").read_text()
-    )
+    on_disk = yaml.safe_load((user_home / ".ai-hats" / "customizations.yaml").read_text())
     roles = on_disk["customizations"]
     assert sorted(roles) == [f"role-{i}" for i in range(N)], (
         f"lost update: expected all {N} roles, got {sorted(roles)}"
@@ -94,8 +95,12 @@ def test_parallel_set_and_customize_cross_command(project: Path) -> None:
     """HATS-526 review extension: `config set` no longer wipes concurrent customize."""
     procs = [
         _spawn_hats(
-            project, "config", "customize", f"role-{i}",
-            "--add-trait", f"trait-{i}",
+            project,
+            "config",
+            "customize",
+            f"role-{i}",
+            "--add-trait",
+            f"trait-{i}",
         )
         for i in range(N)
     ]
@@ -113,8 +118,12 @@ def test_parallel_set_and_customize_cross_command(project: Path) -> None:
 def test_parallel_project_customize_keeps_all_additions(project: Path) -> None:
     procs = [
         _spawn_hats(
-            project, "config", "customize", f"role-{i}",
-            "--add-trait", f"trait-{i}",
+            project,
+            "config",
+            "customize",
+            f"role-{i}",
+            "--add-trait",
+            f"trait-{i}",
         )
         for i in range(N)
     ]

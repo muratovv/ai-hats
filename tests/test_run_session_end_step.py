@@ -42,9 +42,7 @@ def test_failure_policy_continue():
 
 
 def test_banner_printed_when_decision_present(capsys):
-    RunSessionEnd().run(
-        retro_decision={"reminder": {"count": 3, "command": "ai-hats reflect"}}
-    )
+    RunSessionEnd().run(retro_decision={"reminder": {"count": 3, "command": "ai-hats reflect"}})
     out = capsys.readouterr().out
     assert "3 sessions" in out
     assert "ai-hats reflect" in out

@@ -102,8 +102,6 @@ def scan_leftover_hook_sidecars(
             if keys:
                 seen.add(resolved)
                 findings.append(
-                    LeftoverHookSidecar(
-                        skill_dir=skill_dir, name=skill_dir.name, keys=keys
-                    )
+                    LeftoverHookSidecar(skill_dir=skill_dir, name=skill_dir.name, keys=keys)
                 )
     return findings

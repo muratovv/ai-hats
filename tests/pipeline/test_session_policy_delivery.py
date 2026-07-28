@@ -93,7 +93,10 @@ def test_automate_context_false_drops_the_role_sections(project: Path, surface: 
         project, role="test-role", provider=surface, task="demo", policy=SessionPolicy()
     )
     off = dry_run_automate(
-        project, role="test-role", provider=surface, task="demo",
+        project,
+        role="test-role",
+        provider=surface,
+        task="demo",
         policy=SessionPolicy(context=False),
     )
 
@@ -103,7 +106,10 @@ def test_automate_context_false_drops_the_role_sections(project: Path, surface: 
 
 def test_claude_automate_context_false_carries_no_role_text(project: Path):
     off = dry_run_automate(
-        project, role="test-role", provider="claude", task="demo",
+        project,
+        role="test-role",
+        provider="claude",
+        task="demo",
         policy=SessionPolicy(context=False),
     )
 
@@ -112,7 +118,10 @@ def test_claude_automate_context_false_carries_no_role_text(project: Path):
 
 def test_claude_automate_hooks_false_passes_no_settings(project: Path):
     off = dry_run_automate(
-        project, role="test-role", provider="claude", task="demo",
+        project,
+        role="test-role",
+        provider="claude",
+        task="demo",
         policy=SessionPolicy(hooks=False),
     )
 

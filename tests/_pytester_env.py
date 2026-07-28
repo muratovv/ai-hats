@@ -17,6 +17,4 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def pythonpath_with_repo_root() -> str:
     """Outer-env PYTHONPATH value that makes ``tests`` importable inner-side."""
-    return os.pathsep.join(
-        filter(None, [str(REPO_ROOT), os.environ.get("PYTHONPATH", "")])
-    )
+    return os.pathsep.join(filter(None, [str(REPO_ROOT), os.environ.get("PYTHONPATH", "")]))

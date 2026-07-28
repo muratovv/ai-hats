@@ -54,9 +54,7 @@ def _invoke(*args: str):
     return runner.invoke(customize, list(args), catch_exceptions=False)
 
 
-def test_reset_global_fails_friendly_when_locked(
-    isolated_home: Path, project: Path, monkeypatch
-):
+def test_reset_global_fails_friendly_when_locked(isolated_home: Path, project: Path, monkeypatch):
     """HATS-526: a held lock surfaces as exit 1 + message, and the RMW never runs."""
     from functools import partial
 

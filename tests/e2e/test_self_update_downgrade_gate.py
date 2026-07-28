@@ -48,7 +48,9 @@ from _helpers.project import pin_edge_channel
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -59,8 +61,12 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0, check_returncode=True):
     """Run a subprocess; assert exit code matches ``expect_exit`` when
     ``check_returncode`` is True."""
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if check_returncode and result.returncode != expect_exit:
         raise AssertionError(
@@ -108,11 +114,20 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # to follow as its default HEAD.
     pre_ahead_sha = subprocess.run(
         ["git", "-C", str(src_repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     subprocess.run(
-        ["git", "-C", str(src_repo), "commit", "--allow-empty",
-         "-m", "HATS-441 e2e: simulated ahead-of-remote commit"],
+        [
+            "git",
+            "-C",
+            str(src_repo),
+            "commit",
+            "--allow-empty",
+            "-m",
+            "HATS-441 e2e: simulated ahead-of-remote commit",
+        ],
         check=True,
     )
 
@@ -127,8 +142,7 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # which is identical to src-repo's pre-commit HEAD on the common path
     # but is not guaranteed and depends on the host environment.
     subprocess.run(
-        ["git", "-C", str(fake_remote), "update-ref",
-         "refs/heads/master", pre_ahead_sha],
+        ["git", "-C", str(fake_remote), "update-ref", "refs/heads/master", pre_ahead_sha],
         check=True,
     )
 
@@ -144,8 +158,9 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
     # First update populates the project venv with a working ai-hats install.
-    _run([str(launcher_dest), "self", "update"],
-         cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
+    _run(
+        [str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=300
+    )  # HATS-675: 300s = -n8 gate suite norm
 
     # ----- convert to editable install so the package dir carries .git -----
     # The ahead/behind probe (``_fetch_into_pkg`` / ``_count_ahead_behind``
@@ -159,15 +174,18 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # uninstalling first.
     # HATS-763: uv venvs ship no pip — convert via uv, targeting the venv interp.
     venv_python = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
-    assert venv_python.is_file(), \
-        f"project venv python missing at {venv_python}"
+    assert venv_python.is_file(), f"project venv python missing at {venv_python}"
     subprocess.run(
         ["uv", "pip", "uninstall", "--python", str(venv_python), "ai-hats"],
-        env=env, check=True, timeout=60,
+        env=env,
+        check=True,
+        timeout=60,
     )
     subprocess.run(
         ["uv", "pip", "install", "--python", str(venv_python), "-e", str(src_repo)],
-        env=env, check=True, timeout=120,
+        env=env,
+        check=True,
+        timeout=120,
     )
     # HATS-647: the non-editable bootstrap `self update` created a versions/<sha>/
     # + current pointer; drop it so the launcher resolves the now-editable .venv
@@ -179,9 +197,16 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # silently exercise a non-editable install (which falls into the
     # ``__commit__`` fallback path and bypasses the gate by design).
     where = subprocess.run(
-        [str(venv_python), "-c",
-         "import ai_hats, pathlib; print(pathlib.Path(ai_hats.__file__).resolve())"],
-        env=env, capture_output=True, text=True, check=True, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import ai_hats, pathlib; print(pathlib.Path(ai_hats.__file__).resolve())",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
     ).stdout.strip()
     assert str(src_repo) in where, (
         f"editable conversion did not take effect: ai_hats.__file__={where!r}, "
@@ -194,21 +219,23 @@ def test_e2e_self_update_refuses_silent_downgrade(tmp_path: Path) -> None:
     # ----- assertion 1: gate refuses, exit 3 -----
     refuse = _run(
         [str(launcher_dest), "self", "update"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
         expect_exit=3,
     )
     combined = refuse.stdout + refuse.stderr
     assert "Refusing to downgrade" in combined, (
         f"refusal message missing; combined output:\n{combined}"
     )
-    assert "--force-downgrade" in combined, (
-        f"override hint missing; combined output:\n{combined}"
-    )
+    assert "--force-downgrade" in combined, f"override hint missing; combined output:\n{combined}"
 
     # ----- assertion 2: --force-downgrade override succeeds, exit 0 -----
     override = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
     combined2 = override.stdout + override.stderr
     assert "--force-downgrade bypasses" in combined2, (

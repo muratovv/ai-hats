@@ -93,6 +93,7 @@ def lint_permission_rules(settings: object, *, source: Path) -> list[SettingsFin
                     break
     return findings
 
+
 def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
     """Findings across a settings-file chain; per-file fail-open.
 
@@ -108,6 +109,7 @@ def lint_settings_files(paths: "Iterable[Path]") -> list[SettingsFinding]:
         findings.extend(lint_permission_rules(data, source=path))
     return findings
 
+
 class ClaudeProvider(Provider):
     @property
     def name(self) -> str:
@@ -115,6 +117,7 @@ class ClaudeProvider(Provider):
 
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
+
         return [
             ProviderHint(
                 name="--model",
@@ -133,9 +136,12 @@ class ClaudeProvider(Provider):
         from ai_hats.paths import claude_transcript_path, claude_transcripts_dir, resolve_transcript
 
         return resolve_transcript(
-            claude_transcripts_dir(project_dir), "*.jsonl", session_id,
+            claude_transcripts_dir(project_dir),
+            "*.jsonl",
+            session_id,
             exact_path=claude_transcript_path(project_dir, provider_session_id)
-            if provider_session_id else None,
+            if provider_session_id
+            else None,
         )
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
@@ -193,7 +199,9 @@ class ClaudeProvider(Provider):
         text = expand_path_placeholders(self.build_system_prompt(result), project_dir)
         text = expand_role_catalog(text, project_dir)
         artifacts.sdk_options["system_prompt"] = {
-            "type": "preset", "preset": "claude_code", "append": text,
+            "type": "preset",
+            "preset": "claude_code",
+            "append": text,
         }
 
     # -- skills ----------------------------------------------------------------
@@ -205,9 +213,7 @@ class ClaudeProvider(Provider):
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
         plugin_dir = cache_dir / "plugin"
-        materialize_plugin_dir(
-            result.name, result.skills, project_dir, plugin_dir, artifacts.port
-        )
+        materialize_plugin_dir(result.name, result.skills, project_dir, plugin_dir, artifacts.port)
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_dir / "skills")
         artifacts.materialized.append(plugin_dir)
         return plugin_dir
@@ -254,7 +260,10 @@ class ClaudeProvider(Provider):
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts."""
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL,
+            project_dir,
+            result,
+            session_id,
+            run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
@@ -302,7 +311,9 @@ class ClaudeProvider(Provider):
             cmd.extend(args)
         return cmd
 
-    def get_cli_launch_args(self, base_cmd: list[str], session_id: str, is_resume: bool) -> list[str]:
+    def get_cli_launch_args(
+        self, base_cmd: list[str], session_id: str, is_resume: bool
+    ) -> list[str]:
         if not is_resume:
             return base_cmd + ["--session-id", session_id]
         return base_cmd
@@ -513,7 +524,7 @@ class ClaudeProvider(Provider):
         task: str,
     ) -> str:
         from .sdk_options import _build_system_prompt, build_first_user_message
-        
+
         sp = _build_system_prompt(result, project_dir, self)
         system_text = sp.get("append", "")
         initial_message = build_first_user_message(
@@ -601,7 +612,10 @@ class ClaudeSubagentEngine(SubagentEngine):
     ) -> ProviderRunResult:
         if artifacts is None:
             artifacts = self._provider.build_session_artifacts(
-                project_dir, result, session_id, run_mode="automate",
+                project_dir,
+                result,
+                session_id,
+                run_mode="automate",
                 artifacts=BuiltArtifacts(),
             )
         sys_prompt = artifacts.sdk_options.get("system_prompt")
@@ -624,8 +638,6 @@ class ClaudeSubagentEngine(SubagentEngine):
             ticket_context=f"Ticket: {ticket_id}" if ticket_id else "",
         )
         run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
-
-
 
         return ProviderRunResult(
             exit_code=run_res.exit_code,

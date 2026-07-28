@@ -270,7 +270,6 @@ class SubAgentRunner:
         inject_skill_paths_to_env(env, result.skills)
         inject_skill_paths_to_env(sdk_env_overlay, result.skills)
 
-
         # Legacy subprocess path still needs cmd / skill_args precomputed.
         # The Claude SDK path materializes skills internally via
         # ``build_options`` → ``_build_plugins``, so we skip the upfront
@@ -310,12 +309,9 @@ class SubAgentRunner:
             SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode, provider_name).unwrap()
             t0 = time.monotonic()
 
-
             try:
                 engine = provider.engine()
                 if engine is not None:
-
-
                     run_result = engine.run(
                         result=result,
                         project_dir=self.project_dir,
@@ -330,9 +326,7 @@ class SubAgentRunner:
                     )
                     session.log_res(f"Exit code: {run_result.exit_code}")
                     if run_result.session_id:
-                        session.log_sub(
-                            f"Provider session_id: {run_result.session_id}"
-                        )
+                        session.log_sub(f"Provider session_id: {run_result.session_id}")
                     _finalize_sub_agent(
                         session,
                         role=role_name,
@@ -440,8 +434,6 @@ class SubAgentRunner:
         SurfaceGuard.post_flight_guard(session, work_dir, provider_name).unwrap()
         return session
 
-
-
     def _release_ownership_on_finish(self, session: "Session") -> None:
         """Drop this finished session's ownership holds (HATS-1045).
 
@@ -484,7 +476,6 @@ class SubAgentRunner:
         """
         from .sdk_options import build_first_user_message, build_options
         from ai_hats.surfaces.claude.sdk_runner import run_claude_sdk_blocking
-
 
         ticket_context = self._load_ticket(ticket_id)
         linked_context = self._load_linked_context(ticket_id)
@@ -578,6 +569,4 @@ class SubAgentRunner:
         from .linked_context import load_linked_context
         from .paths import tasks_dir
 
-        return load_linked_context(
-            tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id
-        )
+        return load_linked_context(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)

@@ -10,6 +10,7 @@ Verifies:
 5. Sweeper ProcSurface handles directory markers (.agent/ai-hats).
 6. Assembler.init and set_role trigger legacy sweeps.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -149,7 +150,10 @@ def test_assembler_cleanup_on_init_and_set_role(tmp_path: Path) -> None:
         user_rules=[],
         priorities=[],
     )
-    with patch.object(Assembler, "_refresh"), patch("ai_hats.assembler.compose_for_role", return_value=mock_res):
+    with (
+        patch.object(Assembler, "_refresh"),
+        patch("ai_hats.assembler.compose_for_role", return_value=mock_res),
+    ):
         asm = Assembler(tmp_path)
         asm.set_role("maintainer")
 

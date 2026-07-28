@@ -40,8 +40,12 @@ GUARD_TAG = "ai-hats:hats-437"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -76,9 +80,10 @@ def installed_launcher(shared_launcher, tmp_path_factory):
 def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(exist_ok=True)
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "assistant", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "assistant", "--no-wizard"],
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
 
@@ -130,9 +135,11 @@ def test_e2e_guard_command_resolves_from_subdirectory(installed_launcher, tmp_pa
     sh_env = {k: v for k, v in env.items() if k != "AI_HATS_SHARED_STATE_ACK"}
     sh_env["CLAUDE_PROJECT_DIR"] = str(project)
 
-    payload = json.dumps({
-        "tool_input": {"command": "gh pr merge 42 --merge --delete-branch"},
-    })
+    payload = json.dumps(
+        {
+            "tool_input": {"command": "gh pr merge 42 --merge --delete-branch"},
+        }
+    )
     result = subprocess.run(
         ["/bin/sh", "-c", command],
         input=payload,

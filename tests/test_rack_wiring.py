@@ -82,9 +82,9 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     assert exc_info.value.subscriber == "plan-gate"
     registry = kernel.tasks_dir.parent / "ownership.json"
     assert not registry.exists(), "gate abort must not leave an ownership claim"
-    assert WorktreeManager.load_for_task(
-        project, "T-1", state_dir=worktrees_dir(project)
-    ) is None, "gate abort must not leave a worktree"
+    assert (
+        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+    ), "gate abort must not leave a worktree"
     assert not WorktreeManager.branch_exists(project, "task/t-1")
     assert (kernel.tasks_dir / "T-1" / "task.yaml").read_bytes() == before
 
@@ -181,9 +181,9 @@ def test_full_stack_lifecycle_with_views(project, monkeypatch):
     plan_path.write_text(_FILLED_PLAN)
 
     kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
-    assert WorktreeManager.load_for_task(
-        project, "T-1", state_dir=worktrees_dir(project)
-    ) is not None
+    assert (
+        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is not None
+    )
 
     for state in ("document", "review", "done"):
         kernel.transition("T-1", state, actor="test", caller_cwd=project)

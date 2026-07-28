@@ -98,9 +98,7 @@ def format_transcript(messages: list) -> str:
                 if isinstance(block, TextBlock):
                     parts.append(block.text)
                 elif isinstance(block, ToolUseBlock):
-                    parts.append(
-                        f"\n[tool: {block.name}({_short_input(block.input)})]\n"
-                    )
+                    parts.append(f"\n[tool: {block.name}({_short_input(block.input)})]\n")
                 elif isinstance(block, ThinkingBlock):
                     # Thinking is reasoning, not transcript — skip here.
                     continue
@@ -141,9 +139,7 @@ def format_reasoning(messages: list) -> str:
     lines: list[str] = []
     for msg in messages:
         if isinstance(msg, SystemMessage):
-            lines.append(
-                f"[system:{msg.subtype}] {_json_safe(msg.data)}"
-            )
+            lines.append(f"[system:{msg.subtype}] {_json_safe(msg.data)}")
         elif isinstance(msg, AssistantMessage):
             for block in msg.content:
                 if isinstance(block, ThinkingBlock):
@@ -152,8 +148,7 @@ def format_reasoning(messages: list) -> str:
                     lines.append(f"[thinking]\n  {body}")
                 elif isinstance(block, ToolUseBlock):
                     lines.append(
-                        f"[tool_use:{block.name}] "
-                        f"id={block.id} input={_json_safe(block.input)}"
+                        f"[tool_use:{block.name}] id={block.id} input={_json_safe(block.input)}"
                     )
                 elif isinstance(block, ToolResultBlock):
                     lines.append(
@@ -339,6 +334,7 @@ def run_claude_sdk_blocking(
     Returns an :class:`SdkRunResult` for every terminal path (success,
     SDK error, timeout) so the caller's finalize logic is exception-free.
     """
+
     async def _gated() -> SdkRunResult:
         return await asyncio.wait_for(
             _run_sdk(options, initial_message),

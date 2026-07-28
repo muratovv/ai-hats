@@ -150,13 +150,15 @@ class HookRunnerExtension:
             ) from None
         except OSError as exc:
             raise AbortOperation(
-                f"lifecycle hook '{script.name}' failed to start on '{event}': "
-                f"{exc}. {_REPAIR}"
+                f"lifecycle hook '{script.name}' failed to start on '{event}': {exc}. {_REPAIR}"
             ) from exc
         if proc.returncode != 0:
-            detail = "\n".join(
-                part for part in (proc.stdout.strip(), proc.stderr.strip()) if part
-            )[-_REASON_LIMIT:] or "(hook produced no output)"
+            detail = (
+                "\n".join(part for part in (proc.stdout.strip(), proc.stderr.strip()) if part)[
+                    -_REASON_LIMIT:
+                ]
+                or "(hook produced no output)"
+            )
             raise AbortOperation(
                 f"lifecycle hook '{script.name}' rejected '{event}' "
                 f"(exit {proc.returncode}): {detail}"

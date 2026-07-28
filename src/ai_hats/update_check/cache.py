@@ -118,9 +118,7 @@ def read_cache(project_dir: Path) -> CacheEntry | None:
 def write_cache(project_dir: Path, entry: CacheEntry) -> None:
     p = cache_path(project_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
-    iso = entry.checked_at.astimezone(timezone.utc).isoformat().replace(
-        "+00:00", "Z"
-    )
+    iso = entry.checked_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     payload = {
         "checked_at": iso,
         "installed_sha": entry.installed_sha,

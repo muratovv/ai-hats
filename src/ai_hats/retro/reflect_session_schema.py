@@ -21,9 +21,7 @@ SCHEMA_VERSION = "hats-reflect-session/v1"
 SCHEMA_FAMILY = "hats-reflect-session"
 
 VerdictKind = Literal["confirmed", "refuted", "inconclusive", "n/a"]
-RecommendationKind = Literal[
-    "close_confirmed", "close_refuted", "keep", "extend_window"
-]
+RecommendationKind = Literal["close_confirmed", "close_refuted", "keep", "extend_window"]
 ProposalActionKind = Literal["created", "voted"]
 
 

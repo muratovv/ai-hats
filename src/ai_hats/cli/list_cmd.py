@@ -109,11 +109,16 @@ def list_skills():
 @list_cmd.command("tokens")
 @click.argument("name")
 @click.option(
-    "--trait", "as_trait", is_flag=True, default=False,
+    "--trait",
+    "as_trait",
+    is_flag=True,
+    default=False,
     help="Analyze as trait instead of role",
 )
 @click.option(
-    "--approx", is_flag=True, default=False,
+    "--approx",
+    is_flag=True,
+    default=False,
     help="Use len//4 instead of Anthropic SDK",
 )
 def list_tokens(name: str, as_trait: bool, approx: bool):

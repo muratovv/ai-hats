@@ -36,9 +36,7 @@ def _make_skill(root: Path, name: str, body: str = "# Skill body") -> ResolvedCo
     """Create a skill on disk and return a ResolvedComponent pointing at it."""
     skill_dir = root / name
     skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "SKILL.md").write_text(
-        f"---\ndescription: {name} skill\n---\n{body}\n"
-    )
+    (skill_dir / "SKILL.md").write_text(f"---\ndescription: {name} skill\n---\n{body}\n")
     return ResolvedComponent(
         name=name,
         component_type=ComponentKind.SKILL,
@@ -105,7 +103,8 @@ def test_build_options_priorities_render_in_append(project_dir: Path) -> None:
 
 
 def test_build_options_always_on_rule_appears_in_append(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     """Rules listed in ALWAYS_ON_RULES end up in the RULES section."""
     rule_dir = tmp_path / "rule"
@@ -126,7 +125,9 @@ def test_build_options_always_on_rule_appears_in_append(
         injections=[],
     )
     append = build_options(
-        comp, project_dir=project_dir, session_id="sid",
+        comp,
+        project_dir=project_dir,
+        session_id="sid",
         provider=ClaudeProvider(),
     ).system_prompt["append"]  # type: ignore[index]
     assert "## RULES" in append
@@ -135,7 +136,8 @@ def test_build_options_always_on_rule_appears_in_append(
 
 
 def test_build_options_non_always_on_rule_not_inlined(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     """Rules outside ALWAYS_ON_RULES stay off the system prompt."""
     rule_dir = tmp_path / "rule"
@@ -154,7 +156,9 @@ def test_build_options_non_always_on_rule_not_inlined(
         injections=[],
     )
     append = build_options(
-        comp, project_dir=project_dir, session_id="sid",
+        comp,
+        project_dir=project_dir,
+        session_id="sid",
         provider=ClaudeProvider(),
     ).system_prompt["append"]  # type: ignore[index]
     # Section absent entirely (no always-on rules in this composition).
@@ -162,7 +166,8 @@ def test_build_options_non_always_on_rule_not_inlined(
 
 
 def test_build_options_skills_absent_from_append_but_materialized(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     """HATS-701: skills do NOT surface as an AVAILABLE SKILLS index in the
     append text — Claude discovers them via the materialized SDK plugin, so
@@ -196,7 +201,8 @@ def test_build_plugins_empty_when_no_skills(project_dir: Path) -> None:
 
 
 def test_build_options_plugins_populated_when_skills_present(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     skill = _make_skill(tmp_path / "skills", "git-mastery")
     comp = CompositionResult(
@@ -207,7 +213,9 @@ def test_build_options_plugins_populated_when_skills_present(
         injections=[],
     )
     opts = build_options(
-        comp, project_dir=project_dir, session_id="sid-001",
+        comp,
+        project_dir=project_dir,
+        session_id="sid-001",
         provider=ClaudeProvider(),
     )
     assert len(opts.plugins) == 1
@@ -240,14 +248,17 @@ def test_build_options_claude_session_id_passthrough(project_dir: Path) -> None:
 
 def test_build_options_cwd_defaults_to_project_dir(project_dir: Path) -> None:
     opts = build_options(
-        _empty_composition(), project_dir=project_dir, session_id="sid",
+        _empty_composition(),
+        project_dir=project_dir,
+        session_id="sid",
         provider=ClaudeProvider(),
     )
     assert opts.cwd == str(project_dir)
 
 
 def test_build_options_cwd_uses_work_dir_when_given(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     wt = tmp_path / "wt"
     wt.mkdir()
@@ -285,7 +296,8 @@ def test_build_options_empty_model_omitted(project_dir: Path) -> None:
 
 
 def test_build_options_mcp_config_path_converted_to_str(
-    project_dir: Path, tmp_path: Path,
+    project_dir: Path,
+    tmp_path: Path,
 ) -> None:
     mcp_file = tmp_path / "mcp.json"
     mcp_file.write_text("{}")
@@ -373,7 +385,9 @@ def test_build_options_fork_session(project_dir: Path) -> None:
 
 def test_build_options_fork_session_default_false(project_dir: Path) -> None:
     opts = build_options(
-        _empty_composition(), project_dir=project_dir, session_id="sid",
+        _empty_composition(),
+        project_dir=project_dir,
+        session_id="sid",
         provider=ClaudeProvider(),
     )
     assert opts.fork_session is False

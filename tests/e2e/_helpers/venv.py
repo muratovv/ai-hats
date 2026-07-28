@@ -88,8 +88,12 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
 
     subprocess.run(
         ["bash", str(install_script)],
-        cwd=str(work_dir), env=env,
-        capture_output=True, text=True, timeout=60, check=True,
+        cwd=str(work_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
     )
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise RuntimeError(f"launcher not installed at {launcher}")
@@ -120,8 +124,12 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     # on a genuinely stuck host.
     subprocess.run(
         [str(launcher), "self", "update"],
-        cwd=str(bootstrap), env=env,
-        capture_output=True, text=True, timeout=600, check=True,
+        cwd=str(bootstrap),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
     )
     shared_venv = bootstrap / ".agent" / "ai-hats" / ".venv"
     if not (shared_venv / "bin" / "python").is_file():

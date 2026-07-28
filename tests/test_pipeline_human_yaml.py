@@ -51,19 +51,27 @@ def test_human_pipeline_e2e(tmp_path: Path):
     session_mgr = MagicMock(name="session_mgr")
     tracer_factory = MagicMock(name="tracer_factory")
 
-    with patch(
-        "ai_hats.runtime.WrapRunner", return_value=fake_runner,
-    ) as wrap_cls, patch(
-        "subprocess.Popen", return_value=fake_proc,
+    with (
+        patch(
+            "ai_hats.runtime.WrapRunner",
+            return_value=fake_runner,
+        ) as wrap_cls,
+        patch(
+            "subprocess.Popen",
+            return_value=fake_proc,
+        ),
     ):
-        final = run_pipeline(pipeline, {
-            "role": "assistant",
-            "interactive": True,
-            "project_dir": tmp_path,
-            "composition": payload,
-            "session_mgr": session_mgr,
-            "tracer_factory": tracer_factory,
-        })
+        final = run_pipeline(
+            pipeline,
+            {
+                "role": "assistant",
+                "interactive": True,
+                "project_dir": tmp_path,
+                "composition": payload,
+                "session_mgr": session_mgr,
+                "tracer_factory": tracer_factory,
+            },
+        )
 
     assert final["session_id"] == "20260101-010101-1"
     assert final["session_dir"] == fake_session.session_dir
@@ -80,7 +88,10 @@ def test_human_pipeline_e2e(tmp_path: Path):
     # object the runner receives — no second composition anywhere in the
     # pipeline (ADR-0005 П1). HATS-867: observe handles injected alongside.
     wrap_cls.assert_called_once_with(
-        tmp_path, payload, session_mgr=session_mgr, tracer_factory=tracer_factory,
+        tmp_path,
+        payload,
+        session_mgr=session_mgr,
+        tracer_factory=tracer_factory,
     )
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
@@ -101,17 +112,24 @@ def test_human_pipeline_e2e_empty_injection_omits_system_prompt(tmp_path: Path):
     payload = MagicMock(name="composition_payload")
     payload.result.merged_injection = ""
 
-    with patch(
-        "ai_hats.runtime.WrapRunner", return_value=fake_runner,
-    ), patch("subprocess.Popen", return_value=MagicMock(pid=1)):
-        final = run_pipeline(pipeline, {
-            "role": None,
-            "interactive": True,
-            "project_dir": tmp_path,
-            "composition": payload,
-            "session_mgr": MagicMock(name="session_mgr"),
-            "tracer_factory": MagicMock(name="tracer_factory"),
-        })
+    with (
+        patch(
+            "ai_hats.runtime.WrapRunner",
+            return_value=fake_runner,
+        ),
+        patch("subprocess.Popen", return_value=MagicMock(pid=1)),
+    ):
+        final = run_pipeline(
+            pipeline,
+            {
+                "role": None,
+                "interactive": True,
+                "project_dir": tmp_path,
+                "composition": payload,
+                "session_mgr": MagicMock(name="session_mgr"),
+                "tracer_factory": MagicMock(name="tracer_factory"),
+            },
+        )
 
     assert "system_prompt" not in final
     assert final["exit_code"] == 0

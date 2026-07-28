@@ -71,7 +71,9 @@ class TestSourceMeta:
 class TestLatestPypiVersion:
     def test_returns_info_version(self):
         payload = {"info": {"version": "0.3.0"}}
-        assert skew.latest_pypi_version("ai-hats-core", fetch=lambda _u: payload) == Version("0.3.0")
+        assert skew.latest_pypi_version("ai-hats-core", fetch=lambda _u: payload) == Version(
+            "0.3.0"
+        )
 
     def test_404_is_unpublished(self):
         def fetch(_url):

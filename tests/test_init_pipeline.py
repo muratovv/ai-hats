@@ -69,5 +69,12 @@ def test_self_init_cli_launches_wizard_with_provider_flag(tmp_path, monkeypatch)
         result = runner.invoke(main, ["self", "init", "-p", "gemini", "--no-update"])
         assert result.exit_code == 0, result.output
         cmd = launch.call_args[0][0]
-        assert cmd[1:] == ["execute", "--role", "initial-wizard", "--prompt", "initial-wizard", "--provider", "gemini"]
-
+        assert cmd[1:] == [
+            "execute",
+            "--role",
+            "initial-wizard",
+            "--prompt",
+            "initial-wizard",
+            "--provider",
+            "gemini",
+        ]

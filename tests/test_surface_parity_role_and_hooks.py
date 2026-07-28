@@ -21,7 +21,9 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 def test_skill(tmp_path: Path) -> ResolvedComponent:
     skill_dir = tmp_path / "sources" / "my-skill"
     skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: Test skill\n---\n# My Skill Body\n")
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: my-skill\ndescription: Test skill\n---\n# My Skill Body\n"
+    )
     hooks_dir = skill_dir / "hooks"
     hooks_dir.mkdir()
     (hooks_dir / "pre_tool.sh").write_text("#!/bin/bash\necho hook\n")

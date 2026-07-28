@@ -53,7 +53,8 @@ def load_user_steps(project_dir: Path) -> list[Path]:
         if key in _LOADED:
             continue
         spec = importlib.util.spec_from_file_location(
-            f"_ai_hats_user_steps.{path.stem}", path,
+            f"_ai_hats_user_steps.{path.stem}",
+            path,
         )
         if spec is None or spec.loader is None:
             raise ImportError(f"could not build spec for {path}")

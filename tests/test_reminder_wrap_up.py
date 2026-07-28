@@ -38,9 +38,7 @@ def _write_metrics(project: Path, **overrides) -> None:
         "tokens": {"cache_read": 12_500_000},  # 12 MB by default
     }
     metrics.update(overrides)
-    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(
-        json.dumps(metrics)
-    )
+    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(json.dumps(metrics))
 
 
 def _create_done_task(project: Path, task_id: str, closed_at: datetime) -> None:
@@ -89,9 +87,7 @@ def test_wrap_up_below_duration_threshold(tmp_path: Path) -> None:
     project = _setup_project(tmp_path)
     _write_metrics(project, duration_s=1800)  # 30 min
     for i, off in enumerate([5, 10, 15], start=1):
-        _create_done_task(
-            project, f"TST-00{i}", SESSION_START + timedelta(minutes=off)
-        )
+        _create_done_task(project, f"TST-00{i}", SESSION_START + timedelta(minutes=off))
 
     assert evaluate_wrap_up(project, SESSION_ID) is None
 
@@ -108,14 +104,16 @@ def test_wrap_up_ignores_tasks_outside_window(tmp_path: Path) -> None:
     project = _setup_project(tmp_path)
     _write_metrics(project)  # window 0..90min
     _create_done_task(
-        project, "TST-001", SESSION_START + timedelta(hours=5)  # after end
+        project,
+        "TST-001",
+        SESSION_START + timedelta(hours=5),  # after end
     )
     _create_done_task(
-        project, "TST-002", SESSION_START - timedelta(hours=5)  # before start
+        project,
+        "TST-002",
+        SESSION_START - timedelta(hours=5),  # before start
     )
-    _create_done_task(
-        project, "TST-003", SESSION_START + timedelta(hours=10)
-    )
+    _create_done_task(project, "TST-003", SESSION_START + timedelta(hours=10))
 
     assert evaluate_wrap_up(project, SESSION_ID) is None
 

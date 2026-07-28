@@ -57,8 +57,11 @@ SRC = REPO_ROOT / "src"
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        check=True, capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -76,7 +79,10 @@ def _run_rack(
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
-        capture_output=True, text=True, env=env, timeout=timeout,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
     )
 
 
@@ -85,9 +91,7 @@ def initialised_git_project(tmp_path: Path) -> Path:
     """Tmp dir bootstrapped as both an ai-hats project AND a git repo."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=[]).save(project / PROJECT_CONFIG)
     Assembler(project).init()
     _git(project, "init")
     _git(project, "config", "user.email", "e2e@hats-517.test")
@@ -100,8 +104,7 @@ def initialised_git_project(tmp_path: Path) -> Path:
 
 def _create_and_plan(project: Path, task_id: str) -> None:
     """Create task ``task_id`` and walk brainstorm → plan with a non-empty plan."""
-    r = _run_rack(project, "create", "test task",
-                  "--id", task_id, "--description", "e2e")
+    r = _run_rack(project, "create", "test task", "--id", task_id, "--description", "e2e")
     assert r.returncode == 0, f"create failed: {r.stderr}"
     r = _run_rack(project, "transition", task_id, "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
@@ -109,8 +112,7 @@ def _create_and_plan(project: Path, task_id: str) -> None:
     # `transition execute` lets us through to the worktree-setup path
     # (which is what HATS-517 fixes).
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         "# Plan\n\n"
@@ -136,18 +138,13 @@ def test_case_a_pre_existing_branch_attaches(
 
     r = _run_rack(proj, "transition", task_id, "execute")
     assert r.returncode == 0, (
-        f"Case A must succeed; got exit {r.returncode}\n"
-        f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+        f"Case A must succeed; got exit {r.returncode}\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
     )
     # rack surfaces the branch through the worktree dirname it prints
     # (`branch_name.replace("/", "-")` — manager.py); there is no `Branch:` line.
     combined = r.stdout + r.stderr
-    assert "task-hats-5171" in combined, (
-        f"branch name not surfaced in output: {combined}"
-    )
-    assert "Worktree:" in combined, (
-        f"worktree path not surfaced in output: {combined}"
-    )
+    assert "task-hats-5171" in combined, f"branch name not surfaced in output: {combined}"
+    assert "Worktree:" in combined, f"worktree path not surfaced in output: {combined}"
 
     # Verify the linked worktree exists and is on the right branch.
     wt_list = _git(proj, "worktree", "list", "--porcelain").stdout

@@ -27,9 +27,7 @@ class ExtractMarker(Step):
         self.end: str = params["end"]
         self.out_key: str = params["out_key"]
         if not self.out_key.isidentifier():
-            raise ValueError(
-                f"{self._NAME}: out_key {self.out_key!r} is not a valid identifier"
-            )
+            raise ValueError(f"{self._NAME}: out_key {self.out_key!r} is not a valid identifier")
 
     @property
     def io(self) -> StepIO:

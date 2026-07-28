@@ -101,13 +101,14 @@ class PipelineHarness:
         self.trace_path: Path | None = None
         trace_env = os.environ.get("AI_HATS_PIPELINE_TRACE", "").strip()
         if trace_env:
-            self.trace_path = _resolve_trace_path(
-                trace_env, project_dir, pipeline_name
-            )
+            self.trace_path = _resolve_trace_path(trace_env, project_dir, pipeline_name)
             self._on_step = JsonlTraceWriter(self.trace_path)
-        self._trace_values = os.environ.get(
-            "AI_HATS_PIPELINE_TRACE_VALUES", ""
-        ).strip() not in ("", "0", "false", "False")
+        self._trace_values = os.environ.get("AI_HATS_PIPELINE_TRACE_VALUES", "").strip() not in (
+            "",
+            "0",
+            "false",
+            "False",
+        )
 
     def __enter__(self) -> "PipelineHarness":
         # Import user-authored step modules BEFORE any YAML is loaded — so user
@@ -138,15 +139,12 @@ class PipelineHarness:
         if not self._pipeline_root.exists():
             return
         siblings = sorted(
-            (
-                p for p in self._pipeline_root.iterdir()
-                if p.is_dir() and p.name != self.session_id
-            ),
+            (p for p in self._pipeline_root.iterdir() if p.is_dir() and p.name != self.session_id),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
         # Keep the (N-1) most recent; this run creates the Nth.
-        for old in siblings[max(0, keep_n - 1):]:
+        for old in siblings[max(0, keep_n - 1) :]:
             shutil.rmtree(old, ignore_errors=True)  # safe-delete: ok pipeline-runs-rotation
 
     def materialize_prompt(self, text: str | None) -> Path | None:
@@ -179,7 +177,9 @@ class PipelineHarness:
         )
 
     def run_yaml(
-        self, yaml_path: Path, initial: Mapping[str, Any],
+        self,
+        yaml_path: Path,
+        initial: Mapping[str, Any],
     ) -> dict[str, Any]:
         """Load a pipeline from an arbitrary path and run it.
 

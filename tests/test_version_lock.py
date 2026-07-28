@@ -22,9 +22,7 @@ from ai_hats.version_lock import (
 
 
 def test_gc_lock_path_points_at_versions_dotlock(tmp_path: Path) -> None:
-    assert gc_lock_path(tmp_path) == (
-        tmp_path / ".agent" / "ai-hats" / "versions" / ".gc.lock"
-    )
+    assert gc_lock_path(tmp_path) == (tmp_path / ".agent" / "ai-hats" / "versions" / ".gc.lock")
 
 
 def test_acquire_creates_parent_dir_and_releases(tmp_path: Path) -> None:

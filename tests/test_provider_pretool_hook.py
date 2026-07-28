@@ -37,8 +37,14 @@ EXPECTED_REL = PREFIX + ".agent/ai-hats/library/hooks/pre_bash_shared_state_guar
 def _settings(project: Path, result: CompositionResult | None = None) -> dict:
     provider = ClaudeProvider()
     res = result or _result([])
-    artifacts = provider.build_session_artifacts(project, res, "test-session-id", run_mode="hitl", artifacts=BuiltArtifacts())
-    settings_file = [Path(artifacts.cli_args[i + 1]) for i, arg in enumerate(artifacts.cli_args) if arg == "--settings"][0]
+    artifacts = provider.build_session_artifacts(
+        project, res, "test-session-id", run_mode="hitl", artifacts=BuiltArtifacts()
+    )
+    settings_file = [
+        Path(artifacts.cli_args[i + 1])
+        for i, arg in enumerate(artifacts.cli_args)
+        if arg == "--settings"
+    ][0]
     return json.loads(settings_file.read_text())
 
 

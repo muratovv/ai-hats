@@ -343,7 +343,6 @@ class WrapRunner:
         return [StartupNotice("warn", text) for text in collisions]
 
     def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
-
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
         :func:`show_and_hold_startup_notices`; supplies a Ctrl-C-aware countdown
@@ -464,11 +463,13 @@ class WrapRunner:
                     self.project_dir, result, session.session_id
                 )
                 if payload.policy != SessionPolicy():
-                    builder_notices.append(StartupNotice(
-                        "warn",
-                        f"provider '{provider_name}' predates the artifact builder: "
-                        f"session policy {payload.policy} is NOT applied to it.",
-                    ))
+                    builder_notices.append(
+                        StartupNotice(
+                            "warn",
+                            f"provider '{provider_name}' predates the artifact builder: "
+                            f"session policy {payload.policy} is NOT applied to it.",
+                        )
+                    )
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -595,7 +596,10 @@ class WrapRunner:
             self._hold_before_launch(startup_notices)
             with provider.execution_context(self.project_dir):
                 exit_code = self._pty_spawn(
-                    cmd, env, tracer, pty_tap_factory=pty_tap_factory,
+                    cmd,
+                    env,
+                    tracer,
+                    pty_tap_factory=pty_tap_factory,
                 )
         except KeyboardInterrupt:
             exit_code = 130

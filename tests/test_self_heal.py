@@ -42,8 +42,11 @@ def test_module_resolves_true_for_stdlib_false_for_bogus() -> None:
 def test_find_broken_surface_providers_flags_only_unresolvable(monkeypatch) -> None:
     eps = [
         EntryPoint(name="ok", value="sys:X", group=self_heal.PROVIDER_ENTRY_POINT_GROUP),
-        EntryPoint(name="cline", value="ai_hats_cline_gone_966:Y",
-                   group=self_heal.PROVIDER_ENTRY_POINT_GROUP),
+        EntryPoint(
+            name="cline",
+            value="ai_hats_cline_gone_966:Y",
+            group=self_heal.PROVIDER_ENTRY_POINT_GROUP,
+        ),
     ]
     monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: eps)
     broken = find_broken_surface_providers()
@@ -104,8 +107,11 @@ def test_heal_warns_when_installer_raises(tmp_path) -> None:
         raise RuntimeError("uv exploded")
 
     result = heal_surface_editables(
-        tmp_path, broken=[_bp()], mapping={"ai_hats_cline": canonical},
-        installer=boom, verifier=lambda m: True,
+        tmp_path,
+        broken=[_bp()],
+        mapping={"ai_hats_cline": canonical},
+        installer=boom,
+        verifier=lambda m: True,
     )
     assert result.healed == []
     assert "re-point failed" in result.warned[0].reason
@@ -114,8 +120,11 @@ def test_heal_warns_when_installer_raises(tmp_path) -> None:
 def test_heal_warns_when_still_unimportable_after_repoint(tmp_path) -> None:
     canonical = tmp_path / "packages" / "surfaces" / "cline"
     result = heal_surface_editables(
-        tmp_path, broken=[_bp()], mapping={"ai_hats_cline": canonical},
-        installer=lambda p: None, verifier=lambda m: False,
+        tmp_path,
+        broken=[_bp()],
+        mapping={"ai_hats_cline": canonical},
+        installer=lambda p: None,
+        verifier=lambda m: False,
     )
     assert result.healed == []
     assert "still unimportable" in result.warned[0].reason
@@ -123,12 +132,17 @@ def test_heal_warns_when_still_unimportable_after_repoint(tmp_path) -> None:
 
 def test_heal_noop_when_nothing_broken(tmp_path) -> None:
     result = heal_surface_editables(
-        tmp_path, broken=[], mapping={}, installer=lambda p: None, verifier=lambda m: True,
+        tmp_path,
+        broken=[],
+        mapping={},
+        installer=lambda p: None,
+        verifier=lambda m: True,
     )
     assert result.is_noop()
 
 
 # ---- run_editable_heal orchestration (repo-root resolve + fast-path + lock) ----
+
 
 def _with_surfaces(tmp_path):
     (tmp_path / "packages" / "surfaces").mkdir(parents=True)
@@ -181,7 +195,11 @@ def test_find_uninstalled_surface_members(tmp_path, monkeypatch) -> None:
     (surfaces / "cline" / "src" / "ai_hats_cline" / "__init__.py").write_text("")
 
     # Only 'cline' is registered
-    eps = [EntryPoint(name="cline", value="ai_hats_cline:Provider", group=self_heal.PROVIDER_ENTRY_POINT_GROUP)]
+    eps = [
+        EntryPoint(
+            name="cline", value="ai_hats_cline:Provider", group=self_heal.PROVIDER_ENTRY_POINT_GROUP
+        )
+    ]
     monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: eps)
     # mock _module_resolves so 'ai_hats_cline' resolves and 'ai_hats_agy' does not
     monkeypatch.setattr(self_heal, "_module_resolves", lambda m: m == "ai_hats_cline")
@@ -257,6 +275,3 @@ def test_ensure_surface_plugin_installed_triggers_installer(monkeypatch) -> None
     res = ensure_surface_plugin_installed("cline", installer=fake_installer)
     assert res is True
     assert installed_pkg == ["ai-hats-cline"]
-
-
-

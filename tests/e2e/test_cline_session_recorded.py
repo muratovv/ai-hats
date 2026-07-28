@@ -54,19 +54,32 @@ def test_cline_session_records_audit_and_usage(
 
     # 1. self init configures cline provider
     tmp_project.run(
-        "self", "init", "-r", "assistant", "-p", "cline", "--no-update",
-        timeout=120, extra_env=checkout_env,
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "cline",
+        "--no-update",
+        timeout=120,
+        extra_env=checkout_env,
     ).expect_ok().expect_stdout_contains(
         "Provider: cline",
     )
 
     # 2. execute --batch runs a real headless cline session (--yolo --json)
     result = tmp_project.run(
-        "execute", "--batch",
-        "-r", "assistant", "-p", "cline",
-        "--prompt", "Reply with exactly: OK. No other text.",
+        "execute",
+        "--batch",
+        "-r",
+        "assistant",
+        "-p",
+        "cline",
+        "--prompt",
+        "Reply with exactly: OK. No other text.",
         "--json",
-        timeout=120, extra_env=checkout_env,
+        timeout=120,
+        extra_env=checkout_env,
     ).expect_ok()
 
     data = json.loads(result.stdout.strip().splitlines()[-1])
@@ -77,9 +90,7 @@ def test_cline_session_records_audit_and_usage(
     audit_path = session_dir / AUDIT_MD
     assert audit_path.exists(), f"audit.md missing: {audit_path}"
     audit = audit_path.read_text()
-    assert "- **Provider**: cline" in audit, (
-        f"audit.md missing provider marker\naudit:\n{audit}"
-    )
+    assert "- **Provider**: cline" in audit, f"audit.md missing provider marker\naudit:\n{audit}"
     assert "👤" in audit, (
         f"audit.md has no 👤 turn markers — transcript not parsed "
         f"(resolve_transcript may be missing). audit:\n{audit}"

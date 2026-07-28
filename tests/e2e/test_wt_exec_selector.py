@@ -6,6 +6,7 @@ Subprocess env targets the checkout under test (``repo_root``): PYTHONPATH +
 AI_HATS_LIBRARY_ROOT (HATS-826) exercises worktree code — plain PYTHONPATH=src
 alone hits the HATS-685 vanished-roles trap.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -39,8 +40,17 @@ def test_wt_exec_selector_routes_to_named_worktree(tmp_project, repo_root):
     # branch of whatever worktree it actually ran in.
     for branch in picks:
         with_dd = _ai_hats(
-            binary, "wt", "exec", branch, "--", "git", "rev-parse", "--abbrev-ref", "HEAD",
-            cwd=main.path, env=env,
+            binary,
+            "wt",
+            "exec",
+            branch,
+            "--",
+            "git",
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+            cwd=main.path,
+            env=env,
         )
         assert with_dd.returncode == 0, (
             f"🐛 HATS-859 REGRESSION: `wt exec {branch} -- …` failed instead of routing:\n"
@@ -51,8 +61,16 @@ def test_wt_exec_selector_routes_to_named_worktree(tmp_project, repo_root):
         )
 
         no_dd = _ai_hats(
-            binary, "wt", "exec", branch, "git", "rev-parse", "--abbrev-ref", "HEAD",
-            cwd=main.path, env=env,
+            binary,
+            "wt",
+            "exec",
+            branch,
+            "git",
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+            cwd=main.path,
+            env=env,
         )
         assert no_dd.returncode == 0 and no_dd.stdout.strip().splitlines()[-1] == branch, (
             f"selector `{branch}` without `--` mis-routed: rc={no_dd.returncode} "
@@ -72,8 +90,16 @@ def test_wt_exec_without_selector_still_reports_ambiguity(tmp_project, repo_root
     _spawn_worktree(main.path, "HATS-2", env)
 
     res = _ai_hats(
-        binary, "wt", "exec", "--", "git", "rev-parse", "--abbrev-ref", "HEAD",
-        cwd=main.path, env=env,
+        binary,
+        "wt",
+        "exec",
+        "--",
+        "git",
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+        cwd=main.path,
+        env=env,
     )
     assert res.returncode != 0, "no-selector form must refuse when >1 worktree active"
     assert "Multiple active worktrees" in (res.stderr + res.stdout)

@@ -14,6 +14,7 @@ those dirs into the real temp root unless redirected. The
 :func:`_wt_sandbox` session fixture redirects BOTH into a pytest-owned
 sandbox and sweeps it on a green run.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -127,7 +128,9 @@ def _dev_environment_integrity_tripwire():
     before_file = getattr(ai_hats, "__file__", None)
     before_ver = getattr(ai_hats, "__version__", None)
     try:
-        before_eps = sorted([ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")])
+        before_eps = sorted(
+            [ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")]
+        )
     except Exception:
         before_eps = []
     before_pyc = len(list(src_root.glob("**/*.pyc")))
@@ -137,7 +140,9 @@ def _dev_environment_integrity_tripwire():
     after_file = getattr(ai_hats, "__file__", None)
     after_ver = getattr(ai_hats, "__version__", None)
     try:
-        after_eps = sorted([ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")])
+        after_eps = sorted(
+            [ep.name for ep in importlib.metadata.entry_points(group="ai_hats.providers")]
+        )
     except Exception:
         after_eps = []
     after_pyc = len(list(src_root.glob("**/*.pyc")))
@@ -291,4 +296,3 @@ def _isolate_session_env(monkeypatch):
     monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
     monkeypatch.delenv("AI_HATS_ROOT_PID", raising=False)
     yield
-

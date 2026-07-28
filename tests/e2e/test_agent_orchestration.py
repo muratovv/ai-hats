@@ -113,9 +113,12 @@ def test_agent_emits_documented_json_envelope(
     project ``library_paths`` being empty).
     """
     result = tmp_project.run(
-        "agent", "assistant",
-        "--task", TASK_PROMPT,
-        "--model", DRIVE_MODEL,
+        "agent",
+        "assistant",
+        "--task",
+        TASK_PROMPT,
+        "--model",
+        DRIVE_MODEL,
         "--json",
         timeout=AGENT_TIMEOUT,
     ).expect_ok()
@@ -124,15 +127,12 @@ def test_agent_emits_documented_json_envelope(
 
     # ----- exit_code (shell propagation surface) -----
     assert envelope["exit_code"] == 0, (
-        f"envelope exit_code={envelope['exit_code']!r} (expected 0); "
-        f"full envelope: {envelope}"
+        f"envelope exit_code={envelope['exit_code']!r} (expected 0); full envelope: {envelope}"
     )
 
     # ----- session_id (parallel/jq downstream key) -----
     sid = envelope.get("session_id")
-    assert isinstance(sid, str) and sid, (
-        f"envelope session_id missing or empty: {sid!r}"
-    )
+    assert isinstance(sid, str) and sid, f"envelope session_id missing or empty: {sid!r}"
 
     # ----- session_dir (downstream artefact reads) -----
     sdir_raw = envelope.get("session_dir")
@@ -140,19 +140,14 @@ def test_agent_emits_documented_json_envelope(
         f"envelope session_dir missing or empty: {sdir_raw!r}"
     )
     session_dir = Path(sdir_raw)
-    assert session_dir.is_dir(), (
-        f"envelope session_dir is not an existing directory: {session_dir}"
-    )
+    assert session_dir.is_dir(), f"envelope session_dir is not an existing directory: {session_dir}"
 
     # ----- total_cost_usd (cost-aware orchestration) -----
     cost = envelope.get("total_cost_usd")
     assert isinstance(cost, (int, float)), (
-        f"envelope total_cost_usd missing or wrong type: {cost!r} "
-        f"({type(cost).__name__})"
+        f"envelope total_cost_usd missing or wrong type: {cost!r} ({type(cost).__name__})"
     )
-    assert cost < COST_CAP_USD, (
-        f"cost ${cost:.4f} >= cap ${COST_CAP_USD} — runaway composition?"
-    )
+    assert cost < COST_CAP_USD, f"cost ${cost:.4f} >= cap ${COST_CAP_USD} — runaway composition?"
 
     # ----- Composition cross-check (free with session_dir) -----
     metrics = read_metrics(session_dir)

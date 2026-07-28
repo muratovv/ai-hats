@@ -30,9 +30,7 @@ from .version_refs import current_run_sha, load_refs, ref_is_live
 DEFAULT_TTL_HOURS = 24
 
 
-def sweep_incomplete_versions(
-    project_dir: Path, ttl_hours: int = DEFAULT_TTL_HOURS
-) -> list[Path]:
+def sweep_incomplete_versions(project_dir: Path, ttl_hours: int = DEFAULT_TTL_HOURS) -> list[Path]:
     """Remove incomplete ``versions/<sha>/`` residue older than ``ttl_hours``.
 
     Idempotent and conservative. Returns the list of removed directories (for
@@ -69,9 +67,7 @@ def sweep_incomplete_versions(
     return removed
 
 
-def reclaim_orphan_versions(
-    project_dir: Path, keep_shas: set[str] | None = None
-) -> list[Path]:
+def reclaim_orphan_versions(project_dir: Path, keep_shas: set[str] | None = None) -> list[Path]:
     """Reclaim complete, non-``current`` ``versions/<sha>/`` dirs with no live ref.
 
     **Reclaim-on-certain-death** (HATS-649 / R2): a complete version is removed
@@ -109,7 +105,9 @@ def reclaim_orphan_versions(
             if isinstance(sha, str):
                 live_shas.add(sha)
         else:
-            ref_path.unlink(missing_ok=True)  # safe-delete: ok dead-ref (drop dead run's ref pointer, no leak)
+            ref_path.unlink(
+                missing_ok=True
+            )  # safe-delete: ok dead-ref (drop dead run's ref pointer, no leak)
 
     removed: list[Path] = []
     for entry in sorted(root.iterdir()):

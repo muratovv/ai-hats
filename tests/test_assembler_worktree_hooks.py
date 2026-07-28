@@ -13,22 +13,16 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.paths import managed_wt_hook_filename, wt_hooks_dir
 
 
-def _skill_with_wt(
-    base: Path, name: str, body: str, scripts: list[str]
-) -> ResolvedComponent:
+def _skill_with_wt(base: Path, name: str, body: str, scripts: list[str]) -> ResolvedComponent:
     d = base / name
     d.mkdir(parents=True, exist_ok=True)
-    (d / "SKILL.md").write_text(
-        f"---\nname: {name}\nai_hats:\n  worktree:\n{body}---\n# {name}\n"
-    )
+    (d / "SKILL.md").write_text(f"---\nname: {name}\nai_hats:\n  worktree:\n{body}---\n# {name}\n")
     for rel in scripts:
         p = d / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("#!/usr/bin/env bash\nexit 0\n")
         p.chmod(0o755)
-    return ResolvedComponent(
-        name=name, component_type=ComponentKind.SKILL, source_path=d
-    )
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=d)
 
 
 @pytest.fixture
@@ -40,15 +34,11 @@ def assembler(tmp_path: Path) -> Assembler:
 
 
 def _result(skills: list[ResolvedComponent]) -> CompositionResult:
-    return CompositionResult(
-        name="r", priorities=[], rules=[], skills=skills, injections=[]
-    )
+    return CompositionResult(name="r", priorities=[], rules=[], skills=skills, injections=[])
 
 
 def _dest(assembler: Assembler, skill: str, script: str) -> Path:
-    return wt_hooks_dir(assembler.project_dir) / managed_wt_hook_filename(
-        skill, script
-    )
+    return wt_hooks_dir(assembler.project_dir) / managed_wt_hook_filename(skill, script)
 
 
 def test_materializes_executable_script(assembler, tmp_path):
@@ -94,8 +84,6 @@ def test_no_dir_when_no_wt_hooks(assembler, tmp_path):
     plain = tmp_path / "skills" / "plain"
     plain.mkdir(parents=True)
     (plain / "SKILL.md").write_text("---\nname: plain\n---\n# plain\n")
-    rc = ResolvedComponent(
-        name="plain", component_type=ComponentKind.SKILL, source_path=plain
-    )
+    rc = ResolvedComponent(name="plain", component_type=ComponentKind.SKILL, source_path=plain)
     assembler.hooks.materialize_worktree_hooks(_result([rc]))
     assert not wt_hooks_dir(assembler.project_dir).exists()

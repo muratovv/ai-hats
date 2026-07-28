@@ -47,15 +47,12 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
 
 
 def _git(cwd: Path, *args: str):
-    return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 def _task_state(project: Path, task_id: str) -> str:
     yaml_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
-        / task_id / "task.yaml"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "task.yaml"
     )
     for line in yaml_path.read_text().splitlines():
         if line.startswith("state:"):
@@ -68,7 +65,7 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     cur: Path | None = None
     for line in out.splitlines():
         if line.startswith("worktree "):
-            cur = Path(line[len("worktree "):].strip())
+            cur = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and cur is not None:
             if line.strip().endswith("/" + branch):
                 return cur
@@ -98,9 +95,20 @@ def _init(launcher: Path, env: dict, project: Path) -> None:
     _git(project, "add", "libraries")
     _git(project, "commit", "-m", "lib")
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "e2e-wthook-role", "--no-wizard", "--task-prefix", "TST"],
-        cwd=project, env=env,
+        [
+            str(launcher),
+            "self",
+            "init",
+            "-p",
+            "claude",
+            "-r",
+            "e2e-wthook-role",
+            "--no-wizard",
+            "--task-prefix",
+            "TST",
+        ],
+        cwd=project,
+        env=env,
     )
 
 
@@ -114,18 +122,17 @@ def test_fsm_transition_fires_wt_in_and_wt_out(installed_launcher, tmp_path):
     _init(launcher, env, project)
 
     def rack(*args, expect_exit=0, timeout=120):
-        return _run([str(rack_bin), *args], cwd=project, env=env,
-                    timeout=timeout, expect_exit=expect_exit)
+        return _run(
+            [str(rack_bin), *args], cwd=project, env=env, timeout=timeout, expect_exit=expect_exit
+        )
 
     task_id = "TST-001"
     branch = f"task/{task_id.lower()}"
-    rack("create", "FSM lifecycle wiring", "--description", "wt_in/wt_out via FSM",
-         "--id", task_id)
+    rack("create", "FSM lifecycle wiring", "--description", "wt_in/wt_out via FSM", "--id", task_id)
     rack("transition", task_id, "plan")
 
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         f"# {task_id} plan\n\n"
@@ -150,8 +157,16 @@ def test_fsm_transition_fires_wt_in_and_wt_out(installed_launcher, tmp_path):
     _git(wt, "config", "user.name", "E2E")
     (wt / "work.txt").write_text("payload\n")
     _git(wt, "add", "work.txt")
-    _git(wt, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
-         "commit", "-m", "worktree work")
+    _git(
+        wt,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "worktree work",
+    )
 
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")

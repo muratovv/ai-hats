@@ -330,9 +330,7 @@ class SkillMetadata(_YamlModel):
                 leaked = [k for k in _HOOK_KEYS if raw.get(k)]
                 if leaked:
                     # Remedy single-sourced with the HATS-815 bump diagnostic.
-                    raise LeftoverSidecarHooksError(
-                        leftover_sidecar_remedy(skill_dir.name, leaked)
-                    )
+                    raise LeftoverSidecarHooksError(leftover_sidecar_remedy(skill_dir.name, leaked))
         fm = read_frontmatter(skill_dir / "SKILL.md")
         ai_hats = fm.get("ai_hats")
         if not isinstance(ai_hats, dict):

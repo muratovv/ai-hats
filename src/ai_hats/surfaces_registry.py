@@ -23,8 +23,12 @@ class SurfaceInfo(NamedTuple):
 # Canonical registry of surfaces (state as is).
 KNOWN_SURFACES: dict[str, SurfaceInfo] = {
     "claude": SurfaceInfo(ep_name="claude", package_name="ai-hats", default_home_dirs=(".claude",)),
-    "agy": SurfaceInfo(ep_name="agy", package_name="ai-hats-agy", default_home_dirs=(".agy", ".gemini")),
-    "cline": SurfaceInfo(ep_name="cline", package_name="ai-hats-cline", default_home_dirs=(".cline",)),
+    "agy": SurfaceInfo(
+        ep_name="agy", package_name="ai-hats-agy", default_home_dirs=(".agy", ".gemini")
+    ),
+    "cline": SurfaceInfo(
+        ep_name="cline", package_name="ai-hats-cline", default_home_dirs=(".cline",)
+    ),
 }
 
 
@@ -79,4 +83,3 @@ def detect_surface_presence(provider_name: str, home: Path | None = None) -> boo
         dirs = list(info.default_home_dirs)
 
     return any((home / d).is_dir() for d in dirs)
-

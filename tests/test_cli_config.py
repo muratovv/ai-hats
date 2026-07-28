@@ -23,6 +23,7 @@ def cli_project(tmp_path, monkeypatch):
 
 def _load_config(project):
     import yaml
+
     return yaml.safe_load((project / PROJECT_CONFIG).read_text())
 
 
@@ -45,7 +46,8 @@ def test_config_feedback_session_retro_set_policy(cli_project):
 def test_config_feedback_session_retro_set_threshold(cli_project):
     project, runner = cli_project
     result = runner.invoke(
-        main, ["config", "feedback", "session-retro", "smart", "--threshold", "turns=15,tool_calls=20"]
+        main,
+        ["config", "feedback", "session-retro", "smart", "--threshold", "turns=15,tool_calls=20"],
     )
     assert result.exit_code == 0, result.output
 
@@ -57,9 +59,7 @@ def test_config_feedback_session_retro_set_threshold(cli_project):
 
 def test_config_feedback_session_retro_set_background(cli_project):
     project, runner = cli_project
-    result = runner.invoke(
-        main, ["config", "feedback", "session-retro", "--no-background"]
-    )
+    result = runner.invoke(main, ["config", "feedback", "session-retro", "--no-background"])
     assert result.exit_code == 0, result.output
 
     data = _load_config(project)

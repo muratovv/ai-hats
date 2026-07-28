@@ -31,9 +31,7 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
     class _Session:
         def __init__(self, sid: str = "intake-1") -> None:
             self.session_id = sid
-            self.session_dir = (
-                project_dir / ".gitlog" / session_dirname(sid)
-            )
+            self.session_dir = project_dir / ".gitlog" / session_dirname(sid)
             self.session_dir.mkdir(parents=True, exist_ok=True)
             self.trace_path = self.session_dir / TRACE_LOG
             self.trace_path.write_text("(sub-agent system events only)\n")
@@ -43,12 +41,14 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
             (self.session_dir / TRANSCRIPT_TXT).write_text(body)
             self.metrics_path = self.session_dir / METRICS_JSON
             self.metrics_path.write_text(
-                json.dumps({
-                    "exit_code": 0,
-                    "session_id": sid,
-                    "role": "hypothesis-intake",
-                    "duration_s": 0.1,
-                })
+                json.dumps(
+                    {
+                        "exit_code": 0,
+                        "session_id": sid,
+                        "role": "hypothesis-intake",
+                        "duration_s": 0.1,
+                    }
+                )
             )
 
     class _Runner:
@@ -56,9 +56,7 @@ def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
             self._payload = payload
 
         def run(self, **kwargs):
-            captured["calls"].append(
-                {"role_name": self._payload.effective_role, **kwargs}
-            )
+            captured["calls"].append({"role_name": self._payload.effective_role, **kwargs})
             return _Session()
 
     import ai_hats.runtime as rt
@@ -74,7 +72,8 @@ def _bootstrap_silenced(monkeypatch) -> None:
 
 
 def test_reflect_issue_create_full_pipeline(
-    project_dir: Path, monkeypatch,
+    project_dir: Path,
+    monkeypatch,
 ) -> None:
     """No active HYPs + create action → HYP-001 materializes."""
     _bootstrap_silenced(monkeypatch)
@@ -120,7 +119,8 @@ def test_reflect_issue_create_full_pipeline(
 
 
 def test_reflect_issue_merge_full_pipeline(
-    project_dir: Path, monkeypatch,
+    project_dir: Path,
+    monkeypatch,
 ) -> None:
     """Active HYP + merge action → validation_log appended, no new file."""
     _bootstrap_silenced(monkeypatch)
@@ -134,9 +134,7 @@ def test_reflect_issue_merge_full_pipeline(
         "hypothesis": "agent uses f-strings in SQL queries",
         "validation_log": [],
     }
-    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
-        yaml.safe_dump(seed)
-    )
+    (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(yaml.safe_dump(seed))
     migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
 
     trace = (
@@ -151,8 +149,11 @@ def test_reflect_issue_merge_full_pipeline(
     res = CliRunner().invoke(
         main,
         [
-            "reflect", "issue", "saw it again in pipeline.py",
-            "--session", "20260512-120000-1",
+            "reflect",
+            "issue",
+            "saw it again in pipeline.py",
+            "--session",
+            "20260512-120000-1",
         ],
     )
     assert res.exit_code == 0, res.output
@@ -167,22 +168,30 @@ def test_reflect_issue_merge_full_pipeline(
 
 
 def test_reflect_issue_missing_markers_with_active_hyp_fails(
-    project_dir: Path, monkeypatch,
+    project_dir: Path,
+    monkeypatch,
 ) -> None:
     """LLM produced output without the marker block — must fail-loud."""
     _bootstrap_silenced(monkeypatch)
     (hypotheses_dir(project_dir) / "HYP-001.yaml").write_text(
-        yaml.safe_dump({
-            "id": "HYP-001", "title": "t", "status": "active",
-            "created": "2026-05-01", "source_task": "HATS-100",
-            "hypothesis": "h", "validation_log": [],
-        })
+        yaml.safe_dump(
+            {
+                "id": "HYP-001",
+                "title": "t",
+                "status": "active",
+                "created": "2026-05-01",
+                "source_task": "HATS-100",
+                "hypothesis": "h",
+                "validation_log": [],
+            }
+        )
     )
     migrate_catalog(hypotheses_dir(project_dir), "hypotheses")  # flat → dir-per-card
     _install_subagent_trace(monkeypatch, project_dir, "no markers here\n")
 
     res = CliRunner().invoke(
-        main, ["reflect", "issue", "obs"],
+        main,
+        ["reflect", "issue", "obs"],
     )
     assert res.exit_code != 0
     # Either fail-loud about active hyps or about missing markers

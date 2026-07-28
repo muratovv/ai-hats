@@ -40,15 +40,23 @@ def _invoke(args):
 
 
 def _create(title="t", category="rule", target="dev_rule_x"):
-    return _invoke([
-        "create",
-        "--title", title,
-        "--category", category,
-        "--target", target,
-        "--description", "d",
-        "--rationale", "r",
-        "--session", "s1",
-    ])
+    return _invoke(
+        [
+            "create",
+            "--title",
+            title,
+            "--category",
+            category,
+            "--target",
+            target,
+            "--description",
+            "d",
+            "--rationale",
+            "r",
+            "--session",
+            "s1",
+        ]
+    )
 
 
 def test_create_auto_id(project_dir: Path):
@@ -81,16 +89,25 @@ def test_create_duplicate_id_rejected(project_dir: Path, monkeypatch):
 
 
 def test_create_meta_proposal_with_failed_session(project_dir: Path):
-    res = _invoke([
-        "create",
-        "--title", "reflect-session failed",
-        "--category", "process",
-        "--target", "reflect-session",
-        "--description", "d",
-        "--rationale", "r",
-        "--session", "judge-s1",
-        "--failed-session-id", "20260504-120000-1",
-    ])
+    res = _invoke(
+        [
+            "create",
+            "--title",
+            "reflect-session failed",
+            "--category",
+            "process",
+            "--target",
+            "reflect-session",
+            "--description",
+            "d",
+            "--rationale",
+            "r",
+            "--session",
+            "judge-s1",
+            "--failed-session-id",
+            "20260504-120000-1",
+        ]
+    )
     assert res.exit_code == 0
     p = proposals_dir(project_dir) / "PROP-001.yaml"
     data = yaml.safe_load(p.read_text())
@@ -100,19 +117,29 @@ def test_create_meta_proposal_with_failed_session(project_dir: Path):
 
 def test_vote_increments(project_dir: Path):
     _create()
-    res1 = _invoke([
-        "vote",
-        "--prop", "PROP-001",
-        "--session", "s2",
-        "--reasoning", "agree",
-    ])
+    res1 = _invoke(
+        [
+            "vote",
+            "--prop",
+            "PROP-001",
+            "--session",
+            "s2",
+            "--reasoning",
+            "agree",
+        ]
+    )
     assert res1.exit_code == 0
-    res2 = _invoke([
-        "vote",
-        "--prop", "PROP-001",
-        "--session", "s3",
-        "--reasoning", "yes",
-    ])
+    res2 = _invoke(
+        [
+            "vote",
+            "--prop",
+            "PROP-001",
+            "--session",
+            "s3",
+            "--reasoning",
+            "yes",
+        ]
+    )
     assert res2.exit_code == 0
     p = proposals_dir(project_dir) / "PROP-001.yaml"
     data = yaml.safe_load(p.read_text())
@@ -120,12 +147,17 @@ def test_vote_increments(project_dir: Path):
 
 
 def test_vote_unknown_fails(project_dir: Path):
-    res = _invoke([
-        "vote",
-        "--prop", "PROP-999",
-        "--session", "s",
-        "--reasoning", "x",
-    ])
+    res = _invoke(
+        [
+            "vote",
+            "--prop",
+            "PROP-999",
+            "--session",
+            "s",
+            "--reasoning",
+            "x",
+        ]
+    )
     assert res.exit_code != 0
 
 

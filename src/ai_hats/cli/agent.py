@@ -22,7 +22,9 @@ from ai_hats_wt import IsolationMode
 @click.option(
     "--isolation",
     default=IsolationMode.DISCARD.value,
-    type=click.Choice([IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]),
+    type=click.Choice(
+        [IsolationMode.DISCARD.value, IsolationMode.SQUASH.value, IsolationMode.BRANCH.value]
+    ),
     help="Worktree isolation mode (default: discard)",
 )
 @click.option(
@@ -30,16 +32,16 @@ from ai_hats_wt import IsolationMode
     "tags_raw",
     multiple=True,
     help="Custom tag k=v (repeatable, max 20). Stored in metrics.json under 'tags' "
-         "for later query via 'ai-hats session list --tag k=v'.",
+    "for later query via 'ai-hats session list --tag k=v'.",
 )
 @click.option(
     "--json",
     "as_json",
     is_flag=True,
     help="Emit a single JSON object to stdout on completion (session_id, "
-         "session_dir, exit_code, role, duration_s, tags, ...). Suppresses "
-         "the human-readable summary. Pair with stable exit code propagation "
-         "so orchestrators can fan out via parallel/xargs/CI scripts.",
+    "session_dir, exit_code, role, duration_s, tags, ...). Suppresses "
+    "the human-readable summary. Pair with stable exit code propagation "
+    "so orchestrators can fan out via parallel/xargs/CI scripts.",
 )
 @click.option(
     "--dry-run",
@@ -87,8 +89,12 @@ def run_subagent(
 
         try:
             report = dry_run_automate(
-                _project_dir(), role=role, task=task or "",
-                ticket_id=ticket or "", model=model or "", provider=provider,
+                _project_dir(),
+                role=role,
+                task=task or "",
+                ticket_id=ticket or "",
+                model=model or "",
+                provider=provider,
             )
         except RoleNotFoundError as exc:
             _handle_role_not_found(exc)

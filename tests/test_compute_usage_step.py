@@ -53,13 +53,22 @@ def _set_mtime(path: Path, ts: float) -> None:
 def test_io_contract():
     io = ComputeUsage().io
     assert io.name == "compute_usage"
-    assert io.requires == frozenset({
-        "session_id", "session_dir", "claude_session_id", "project_dir",
-    })
-    assert io.optional == frozenset({
-        "role", "static_cost_analyzer", "audit_writer_factory",
-        "transcript_resolver",
-    })
+    assert io.requires == frozenset(
+        {
+            "session_id",
+            "session_dir",
+            "claude_session_id",
+            "project_dir",
+        }
+    )
+    assert io.optional == frozenset(
+        {
+            "role",
+            "static_cost_analyzer",
+            "audit_writer_factory",
+            "transcript_resolver",
+        }
+    )
     assert io.produces == frozenset({"usage_path"})
 
 
@@ -80,9 +89,7 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
 
     csid = "abc-direct-uuid"
-    (claude_dir / f"{csid}.jsonl").write_text(
-        (TRANSCRIPTS / "normal.jsonl").read_text()
-    )
+    (claude_dir / f"{csid}.jsonl").write_text((TRANSCRIPTS / "normal.jsonl").read_text())
 
     delta = ComputeUsage().run(
         session_id=session.session_id,
@@ -102,7 +109,8 @@ def test_writes_usage_json_from_configured_jsonl(tmp_path, monkeypatch):
 
 
 def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     """Resume-mode regression (HATS-272 / HATS-734): the configured
     ``claude_session_id`` is a uuid4 that never reached Claude, so its path is
@@ -160,9 +168,7 @@ def test_session_meta_filled_from_metrics_json(tmp_path, monkeypatch):
     project_dir.mkdir()
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
     csid = "meta-uuid"
-    (claude_dir / f"{csid}.jsonl").write_text(
-        (TRANSCRIPTS / "normal.jsonl").read_text()
-    )
+    (claude_dir / f"{csid}.jsonl").write_text((TRANSCRIPTS / "normal.jsonl").read_text())
 
     ComputeUsage().run(
         session_id=session.session_id,
@@ -189,9 +195,7 @@ def test_funnel_role_overrides_metrics_json(tmp_path, monkeypatch):
     project_dir.mkdir()
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
     csid = "override-uuid"
-    (claude_dir / f"{csid}.jsonl").write_text(
-        (TRANSCRIPTS / "normal.jsonl").read_text()
-    )
+    (claude_dir / f"{csid}.jsonl").write_text((TRANSCRIPTS / "normal.jsonl").read_text())
 
     ComputeUsage().run(
         session_id=session.session_id,
@@ -214,9 +218,7 @@ def test_session_meta_null_when_no_metrics(tmp_path, monkeypatch):
     project_dir.mkdir()
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
     csid = "nometa-uuid"
-    (claude_dir / f"{csid}.jsonl").write_text(
-        (TRANSCRIPTS / "normal.jsonl").read_text()
-    )
+    (claude_dir / f"{csid}.jsonl").write_text((TRANSCRIPTS / "normal.jsonl").read_text())
 
     ComputeUsage().run(
         session_id=session.session_id,
@@ -290,9 +292,7 @@ def test_routes_through_injected_parser(tmp_path, monkeypatch):
     project_dir.mkdir()
     claude_dir = _claude_dir_for(tmp_path / "home", project_dir)
     csid = "routed-uuid"
-    (claude_dir / f"{csid}.jsonl").write_text(
-        (TRANSCRIPTS / "normal.jsonl").read_text()
-    )
+    (claude_dir / f"{csid}.jsonl").write_text((TRANSCRIPTS / "normal.jsonl").read_text())
 
     class _FakeParser:
         def parse_usage(self, jsonl_path, trace_path):

@@ -18,7 +18,6 @@ from typing import NoReturn
 STARTUP_WARN_HOLD_SECONDS = 10.0
 
 
-
 def _startup_hold_seconds(
     has_warnings: bool,
     *,
@@ -131,4 +130,3 @@ def show_fatal_notice_and_exit(text: str, *, exit_code: int = 1) -> NoReturn:
     """Render a fatal notice via the banner channel and terminate the session immediately."""
     _print_startup_notices([StartupNotice("fatal", text)])
     sys.exit(exit_code)
-

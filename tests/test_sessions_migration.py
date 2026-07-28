@@ -84,7 +84,14 @@ def test_sessions_migration_moves_all_paths(tmp_path: Path) -> None:
     assert (handoffs_dir(tmp_path) / "handoff-2026-04-09-hats-061.md").exists()
     # All legacy roots gone (or empty)
     assert not (tmp_path / ".gitlog").exists()
-    for sub in ("retrospectives", "audits", "handoffs", "experiments", "worktrees", "worktree.json"):
+    for sub in (
+        "retrospectives",
+        "audits",
+        "handoffs",
+        "experiments",
+        "worktrees",
+        "worktree.json",
+    ):
         assert not (tmp_path / ".agent" / sub).exists(), f".agent/{sub} still present"
     assert not seeds["orphan"].exists()
 
@@ -138,5 +145,6 @@ def test_sessions_migration_noop_on_clean_project(tmp_path: Path) -> None:
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_sessions()  # must not raise
     # No sessions/ subtree spawned by migration alone.
-    assert not (tmp_path / ".agent" / "ai-hats" / "sessions").exists() or \
-        not any((tmp_path / ".agent" / "ai-hats" / "sessions").iterdir())
+    assert not (tmp_path / ".agent" / "ai-hats" / "sessions").exists() or not any(
+        (tmp_path / ".agent" / "ai-hats" / "sessions").iterdir()
+    )

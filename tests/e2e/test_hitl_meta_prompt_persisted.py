@@ -60,7 +60,7 @@ pytestmark = pytest.mark.integration
 # Unique substrings produced by composing the maintainer role with its
 # default trait set. Each comes from a different composition source —
 # regression in role injection / trait injection / merge would drop one.
-TRAIT_MARKER_E2E_GATE = "E2E gate"          # trait ai-hats-maintainer
+TRAIT_MARKER_E2E_GATE = "E2E gate"  # trait ai-hats-maintainer
 TRAIT_MARKER_AGENT_PROTOCOL = "Agent Protocol"  # trait trait-agent
 # role maintainer's own injection intro (HATS-703 dropped the "## Workflow" marker)
 ROLE_MARKER_INTRO = "primary development assistant for the"
@@ -122,8 +122,7 @@ def _find_latest_session_dir(project: Path) -> Path:
     sessions = sorted(runs.glob("session_*"))
     if len(sessions) != 1:
         raise AssertionError(
-            f"expected exactly 1 session dir, got {len(sessions)}: "
-            f"{[s.name for s in sessions]}"
+            f"expected exactly 1 session dir, got {len(sessions)}: {[s.name for s in sessions]}"
         )
     return sessions[0]
 
@@ -156,8 +155,7 @@ def test_hitl_session_persists_meta_prompt_to_session_dir(
 
     text = meta_prompt_path.read_text()
     assert text.strip(), (
-        f"HATS-523 regression: meta_prompt.txt exists but is empty/blank.\n"
-        f"path: {meta_prompt_path}"
+        f"HATS-523 regression: meta_prompt.txt exists but is empty/blank.\npath: {meta_prompt_path}"
     )
 
     # Same trio of unique markers used by HATS-452's mid-session capture —
@@ -172,8 +170,7 @@ def test_hitl_session_persists_meta_prompt_to_session_dir(
         ROLE_MARKER_INTRO,
     ):
         assert marker in text, (
-            f"HATS-523 regression: meta_prompt.txt missing marker "
-            f"{marker!r}. Full content:\n{text}"
+            f"HATS-523 regression: meta_prompt.txt missing marker {marker!r}. Full content:\n{text}"
         )
 
 
@@ -212,9 +209,7 @@ def test_hitl_meta_prompt_matches_system_prompt_file_bytes(
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
     result = CliRunner().invoke(main, [])
-    assert result.exit_code == 0, (
-        f"exit={result.exit_code} exc={result.exception!r}"
-    )
+    assert result.exit_code == 0, f"exit={result.exit_code} exc={result.exception!r}"
 
     cache_text = sink.get("prompt_text")
     assert cache_text, "did not capture --system-prompt-file contents"

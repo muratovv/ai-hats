@@ -10,6 +10,7 @@ Static + composed-prompt assertions:
 No subprocess — pure static + composition. Companion e2e test under
 tests/e2e/ exercises the actual hook scripts.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,9 +66,7 @@ def test_rule_is_always_on() -> None:
 
 def test_rule_present_in_composed_assistant_prompt() -> None:
     asm = Assembler(REPO_ROOT)
-    result = asm.composer.compose(
-        "assistant", overlays=asm._get_overlays("assistant")
-    )
+    result = asm.composer.compose("assistant", overlays=asm._get_overlays("assistant"))
     composed = ClaudeProvider().build_system_prompt(result)
     # Section heading the provider emits per always-on rule.
     assert "### rule_pause_before_shared_state_write" in composed
@@ -77,9 +76,7 @@ def test_rule_present_in_composed_assistant_prompt() -> None:
 
 def test_rule_present_in_composed_maintainer_prompt() -> None:
     asm = Assembler(REPO_ROOT)
-    result = asm.composer.compose(
-        "maintainer", overlays=asm._get_overlays("maintainer")
-    )
+    result = asm.composer.compose("maintainer", overlays=asm._get_overlays("maintainer"))
     composed = ClaudeProvider().build_system_prompt(result)
     assert "### rule_pause_before_shared_state_write" in composed
     assert "gh pr merge" in composed

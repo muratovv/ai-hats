@@ -51,8 +51,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -64,15 +68,17 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
 def _task_state(project: Path, task_id: str) -> str:
     yaml_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
-        / task_id / "task.yaml"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "task.yaml"
     )
     text = yaml_path.read_text()
     for line in text.splitlines():
@@ -82,8 +88,11 @@ def _task_state(project: Path, task_id: str) -> str:
 
 
 def _walk_task_to_review(
-    rack, project: Path, task_id: str,
-    payload_file: str, payload_content: str,
+    rack,
+    project: Path,
+    task_id: str,
+    payload_file: str,
+    payload_content: str,
 ) -> None:
     """plan → execute → write commit in worktree → document → review."""
     rack("transition", task_id, "plan")
@@ -91,8 +100,7 @@ def _walk_task_to_review(
     # Plan content goes straight into the canonical task tree — no
     # .claude/plans round-trip (HATS-637).
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         f"# {task_id} plan\n\n"
@@ -110,9 +118,9 @@ def _walk_task_to_review(
     branch_ref = f"task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current = Path(line[len("worktree "):].strip())
+            current = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(f"/{branch_ref}"):
                 wt_path = current
                 break
@@ -125,10 +133,20 @@ def _walk_task_to_review(
     (wt_path / payload_file).write_text(payload_content)
     _git(wt_path, "add", payload_file)
     subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
-         "commit", "-m", f"add {payload_file}"],
-        cwd=str(wt_path), check=True,
-        capture_output=True, text=True,
+        [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            f"add {payload_file}",
+        ],
+        cwd=str(wt_path),
+        check=True,
+        capture_output=True,
+        text=True,
     )
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
@@ -148,13 +166,19 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- bootstrap ----
@@ -166,9 +190,14 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- two tasks, both rooted in `main` ----
@@ -185,12 +214,20 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     cmd_a = [str(rack_bin), "transition", task_a, "done"]
     cmd_b = [str(rack_bin), "transition", task_b, "done"]
     p1 = subprocess.Popen(
-        cmd_a, cwd=str(project), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd_a,
+        cwd=str(project),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     p2 = subprocess.Popen(
-        cmd_b, cwd=str(project), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd_b,
+        cwd=str(project),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     out1, err1 = p1.communicate(timeout=90)
     out2, err2 = p2.communicate(timeout=90)
@@ -214,10 +251,15 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     assert _task_state(project, task_b) == "done"
 
     # ---- exactly 2 merge commits since head_before ----
-    log = _git(
-        project, "log", "--merges", "--pretty=%H",
-        f"{head_before}..HEAD",
-    ).stdout.strip().splitlines()
-    assert len(log) == 2, (
-        f"expected 2 merge commits since base, got {len(log)}:\n{log}"
+    log = (
+        _git(
+            project,
+            "log",
+            "--merges",
+            "--pretty=%H",
+            f"{head_before}..HEAD",
+        )
+        .stdout.strip()
+        .splitlines()
     )
+    assert len(log) == 2, f"expected 2 merge commits since base, got {len(log)}:\n{log}"

@@ -79,12 +79,10 @@ def make_event(
         duration_ms=round(duration_ms, 3),
         error=f"{type(error).__name__}: {error}" if error is not None else None,
         requires_values=(
-            {k: safe_repr(v) for k, v in requires_seen.items()}
-            if include_values else None
+            {k: safe_repr(v) for k, v in requires_seen.items()} if include_values else None
         ),
         produces_values=(
-            {k: safe_repr(v) for k, v in produces.items()}
-            if include_values else None
+            {k: safe_repr(v) for k, v in produces.items()} if include_values else None
         ),
     )
 

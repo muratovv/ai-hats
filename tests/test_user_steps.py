@@ -50,7 +50,10 @@ def test_no_steps_dir_silent_noop(tmp_path):
 def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "echo", """
+    _write_step(
+        steps_dir,
+        "echo",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -74,7 +77,8 @@ def test_step_registers_via_module_top_level(tmp_path, monkeypatch):
 
 
         register("echo", EchoStep)
-    """)
+    """,
+    )
 
     loaded = load_user_steps(tmp_path)
     assert len(loaded) == 1 and loaded[0].name == "echo.py"
@@ -88,9 +92,13 @@ def test_underscore_prefix_modules_skipped(tmp_path, monkeypatch):
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
     # If this module ran, it would raise — proves it was NOT executed.
-    _write_step(steps_dir, "_helpers", """
+    _write_step(
+        steps_dir,
+        "_helpers",
+        """
         raise RuntimeError("this should not have been imported")
-    """)
+    """,
+    )
     assert load_user_steps(tmp_path) == []
 
 
@@ -98,7 +106,10 @@ def test_loader_idempotent_within_process(tmp_path, monkeypatch):
     """Re-loading does not fire register() twice → no StepRegistryError."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "noop", """
+    _write_step(
+        steps_dir,
+        "noop",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -118,7 +129,8 @@ def test_loader_idempotent_within_process(tmp_path, monkeypatch):
 
 
         register("noop", NoopStep)
-    """)
+    """,
+    )
 
     first = load_user_steps(tmp_path)
     assert len(first) == 1
@@ -130,7 +142,10 @@ def test_conflict_with_builtin_raises(tmp_path, monkeypatch):
     """User module trying to override a built-in → StepRegistryError."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "shadow", """
+    _write_step(
+        steps_dir,
+        "shadow",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -150,7 +165,8 @@ def test_conflict_with_builtin_raises(tmp_path, monkeypatch):
 
 
         register("compose_role", Hijack)
-    """)
+    """,
+    )
 
     with pytest.raises(registry.StepRegistryError, match="already registered"):
         load_user_steps(tmp_path)
@@ -160,9 +176,13 @@ def test_invalid_step_class_surfaces_error(tmp_path, monkeypatch):
     """A broken module raises at import — surfaces, not swallowed."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "broken", """
+    _write_step(
+        steps_dir,
+        "broken",
+        """
         raise ValueError("intentional import-time failure")
-    """)
+    """,
+    )
     with pytest.raises(ValueError, match="intentional"):
         load_user_steps(tmp_path)
 
@@ -176,7 +196,10 @@ def test_ai_hats_dir_override_for_user_steps(tmp_path, monkeypatch):
     project_dir.mkdir()
 
     steps_dir = custom / "pipeline_steps"
-    _write_step(steps_dir, "external", """
+    _write_step(
+        steps_dir,
+        "external",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -196,7 +219,8 @@ def test_ai_hats_dir_override_for_user_steps(tmp_path, monkeypatch):
 
 
         register("external", External)
-    """)
+    """,
+    )
 
     loaded = load_user_steps(project_dir)
     assert len(loaded) == 1
@@ -215,7 +239,10 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
     # 1. The user-authored step file (echoes ``text`` into ``echoed``,
     #    plus prepends a banner so we can verify it actually ran).
     steps_dir = tmp_path / ".agent" / "ai-hats" / "pipeline_steps"
-    _write_step(steps_dir, "echo", """
+    _write_step(
+        steps_dir,
+        "echo",
+        """
         from ai_hats.pipeline.registry import register
         from ai_hats.pipeline.step import Step, StepIO
 
@@ -241,18 +268,21 @@ def test_step_runs_in_pipeline_e2e(tmp_path, monkeypatch):
 
 
         register("echo", EchoStep)
-    """)
+    """,
+    )
 
     # 2. The user-authored YAML pipeline that references the new step.
     #    Harness loads built-in pipelines via importlib.resources, so
     #    we patch the loader path for this one. (HATS-268 will surface
     #    project-local pipelines through the same lookup.)
     yaml_path = tmp_path / "echo-pipeline.yaml"
-    yaml_path.write_text(textwrap.dedent("""
+    yaml_path.write_text(
+        textwrap.dedent("""
         name: echo-pipeline
         steps:
           - id: echo
-    """).lstrip())
+    """).lstrip()
+    )
 
     # 3. Harness loads user steps on entry, then runs the project-local
     #    YAML via run_yaml (minimum-friction proxy for HATS-268's

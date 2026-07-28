@@ -207,8 +207,7 @@ def test_user_rule_reaches_session_prompt(project_with_user_rule: Path, monkeypa
 
     text = sink.get("prompt_text")
     assert text, (
-        f"session prompt missing/empty "
-        f"(path={sink.get('prompt_path')!r}, cmd={sink.get('cmd')!r})"
+        f"session prompt missing/empty (path={sink.get('prompt_path')!r}, cmd={sink.get('cmd')!r})"
     )
     assert SENTINEL in text, (
         f"HATS-1203 regression: user-rule body never reached the session prompt.\n"
@@ -225,9 +224,7 @@ def test_user_rule_reaches_session_prompt(project_with_user_rule: Path, monkeypa
     )
 
 
-def test_show_prompt_and_session_agree_on_user_rules(
-    project_with_user_rule: Path, monkeypatch
-):
+def test_show_prompt_and_session_agree_on_user_rules(project_with_user_rule: Path, monkeypatch):
     """Preview and session must be derived from the same composition.
 
     ``test_show_prompt_matches_session_prompt.py`` already pins byte-equality,
@@ -247,9 +244,7 @@ def test_show_prompt_and_session_agree_on_user_rules(
 
     res_show = CliRunner().invoke(main, ["config", "show-prompt"])
     assert res_show.exit_code == 0, f"show-prompt exited {res_show.exit_code}"
-    show_body = expand_path_placeholders(
-        res_show.output, project_with_user_rule
-    ).strip("\n")
+    show_body = expand_path_placeholders(res_show.output, project_with_user_rule).strip("\n")
 
     assert SENTINEL in session_body, "sentinel missing from session side"
     assert SENTINEL in show_body, "sentinel missing from show-prompt side"

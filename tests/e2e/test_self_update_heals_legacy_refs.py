@@ -27,8 +27,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -41,8 +45,12 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 def _git(project_dir: Path, *args: str, env: dict[str, str]) -> None:
     """Run a git command in `project_dir`, raising on non-zero exit."""
     subprocess.run(
-        ["git", *args], cwd=str(project_dir), env=env,
-        check=True, capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(project_dir),
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -62,25 +70,33 @@ def _seed_legacy_project(project_dir: Path) -> None:
 
     claude_dir = project_dir / ".claude"
     claude_dir.mkdir()
-    (claude_dir / "settings.json").write_text(json.dumps({
-        "hooks": {
-            HOOK_PRE_TOOL_USE: [{
-                "matcher": "Bash",
-                "hooks": [{
-                    "type": "command",
-                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
-                }],
-            }],
-        },
-    }, indent=2) + "\n")
+    (claude_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.sh",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     (project_dir / "CLAUDE.md").write_text(
         "# Project doc\n\nHook lives at `.agent/hooks/guard.sh`.\n"
         "See backlog at `.agent/backlog/tasks/X-1/plan.md` for context.\n"
     )
-    (project_dir / "docs.md").write_text(
-        "Retro at `.agent/retrospectives/2026-01-01-foo.md`\n"
-    )
+    (project_dir / "docs.md").write_text("Retro at `.agent/retrospectives/2026-01-01-foo.md`\n")
 
     # HATS-549 Phase 2: dst-gate refuses to heal a file if ANY ref
     # points at a path missing from BOTH legacy and new locations.
@@ -128,7 +144,9 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=120,
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
     # HATS-549 Phase 4: ``guard.sh`` is user-authored (basename NOT in
@@ -150,8 +168,7 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
     assert ".agent/hooks/guard.sh" not in raw
     assert "library/hooks/guard.sh" not in raw
     assert "user-hooks/guard.sh" not in raw, (
-        "Phase 4 disables — entry should be REMOVED, not auto-rewritten "
-        "to user-hooks/."
+        "Phase 4 disables — entry should be REMOVED, not auto-rewritten to user-hooks/."
     )
 
     # Markdown files rewritten (clean git tree). HATS-549 Phase 4
@@ -186,19 +203,21 @@ def test_e2e_healer_dirty_markdown_falls_back_to_inventory(installed_launcher, t
     _git_init_commit(project, env)
     # Make CLAUDE.md dirty after commit
     (project / "CLAUDE.md").write_text(
-        "# Project doc\n\nHook lives at `.agent/hooks/guard.sh`.\n"
-        "UNCOMMITTED EDIT\n"
+        "# Project doc\n\nHook lives at `.agent/hooks/guard.sh`.\nUNCOMMITTED EDIT\n"
     )
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=120,
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
     # CLAUDE.md NOT auto-rewritten (dirty)
     claude_md = (project / "CLAUDE.md").read_text()
-    assert ".agent/hooks/guard.sh" in claude_md, \
+    assert ".agent/hooks/guard.sh" in claude_md, (
         f"dirty CLAUDE.md was modified despite git-dirty gate: {claude_md!r}"
+    )
     assert "UNCOMMITTED EDIT" in claude_md
 
     # Inventory audit-log written
@@ -223,7 +242,12 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     _seed_legacy_project(project)
     _git_init_commit(project, env)
 
-    _run([f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"], cwd=project, env=env, timeout=120)
+    _run(
+        [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
+        cwd=project,
+        env=env,
+        timeout=120,
+    )
     # Commit the heal so the tree is clean again
     _git(project, "add", "-A", env=env)
     _git(project, "commit", "-q", "-m", "post-heal", env=env)
@@ -233,12 +257,15 @@ def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
 
     res = _run(
         [f"{env[ENV_AI_HATS_VENV]}/bin/python", "-m", "ai_hats._bump_internal"],
-        cwd=project, env=env, timeout=120,
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
     after = {p.name for p in audits.glob("*")} if audits.exists() else set()
-    assert before == after, \
+    assert before == after, (
         f"second bump created inventory artefacts (before={before} after={after})"
+    )
 
     # No new "Healed:" lines
     combined = res.stdout + res.stderr

@@ -73,23 +73,22 @@ def test_reflect_role_materializes_target_composition(
     requires_claude_auth,  # noqa: ARG001 — skip-marker fixture
 ) -> None:
     """User-way smoke: composed-role manifest on disk + clean PTY exit."""
-    result = drive_bare_hitl(
-        tmp_project,
-        subcommand_args=("reflect", "role", TARGET_ROLE),
-        timeout=REFLECT_ROLE_TIMEOUT,
-    ).expect_no_hang().expect_exit_in({0, 130})
+    result = (
+        drive_bare_hitl(
+            tmp_project,
+            subcommand_args=("reflect", "role", TARGET_ROLE),
+            timeout=REFLECT_ROLE_TIMEOUT,
+        )
+        .expect_no_hang()
+        .expect_exit_in({0, 130})
+    )
 
     # ---- Pre-flight materialization (deterministic, Python-side) ----
     # Path contract from PipelineHarness.namespace:
     #   <ai_hats_dir>/sessions/runs/pipeline_runs/<pipeline>/<session_id>/
     # plus reflect.py's ``h.namespace / "composed" / target_role``.
-    pipeline_runs = (
-        tmp_project.agent_dir
-        / "sessions" / "runs" / "pipeline_runs" / "reflect-role"
-    )
-    composed = list(
-        pipeline_runs.glob(f"*/composed/{TARGET_ROLE}/manifest.yaml")
-    )
+    pipeline_runs = tmp_project.agent_dir / "sessions" / "runs" / "pipeline_runs" / "reflect-role"
+    composed = list(pipeline_runs.glob(f"*/composed/{TARGET_ROLE}/manifest.yaml"))
     assert len(composed) == 1, (
         f"expected exactly one composed manifest under {pipeline_runs}, "
         f"got {len(composed)}: {composed}"
@@ -97,9 +96,7 @@ def test_reflect_role_materializes_target_composition(
     # Manifest is a YAML dict written by _materialize_target_composition;
     # non-zero size means the dump succeeded (compose produced something
     # to serialize).
-    assert composed[0].stat().st_size > 0, (
-        f"composed manifest is empty: {composed[0]}"
-    )
+    assert composed[0].stat().st_size > 0, f"composed manifest is empty: {composed[0]}"
 
     # ---- Pin that we actually got past pre-flight into PTY ----
     # Same rationale as test_reflect_all_e2e.py — the session-start
@@ -116,6 +113,5 @@ def test_reflect_role_materializes_target_composition(
 
     # ---- Defensive: no traceback leak ----
     assert "Traceback" not in plain, (
-        f"traceback leaked to user-facing output:\n"
-        f"stdout (tail 800):\n{plain[-800:]}"
+        f"traceback leaked to user-facing output:\nstdout (tail 800):\n{plain[-800:]}"
     )

@@ -30,7 +30,9 @@ import pytest
 from _helpers.workspace import build_workspace_member_wheels  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = pytest.mark.install_heavy  # real wheel build + install at call time → capped via conftest
+pytestmark = (
+    pytest.mark.install_heavy
+)  # real wheel build + install at call time → capped via conftest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -81,13 +83,28 @@ def test_wheel_install_has_no_console_script_and_module_runs(tmp_path: Path) -> 
     venv = tmp_path / "venv"
     subprocess.run(
         ["uv", "venv", "--python", "3.11", str(venv)],
-        check=True, capture_output=True, text=True, env=env, timeout=120,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
     )
     venv_python = venv / "bin" / "python"
     install = subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv_python),
-         "--find-links", str(wheel.parent), str(wheel)],
-        capture_output=True, text=True, env=env, timeout=300,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv_python),
+            "--find-links",
+            str(wheel.parent),
+            str(wheel),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,
     )
     assert install.returncode == 0, f"wheel install failed:\n{install.stdout}\n{install.stderr}"
 
@@ -100,11 +117,12 @@ def test_wheel_install_has_no_console_script_and_module_runs(tmp_path: Path) -> 
     # 2. The module entry point works.
     run = subprocess.run(
         [str(venv_python), "-m", "ai_hats", "--version"],
-        capture_output=True, text=True, env=env, timeout=60,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
     )
-    assert run.returncode == 0, (
-        f"`python -m ai_hats --version` failed:\n{run.stdout}\n{run.stderr}"
-    )
+    assert run.returncode == 0, f"`python -m ai_hats --version` failed:\n{run.stdout}\n{run.stderr}"
     # Click renders ``<prog_name>, version <X>`` — prog_name is ``python -m ai_hats``
     # (underscore). Assert the version line, tolerant of the ai_hats/ai-hats spelling.
     out = (run.stdout + run.stderr).lower()

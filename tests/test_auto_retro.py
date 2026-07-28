@@ -238,31 +238,41 @@ class TestDescribeDecision:
     def test_run_bg(self):
         from ai_hats.retro.auto_retro import describe_decision
 
-        s = describe_decision({
-            "action": "run", "reason": "threshold met",
-            "background": True, "retro_path": "/x/SID.md",
-        })
+        s = describe_decision(
+            {
+                "action": "run",
+                "reason": "threshold met",
+                "background": True,
+                "retro_path": "/x/SID.md",
+            }
+        )
         assert "generating" in s and "bg" in s and "/x/SID.md" in s
 
     def test_skip_with_reason(self):
         from ai_hats.retro.auto_retro import describe_decision
 
-        s = describe_decision({
-            "action": "skip",
-            "reason": "below threshold (turns=0<1, tool_calls=0<1)",
-            "background": None, "retro_path": None,
-        })
+        s = describe_decision(
+            {
+                "action": "skip",
+                "reason": "below threshold (turns=0<1, tool_calls=0<1)",
+                "background": None,
+                "retro_path": None,
+            }
+        )
         assert s.startswith("skipped")
         assert "below threshold" in s
 
     def test_hint_includes_cli_hint(self):
         from ai_hats.retro.auto_retro import describe_decision
 
-        s = describe_decision({
-            "action": "hint", "reason": "threshold met",
-            "background": False,
-            "retro_path": "/a/20260422-071234-1.md",
-        })
+        s = describe_decision(
+            {
+                "action": "hint",
+                "reason": "threshold met",
+                "background": False,
+                "retro_path": "/a/20260422-071234-1.md",
+            }
+        )
         assert "ai-hats session retro" in s
         assert "20260422-071234-1" in s
 
@@ -306,7 +316,8 @@ class TestMainHookWritesLog:
 
         spawned: list[tuple] = []
         monkeypatch.setattr(
-            auto_retro, "_spawn_session_reviewer_background",
+            auto_retro,
+            "_spawn_session_reviewer_background",
             lambda pd, sid: spawned.append((pd, sid)),
         )
         auto_retro._run_foreground(tmp_path, "SID")
@@ -326,7 +337,8 @@ class TestRecursionGuard:
         # Sentinel — should_run must NOT be reached.
         called: list[bool] = []
         monkeypatch.setattr(
-            auto_retro, "should_run",
+            auto_retro,
+            "should_run",
             lambda *a, **kw: called.append(True) or ("run", ""),
         )
 

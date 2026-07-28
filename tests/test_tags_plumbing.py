@@ -164,12 +164,14 @@ def test_tags_survive_auditwriter_enrichment(tmp_path):
     session = _make_session(tmp_path)
 
     # 1. Initial finalize (simulates runtime._finalize_session payload).
-    session.finalize_audit({
-        "exit_code": 0,
-        "role": "primary",
-        "provider": "claude",
-        "tags": {"experiment": "prompt-v2", "client": "acme"},
-    })
+    session.finalize_audit(
+        {
+            "exit_code": 0,
+            "role": "primary",
+            "provider": "claude",
+            "tags": {"experiment": "prompt-v2", "client": "acme"},
+        }
+    )
 
     # 2. Enrichment pass (AuditWriter._write_metrics with no turns / empty stats).
     writer = AuditWriter()
@@ -182,7 +184,10 @@ def test_tags_survive_auditwriter_enrichment(tmp_path):
     assert "turns" in m
     assert "tokens" in m
     assert m["tokens"] == {
-        "input": 0, "output": 0, "cache_read": 0, "cache_creation": 0,
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_creation": 0,
     }
     # Original fields preserved too.
     assert m["exit_code"] == 0

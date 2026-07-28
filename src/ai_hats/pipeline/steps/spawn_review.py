@@ -26,7 +26,11 @@ class SpawnSessionReview(Step):
         )
 
     def run(
-        self, *, session_id: str, project_dir: Path, **_: Any,
+        self,
+        *,
+        session_id: str,
+        project_dir: Path,
+        **_: Any,
     ) -> dict[str, Any]:
         from ai_hats_observe.artifacts import RETRO_LOG, session_dirname
         from ...paths import runs_dir
@@ -37,7 +41,8 @@ class SpawnSessionReview(Step):
             proc = subprocess.Popen(
                 [
                     sys.executable,
-                    "-m", "ai_hats.cli.reflect_session_main",
+                    "-m",
+                    "ai_hats.cli.reflect_session_main",
                     session_id,
                     str(self.max_retries),
                 ],

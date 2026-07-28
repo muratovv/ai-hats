@@ -45,21 +45,21 @@ def _setup_fake_scripts(scripts_dir: Path, launcher_calls_log: Path) -> Path:
     # Stub launcher: appends `REPO=...|ARGS=...` to log on every call.
     stub_launcher = scripts_dir / "ai-hats-launcher"
     stub_launcher.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         f'echo "REPO=${{AI_HATS_REPO_URL:-}}|ARGS=$*" >> "{launcher_calls_log}"\n'
-        'exit 0\n'
+        "exit 0\n"
     )
     _make_executable(stub_launcher)
 
     # Stub install-launcher.sh: copies the stub launcher to AI_HATS_LAUNCHER_DEST.
     installer = scripts_dir / "install-launcher.sh"
     installer.write_text(
-        '#!/usr/bin/env bash\n'
-        'set -e\n'
+        "#!/usr/bin/env bash\n"
+        "set -e\n"
         'mkdir -p "$(dirname "$AI_HATS_LAUNCHER_DEST")"\n'
         f'cp "{stub_launcher}" "$AI_HATS_LAUNCHER_DEST"\n'
         'chmod +x "$AI_HATS_LAUNCHER_DEST"\n'
-        'exit 0\n'
+        "exit 0\n"
     )
     _make_executable(installer)
 
@@ -113,8 +113,13 @@ def test_bootstrap_propagates_role_provider_to_init(tmp_path):
     _, project, dest, log, bootstrap = _setup_env(tmp_path)
 
     res = _run_bootstrap(
-        bootstrap, "-r", "go-dev", "-p", "claude",
-        cwd=project, launcher_dest=dest,
+        bootstrap,
+        "-r",
+        "go-dev",
+        "-p",
+        "claude",
+        cwd=project,
+        launcher_dest=dest,
     )
 
     assert res.returncode == 0, res.stderr
@@ -131,14 +136,16 @@ def test_bootstrap_local_repo_path_becomes_repo_url(tmp_path):
     (local_repo / "pyproject.toml").write_text("[project]\nname='dummy'\n")
 
     res = _run_bootstrap(
-        bootstrap, "--local", str(local_repo),
-        cwd=project, launcher_dest=dest,
+        bootstrap,
+        "--local",
+        str(local_repo),
+        cwd=project,
+        launcher_dest=dest,
     )
 
     assert res.returncode == 0, res.stderr
     self_update_lines = [
-        line for line in log.read_text().splitlines()
-        if "ARGS=self update" in line
+        line for line in log.read_text().splitlines() if "ARGS=self update" in line
     ]
     assert len(self_update_lines) == 1
     assert f"REPO={local_repo}" in self_update_lines[0]
@@ -149,14 +156,16 @@ def test_bootstrap_custom_repo_url_propagated(tmp_path):
     _, project, dest, log, bootstrap = _setup_env(tmp_path)
 
     res = _run_bootstrap(
-        bootstrap, "--repo", "git+ssh://custom.example/repo.git",
-        cwd=project, launcher_dest=dest,
+        bootstrap,
+        "--repo",
+        "git+ssh://custom.example/repo.git",
+        cwd=project,
+        launcher_dest=dest,
     )
 
     assert res.returncode == 0, res.stderr
     self_update_lines = [
-        line for line in log.read_text().splitlines()
-        if "ARGS=self update" in line
+        line for line in log.read_text().splitlines() if "ARGS=self update" in line
     ]
     assert len(self_update_lines) == 1
     assert "REPO=git+ssh://custom.example/repo.git" in self_update_lines[0]
@@ -185,8 +194,7 @@ def test_bootstrap_default_repo_url_blank_when_no_override(tmp_path):
 
     assert res.returncode == 0, res.stderr
     self_update_lines = [
-        line for line in log.read_text().splitlines()
-        if "ARGS=self update" in line
+        line for line in log.read_text().splitlines() if "ARGS=self update" in line
     ]
     assert len(self_update_lines) == 1
     assert "REPO=|" in self_update_lines[0]  # empty REPO value
@@ -207,9 +215,9 @@ def test_bootstrap_auto_installs_uv_when_absent(tmp_path):
     stubbin.mkdir()
     curl = stubbin / "curl"
     curl.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'mkdir -p "$HOME/.local/bin"\n'
-        'printf \'#!/usr/bin/env bash\\necho "uv 0.0.0-stub"\\nexit 0\\n\' '
+        "printf '#!/usr/bin/env bash\\necho \"uv 0.0.0-stub\"\\nexit 0\\n' "
         '> "$HOME/.local/bin/uv"\n'
         'chmod +x "$HOME/.local/bin/uv"\n'
         'echo "true"\n'  # piped into `sh` — harmless no-op
@@ -256,7 +264,7 @@ def test_bootstrap_piped_fetches_installer(tmp_path):
     _make_executable(stub_launcher)
     stub_installer = assets / "install-launcher.sh"
     stub_installer.write_text(
-        '#!/usr/bin/env bash\nset -e\n'
+        "#!/usr/bin/env bash\nset -e\n"
         'mkdir -p "$(dirname "$AI_HATS_LAUNCHER_DEST")"\n'
         f'cp "{stub_launcher}" "$AI_HATS_LAUNCHER_DEST"\n'
         'chmod +x "$AI_HATS_LAUNCHER_DEST"\nexit 0\n'
@@ -267,11 +275,11 @@ def test_bootstrap_piped_fetches_installer(tmp_path):
     stubbin.mkdir()
     curl = stubbin / "curl"
     curl.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'out=""; prev=""\n'
         'for a in "$@"; do [[ "$prev" == "-o" ]] && out="$a"; prev="$a"; done\n'
         f'cp "{stub_installer}" "$out"\n'
-        'exit 0\n'
+        "exit 0\n"
     )
     _make_executable(curl)
 

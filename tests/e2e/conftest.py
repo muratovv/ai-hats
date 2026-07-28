@@ -91,9 +91,7 @@ def _install_heavy_group_map(install_heavy_files, k):  # noqa: ANN001, ANN202
     Fail-under-revert: collapse this to per-file groups (drop the call in the
     hook) → install-heavy items fan back out to ``nworkers`` concurrent installs.
     """
-    return {
-        f: f"install_heavy_{i % k}" for i, f in enumerate(sorted(install_heavy_files))
-    }
+    return {f: f"install_heavy_{i % k}" for i, f in enumerate(sorted(install_heavy_files))}
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
@@ -144,9 +142,7 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
             # whole live cohort to ONE worker — no N concurrent SDK sessions.
             item.add_marker(pytest.mark.xdist_group("live_claude"))
         elif item.get_closest_marker("install_heavy"):
-            item.add_marker(
-                pytest.mark.xdist_group(group_for_file[item.nodeid.split("::", 1)[0]])
-            )
+            item.add_marker(pytest.mark.xdist_group(group_for_file[item.nodeid.split("::", 1)[0]]))
         else:
             item.add_marker(pytest.mark.xdist_group(item.nodeid.split("::", 1)[0]))
 
@@ -202,7 +198,10 @@ def requires_claude_auth() -> None:
         pytest.skip("claude binary not found in PATH")
     try:
         cp = subprocess.run(
-            ["claude", "--version"], capture_output=True, text=True, timeout=10,
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         pytest.skip(f"claude --version probe failed: {exc}")
@@ -221,7 +220,10 @@ def requires_cline_auth() -> None:
         pytest.skip("cline binary not found in PATH")
     try:
         cp = subprocess.run(
-            ["cline", "--version"], capture_output=True, text=True, timeout=10,
+            ["cline", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         pytest.skip(f"cline --version probe failed: {exc}")
@@ -296,13 +298,18 @@ def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     project_path = tmp_path / "project"
     project_path.mkdir()
     import subprocess
-    subprocess.run(["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True)
-    ProjectConfig(provider="claude", library_paths=[]).save(
-        project_path / PROJECT_CONFIG
+
+    subprocess.run(
+        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
     )
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
+    )
+    ProjectConfig(provider="claude", library_paths=[]).save(project_path / PROJECT_CONFIG)
     Assembler(project_path).init()
     return Project(
         path=project_path,
@@ -419,12 +426,20 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     project_path = tmp_path / "project"
     project_path.mkdir()
     import subprocess
-    subprocess.run(["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True)
+
+    subprocess.run(
+        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
+    )
     return Project(
-        path=project_path, ai_hats_binary=launcher,
+        path=project_path,
+        ai_hats_binary=launcher,
         env={
             # HATS-589: per-worker private build source (no-op on serial).
             ENV_REPO_URL: str(build_src(repo_root)),

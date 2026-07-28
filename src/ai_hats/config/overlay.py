@@ -8,6 +8,7 @@ from pydantic import Field, computed_field
 
 from ai_hats_core import YamlModel as _YamlModel
 
+
 class OverlayConfig(_YamlModel):
     """Per-role customization overlay (add/remove components).
 

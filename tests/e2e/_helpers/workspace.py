@@ -29,9 +29,7 @@ def workspace_members(repo_root: Path) -> list[tuple[str, str]]:
     return members
 
 
-def build_workspace_member_wheels(
-    repo_root: Path, out_dir: Path, env: dict | None = None
-) -> Path:
+def build_workspace_member_wheels(repo_root: Path, out_dir: Path, env: dict | None = None) -> Path:
     """``uv build --wheel`` every ``packages/*`` member into ``out_dir``.
 
     The integrator's built ``Requires-Dist`` lists bare ``ai-hats-core`` /

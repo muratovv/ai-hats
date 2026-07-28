@@ -92,10 +92,7 @@ def test_unknown_non_deprecated_key_stripped_with_warn(tmp_path, capsys):
     """
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "schema_version: 4\n"
-        "provider: claude\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-        "mystery_flag: true\n"
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\nmystery_flag: true\n"
     )
 
     cfg = ProjectConfig.from_yaml(path)
@@ -119,10 +116,7 @@ def test_default_role_healed_from_active_role(tmp_path, capsys):
     """v0.6 yaml with active_role + empty default_role → default_role := active_role + WARN."""
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "schema_version: 4\n"
-        "provider: claude\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: dev\n"
+        "schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\nactive_role: dev\n"
         # default_role intentionally omitted (v0.6 shape)
     )
 
@@ -158,11 +152,7 @@ def test_default_role_heal_no_op_when_both_set(tmp_path, capsys):
 def test_default_role_heal_no_op_when_both_empty(tmp_path, capsys):
     """Greenfield project (no active_role, no default_role) → no heal, no WARN."""
     path = tmp_path / PROJECT_CONFIG
-    path.write_text(
-        "schema_version: 4\n"
-        "provider: claude\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-    )
+    path.write_text("schema_version: 4\nprovider: claude\nai_hats_dir: .agent/ai-hats\n")
 
     cfg = ProjectConfig.from_yaml(path)
 

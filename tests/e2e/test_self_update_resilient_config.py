@@ -38,13 +38,19 @@ from ai_hats.paths import PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -80,7 +86,8 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     # ``ai_hats_library`` with the source tree, so role resolution stops
     # exercising the installed artefact.
     env = {
-        k: v for k, v in os.environ.items()
+        k: v
+        for k, v in os.environ.items()
         if not k.startswith("AI_HATS_")
         and k not in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "PYTHONPATH")
     }
@@ -90,10 +97,17 @@ def _bootstrap(tmp_path: Path) -> tuple[Path, Path, dict]:
     env["AI_HATS_BUMP_BACKUP_DIR"] = str(backups)
 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=30)
-    _run([str(launcher_dest), "self", "update", "--force-downgrade"], cwd=project, env=env, timeout=300)  # HATS-675: 300s = -n8 gate suite norm
+    _run(
+        [str(launcher_dest), "self", "update", "--force-downgrade"],
+        cwd=project,
+        env=env,
+        timeout=300,
+    )  # HATS-675: 300s = -n8 gate suite norm
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=60,
+        cwd=project,
+        env=env,
+        timeout=60,
     )
     # HATS-764: `self init` rewrote ai-hats.yaml without a harness block (→ the
     # stable default). Re-pin edge so the per-test corrupt-config `self update`s
@@ -123,15 +137,16 @@ def test_update_survives_unknown_config_key(tmp_path: Path) -> None:
 
     res = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     combined = res.stdout + res.stderr
     # Fix #2 signature: the unknown key is stripped with a named WARN, the
     # command does not crash on it.
     assert "dropping unknown field 'future_field'" in combined, (
-        f"expected the unknown-field strip WARN.\n"
-        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+        f"expected the unknown-field strip WARN.\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     )
     # Recovery net: a pre-bump snapshot must exist.
     tarballs = glob.glob(str(tmp_path / "backups" / "*.tar.gz"))
@@ -167,15 +182,15 @@ def test_update_survives_garbage_config_value(tmp_path: Path) -> None:
 
     res = _run(
         [str(launcher_dest), "self", "update", "--force-downgrade"],
-        cwd=project, env=env, timeout=300,  # HATS-675: 300s = -n8 gate suite norm
+        cwd=project,
+        env=env,
+        timeout=300,  # HATS-675: 300s = -n8 gate suite norm
     )
 
     assert res.returncode == 0, (
-        f"degraded update must still exit 0.\n"
-        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+        f"degraded update must still exit 0.\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     )
     combined = res.stdout + res.stderr
     assert "not parseable by the installed version" in combined, (
-        f"expected the graceful degrade message.\n"
-        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+        f"expected the graceful degrade message.\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     )

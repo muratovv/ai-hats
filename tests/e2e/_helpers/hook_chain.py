@@ -53,7 +53,9 @@ def _matches_tool(matcher: str, tool: str) -> bool:
         return matcher == tool
 
 
-def build_session_settings(project: Path, role: str = "assistant", session_id: str = "sid-hooks") -> Path:
+def build_session_settings(
+    project: Path, role: str = "assistant", session_id: str = "sid-hooks"
+) -> Path:
     """Compose a session and return its materialized settings.json.
 
     HATS-1170 moved hook wiring out of project-root ``.claude/settings.json``

@@ -20,7 +20,6 @@ from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir, wt_hooks_di
 from .sweeper import read_marker_names
 
 
-
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
 
 
@@ -169,7 +168,9 @@ def _drift_report(project_dir: Path) -> LayerReport:
     if entry is None:
         raw_entry = read_cache(project_dir)
         if raw_entry is None or raw_entry.behind is None:
-            return LayerReport(Layer.RUNTIME, "version drift", Status.OK, "unknown (no cached probe)")
+            return LayerReport(
+                Layer.RUNTIME, "version drift", Status.OK, "unknown (no cached probe)"
+            )
         if raw_entry.behind > 0:
             return LayerReport(
                 Layer.RUNTIME,
@@ -186,8 +187,6 @@ def _drift_report(project_dir: Path) -> LayerReport:
         f"{entry.behind} commit(s) behind upstream",
         _UPDATE,
     )
-
-
 
 
 @contextmanager

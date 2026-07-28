@@ -34,9 +34,7 @@ def test_claude_get_env_ai_hats_dir_defaults_under_project(tmp_path: Path) -> No
     assert env[ENV_AI_HATS_DIR] == str(tmp_path / ".agent" / "ai-hats")
 
 
-def test_claude_get_env_ai_hats_dir_honours_env_override(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_claude_get_env_ai_hats_dir_honours_env_override(tmp_path: Path, monkeypatch) -> None:
     # ai_hats_dir() gives the AI_HATS_DIR env var precedence — get_env must
     # surface the resolved override, not the in-project default.
     override = tmp_path / "shared-ai-hats"

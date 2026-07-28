@@ -3,6 +3,7 @@
 Asserts the hook behaviour against a fixture src tree, not the real
 ai_hats source — so the test is agnostic to ongoing refactors.
 """
+
 from __future__ import annotations
 
 import os
@@ -10,11 +11,17 @@ import subprocess
 from pathlib import Path
 
 
-
 HOOK_PATH = (
     Path(__file__).parent.parent
-    / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "skills" / "git-mastery"
-    / "git_hooks" / "pre-commit-no-raw-destructive.sh"
+    / "packages"
+    / "ai-hats-library"
+    / "src"
+    / "ai_hats_library"
+    / "core"
+    / "skills"
+    / "git-mastery"
+    / "git_hooks"
+    / "pre-commit-no-raw-destructive.sh"
 )
 
 
@@ -39,9 +46,7 @@ def _make_fake_project(tmp_path: Path) -> Path:
     # The exempt raw-ops site lives in the core package (HATS-862).
     core = project / "packages" / "ai-hats-core" / "src" / "ai_hats_core"
     core.mkdir(parents=True)
-    (core / "safe_delete.py").write_text(
-        "def discard(p):\n    p.unlink()\n"
-    )
+    (core / "safe_delete.py").write_text("def discard(p):\n    p.unlink()\n")
     return project
 
 
@@ -76,9 +81,7 @@ def test_hook_passes_on_clean_tree(tmp_path):
 
 def test_hook_blocks_raw_unlink_outside_safe_delete(tmp_path):
     project = _make_fake_project(tmp_path)
-    (project / "src" / "ai_hats" / "bad.py").write_text(
-        "def f(p):\n    p.unlink()\n"
-    )
+    (project / "src" / "ai_hats" / "bad.py").write_text("def f(p):\n    p.unlink()\n")
     rc, _, err = _run_hook(project)
     assert rc == 1
     assert "raw destructive call" in err
@@ -88,8 +91,7 @@ def test_hook_blocks_raw_unlink_outside_safe_delete(tmp_path):
 def test_hook_blocks_raw_rmtree(tmp_path):
     project = _make_fake_project(tmp_path)
     (project / "src" / "ai_hats" / "bad.py").write_text(
-        "import shutil\n"
-        "def f(p):\n    shutil.rmtree(p)\n"
+        "import shutil\ndef f(p):\n    shutil.rmtree(p)\n"
     )
     rc, _, err = _run_hook(project)
     assert rc == 1
@@ -98,9 +100,7 @@ def test_hook_blocks_raw_rmtree(tmp_path):
 
 def test_hook_blocks_raw_rmdir(tmp_path):
     project = _make_fake_project(tmp_path)
-    (project / "src" / "ai_hats" / "bad.py").write_text(
-        "def f(p):\n    p.rmdir()\n"
-    )
+    (project / "src" / "ai_hats" / "bad.py").write_text("def f(p):\n    p.rmdir()\n")
     rc, _, err = _run_hook(project)
     assert rc == 1
 
@@ -139,22 +139,15 @@ def test_hook_noop_on_non_ai_hats_project(tmp_path):
     project.mkdir()
     subprocess.run(["git", "init", "-q", str(project)], check=True)
     (project / "main.py").write_text(
-        "def f(p):\n    p.unlink()\n"
-        "import shutil\n"
-        "shutil.rmtree('/anywhere')\n"
+        "def f(p):\n    p.unlink()\nimport shutil\nshutil.rmtree('/anywhere')\n"
     )
     rc, _, err = _run_hook(project)
-    assert rc == 0, (
-        f"hook must no-op for non-ai-hats projects; "
-        f"got returncode={rc}, stderr={err!r}"
-    )
+    assert rc == 0, f"hook must no-op for non-ai-hats projects; got returncode={rc}, stderr={err!r}"
 
 
 def test_hook_respects_skip_env(tmp_path):
     project = _make_fake_project(tmp_path)
-    (project / "src" / "ai_hats" / "bad.py").write_text(
-        "def f(p):\n    p.unlink()\n"
-    )
+    (project / "src" / "ai_hats" / "bad.py").write_text("def f(p):\n    p.unlink()\n")
     env = os.environ.copy()
     env["AI_HATS_NO_RAW_DESTRUCTIVE_SKIP"] = "1"
     result = subprocess.run(
@@ -188,11 +181,7 @@ def test_hook_does_not_flag_safe_delete_module_itself(tmp_path):
     project = _make_fake_project(tmp_path)
     # Add more raw ops to safe_delete.py — should still pass.
     (project / "packages" / "ai-hats-core" / "src" / "ai_hats_core" / "safe_delete.py").write_text(
-        "import shutil\n"
-        "def discard(p):\n"
-        "    p.unlink()\n"
-        "    p.rmdir()\n"
-        "    shutil.rmtree(p)\n"
+        "import shutil\ndef discard(p):\n    p.unlink()\n    p.rmdir()\n    shutil.rmtree(p)\n"
     )
     rc, _, err = _run_hook(project)
     assert rc == 0, f"safe_delete.py raw ops must not trip the hook; got: {err}"
