@@ -25,7 +25,7 @@ ACK_FLAG_RE = re.compile(r"AI_HATS_[A-Z0-9_]*ACK")
 class Verdict:
     """Composite outcome of the whole chain."""
 
-    decision: str  # "allow" | "deny"
+    decision: str  # "allow" | "deny" | "ask"
     reason: str = ""
     hook: str = ""  # basename of the deciding hook; "" when allowed
 
@@ -34,13 +34,23 @@ class Verdict:
         return self.decision == "deny"
 
     @property
+    def gated(self) -> bool:
+        """The agent may not proceed on its own — the chain said deny or ask.
+
+        Kept distinct from :attr:`denied` (HATS-1308): ``deny`` ends the call,
+        ``ask`` hands the decision to the user. Asserting ``denied`` on an
+        ``ask`` would misreport the guard just as badly as reading it as allow.
+        """
+        return self.decision in {"deny", "ask"}
+
+    @property
     def names_ack_flag(self) -> bool:
         return bool(ACK_FLAG_RE.search(self.reason))
 
     def __str__(self) -> str:  # pragma: no cover - assertion messages only
-        if not self.denied:
+        if not self.gated:
             return "allow"
-        return f"deny by {self.hook}: {self.reason.strip()[:200]}"
+        return f"{self.decision} by {self.hook}: {self.reason.strip()[:200]}"
 
 
 def _matches_tool(matcher: str, tool: str) -> bool:
@@ -114,7 +124,9 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
     if proc.returncode == 2:
         return Verdict("deny", proc.stderr, name)
 
-    # Convention 2: a permissionDecision on stdout.
+    # Convention 2: a permissionDecision on stdout. `ask` is a gate too — it
+    # routes the call to the user, so treating it as allow reports a guard that
+    # escalated as one that waved the command through (HATS-1308).
     out = (proc.stdout or "").strip()
     if out:
         try:
@@ -122,8 +134,9 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
         except json.JSONDecodeError:
             payload_out = {}
         hso = payload_out.get("hookSpecificOutput") or {}
-        if str(hso.get("permissionDecision", "")).lower() == "deny":
-            return Verdict("deny", str(hso.get("permissionDecisionReason", "")), name)
+        decision = str(hso.get("permissionDecision", "")).lower()
+        if decision in {"deny", "ask"}:
+            return Verdict(decision, str(hso.get("permissionDecisionReason", "")), name)
 
     return Verdict("allow")
 
@@ -162,7 +175,7 @@ def run_tool_chain(
 
     for command_str in hooks:
         verdict = _run_one(command_str, payload, project, base_env)
-        if verdict.denied:
+        if verdict.gated:
             return verdict
     return Verdict("allow")
 
