@@ -21,7 +21,7 @@ def test_wt_exec_runs_in_the_subdirectory_you_stand_in(tmp_project, repo_root):
     """S1: inside `<wt>/sub`, the bare form needs no selector and no flag."""
     main = tmp_project
     env = child_env(repo_root)
-    _, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    _, wt = two_worktrees(main.path, env)
     sub = wt / "sub"
     sub.mkdir()
 
@@ -41,7 +41,7 @@ def test_wt_exec_from_outside_still_lands_at_the_worktree_root(tmp_project, repo
     """R5 back-compat: every published example runs from the main checkout."""
     main = tmp_project
     env = child_env(repo_root)
-    branch, wt = two_worktrees(main.ai_hats_binary, main.path, env)
+    branch, wt = two_worktrees(main.path, env)
     (wt / "sub").mkdir()
 
     res = ai_hats(main.ai_hats_binary, "wt", "exec", branch, "--", *_PROBE, cwd=main.path, env=env)

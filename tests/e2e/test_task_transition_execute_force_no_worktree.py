@@ -1,4 +1,4 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> execute --force``
+"""End-to-end coverage for ``rack transition <ID> execute --force``
 NOT creating a fresh worktree (HATS-697 / PROX-287).
 
 A forced ``→ execute`` is a manual state correction (typically for
@@ -69,13 +69,19 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
          only the main worktree is registered.
       6. The output names the deliberate skip.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
 
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
+            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(venv / "bin" / "rack"), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
@@ -94,8 +100,8 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
     )
 
     # ---- 2. create task → plan (scaffold) → fill the plan ----
-    new_res = ai_hats(
-        "task", "create", "forced execute no worktree",
+    new_res = rack(
+        "create", "forced execute no worktree",
         "--description", "exercise the HATS-697 forced-execute no-worktree path",
         "--role", "assistant",
         "--reviewer", "user",
@@ -110,7 +116,7 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
         / "tasks" / task_id / "plan.md"
@@ -131,17 +137,17 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
     )
 
     # ---- 3. forced execute MUST NOT create a worktree ----
-    res = ai_hats(
-        "task", "transition", task_id, "execute",
+    res = rack(
+        "transition", task_id, "execute",
         "--force", "--reason", "shipped on master, correcting state",
         expect_exit=0,
     )
-    assert "No worktree created (forced)" in res.stdout, (
+    assert "no worktree created (manual override)" in res.stdout, (
         f"forced execute did not announce the deliberate skip:\n{res.stdout}"
     )
 
     # ---- 4. state advanced, but NO task worktree was registered ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: execute" in show.stdout, (
         f"task did not reach `execute`:\n{show.stdout}"
     )

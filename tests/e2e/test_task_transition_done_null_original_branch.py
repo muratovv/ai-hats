@@ -1,4 +1,4 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> done`` on a
+"""End-to-end coverage for ``rack transition <ID> done`` on a
 worktree state file whose ``original_branch`` is ``null`` (HATS-714).
 
 Sibling to ``test_wt_merge_null_original_branch.py`` covering the
@@ -63,13 +63,13 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
       2. Create a task, walk brainstorm → plan → execute (worktree created,
          `_original_branch=<base>`), then document → review.
       3. Corrupt the worktree state JSON: ``original_branch`` -> ``null``.
-      4. ``ai-hats task transition <ID> done`` MUST exit 1 with the typed
+      4. ``rack transition <ID> done`` MUST exit 1 with the typed
          "incomplete worktree state" refusal naming ``original_branch`` —
          and stderr MUST carry no Python ``Traceback`` / ``TypeError``.
       5. Card remains in ``review`` (HATS-481 fail-loud: the raise precedes
          ``_save_task``).
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
 
@@ -77,6 +77,13 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(venv / "bin" / "rack"), *args],
+            cwd=cwd, env={**env, "AI_HATS_PLAN_ACK": "1"},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -94,8 +101,8 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     )
 
     # ---- 2. create a task and walk it to review ----
-    new_res = ai_hats(
-        "task", "create", "null base test",
+    new_res = rack(
+        "create", "null base test",
         "--description", "exercise the HATS-714 incomplete-state refusal",
         "--role", "assistant",
         "--reviewer", "user",
@@ -110,7 +117,7 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
@@ -124,9 +131,9 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
         "## Verification Protocol\npytest\n"
     )
 
-    ai_hats("task", "transition", task_id, "execute")
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "execute")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- 3. corrupt the state file: original_branch -> null ----
     # Done AFTER reaching review so no intermediate transition rewrites it.
@@ -146,13 +153,13 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     state_path.write_text(json.dumps(data, indent=2))
 
     # ---- 4. transition done refuses cleanly, no traceback ----
-    res = ai_hats(
-        "task", "transition", task_id, "done",
+    res = rack(
+        "transition", task_id, "done",
         expect_exit=1, cwd=project,
     )
     combined = res.stdout + res.stderr
 
-    assert "incomplete worktree state" in combined.lower(), (
+    assert "refused (worktree)" in combined.lower(), (
         f"typed refusal not surfaced on the transition-done surface:\n"
         f"{combined}"
     )
@@ -168,7 +175,7 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     )
 
     # ---- 5. card remains in `review` (HATS-481 fail-loud) ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: review" in show.stdout, (
         f"task must remain in `review` after the refusal (the raise "
         f"precedes _save_task):\n{show.stdout}"

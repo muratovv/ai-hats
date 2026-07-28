@@ -1,4 +1,4 @@
-"""End-to-end coverage for ``ai-hats task transition <ID> done`` when the
+"""End-to-end coverage for ``rack transition <ID> done`` when the
 task branch is ALREADY merged into its base and the main checkout HEAD has
 wandered to a foreign branch (HATS-596).
 
@@ -18,7 +18,9 @@ refused with a false mid-merge / un-merged hint.
 ``transition done`` exits 1 with "base branch mismatch", and the exit-0 /
 ``state: done`` assertions below fail.
 
-Modelled on ``tests/e2e/test_task_transition_done_head_wandered.py``.
+Modelled on ``tests/e2e/test_task_transition_done_head_wandered.py``. Driven
+through the ``rack`` CLI (HATS-1263); ``self init`` stays on the ``ai-hats``
+launcher.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.integration
 def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_path):
-    """HATS-596 on the `task transition done` surface.
+    """HATS-596 on the `rack transition done` surface.
 
     Scenario (mirrors the HATS-593 incident):
       1. Bootstrap session-shared venv + ``self init``.
@@ -64,12 +66,13 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
       6. In the main repo, ``git checkout -b wandered-feature`` + leave
          uncommitted WIP (HATS-593 live trigger).
       7. Walk execute → document → review.
-      8. ``ai-hats task transition <ID> done`` MUST exit 0 (short-circuit).
+      8. ``rack transition <ID> done`` MUST exit 0 (short-circuit).
       9. Task reaches ``done``; worktree dir + branch torn down.
      10. Main checkout untouched: still on wandered-feature, WIP intact.
      11. No double-merge: base ref unchanged since the manual merge.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
     project.mkdir()
 
@@ -77,6 +80,13 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
+        return _run(
+            [str(rack_bin), *args],
+            cwd=cwd, env={**env, **(extra_env or {})},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap ----
@@ -98,8 +108,8 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create task → execute (worktree from base) ----
-    new_res = ai_hats(
-        "task", "create", "already merged test",
+    new_res = rack(
+        "create", "already merged test",
         "--description", "exercise the HATS-596 already-merged short-circuit",
         "--role", "assistant",
         "--reviewer", "user",
@@ -114,7 +124,7 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
         f"could not parse task ID from:\n{new_res.stdout}"
     )
 
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
         / "tasks" / task_id / "plan.md"
@@ -126,7 +136,8 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
         "## Steps\n- [ ] do thing\n\n"
         "## Verification Protocol\npytest\n"
     )
-    ai_hats("task", "transition", task_id, "execute")
+    # plan → execute is consent-gated on rack; the launcher env carries no ack.
+    rack("transition", task_id, "execute", extra_env={"AI_HATS_PLAN_ACK": "1"})
 
     # Locate worktree.
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -173,11 +184,11 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     (project / "foreign-wip.txt").write_text("concurrent WIP\n")  # untracked
 
     # ---- 5. walk execute → document → review ----
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- 6. transition done MUST SUCCEED (the fix) ----
-    res = ai_hats("task", "transition", task_id, "done", expect_exit=0)
+    res = rack("transition", task_id, "done", expect_exit=0)
     combined = res.stdout + res.stderr
     assert "base branch mismatch" not in combined.lower(), (
         f"false mismatch refusal — HATS-596 short-circuit not applied:\n"
@@ -185,7 +196,7 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     )
 
     # ---- 7. task done; worktree dir + branch torn down ----
-    show = ai_hats("task", "show", task_id)
+    show = rack("context", task_id)
     assert "state: done" in show.stdout, (
         f"task did not reach `done`:\n{show.stdout}"
     )

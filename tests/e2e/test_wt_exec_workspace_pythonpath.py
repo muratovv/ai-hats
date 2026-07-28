@@ -15,22 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import tasks_dir
 from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
 
+from _helpers.wt import spawn_worktree
+
 pytestmark = pytest.mark.integration
-
-_PLAN = """# Plan
-## Requirements
-do the thing
-## Scope & Out-of-scope
-in: thing; out: other
-## Steps
-1. thing
-## Verification Protocol
-run it
-"""
-
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -82,11 +71,7 @@ def test_wt_exec_resolves_workspace_package_from_worktree(tmp_project, repo_root
     _git(main.path, "add", "-A")
     _git(main.path, "commit", "-m", "init")
 
-    assert _ai_hats(binary, "task", "create", "A", "--id", "HATS-1", cwd=main.path, env=env).returncode == 0
-    assert _ai_hats(binary, "task", "transition", "HATS-1", "plan", cwd=main.path, env=env).returncode == 0
-    (tasks_dir(main.path) / "HATS-1" / "plan.md").write_text(_PLAN)
-    r = _ai_hats(binary, "task", "transition", "HATS-1", "execute", cwd=main.path, env=env)
-    assert r.returncode == 0, r.stderr
+    spawn_worktree(main.path, "HATS-1", env)
     wt = _find_worktree(main.path)
     assert wt is not None and wt.is_dir(), "a worktree must exist after execute"
 

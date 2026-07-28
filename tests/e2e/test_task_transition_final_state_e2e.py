@@ -13,6 +13,11 @@ subprocess test that fails if the guard is reverted. This test runs the
 (~60s on a warm pip cache). Marked `integration`.
 """
 
+# HATS-1263: still on the legacy CLI. Needs two things rack lacks — the
+# `--final-state is only valid with review` guard, and `final_state` in the
+# `context` read-back (cli_context.py:123-140 renders a fixed key set).
+# Re-point once HATS-1275 lands.
+
 from __future__ import annotations
 
 import subprocess

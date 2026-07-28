@@ -3,7 +3,7 @@ mark a task DONE when the merge fails (e.g. merge conflict).
 
 Per ``dev_rule_e2e_gate`` (and the precedent of
 ``tests/e2e/test_wt_merge_drift.py``): user-visible behavior of
-``ai-hats task transition <ID> done`` requires a real-binary e2e test.
+``rack transition <ID> done`` requires a real-binary e2e test.
 
 The bug pre-HATS-481: `_teardown_worktree` caught ALL exceptions at
 WARNING and let `transition` proceed to `_save_task`, persisting the
@@ -65,7 +65,8 @@ def _task_state(project: Path, task_id: str) -> str:
 def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     """Forcing a merge conflict on `transition done` must leave the task
     in `review` (not DONE) and preserve the worktree branch for retry."""
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
+    rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"
     project.mkdir()
 
@@ -73,6 +74,13 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
         return _run(
             [str(launcher_dest), *args],
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
+        return _run(
+            [str(rack_bin), *args],
+            cwd=cwd, env={**env, **(extra_env or {})},
+            timeout=timeout, expect_exit=expect_exit,
         )
 
     # ---- bootstrap project ----
@@ -91,12 +99,12 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
 
     # ---- create task + walk plan→execute ----
     task_id = "TST-001"
-    ai_hats(
-        "task", "create", "Conflict test",
-        "-d", "Used to verify HATS-481 L4'.",
+    rack(
+        "create", "Conflict test",
+        "--description", "Used to verify HATS-481 L4'.",
         "--id", task_id,
     )
-    ai_hats("task", "transition", task_id, "plan")
+    rack("transition", task_id, "plan")
 
     # A real plan is required (the empty scaffold is rejected by
     # strict_plan_check on transition execute). Write it straight into the
@@ -113,7 +121,8 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
         "## Verification Protocol\nmerge\n"
     )
 
-    ai_hats("task", "transition", task_id, "execute")
+    # plan → execute is consent-gated on rack; the launcher env carries no ack.
+    rack("transition", task_id, "execute", extra_env={"AI_HATS_PLAN_ACK": "1"})
 
     # ---- locate worktree (same pattern as test_wt_merge_drift.py) ----
     listing = _git(project, "worktree", "list", "--porcelain").stdout
@@ -156,12 +165,12 @@ def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
     )
 
     # ---- walk task to review ----
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
 
     # ---- the contended transition done — MUST exit non-zero ----
-    res = ai_hats(
-        "task", "transition", task_id, "done",
+    res = rack(
+        "transition", task_id, "done",
         expect_exit=None, timeout=90,
     )
     assert res.returncode != 0, (

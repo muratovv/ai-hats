@@ -1,10 +1,10 @@
 """E2E gate for HATS-518: ``ai-hats wt create`` refuses when HEAD ≠ master.
 
-Runs the **real** ai-hats binary (pip-installed from the local repo via
-``tmp_venv_project``) against a real git project. Mirrors the canonical
-e2e pattern from ``test_install.py`` — exists specifically to satisfy
+Runs the **real** binaries (pip-installed from the local repo via
+``tmp_venv_project``) against a real git project: ``wt create`` on the
+``ai-hats`` binary, the task ops on ``rack`` (HATS-1263). Exists to satisfy
 ``dev_rule_e2e_gate`` for changes in ``src/ai_hats/cli/worktree.py``
-and ``src/ai_hats/cli/task.py``.
+and ``src/ai_hats/rack_wiring.py``.
 
 **Fail-under-revert check**: revert the guard from ``cli/worktree.py``
 (or remove ``_assert_head_is_canonical_base`` from ``worktree.py``) →
@@ -32,6 +32,38 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=True,
     )
+
+
+def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
+    """The venv's real ``rack`` console script (HATS-1263)."""
+    import os
+
+    from ai_hats.paths import ENV_AI_HATS_VENV
+
+    from _helpers.env import clean_env
+
+    env = clean_env(os.environ)
+    env.update(proj.env)
+    env["AI_HATS_PLAN_ACK"] = "1"  # else plan->execute stops at the consent gate
+    rack_bin = Path(proj.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
+    return subprocess.run(
+        [str(rack_bin), *args],
+        cwd=str(proj.path), env=env, capture_output=True, text=True, timeout=180,
+    )
+
+
+def _ok(res: subprocess.CompletedProcess[str]) -> subprocess.CompletedProcess[str]:
+    assert res.returncode == 0, f"{res.args}\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    return res
+
+
+def _created_id(res: subprocess.CompletedProcess[str]) -> str:
+    """Parse `Created: <ID> …` — the default prefix differs between the CLIs
+    (legacy TASK, rack HATS), so ids are never hardcoded."""
+    for line in res.stdout.splitlines():
+        if line.strip().startswith("Created:"):
+            return line.split()[1]
+    raise AssertionError(f"no Created: line in:\n{res.stdout}")
 
 
 def _git_init_on_master(project: Path) -> None:
@@ -100,19 +132,19 @@ def test_wt_create_refuses_on_feature_branch(tmp_venv_project) -> None:
 
 
 def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> None:
-    """E2E gate for the second call site (`cli/task.py`).
+    """E2E gate for the second call site (`rack transition ... execute`).
 
     Covers the path the unit test exercises via `TaskManager.transition()`
     directly — but here through the real binary, real backlog state file,
     and real disk I/O. Without this, a regression that breaks the
-    `WorktreeBaseBranchError` propagation in `cli/task.py::task_transition`
-    (e.g. accidentally catching it as a generic `Exception` earlier in
-    the chain) would slip past the unit suite.
+    `WorktreeBaseBranchError` propagation through the rack worktree
+    extension (e.g. accidentally catching it as a generic `Exception`
+    earlier in the chain) would slip past the unit suite.
 
     1. ``git init -b master`` + commit + .agent layout.
     2. Seed a task and transition it to ``plan``.
     3. ``git checkout -b feat/parking``.
-    4. ``ai-hats task transition <ID> execute`` → exit 1, stderr/stdout
+    4. ``rack transition <ID> execute`` → exit 1, stderr/stdout
        names ``Refused`` + the feature branch + ``master``.
     5. Task card on disk is still in ``plan`` state (no partial commit).
     """
@@ -121,19 +153,15 @@ def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> 
 
     _git_init_on_master(project)
 
-    # Seed a card and walk it to PLAN via the real CLI. The project has no
-    # `ai-hats.yaml` (tmp_venv_project skips init), so prefix falls back to
-    # the default `TASK` per `ProjectConfig.resolve_task_prefix`. First
-    # auto-generated ID is `TASK-001`.
-    proj.run("task", "create", "Probe HATS-518 e2e").expect_ok()
-    proj.run("task", "transition", "TASK-001", "plan").expect_ok()
+    task_id = _created_id(_ok(_rack(proj, "create", "Probe HATS-518 e2e")))
+    _ok(_rack(proj, "transition", task_id, "plan"))
     # The PLAN scaffold is empty; `transition execute` defaults to
     # strict_plan_check=True and would raise EmptyPlanError BEFORE our
     # guard fires. Fill every required section so the per-section gate
     # passes and execution proceeds to the guard (HATS-635).
     plan_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / "TASK-001" / "plan.md"
+        / "tasks" / task_id / "plan.md"
     )
     assert plan_path.exists(), f"expected plan scaffold at {plan_path}"
     plan_path.write_text(
@@ -144,19 +172,20 @@ def test_task_transition_execute_refuses_on_feature_branch(tmp_venv_project) -> 
         "## Verification Protocol\npytest\n"
     )
 
-    # Park HEAD on a feature branch and try to execute.
+    # Park HEAD on a feature branch and try to execute. rack renders the
+    # generic worktree refusal on stderr and exits 1 (legacy exited 2).
     _git(project, "checkout", "-b", "feat/parking")
-    (
-        proj.run("task", "transition", "TASK-001", "execute")
-        .expect_failure()
-        .expect_stdout_contains("Refused", "feat/parking", "master")
-    )
+    refused = _rack(proj, "transition", task_id, "execute")
+    combined = refused.stdout + refused.stderr
+    assert refused.returncode == 1, combined
+    for marker in ("Refused", "feat/parking", "master"):
+        assert marker in combined, f"missing {marker!r}:\n{combined}"
 
     # Card untouched — still in plan on disk.
-    show = proj.run("task", "show", "TASK-001").expect_ok()
+    show = _ok(_rack(proj, "context", task_id))
     assert "state: plan" in show.stdout, (
         f"Card should remain in 'plan' state after refused transition; "
-        f"`task show` output tail:\n{show.stdout[-400:]}"
+        f"`rack context` output tail:\n{show.stdout[-400:]}"
     )
 
     # No worktree leak — only the main repo's worktree listed.

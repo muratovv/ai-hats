@@ -41,16 +41,32 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _child_env() -> dict[str, str]:
     from _helpers.env import checkout_pythonpath
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     env[ENV_AI_HATS_VENV] = str(Path(sys.executable).parent.parent)
+    env["AI_HATS_PLAN_ACK"] = "1"  # plan->execute is consent-gated on rack
+    return env
+
+
+def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(binary), *args],
         cwd=str(cwd),
-        env=env,
+        env=_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _rack(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "ai_hats_rack", *args],
+        cwd=str(cwd),
+        env=_child_env(),
         capture_output=True,
         text=True,
         timeout=120,
@@ -102,8 +118,8 @@ def test_transition_execute_from_inside_worktree_adopts(tmp_project, tmp_path):
     _git(main.path, "commit", "-m", "init", "--allow-empty")
 
     # A planned, worktree-eligible task (plan filled so the execute gate passes).
-    assert _ai_hats(binary, "task", "create", "A", "--id", "HATS-1", cwd=main.path).returncode == 0
-    assert _ai_hats(binary, "task", "transition", "HATS-1", "plan", cwd=main.path).returncode == 0
+    assert _rack("create", "A", "--id", "HATS-1", cwd=main.path).returncode == 0
+    assert _rack("transition", "HATS-1", "plan", cwd=main.path).returncode == 0
     (_tracker(main.path) / "HATS-1" / "plan.md").write_text(_PLAN)
 
     # The operator stands in a pre-existing linked worktree (created off main).
@@ -112,7 +128,7 @@ def test_transition_execute_from_inside_worktree_adopts(tmp_project, tmp_path):
     assert wt is not None and wt.is_dir()
 
     # Execute issued from INSIDE the worktree → adopt it, do NOT spin a fresh one.
-    res = _ai_hats(binary, "task", "transition", "HATS-1", "execute", cwd=wt)
+    res = _rack("transition", "HATS-1", "execute", cwd=wt)
     combined = res.stdout + res.stderr
     assert res.returncode == 0, combined
 
@@ -121,8 +137,14 @@ def test_transition_execute_from_inside_worktree_adopts(tmp_project, tmp_path):
         f"fresh worktree spun up off main instead of adopting: {branches}"
     )
     assert "task/foo" in branches, branches
-    assert "adopted" in combined, combined
+
+    # rack prints no "adopted" token (legacy did) — assert the stronger fact:
+    # the worktree it reports IS the pre-existing one.
+    reported = [ln for ln in combined.splitlines() if ln.strip().startswith("Worktree:")]
+    assert reported, f"execute must report a worktree:\n{combined}"
+    adopted = Path(reported[0].split("Worktree:", 1)[1].strip()).resolve()
+    assert adopted == wt.resolve(), f"must adopt {wt}, reported {adopted}"
 
     # The task did advance to execute.
-    shown = _ai_hats(binary, "task", "show", "HATS-1", "--short", cwd=main.path)
-    assert "execute" in shown.stdout, shown.stdout
+    shown = _rack("context", "HATS-1", cwd=main.path)
+    assert "state: execute" in shown.stdout, shown.stdout

@@ -1,14 +1,15 @@
 """E2E gate for HATS-690: child-driven epic auto-transitions via the real CLI.
 
-Runs the **real** ai-hats binary (pip-installed from the local repo via
-``tmp_venv_project``) against a real git project. Exists specifically to
-satisfy ``dev_rule_e2e_gate`` for the ``src/ai_hats/cli/task.py`` edit that
-prints the auto-transition notice (``_print_auto_transitions``).
+Runs the **real** ``rack`` console script from the pip-installed venv
+(``tmp_venv_project``) against a real git project — re-pointed off the legacy
+CLI (HATS-1263).
 
-**Fail-under-revert check**: revert ``_propagate_to_parent`` (or its call sites)
-in ``state.py`` → both ``expect_stdout_contains("Epic auto-transition", ...)``
-assertions fail (no notice is printed and the epic never changes state).
-Reviewer rejects if the test passes both with and without the propagation.
+**Fail-under-revert**: drop ``EpicAutomationExtension`` or its wiring
+(``rack_wiring.py:418``) → the epic never changes state and no ``epic <id>:``
+delta is echoed, so both marker loops fail.
+
+Ids are parsed from ``Created:``, not hardcoded: the default task prefix
+differs between the CLIs (legacy ``TASK``, rack ``HATS``).
 """
 
 from __future__ import annotations
@@ -51,6 +52,38 @@ def _plan_path(project: Path, task_id: str) -> Path:
     )
 
 
+def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
+    """The venv's real ``rack`` console script (HATS-1263)."""
+    import os
+
+    from ai_hats.paths import ENV_AI_HATS_VENV
+
+    from _helpers.env import clean_env
+
+    env = clean_env(os.environ)
+    env.update(proj.env)
+    env["AI_HATS_PLAN_ACK"] = "1"
+    rack_bin = Path(proj.env[ENV_AI_HATS_VENV]) / "bin" / "rack"
+    return subprocess.run(
+        [str(rack_bin), *args],
+        cwd=str(proj.path), env=env, capture_output=True, text=True, timeout=180,
+    )
+
+
+def _ok(res: subprocess.CompletedProcess[str]) -> subprocess.CompletedProcess[str]:
+    assert res.returncode == 0, f"{res.args}\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    return res
+
+
+def _created_id(res: subprocess.CompletedProcess[str]) -> str:
+    """Parse `Created: <ID> [state] <title>`. Ids are not hardcoded: the default
+    prefix differs between the CLIs (legacy TASK, rack HATS)."""
+    for line in res.stdout.splitlines():
+        if line.strip().startswith("Created:"):
+            return line.split()[1]
+    raise AssertionError(f"no Created: line in:\n{res.stdout}")
+
+
 def test_epic_auto_advance_and_reopen_e2e(tmp_venv_project) -> None:
     """Full chain through the real binary: advance to review, then reopen.
 
@@ -67,14 +100,14 @@ def test_epic_auto_advance_and_reopen_e2e(tmp_venv_project) -> None:
     project = proj.path
     _git_init_on_master(project)
 
-    proj.run("task", "create", "Epic").expect_ok()  # TASK-001
-    proj.run("task", "create", "Child 1", "--parent-task", "TASK-001").expect_ok()
-    proj.run("task", "create", "Child 2", "--parent-task", "TASK-001").expect_ok()
+    epic = _created_id(_ok(_rack(proj, "create", "Epic")))
+    child1 = _created_id(_ok(_rack(proj, "create", "Child 1", "--parent", epic)))
+    child2 = _created_id(_ok(_rack(proj, "create", "Child 2", "--parent", epic)))
 
     # Walk the epic to execute (real worktree). Fill the scaffold so the
     # per-section gate passes (HATS-635).
-    proj.run("task", "transition", "TASK-001", "plan").expect_ok()
-    plan_path = _plan_path(project, "TASK-001")
+    _ok(_rack(proj, "transition", epic, "plan"))
+    plan_path = _plan_path(project, epic)
     assert plan_path.exists(), f"expected plan scaffold at {plan_path}"
     plan_path.write_text(
         "# Plan\n\n"
@@ -83,31 +116,31 @@ def test_epic_auto_advance_and_reopen_e2e(tmp_venv_project) -> None:
         "## Steps\n- [ ] do thing\n\n"
         "## Verification Protocol\npytest\n"
     )
-    proj.run("task", "transition", "TASK-001", "execute").expect_ok()
+    _ok(_rack(proj, "transition", epic, "execute"))
 
     # Fast-close both children; the SECOND completes the epic → auto-advance.
-    proj.run("task", "close", "TASK-002", "--resolution", "shipped").expect_ok()
-    (
-        proj.run("task", "close", "TASK-003", "--resolution", "shipped")
-        .expect_ok()
-        .expect_stdout_contains("Epic auto-transition", "TASK-001", "review")
-    )
-    show = proj.run("task", "show", "TASK-001").expect_ok()
+    _ok(_rack(proj, "transition", child1, "--state", "done",
+              "--force", "--reason", "fast-close", "--resolution", "shipped"))
+    closed = _ok(_rack(proj, "transition", child2, "--state", "done",
+                       "--force", "--reason", "fast-close", "--resolution", "shipped"))
+    # rack echoes the epic work_log delta (cli_kernel.py:_echo_deltas); the
+    # legacy `Epic auto-transition:` line has no rack equivalent.
+    for marker in (f"epic {epic}:", "advance", "review"):
+        assert marker in closed.stdout, f"missing {marker!r}:\n{closed.stdout}"
+    show = _ok(_rack(proj, "context", epic))
     assert "state: review" in show.stdout, (
         f"epic should be in review after all children resolved; got:\n"
         f"{show.stdout[-400:]}"
     )
 
     # Reviewer closes the epic.
-    proj.run("task", "transition", "TASK-001", "done").expect_ok()
+    _ok(_rack(proj, "transition", epic, "done"))
 
     # New work under the done epic → auto-reopen to execute.
-    (
-        proj.run("task", "create", "Child 3", "--parent-task", "TASK-001")
-        .expect_ok()
-        .expect_stdout_contains("Epic auto-transition", "TASK-001", "execute")
-    )
-    show = proj.run("task", "show", "TASK-001").expect_ok()
+    reopened = _ok(_rack(proj, "create", "Child 3", "--parent", epic))
+    for marker in (f"epic {epic}:", "reopen", "execute"):
+        assert marker in reopened.stdout, f"missing {marker!r}:\n{reopened.stdout}"
+    show = _ok(_rack(proj, "context", epic))
     assert "state: execute" in show.stdout, (
         f"epic should reopen to execute after new child; got:\n"
         f"{show.stdout[-400:]}"

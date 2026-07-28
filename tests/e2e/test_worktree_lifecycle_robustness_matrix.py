@@ -68,9 +68,9 @@ def _bootstrap(ai_hats, project: Path) -> None:
     ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
 
 
-def _create_task(ai_hats) -> str:
-    res = ai_hats(
-        "task", "create", "matrix case",
+def _create_task(rack) -> str:
+    res = rack(
+        "create", "matrix case",
         "--description", "epic robustness matrix",
         "--role", "assistant", "--reviewer", "user",
     )
@@ -106,11 +106,11 @@ def _locate_worktree(project: Path, task_id: str) -> Path:
     raise AssertionError(f"worktree for {task_id} not found:\n{listing}")
 
 
-def _walk_to_execute(ai_hats, project: Path) -> tuple[str, Path]:
-    task_id = _create_task(ai_hats)
-    ai_hats("task", "transition", task_id, "plan")
+def _walk_to_execute(rack, project: Path) -> tuple[str, Path]:
+    task_id = _create_task(rack)
+    rack("transition", task_id, "plan")
     _fill_plan(project, task_id)
-    ai_hats("task", "transition", task_id, "execute")
+    rack("transition", task_id, "execute")
     return task_id, _locate_worktree(project, task_id)
 
 
@@ -125,9 +125,9 @@ def _state_json(project: Path, task_id: str) -> Path:
 # Scenarios — each takes (ai_hats, project) and asserts one epic invariant
 # --------------------------------------------------------------------------- #
 
-def _scenario_already_merged_state_lost(ai_hats, project: Path) -> None:
+def _scenario_already_merged_state_lost(rack, project: Path) -> None:
     """HATS-697: merged branch + lost state → finalize, no false refusal."""
-    task_id, wt = _walk_to_execute(ai_hats, project)
+    task_id, wt = _walk_to_execute(rack, project)
     base = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     task_branch = f"task/{task_id.lower()}"
 
@@ -147,13 +147,13 @@ def _scenario_already_merged_state_lost(ai_hats, project: Path) -> None:
         removed = True
     assert removed, "precondition: a worktree state JSON should have existed"
 
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
-    res = ai_hats("task", "transition", task_id, "done", expect_exit=0)
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
+    res = rack("transition", task_id, "done", expect_exit=0)
     assert "worktree state lost" not in (res.stdout + res.stderr).lower(), (
         f"false state-lost refusal:\n{res.stdout}\n{res.stderr}"
     )
-    assert "state: done" in ai_hats("task", "show", task_id).stdout
+    assert "state: done" in rack("context", task_id).stdout
     assert _git(project, "branch", "--list", task_branch).stdout.strip() == "", (
         "merged branch should be cleaned up by finalize"
     )
@@ -162,18 +162,18 @@ def _scenario_already_merged_state_lost(ai_hats, project: Path) -> None:
     )
 
 
-def _scenario_forced_execute_no_worktree(ai_hats, project: Path) -> None:
+def _scenario_forced_execute_no_worktree(rack, project: Path) -> None:
     """HATS-697: a forced execute spins no fresh worktree."""
-    task_id = _create_task(ai_hats)
-    ai_hats("task", "transition", task_id, "plan")
+    task_id = _create_task(rack)
+    rack("transition", task_id, "plan")
     _fill_plan(project, task_id)
-    res = ai_hats(
-        "task", "transition", task_id, "execute",
+    res = rack(
+        "transition", task_id, "execute",
         "--force", "--reason", "shipped on master, correcting state",
         expect_exit=0,
     )
-    assert "No worktree created (forced)" in res.stdout, res.stdout
-    assert "state: execute" in ai_hats("task", "show", task_id).stdout
+    assert "no worktree created (manual override)" in res.stdout, res.stdout
+    assert "state: execute" in rack("context", task_id).stdout
     branches = [
         line[len("branch "):].strip()
         for line in _git(project, "worktree", "list", "--porcelain").stdout.splitlines()
@@ -186,9 +186,9 @@ def _scenario_forced_execute_no_worktree(ai_hats, project: Path) -> None:
     assert _git(project, "branch", "--list", task_branch).stdout.strip() == ""
 
 
-def _scenario_null_original_branch_typed(ai_hats, project: Path) -> None:
+def _scenario_null_original_branch_typed(rack, project: Path) -> None:
     """HATS-714: original_branch=null → typed refusal, not a traceback."""
-    task_id, _wt = _walk_to_execute(ai_hats, project)
+    task_id, _wt = _walk_to_execute(rack, project)
     state_path = _state_json(project, task_id)
     assert state_path.is_file(), f"state JSON missing: {state_path}"
     data = json.loads(state_path.read_text())
@@ -196,27 +196,29 @@ def _scenario_null_original_branch_typed(ai_hats, project: Path) -> None:
     data["original_branch"] = None
     state_path.write_text(json.dumps(data, indent=2))
 
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
-    res = ai_hats("task", "transition", task_id, "done", expect_exit=1)
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
+    res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
-    assert "incomplete worktree state" in combined.lower(), combined
+    # rack keeps this on the generic wt-refusal shape (HATS-1263 ruling Q2):
+    # no bespoke recipe, but the refusal must stay typed and name the field.
+    assert "refused (worktree)" in combined.lower(), combined
     assert "original_branch" in combined, combined
     assert "Traceback" not in combined, f"leaked traceback:\n{combined}"
 
 
-def _scenario_in_worktree_done_refused(ai_hats, project: Path) -> None:
+def _scenario_in_worktree_done_refused(rack, project: Path) -> None:
     """HATS-788: transition done from inside the linked worktree is refused."""
-    task_id, wt = _walk_to_execute(ai_hats, project)
-    ai_hats("task", "transition", task_id, "document")
-    ai_hats("task", "transition", task_id, "review")
+    task_id, wt = _walk_to_execute(rack, project)
+    rack("transition", task_id, "document")
+    rack("transition", task_id, "review")
     # Run from INSIDE the worktree → must refuse before any teardown.
-    res = ai_hats("task", "transition", task_id, "done", cwd=wt, expect_exit=None)
+    res = rack("transition", task_id, "done", cwd=wt, expect_exit=None)
     combined = res.stdout + res.stderr
     assert res.returncode != 0, f"in-worktree close should refuse:\n{combined}"
     assert "linked worktree" in combined.lower(), combined
     assert wt.is_dir(), "refused close must not remove the worktree"
-    assert "state: review" in ai_hats("task", "show", task_id).stdout
+    assert "state: review" in rack("context", task_id).stdout
 
 
 SCENARIOS = {
@@ -231,7 +233,7 @@ SCENARIOS = {
 @pytest.mark.parametrize("scenario_id", list(SCENARIOS))
 def test_worktree_lifecycle_robustness(shared_launcher, tmp_path, scenario_id):
     """Capstone matrix: every epic invariant must hold on the real binary."""
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
 
@@ -241,5 +243,12 @@ def test_worktree_lifecycle_robustness(shared_launcher, tmp_path, scenario_id):
             cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
         )
 
-    _bootstrap(ai_hats, project)
-    SCENARIOS[scenario_id](ai_hats, project)
+    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+        return _run(
+            [str(venv / "bin" / "rack"), *args],
+            cwd=cwd, env={**env, "AI_HATS_PLAN_ACK": "1"},
+            timeout=timeout, expect_exit=expect_exit,
+        )
+
+    _bootstrap(ai_hats, project)  # `self init` stays on the ai-hats binary
+    SCENARIOS[scenario_id](rack, project)
