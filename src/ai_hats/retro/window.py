@@ -13,7 +13,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ai_hats_observe.artifacts import METRICS_JSON, strip_session_prefix
-from ..paths import PROJECT_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -60,36 +59,26 @@ def compute_session_end(
 def tasks_closed_in_window(
     project_dir: Path, since: datetime, until: datetime
 ) -> list[str]:
-    """Return IDs of tasks whose `updated` falls in [since, until], state=done."""
-    from ..paths import tasks_dir as _tasks_dir
+    """Return IDs of tasks whose `completed_at` falls in [since, until], state=done.
 
-    tasks_dir = _tasks_dir(project_dir)
-    if not tasks_dir.exists():
-        return []
-    try:
-        from ..models import ProjectConfig, TaskState
-        from ai_hats_tracker.state import TaskManager
-        from ..tracker_wiring import tracker_paths
-    except ImportError:
-        return []
-    try:
-        prefix = ProjectConfig.resolve_task_prefix(
-            project_dir, project_dir / PROJECT_CONFIG
-        )
-        tm = TaskManager(
-            project_dir,
-            prefix=prefix,
-            layout=tracker_paths(project_dir),
-            strict_plan_check=False,
-        )
-        done = tm.list_tasks(state=TaskState.DONE)
-    except Exception:
-        return []
+    Loud by design (HATS-1259): a read that cannot be performed raises rather than
+    reporting "nothing closed". The wrap-up nudge tolerates that at the UX boundary
+    (``auto_retro.make_decision``); ``session retro`` should not.
+    """
+    from ..rack_workspace import closed_tasks
+
     closed: list[str] = []
-    for t in done:
-        ts = parse_task_timestamp(t.updated)
-        if ts and since <= ts <= until:
-            closed.append(t.id)
+    for task in closed_tasks(project_dir):
+        ts = parse_task_timestamp(task.completed_at)
+        if ts is None:
+            logger.warning(
+                "task %s is done with no completed_at stamp — "
+                "not counted in the session window",
+                task.id,
+            )
+            continue
+        if since <= ts <= until:
+            closed.append(task.id)
     return sorted(closed)
 
 
