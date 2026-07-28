@@ -7,6 +7,7 @@ fallback hand-rolled as ``sys.path.insert(0, "src")``).
 Fail-under-revert: root ``workspace_pythonpath`` at ``wt_path`` again and
 ``import mypkg`` under ``-C sub`` raises ModuleNotFoundError.
 """
+
 from __future__ import annotations
 
 import sys
@@ -38,9 +39,18 @@ def test_subproject_gets_its_own_src(tmp_project, repo_root):
     _seed(wt)
 
     res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch, "-C", "sub", "--",
-        sys.executable, "-c", "import mypkg; print(mypkg.__file__)",
-        cwd=main.path, env=env,
+        main.ai_hats_binary,
+        "wt",
+        "exec",
+        branch,
+        "-C",
+        "sub",
+        "--",
+        sys.executable,
+        "-c",
+        "import mypkg; print(mypkg.__file__)",
+        cwd=main.path,
+        env=env,
     )
 
     assert res.returncode == 0, (
@@ -61,9 +71,18 @@ def test_subproject_does_not_inherit_the_outer_workspace(tmp_project, repo_root)
     _seed(wt)
 
     res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch, "-C", "sub", "--",
-        sys.executable, "-c", "import outerpkg",
-        cwd=main.path, env=env,
+        main.ai_hats_binary,
+        "wt",
+        "exec",
+        branch,
+        "-C",
+        "sub",
+        "--",
+        sys.executable,
+        "-c",
+        "import outerpkg",
+        cwd=main.path,
+        env=env,
     )
 
     assert res.returncode != 0, (
@@ -81,9 +100,18 @@ def test_plain_subdirectory_keeps_the_worktree_root_env(tmp_project, repo_root):
     _seed(wt)
 
     res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch, "-C", "plain", "--",
-        sys.executable, "-c", "import outerpkg; print(outerpkg.__file__)",
-        cwd=main.path, env=env,
+        main.ai_hats_binary,
+        "wt",
+        "exec",
+        branch,
+        "-C",
+        "plain",
+        "--",
+        sys.executable,
+        "-c",
+        "import outerpkg; print(outerpkg.__file__)",
+        cwd=main.path,
+        env=env,
     )
 
     assert res.returncode == 0, (

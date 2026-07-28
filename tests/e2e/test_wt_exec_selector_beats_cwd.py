@@ -8,6 +8,7 @@ Fail-under-revert: put the peel back on the ambiguity-only path and every test
 here fails with ``Command not found: <branch>`` (rc=127), or under ``-C`` with a
 refusal naming a subdir of a worktree the caller never asked for.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -42,9 +43,7 @@ def test_selector_beats_cwd_from_inside_another_worktree(tmp_project, repo_root,
     main = tmp_project
     env, branch_a, wt_a, branch_b, _ = _two(main, repo_root)
 
-    res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch_b, *sep, *_HEAD, cwd=wt_a, env=env
-    )
+    res = ai_hats(main.ai_hats_binary, "wt", "exec", branch_b, *sep, *_HEAD, cwd=wt_a, env=env)
 
     assert res.returncode == 0, (
         f"🐛 HATS-1213: `wt exec {branch_b}` from inside {branch_a} failed instead of "
@@ -68,8 +67,17 @@ def test_selector_with_cd_from_inside_another_worktree(tmp_project, repo_root):
 
     res = ai_hats(
         main.ai_hats_binary,
-        "wt", "exec", branch_b, "-C", "sub", "--", "git", "rev-parse", "--show-prefix",
-        cwd=wt_a, env=env,
+        "wt",
+        "exec",
+        branch_b,
+        "-C",
+        "sub",
+        "--",
+        "git",
+        "rev-parse",
+        "--show-prefix",
+        cwd=wt_a,
+        env=env,
     )
 
     assert res.returncode == 0, (
@@ -88,9 +96,7 @@ def test_selector_beats_the_sole_active_worktree(tmp_project, repo_root):
     spawn_worktree(main.path, "HATS-1", env)
     branch = next(iter(worktree_branches(main.path)))
 
-    res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch, "--", *_HEAD, cwd=main.path, env=env
-    )
+    res = ai_hats(main.ai_hats_binary, "wt", "exec", branch, "--", *_HEAD, cwd=main.path, env=env)
 
     assert res.returncode == 0, (
         f"🐛 HATS-1213: sole-worktree selector run as the command "
@@ -105,9 +111,7 @@ def test_selector_targeting_your_own_worktree_is_accepted(tmp_project, repo_root
     main = tmp_project
     env, branch_a, wt_a, _, _ = _two(main, repo_root)
 
-    res = ai_hats(
-        main.ai_hats_binary, "wt", "exec", branch_a, "--", *_HEAD, cwd=wt_a, env=env
-    )
+    res = ai_hats(main.ai_hats_binary, "wt", "exec", branch_a, "--", *_HEAD, cwd=wt_a, env=env)
 
     assert res.returncode == 0, f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     assert last_line(res) == branch_a, f"expected {branch_a}, got {res.stdout!r}"

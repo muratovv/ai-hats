@@ -212,9 +212,7 @@ def test_write_canonical_does_not_delete_user_rules(project_with_library: Path) 
     user_rules.mkdir(exist_ok=True)
     (user_rules / "my-rule.md").write_text("# user content")
     # Manifest erroneously includes user-rules path (defense-in-depth check).
-    (canonical / CANONICAL_MANIFEST).write_text(
-        f"{USER_RULES_SUBDIR}/my-rule.md\nimports.md\n"
-    )
+    (canonical / CANONICAL_MANIFEST).write_text(f"{USER_RULES_SUBDIR}/my-rule.md\nimports.md\n")
 
     asm, _ = _compose(project_with_library)
     asm.write_canonical()

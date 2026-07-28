@@ -52,9 +52,7 @@ def test_transition_plan_writes_scaffold(mgr: TaskManager) -> None:
     mgr.transition("HATS-230", TaskState.PLAN)
 
     dst = mgr.tasks_dir / "HATS-230" / "plan.md"
-    assert dst.read_text() == PLAN_SCAFFOLD.format(
-        task_id="HATS-230", title="Test scaffold"
-    )
+    assert dst.read_text() == PLAN_SCAFFOLD.format(task_id="HATS-230", title="Test scaffold")
 
 
 def test_transition_execute_blocks_on_empty_scaffold(mgr: TaskManager) -> None:

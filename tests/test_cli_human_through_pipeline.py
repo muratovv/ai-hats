@@ -25,12 +25,18 @@ def test_launch_session_invokes_human_pipeline(tmp_path: Path):
         captured["initial"] = dict(initial)
         return {"exit_code": 0, "session_id": "x", "review_pid": 99}
 
-    with patch(
-        "ai_hats.pipeline.harness.PipelineHarness.run",
-        autospec=True, side_effect=fake_run,
-    ), patch(
-        "ai_hats.cli._helpers._project_dir", return_value=tmp_path,
-    ), pytest.raises(SystemExit) as exc_info:
+    with (
+        patch(
+            "ai_hats.pipeline.harness.PipelineHarness.run",
+            autospec=True,
+            side_effect=fake_run,
+        ),
+        patch(
+            "ai_hats.cli._helpers._project_dir",
+            return_value=tmp_path,
+        ),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         _launch_session(
             provider="claude",
             role="judge",
@@ -60,12 +66,17 @@ def test_launch_session_propagates_nonzero_exit(tmp_path: Path):
         "schema_version: 2\nprovider: claude\nactive_role: assistant\n"
     )
 
-    with patch(
-        "ai_hats.pipeline.harness.PipelineHarness.run",
-        return_value={"exit_code": 42},
-    ), patch(
-        "ai_hats.cli._helpers._project_dir", return_value=tmp_path,
-    ), pytest.raises(SystemExit) as exc_info:
+    with (
+        patch(
+            "ai_hats.pipeline.harness.PipelineHarness.run",
+            return_value={"exit_code": 42},
+        ),
+        patch(
+            "ai_hats.cli._helpers._project_dir",
+            return_value=tmp_path,
+        ),
+        pytest.raises(SystemExit) as exc_info,
+    ):
         _launch_session()
 
     assert exc_info.value.code == 42

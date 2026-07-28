@@ -22,9 +22,7 @@ pytestmark = pytest.mark.integration
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    )
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _rack(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -82,9 +80,10 @@ def test_task_done_from_inside_worktree_refused(tmp_project, tmp_path):
     r = _rack("transition", "HATS-1", "execute", cwd=main.path)
     assert r.returncode == 0, r.stderr
     assert _rack("transition", "HATS-1", "document", cwd=main.path).returncode == 0
-    assert _rack(
-        "transition", "HATS-1", "review", "--final-state", "done", cwd=main.path
-    ).returncode == 0
+    assert (
+        _rack("transition", "HATS-1", "review", "--final-state", "done", cwd=main.path).returncode
+        == 0
+    )
 
     wt = _find_worktree(main.path)
     assert wt is not None and wt.is_dir(), "worktree should exist after execute"

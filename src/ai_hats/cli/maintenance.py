@@ -100,7 +100,6 @@ def _build_update_cmd(ref: str | None = None, target_python: str | Path | None =
     ]
 
 
-
 def _read_direct_url() -> dict | None:
     """Return the parsed ``direct_url.json`` (PEP 610) for the active install.
 

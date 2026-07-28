@@ -43,8 +43,11 @@ SRC = REPO_ROOT / "src"
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        check=True, capture_output=True, text=True,
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -62,15 +65,15 @@ def _run_rack(
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
-        capture_output=True, text=True, env=env, timeout=timeout,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
     )
 
 
 def _plan_path(project: Path, task_id: str) -> Path:
-    return (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
-    )
+    return project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
 
 
 @pytest.fixture
@@ -78,9 +81,7 @@ def git_project(tmp_path: Path) -> Path:
     """Tmp dir bootstrapped as both an ai-hats project AND a git repo."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=[]).save(project / PROJECT_CONFIG)
     Assembler(project).init()
     _git(project, "init")
     _git(project, "config", "user.email", "e2e@hats-621.test")
@@ -111,8 +112,7 @@ def test_scaffold_contains_approach_counter_in_position_c(git_project: Path) -> 
     i_ac = scaffold.index("## Approach & counter")
     i_scope = scaffold.index("## Scope & Out-of-scope")
     assert i_req < i_ac < i_scope, (
-        "Approach & counter must sit after Requirements and before Scope:\n"
-        f"{scaffold}"
+        f"Approach & counter must sit after Requirements and before Scope:\n{scaffold}"
     )
 
 
@@ -120,9 +120,8 @@ def test_empty_approach_counter_does_not_block_execute(git_project: Path) -> Non
     """All REQUIRED sections filled + an EMPTY `## Approach & counter` still
     transitions to execute (the section is optional, never gate-blocking)."""
     proj = git_project
-    task_id = "HATS-6212"  # numeric suffix — see the sibling test's note
-    r = _run_rack(proj, "create", "Probe", "--id", task_id,
-                  "--description", "e2e")
+    task_id = "HATS-6212"
+    r = _run_rack(proj, "create", "Probe", "--id", task_id, "--description", "e2e")
     assert r.returncode == 0, f"create failed: {r.stderr}"
     r = _run_rack(proj, "transition", task_id, "plan")
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
@@ -142,6 +141,4 @@ def test_empty_approach_counter_does_not_block_execute(git_project: Path) -> Non
         f"{r.returncode}\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
     )
     combined = r.stdout + r.stderr
-    assert "Worktree:" in combined, (
-        f"expected worktree setup on a passing gate:\n{combined}"
-    )
+    assert "Worktree:" in combined, f"expected worktree setup on a passing gate:\n{combined}"

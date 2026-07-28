@@ -49,7 +49,7 @@ def test_e2e_broken_install_friendly_error(tmp_project, tmp_path: Path) -> None:
     """``ai-hats`` on a broken install exits 1 with remediation and no traceback."""
     extra_env = _broken_rack_pythonpath(
         tmp_path,
-        'raise ImportError("cannot import name PROVIDER_GEMINI from \'ai_hats.constants\'")\n',
+        "raise ImportError(\"cannot import name PROVIDER_GEMINI from 'ai_hats.constants'\")\n",
     )
 
     # 1. Normal invocation: friendly error, no traceback
@@ -62,9 +62,13 @@ def test_e2e_broken_install_friendly_error(tmp_project, tmp_path: Path) -> None:
 
     assert "Inconsistent or broken ai-hats installation" in result.stderr, result.stderr
     assert "cannot import name PROVIDER_GEMINI" in result.stderr, result.stderr
-    assert "Likely cause: package files are out of sync or corrupted." in result.stderr, result.stderr
+    assert "Likely cause: package files are out of sync or corrupted." in result.stderr, (
+        result.stderr
+    )
     assert "python -m ai_hats self update" in result.stderr, result.stderr
-    assert "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v" in result.stderr, result.stderr
+    assert (
+        "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v" in result.stderr
+    ), result.stderr
 
     combined = result.stdout + result.stderr
     assert "Traceback" not in combined, f"Traceback leaked in normal mode:\n{combined}"
@@ -73,7 +77,9 @@ def test_e2e_broken_install_friendly_error(tmp_project, tmp_path: Path) -> None:
     debug_env = {**extra_env, "AI_HATS_DEBUG": "1"}
     debug_result = tmp_project.run(*PROBE, extra_env=debug_env, timeout=10.0)
 
-    assert debug_result.exit_code != 0, f"expected non-zero exit in debug mode, got {debug_result.exit_code}"
+    assert debug_result.exit_code != 0, (
+        f"expected non-zero exit in debug mode, got {debug_result.exit_code}"
+    )
     debug_combined = debug_result.stdout + debug_result.stderr
     assert "Traceback" in debug_combined, f"Traceback missing in debug mode:\n{debug_combined}"
 

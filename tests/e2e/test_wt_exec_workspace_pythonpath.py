@@ -6,6 +6,7 @@ Fail-under-revert: drop the ``workspace_pythonpath`` call in ``wt_exec`` (back
 to ``src``-only) and the inner ``import mypkg`` raises ModuleNotFoundError —
 ``mypkg`` lives only under ``packages/mypkg/src``.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,10 +22,9 @@ from _helpers.wt import spawn_worktree
 
 pytestmark = pytest.mark.integration
 
+
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    )
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _child_env(repo_root: Path) -> dict[str, str]:
@@ -33,11 +33,15 @@ def _child_env(repo_root: Path) -> dict[str, str]:
 
     env = {**os.environ}
     env["PYTHONPATH"] = checkout_pythonpath(repo_root)
-    env["AI_HATS_LIBRARY_ROOT"] = str(repo_root / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
+    env["AI_HATS_LIBRARY_ROOT"] = str(
+        repo_root / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    )
     return env
 
 
-def _ai_hats(binary: Path, *args: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _ai_hats(
+    binary: Path, *args: str, cwd: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(binary), *args],
         cwd=str(cwd),
@@ -76,9 +80,15 @@ def test_wt_exec_resolves_workspace_package_from_worktree(tmp_project, repo_root
     assert wt is not None and wt.is_dir(), "a worktree must exist after execute"
 
     res = _ai_hats(
-        binary, "wt", "exec", "--",
-        sys.executable, "-c", "import mypkg; print(mypkg.__file__)",
-        cwd=main.path, env=env,
+        binary,
+        "wt",
+        "exec",
+        "--",
+        sys.executable,
+        "-c",
+        "import mypkg; print(mypkg.__file__)",
+        cwd=main.path,
+        env=env,
     )
     assert res.returncode == 0, (
         "🐛 HATS-913 REGRESSION: `wt exec` left packages/*/src off PYTHONPATH — "

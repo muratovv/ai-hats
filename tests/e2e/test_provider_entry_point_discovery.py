@@ -22,7 +22,7 @@ from _helpers.env import checkout_pythonpath
 pytestmark = pytest.mark.integration
 
 
-_PLUGIN_SRC = '''\
+_PLUGIN_SRC = """\
 from pathlib import Path
 
 from ai_hats.providers import Provider
@@ -47,7 +47,7 @@ class AcmeProvider(Provider):
 
     def get_env(self, session_dir, project_dir):
         return {}
-'''
+"""
 
 
 def _write_plugin_dist(root: Path) -> Path:
@@ -56,9 +56,7 @@ def _write_plugin_dist(root: Path) -> Path:
     (root / "acme_provider.py").write_text(_PLUGIN_SRC)
     dist_info = root / "acme_hats-0.1.dist-info"
     dist_info.mkdir()
-    (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: acme-hats\nVersion: 0.1\n"
-    )
+    (dist_info / "METADATA").write_text("Metadata-Version: 2.1\nName: acme-hats\nVersion: 0.1\n")
     (dist_info / "entry_points.txt").write_text(
         "[ai_hats.providers]\nacme = acme_provider:AcmeProvider\n"
     )

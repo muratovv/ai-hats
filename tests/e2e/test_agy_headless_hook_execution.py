@@ -50,16 +50,20 @@ print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PreToolUse"}}}}))
 
     # Create hooks.json in skill dir
     hooks_json = hook_dir.parent / "hooks.json"
-    hooks_json.write_text(json.dumps({
-        "hooks": [
+    hooks_json.write_text(
+        json.dumps(
             {
-                "event": "PreToolUse",
-                "matcher": ".*",
-                "command": f"{sys.executable} {hook_script}",
-                "tag": "test-hook"
+                "hooks": [
+                    {
+                        "event": "PreToolUse",
+                        "matcher": ".*",
+                        "command": f"{sys.executable} {hook_script}",
+                        "tag": "test-hook",
+                    }
+                ]
             }
-        ]
-    }))
+        )
+    )
 
     # Wire the hook into .gemini/settings.json and .agy/settings.json in project
     gemini_dir = project / ".gemini"
@@ -88,8 +92,6 @@ print(json.dumps({{"hookSpecificOutput": {{"hookEventName": "PreToolUse"}}}}))
 
     env = os.environ.copy()
     env.update(provider.get_env(tmp_path / "session", project))
-
-
 
     res = subprocess.run(
         cmd,

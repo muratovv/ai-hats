@@ -130,12 +130,16 @@ class Assembler:
         self.composer = Composer(self.resolver)
 
         # HATS-837: managed-hook materialize + drift-sync. Injectable for tests.
-        self.hooks = hooks if hooks is not None else HooksManager(
-            self.project_dir,
-            self.project_config,
-            compose=lambda role: compose_for_role(self, role),
-            resolve_provider=get_provider,  # HATS-865: DI so the brick never imports providers
-            library_paths=self.library_paths,  # HATS-1023: consumer lifecycle union scope
+        self.hooks = (
+            hooks
+            if hooks is not None
+            else HooksManager(
+                self.project_dir,
+                self.project_config,
+                compose=lambda role: compose_for_role(self, role),
+                resolve_provider=get_provider,  # HATS-865: DI so the brick never imports providers
+                library_paths=self.library_paths,  # HATS-1023: consumer lifecycle union scope
+            )
         )
 
     def _build_library_paths(self, extra: list[Path]) -> list[Path]:
@@ -217,7 +221,6 @@ class Assembler:
         drop_legacy_skills_mirror(self.project_dir)
         drop_legacy_claude_publish(self.project_dir)
         drop_legacy_root_skills_mirrors(self.project_dir)
-
 
     @staticmethod
     def _cleanup_obsolete_files(project_dir: Path) -> list[str]:
@@ -1015,9 +1018,7 @@ class Assembler:
         remediation = get_surface_remediation(provider_name)
         hint = f"\nFix: {remediation}" if remediation else ""
         available = sorted(set(provider_names()) | set(get_known_surfaces().keys()))
-        raise ValueError(
-            f"Unknown provider: {provider_name}. Available: {available}.{hint}"
-        )
+        raise ValueError(f"Unknown provider: {provider_name}. Available: {available}.{hint}")
 
     def _build_tree(self, result: CompositionResult) -> dict:
         """Build a dependency tree representation.

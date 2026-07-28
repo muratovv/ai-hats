@@ -30,9 +30,7 @@ def collect_runtime_hooks(
         if not metadata.runtime_hooks:
             continue
         for event, hooks in metadata.runtime_hooks.items():
-            collected.setdefault(event, []).extend(
-                (skill.name, hook) for hook in hooks
-            )
+            collected.setdefault(event, []).extend((skill.name, hook) for hook in hooks)
     return collected
 
 
@@ -56,9 +54,7 @@ def collect_worktree_hooks(
             continue
         for kind, hooks in (("wt_in", carry.wt_in), ("wt_out", carry.wt_out)):
             if hooks:
-                collected.setdefault(kind, []).extend(
-                    (skill.name, hook) for hook in hooks
-                )
+                collected.setdefault(kind, []).extend((skill.name, hook) for hook in hooks)
     return collected
 
 

@@ -52,6 +52,7 @@ class SessionDirSnapshot:
     Pass to :func:`wait_for_new_session_dir` so pre-existing sessions are
     excluded from the "did a new one appear" check.
     """
+
     runs_dir: Path
     existing_names: frozenset[str]
 
@@ -65,10 +66,7 @@ def snapshot_session_dirs(project_root: Path) -> SessionDirSnapshot:
     runs = _runs_dir(project_root)
     if not runs.exists():
         return SessionDirSnapshot(runs_dir=runs, existing_names=frozenset())
-    names = {
-        p.name for p in runs.iterdir()
-        if p.is_dir() and p.name.startswith("session_")
-    }
+    names = {p.name for p in runs.iterdir() if p.is_dir() and p.name.startswith("session_")}
     return SessionDirSnapshot(runs_dir=runs, existing_names=frozenset(names))
 
 

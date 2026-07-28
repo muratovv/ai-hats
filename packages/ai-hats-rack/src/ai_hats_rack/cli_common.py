@@ -33,6 +33,7 @@ from .kernel import (
     UnroutableIdError,
 )
 from .linked import SelfLinkError
+from .models import CardLoadError, UnreadableWriteError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
 from .resolver import NoProjectRootError, RackRoot, resolve_root
@@ -128,6 +129,11 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     # RequiredFieldError subclass resolves here via the MRO.
     FieldValidationError: lambda e: ("invalid_field", {"field": e.field_name, **e.details}),
     ExtrasForbiddenError: lambda e: ("extras_forbidden", {"field": e.field_name}),
+    # The write would not load back — refused at the persist chokepoint, so the
+    # card on disk is untouched (HATS-1299).
+    UnreadableWriteError: lambda e: ("unreadable_write", {"task_id": e.task_id}),
+    # Present but unparseable — distinct from unknown_task, which means absent.
+    CardLoadError: lambda e: ("card_load_failed", {"task_id": e.task_id, "path": str(e.path)}),
     # --backlog names no mounted backlog — a specific match ahead of the
     # RackConfigError catch-all below (nearest-MRO wins).
     UnknownBacklogError: lambda e: ("unknown_backlog", {"backlog": e.name, "mounted": list(e.mounted)}),

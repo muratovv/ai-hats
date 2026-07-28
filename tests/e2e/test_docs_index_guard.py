@@ -15,6 +15,7 @@ docs/INDEX.md and no longer hardcodes the per-step bullet-list.
 
 Slow only because of git init + subprocess spin-up (~ms each).
 """
+
 from __future__ import annotations
 
 import os
@@ -29,7 +30,9 @@ HOOK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-commit-docs-index.sh"
 )
-WIZARD_CONFIG = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml"
+WIZARD_CONFIG = (
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/roles/initial-wizard/config.yaml"
+)
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -63,9 +66,7 @@ def repo_with_docs(tmp_path: Path) -> Path:
     one how-to file, so subsequent tests can simulate add/delete/rename
     against a realistic baseline."""
     subprocess.run(["git", "init", "--quiet"], cwd=str(tmp_path), check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True
-    )
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -87,9 +88,7 @@ def repo_with_docs(tmp_path: Path) -> Path:
 def test_hook_blocks_add_without_index(repo_with_docs: Path):
     """Staging a brand-new docs/*.md without INDEX must fail."""
     (repo_with_docs / "docs/new.md").write_text("# New\n")
-    subprocess.run(
-        ["git", "add", "docs/new.md"], cwd=str(repo_with_docs), check=True
-    )
+    subprocess.run(["git", "add", "docs/new.md"], cwd=str(repo_with_docs), check=True)
     res = _run_hook(repo_with_docs)
     assert res.returncode == 1, res.stderr
     assert "BLOCKED" in res.stderr
@@ -142,12 +141,8 @@ def test_hook_blocks_deletion_without_index(repo_with_docs: Path):
 def test_hook_allows_content_edit_without_index(repo_with_docs: Path):
     """Modifying content of an existing docs/*.md (status M) is not
     structural — hook must allow it without INDEX update."""
-    (repo_with_docs / "docs/existing.md").write_text(
-        "# Existing doc\n\nUpdated content.\n"
-    )
-    subprocess.run(
-        ["git", "add", "docs/existing.md"], cwd=str(repo_with_docs), check=True
-    )
+    (repo_with_docs / "docs/existing.md").write_text("# Existing doc\n\nUpdated content.\n")
+    subprocess.run(["git", "add", "docs/existing.md"], cwd=str(repo_with_docs), check=True)
     res = _run_hook(repo_with_docs)
     assert res.returncode == 0, res.stderr
 
@@ -156,9 +151,7 @@ def test_hook_allows_content_edit_without_index(repo_with_docs: Path):
 def test_hook_ack_overrides_block(repo_with_docs: Path):
     """Override env must bypass the block."""
     (repo_with_docs / "docs/new.md").write_text("# New\n")
-    subprocess.run(
-        ["git", "add", "docs/new.md"], cwd=str(repo_with_docs), check=True
-    )
+    subprocess.run(["git", "add", "docs/new.md"], cwd=str(repo_with_docs), check=True)
     res = _run_hook(repo_with_docs, env={"AI_HATS_DOCS_INDEX_ACK": "1"})
     assert res.returncode == 0, res.stderr
     assert "AI_HATS_DOCS_INDEX_ACK=1" in res.stderr
@@ -175,9 +168,7 @@ def test_hook_allows_empty_stage(repo_with_docs: Path):
 def test_hook_allows_non_docs_change(repo_with_docs: Path):
     """Staging an unrelated file (outside docs/) must not trigger the hook."""
     (repo_with_docs / "README.md").write_text("# Repo\n")
-    subprocess.run(
-        ["git", "add", "README.md"], cwd=str(repo_with_docs), check=True
-    )
+    subprocess.run(["git", "add", "README.md"], cwd=str(repo_with_docs), check=True)
     res = _run_hook(repo_with_docs)
     assert res.returncode == 0, res.stderr
 
@@ -189,9 +180,7 @@ def test_hook_allows_adr_subdir_add(repo_with_docs: Path):
     :(glob) pathspec keeps the guard to top-level docs/*.md only."""
     (repo_with_docs / "docs/adr").mkdir()
     (repo_with_docs / "docs/adr/0001-x.md").write_text("# ADR 1\n")
-    subprocess.run(
-        ["git", "add", "docs/adr/0001-x.md"], cwd=str(repo_with_docs), check=True
-    )
+    subprocess.run(["git", "add", "docs/adr/0001-x.md"], cwd=str(repo_with_docs), check=True)
     res = _run_hook(repo_with_docs)
     assert res.returncode == 0, res.stderr
 
@@ -221,6 +210,4 @@ def test_wizard_injection_references_index():
         "`docs/ARCHITECTURE.md` — composition model",
     ]
     for snippet in opener_dropped:
-        assert snippet not in content, (
-            f"old opener bullet must be removed: {snippet!r}"
-        )
+        assert snippet not in content, f"old opener bullet must be removed: {snippet!r}"

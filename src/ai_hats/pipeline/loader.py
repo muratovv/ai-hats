@@ -112,32 +112,23 @@ def load_pipeline(yaml_path: Path) -> Pipeline:
     instances = []
     for i, item in enumerate(raw_steps):
         if not isinstance(item, dict):
-            raise PipelineYamlError(
-                f"{yaml_path}: steps[{i}] must be a mapping"
-            )
+            raise PipelineYamlError(f"{yaml_path}: steps[{i}] must be a mapping")
         step_id = item.get("id")
         if not isinstance(step_id, str) or not step_id:
-            raise PipelineYamlError(
-                f"{yaml_path}: steps[{i}].id must be a non-empty string"
-            )
+            raise PipelineYamlError(f"{yaml_path}: steps[{i}].id must be a non-empty string")
         params = item.get("params") or {}
         if not isinstance(params, dict):
             raise PipelineYamlError(
-                f"{yaml_path}: steps[{i}].params must be a mapping (got "
-                f"{type(params).__name__})"
+                f"{yaml_path}: steps[{i}].params must be a mapping (got {type(params).__name__})"
             )
         try:
             factory = registry.get(step_id)
         except registry.StepRegistryError as e:
-            raise PipelineYamlError(
-                f"{yaml_path}: steps[{i}] {e}"
-            ) from e
+            raise PipelineYamlError(f"{yaml_path}: steps[{i}] {e}") from e
         try:
             instance = factory(params)
         except (TypeError, ValueError) as e:
-            raise PipelineYamlError(
-                f"{yaml_path}: steps[{i}] ({step_id}): {e}"
-            ) from e
+            raise PipelineYamlError(f"{yaml_path}: steps[{i}] ({step_id}): {e}") from e
         # Optional harness reliability policy. Additive — steps without `harness:`
         # keep the base-class default (None).
         harness_raw = item.get("harness")
@@ -145,9 +136,7 @@ def load_pipeline(yaml_path: Path) -> Pipeline:
             try:
                 instance.harness_policy = parse_harness_policy(harness_raw)
             except HarnessPolicyError as e:
-                raise PipelineYamlError(
-                    f"{yaml_path}: steps[{i}] ({step_id}): harness: {e}"
-                ) from e
+                raise PipelineYamlError(f"{yaml_path}: steps[{i}] ({step_id}): harness: {e}") from e
         instances.append(instance)
 
     return build(*instances, name=name)
@@ -160,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m ai_hats.pipeline.loader",
         description="Inspect a pipeline YAML — validate registry resolution "
-                    "and print the IO graph. No execution.",
+        "and print the IO graph. No execution.",
     )
     parser.add_argument("yaml_path", type=Path, help="Path to pipeline YAML")
     args = parser.parse_args(argv)
@@ -185,4 +174,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     import sys
+
     sys.exit(main())

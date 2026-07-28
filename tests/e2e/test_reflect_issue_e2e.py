@@ -74,42 +74,33 @@ def test_reflect_issue_writes_a_draft_hypothesis(
     # ``tracker/backlog/hypotheses/<ID>/task.yaml``. ``ensure_backlog`` mounts the
     # sibling backlog on a fresh project before the first create (cli/reflect.py).
     hyp_dir = tmp_project.agent_dir / "tracker" / "backlog" / "hypotheses"
-    before = (
-        {p.name for p in hyp_dir.glob("HYP-*")}
-        if hyp_dir.exists() else set()
-    )
+    before = {p.name for p in hyp_dir.glob("HYP-*")} if hyp_dir.exists() else set()
 
     tmp_project.run(
-        "reflect", "issue", OBSERVATION,
+        "reflect",
+        "issue",
+        OBSERVATION,
         timeout=ISSUE_TIMEOUT,
     ).expect_ok()
 
     assert hyp_dir.is_dir(), (
-        f"hypotheses backlog not created at {hyp_dir} — "
-        "did reflect issue silently no-op?"
+        f"hypotheses backlog not created at {hyp_dir} — did reflect issue silently no-op?"
     )
 
     after = {p.name for p in hyp_dir.glob("HYP-*")}
     new = after - before
     assert len(new) == 1, (
-        f"expected exactly one new HYP card under {hyp_dir}, "
-        f"got {len(new)} new: {sorted(new)}"
+        f"expected exactly one new HYP card under {hyp_dir}, got {len(new)} new: {sorted(new)}"
     )
 
     card = hyp_dir / next(iter(new)) / "task.yaml"
     data = yaml.safe_load(card.read_text())
-    assert isinstance(data, dict), (
-        f"HYP {card} not a YAML mapping: {type(data).__name__}"
-    )
+    assert isinstance(data, dict), f"HYP {card} not a YAML mapping: {type(data).__name__}"
 
     # User-contract fields populated by ``_write_intake`` (cli/reflect.py).
     # Empty-string is treated as missing — haiku must produce SOMETHING.
-    assert data.get("title"), (
-        f"empty/missing title in {card}: {data}"
-    )
-    assert data.get("hypothesis"), (
-        f"empty/missing hypothesis in {card}: {data}"
-    )
+    assert data.get("title"), f"empty/missing title in {card}: {data}"
+    assert data.get("hypothesis"), f"empty/missing hypothesis in {card}: {data}"
     # ``source_task`` rides a rack link (defaults to ``supervisor-observation``
     # when ``--task`` is absent); ``state`` — not ``status`` — carries lifecycle.
     assert (data.get("links") or {}).get("source_task"), (

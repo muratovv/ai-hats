@@ -86,8 +86,7 @@ def _pkg_tracked_by_local_git(pkg_dir: Path) -> bool:
     """
     try:
         result = subprocess.run(
-            ["git", "-C", str(pkg_dir),
-             "ls-files", "--error-unmatch", "__init__.py"],
+            ["git", "-C", str(pkg_dir), "ls-files", "--error-unmatch", "__init__.py"],
             capture_output=True,
             text=True,
             timeout=REV_PARSE_TIMEOUT,
@@ -224,8 +223,7 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
         return False
     try:
         result = subprocess.run(
-            ["git", "-C", str(pkg_dir), "fetch", "--quiet",
-             remote_url.removeprefix("git+"), ref],
+            ["git", "-C", str(pkg_dir), "fetch", "--quiet", remote_url.removeprefix("git+"), ref],
             capture_output=True,
             text=True,
             timeout=FETCH_TIMEOUT,
@@ -297,8 +295,7 @@ def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
     """
     try:
         result = subprocess.run(
-            ["git", "-C", str(mirror), "fetch",
-             "--quiet", remote_url.removeprefix("git+"), ref],
+            ["git", "-C", str(mirror), "fetch", "--quiet", remote_url.removeprefix("git+"), ref],
             capture_output=True,
             text=True,
             timeout=FETCH_TIMEOUT,
@@ -433,10 +430,7 @@ def run_check(
         # any foreign ``.git`` in an ancestor (HATS-441 closed that
         # surface), no dependency on a pkg-checkout-shaped install.
         mirror = _ensure_probe_mirror(project_dir)
-        if (
-            mirror is not None
-            and _fetch_into_mirror(mirror, remote_url, ref)
-        ):
+        if mirror is not None and _fetch_into_mirror(mirror, remote_url, ref):
             counts = _count_ahead_behind(installed, latest, git_dir=mirror)
             if counts is not None:
                 ahead, behind = counts

@@ -81,9 +81,7 @@ def initialised_git_project(tmp_path: Path) -> Path:
     """Tmp dir bootstrapped as an ai-hats project AND a git repo with one commit."""
     project = tmp_path / "project"
     project.mkdir()
-    ProjectConfig(provider="claude", library_paths=[]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=[]).save(project / PROJECT_CONFIG)
     Assembler(project).init()
     _git(project, "init")
     _git(project, "config", "user.email", "e2e@hats-502.test")
@@ -109,13 +107,10 @@ def test_wt_merge_no_branch_with_multiple_active_refuses(
 
     # Bad invocation: outside any linked worktree, no BRANCH.
     result = _run_hats(proj, "wt", "merge")
-    assert result.returncode != 0, (
-        f"expected non-zero exit, got 0\nSTDOUT: {result.stdout}"
-    )
+    assert result.returncode != 0, f"expected non-zero exit, got 0\nSTDOUT: {result.stdout}"
     combined = result.stdout + result.stderr
     assert "Multiple active worktrees" in combined, (
-        f"expected ambiguity error, got:\nSTDOUT:\n{result.stdout}\n"
-        f"STDERR:\n{result.stderr}"
+        f"expected ambiguity error, got:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
     assert "task/hats-aaa" in combined
     assert "task/hats-bbb" in combined

@@ -6,9 +6,9 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import yaml
+
 from ai_hats.retro.reminder import evaluate_wrap_up
-from ai_hats_tracker.state import TaskManager
-from ai_hats.tracker_wiring import tracker_paths
 from ai_hats.paths import runs_dir, state_md_path, tasks_dir
 from ai_hats_observe.artifacts import METRICS_JSON, session_dirname
 from ai_hats.paths import PROJECT_CONFIG
@@ -38,38 +38,27 @@ def _write_metrics(project: Path, **overrides) -> None:
         "tokens": {"cache_read": 12_500_000},  # 12 MB by default
     }
     metrics.update(overrides)
-    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(
-        json.dumps(metrics)
-    )
+    (runs_dir(project) / session_dirname(SESSION_ID) / METRICS_JSON).write_text(json.dumps(metrics))
 
 
-def _create_done_task(
-    project: Path, task_id: str, updated: datetime
-) -> None:
-    mgr = TaskManager(
-        project, prefix="TST", strict_plan_check=False, layout=tracker_paths(project)
+def _create_done_task(project: Path, task_id: str, closed_at: datetime) -> None:
+    """Seed a closed card as literal yaml — HATS-1259 windows on ``completed_at``."""
+    iso = closed_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    card_dir = tasks_dir(project) / task_id
+    card_dir.mkdir(parents=True, exist_ok=True)
+    (card_dir / "task.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": task_id,
+                "title": f"task {task_id}",
+                "state": "done",
+                "created": "2026-01-01",
+                "updated": iso,
+                "completed_at": iso,
+            },
+            sort_keys=False,
+        )
     )
-    mgr.create_task(task_id, f"task {task_id}")
-    # Mark as done by writing the yaml directly with the desired updated/state.
-    # Going through transition() would require plan content, which the wrap-up
-    # logic is independent of.
-    task_path = tasks_dir(project) / task_id / "task.yaml"
-    yaml_text = task_path.read_text()
-    yaml_text = yaml_text.replace(
-        "state: brainstorm", "state: done"
-    )
-    iso = updated.strftime("%Y-%m-%dT%H:%M:%SZ")
-    yaml_text = yaml_text.replace(
-        f"updated: '{yaml_text.split(chr(10))[0]}'",
-        f"updated: '{iso}'",
-    )
-    # Replace the literal updated line robustly: regex substitute.
-    import re
-
-    yaml_text = re.sub(
-        r"^updated:.*$", f"updated: '{iso}'", yaml_text, count=1, flags=re.MULTILINE
-    )
-    task_path.write_text(yaml_text)
 
 
 def test_wrap_up_fires_when_thresholds_met(tmp_path: Path) -> None:
@@ -98,9 +87,7 @@ def test_wrap_up_below_duration_threshold(tmp_path: Path) -> None:
     project = _setup_project(tmp_path)
     _write_metrics(project, duration_s=1800)  # 30 min
     for i, off in enumerate([5, 10, 15], start=1):
-        _create_done_task(
-            project, f"TST-00{i}", SESSION_START + timedelta(minutes=off)
-        )
+        _create_done_task(project, f"TST-00{i}", SESSION_START + timedelta(minutes=off))
 
     assert evaluate_wrap_up(project, SESSION_ID) is None
 
@@ -117,14 +104,16 @@ def test_wrap_up_ignores_tasks_outside_window(tmp_path: Path) -> None:
     project = _setup_project(tmp_path)
     _write_metrics(project)  # window 0..90min
     _create_done_task(
-        project, "TST-001", SESSION_START + timedelta(hours=5)  # after end
+        project,
+        "TST-001",
+        SESSION_START + timedelta(hours=5),  # after end
     )
     _create_done_task(
-        project, "TST-002", SESSION_START - timedelta(hours=5)  # before start
+        project,
+        "TST-002",
+        SESSION_START - timedelta(hours=5),  # before start
     )
-    _create_done_task(
-        project, "TST-003", SESSION_START + timedelta(hours=10)
-    )
+    _create_done_task(project, "TST-003", SESSION_START + timedelta(hours=10))
 
     assert evaluate_wrap_up(project, SESSION_ID) is None
 

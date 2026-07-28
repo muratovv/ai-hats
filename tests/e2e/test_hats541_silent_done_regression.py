@@ -40,8 +40,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -53,15 +57,17 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
 def _task_state(project: Path, task_id: str) -> str:
     yaml_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
-        / task_id / "task.yaml"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "task.yaml"
     )
     text = yaml_path.read_text()
     for line in text.splitlines():
@@ -71,9 +77,7 @@ def _task_state(project: Path, task_id: str) -> str:
 
 
 @pytest.mark.integration
-def test_e2e_failed_done_stays_review_then_retry_succeeds(
-    shared_launcher, tmp_path
-):
+def test_e2e_failed_done_stays_review_then_retry_succeeds(shared_launcher, tmp_path):
     """Two-attempt `transition done` flow under a forced merge conflict.
 
     Attempt 1: merge conflict → exit non-zero, task stays in `review`,
@@ -92,13 +96,19 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- bootstrap project ----
@@ -110,26 +120,33 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- create task + walk plan→execute ----
     task_id = "TST-001"
     branch_ref = f"task/{task_id.lower()}"
     rack(
-        "create", "Failed-merge retry regression",
-        "--description", "Used to verify HATS-481/541 silent-done + HATS-587/F5 retry.",
-        "--id", task_id,
+        "create",
+        "Failed-merge retry regression",
+        "--description",
+        "Used to verify HATS-481/541 silent-done + HATS-587/F5 retry.",
+        "--id",
+        task_id,
     )
     rack("transition", task_id, "plan")
 
     # Plan content goes straight into the canonical task tree — no
     # .claude/plans round-trip (HATS-637).
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         f"# {task_id} plan\n\n"
@@ -147,9 +164,9 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     current: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current = Path(line[len("worktree "):].strip())
+            current = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(f"/{branch_ref}"):
                 wt_path = current
                 break
@@ -165,9 +182,14 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     (wt_path / "COLLIDE.txt").write_text("from-worktree\n")
     _git(wt_path, "add", "COLLIDE.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "worktree adds COLLIDE.txt",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "worktree adds COLLIDE.txt",
     )
 
     # Main side: place an UNTRACKED file at the same path. Drift check
@@ -183,8 +205,11 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
 
     # ---- Attempt 1: must exit non-zero, state must stay `review`. ----
     res1 = rack(
-        "transition", task_id, "done",
-        expect_exit=None, timeout=90,
+        "transition",
+        task_id,
+        "done",
+        expect_exit=None,
+        timeout=90,
     )
     assert res1.returncode != 0, (
         f"attempt 1: transition done exited 0 despite merge conflict\n"
@@ -196,9 +221,7 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
 
     # ---- HATS-587/F5: worktree dir + branch PRESERVED on failure. ----
     branches = _git(project, "branch", "--list", branch_ref).stdout
-    assert branch_ref in branches, (
-        f"attempt 1: worktree branch must be preserved:\n{branches}"
-    )
+    assert branch_ref in branches, f"attempt 1: worktree branch must be preserved:\n{branches}"
     assert wt_path.is_dir(), (
         "🐛 F5 REGRESSION: a failed merge tore down the worktree directory — "
         "the next `transition done` can no longer be a clean retry"
@@ -209,14 +232,19 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     # MERGING state left by the conflicting merge.
     (project / "COLLIDE.txt").unlink()
     subprocess.run(
-        ["git", "merge", "--abort"], cwd=str(project),
-        capture_output=True, check=False,
+        ["git", "merge", "--abort"],
+        cwd=str(project),
+        capture_output=True,
+        check=False,
     )
 
     # ---- Attempt 2: clean retry → task advances to `done`. ----
     res2 = rack(
-        "transition", task_id, "done",
-        expect_exit=None, timeout=90,
+        "transition",
+        task_id,
+        "done",
+        expect_exit=None,
+        timeout=90,
     )
     assert res2.returncode == 0, (
         f"🐛 attempt 2 should be a clean retry now that the worktree is "
@@ -232,12 +260,10 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(
     # The worktree commit actually landed on the base branch.
     log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
     assert "worktree adds COLLIDE.txt" in log, (
-        f"worktree commit missing from history — merge did not really "
-        f"happen:\n{log}"
+        f"worktree commit missing from history — merge did not really happen:\n{log}"
     )
     # Worktree branch cleaned up after the successful merge.
     branches_final = _git(project, "branch", "--list", branch_ref).stdout
     assert branches_final.strip() == "", (
-        f"worktree branch should be deleted after the successful retry:\n"
-        f"{branches_final!r}"
+        f"worktree branch should be deleted after the successful retry:\n{branches_final!r}"
     )

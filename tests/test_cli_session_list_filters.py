@@ -37,24 +37,45 @@ def project_dir(tmp_path: Path) -> Path:
         "schema_version: 2\nprovider: claude\nactive_role: primary\n"
     )
     # Set of sessions covering filter axes.
-    _make_session(project_dir=tmp_path, session_id="20260401-100000-1-1001", metrics={
-        "role": "diagnoser", "provider": "claude",
-        "exit_code": 0, "turns": 5, "tool_calls": 10,
-        "tokens": {"input": 100, "output": 200, "cache_read": 0, "cache_creation": 0},
-        "tags": {"alert_fp": "abc", "client": "home"},
-    })
-    _make_session(project_dir=tmp_path, session_id="20260410-120000-1-1002", metrics={
-        "role": "diagnoser", "provider": "claude",
-        "exit_code": 0, "turns": 3, "tool_calls": 7,
-        "tokens": {"input": 50, "output": 100, "cache_read": 0, "cache_creation": 0},
-        "tags": {"alert_fp": "xyz", "client": "home"},
-    })
-    _make_session(project_dir=tmp_path, session_id="20260420-090000-1-1003", metrics={
-        "role": "primary", "provider": "agy",
-        "exit_code": 1, "turns": 2, "tool_calls": 3,
-        "tokens": {"input": 30, "output": 60, "cache_read": 0, "cache_creation": 0},
-        "tags": {"alert_fp": "abc", "client": "work"},
-    })
+    _make_session(
+        project_dir=tmp_path,
+        session_id="20260401-100000-1-1001",
+        metrics={
+            "role": "diagnoser",
+            "provider": "claude",
+            "exit_code": 0,
+            "turns": 5,
+            "tool_calls": 10,
+            "tokens": {"input": 100, "output": 200, "cache_read": 0, "cache_creation": 0},
+            "tags": {"alert_fp": "abc", "client": "home"},
+        },
+    )
+    _make_session(
+        project_dir=tmp_path,
+        session_id="20260410-120000-1-1002",
+        metrics={
+            "role": "diagnoser",
+            "provider": "claude",
+            "exit_code": 0,
+            "turns": 3,
+            "tool_calls": 7,
+            "tokens": {"input": 50, "output": 100, "cache_read": 0, "cache_creation": 0},
+            "tags": {"alert_fp": "xyz", "client": "home"},
+        },
+    )
+    _make_session(
+        project_dir=tmp_path,
+        session_id="20260420-090000-1-1003",
+        metrics={
+            "role": "primary",
+            "provider": "agy",
+            "exit_code": 1,
+            "turns": 2,
+            "tool_calls": 3,
+            "tokens": {"input": 30, "output": 60, "cache_read": 0, "cache_creation": 0},
+            "tags": {"alert_fp": "abc", "client": "work"},
+        },
+    )
     return tmp_path
 
 
@@ -98,10 +119,17 @@ def test_json_item_has_computed_fields(cli, project_dir):
 
 
 def test_tag_filter_single(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--json", "--all",
-        "--tag", "alert_fp=abc",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--json",
+            "--all",
+            "--tag",
+            "alert_fp=abc",
+        ],
+    )
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
@@ -109,28 +137,53 @@ def test_tag_filter_single(cli):
 
 
 def test_tag_filter_and(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--json", "--all",
-        "--tag", "alert_fp=abc", "--tag", "client=home",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--json",
+            "--all",
+            "--tag",
+            "alert_fp=abc",
+            "--tag",
+            "client=home",
+        ],
+    )
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
     assert ids == ["20260401-100000-1-1001"]
 
 
 def test_role_filter(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--json", "--all", "--role", "diagnoser",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--json",
+            "--all",
+            "--role",
+            "diagnoser",
+        ],
+    )
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
     assert ids == ["20260401-100000-1-1001", "20260410-120000-1-1002"]
 
 
 def test_since_filter(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--json", "--all", "--since", "2026-04-10",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--json",
+            "--all",
+            "--since",
+            "2026-04-10",
+        ],
+    )
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
     assert ids == ["20260410-120000-1-1002", "20260420-090000-1-1003"]
@@ -138,12 +191,21 @@ def test_since_filter(cli):
 
 def test_combined_filters(cli):
     """role + tag + since — all ANDed."""
-    result = cli.invoke(main, [
-        "session", "list", "--json", "--all",
-        "--role", "diagnoser",
-        "--tag", "client=home",
-        "--since", "2026-04-05",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--json",
+            "--all",
+            "--role",
+            "diagnoser",
+            "--tag",
+            "client=home",
+            "--since",
+            "2026-04-05",
+        ],
+    )
     data = json.loads(result.output)
     ids = [d["session_id"] for d in data]
     assert ids == ["20260410-120000-1-1002"]
@@ -155,17 +217,29 @@ def test_combined_filters(cli):
 
 
 def test_tag_filter_invalid_format_errors(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--tag", "broken",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--tag",
+            "broken",
+        ],
+    )
     assert result.exit_code == 2
     assert "missing '=' separator" in result.output
 
 
 def test_tag_filter_reserved_key_errors(cli):
-    result = cli.invoke(main, [
-        "session", "list", "--tag", "role=anything",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--tag",
+            "role=anything",
+        ],
+    )
     assert result.exit_code == 2
     assert "is reserved" in result.output
 
@@ -190,10 +264,16 @@ def test_table_output_unchanged_without_json(cli):
 
 def test_table_with_filters(cli):
     """Table output respects new filters (same path as --json)."""
-    result = cli.invoke(main, [
-        "session", "list", "--all",
-        "--tag", "alert_fp=xyz",
-    ])
+    result = cli.invoke(
+        main,
+        [
+            "session",
+            "list",
+            "--all",
+            "--tag",
+            "alert_fp=xyz",
+        ],
+    )
     assert result.exit_code == 0
     assert "1 sessions shown" in result.output
     # b2 has turns=3, tool_calls=7 — unique across fixture.

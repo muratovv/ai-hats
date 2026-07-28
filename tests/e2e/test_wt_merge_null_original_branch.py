@@ -37,8 +37,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -82,7 +86,10 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -94,9 +101,14 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- 2. create worktree on a task branch ----
@@ -104,12 +116,9 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
 
     # ---- 3. corrupt the state file: original_branch -> null ----
     state_path = (
-        project / ".agent" / "ai-hats" / "sessions" / "worktrees"
-        / "task-null-base-probe.json"
+        project / ".agent" / "ai-hats" / "sessions" / "worktrees" / "task-null-base-probe.json"
     )
-    assert state_path.is_file(), (
-        f"worktree state file not found at {state_path}"
-    )
+    assert state_path.is_file(), f"worktree state file not found at {state_path}"
     data = json.loads(state_path.read_text())
     assert data.get("original_branch"), (
         f"precondition: state should start with a real original_branch, "
@@ -120,8 +129,11 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
 
     # ---- 4. wt merge refuses cleanly, no traceback ----
     res = ai_hats(
-        "wt", "merge", "task/null-base-probe",
-        expect_exit=1, cwd=project,
+        "wt",
+        "merge",
+        "task/null-base-probe",
+        expect_exit=1,
+        cwd=project,
     )
     combined = res.stdout + res.stderr
 
@@ -134,12 +146,9 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
     )
     # The whole point of HATS-714: no opaque crash leaks to the operator.
     assert "Traceback" not in res.stderr, (
-        f"a Python traceback leaked instead of a typed refusal:\n"
-        f"{res.stderr}"
+        f"a Python traceback leaked instead of a typed refusal:\n{res.stderr}"
     )
-    assert "TypeError" not in combined, (
-        f"the opaque TypeError must be gone:\n{combined}"
-    )
+    assert "TypeError" not in combined, f"the opaque TypeError must be gone:\n{combined}"
     # The misleading "left intact for retry" line belongs to the generic
     # merge-failure path, which the top-of-merge guard never reaches.
     assert "left intact for retry" not in combined, (
@@ -147,9 +156,7 @@ def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
     )
 
     # ---- 5. refused before mutation: worktree branch preserved ----
-    branches = _git(
-        project, "branch", "--list", "task/null-base-probe"
-    ).stdout
+    branches = _git(project, "branch", "--list", "task/null-base-probe").stdout
     assert "task/null-base-probe" in branches, (
         f"refusal must preserve the worktree branch (no teardown on a "
         f"pre-mutation refusal):\n{branches}"

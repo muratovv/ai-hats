@@ -41,9 +41,7 @@ def _make_executable(path: Path) -> None:
 def _stub_launcher(path: Path, log: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "#!/usr/bin/env bash\n"
-        f'echo "REPO=${{AI_HATS_REPO_URL:-}}|ARGS=$*" >> "{log}"\n'
-        "exit 0\n"
+        f'#!/usr/bin/env bash\necho "REPO=${{AI_HATS_REPO_URL:-}}|ARGS=$*" >> "{log}"\nexit 0\n'
     )
     _make_executable(path)
 
@@ -90,7 +88,11 @@ def test_repair_warns_on_stray_launcher(tmp_path: Path) -> None:
 
     res = subprocess.run(
         ["bash", str(bootstrap), "--repair"],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=120,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     combined = res.stdout + res.stderr
     assert res.returncode == 0, f"bootstrap --repair failed:\n{combined}"

@@ -46,7 +46,7 @@ pytestmark = pytest.mark.integration
 PROBE_MODEL = "claude-haiku-4-5"
 PROBE_BUDGET_USD = 0.10
 PROBE_TIMEOUT_S = 120
-PROBE_TASK = 'Reply with exactly the four characters: PONG. Nothing else.'
+PROBE_TASK = "Reply with exactly the four characters: PONG. Nothing else."
 
 
 @pytest.fixture
@@ -62,7 +62,10 @@ def requires_claude_auth() -> None:
         pytest.skip("claude binary not in PATH")
     try:
         cp = subprocess.run(
-            ["claude", "--version"], capture_output=True, text=True, timeout=10,
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         pytest.skip(f"claude --version failed: {exc}")
@@ -79,7 +82,9 @@ def minimal_claude_project(tmp_path: Path) -> Path:
     """
     project = tmp_path / "project"
     project.mkdir()
-    subprocess.run(["git", "init", "-b", "master"], cwd=str(project), check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "-b", "master"], cwd=str(project), check=True, capture_output=True
+    )
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(project), check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project), check=True)
     subprocess.run(["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project), check=True)
@@ -96,9 +101,7 @@ def minimal_claude_project(tmp_path: Path) -> Path:
         "  You are a one-word echo bot. Respond with exactly what you are asked.\n"
     )
 
-    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
 
     asm = Assembler(project)
     asm.init()
@@ -106,9 +109,7 @@ def minimal_claude_project(tmp_path: Path) -> Path:
     return project
 
 
-def test_subagent_runner_via_sdk_smoke(
-    minimal_claude_project: Path, requires_claude_auth
-) -> None:
+def test_subagent_runner_via_sdk_smoke(minimal_claude_project: Path, requires_claude_auth) -> None:
     from ai_hats.composition_seam import build_composition_payload
     from ai_hats_observe import SessionManager
     from ai_hats.paths import runs_dir
@@ -116,10 +117,12 @@ def test_subagent_runner_via_sdk_smoke(
 
     # HATS-865: compose once at the integrator seam, inject the payload.
     payload = build_composition_payload(
-        minimal_claude_project, role_override="probe",
+        minimal_claude_project,
+        role_override="probe",
     )
     runner = SubAgentRunner(
-        minimal_claude_project, payload,
+        minimal_claude_project,
+        payload,
         session_mgr=SessionManager(
             minimal_claude_project, runs_dir=runs_dir(minimal_claude_project)
         ),
@@ -141,15 +144,13 @@ def test_subagent_runner_via_sdk_smoke(
     metrics = json.loads(metrics_path.read_text())
 
     assert metrics["exit_code"] == 0, (
-        f"sub-agent failed: error={metrics.get('error')!r} "
-        f"timed_out={metrics.get('timed_out')!r}"
+        f"sub-agent failed: error={metrics.get('error')!r} timed_out={metrics.get('timed_out')!r}"
     )
     # SDK-specific telemetry — the whole point of Phase 2.
     print("METRICS JSON:", metrics)
 
     assert metrics.get("claude_session_id"), (
-        "claude_session_id absent from metrics.json — "
-        "ResultMessage.session_id capture is broken"
+        "claude_session_id absent from metrics.json — ResultMessage.session_id capture is broken"
     )
     assert metrics.get("total_cost_usd") is not None, (
         "total_cost_usd absent — SDK cost telemetry not threaded through"
@@ -166,6 +167,4 @@ def test_subagent_runner_via_sdk_smoke(
     # The agent was asked to reply "PONG"; allow some flexibility but
     # require recognizable echo (case-insensitive, may include
     # punctuation).
-    assert "pong" in transcript.lower(), (
-        f"agent did not respond to the echo prompt: {transcript!r}"
-    )
+    assert "pong" in transcript.lower(), f"agent did not respond to the echo prompt: {transcript!r}"

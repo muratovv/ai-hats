@@ -89,7 +89,9 @@ def _build_plugins(
         return []
 
     skill_args = provider.materialize_runtime_skills(
-        project_dir, composition_result, session_id,
+        project_dir,
+        composition_result,
+        session_id,
     )
     if len(skill_args) >= 2 and skill_args[0] == "--plugin-dir":
         return [{"type": "local", "path": skill_args[1]}]
@@ -150,9 +152,7 @@ def build_options(
     if model:
         kwargs["model"] = model
     if mcp_config is not None:
-        kwargs["mcp_servers"] = (
-            str(mcp_config) if isinstance(mcp_config, Path) else mcp_config
-        )
+        kwargs["mcp_servers"] = str(mcp_config) if isinstance(mcp_config, Path) else mcp_config
     if settings is not None:
         kwargs["settings"] = settings
     if setting_sources is not None:
@@ -161,7 +161,6 @@ def build_options(
     from ai_hats.paths import session_cache_dir
 
     from ai_hats.skills_dir import inject_skill_paths_to_env
-
 
     plugin_skills_dir = session_cache_dir(project_dir, session_id) / "plugin" / "skills"
     inject_skill_paths_to_env(env_dict, composition_result.skills, plugin_skills_dir)

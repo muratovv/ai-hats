@@ -65,9 +65,13 @@ def assemble_launch_command(
 
 @dataclass
 class BuiltArtifacts:
-    cli_args: list[str] = field(default_factory=list)  # HITL: --system-prompt-file/--plugin-dir/--settings
+    cli_args: list[str] = field(
+        default_factory=list
+    )  # HITL: --system-prompt-file/--plugin-dir/--settings
     extra_env: dict[str, str] = field(default_factory=dict)
-    sdk_options: dict = field(default_factory=dict)  # Automate: {"settings":..., "setting_sources":[]}
+    sdk_options: dict = field(
+        default_factory=dict
+    )  # Automate: {"settings":..., "setting_sources":[]}
     materialized: list[Path] = field(default_factory=list)  # for tests/audit
     full_content: str | None = None  # composed prompt bytes (meta_prompt.txt)
     # HATS-1211: every session write goes through here; a PlanMaterializer turns
@@ -76,4 +80,3 @@ class BuiltArtifacts:
     # HATS-1207: policy rides here so per-category handlers read it without a
     # published signature change (ADR-0018 §1). Same rule — append last.
     policy: SessionPolicy = field(default_factory=SessionPolicy)
-

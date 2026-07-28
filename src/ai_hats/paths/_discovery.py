@@ -31,7 +31,9 @@ def session_start_ts(session_id: str) -> float | None:
 
 
 def discover_recent_by_mtime(
-    transcripts_dir: Path, glob_pattern: str, session_id: str,
+    transcripts_dir: Path,
+    glob_pattern: str,
+    session_id: str,
 ) -> Path | None:
     """Freshest file matching ``glob_pattern`` with mtime >= session start (HATS-272)."""
     if not transcripts_dir.is_dir():

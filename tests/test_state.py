@@ -213,9 +213,7 @@ def test_final_state_not_written_when_transition_fails(tmp_path):
     project.mkdir()
     (project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
     (project / ".agent" / "STATE.md").write_text("")
-    strict = TaskManager(
-        project, prefix="T", strict_plan_check=True, layout=tracker_paths(project)
-    )
+    strict = TaskManager(project, prefix="T", strict_plan_check=True, layout=tracker_paths(project))
 
     strict.create_task("T-9", "Empty plan")
     strict.transition("T-9", TaskState.PLAN)  # empty scaffold → execute blocked
@@ -534,9 +532,7 @@ def test_epicify_keeps_worktree_with_pending_hunk_review(git_mgr):
     git_mgr.create_task("T-1", "Parent")
     git_mgr.transition("T-1", TaskState.PLAN)
     git_mgr.transition("T-1", TaskState.EXECUTE)
-    active = WorktreeManager.load_for_task(
-        project, "T-1", state_dir=worktrees_dir(project)
-    )
+    active = WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project))
     wt = active.worktree_path
     assert wt.exists()
 
@@ -1982,9 +1978,7 @@ def test_no_handler_is_pure_fsm(tmp_path):
     fsm.create_task("T-1", "No worktree")
     fsm.transition("T-1", TaskState.PLAN)
     fsm.transition("T-1", TaskState.EXECUTE)
-    assert (
-        WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
-    )
+    assert WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
     for state in (TaskState.DOCUMENT, TaskState.REVIEW, TaskState.DONE):
         fsm.transition("T-1", state)
     done = fsm.get_task("T-1")

@@ -15,20 +15,26 @@ from ai_hats.constants import is_debug_mode
 from ai_hats.self_heal import is_broken_install_exception
 
 
-
 def test_is_broken_install_exception() -> None:
     """is_broken_install_exception identifies import/module errors vs object errors (HATS-1132)."""
     assert is_broken_install_exception(ImportError("cannot import name foo"))
-    assert is_broken_install_exception(AttributeError("module 'ai_hats.constants' has no attribute 'FOO'"))
-    assert is_broken_install_exception(AttributeError("partially initialized module 'ai_hats' has no attribute 'bar'"))
+    assert is_broken_install_exception(
+        AttributeError("module 'ai_hats.constants' has no attribute 'FOO'")
+    )
+    assert is_broken_install_exception(
+        AttributeError("partially initialized module 'ai_hats' has no attribute 'bar'")
+    )
 
     # Object-level AttributeError must NOT be classified as broken install
-    assert not is_broken_install_exception(AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'"))
+    assert not is_broken_install_exception(
+        AttributeError("'AgyProvider' object has no attribute 'get_cli_launch_args'")
+    )
     assert not is_broken_install_exception(AttributeError("'dict' object has no attribute 'foo'"))
 
 
-
-def test_catch_broken_install_ignores_non_module_attribute_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catch_broken_install_ignores_non_module_attribute_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """catch_broken_install re-raises non-module AttributeError (HATS-1132)."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
@@ -61,7 +67,6 @@ def test_main_entry_re_raises_non_module_attribute_error(monkeypatch: pytest.Mon
 
 
 def test_is_debug_mode_detects_env_and_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-
     """is_debug_mode returns True when env vars or debug flags are present."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
@@ -83,7 +88,9 @@ def test_is_debug_mode_detects_env_and_flags(monkeypatch: pytest.MonkeyPatch) ->
         assert is_debug_mode()
 
 
-def test_handle_broken_install_normal_mode(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_handle_broken_install_normal_mode(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """_handle_broken_install_or_die in normal mode prints friendly error and exits 1 without traceback."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
@@ -104,7 +111,9 @@ def test_handle_broken_install_normal_mode(capsys: pytest.CaptureFixture[str], m
     assert "Traceback" not in captured.err
 
 
-def test_catch_broken_install_context_manager(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catch_broken_install_context_manager(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """catch_broken_install context manager catches ImportError and exits cleanly."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
@@ -132,7 +141,9 @@ def test_handle_broken_install_debug_mode(monkeypatch: pytest.MonkeyPatch) -> No
     assert exc_info.value is exc
 
 
-def test_main_entry_catches_import_error(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_entry_catches_import_error(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """main_entry catches ImportError/AttributeError and outputs actionable remediation."""
     monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
     monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)

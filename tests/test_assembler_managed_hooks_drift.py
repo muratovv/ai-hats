@@ -37,9 +37,7 @@ def assembler(tmp_path: Path) -> Assembler:
 
 
 def _result(skills: list[ResolvedComponent]) -> CompositionResult:
-    return CompositionResult(
-        name="r", priorities=[], rules=[], skills=skills, injections=[]
-    )
+    return CompositionResult(name="r", priorities=[], rules=[], skills=skills, injections=[])
 
 
 def _skill_runtime(base: Path, name: str, event: str, matcher: str, script: str):
@@ -84,9 +82,7 @@ class TestRuntimeBytesDrift:
         s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         res = _result([s])
         assembler.hooks.materialize_runtime_hooks(res)
-        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
-            "sa", "h/a.sh"
-        )
+        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename("sa", "h/a.sh")
         dest.unlink()
         changes = assembler.hooks._runtime_bytes_changes(res)
         assert (dest.name, "missing") in changes
@@ -95,9 +91,7 @@ class TestRuntimeBytesDrift:
         s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
         res = _result([s])
         assembler.hooks.materialize_runtime_hooks(res)
-        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename(
-            "sa", "h/a.sh"
-        )
+        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename("sa", "h/a.sh")
         dest.write_text("#!/usr/bin/env bash\necho drifted\n")
         changes = assembler.hooks._runtime_bytes_changes(res)
         assert (dest.name, "content") in changes
@@ -118,7 +112,10 @@ class TestRuntimeBytesDrift:
         helper = hooks_dir(assembler.project_dir) / "shared_state_classifier.sh"
         if helper.exists():  # only if the package ships it
             helper.unlink()
-            assert ("shared_state_classifier.sh", "missing") in assembler.hooks._runtime_bytes_changes(res)
+            assert (
+                "shared_state_classifier.sh",
+                "missing",
+            ) in assembler.hooks._runtime_bytes_changes(res)
 
 
 # ----- wt-hook BYTES drift -----

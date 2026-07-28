@@ -26,7 +26,10 @@ from ai_hats.rule_delivery import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LIB_LAYERS = [REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core", REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage"]
+LIB_LAYERS = [
+    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core",
+    REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage",
+]
 PROVIDERS = [ClaudeProvider, AgyProvider]
 
 
@@ -35,7 +38,9 @@ def _resolver() -> LibraryResolver:
 
 
 def _lib_text(*parts: str) -> str:
-    return (REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / Path(*parts)).read_text()
+    return (
+        REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / Path(*parts)
+    ).read_text()
 
 
 # --------------------------------------------------------------------------- #
@@ -52,7 +57,14 @@ def test_harness_reminder_essence_delivered_in_both_base_traits(trait):
 
 def test_edit_efficiency_folded_into_skill_and_rule_removed():
     assert not (
-        REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "rules" / "dev_rule_edit_efficiency"
+        REPO_ROOT
+        / "packages"
+        / "ai-hats-library"
+        / "src"
+        / "ai_hats_library"
+        / "core"
+        / "rules"
+        / "dev_rule_edit_efficiency"
     ).exists(), "dev_rule_edit_efficiency rule dir should be deleted"
     assert "dev_rule_edit_efficiency" not in _lib_text(
         "core", "traits", "trait-agent", "config.yaml"
@@ -115,7 +127,9 @@ def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
 
 
 def test_no_dangling_rule_pointers_in_shipped_library():
-    violations = find_dangling_rule_pointers(REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
+    violations = find_dangling_rule_pointers(
+        REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    )
     assert violations == [], (
         "Undelivered `see rule X` pointers — each rule must be always-on or "
         "registered in SUMMARIZED_IN_INJECTION:\n"
@@ -135,10 +149,7 @@ def test_g2_catches_an_undelivered_pointer(tmp_path):
     trait = tmp_path / "core" / "traits" / "trait-bad"
     trait.mkdir(parents=True)
     (trait / "config.yaml").write_text(
-        "name: trait-bad\n"
-        "injection: |\n"
-        "  Do the thing — see rule `rule_totally_undelivered`.\n"
+        "name: trait-bad\ninjection: |\n  Do the thing — see rule `rule_totally_undelivered`.\n"
     )
     violations = find_dangling_rule_pointers(tmp_path)
     assert [v.rule for v in violations] == ["rule_totally_undelivered"]
-

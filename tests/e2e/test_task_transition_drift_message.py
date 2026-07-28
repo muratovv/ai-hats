@@ -26,8 +26,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -75,14 +79,19 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(rack_bin), *args],
-            cwd=cwd, env={**env, **(extra_env or {})},
-            timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env={**env, **(extra_env or {})},
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -94,17 +103,26 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- 2. create a task and walk it through to execute ----
     new_res = rack(
-        "create", "drift message test",
-        "--description", "exercise the ported drift recipe",
-        "--role", "assistant",
-        "--reviewer", "user",
+        "create",
+        "drift message test",
+        "--description",
+        "exercise the ported drift recipe",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     # `rack create` prints `Created: TST-NNN — <title> [...] (...)`
     task_id = None
@@ -121,8 +139,7 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
 
     # Fill the plan scaffold so the plan→execute transition is allowed.
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     assert plan_path.is_file(), f"plan scaffold missing: {plan_path}"
     plan_path.write_text(
@@ -141,9 +158,9 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     branch_suffix = f"/task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith(branch_suffix):
                 wt_path = current_path
                 break
@@ -157,9 +174,14 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 4. main repo advances → drift ----
@@ -176,20 +198,14 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     combined = res.stdout + res.stderr
 
     # Positive: drift summary preserved (commits + affected path).
-    assert "drift" in combined.lower(), (
-        f"drift not mentioned in refusal:\n{combined}"
-    )
-    assert "other.txt" in combined, (
-        f"affected path not listed in refusal:\n{combined}"
-    )
+    assert "drift" in combined.lower(), f"drift not mentioned in refusal:\n{combined}"
+    assert "other.txt" in combined, f"affected path not listed in refusal:\n{combined}"
 
     # Positive: the recipe — full command form pointing at the right surface.
     assert f"ai-hats wt merge --accept-drift task/{task_id.lower()}" in combined, (
         f"recipe missing the full `wt merge --accept-drift` command:\n{combined}"
     )
-    assert str(project) in combined, (
-        f"main-repo path missing from the cd hint:\n{combined}"
-    )
+    assert str(project) in combined, f"main-repo path missing from the cd hint:\n{combined}"
     # The recipe must also point back at the rack transition so the operator
     # has a complete two-step path.
     assert f"rack transition {task_id} --state done" in combined, (

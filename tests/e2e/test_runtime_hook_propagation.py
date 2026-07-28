@@ -52,8 +52,12 @@ REL_COMMAND = CLAUDE_PROJECT_DIR_VAR + REL_PATH
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -91,9 +95,10 @@ def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     shutil.copytree(FIXTURE_LIB, project / "libraries")
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "e2e-rthook-role", "--no-wizard"],
-        cwd=project, env=env, timeout=120,
+        [str(launcher), "self", "init", "-p", "claude", "-r", "e2e-rthook-role", "--no-wizard"],
+        cwd=project,
+        env=env,
+        timeout=120,
     )
 
 
@@ -138,8 +143,7 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     # A. PostToolUse managed entry under its own event.
     post = by_event.get(HOOK_POST_TOOL_USE, [])
     pe = [
-        e for e in post
-        if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"
+        e for e in post if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PostToolUse:Edit|Write"
     ]
     assert len(pe) == 1, f"missing PostToolUse skill entry in {post}"
     assert pe[0]["matcher"] == "Edit|Write"
@@ -170,7 +174,11 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     deny = subprocess.run(
         ["bash", str(script)],
         input=json.dumps({"tool_input": {"command": "RTHOOK_DENY"}}),
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=10,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert deny.returncode == 2, (
         f"sentinel payload must exit 2; got {deny.returncode}\n"
@@ -180,7 +188,11 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     allow = subprocess.run(
         ["bash", str(script)],
         input=json.dumps({"tool_input": {"command": "ls -la"}}),
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=10,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert allow.returncode == 0, (
         f"benign payload must exit 0; got {allow.returncode}\n"

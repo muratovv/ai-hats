@@ -44,7 +44,8 @@ def bump_pipeline(
     from ai_hats.materialize import compose_for_role
 
     asm._run_v07_migration(
-        force=force_v07_migration, check_branches=check_v07_branches,
+        force=force_v07_migration,
+        check_branches=check_v07_branches,
     )
     cfg = asm.project_config
     role_name = cfg.active_role or cfg.default_role

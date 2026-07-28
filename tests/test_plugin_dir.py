@@ -58,7 +58,9 @@ def test_copies_skill_directory(tmp_path: Path) -> None:
         skills_root,
         body="---\nname: role-coherence-protocol\ndescription: x\n---\n# body\n",
     )
-    out = materialize_plugin_dir("judge-for-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    out = materialize_plugin_dir(
+        "judge-for-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
     copied = out / "skills" / "role-coherence-protocol" / "SKILL.md"
     assert copied.exists()
     assert "role-coherence-protocol" in copied.read_text()
@@ -70,7 +72,9 @@ def test_copies_non_skill_md_assets_verbatim(tmp_path: Path) -> None:
     skill = _make_skill("alpha", skills_root)
     # Drop a non-SKILL.md asset alongside; must be preserved.
     (skill.source_path / "fixture.txt").write_text("RAW_ASSET_<ai_hats_dir>")
-    out = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    out = materialize_plugin_dir(
+        "test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
     asset = out / "skills" / "alpha" / "fixture.txt"
     assert asset.exists()
     # Verbatim — placeholder must NOT be expanded in non-SKILL.md files.
@@ -85,14 +89,18 @@ def test_expands_placeholder_in_skill_md(tmp_path: Path) -> None:
         skills_root,
         body="see <ai_hats_dir>/state for details",
     )
-    out = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    out = materialize_plugin_dir(
+        "test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
     body = (out / "skills" / "beta" / "SKILL.md").read_text()
     assert "<ai_hats_dir>" not in body
     assert ".agent/ai-hats/state" in body
 
 
 def test_empty_skills_list_makes_empty_skills_dir(tmp_path: Path) -> None:
-    out = materialize_plugin_dir("test-role", [], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    out = materialize_plugin_dir(
+        "test-role", [], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
     skills_dir = out / "skills"
     assert skills_dir.is_dir()
     assert list(skills_dir.iterdir()) == []
@@ -107,7 +115,9 @@ def test_skips_non_directory_source_path(tmp_path: Path) -> None:
         source_path=tmp_path / "missing-dir",
         injection="",
     )
-    out = materialize_plugin_dir("test-role", [rogue], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    out = materialize_plugin_dir(
+        "test-role", [rogue], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
     skills_dir = out / "skills"
     assert list(skills_dir.iterdir()) == []
 
@@ -130,8 +140,12 @@ def test_parallel_invocations_with_distinct_targets(tmp_path: Path) -> None:
     skills_root.mkdir()
     skill_a = _make_skill("alpha", skills_root)
     skill_b = _make_skill("beta", tmp_path / "src2")
-    out_a = materialize_plugin_dir("role-a", [skill_a], tmp_path, tmp_path / "a", ApplyMaterializer())
-    out_b = materialize_plugin_dir("role-b", [skill_b], tmp_path, tmp_path / "b", ApplyMaterializer())
+    out_a = materialize_plugin_dir(
+        "role-a", [skill_a], tmp_path, tmp_path / "a", ApplyMaterializer()
+    )
+    out_b = materialize_plugin_dir(
+        "role-b", [skill_b], tmp_path, tmp_path / "b", ApplyMaterializer()
+    )
     assert out_a != out_b
     assert (out_a / "skills" / "alpha").is_dir()
     assert (out_b / "skills" / "beta").is_dir()
@@ -147,7 +161,9 @@ def _hammer_materialize(args: tuple) -> list[str]:
     errors: list[str] = []
     for _ in range(iters):
         try:
-            materialize_plugin_dir("stress-role", skills, project_dir, plugin_dir, ApplyMaterializer())
+            materialize_plugin_dir(
+                "stress-role", skills, project_dir, plugin_dir, ApplyMaterializer()
+            )
         except Exception as exc:  # noqa: BLE001 — record every failure mode
             errors.append(f"{type(exc).__name__}: {exc}")
     return errors
@@ -354,7 +370,9 @@ def test_duplicate_registration_identical_user_copy(tmp_path: Path) -> None:
     skills_root = tmp_path / "src"
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
-    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    plugin = materialize_plugin_dir(
+        "test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
 
     home = tmp_path / "home"
     user_copy = claude_skills_dir(home) / "alpha"
@@ -379,7 +397,9 @@ def test_duplicate_registration_differing_content(tmp_path: Path) -> None:
     skills_root = tmp_path / "src"
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
-    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    plugin = materialize_plugin_dir(
+        "test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
 
     home = tmp_path / "home"
     stale = claude_skills_dir(home) / "alpha"
@@ -402,7 +422,9 @@ def test_duplicate_registration_marker_listed_is_managed(tmp_path: Path) -> None
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
     project = tmp_path / "project"
-    plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin", ApplyMaterializer())
+    plugin = materialize_plugin_dir(
+        "test-role", [skill], project, tmp_path / "plugin", ApplyMaterializer()
+    )
 
     mirror = claude_skills_dir(project)
     (mirror / "alpha").mkdir(parents=True)
@@ -428,7 +450,9 @@ def test_duplicate_registration_scope_attribution(tmp_path: Path) -> None:
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
     project = tmp_path / "project"
-    plugin = materialize_plugin_dir("test-role", [skill], project, tmp_path / "plugin", ApplyMaterializer())
+    plugin = materialize_plugin_dir(
+        "test-role", [skill], project, tmp_path / "plugin", ApplyMaterializer()
+    )
     home = tmp_path / "home"
     for base in (home, project):
         stale = claude_skills_dir(base) / "alpha"
@@ -452,7 +476,9 @@ def test_duplicate_registration_none_when_clean(tmp_path: Path) -> None:
     skills_root = tmp_path / "src"
     skills_root.mkdir()
     skill = _make_skill("alpha", skills_root)
-    plugin = materialize_plugin_dir("test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer())
+    plugin = materialize_plugin_dir(
+        "test-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+    )
 
     found = duplicate_skill_registrations(
         ["alpha"],
@@ -496,4 +522,3 @@ def test_drop_legacy_root_skills_mirrors_noop_when_absent(tmp_path: Path) -> Non
     from ai_hats.plugin_dir import drop_legacy_root_skills_mirrors
 
     assert drop_legacy_root_skills_mirrors(tmp_path) == []
-

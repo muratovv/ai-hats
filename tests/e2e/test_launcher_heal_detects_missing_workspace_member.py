@@ -34,7 +34,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,  # non-TTY → self init takes the no-wizard path
     )
     if result.returncode != expect_exit:
@@ -73,7 +78,9 @@ def test_e2e_self_update_heals_venv_missing_workspace_member(tmp_path: Path) -> 
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
     _run(
         [str(launcher), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     venv = project / ".agent" / "ai-hats" / ".venv"
@@ -85,7 +92,9 @@ def test_e2e_self_update_heals_venv_missing_workspace_member(tmp_path: Path) -> 
     # chain, so the CLI is dead while bare `import ai_hats` still passes.
     _run(
         ["uv", "pip", "uninstall", "--python", str(py), "ai-hats-core"],
-        cwd=tmp_path, env=env, timeout=60,
+        cwd=tmp_path,
+        env=env,
+        timeout=60,
     )
     bare = subprocess.run([str(py), "-c", "import ai_hats"], capture_output=True, text=True)
     assert bare.returncode == 0, (

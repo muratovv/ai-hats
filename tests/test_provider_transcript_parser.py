@@ -35,10 +35,14 @@ def test_seam_injects_provider_parser(tmp_path: Path) -> None:
     provider.transcript_parser.return_value = sentinel
     asm = MagicMock(name="assembler")
     asm.resolver.list_components.return_value = ["judge"]
-    with patch("ai_hats.assembler.Assembler", return_value=asm), \
-         patch("ai_hats.materialize.compose_for_role",
-               return_value=MagicMock(errors=[], merged_injection="P")), \
-         patch("ai_hats.providers.get_provider", return_value=provider):
+    with (
+        patch("ai_hats.assembler.Assembler", return_value=asm),
+        patch(
+            "ai_hats.materialize.compose_for_role",
+            return_value=MagicMock(errors=[], merged_injection="P"),
+        ),
+        patch("ai_hats.providers.get_provider", return_value=provider),
+    ):
         payload = build_composition_payload(tmp_path, role_override="judge")
 
     writer = payload.audit_writer_factory()

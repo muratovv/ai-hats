@@ -22,6 +22,7 @@ whole file pins to one worker). They now share ONE module-scoped bump
 post-bump tree. The only mutating check extracts into a fresh dir, never
 the shared project, so the module fixture stays immutable across tests.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,33 +60,52 @@ def _seed_proxmox_shape(project_path: Path) -> None:
     (hooks / "guard.py").chmod(0o755)
     claude = project_path / ".claude"
     claude.mkdir()
-    (claude / "settings.json").write_text(json.dumps({
-        "hooks": {HOOK_PRE_TOOL_USE: [{
-            "matcher": "Bash",
-            "hooks": [{
-                "type": "command",
-                "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py",
-            }],
-        }]},
-    }, indent=2) + "\n")
+    (claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/guard.py",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     # Git init so the healer's git-clean gate has a baseline.
     subprocess.run(
-        ["git", "init", "-q"], cwd=str(project_path), check=True,
+        ["git", "init", "-q"],
+        cwd=str(project_path),
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.email", "t@t.t"],
-        cwd=str(project_path), check=True,
+        cwd=str(project_path),
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "t"],
-        cwd=str(project_path), check=True,
+        cwd=str(project_path),
+        check=True,
     )
     subprocess.run(
-        ["git", "add", "-A"], cwd=str(project_path), check=True,
+        ["git", "add", "-A"],
+        cwd=str(project_path),
+        check=True,
     )
     subprocess.run(
         ["git", "commit", "-q", "-m", "seed"],
-        cwd=str(project_path), check=True,
+        cwd=str(project_path),
+        check=True,
     )
 
 
@@ -155,7 +175,8 @@ def bumped(tmp_path_factory, _shared_launcher_venv, repo_root: Path):
 
     backup_dir = tmp_path_factory.mktemp("bump-backup-out")
     res = project.run(
-        "self", "update",
+        "self",
+        "update",
         timeout=300,  # HATS-675: 300s = -n8 gate suite norm
         extra_env={"AI_HATS_BUMP_BACKUP_DIR": str(backup_dir)},
     )
@@ -197,9 +218,7 @@ def test_bump_produces_backup_with_recovery_banner(bumped) -> None:
     )
     # Tarball materialised on disk under our isolated backup dir.
     tarballs = list(bumped.backup_dir.glob("*.tar.gz"))
-    assert len(tarballs) == 1, (
-        f"expected exactly one tarball, found: {tarballs}"
-    )
+    assert len(tarballs) == 1, f"expected exactly one tarball, found: {tarballs}"
 
 
 @pytest.mark.integration
@@ -219,18 +238,14 @@ def test_backup_captures_scoped_surface(bumped) -> None:
     assert "CLAUDE.md" in names
     # Pre-bump .agent/hooks/ entries are inside the captured .agent/
     # subtree (tarfile reports the inner files when recursive=True).
-    has_legacy_hook = any(
-        n == ".agent/hooks/guard.py" or n.endswith("/guard.py")
-        for n in names
-    )
-    assert has_legacy_hook, (
-        f"pre-bump legacy hook missing from backup; got: {sorted(names)[:30]}"
-    )
+    has_legacy_hook = any(n == ".agent/hooks/guard.py" or n.endswith("/guard.py") for n in names)
+    assert has_legacy_hook, f"pre-bump legacy hook missing from backup; got: {sorted(names)[:30]}"
 
 
 @pytest.mark.integration
 def test_backup_round_trip_restores_state_byte_for_byte(
-    bumped, tmp_path: Path,
+    bumped,
+    tmp_path: Path,
 ) -> None:
     """AC2 part 2: ``tar -xzf <backup>`` restores byte-identical state
     for scoped paths.
@@ -262,8 +277,7 @@ def test_backup_round_trip_restores_state_byte_for_byte(
     for rel, expected in bumped.pre_hashes.items():
         actual = _sha256(restore / rel)
         assert actual == expected, (
-            f"{rel} not byte-identical after restore: "
-            f"expected sha256 {expected}, got {actual}"
+            f"{rel} not byte-identical after restore: expected sha256 {expected}, got {actual}"
         )
 
 

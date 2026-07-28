@@ -146,9 +146,7 @@ def test_run_swallows_oserror_in_version_gc(tmp_path, monkeypatch):
     def _boom(*_a, **_k):
         raise OSError("disk gone")
 
-    monkeypatch.setattr(
-        "ai_hats.environment_recovery.reclaim_orphan_versions", _boom
-    )
+    monkeypatch.setattr("ai_hats.environment_recovery.reclaim_orphan_versions", _boom)
 
     EnvironmentRecovery(tmp_path).run()  # must not raise
 

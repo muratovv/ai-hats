@@ -26,10 +26,7 @@ def test_e2e_newer_schema_version_fails_loud(tmp_project):
     yaml_path = tmp_project.yaml
     # Overwrite the bootstrapped config with a future-version one.
     future = (
-        "schema_version: 99\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-        "provider: claude\n"
-        "future_field: keep-me\n"
+        "schema_version: 99\nai_hats_dir: .agent/ai-hats\nprovider: claude\nfuture_field: keep-me\n"
     )
     yaml_path.write_text(future)
 
@@ -44,11 +41,7 @@ def test_e2e_newer_schema_version_fails_loud(tmp_project):
     assert "schema_version 99 is newer" in combined, (
         f"missing schema-too-new diagnostic; got:\n{combined}"
     )
-    assert "ai-hats self update" in combined, (
-        f"missing remediation pointer; got:\n{combined}"
-    )
+    assert "ai-hats self update" in combined, f"missing remediation pointer; got:\n{combined}"
 
     # The future config is NOT silently rewritten — byte-for-byte intact.
-    assert yaml_path.read_text() == future, (
-        f"future config was rewritten:\n{yaml_path.read_text()}"
-    )
+    assert yaml_path.read_text() == future, f"future config was rewritten:\n{yaml_path.read_text()}"

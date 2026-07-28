@@ -7,6 +7,7 @@ any error. RED baseline = the HATS-837 shape (4-line DI comment + essay docstrin
 the ≈9-line contract docstring review kept stays silent; ``# noqa: comment-length``
 suppresses.
 """
+
 from __future__ import annotations
 
 import json
@@ -76,7 +77,9 @@ TERSE_OK = (
 INLINE_TRAILERS = "a = 1  # one\nb = 2  # two\nc = 3  # three\nd = 4  # four\n"
 
 # Suppressed: the DI block carries the marker on its last line.
-SUPPRESSED_COMMENT = DI_COMMENT.replace("# at load time.\n", "# at load time.\n# noqa: comment-length\n")
+SUPPRESSED_COMMENT = DI_COMMENT.replace(
+    "# at load time.\n", "# at load time.\n# noqa: comment-length\n"
+)
 
 # Suppressed via the ruff-safe token (HATS-888): same block, new marker.
 SUPPRESSED_COMMENT_NEW = DI_COMMENT.replace(
@@ -84,7 +87,9 @@ SUPPRESSED_COMMENT_NEW = DI_COMMENT.replace(
 )
 
 # Suppressed: the marker rides the def line carrying the bloated docstring.
-SUPPRESSED_DOCSTRING_DEF = BLOATED_DOCSTRING.replace("def g():\n", "def g():  # noqa: comment-length\n")
+SUPPRESSED_DOCSTRING_DEF = BLOATED_DOCSTRING.replace(
+    "def g():\n", "def g():  # noqa: comment-length\n"
+)
 
 # Suppressed: a bloated module docstring with the marker inside it.
 SUPPRESSED_MODULE_DOC = (

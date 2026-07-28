@@ -95,9 +95,7 @@ class TestCollectSkillRuntimeHooks:
         plain = tmp_path / "skills" / "plain"
         plain.mkdir(parents=True)
         (plain / "metadata.yaml").write_text("name: plain\n")
-        collected = assembler.hooks._collect_skill_runtime_hooks(
-            _result([_skill("plain", plain)])
-        )
+        collected = assembler.hooks._collect_skill_runtime_hooks(_result([_skill("plain", plain)]))
         assert collected == {}
 
 
@@ -112,9 +110,7 @@ class TestMaterializeRuntimeHooks:
     scripts (package data) stay materialized throughout.
     """
 
-    def test_materializes_skill_script_alongside_package_guards(
-        self, assembler, tmp_path
-    ):
+    def test_materializes_skill_script_alongside_package_guards(self, assembler, tmp_path):
         from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 
         s = _make_skill_with_runtime_hooks(
@@ -158,6 +154,4 @@ class TestMaterializeRuntimeHooks:
 
         # Legacy bare-bump path (no active role) — guards only, no crash.
         assembler.hooks.materialize_runtime_hooks(None)
-        assert (
-            hooks_dir(assembler.project_dir) / "pre_bash_shared_state_guard.sh"
-        ).is_file()
+        assert (hooks_dir(assembler.project_dir) / "pre_bash_shared_state_guard.sh").is_file()

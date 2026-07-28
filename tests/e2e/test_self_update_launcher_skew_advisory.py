@@ -40,7 +40,9 @@ from _helpers.workspace import build_workspace_member_wheels
 from ai_hats.paths import ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_REPO_URL
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -71,19 +73,25 @@ exec "$VENV/bin/python" -m ai_hats "$@"
 
 def _run(cmd, *, cwd, env, timeout):
     return subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
 def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True,
-                   capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -104,7 +112,8 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     pin_edge_channel(project)  # HATS-764: edge so self update resolves the local source
 
     subprocess.run(
-        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)], check=True,
+        ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
+        check=True,
     )
     _git(["config", "user.email", "e2e@test"], src_repo)
     _git(["config", "user.name", "E2E"], src_repo)

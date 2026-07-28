@@ -33,7 +33,12 @@ pytestmark = pytest.mark.install_heavy  # real wheel build + install → capped 
 
 def _run(cmd, *, cwd, env, timeout):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if result.returncode != 0:
         raise AssertionError(
@@ -52,15 +57,31 @@ def test_tracker_console_script_resolves_on_path(tmp_path):
     # Build the tracker + its only workspace dep (ai-hats-core) so the install
     # resolves ai-hats-core from --find-links, third-party deps from the cache.
     for pkg in (CORE_DIR, TRACKER_DIR):
-        _run(["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(pkg)],
-             cwd=tmp_path, env=env, timeout=180)
+        _run(
+            ["uv", "build", "--wheel", "--out-dir", str(wheeldir), str(pkg)],
+            cwd=tmp_path,
+            env=env,
+            timeout=180,
+        )
     assert sorted(wheeldir.glob("ai_hats_tracker-*.whl")), "no ai-hats-tracker wheel built"
 
     venv = tmp_path / "venv"
     _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path, env=env, timeout=120)
-    _run(["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
-          "--find-links", str(wheeldir), "ai-hats-tracker"],
-         cwd=tmp_path, env=env, timeout=180)
+    _run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(venv / "bin" / "python"),
+            "--find-links",
+            str(wheeldir),
+            "ai-hats-tracker",
+        ],
+        cwd=tmp_path,
+        env=env,
+        timeout=180,
+    )
 
     # 1. The console entry materialised (the heart of the [project.scripts] change).
     console = venv / "bin" / "ai-hats-tracker"
@@ -72,7 +93,11 @@ def test_tracker_console_script_resolves_on_path(tmp_path):
     probe_env["PATH"] = str(venv / "bin") + os.pathsep + probe_env.get("PATH", "")
     probe = subprocess.run(
         ["ai-hats-tracker", "--version"],
-        cwd=str(tmp_path), env=probe_env, capture_output=True, text=True, timeout=60,
+        cwd=str(tmp_path),
+        env=probe_env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert probe.returncode == 0, f"`ai-hats-tracker --version` failed:\n{probe.stderr}"
     assert "ai-hats-tracker" in probe.stdout, probe.stdout

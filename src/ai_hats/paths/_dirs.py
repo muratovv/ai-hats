@@ -659,7 +659,7 @@ def editable_install_root(dist_name: str = "ai-hats") -> Path | None:
         return None
     prefix = "file://"
     url = data.get("url") or ""
-    return Path(url[len(prefix):]) if url.startswith(prefix) else None
+    return Path(url[len(prefix) :]) if url.startswith(prefix) else None
 
 
 __all__ = [

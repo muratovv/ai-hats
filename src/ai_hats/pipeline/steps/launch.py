@@ -51,22 +51,38 @@ class Provider(Step):
             # HATS-865: funnel-seeded CompositionPayload, handed to the runner
             # as-is — this step never composes nor resolves providers.
             # HATS-867: observe writer handles are funnel-seeded too.
-            requires=frozenset({
-                "interactive", "project_dir", "composition",
-                "session_mgr", "tracer_factory",
-            }),
+            requires=frozenset(
+                {
+                    "interactive",
+                    "project_dir",
+                    "composition",
+                    "session_mgr",
+                    "tracer_factory",
+                }
+            ),
             # HATS-505: ``system_prompt`` is deliberately NOT read here —
             # prompt delivery goes through the payload, not a funnel string.
-            optional=frozenset({
-                "prompt_text", "model", "isolation", "ticket", "tags",
-                "extra_args",
-                # HATS-1192: an optional PtyTap factory seeded upstream (the
-                # pty_tee step, HATS-1197); forwarded to the HITL PTY seam.
-                "pty_tap_factory",
-            }),
-            produces=frozenset({
-                "session_id", "session_dir", "transcript_path", "exit_code",
-            }),
+            optional=frozenset(
+                {
+                    "prompt_text",
+                    "model",
+                    "isolation",
+                    "ticket",
+                    "tags",
+                    "extra_args",
+                    # HATS-1192: an optional PtyTap factory seeded upstream (the
+                    # pty_tee step, HATS-1197); forwarded to the HITL PTY seam.
+                    "pty_tap_factory",
+                }
+            ),
+            produces=frozenset(
+                {
+                    "session_id",
+                    "session_dir",
+                    "transcript_path",
+                    "exit_code",
+                }
+            ),
         )
 
     def run(
@@ -105,11 +121,15 @@ class Provider(Step):
             # channel; the payload's composition reaches the agent via
             # ``build_session_prompt`` inside ``run``.
             runner = WrapRunner(
-                project_dir, composition,
-                session_mgr=session_mgr, tracer_factory=tracer_factory,
+                project_dir,
+                composition,
+                session_mgr=session_mgr,
+                tracer_factory=tracer_factory,
             )
             exit_code, session = runner.run(
-                extra_args=eff_extra, tags=tags, pty_tap_factory=pty_tap_factory,
+                extra_args=eff_extra,
+                tags=tags,
+                pty_tap_factory=pty_tap_factory,
             )
             # HATS-378: universal zero-output guard for reporting steps.
             # Interactive (main) sessions have trace-enriched metrics by
@@ -150,9 +170,7 @@ class Provider(Step):
         # the LLM output. Fall back to trace_path if transcript.txt
         # was not produced (e.g. sub-agent terminated before stdout).
         transcript_txt = session.session_dir / TRANSCRIPT_TXT
-        transcript_path = (
-            transcript_txt if transcript_txt.exists() else session.trace_path
-        )
+        transcript_path = transcript_txt if transcript_txt.exists() else session.trace_path
         return {
             "session_id": session.session_id,
             "session_dir": session.session_dir,

@@ -30,16 +30,16 @@ _WRAP_TASKS_THRESHOLD = 2
 _WRAP_DURATION_MIN = 60
 
 
-def evaluate_wrap_up(
-    project_dir: Path, session_id: str
-) -> WrapUpInfo | None:
+def evaluate_wrap_up(project_dir: Path, session_id: str) -> WrapUpInfo | None:
     """Wrap-up nudge: fire when tasks_closed_in_window >= 2 AND duration > 60min.
 
     HATS-214. Source data:
       - duration_s from <runs_dir>/session_<id>/metrics.json
       - tasks_closed via window.tasks_closed_in_window (HATS-212 scope)
       - cache_read from metrics.json tokens block, rounded to MB
-    Returns None when triggers not met or data unavailable. Never raises.
+    Returns None when triggers not met. A failed backlog read propagates — the
+    nudge degrades at the UX boundary (``auto_retro.make_decision``), not via a
+    second ``except`` down here that would turn a bug into "0 tasks" (HATS-1259).
     """
     from ..paths import runs_dir
 

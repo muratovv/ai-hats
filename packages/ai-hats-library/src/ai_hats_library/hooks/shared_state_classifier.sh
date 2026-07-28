@@ -50,6 +50,26 @@ classify_command() {
             echo irreversible
             return 0
         fi
+        # HATS-1294: --force is not the only spelling of a force push. A leading
+        # '+' on a refspec forces just the same, and --mirror force-updates every
+        # ref (deleting the ones absent locally). Both used to fall through to
+        # `gated`, which named the wrong hazard in the refusal and let a single
+        # ack cover an ordinary push and a history overwrite alike.
+        if [[ "$cmd" =~ (^|[[:space:]])\+[^[:space:]]+([[:space:]]|$) ]]; then
+            echo irreversible
+            return 0
+        fi
+        if [[ "$cmd" =~ (^|[[:space:]])--mirror([[:space:]]|$) ]]; then
+            echo irreversible
+            return 0
+        fi
+        # Deleting a remote branch: --delete/-d, or an empty-source refspec
+        # (`git push origin :master`). The ref is gone for everyone downstream.
+        if [[ "$cmd" =~ (^|[[:space:]])(--delete|-d)([[:space:]]|$) ]] \
+            || [[ "$cmd" =~ (^|[[:space:]]):[^[:space:]]+([[:space:]]|$) ]]; then
+            echo irreversible
+            return 0
+        fi
     fi
 
     # --- shared ---

@@ -137,7 +137,9 @@ def test_expand_noop_without_placeholder(tmp_path):
 # composition AND expand_role_catalog see the in-progress wizard + roles
 # (library-curator recipe). builtin layers stay underneath; worktree wins
 # last (override).
-_WT_LIBRARY = Path(__file__).resolve().parents[1] / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+_WT_LIBRARY = (
+    Path(__file__).resolve().parents[1] / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+)
 _WT_LIBRARY_PATHS = [str(_WT_LIBRARY / "core"), str(_WT_LIBRARY / "usage")]
 
 
@@ -148,9 +150,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
 
     project = tmp_path / "proj"
     project.mkdir()
-    ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(project / PROJECT_CONFIG)
     asm = Assembler(project)
     asm.init()
 
@@ -176,9 +176,7 @@ def test_non_wizard_prompt_has_no_catalog(tmp_path):
 
     project = tmp_path / "proj"
     project.mkdir()
-    ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="claude", library_paths=_WT_LIBRARY_PATHS).save(project / PROJECT_CONFIG)
     asm = Assembler(project)
     asm.init()
 

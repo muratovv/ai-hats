@@ -148,9 +148,7 @@ def test_reconcile_noop_when_digest_matches(tmp_path):
     card_dir = _card_dir(tmp_path)
     blob = tmp_path / "x.md"
     blob.write_text("same")
-    existing = Attachment(
-        name="x.md", digest=compute_digest(blob), added="2026-05-20T00:00:00Z"
-    )
+    existing = Attachment(name="x.md", digest=compute_digest(blob), added="2026-05-20T00:00:00Z")
     card = _make_card(attachments=[existing])
 
     r = reconcile(card, card_dir, blob, name="x.md")
@@ -191,11 +189,7 @@ def test_verify_manifest_clean(tmp_path):
     attachments_dir(card_dir).mkdir()
     blob = attachments_dir(card_dir) / "ok.md"
     blob.write_text("ok")
-    card = _make_card(
-        attachments=[
-            Attachment(name="ok.md", digest=compute_digest(blob), added="")
-        ]
-    )
+    card = _make_card(attachments=[Attachment(name="ok.md", digest=compute_digest(blob), added="")])
 
     assert verify_manifest(card, card_dir) == []
 
@@ -215,9 +209,7 @@ def test_verify_manifest_blob_without_entry(tmp_path):
 def test_verify_manifest_entry_without_blob(tmp_path):
     card_dir = _card_dir(tmp_path)
     attachments_dir(card_dir).mkdir()
-    card = _make_card(
-        attachments=[Attachment(name="ghost.md", digest="0123456789ab", added="")]
-    )
+    card = _make_card(attachments=[Attachment(name="ghost.md", digest="0123456789ab", added="")])
 
     divs = verify_manifest(card, card_dir)
     assert len(divs) == 1
@@ -230,11 +222,7 @@ def test_verify_manifest_digest_drift(tmp_path):
     attachments_dir(card_dir).mkdir()
     blob = attachments_dir(card_dir) / "drift.md"
     blob.write_text("on disk")
-    card = _make_card(
-        attachments=[
-            Attachment(name="drift.md", digest="ffffffffffff", added="")
-        ]
-    )
+    card = _make_card(attachments=[Attachment(name="drift.md", digest="ffffffffffff", added="")])
 
     divs = verify_manifest(card, card_dir)
     assert len(divs) == 1

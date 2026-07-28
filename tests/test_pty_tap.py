@@ -152,7 +152,9 @@ def test_load_pty_tap_factory_handles_non_callable_and_load_failure(monkeypatch,
         assert pty_tap.load_pty_tap_factory() is make_fd_pty_tap
         assert "did not return a callable" in caplog.text
 
-    monkeypatch.setattr(pty_tap, "_pty_tap_entry_points", lambda: [BadEP("broken", None, fail=True)])
+    monkeypatch.setattr(
+        pty_tap, "_pty_tap_entry_points", lambda: [BadEP("broken", None, fail=True)]
+    )
     with caplog.at_level("WARNING"):
         assert pty_tap.load_pty_tap_factory() is make_fd_pty_tap
         assert "Failed to load ai_hats.pty_tap entry point" in caplog.text
@@ -189,8 +191,11 @@ def test_pty_relay_helpers_and_fd_tap(monkeypatch):
     resized = []
 
     class DummySession:
-        def __init__(self): self.audits = []
-        def append_audit(self, entry): self.audits.append(entry)
+        def __init__(self):
+            self.audits = []
+
+        def append_audit(self, entry):
+            self.audits.append(entry)
 
     sess = DummySession()
 
@@ -263,10 +268,12 @@ def test_provider_step_seeds_pty_tap_factory_from_env(monkeypatch):
 
     def mock_run_unset(self, extra_args=None, tags=None, pty_tap_factory=None):
         captured["factory"] = pty_tap_factory
+
         class DummySession:
             session_id = "s1"
             session_dir = "/tmp/s1"
             trace_path = "/tmp/s1/trace.txt"
+
         return 0, DummySession()
 
     monkeypatch.setattr(DummyWrapRunner, "run", mock_run_unset)
@@ -288,4 +295,3 @@ def test_provider_step_seeds_pty_tap_factory_from_env(monkeypatch):
         tracer_factory=None,
     )
     assert captured["factory"] is dummy_factory
-

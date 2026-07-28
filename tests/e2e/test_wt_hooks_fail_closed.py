@@ -39,16 +39,16 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
 
 
 def _git(cwd: Path, *args: str):
-    return subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 def _branch_exists(project: Path, branch: str) -> bool:
     return bool(
         subprocess.run(
             ["git", "branch", "--list", branch],
-            cwd=str(project), capture_output=True, text=True,
+            cwd=str(project),
+            capture_output=True,
+            text=True,
         ).stdout.strip()
     )
 
@@ -58,7 +58,7 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     cur: Path | None = None
     for line in out.splitlines():
         if line.startswith("worktree "):
-            cur = Path(line[len("worktree "):].strip())
+            cur = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and cur is not None:
             if line.strip().endswith("/" + branch):
                 return cur
@@ -89,9 +89,20 @@ def _init(launcher: Path, env: dict, project: Path) -> None:
     _git(project, "add", "libraries")
     _git(project, "commit", "-m", "lib")
     _run(
-        [str(launcher), "self", "init", "-p", "claude",
-         "-r", "e2e-wthook-role", "--no-wizard", "--task-prefix", "TST"],
-        cwd=project, env=env,
+        [
+            str(launcher),
+            "self",
+            "init",
+            "-p",
+            "claude",
+            "-r",
+            "e2e-wthook-role",
+            "--no-wizard",
+            "--task-prefix",
+            "TST",
+        ],
+        cwd=project,
+        env=env,
     )
 
 

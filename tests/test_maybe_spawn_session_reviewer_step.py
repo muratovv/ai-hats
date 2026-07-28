@@ -38,22 +38,26 @@ def _seed_project(
     background: bool = True,
 ) -> Path:
     """Write ai-hats.yaml + ensure session dir; return path to metrics.json."""
-    (tmp_path / PROJECT_CONFIG).write_text(yaml.dump({
-        "schema_version": 2,
-        "provider": "claude",
-        "active_role": "primary",
-        "feedback": {
-            "session_retro": {
-                "policy": policy,
-                "smart_threshold": {
-                    "min_turns": min_turns,
-                    "min_tool_calls": min_tool_calls,
+    (tmp_path / PROJECT_CONFIG).write_text(
+        yaml.dump(
+            {
+                "schema_version": 2,
+                "provider": "claude",
+                "active_role": "primary",
+                "feedback": {
+                    "session_retro": {
+                        "policy": policy,
+                        "smart_threshold": {
+                            "min_turns": min_turns,
+                            "min_tool_calls": min_tool_calls,
+                        },
+                        "mode": "programmatic",
+                        "background": background,
+                    },
                 },
-                "mode": "programmatic",
-                "background": background,
-            },
-        },
-    }))
+            }
+        )
+    )
     metrics_dir = runs_dir(tmp_path) / "session_test"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     return metrics_dir / METRICS_JSON

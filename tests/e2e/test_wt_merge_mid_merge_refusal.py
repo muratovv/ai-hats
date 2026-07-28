@@ -35,8 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -82,7 +86,10 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap project ----
@@ -94,14 +101,17 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
-    base_branch = _git(
-        project, "rev-parse", "--abbrev-ref", "HEAD"
-    ).stdout.strip()
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     assert base_branch, "no checked-out branch after bootstrap"
 
     # ---- 2. create worktree on a task branch ----
@@ -112,15 +122,13 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     current_path: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            ref = line[len("branch "):].strip()
+            ref = line[len("branch ") :].strip()
             if ref.endswith("/task/midmerge-probe"):
                 wt_path = current_path
                 break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"could not locate worktree path:\n{listing}"
-    )
+    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
 
     # ---- 3. worktree branch gets its own commit ----
     _git(wt_path, "config", "user.email", "e2e@test")
@@ -128,9 +136,14 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 4. start a FOREIGN merge in the main repo, leave it unfinished ----
@@ -143,16 +156,33 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     (project / "foreign.txt").write_text("foreign change\n")
     _git(project, "add", "foreign.txt")
     _git(
-        project, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "foreign commit",
+        project,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "foreign commit",
     )
     _git(project, "checkout", base_branch)
     # --no-commit leaves MERGE_HEAD without finishing the merge.
     subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
-         "merge", "--no-commit", "--no-ff", "foreign"],
-        cwd=str(project), capture_output=True, text=True, check=False,
+        [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "merge",
+            "--no-commit",
+            "--no-ff",
+            "foreign",
+        ],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+        check=False,
     )
     # Sanity: the main repo is genuinely mid-merge.
     assert (project / ".git" / "MERGE_HEAD").exists(), (
@@ -161,18 +191,17 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
 
     # ---- 5. wt merge refuses cleanly, no traceback ----
     res = ai_hats(
-        "wt", "merge", "task/midmerge-probe",
-        expect_exit=1, cwd=project,
+        "wt",
+        "merge",
+        "task/midmerge-probe",
+        expect_exit=1,
+        cwd=project,
     )
     combined = res.stdout + res.stderr
 
-    assert "mid-merge" in combined.lower(), (
-        f"mid-merge refusal not surfaced:\n{combined}"
-    )
+    assert "mid-merge" in combined.lower(), f"mid-merge refusal not surfaced:\n{combined}"
     # No raw Python traceback / CalledProcessError leak (the F4 bug).
-    assert "Traceback" not in combined, (
-        f"raw traceback leaked — F4 regression:\n{combined}"
-    )
+    assert "Traceback" not in combined, f"raw traceback leaked — F4 regression:\n{combined}"
     assert "CalledProcessError" not in combined, (
         f"raw CalledProcessError leaked — F4 regression:\n{combined}"
     )
@@ -189,19 +218,14 @@ def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path
     assert "task/midmerge-probe" in branches, (
         f"refusal must preserve the worktree branch:\n{branches}"
     )
-    assert wt_path.is_dir(), (
-        "refusal must leave the worktree directory intact"
-    )
+    assert wt_path.is_dir(), "refusal must leave the worktree directory intact"
 
     # ---- 7. recovery: abort the foreign merge, then merge succeeds ----
     _git(project, "merge", "--abort")
     ai_hats("wt", "merge", "task/midmerge-probe", cwd=project)
     branches = _git(project, "branch", "--list", "task/midmerge-probe").stdout
     assert branches.strip() == "", (
-        f"worktree branch should be deleted after a successful merge:\n"
-        f"{branches!r}"
+        f"worktree branch should be deleted after a successful merge:\n{branches!r}"
     )
     log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
-    assert "wt-work" in log, (
-        f"worktree commit not in history after recovery:\n{log}"
-    )
+    assert "wt-work" in log, f"worktree commit not in history after recovery:\n{log}"

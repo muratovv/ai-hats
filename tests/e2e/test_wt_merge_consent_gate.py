@@ -21,8 +21,12 @@ import pytest
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -64,7 +68,10 @@ def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, run_env=ack_env):
         return _run(
             [str(launcher_dest), *args],
-            cwd=project, env=run_env, timeout=timeout, expect_exit=expect_exit,
+            cwd=project,
+            env=run_env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap ----
@@ -84,34 +91,38 @@ def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     current_path: Path | None = None
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            if line[len("branch "):].strip().endswith("/task/test-consent"):
+            if line[len("branch ") :].strip().endswith("/task/test-consent"):
                 wt_path = current_path
                 break
-    assert wt_path is not None and wt_path.is_dir(), (
-        f"could not locate worktree path:\n{listing}"
-    )
+    assert wt_path is not None and wt_path.is_dir(), f"could not locate worktree path:\n{listing}"
 
     _git(wt_path, "config", "user.email", "e2e@test")
     _git(wt_path, "config", "user.name", "E2E")
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
 
     # ---- 3. merge without ack: directive refusal ----
     res = ai_hats(
-        "wt", "merge", "task/test-consent",
-        expect_exit=1, run_env=deny_env,
+        "wt",
+        "merge",
+        "task/test-consent",
+        expect_exit=1,
+        run_env=deny_env,
     )
     combined = res.stdout + res.stderr
-    assert "AI_HATS_MERGE_ACK" in combined, (
-        f"consent env var not named in refusal:\n{combined}"
-    )
+    assert "AI_HATS_MERGE_ACK" in combined, f"consent env var not named in refusal:\n{combined}"
     assert "review" in combined.lower(), (
         f"review handoff directive missing from refusal:\n{combined}"
     )
@@ -158,13 +169,19 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, run_env=deny_env):
         return _run(
             [str(launcher_dest), *args],
-            cwd=project, env=run_env, timeout=timeout, expect_exit=expect_exit,
+            cwd=project,
+            env=run_env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     def rack(*args, expect_exit=0, timeout=180, run_env=deny_env):
         return _run(
             [str(venv / "bin" / "rack"), *args],
-            cwd=project, env=run_env, timeout=timeout, expect_exit=expect_exit,
+            cwd=project,
+            env=run_env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 1. bootstrap + task → execute ----
@@ -177,9 +194,14 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
 
     new_res = rack(
-        "create", "consent gate test",
-        "--description", "exercise the HATS-1019 supervised close",
-        "--role", "assistant", "--reviewer", "user",
+        "create",
+        "consent gate test",
+        "--description",
+        "exercise the HATS-1019 supervised close",
+        "--role",
+        "assistant",
+        "--reviewer",
+        "user",
     )
     task_id = None
     for line in new_res.stdout.splitlines():
@@ -192,8 +214,7 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
 
     rack("transition", task_id, "plan")
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / task_id / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "plan.md"
     )
     plan_path.write_text(
         "# Plan\n\n## Requirements\nexercise the consent gate.\n\n"
@@ -209,9 +230,9 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     task_branch = f"task/{task_id.lower()}"
     for line in listing.splitlines():
         if line.startswith("worktree "):
-            current_path = Path(line[len("worktree "):].strip())
+            current_path = Path(line[len("worktree ") :].strip())
         elif line.startswith("branch ") and current_path is not None:
-            if line[len("branch "):].strip().endswith(f"/{task_branch}"):
+            if line[len("branch ") :].strip().endswith(f"/{task_branch}"):
                 wt_path = current_path
                 break
     assert wt_path is not None and wt_path.is_dir(), (
@@ -224,9 +245,14 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     (wt_path / "wt-work.txt").write_text("wt change\n")
     _git(wt_path, "add", "wt-work.txt")
     _git(
-        wt_path, "-c", "core.hooksPath=/dev/null",
-        "-c", "commit.gpgsign=false",
-        "commit", "-m", "wt-work",
+        wt_path,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "wt-work",
     )
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
@@ -234,12 +260,8 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     # ---- 3. agent's `done` without ack: directive refusal, review intact ----
     res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
-    assert "AI_HATS_MERGE_ACK" in combined, (
-        f"consent env var not named in refusal:\n{combined}"
-    )
-    assert "review" in combined.lower(), (
-        f"review handoff directive missing:\n{combined}"
-    )
+    assert "AI_HATS_MERGE_ACK" in combined, f"consent env var not named in refusal:\n{combined}"
+    assert "review" in combined.lower(), f"review handoff directive missing:\n{combined}"
     branches = _git(project, "branch", "--list", task_branch).stdout
     assert task_branch in branches, "refusal must preserve the task branch"
     show = rack("context", task_id).stdout

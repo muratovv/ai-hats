@@ -66,13 +66,15 @@ def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
 
 def test_check_allowed_keys_accepts_canonical(tmp_path: Path) -> None:
     runner = SessionReviewRunner(tmp_path)
-    runner._check_allowed_keys({
-        "summary": "x",
-        "observations": [],
-        "hypothesis_verdicts": [],
-        "proposal_actions": [],
-        "self_problems": [],
-    })
+    runner._check_allowed_keys(
+        {
+            "summary": "x",
+            "observations": [],
+            "hypothesis_verdicts": [],
+            "proposal_actions": [],
+            "self_problems": [],
+        }
+    )
 
 
 def test_check_allowed_keys_rejects_facts(tmp_path: Path) -> None:
@@ -95,6 +97,7 @@ def _wrap_in_delims(body: str) -> str:
         REVIEW_DELIM_START,
         REVIEW_DELIM_END,
     )
+
     return f"junk before\n{REVIEW_DELIM_START}\n{body}\n{REVIEW_DELIM_END}\njunk after"
 
 
@@ -240,7 +243,8 @@ def test_validate_analysis_shape_requires_active_hyp_coverage(tmp_path: Path) ->
     runner = SessionReviewRunner(tmp_path)
     with pytest.raises(ValueError, match="HYP-042"):
         runner._validate_analysis_shape(
-            {"summary": "ok", "hypothesis_verdicts": []}, SID,
+            {"summary": "ok", "hypothesis_verdicts": []},
+            SID,
         )
 
 
@@ -295,9 +299,7 @@ def test_coerce_observations_stringifies_other_scalars() -> None:
 
 
 def test_coerce_observations_mixed_list() -> None:
-    out = SessionReviewRunner._coerce_observations(
-        ["plain bullet", {"dict obs": "detail"}]
-    )
+    out = SessionReviewRunner._coerce_observations(["plain bullet", {"dict obs": "detail"}])
     assert out == ["plain bullet", "dict obs: detail"]
 
 
@@ -311,13 +313,16 @@ def test_coerce_observations_empty_and_none_return_empty_list() -> None:
 
 def test_merge_produces_valid_review(tmp_path: Path) -> None:
     runner = SessionReviewRunner(tmp_path)
-    review = runner._merge(_facts(), {
-        "summary": "did stuff",
-        "observations": ["obs1"],
-        "hypothesis_verdicts": [],
-        "proposal_actions": [],
-        "self_problems": [],
-    })
+    review = runner._merge(
+        _facts(),
+        {
+            "summary": "did stuff",
+            "observations": ["obs1"],
+            "hypothesis_verdicts": [],
+            "proposal_actions": [],
+            "self_problems": [],
+        },
+    )
     assert isinstance(review, SessionReviewV1)
     assert review.metrics.turns == 4
     assert review.artifacts.files_changed == ["a.py"]
@@ -399,13 +404,15 @@ def test_run_writes_artifact_and_round_trips(tmp_path: Path, monkeypatch) -> Non
 
     transcript = (
         "noise BEGIN_REFLECT_SESSION_RETRO\n"
-        + yaml.safe_dump({
-            "summary": "what happened",
-            "observations": ["o1"],
-            "hypothesis_verdicts": [],
-            "proposal_actions": [],
-            "self_problems": [],
-        })
+        + yaml.safe_dump(
+            {
+                "summary": "what happened",
+                "observations": ["o1"],
+                "hypothesis_verdicts": [],
+                "proposal_actions": [],
+                "self_problems": [],
+            }
+        )
         + "\nEND_REFLECT_SESSION_RETRO trailing\n"
     )
     fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
@@ -420,7 +427,8 @@ def test_run_writes_artifact_and_round_trips(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_run_coerces_dict_observation_instead_of_crashing(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """HATS-610 regression: a dict-shaped observation entry must NOT crash
     the retro. Before the fix this passed _validate_analysis_shape (IS-A-LIST
@@ -430,16 +438,18 @@ def test_run_coerces_dict_observation_instead_of_crashing(
     _stub_facts(monkeypatch, tmp_path)
     transcript = (
         "BEGIN_REFLECT_SESSION_RETRO\n"
-        + yaml.safe_dump({
-            "summary": "what happened",
-            "observations": [
-                "a plain bullet",
-                {"Session exited normally": "composition initialization"},
-            ],
-            "hypothesis_verdicts": [],
-            "proposal_actions": [],
-            "self_problems": [],
-        })
+        + yaml.safe_dump(
+            {
+                "summary": "what happened",
+                "observations": [
+                    "a plain bullet",
+                    {"Session exited normally": "composition initialization"},
+                ],
+                "hypothesis_verdicts": [],
+                "proposal_actions": [],
+                "self_problems": [],
+            }
+        )
         + "\nEND_REFLECT_SESSION_RETRO\n"
     )
     fake_runner = _FakeSubAgentRunner(transcript, tmp_path)
@@ -457,7 +467,8 @@ def test_run_coerces_dict_observation_instead_of_crashing(
 
 
 def test_run_raises_session_review_error_on_invalid_llm_output(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     _stub_facts(monkeypatch, tmp_path)
     transcript = (
@@ -475,14 +486,16 @@ def test_run_raises_session_review_error_on_invalid_llm_output(
 
 
 def test_run_surfaces_subagent_failure_when_transcript_missing(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """Sub-agent crashed before writing transcript.txt → must NOT loop on
     'Empty frontmatter'; must surface exit_code/error from metrics.json so
     the harness records a meaningful cause in retro.log."""
     _stub_facts(monkeypatch, tmp_path)
     fake_runner = _FakeSubAgentRunner(
-        "", tmp_path,
+        "",
+        tmp_path,
         write_transcript=False,
         metrics={"exit_code": 124, "timed_out": True},
         reasoning="claude: request timed out\n",
@@ -502,7 +515,8 @@ def test_run_surfaces_subagent_failure_when_transcript_missing(
 
 
 def test_run_surfaces_subagent_failure_when_transcript_blank(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
     """transcript.txt exists but contains only whitespace — same failure
     mode as missing file: do not retry, surface diagnostics."""
@@ -636,9 +650,7 @@ def test_render_active_hypotheses_surfaces_verification_protocol(tmp_path: Path)
         "Line 2: OBSERVED: <verbatim or NOT OBSERVED>\n"
         "Line 3: VERDICT_REASON: satisfies | fails | silent"
     )
-    _write_hyp_with_extras(
-        tmp_path, "HYP-501", verification_protocol=protocol
-    )
+    _write_hyp_with_extras(tmp_path, "HYP-501", verification_protocol=protocol)
 
     runner = SessionReviewRunner(tmp_path)
     out = runner._render_active_hypotheses()

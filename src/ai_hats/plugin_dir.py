@@ -217,7 +217,6 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
     return removed
 
 
-
 def _is_safe_relative(base_dir: Path, name: str) -> bool:
     """:func:`_is_plain_child` generalized to nested relative entries
     (HATS-905: githooks/publish manifests list ``a/b`` paths); victims must

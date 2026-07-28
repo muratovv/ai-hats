@@ -48,26 +48,46 @@ def project_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def fixture_sessions(project_dir: Path):
     """A mixed set covering all filter angles."""
-    _make_session_dir(project_dir, "20260401T100000Z_a1", metrics={
-        "role": "diagnoser",
-        "tags": {"alert_fp": "abc", "client": "home"},
-        "turns": 5, "tool_calls": 10,
-    })
-    _make_session_dir(project_dir, "20260410T120000Z_b2", metrics={
-        "role": "diagnoser",
-        "tags": {"alert_fp": "xyz", "client": "home"},
-        "turns": 3, "tool_calls": 7,
-    })
-    _make_session_dir(project_dir, "20260420T090000Z_c3", metrics={
-        "role": "primary",
-        "tags": {"alert_fp": "abc", "client": "work"},
-        "turns": 0, "tool_calls": 0,  # unproductive
-    })
-    _make_session_dir(project_dir, "20260423T150000Z_d4", metrics={
-        "role": "retrospector",
-        # no tags field
-        "turns": 1, "tool_calls": 2,
-    })
+    _make_session_dir(
+        project_dir,
+        "20260401T100000Z_a1",
+        metrics={
+            "role": "diagnoser",
+            "tags": {"alert_fp": "abc", "client": "home"},
+            "turns": 5,
+            "tool_calls": 10,
+        },
+    )
+    _make_session_dir(
+        project_dir,
+        "20260410T120000Z_b2",
+        metrics={
+            "role": "diagnoser",
+            "tags": {"alert_fp": "xyz", "client": "home"},
+            "turns": 3,
+            "tool_calls": 7,
+        },
+    )
+    _make_session_dir(
+        project_dir,
+        "20260420T090000Z_c3",
+        metrics={
+            "role": "primary",
+            "tags": {"alert_fp": "abc", "client": "work"},
+            "turns": 0,
+            "tool_calls": 0,  # unproductive
+        },
+    )
+    _make_session_dir(
+        project_dir,
+        "20260423T150000Z_d4",
+        metrics={
+            "role": "retrospector",
+            # no tags field
+            "turns": 1,
+            "tool_calls": 2,
+        },
+    )
     # corrupt metrics.json
     sdir = runs_dir(project_dir) / "session_20260423T160000Z_e5"
     sdir.mkdir()
@@ -105,7 +125,8 @@ def test_tag_filter_and_semantics(project_dir, fixture_sessions):
     """All k=v pairs must match — AND logic."""
     mgr = _session_mgr(project_dir)
     ids = [
-        s.session_id for s in mgr.list_sessions(
+        s.session_id
+        for s in mgr.list_sessions(
             tag_filters={"alert_fp": "abc", "client": "home"},
         )
     ]
@@ -142,7 +163,8 @@ def test_combined_filters_and(project_dir, fixture_sessions):
     """role + tag + since — all ANDed."""
     mgr = _session_mgr(project_dir)
     ids = [
-        s.session_id for s in mgr.list_sessions(
+        s.session_id
+        for s in mgr.list_sessions(
             role_eq="diagnoser",
             tag_filters={"client": "home"},
             since_date="2026-04-05",

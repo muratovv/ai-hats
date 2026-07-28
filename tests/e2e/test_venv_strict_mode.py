@@ -15,6 +15,7 @@ Two layers:
   deterministically (empty ``PATH`` ⇒ ``network_available()`` False), so the
   fixture short-circuits at its first branch — no actual build, ~instant.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,8 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # If this nodeid is ever renamed/removed, the seam tests fail loudly (the
 # outcome-marker assertions below catch a miscollection) — update it here.
 VENV_TIER_PROBE = (
-    "tests/e2e/test_runtime_hook_propagation.py"
-    "::test_e2e_skill_runtime_hook_wired_and_materialized"
+    "tests/e2e/test_runtime_hook_propagation.py::test_e2e_skill_runtime_hook_wired_and_materialized"
 )
 
 
@@ -57,10 +57,24 @@ def _run_probe_offline(tmp_path, *, strict: bool) -> subprocess.CompletedProcess
     return subprocess.run(
         # --tb=line surfaces the fixture-ERROR message (the fail-closed marker)
         # in the captured output; --tb=no would hide it.
-        [sys.executable, "-m", "pytest", VENV_TIER_PROBE,
-         "-p", "no:xdist", "-p", "no:cacheprovider", "-q", "--no-header", "--tb=line"],
-        cwd=str(REPO_ROOT), env=env,
-        capture_output=True, text=True, timeout=120,
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            VENV_TIER_PROBE,
+            "-p",
+            "no:xdist",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            "--no-header",
+            "--tb=line",
+        ],
+        cwd=str(REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
 

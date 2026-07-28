@@ -89,7 +89,11 @@ def test_bare_cwd_does_not_evict_hooks_of_foreign_project(
 
     subprocess.run(  # noqa: S603 — fixed argv, dev-venv interpreter
         [sys.executable, "-m", "ai_hats._bump_internal"],
-        cwd=str(bare), env=env, capture_output=True, text=True, timeout=300,
+        cwd=str(bare),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
 
     evicted = project / ".agent" / "ai-hats" / "user-hooks" / _SENTINEL

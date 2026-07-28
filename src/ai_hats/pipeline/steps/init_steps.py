@@ -99,7 +99,6 @@ class SelectProviderStep(Step):
                 detected = _detected_providers()
                 res_provider = _wizard_provider_prompt(detected)
 
-
         if res_provider is None:
             if already:
                 try:
@@ -126,15 +125,17 @@ class BootstrapProjectStep(Step):
         return StepIO(
             name="bootstrap_project",
             requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER}),
-            optional=frozenset({
-                KEY_ROLE,
-                KEY_TASK_PREFIX,
-                KEY_AI_HATS_DIR,
-                KEY_VENV_PATH,
-                KEY_NO_MANAGE_GITIGNORE,
-                KEY_CHANNEL,
-                KEY_HARNESS_PATH,
-            }),
+            optional=frozenset(
+                {
+                    KEY_ROLE,
+                    KEY_TASK_PREFIX,
+                    KEY_AI_HATS_DIR,
+                    KEY_VENV_PATH,
+                    KEY_NO_MANAGE_GITIGNORE,
+                    KEY_CHANNEL,
+                    KEY_HARNESS_PATH,
+                }
+            ),
             produces=frozenset({KEY_PROJECT_CONFIG}),
         )
 
@@ -184,12 +185,15 @@ class BootstrapProjectStep(Step):
                 harness_path=harness_path,
             )
         except ValueError as err:
-            if not already and not agent_existed_before and agent_dir.exists() and not (project_dir / PROJECT_CONFIG).exists():
+            if (
+                not already
+                and not agent_existed_before
+                and agent_dir.exists()
+                and not (project_dir / PROJECT_CONFIG).exists()
+            ):
                 shutil.rmtree(agent_dir, ignore_errors=True)  # safe-delete: ok init-cleanup
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1) from err
-
-
 
         seeded = asm.project_config.harness
         if seeded.channel is not _Channel.STABLE:
@@ -223,14 +227,16 @@ class PrepareExecuteSessionStep(Step):
         return StepIO(
             name="prepare_execute_session",
             requires=frozenset({KEY_PROJECT_DIR, KEY_PROVIDER}),
-            optional=frozenset({
-                KEY_ROLE,
-                KEY_NO_WIZARD,
-                KEY_TASK_PREFIX,
-                KEY_AI_HATS_DIR,
-                KEY_VENV_PATH,
-                KEY_NO_MANAGE_GITIGNORE,
-            }),
+            optional=frozenset(
+                {
+                    KEY_ROLE,
+                    KEY_NO_WIZARD,
+                    KEY_TASK_PREFIX,
+                    KEY_AI_HATS_DIR,
+                    KEY_VENV_PATH,
+                    KEY_NO_MANAGE_GITIGNORE,
+                }
+            ),
             produces=frozenset({KEY_EXECUTE_CMD}),
         )
 

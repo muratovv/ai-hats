@@ -60,15 +60,17 @@ def test_approved_push_completes_with_ack(hooked_project):
     exactly the reported bug (supervisor approved, agent still could not push).
     """
     project, env, settings = hooked_project
-    verdict = run_chain(project, "git push origin master", settings=settings, env=env, ack=SHARED_ACK)
+    verdict = run_chain(
+        project, "git push origin master", settings=settings, env=env, ack=SHARED_ACK
+    )
     assert not verdict.denied, (
         f"an approved push must pass the chain with {SHARED_ACK}=1; got {verdict}"
     )
 
 
 @pytest.mark.integration
-def test_unapproved_push_is_denied_and_names_its_hatch(hooked_project):
-    """An unapproved push is denied, and the denial says how to proceed.
+def test_unapproved_push_is_gated_and_names_its_hatch(hooked_project):
+    """An unapproved push is gated, and the refusal says how to proceed.
 
     The second half is the deny-names-its-hatch invariant (P4): ``check_git``
     denied with "requires explicit permission" and named no flag, leaving the
@@ -76,9 +78,9 @@ def test_unapproved_push_is_denied_and_names_its_hatch(hooked_project):
     """
     project, env, settings = hooked_project
     verdict = run_chain(project, "git push origin master", settings=settings, env=env)
-    assert verdict.denied, f"an unapproved push must be denied; got {verdict}"
+    assert verdict.gated, f"an unapproved push must be gated; got {verdict}"
     assert verdict.names_ack_flag, (
-        f"denial must name the consent flag that unblocks it; got {verdict}"
+        f"refusal must name the consent flag that unblocks it; got {verdict}"
     )
 
 
@@ -113,11 +115,16 @@ def test_non_mutating_git_commands_pass(hooked_project, command):
     ],
 )
 @pytest.mark.integration
-def test_irreversible_still_denied_without_ack(hooked_project, command):
-    """Loosening regular push must not loosen the irreversible class."""
+def test_irreversible_still_gated_without_ack(hooked_project, command):
+    """Loosening regular push must not loosen the irreversible class.
+
+    ``gated``, not ``denied``: since HATS-1294 the guard escalates to the user
+    (``permissionDecision: ask``) instead of ending the call. Either way the
+    agent cannot proceed alone, which is the invariant under test.
+    """
     project, env, settings = hooked_project
     verdict = run_chain(project, command, settings=settings, env=env)
-    assert verdict.denied, f"{command!r} is irreversible and must stay denied; got {verdict}"
+    assert verdict.gated, f"{command!r} is irreversible and must stay gated; got {verdict}"
 
 
 # --- The rm policy (R-6/R-7) ------------------------------------------------
@@ -182,9 +189,7 @@ def test_catastrophic_targets_deny_even_with_ack(hooked_project, command):
     project, env, settings = hooked_project
     for ack in (None, DESTRUCTIVE_ACK, SHARED_ACK):
         verdict = run_chain(project, command, settings=settings, env=env, ack=ack)
-        assert verdict.denied, (
-            f"{command!r} must be denied even with ack={ack}; got {verdict}"
-        )
+        assert verdict.denied, f"{command!r} must be denied even with ack={ack}; got {verdict}"
 
 
 # --- Binaries that are not data-destructive --------------------------------
@@ -259,9 +264,7 @@ def test_every_deny_names_its_hatch(hooked_project, command):
     ],
 )
 @pytest.mark.integration
-def test_enter_worktree_is_denied_with_the_ai_hats_recipe(
-    hooked_project, tool_input, must_mention
-):
+def test_enter_worktree_is_denied_with_the_ai_hats_recipe(hooked_project, tool_input, must_mention):
     """EnterWorktree is denied, and the denial carries the flow to use instead.
 
     A bare ``permissions.deny`` would strip the tool silently; the agent that
@@ -269,9 +272,7 @@ def test_enter_worktree_is_denied_with_the_ai_hats_recipe(
     harness tool, so the refusal has to say what replaces it.
     """
     project, env, settings = hooked_project
-    verdict = run_tool_chain(
-        project, "EnterWorktree", tool_input, settings=settings, env=env
-    )
+    verdict = run_tool_chain(project, "EnterWorktree", tool_input, settings=settings, env=env)
     assert verdict.denied, f"EnterWorktree must be denied; got {verdict}"
     assert must_mention in verdict.reason, (
         f"denial must name the replacement flow ({must_mention!r}); got {verdict}"

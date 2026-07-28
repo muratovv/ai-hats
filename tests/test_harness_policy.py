@@ -28,16 +28,12 @@ def test_reporting_true_only():
 
 
 def test_on_zero_output_harness_incident():
-    policy = parse_harness_policy(
-        {"reporting": True, "on_zero_output": "harness_incident"}
-    )
+    policy = parse_harness_policy({"reporting": True, "on_zero_output": "harness_incident"})
     assert policy.on_zero_output == "harness_incident"
 
 
 def test_on_zero_output_ignore():
-    policy = parse_harness_policy(
-        {"reporting": True, "on_zero_output": "ignore"}
-    )
+    policy = parse_harness_policy({"reporting": True, "on_zero_output": "ignore"})
     assert policy.on_zero_output == "ignore"
 
 

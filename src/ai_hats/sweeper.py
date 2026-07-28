@@ -134,7 +134,6 @@ def default_surfaces() -> tuple[Surface, ...]:
     )
 
 
-
 def sweep_unclaimed(
     project_dir: Path,
     *,
@@ -246,9 +245,9 @@ def _has_tagged_entries(hooks_root: dict, tag_prefix: str) -> bool:
         if not isinstance(event_list, list):
             continue
         for entry in event_list:
-            if isinstance(entry, dict) and str(
-                entry.get("_ai_hats_managed", "")
-            ).startswith(tag_prefix):
+            if isinstance(entry, dict) and str(entry.get("_ai_hats_managed", "")).startswith(
+                tag_prefix
+            ):
                 return True
     return False
 
@@ -263,9 +262,7 @@ def _sweep_line_manifest(
     try:
         owner_key, entries = _parse_marker(marker, surface)
     except _MarkerRefused as exc:
-        return SurfaceSweep(
-            owner_key=surface.owner_key, marker=marker, refused=str(exc)
-        )
+        return SurfaceSweep(owner_key=surface.owner_key, marker=marker, refused=str(exc))
     if owners.is_living(owner_key):
         return None
 
@@ -344,9 +341,7 @@ def _shrink_marker(
     if not has_kept:
         discard(marker, reason=reason, project_dir=project_dir)
         return True
-    remaining = [
-        raw for raw in marker.read_text().splitlines() if raw.strip() not in resolved_raws
-    ]
+    remaining = [raw for raw in marker.read_text().splitlines() if raw.strip() not in resolved_raws]
     replace(
         marker,
         ("\n".join(remaining) + "\n").encode(),
@@ -360,9 +355,7 @@ class _MarkerRefused(Exception):
     """Marker is structurally untrustworthy — refuse the whole surface."""
 
 
-def _parse_marker(
-    marker: Path, surface: LineManifestSurface
-) -> tuple[str, list[_Entry]]:
+def _parse_marker(marker: Path, surface: LineManifestSurface) -> tuple[str, list[_Entry]]:
     owner_key: str | None = None
     entries: list[_Entry] = []
     for raw in marker.read_text().splitlines():
@@ -426,9 +419,7 @@ def _is_hex(token: str) -> bool:
     return True
 
 
-def _content_proven(
-    victim: Path, entry: _Entry, surface: LineManifestSurface
-) -> bool:
+def _content_proven(victim: Path, entry: _Entry, surface: LineManifestSurface) -> bool:
     if surface.legacy:
         return True
     if entry.digest is not None:

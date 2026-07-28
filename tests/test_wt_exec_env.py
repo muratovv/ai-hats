@@ -7,6 +7,7 @@ Fast unit proofs — the e2e files are the gate tests, but they can only validat
 GREEN at the main checkout (the dev-venv shim runs the installed package, not
 worktree-local src), so the ordering contract is pinned here too.
 """
+
 from __future__ import annotations
 
 from unittest import mock
@@ -39,9 +40,11 @@ def test_wt_exec_strips_git_plumbing_from_subprocess_env(monkeypatch, tmp_path):
     # _peel_selector stubbed out: this test is about the env, and the real one
     # would need git for _project_dir (the subprocess.run patch below lands on
     # the stdlib module object, so it would answer that git call with a Mock).
-    with mock.patch("ai_hats.cli.worktree._peel_selector", return_value=None), \
-         mock.patch("ai_hats.cli.worktree._resolve_worktree", return_value=fake_mgr), \
-         mock.patch("ai_hats.cli.worktree.subprocess.run", side_effect=_fake_run):
+    with (
+        mock.patch("ai_hats.cli.worktree._peel_selector", return_value=None),
+        mock.patch("ai_hats.cli.worktree._resolve_worktree", return_value=fake_mgr),
+        mock.patch("ai_hats.cli.worktree.subprocess.run", side_effect=_fake_run),
+    ):
         result = CliRunner().invoke(wt, ["exec", "--", "git", "rev-parse", "HEAD"])
 
     assert result.exit_code == 0, result.output
@@ -73,10 +76,12 @@ def test_wt_exec_resolves_the_selector_not_cwd(tmp_path, active):
         captured["cmd"] = cmd
         return mock.Mock(returncode=0)
 
-    with mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path), \
-         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active(*active)), \
-         mock.patch("ai_hats.cli.worktree._resolve_worktree", return_value=fake_mgr) as resolve, \
-         mock.patch("ai_hats.cli.worktree.subprocess.run", side_effect=_fake_run):
+    with (
+        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active(*active)),
+        mock.patch("ai_hats.cli.worktree._resolve_worktree", return_value=fake_mgr) as resolve,
+        mock.patch("ai_hats.cli.worktree.subprocess.run", side_effect=_fake_run),
+    ):
         result = CliRunner().invoke(wt, ["exec", "task/b", "--", "git", "status"])
 
     assert result.exit_code == 0, result.output
@@ -102,8 +107,10 @@ def test_wt_env_honours_an_optional_branch(tmp_path, argv, expected):
 
 def test_peel_selector_pops_the_branch_and_a_trailing_separator(tmp_path):
     args = ["task/a", "--", "pytest", "-x"]
-    with mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path), \
-         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")):
+    with (
+        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
+    ):
         assert _peel_selector(args) == "task/a"
     assert args == ["pytest", "-x"]
 
@@ -111,15 +118,19 @@ def test_peel_selector_pops_the_branch_and_a_trailing_separator(tmp_path):
 def test_peel_selector_leaves_a_plain_command_alone(tmp_path):
     """A first arg that names no active worktree is the command, not a selector."""
     args = ["pytest", "-x"]
-    with mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path), \
-         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")):
+    with (
+        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
+    ):
         assert _peel_selector(args) is None
     assert args == ["pytest", "-x"], "a non-selector first arg must survive untouched"
 
 
 def test_peel_selector_refuses_a_selector_with_no_command(tmp_path):
     args = ["task/a"]
-    with mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path), \
-         mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")), \
-         pytest.raises(click.UsageError, match="No command to run"):
+    with (
+        mock.patch("ai_hats.cli.worktree._project_dir", return_value=tmp_path),
+        mock.patch("ai_hats_wt.WorktreeManager.list_active", return_value=_active("task/a")),
+        pytest.raises(click.UsageError, match="No command to run"),
+    ):
         _peel_selector(args)

@@ -103,10 +103,7 @@ def test_hook_routes_install_heavy_within_cap() -> None:
     This is the fail-under-revert guard: with the install-heavy branch removed each
     install-heavy file would get its own group → ``len(install_heavy_groups) > K``.
     """
-    items = [
-        _FakeItem(f"tests/e2e/test_ph_{i}.py::test_x", install_heavy=True)
-        for i in range(10)
-    ]
+    items = [_FakeItem(f"tests/e2e/test_ph_{i}.py::test_x", install_heavy=True) for i in range(10)]
     items += [
         _FakeItem("tests/e2e/test_live.py::test_a", live=True),
         _FakeItem("tests/e2e/test_live.py::test_b", live=True),

@@ -41,17 +41,13 @@ def discover_subpackages(repo_root: Path) -> list[Path]:
     packages_dir = repo_root / "packages"
     if not packages_dir.is_dir():
         return []
-    return sorted([
-        p.parent for p in packages_dir.glob("**/pyproject.toml")
-    ])
+    return sorted([p.parent for p in packages_dir.glob("**/pyproject.toml")])
 
 
 def remedy_message(repo_root: Path, foreign: Path) -> str:
     """Operator-facing message: what went wrong and how to fix it."""
     subpkgs = discover_subpackages(repo_root)
-    pkg_args = " \\\n    ".join(
-        f"-e '{p.relative_to(repo_root)}'" for p in subpkgs
-    )
+    pkg_args = " \\\n    ".join(f"-e '{p.relative_to(repo_root)}'" for p in subpkgs)
     if pkg_args:
         pkg_args = " \\\n    " + pkg_args
 

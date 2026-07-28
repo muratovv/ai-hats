@@ -31,7 +31,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,
     )
     if result.returncode != expect_exit:
@@ -70,7 +75,9 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
     _run(
         [str(launcher), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     py = project / ".agent" / "ai-hats" / ".venv" / "bin" / "python"
@@ -80,7 +87,9 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
     for dist, imp in members:
         _run(
             ["uv", "pip", "uninstall", "--python", str(py), dist],
-            cwd=tmp_path, env=env, timeout=60,
+            cwd=tmp_path,
+            env=env,
+            timeout=60,
         )
         bare = subprocess.run([str(py), "-c", "import ai_hats"], capture_output=True, text=True)
         assert bare.returncode == 0, (
@@ -88,8 +97,13 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
         )
 
         result = subprocess.run(
-            [str(launcher), "--help"], cwd=str(project), env=env,
-            capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
+            [str(launcher), "--help"],
+            cwd=str(project),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
         )
         assert result.returncode == 1, (
             f"mined {dist} ({imp}): expected clean refusal (exit 1), got "
@@ -106,6 +120,8 @@ def test_e2e_regular_call_refused_for_each_missing_member(tmp_path: Path) -> Non
         # the missing member), then sanity-check before the next round.
         _run(
             ["uv", "pip", "install", "--quiet", "--python", str(py), "-e", str(src_repo)],
-            cwd=tmp_path, env=env, timeout=180,
+            cwd=tmp_path,
+            env=env,
+            timeout=180,
         )
         _run([str(launcher), "--help"], cwd=project, env=env, timeout=120)

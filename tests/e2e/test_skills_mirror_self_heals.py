@@ -42,9 +42,7 @@ def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     lib = tmp_path / "lib"
     skill = lib / "skills" / "alpha"
     skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text(
-        "---\nname: alpha\ndescription: library skill\n---\n# alpha\n"
-    )
+    (skill / "SKILL.md").write_text("---\nname: alpha\ndescription: library skill\n---\n# alpha\n")
     trait = lib / "traits" / "trait-base"
     trait.mkdir(parents=True)
     (trait / "config.yaml").write_text(
@@ -69,7 +67,9 @@ def _make_project(tmp_path: Path) -> tuple[Path, Path]:
 def _launch(project: Path, monkeypatch) -> str:
     from ai_hats import runtime as rt
 
-    monkeypatch.setattr(rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0)
+    monkeypatch.setattr(
+        rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0
+    )
     monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0.05")
     monkeypatch.chdir(project)
     result = CliRunner().invoke(main, [])
@@ -105,9 +105,7 @@ def test_session_start_heals_stale_skills_mirror(tmp_path: Path, monkeypatch):
 
     trash = session_root()
     assert trash is not None
-    rescued = [
-        p for p in trash.rglob("SKILL.md") if p.read_text() == "# stale pre-294 export\n"
-    ]
+    rescued = [p for p in trash.rglob("SKILL.md") if p.read_text() == "# stale pre-294 export\n"]
     assert rescued, f"discarded mirror copy not found under {trash}"
     # ... and announced (green NOTE, no CLI verb instructed).
     assert "removed stale ai-hats skills mirror" in output, output

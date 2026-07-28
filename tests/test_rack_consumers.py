@@ -173,8 +173,12 @@ def test_env_contract_forced_composite_transition(project, lib):
     kernel = _kernel(project)
     kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
     kernel.transition_ops(
-        "T-1", [StateOp("plan")], actor="test", caller_cwd=project,
-        force=True, reason="ops override",
+        "T-1",
+        [StateOp("plan")],
+        actor="test",
+        caller_cwd=project,
+        force=True,
+        reason="ops override",
     )
     got = dict(line.split("=", 1) for line in dump.read_text().splitlines())
     assert got["AI_HATS_HOOK_FORCE"] == "1"

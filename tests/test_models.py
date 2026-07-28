@@ -425,8 +425,7 @@ def test_from_yaml_strips_unknown_future_key(tmp_path, capsys):
     binary wrote (the recovery command must keep working)."""
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "provider: claude\nschema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
     )
 
     cfg = ProjectConfig.from_yaml(path)
@@ -448,8 +447,7 @@ def test_from_yaml_strips_migration_step_on_old_schema(tmp_path, capsys, monkeyp
 
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "provider: claude\nschema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\nmigration_step: 6\n"
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\nmigration_step: 6\n"
     )
 
     cfg = ProjectConfig.from_yaml(path)
@@ -464,8 +462,7 @@ def test_from_yaml_deprecated_field_keeps_specific_message(tmp_path, capsys):
     'deprecated' message and never fall through to the generic 'unknown' one."""
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "provider: claude\nschema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\nimports_order: []\n"
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\nimports_order: []\n"
     )
 
     ProjectConfig.from_yaml(path)
@@ -490,8 +487,7 @@ def test_from_yaml_preserves_unknown_top_level_field_round_trip(tmp_path, capsys
     (HATS-581 no longer means silent loss). The WARN still fires."""
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "provider: claude\nschema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\nfuture_field: 7\n"
     )
 
     cfg = ProjectConfig.from_yaml(path)
@@ -508,9 +504,7 @@ def test_from_yaml_fails_loud_on_newer_schema_version(tmp_path):
     """HATS-792: schema_version 5 (> KNOWN 4) is refused with a typed error +
     remediation instead of being silently treated as v4."""
     path = tmp_path / PROJECT_CONFIG
-    path.write_text(
-        "provider: claude\nschema_version: 5\nai_hats_dir: .agent/ai-hats\n"
-    )
+    path.write_text("provider: claude\nschema_version: 5\nai_hats_dir: .agent/ai-hats\n")
 
     with pytest.raises(ProjectConfigError) as exc:
         ProjectConfig.from_yaml(path)
@@ -596,9 +590,7 @@ def test_project_config_venv_path_omitted_when_none(tmp_path):
 def test_project_config_backward_compat_yaml_without_venv_path(tmp_path):
     """v4 yaml without venv_path field loads fine with venv_path=None."""
     path = tmp_path / PROJECT_CONFIG
-    path.write_text(
-        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\n"
-    )
+    path.write_text("provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\n")
 
     config = ProjectConfig.from_yaml(path)
     assert config.venv_path is None
@@ -608,8 +600,7 @@ def test_project_config_rejects_invalid_venv_path(tmp_path):
     """Invalid venv_path (dotdot escape) raises ProjectConfigError on load."""
     path = tmp_path / PROJECT_CONFIG
     path.write_text(
-        "provider: claude\nschema_version: 4\n"
-        "ai_hats_dir: .agent/ai-hats\nvenv_path: '../escape'\n"
+        "provider: claude\nschema_version: 4\nai_hats_dir: .agent/ai-hats\nvenv_path: '../escape'\n"
     )
 
     with pytest.raises(ProjectConfigError) as exc:
@@ -923,12 +914,7 @@ def test_runtime_hooks_unknown_event_rejected(tmp_path):
 
 def test_runtime_hooks_missing_field_fails_loud(tmp_path):
     path = tmp_path / "metadata.yaml"
-    path.write_text(
-        "name: bad-skill\n"
-        "runtime_hooks:\n"
-        "  PreToolUse:\n"
-        "    - matcher: Bash\n"
-    )
+    path.write_text("name: bad-skill\nruntime_hooks:\n  PreToolUse:\n    - matcher: Bash\n")
     with pytest.raises(Exception, match="script"):
         SkillMetadata.from_yaml(path)
 
@@ -1058,9 +1044,7 @@ def test_task_card_attachments_not_captured_into_extras():
     data = {
         "id": "T-1",
         "title": "Test",
-        "attachments": [
-            {"name": "x.md", "digest": "0123456789ab", "added": "", "note": ""}
-        ],
+        "attachments": [{"name": "x.md", "digest": "0123456789ab", "added": "", "note": ""}],
     }
     card = TaskCard.from_dict(data)
     assert len(card.attachments) == 1
@@ -1101,15 +1085,34 @@ def test_facade_surface_parity():
 
     expected = {
         # tracker
-        "Attachment", "TaskCard", "TaskState", "WorkLogEntry",
+        "Attachment",
+        "TaskCard",
+        "TaskState",
+        "WorkLogEntry",
         # library
-        "GIT_HOOK_EVENTS", "RUNTIME_HOOK_EVENTS", "ComponentConfig",
-        "ComponentType", "Composition", "LeftoverSidecarHooksError",
-        "RuleMetadata", "RuntimeHook", "SkillMetadata", "resolve_namespace",
+        "GIT_HOOK_EVENTS",
+        "RUNTIME_HOOK_EVENTS",
+        "ComponentConfig",
+        "ComponentType",
+        "Composition",
+        "LeftoverSidecarHooksError",
+        "RuleMetadata",
+        "RuntimeHook",
+        "SkillMetadata",
+        "resolve_namespace",
         # config
-        "KNOWN_SCHEMA_VERSION", "Channel", "FeedbackConfig", "FeedbackPolicy",
-        "HarnessConfig", "OverlayConfig", "ProjectConfig", "ProjectConfigError",
-        "SessionRetroConfig", "SmartThreshold", "UserConfig", "UserConfigError",
+        "KNOWN_SCHEMA_VERSION",
+        "Channel",
+        "FeedbackConfig",
+        "FeedbackPolicy",
+        "HarnessConfig",
+        "OverlayConfig",
+        "ProjectConfig",
+        "ProjectConfigError",
+        "SessionRetroConfig",
+        "SmartThreshold",
+        "UserConfig",
+        "UserConfigError",
     }
     missing = sorted(n for n in expected if not hasattr(facade, n))
     assert not missing, f"facade lost re-exports: {missing}"

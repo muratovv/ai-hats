@@ -34,8 +34,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -47,8 +51,11 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(cwd),
-        capture_output=True, text=True, check=True,
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
 
@@ -63,7 +70,10 @@ def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180, cwd=project):
         return _run(
             [str(launcher_dest), *args],
-            cwd=cwd, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- bootstrap project (real git repo + ai-hats init) ----
@@ -75,9 +85,14 @@ def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     _git(project, "commit", "-m", "init")
 
     ai_hats(
-        "self", "init",
-        "-r", "assistant", "-p", "claude",
-        "--task-prefix", "TST",
+        "self",
+        "init",
+        "-r",
+        "assistant",
+        "-p",
+        "claude",
+        "--task-prefix",
+        "TST",
     )
 
     # ---- race two `wt create task/race` ----
@@ -86,18 +101,27 @@ def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     # below ignores worktree dirs left over from prior test runs (mkdtemp
     # writes to the system temp root, outside tmp_path's cleanup scope).
     import tempfile
+
     tmp_root = Path(tempfile.gettempdir())
     prefix = "ai-hats-wt-task-race-"
     pre_existing = {p.name for p in tmp_root.iterdir() if p.name.startswith(prefix)}
 
     cmd = [str(launcher_dest), "wt", "create", branch]
     p1 = subprocess.Popen(
-        cmd, cwd=str(project), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd,
+        cwd=str(project),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     p2 = subprocess.Popen(
-        cmd, cwd=str(project), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cmd,
+        cwd=str(project),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     out1, err1 = p1.communicate(timeout=60)
     out2, err2 = p2.communicate(timeout=60)
@@ -110,19 +134,15 @@ def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
         f"p1 stdout: {out1}\np1 stderr: {err1}\n"
         f"p2 stdout: {out2}\np2 stderr: {err2}"
     )
-    assert len(losers) == 1, (
-        f"expected 1 loser, got exit codes {[o[0] for o in outcomes]}"
-    )
+    assert len(losers) == 1, f"expected 1 loser, got exit codes {[o[0] for o in outcomes]}"
 
     # Loser sees a friendly message — not an opaque traceback.
     loser_stdout_stderr = (losers[0][1] + losers[0][2]).lower()
     assert "already exists" in loser_stdout_stderr, (
-        f"loser output missing 'already exists':\n"
-        f"stdout: {losers[0][1]}\nstderr: {losers[0][2]}"
+        f"loser output missing 'already exists':\nstdout: {losers[0][1]}\nstderr: {losers[0][2]}"
     )
     assert "traceback" not in loser_stdout_stderr, (
-        f"loser leaked a traceback:\n"
-        f"stdout: {losers[0][1]}\nstderr: {losers[0][2]}"
+        f"loser leaked a traceback:\nstdout: {losers[0][1]}\nstderr: {losers[0][2]}"
     )
 
     # ---- post-conditions ----
@@ -140,6 +160,4 @@ def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     # exist — the winner's worktree. Two means the loser leaked.
     after = {p.name for p in tmp_root.iterdir() if p.name.startswith(prefix)}
     new_dirs = after - pre_existing
-    assert len(new_dirs) <= 1, (
-        f"loser leaked tempdirs (this test): {sorted(new_dirs)}"
-    )
+    assert len(new_dirs) <= 1, f"loser leaked tempdirs (this test): {sorted(new_dirs)}"

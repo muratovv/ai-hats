@@ -8,6 +8,7 @@ extract_marker actually reads the (stubbed) transcript and
 save_artifact actually writes to disk — the contract between Phase 1
 and Phase 2 is what we're testing.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,9 +24,12 @@ from ai_hats_observe.artifacts import TRACE_LOG, TRANSCRIPT_TXT
 
 def _make_hyp(pd: Path, hyp_id: str):
     body = {
-        "id": hyp_id, "title": f"hyp-{hyp_id}",
-        "status": "active", "created": "2026-01-01",
-        "source_task": "HATS-001", "hypothesis": "h",
+        "id": hyp_id,
+        "title": f"hyp-{hyp_id}",
+        "status": "active",
+        "created": "2026-01-01",
+        "source_task": "HATS-001",
+        "hypothesis": "h",
         "validation_log": [],
         "success_criterion": "x",
         "observation_window": "5 sessions",
@@ -37,9 +41,13 @@ def _make_prop(pd: Path, pid: str):
     body = {
         "id": pid,
         "created": datetime(2026, 5, 4, tzinfo=timezone.utc).isoformat(),
-        "title": f"title-{pid}", "category": "rule", "target": "x",
-        "description": "d", "rationale": "r",
-        "votes": [], "status": "open",
+        "title": f"title-{pid}",
+        "category": "rule",
+        "target": "x",
+        "description": "d",
+        "rationale": "r",
+        "votes": [],
+        "status": "open",
     }
     (proposals_dir(pd) / f"{pid}.yaml").write_text(yaml.safe_dump(body))
 
@@ -86,14 +94,10 @@ def test_dry_run_writes_handoff_no_pipeline(project_dir: Path, mock_runners):
     _make_hyp(project_dir, "HYP-001")
     _make_prop(project_dir, "PROP-001")
 
-    res = CliRunner().invoke(
-        main, ["reflect", "hypothesis", "--dry-run"]
-    )
+    res = CliRunner().invoke(main, ["reflect", "hypothesis", "--dry-run"])
     assert res.exit_code == 0, res.output
 
-    handoff_files = list(
-        (retros_dir(project_dir) / "reflect-all").glob("*-handoff.md")
-    )
+    handoff_files = list((retros_dir(project_dir) / "reflect-all").glob("*-handoff.md"))
     assert len(handoff_files) == 1
 
     # No pipeline launched at all
@@ -104,9 +108,7 @@ def test_dry_run_writes_handoff_no_pipeline(project_dir: Path, mock_runners):
 # --- headless (Phase 1 only) -----------------------------------------------
 
 
-def test_headless_runs_phase1_only(
-    project_dir: Path, mock_runners, monkeypatch
-):
+def test_headless_runs_phase1_only(project_dir: Path, mock_runners, monkeypatch):
     """`reflect hypothesis --headless` invokes SubAgentRunner with role
     judge-auditor and exits without touching WrapRunner."""
     _make_hyp(project_dir, "HYP-001")
@@ -114,6 +116,7 @@ def test_headless_runs_phase1_only(
 
     # Seed the stub session output so extract_marker captures a draft.
     from ai_hats.paths import runs_dir
+
     sub_session_dir = runs_dir(project_dir) / "session_sub-1"
     _seed_draft_transcript(sub_session_dir)
 
@@ -128,9 +131,7 @@ def test_headless_runs_phase1_only(
     assert call["role_name"] == "judge-auditor"
 
     # Draft was persisted.
-    draft_files = list(
-        (retros_dir(project_dir) / "judge").glob("*-draft.md")
-    )
+    draft_files = list((retros_dir(project_dir) / "judge").glob("*-draft.md"))
     assert len(draft_files) == 1
     assert "HYP-001" in draft_files[0].read_text()
 
@@ -138,9 +139,7 @@ def test_headless_runs_phase1_only(
 # --- full 2-phase ----------------------------------------------------------
 
 
-def test_full_runs_both_phases(
-    project_dir: Path, mock_runners
-):
+def test_full_runs_both_phases(project_dir: Path, mock_runners):
     """`reflect hypothesis` runs Phase 1 (SubAgent) then Phase 2 (Wrap)
     with role=judge and the draft body inlined in the preamble."""
     _make_hyp(project_dir, "HYP-001")
@@ -148,6 +147,7 @@ def test_full_runs_both_phases(
 
     # Seed both phases' fake outputs.
     from ai_hats.paths import runs_dir
+
     _seed_draft_transcript(runs_dir(project_dir) / "session_sub-1")
     _seed_report_trace(runs_dir(project_dir) / "session_wrap-1")
 
@@ -164,12 +164,8 @@ def test_full_runs_both_phases(
     assert wcall["role"] == "judge"
     # The Phase 2 preamble (with draft inlined) is in extra_args[0]
     first_arg = wcall["extra_args"][0]
-    assert "Phase 1 draft" in first_arg, (
-        "Phase 2 prompt must include the inlined draft section"
-    )
-    assert "HYP-001" in first_arg, (
-        "draft body (with HYP) must be substituted into preamble"
-    )
+    assert "Phase 1 draft" in first_arg, "Phase 2 prompt must include the inlined draft section"
+    assert "HYP-001" in first_arg, "draft body (with HYP) must be substituted into preamble"
 
     # Both artifacts persisted
     drafts = list((retros_dir(project_dir) / "judge").glob("*-draft.md"))
@@ -181,9 +177,7 @@ def test_full_runs_both_phases(
 # --- fail-closed: Phase 1 failure aborts Phase 2 ---------------------------
 
 
-def test_phase1_failure_aborts_phase2(
-    project_dir: Path, mock_runners, monkeypatch
-):
+def test_phase1_failure_aborts_phase2(project_dir: Path, mock_runners, monkeypatch):
     """If Phase 1 sub-agent exits non-zero, Phase 2 must not run."""
     _make_hyp(project_dir, "HYP-001")
     _make_prop(project_dir, "PROP-001")
@@ -195,7 +189,8 @@ def test_phase1_failure_aborts_phase2(
     import ai_hats.runtime as rt
 
     class _FailingSubAgentRunner:
-        def __init__(self, _pd, _payload, *, session_mgr=None): pass
+        def __init__(self, _pd, _payload, *, session_mgr=None):
+            pass
 
         def run(self, **kwargs):
             mock_runners["sub_calls"].append(kwargs)
@@ -211,18 +206,14 @@ def test_phase1_failure_aborts_phase2(
 
     # Phase 1 ran; Phase 2 did NOT.
     assert len(mock_runners["sub_calls"]) == 1
-    assert mock_runners["wrap_calls"] == [], (
-        "Phase 2 must not run when Phase 1 failed"
-    )
+    assert mock_runners["wrap_calls"] == [], "Phase 2 must not run when Phase 1 failed"
     assert "Phase 2 aborted" in res.output
 
 
 # --- fail-closed: Phase 1 succeeded but produced empty draft -------------
 
 
-def test_phase1_empty_draft_aborts_phase2(
-    project_dir: Path, mock_runners
-):
+def test_phase1_empty_draft_aborts_phase2(project_dir: Path, mock_runners):
     """Phase 1 exits clean but transcript has no BEGIN_JUDGE_DRAFT markers
     → `extract_marker` returns "" → `save_artifact` writes a zero-byte
     draft file. CLI must detect this and abort Phase 2 (otherwise a
@@ -238,6 +229,7 @@ def test_phase1_empty_draft_aborts_phase2(
     # Seed the sub-agent session output WITHOUT the BEGIN_JUDGE_DRAFT
     # markers. extract_marker → "", save_artifact writes empty file.
     from ai_hats.paths import runs_dir
+
     sub_session_dir = runs_dir(project_dir) / "session_sub-1"
     sub_session_dir.mkdir(parents=True, exist_ok=True)
     (sub_session_dir / TRANSCRIPT_TXT).write_text(
@@ -246,9 +238,7 @@ def test_phase1_empty_draft_aborts_phase2(
     (sub_session_dir / TRACE_LOG).write_text("(trace)")
 
     res = CliRunner().invoke(main, ["reflect", "hypothesis"])
-    assert res.exit_code != 0, (
-        f"empty-draft Phase 1 must abort Phase 2 (output={res.output!r})"
-    )
+    assert res.exit_code != 0, f"empty-draft Phase 1 must abort Phase 2 (output={res.output!r})"
 
     # Phase 1 ran; Phase 2 did NOT.
     assert len(mock_runners["sub_calls"]) == 1
@@ -264,9 +254,7 @@ def test_phase1_empty_draft_aborts_phase2(
 
 
 def test_dry_run_observable(project_dir: Path, mock_runners):
-    res = CliRunner().invoke(
-        main, ["reflect", "hypothesis", "--dry-run"]
-    )
+    res = CliRunner().invoke(main, ["reflect", "hypothesis", "--dry-run"])
     assert res.exit_code == 0
     assert "Handoff written" in res.output
     assert "Phase 1" not in res.output  # no exec

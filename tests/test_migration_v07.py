@@ -83,7 +83,10 @@ def _make_compose(
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(cwd), *args],
-        capture_output=True, text=True, check=False, timeout=10,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
 
 
@@ -207,9 +210,7 @@ def test_plan_migration_tier2_hook_file_safe_when_source_matches(tmp_path):
     (source_root / "session_start.sh").write_text("#!/bin/sh\nbody\n")
     compose = _make_compose()
 
-    report = m.plan_migration(
-        canonical, compose, tier2_hook_source_dirs=[source_root]
-    )
+    report = m.plan_migration(canonical, compose, tier2_hook_source_dirs=[source_root])
 
     findings = [f for f in report.findings if f.kind == "lib_hook_file"]
     assert len(findings) == 1
@@ -227,9 +228,7 @@ def test_plan_migration_tier2_hook_file_user_edit_when_source_diverges(tmp_path)
     (source_root / "session_start.sh").write_text("#!/bin/sh\noriginal\n")
     compose = _make_compose()
 
-    report = m.plan_migration(
-        canonical, compose, tier2_hook_source_dirs=[source_root]
-    )
+    report = m.plan_migration(canonical, compose, tier2_hook_source_dirs=[source_root])
 
     findings = [f for f in report.findings if f.kind == "lib_hook_file"]
     assert len(findings) == 1
@@ -434,15 +433,24 @@ def test_plan_migration_no_user_edits_when_disk_matches_baseline(tmp_path):
         priorities=["Reliability", "Cleanliness"],
         role_injection="role injection text",
         trait_injections={"foo": "trait body"},
-        rules=[ResolvedComponent(name="bar", component_type=ComponentKind.RULE,
-                                 source_path=tmp_path, injection="rule body")],
+        rules=[
+            ResolvedComponent(
+                name="bar",
+                component_type=ComponentKind.RULE,
+                source_path=tmp_path,
+                injection="rule body",
+            )
+        ],
     )
 
     report = m.plan_migration(canonical, compose)
 
     assert report.user_edits == []
     assert {f.path.name for f in report.safe_deletions} == {
-        "priorities.md", "role.md", "foo.md", "bar.md"
+        "priorities.md",
+        "role.md",
+        "foo.md",
+        "bar.md",
     }
     assert all(f.baseline_present for f in report.findings)
 
@@ -463,8 +471,14 @@ def test_plan_migration_flags_user_edits_beyond_whitespace(tmp_path):
         priorities=["Reliability"],
         role_injection="base role",
         trait_injections={"foo": "trait body"},
-        rules=[ResolvedComponent(name="bar", component_type=ComponentKind.RULE,
-                                 source_path=tmp_path, injection="rule body")],
+        rules=[
+            ResolvedComponent(
+                name="bar",
+                component_type=ComponentKind.RULE,
+                source_path=tmp_path,
+                injection="rule body",
+            )
+        ],
     )
 
     report = m.plan_migration(canonical, compose)
@@ -545,9 +559,7 @@ def test_plan_migration_expands_ai_hats_dir_placeholder_in_baseline(tmp_path):
     assert finding.is_user_edit is True
 
     # With project_dir: baseline expands, diff matches.
-    report_expanded = m.plan_migration(
-        canonical.parent, compose, project_dir=project
-    )
+    report_expanded = m.plan_migration(canonical.parent, compose, project_dir=project)
     finding = next(f for f in report_expanded.findings if f.path.name == "foo.md")
     assert finding.is_user_edit is False, "expanded baseline should match disk bytes"
 
@@ -569,9 +581,7 @@ def test_plan_migration_placeholder_irrelevant_when_token_absent(tmp_path):
 # ---------- HATS-408 review B5: permission-denied resilience ----------
 
 
-def test_execute_deletions_logs_and_continues_on_permission_error(
-    tmp_path, monkeypatch, capsys
-):
+def test_execute_deletions_logs_and_continues_on_permission_error(tmp_path, monkeypatch, capsys):
     """A permission-denied file mid-sweep must not crash the loop.
 
     HATS-470: error injection moved to safe_delete.shutil.move (the new
@@ -579,6 +589,7 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     safe_delete.discard().
     """
     from ai_hats_core import safe_delete
+
     safe_delete.reset_session()
 
     canonical = tmp_path / "ai-hats"
@@ -597,12 +608,16 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
 
     monkeypatch.setattr(safe_delete.shutil, "move", selective_move)
 
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=poison, tier=1, kind="trait",
-                      is_user_edit=False, baseline_present=True),
-        m.TierFinding(path=survivor, tier=1, kind="trait",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=poison, tier=1, kind="trait", is_user_edit=False, baseline_present=True
+            ),
+            m.TierFinding(
+                path=survivor, tier=1, kind="trait", is_user_edit=False, baseline_present=True
+            ),
+        ]
+    )
     removed = m.execute_deletions(report, canonical)
 
     # Loop continued: survivor was removed; poison logged.
@@ -617,9 +632,7 @@ def test_execute_deletions_logs_and_continues_on_permission_error(
     safe_delete.reset_session()
 
 
-def test_execute_deletions_logs_and_continues_on_rmtree_error(
-    tmp_path, monkeypatch, capsys
-):
+def test_execute_deletions_logs_and_continues_on_rmtree_error(tmp_path, monkeypatch, capsys):
     """Permission-denied DIRECTORY finding must also log + continue.
 
     HATS-470: safe_delete.discard uses shutil.move for both files and
@@ -628,6 +641,7 @@ def test_execute_deletions_logs_and_continues_on_rmtree_error(
     becomes another move-injection variant.
     """
     from ai_hats_core import safe_delete
+
     safe_delete.reset_session()
 
     canonical = tmp_path / "ai-hats"
@@ -649,12 +663,20 @@ def test_execute_deletions_logs_and_continues_on_rmtree_error(
 
     monkeypatch.setattr(safe_delete.shutil, "move", selective_move)
 
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=poison, tier=2, kind="lib_rule_dir",
-                      is_user_edit=False, baseline_present=True),
-        m.TierFinding(path=survivor_dir, tier=2, kind="lib_rule_dir",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=poison, tier=2, kind="lib_rule_dir", is_user_edit=False, baseline_present=True
+            ),
+            m.TierFinding(
+                path=survivor_dir,
+                tier=2,
+                kind="lib_rule_dir",
+                is_user_edit=False,
+                baseline_present=True,
+            ),
+        ]
+    )
 
     removed = m.execute_deletions(report, canonical)
 
@@ -736,8 +758,9 @@ def test_render_priorities_integrates_with_real_composer(tmp_path):
     (canonical / "rules" / "demo_rule.md").write_text(rule_md)
 
     report = m.plan_migration(canonical, result)
-    assert report.user_edits == [], \
+    assert report.user_edits == [], (
         f"unexpected user-edit findings from real-composer baseline: {report.user_edits}"
+    )
 
 
 # ---------- yaml change detection ----------
@@ -751,8 +774,9 @@ def test_detect_yaml_changes_flags_imports_order_and_heal(tmp_path):
         "active_role": "dev",
         "imports_order": "role-first",
     }
-    cfg = ProjectConfig(provider="claude", ai_hats_dir=".agent/ai-hats",
-                        active_role="dev", default_role="dev")
+    cfg = ProjectConfig(
+        provider="claude", ai_hats_dir=".agent/ai-hats", active_role="dev", default_role="dev"
+    )
     changes = m.detect_yaml_changes(raw, cfg)
     assert any("imports_order" in c for c in changes)
     assert any("heal default_role" in c for c in changes)
@@ -770,12 +794,24 @@ def test_detect_yaml_changes_silent_on_clean_yaml():
 def test_execute_deletions_removes_findings_and_empty_parents(tmp_path):
     canonical = tmp_path / "ai-hats"
     files = _seed_tier1(canonical)
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=files["trait_foo"], tier=1, kind="trait",
-                      is_user_edit=False, baseline_present=True),
-        m.TierFinding(path=files["rule_bar"], tier=1, kind="rule",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=files["trait_foo"],
+                tier=1,
+                kind="trait",
+                is_user_edit=False,
+                baseline_present=True,
+            ),
+            m.TierFinding(
+                path=files["rule_bar"],
+                tier=1,
+                kind="rule",
+                is_user_edit=False,
+                baseline_present=True,
+            ),
+        ]
+    )
 
     removed = m.execute_deletions(report, canonical)
 
@@ -795,10 +831,13 @@ def test_execute_deletions_never_touches_user_rules(tmp_path):
     sacred = user_rules / "do-not-touch.md"
     sacred.write_text("user content\n")
     # Construct a malicious report attempting to delete a user-rules file.
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=sacred, tier=1, kind="trait",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=sacred, tier=1, kind="trait", is_user_edit=False, baseline_present=True
+            ),
+        ]
+    )
 
     m.execute_deletions(report, canonical)
 
@@ -814,10 +853,13 @@ def test_execute_deletions_unlinks_symlink_without_following_target(tmp_path):
     outside.write_text("DO NOT DELETE ME\n")
     link = canonical / "traits" / "foo.md"
     link.symlink_to(outside)
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=link, tier=1, kind="trait",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=link, tier=1, kind="trait", is_user_edit=False, baseline_present=True
+            ),
+        ]
+    )
 
     m.execute_deletions(report, canonical)
 
@@ -837,10 +879,13 @@ def test_execute_deletions_does_not_rmtree_through_symlinked_dir(tmp_path):
     (outside_dir / "important.md").write_text("KEEP\n")
     link = mirror_parent / "fake_rule"
     link.symlink_to(outside_dir)
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=link, tier=2, kind="lib_rule_dir",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=link, tier=2, kind="lib_rule_dir", is_user_edit=False, baseline_present=True
+            ),
+        ]
+    )
 
     m.execute_deletions(report, canonical)
 
@@ -854,10 +899,13 @@ def test_execute_deletions_idempotent_on_missing_paths(tmp_path):
     canonical = tmp_path / "ai-hats"
     canonical.mkdir()
     ghost = canonical / "rules" / "missing.md"
-    report = m.MigrationReport(findings=[
-        m.TierFinding(path=ghost, tier=1, kind="rule",
-                      is_user_edit=False, baseline_present=True),
-    ])
+    report = m.MigrationReport(
+        findings=[
+            m.TierFinding(
+                path=ghost, tier=1, kind="rule", is_user_edit=False, baseline_present=True
+            ),
+        ]
+    )
     removed = m.execute_deletions(report, canonical)
     assert removed == []
 
@@ -886,9 +934,7 @@ def git_project(tmp_path):
 
 def test_check_branches_modify_paths_finds_sibling(git_project):
     canonical = git_project / ".agent" / "ai-hats"
-    findings = m.check_branches_modify_paths(
-        git_project, [canonical / "priorities.md"]
-    )
+    findings = m.check_branches_modify_paths(git_project, [canonical / "priorities.md"])
     branches = {b for b, _ in findings}
     assert "sibling" in branches
     sibling_paths = {p for b, paths in findings if b == "sibling" for p in paths}

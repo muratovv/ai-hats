@@ -39,7 +39,12 @@ INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,  # non-TTY
     )
     if expect_exit is not None and result.returncode != expect_exit:
@@ -51,10 +56,15 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 
 def _imports(vpy: Path, module: str, env) -> bool:
-    return subprocess.run(
-        [str(vpy), "-c", f"import {module}"], env=env,
-        capture_output=True, text=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            [str(vpy), "-c", f"import {module}"],
+            env=env,
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
 
 
 @pytest.mark.integration
@@ -86,7 +96,9 @@ def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
     # self init builds the channel:local venv (ai-hats editable from src_repo).
     _run(
         [str(launcher_dest), "self", "init", "-r", "assistant", "-p", "claude"],
-        cwd=project, env=env, timeout=300,
+        cwd=project,
+        env=env,
+        timeout=300,
     )
 
     venv = project / ".agent" / "ai-hats" / ".venv"
@@ -96,9 +108,19 @@ def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
     # Install the cline surface plugin editable into the venv (uv resolves the
     # workspace from the package path, not cwd). This is the provider we break.
     _run(
-        ["uv", "pip", "install", "--no-deps", "--python", str(vpy),
-         "-e", str(src_repo / "packages" / "surfaces" / "cline")],
-        cwd=tmp_path, env=env, timeout=120,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--no-deps",
+            "--python",
+            str(vpy),
+            "-e",
+            str(src_repo / "packages" / "surfaces" / "cline"),
+        ],
+        cwd=tmp_path,
+        env=env,
+        timeout=120,
     )
     assert _imports(vpy, "ai_hats_cline", env), "cline should import after install"
 
@@ -107,9 +129,7 @@ def test_e2e_launcher_auto_heals_stale_surface_plugin(tmp_path: Path) -> None:
     pths = list((venv / "lib").glob("python*/site-packages/*ai_hats_cline*.pth"))
     assert pths, "cline editable .pth not found"
     pths[0].write_text("/tmp/gone-hats966-e2e/packages/surfaces/cline/src\n")
-    assert not _imports(vpy, "ai_hats_cline", env), (
-        "cline should be broken after the .pth rewrite"
-    )
+    assert not _imports(vpy, "ai_hats_cline", env), "cline should be broken after the .pth rewrite"
 
     # Drive the REAL launcher with a non-`self` command. The fall-through probe
     # flags cline; the heal branch re-points it BEFORE exec; the fresh

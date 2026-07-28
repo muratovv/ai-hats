@@ -54,9 +54,7 @@ def _wt_hook_log_dir(state_dir, branch_name: str):
 
 def _materialized_hook(project_dir, row: dict):
     """On-disk path of a hook script the assembler materialized."""
-    return wt_hooks_dir(project_dir) / managed_wt_hook_filename(
-        row["skill"], row["script"]
-    )
+    return wt_hooks_dir(project_dir) / managed_wt_hook_filename(row["skill"], row["script"])
 
 
 class HookRunningLifecycle:
@@ -141,9 +139,7 @@ class HookRunningLifecycle:
                 _raise_teardown_aborted(event, ctx.branch_name, row, outcome.reason)
 
 
-def _raise_teardown_aborted(
-    event: str, branch_name: str, row: dict, reason: str
-) -> NoReturn:
+def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str) -> NoReturn:
     """Raise the core abort wrapping a :class:`WorktreeHookError` cause (D8).
 
     The ``__cause__`` carries the full recovery recipe. On the propagated

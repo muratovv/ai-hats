@@ -35,18 +35,19 @@ _USAGE = {
         "first_cache_read_input_tokens": 0,
         "model": "claude",
         "note": "measured proxy",
-        "static": {"role": "maintainer", "total_tokens": 17000, "exact": False,
-                   "components": []},
+        "static": {"role": "maintainer", "total_tokens": 17000, "exact": False, "components": []},
     },
     "aggregates": {
         "skill_loads": {"backlog-manager": 1},
         "reference_reads": {},
-        "tool_calls": 16, "tool_results": 16, "tool_errors": 4,
+        "tool_calls": 16,
+        "tool_results": 16,
+        "tool_errors": 4,
         "tool_success_rate": 0.75,
-        "hook_firings": 0, "hook_total_ms": 0,
+        "hook_firings": 0,
+        "hook_total_ms": 0,
     },
-    "sidechain": {"is_sidechain": False, "agent_name": None,
-                  "parent_session_id": None},
+    "sidechain": {"is_sidechain": False, "agent_name": None, "parent_session_id": None},
     "flags": [],
 }
 
@@ -54,15 +55,20 @@ _USAGE = {
 def _make_session(project_dir: Path, *, usage: dict | str | None) -> None:
     sdir = runs_dir(project_dir) / session_dirname(SID)
     sdir.mkdir(parents=True)
-    (sdir / METRICS_JSON).write_text(json.dumps({
-        "role": "maintainer", "provider": "claude", "exit_code": 0,
-        "turns": 4, "tool_calls": 16,
-    }))
+    (sdir / METRICS_JSON).write_text(
+        json.dumps(
+            {
+                "role": "maintainer",
+                "provider": "claude",
+                "exit_code": 0,
+                "turns": 4,
+                "tool_calls": 16,
+            }
+        )
+    )
     if usage is None:
         return
-    (sdir / USAGE_JSON).write_text(
-        usage if isinstance(usage, str) else json.dumps(usage)
-    )
+    (sdir / USAGE_JSON).write_text(usage if isinstance(usage, str) else json.dumps(usage))
 
 
 @pytest.fixture
@@ -98,7 +104,8 @@ def test_static_split_shows_always_on_and_on_demand(cli, project_dir):
     """HATS-957: honest always-on figure + a separate on-demand-skills line."""
     usage = json.loads(json.dumps(_USAGE))
     usage["always_on"]["static"] = {
-        "role": "maintainer", "exact": False,
+        "role": "maintainer",
+        "exact": False,
         "total_tokens": 42000,
         "always_on_tokens": 6100,
         "on_demand_tokens": 35900,
@@ -149,8 +156,7 @@ def test_malformed_usage_json_is_fail_soft(cli, project_dir):
 
 def test_sidechain_and_flags_surface(cli, project_dir):
     usage = json.loads(json.dumps(_USAGE))
-    usage["sidechain"] = {"is_sidechain": True, "agent_name": "Explore",
-                          "parent_session_id": "p1"}
+    usage["sidechain"] = {"is_sidechain": True, "agent_name": "Explore", "parent_session_id": "p1"}
     usage["flags"] = ["malformed-lines: 2"]
     _make_session(project_dir, usage=usage)
     result = cli.invoke(main, ["session", "show", SID])

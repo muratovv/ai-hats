@@ -45,11 +45,17 @@ class MakeAudit(Step):
         return StepIO(
             name="make_audit",
             # HATS-867: Session/AuditWriter arrive injected — no observe import.
-            requires=frozenset({
-                "session_id", "session_dir", "claude_session_id",
-                "project_dir", "exit_code",
-                "session_factory", "audit_writer_factory",
-            }),
+            requires=frozenset(
+                {
+                    "session_id",
+                    "session_dir",
+                    "claude_session_id",
+                    "project_dir",
+                    "exit_code",
+                    "session_factory",
+                    "audit_writer_factory",
+                }
+            ),
             optional=frozenset({"transcript_resolver"}),
             produces=frozenset({"audit_path"}),
         )
@@ -75,7 +81,8 @@ class MakeAudit(Step):
         try:
             jsonl_path = (
                 transcript_resolver(
-                    project_dir, session_id,
+                    project_dir,
+                    session_id,
                     provider_session_id=claude_session_id or None,
                 )
                 if transcript_resolver is not None

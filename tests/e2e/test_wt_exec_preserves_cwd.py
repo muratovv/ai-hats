@@ -4,6 +4,7 @@ environment wrapper, not a teleporter.
 Fail-under-revert: restore the unconditional ``cwd=str(wt_path)`` in ``wt_exec``
 and ``git rev-parse --show-prefix`` reports ``""`` (the root), not ``sub/``.
 """
+
 from __future__ import annotations
 
 import pytest

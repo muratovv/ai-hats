@@ -457,7 +457,9 @@ class HooksManager:
         """
         expected: dict[str, bytes] = {}
         try:
-            src_root = _builtin_library_hooks(self.project_dir)  # worktree-aware builtin resolver (HATS-831 / HATS-1127)
+            src_root = _builtin_library_hooks(
+                self.project_dir
+            )  # worktree-aware builtin resolver (HATS-831 / HATS-1127)
             if src_root is not None and src_root.is_dir():
                 for src in src_root.iterdir():
                     if src.is_file() and src.suffix == ".sh":

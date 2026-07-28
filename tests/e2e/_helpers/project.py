@@ -94,15 +94,12 @@ class RunResult:
         """``cwd/rel_path`` must exist; optionally check substring."""
         target = self.cwd / rel_path
         if not target.exists():
-            raise AssertionError(
-                f"expected file {target} to exist after `{' '.join(self.cmd)}`"
-            )
+            raise AssertionError(f"expected file {target} to exist after `{' '.join(self.cmd)}`")
         if contains is not None:
             text = target.read_text()
             if contains not in text:
                 raise AssertionError(
-                    f"expected {target} to contain {contains!r}; "
-                    f"got (tail 200):\n{text[-200:]}"
+                    f"expected {target} to contain {contains!r}; got (tail 200):\n{text[-200:]}"
                 )
         return self
 
@@ -129,8 +126,9 @@ class Project:
     def agent_dir(self) -> Path:
         return self.path / ".agent" / "ai-hats"
 
-    def run(self, *args: str, timeout: float = 60.0,
-            extra_env: dict[str, str] | None = None) -> RunResult:
+    def run(
+        self, *args: str, timeout: float = 60.0, extra_env: dict[str, str] | None = None
+    ) -> RunResult:
         """Run ``ai-hats <args>`` against this project's binary."""
         from _helpers.env import clean_env
 

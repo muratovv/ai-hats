@@ -59,7 +59,11 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     main = tmp_path / "proj"
     main.mkdir()
     _init_project(main)
-    env = {**base_env, "AI_HATS_SESSION_ID": "e2e-rack-cutover", "AI_HATS_ROOT_PID": str(os.getpid())}
+    env = {
+        **base_env,
+        "AI_HATS_SESSION_ID": "e2e-rack-cutover",
+        "AI_HATS_ROOT_PID": str(os.getpid()),
+    }
 
     # --- C1a: the wired kernel refreshes STATE.md after create (bare does not) ---
     created = _rack(rack, "create", "wired flow", "--role", "assistant", cwd=main, env=env)

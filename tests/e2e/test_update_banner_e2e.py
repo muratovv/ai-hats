@@ -41,7 +41,9 @@ from _helpers.repo_src import build_src  # noqa: E402
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG  # noqa: E402
 
-pytestmark = pytest.mark.install_heavy  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
+pytestmark = (
+    pytest.mark.install_heavy
+)  # HATS-678: real uv install at call time → capped via conftest.INSTALL_HEAVY_GROUPS
 
 # HATS-782: the installed sha is detected at runtime (the real running build) so
 # HATS-781's installed-SHA banner guard does not suppress the seeded banner.
@@ -52,8 +54,12 @@ LATEST_SHA = "9876543210fedcba9876543210fedcba98765432"
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     result = subprocess.run(
-        cmd, cwd=str(cwd), env=env,
-        capture_output=True, text=True, timeout=timeout,
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
     if expect_exit is not None and result.returncode != expect_exit:
         raise AssertionError(
@@ -75,18 +81,21 @@ def _seed_cache(
 ) -> Path:
     cache = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({
-        "checked_at": datetime.now(timezone.utc).isoformat().replace(
-            "+00:00", "Z"
-        ),
-        "installed_sha": installed,
-        "latest_sha": latest,
-        "remote_url": "https://example.git",
-        "behind": behind,
-        "ahead": ahead,
-        "installed_label": installed_label,
-        "latest_label": latest_label,
-    }) + "\n")
+    cache.write_text(
+        json.dumps(
+            {
+                "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "installed_sha": installed,
+                "latest_sha": latest,
+                "remote_url": "https://example.git",
+                "behind": behind,
+                "ahead": ahead,
+                "installed_label": installed_label,
+                "latest_label": latest_label,
+            }
+        )
+        + "\n"
+    )
     return cache
 
 
@@ -132,7 +141,10 @@ def test_update_banner_e2e(tmp_path):
     def ai_hats(*args, expect_exit=0, timeout=180):
         return _run(
             [str(launcher_dest), *args],
-            cwd=project, env=env, timeout=timeout, expect_exit=expect_exit,
+            cwd=project,
+            env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
         )
 
     # ---- 2. self update — pip-installs ai-hats from local repo ----
@@ -150,10 +162,15 @@ def test_update_banner_e2e(tmp_path):
     # seed THAT, so each stage exercises its intended behind/ahead path rather
     # than the sha-mismatch guard.
     real_sha = _run(
-        [str(venv_python), "-c",
-         "from ai_hats.update_check import detect_installed_sha; "
-         "print(detect_installed_sha() or '')"],
-        cwd=project, env=env, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "from ai_hats.update_check import detect_installed_sha; "
+            "print(detect_installed_sha() or '')",
+        ],
+        cwd=project,
+        env=env,
+        timeout=15,
     ).stdout.strip()
     assert real_sha, "detect_installed_sha() empty — cannot seed a matching cache"
 
@@ -165,15 +182,34 @@ def test_update_banner_e2e(tmp_path):
     # The loader's `__main__` prints the resolved step graph; that
     # exercises the real registry + real YAML in one shot.
     res = _run(
-        [str(venv_python), "-m", "ai_hats.pipeline.loader",
-         str(REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core" / "pipelines" / "execute.yaml")],
-        cwd=project, env=env, timeout=30,
+        [
+            str(venv_python),
+            "-m",
+            "ai_hats.pipeline.loader",
+            str(
+                REPO_ROOT
+                / "packages"
+                / "ai-hats-library"
+                / "src"
+                / "ai_hats_library"
+                / "core"
+                / "pipelines"
+                / "execute.yaml"
+            ),
+        ],
+        cwd=project,
+        env=env,
+        timeout=30,
     )
     assert "check_update_async" in res.stdout, res.stdout
     assert "render_update_banner" in res.stdout, res.stdout
     # Order check: check_update_async is step 1, render_update_banner is last.
-    lines = [ln for ln in res.stdout.splitlines() if ln.strip().startswith("1.") or
-             ln.strip().startswith(("2.", "3.", "4.", "5.", "6.", "7.", "8.", "9."))]
+    lines = [
+        ln
+        for ln in res.stdout.splitlines()
+        if ln.strip().startswith("1.")
+        or ln.strip().startswith(("2.", "3.", "4.", "5.", "6.", "7.", "8.", "9."))
+    ]
     assert lines, f"no numbered step lines in output:\n{res.stdout}"
     assert "check_update_async" in lines[0], lines
     assert "render_update_banner" in lines[-1], lines
@@ -187,12 +223,17 @@ def test_update_banner_e2e(tmp_path):
         ahead=0,
     )
     res = _run(
-        [str(venv_python), "-c",
-         "import sys; from pathlib import Path; "
-         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
-         str(project)],
-        cwd=project, env=env, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            str(project),
+        ],
+        cwd=project,
+        env=env,
+        timeout=15,
     )
     assert "ai-hats update available" in res.stderr, res.stderr
     assert real_sha[:7] in res.stderr, res.stderr
@@ -214,12 +255,17 @@ def test_update_banner_e2e(tmp_path):
         ahead=5,
     )
     res = _run(
-        [str(venv_python), "-c",
-         "import sys; from pathlib import Path; "
-         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
-         str(project)],
-        cwd=project, env=env, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            str(project),
+        ],
+        cwd=project,
+        env=env,
+        timeout=15,
     )
     assert "ai-hats update available" not in res.stderr, res.stderr
 
@@ -232,12 +278,17 @@ def test_update_banner_e2e(tmp_path):
         ahead=2,
     )
     res = _run(
-        [str(venv_python), "-c",
-         "import sys; from pathlib import Path; "
-         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
-         str(project)],
-        cwd=project, env=env, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            str(project),
+        ],
+        cwd=project,
+        env=env,
+        timeout=15,
     )
     assert "ai-hats update available" not in res.stderr, res.stderr
 
@@ -252,12 +303,17 @@ def test_update_banner_e2e(tmp_path):
     env_optout = env.copy()
     env_optout["AI_HATS_NO_UPDATE_CHECK"] = "1"
     res = _run(
-        [str(venv_python), "-c",
-         "import sys; from pathlib import Path; "
-         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
-         str(project)],
-        cwd=project, env=env_optout, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            str(project),
+        ],
+        cwd=project,
+        env=env_optout,
+        timeout=15,
     )
     assert "ai-hats update available" not in res.stderr, res.stderr
 
@@ -270,12 +326,17 @@ def test_update_banner_e2e(tmp_path):
         ahead=0,
     )
     res = _run(
-        [str(venv_python), "-c",
-         "import sys; from pathlib import Path; "
-         "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
-         "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
-         str(project)],
-        cwd=project, env=env, timeout=15,
+        [
+            str(venv_python),
+            "-c",
+            "import sys; from pathlib import Path; "
+            "from ai_hats.pipeline.steps.update_banner import RenderUpdateBanner; "
+            "RenderUpdateBanner().run(project_dir=Path(sys.argv[1]))",
+            str(project),
+        ],
+        cwd=project,
+        env=env,
+        timeout=15,
     )
     assert "ai-hats update available" not in res.stderr, res.stderr
 
@@ -285,5 +346,8 @@ def test_update_banner_e2e(tmp_path):
     # `ModuleNotFoundError` if the file were dropped.
     res = _run(
         [str(venv_python), "-m", "ai_hats.update_check"],
-        cwd=project, env=env, timeout=15, expect_exit=1,
+        cwd=project,
+        env=env,
+        timeout=15,
+        expect_exit=1,
     )

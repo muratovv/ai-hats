@@ -31,7 +31,10 @@ def _seed(project_dir: Path) -> None:
 
 
 def _make_review_file(
-    project_dir: Path, *, summary: str = "ok", verdicts=None,
+    project_dir: Path,
+    *,
+    summary: str = "ok",
+    verdicts=None,
 ) -> Path:
     out = retros_dir(project_dir) / "sessions" / f"{SID}.md"
     out.parent.mkdir(parents=True, exist_ok=True)

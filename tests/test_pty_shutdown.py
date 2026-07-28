@@ -300,9 +300,7 @@ def test_emit_terminal_reset_writes_expected_bytes_when_forced(tmp_path):
         emit_terminal_reset(fh.fileno(), force=True)
 
     written = log.read_bytes()
-    assert written == (
-        b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
-    )
+    assert written == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
 
 
 def test_emit_terminal_reset_skips_non_tty_by_default(tmp_path):
@@ -326,9 +324,7 @@ def test_emit_terminal_reset_writes_when_fd_is_real_tty():
             data = os.read(master, 1024)
         except BlockingIOError:
             data = b""
-        assert data == (
-            b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l"
-        )
+        assert data == (b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l")
     finally:
         os.close(master)
         os.close(slave)

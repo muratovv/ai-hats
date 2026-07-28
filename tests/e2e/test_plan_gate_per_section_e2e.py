@@ -47,7 +47,10 @@ def _run_rack(
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],
         cwd=str(project_dir),
-        capture_output=True, text=True, env=env, timeout=timeout,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
     )
 
 
@@ -78,8 +81,7 @@ def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> No
     assert r.returncode == 0, f"transition plan failed: {r.stderr}"
 
     plan_path = (
-        project / ".agent" / "ai-hats" / "tracker" / "backlog"
-        / "tasks" / "HATS-001" / "plan.md"
+        project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / "HATS-001" / "plan.md"
     )
     assert plan_path.exists(), f"expected scaffold at {plan_path}"
     plan_path.write_text(_PARTIAL_PLAN)
@@ -88,8 +90,7 @@ def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> No
     # rack renders a subscriber abort on stderr (cli_common.py:70-75).
     out = r.stdout + r.stderr
     assert r.returncode != 0, (
-        "gate must BLOCK execute on a partial plan; got exit 0\n"
-        f"output:\n{out}"
+        f"gate must BLOCK execute on a partial plan; got exit 0\noutput:\n{out}"
     )
     # The block message must NAME each empty required section...
     for marker in (
@@ -98,10 +99,6 @@ def test_transition_execute_blocks_and_names_empty_sections(project: Path) -> No
         "Steps",
         "Verification Protocol",
     ):
-        assert marker in out, (
-            f"missing marker {marker!r} in:\n{out}"
-        )
+        assert marker in out, f"missing marker {marker!r} in:\n{out}"
     # ...and must NOT list the one section that IS filled.
-    assert "Requirements," not in out, (
-        f"filled section must not be listed as empty:\n{out}"
-    )
+    assert "Requirements," not in out, f"filled section must not be listed as empty:\n{out}"

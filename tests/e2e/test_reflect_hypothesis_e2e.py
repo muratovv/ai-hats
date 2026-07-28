@@ -43,27 +43,20 @@ def test_e2e_reflect_hypothesis_dry_run_writes_handoff(tmp_project) -> None:
     )
 
     assert "Handoff written" in result.stdout, (
-        "stdout must announce the handoff path\n"
-        f"stdout:\n{result.stdout}"
+        f"stdout must announce the handoff path\nstdout:\n{result.stdout}"
     )
 
     # Dry-run must NOT proceed to Phase 1 launch.
     assert "Phase 1" not in result.stdout, (
-        "dry-run must short-circuit before Phase 1 launch\n"
-        f"stdout:\n{result.stdout}"
+        f"dry-run must short-circuit before Phase 1 launch\nstdout:\n{result.stdout}"
     )
 
     # Handoff file landed on disk under the reflect-all retros dir.
-    handoff_dir = (
-        tmp_project.agent_dir / "sessions" / "retros" / "reflect-all"
-    )
-    assert handoff_dir.is_dir(), (
-        f"handoff dir missing: {handoff_dir}"
-    )
+    handoff_dir = tmp_project.agent_dir / "sessions" / "retros" / "reflect-all"
+    assert handoff_dir.is_dir(), f"handoff dir missing: {handoff_dir}"
     handoffs = list(handoff_dir.glob("*-handoff.md"))
     assert len(handoffs) == 1, (
-        f"expected exactly one handoff under {handoff_dir}, "
-        f"got {len(handoffs)}: {handoffs}"
+        f"expected exactly one handoff under {handoff_dir}, got {len(handoffs)}: {handoffs}"
     )
 
 
@@ -77,14 +70,10 @@ def test_e2e_reflect_hypothesis_help_lists_flags(tmp_project) -> None:
     result = tmp_project.run("reflect", "hypothesis", "--help")
 
     assert result.exit_code == 0, (
-        f"reflect hypothesis --help failed: exit {result.exit_code}\n"
-        f"stderr:\n{result.stderr}"
+        f"reflect hypothesis --help failed: exit {result.exit_code}\nstderr:\n{result.stderr}"
     )
 
     for flag in ("--headless", "--dry-run"):
-        assert flag in result.stdout, (
-            f"--help output missing {flag!r}\n"
-            f"stdout:\n{result.stdout}"
-        )
+        assert flag in result.stdout, f"--help output missing {flag!r}\nstdout:\n{result.stdout}"
 
     assert "HATS-513" in result.stdout or "Two-phase HYP closure" in result.stdout

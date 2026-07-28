@@ -88,8 +88,7 @@ def test_leftover_sidecar_with_runtime_hooks_raises(tmp_path: Path) -> None:
         tmp_path,
         "---\nname: demo\n---\n# Demo\n",
         sidecar=(
-            "name: demo\nruntime_hooks:\n  PreToolUse:\n"
-            "    - matcher: Bash\n      script: h.sh\n"
+            "name: demo\nruntime_hooks:\n  PreToolUse:\n    - matcher: Bash\n      script: h.sh\n"
         ),
     )
     with pytest.raises(LeftoverSidecarHooksError):
