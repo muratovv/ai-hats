@@ -96,3 +96,14 @@ def test_missing_provider_dispatches_by_isinstance_not_exact_type() -> None:
 
     assert result.exit_code == 2
     assert "no provider configured" in _output(result)
+
+
+def test_real_main_group_carries_the_dispatch() -> None:
+    """Every other test here builds a synthetic root, so none of them notice if
+    the shipped ``main`` stops using the dispatching group class."""
+    from ai_hats.cli import main
+
+    assert isinstance(main, _PassthroughGroup), (
+        f"ai_hats.cli.main is {type(main).__name__}, not _PassthroughGroup — "
+        "the friendly-error dispatch is unmounted from the real CLI"
+    )
