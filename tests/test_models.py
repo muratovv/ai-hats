@@ -1,10 +1,21 @@
-"""Tests for core data models facade."""
+import pytest
 
 from ai_hats.models import (
+    KNOWN_SCHEMA_VERSION,
+    ComponentConfig,
+    Composition,
+    FeedbackConfig,
+    FeedbackPolicy,
+    OverlayConfig,
+    ProjectConfig,
+    ProjectConfigError,
+    RuntimeHook,
+    SessionRetroConfig,
+    SkillMetadata,
+    SmartThreshold,
     resolve_namespace,
 )
 
-<<<<<<< HEAD
 # HATS-1264: the card model moved to the rack when ai-hats-tracker was deleted
 # (HATS-1262); `state` is a plain string there (backlog.yaml is the FSM SSOT)
 # and `attachments` is untyped, so both lose their model-level tests below.
@@ -12,22 +23,13 @@ from ai_hats_rack.models import TaskCard
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
-||||||| parent of 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
-# HATS-1260: tracker models come from the package directly (facade re-export dropped).
-from ai_hats_tracker.models import Attachment, TaskCard, TaskState
-from ai_hats.paths import PROJECT_CONFIG
-from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
-
-=======
->>>>>>> 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
-
 def test_resolve_namespace():
     assert resolve_namespace("dev::python") == "dev/python"
     assert resolve_namespace("trait-base") == "trait-base"
     assert resolve_namespace("a::b::c") == "a/b/c"
 
 
-<<<<<<< HEAD
+
 # comment-length: allow — a twin ledger: each dropped test names its replacement.
 # HATS-1264: the FSM was a model concern only while `TaskState` was an enum on
 # the card. The rack keeps the adjacency in backlog.yaml and guards it in the
@@ -1001,254 +1003,7 @@ def _orphan_tmp_files(path):
     return [f for f in path.parent.iterdir() if f.name.startswith(f".{path.name}.")]
 
 
-||||||| parent of 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
-def test_task_state_valid_transitions():
-    assert TaskState.BRAINSTORM.can_transition_to(TaskState.PLAN)
-    assert TaskState.PLAN.can_transition_to(TaskState.EXECUTE)
-    assert TaskState.EXECUTE.can_transition_to(TaskState.DOCUMENT)
-    assert TaskState.DOCUMENT.can_transition_to(TaskState.REVIEW)
-    assert TaskState.REVIEW.can_transition_to(TaskState.DONE)
-
-
-def test_task_state_invalid_transitions():
-    assert not TaskState.BRAINSTORM.can_transition_to(TaskState.EXECUTE)
-    assert not TaskState.BRAINSTORM.can_transition_to(TaskState.DONE)
-    assert not TaskState.EXECUTE.can_transition_to(TaskState.REVIEW)
-    assert not TaskState.REVIEW.can_transition_to(TaskState.BRAINSTORM)
-    assert not TaskState.DONE.can_transition_to(TaskState.BRAINSTORM)
-
-
-def test_task_state_blocked_recovery():
-    assert TaskState.BLOCKED.can_transition_to(TaskState.BRAINSTORM)
-    assert TaskState.BLOCKED.can_transition_to(TaskState.PLAN)
-    assert TaskState.BLOCKED.can_transition_to(TaskState.EXECUTE)
-    assert TaskState.BLOCKED.can_transition_to(TaskState.DOCUMENT)
-
-
-def test_task_state_failed_recovery():
-    assert TaskState.FAILED.can_transition_to(TaskState.BRAINSTORM)
-    assert not TaskState.FAILED.can_transition_to(TaskState.EXECUTE)
-
-
-def test_task_card_transition():
-    task = TaskCard(id="T-1", title="Test")
-    task.transition_to(TaskState.PLAN)
-    assert task.state == TaskState.PLAN
-
-    task.transition_to(TaskState.EXECUTE)
-    assert task.state == TaskState.EXECUTE
-
-
-def test_task_card_invalid_transition():
-    task = TaskCard(id="T-1", title="Test")
-    with pytest.raises(ValueError, match="Invalid transition"):
-        task.transition_to(TaskState.DONE)
-
-
-# --- HATS-055: extras round-trip + dropped resolution fix ---
-
-
-def test_task_card_unknown_field_captured_into_extras():
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "acceptance_criteria": ["ac one", "ac two"],
-        "custom_field": {"nested": True},
-    }
-    card = TaskCard.from_dict(data)
-    assert card.extras == {
-        "acceptance_criteria": ["ac one", "ac two"],
-        "custom_field": {"nested": True},
-    }
-
-
-def test_task_card_extras_round_trip_via_to_dict():
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "acceptance_criteria": ["ac one", "ac two"],
-    }
-    card = TaskCard.from_dict(data)
-    out = card.to_dict()
-    assert out["acceptance_criteria"] == ["ac one", "ac two"]
-
-
-def test_task_card_extras_survive_state_transition():
-    """Regression for HATS-055: transition must not drop unknown fields."""
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "state": "brainstorm",
-        "acceptance_criteria": ["must work after transition"],
-        "custom_field": "value",
-    }
-    card = TaskCard.from_dict(data)
-    card.transition_to(TaskState.PLAN)
-    card.transition_to(TaskState.EXECUTE)
-    out = card.to_dict()
-    assert out["state"] == "execute"
-    assert out["acceptance_criteria"] == ["must work after transition"]
-    assert out["custom_field"] == "value"
-
-
-def test_task_card_extras_survive_full_yaml_round_trip(tmp_path):
-    """End-to-end: from_yaml + save + from_yaml preserves unknown fields."""
-    import yaml
-
-    src = tmp_path / "task.yaml"
-    src.write_text(
-        yaml.safe_dump(
-            {
-                "id": "T-1",
-                "title": "Test",
-                "state": "plan",
-                "acceptance_criteria": ["a", "b", "c"],
-                "weird_field": [1, 2, {"k": "v"}],
-            }
-        )
-    )
-
-    card = TaskCard.from_yaml(src)
-    card.transition_to(TaskState.EXECUTE)
-    card.save(src)
-
-    reloaded = TaskCard.from_yaml(src)
-    assert reloaded.state == TaskState.EXECUTE
-    assert reloaded.extras["acceptance_criteria"] == ["a", "b", "c"]
-    assert reloaded.extras["weird_field"] == [1, 2, {"k": "v"}]
-
-
-def test_task_card_resolution_field_no_longer_dropped():
-    """Regression: 'resolution' field was declared but never serialized."""
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "resolution": "closed: superseded by HATS-100",
-    }
-    card = TaskCard.from_dict(data)
-    assert card.resolution == "closed: superseded by HATS-100"
-    out = card.to_dict()
-    assert out["resolution"] == "closed: superseded by HATS-100"
-
-
-def test_task_card_empty_resolution_omitted_from_output():
-    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
-    out = card.to_dict()
-    assert "resolution" not in out
-
-
-def test_task_card_empty_extras_not_in_output():
-    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
-    out = card.to_dict()
-    assert "extras" not in out
-
-
-def test_task_card_extras_cannot_shadow_known_field_via_to_dict():
-    """Defensive: even if user mutates extras to contain a known key,
-    the typed field wins in to_dict output."""
-    card = TaskCard(id="T-1", title="Real Title")
-    card.extras["title"] = "IMPOSTER"
-    out = card.to_dict()
-    assert out["title"] == "Real Title"
-
-
-def test_task_card_known_fields_not_double_captured():
-    """from_dict should NOT put known keys into extras."""
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "state": "plan",
-        "priority": "high",
-        "tags": ["bug"],
-        "extra1": "in extras",
-    }
-    card = TaskCard.from_dict(data)
-    assert "id" not in card.extras
-    assert "state" not in card.extras
-    assert "tags" not in card.extras
-    assert card.extras == {"extra1": "in extras"}
-
-
-def test_load_header_extracts_scalars(tmp_path):
-    p = tmp_path / "task.yaml"
-    p.write_text(
-        "id: T-1\n"
-        "title: 'Hello world'\n"
-        "state: plan\n"
-        "priority: high\n"
-        "assignee: alice\n"
-        "reviewer: bob\n"
-        "role: dev\n"
-        "description: 'long description here'\n"
-    )
-    h = TaskCard.load_header(p)
-    assert h == {
-        "id": "T-1",
-        "title": "Hello world",
-        "state": "plan",
-        "priority": "high",
-        "assignee": "alice",
-        "reviewer": "bob",
-        "role": "dev",
-    }
-
-
-def test_load_header_handles_quotes_and_defaults(tmp_path):
-    p = tmp_path / "task.yaml"
-    p.write_text("id: T-2\ntitle: \"with: colon\"\nstate: brainstorm\nassignee: ''\n")
-    h = TaskCard.load_header(p)
-    assert h["title"] == "with: colon"
-    assert h["assignee"] == ""
-    assert h["priority"] == "medium"
-    assert h["reviewer"] == "user"
-    assert h["role"] == ""
-
-
-def test_load_header_unescapes_doubled_single_quote(tmp_path):
-    p = tmp_path / "task.yaml"
-    p.write_text("id: T-3\nstate: done\ntitle: 'Foo''s bar'\n")
-    h = TaskCard.load_header(p)
-    assert h["title"] == "Foo's bar"
-
-
-def test_load_header_falls_back_when_id_missing_in_regex(tmp_path):
-    """Block-scalar layouts hide `id:` from the line-based regex — fall back."""
-    p = tmp_path / "task.yaml"
-    p.write_text(
-        "title: 'block-scalar layout'\n"
-        "description: |\n"
-        "  multi-line description with id: T-X inside\n"
-        "  more text\n"
-        "state: plan\n"
-        "id: T-FALLBACK\n"
-        "priority: medium\n"
-    )
-    h = TaskCard.load_header(p)
-    assert h["id"] == "T-FALLBACK"
-    assert h["state"] == "plan"
-
-
-def test_load_header_matches_from_yaml_on_real_layout(tmp_path):
-    """load_header must agree with from_yaml for any field the renderer reads."""
-    p = tmp_path / "task.yaml"
-    card = TaskCard(
-        id="T-99",
-        title="Round-trip me",
-        state=TaskState.EXECUTE,
-        priority="high",
-        assignee="charlie",
-        reviewer="dave",
-        role="architect",
-    )
-    card.save(p)
-    full = TaskCard.from_yaml(p)
-    h = TaskCard.load_header(p)
-    assert h["id"] == full.id
-    assert h["title"] == full.title
-    assert h["state"] == full.state.value
-    assert h["priority"] == full.priority
-    assert h["assignee"] == full.assignee
-    assert h["reviewer"] == full.reviewer
+def test_facade_surface_parity():
     assert h["role"] == full.role
 
 
@@ -1945,112 +1700,13 @@ def test_runtime_hooks_same_script_across_events_ok(tmp_path):
     assert meta.runtime_hooks[HOOK_POST_TOOL_USE][0].script == "hooks/probe.sh"
 
 
-# ---------- Attachment / TaskCard.attachments (HATS-402) ----------
 
 
-def test_attachment_digest_validation_accepts_12_hex():
-    Attachment(name="plan.md", digest="a1b2c3d4e5f6", added="2026-05-20T00:00:00Z")
+
+def _orphan_tmp_files(path):
+    return [f for f in path.parent.iterdir() if f.name.startswith(f".{path.name}.")]
 
 
-@pytest.mark.parametrize(
-    "bad",
-    [
-        "a1b2c3d4e5",  # 10 chars — too short
-        "a1b2c3d4e5f60",  # 13 chars — too long
-        "A1B2C3D4E5F6",  # uppercase
-        "g1b2c3d4e5f6",  # non-hex char
-        "a1b2c3d4e5f60000000000000000000000000000000000000000000000000000",  # full sha256 — must reject
-    ],
-)
-def test_attachment_digest_validation_rejects_invalid(bad):
-    with pytest.raises(Exception):
-        Attachment(name="x", digest=bad, added="2026-05-20T00:00:00Z")
-
-
-def test_attachment_digest_empty_allowed_for_construction():
-    """Default-constructed Attachment (e.g. before populating) tolerates empty digest."""
-    Attachment()
-
-
-def test_task_card_attachments_field_round_trip():
-    card = TaskCard(
-        id="T-1",
-        title="Test",
-        attachments=[
-            Attachment(
-                name="plan.md",
-                digest="a1b2c3d4e5f6",
-                added="2026-05-20T00:00:00Z",
-                note="design",
-            )
-        ],
-    )
-    out = card.to_dict()
-    assert out["attachments"] == [
-        {
-            "name": "plan.md",
-            "digest": "a1b2c3d4e5f6",
-            "added": "2026-05-20T00:00:00Z",
-            "note": "design",
-        }
-    ]
-    reloaded = TaskCard.from_dict(out)
-    assert reloaded.attachments[0].name == "plan.md"
-    assert reloaded.attachments[0].digest == "a1b2c3d4e5f6"
-
-
-def test_task_card_empty_attachments_omitted_from_output():
-    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
-    out = card.to_dict()
-    assert "attachments" not in out
-
-
-def test_task_card_legacy_yaml_without_attachments_loads_as_empty_list():
-    """Existing YAML predating HATS-402 must load without errors and yield []."""
-    card = TaskCard.from_dict({"id": "T-1", "title": "Test"})
-    assert card.attachments == []
-
-
-def test_task_card_attachments_not_captured_into_extras():
-    """attachments is a typed field — must not leak into extras."""
-    data = {
-        "id": "T-1",
-        "title": "Test",
-        "attachments": [{"name": "x.md", "digest": "0123456789ab", "added": "", "note": ""}],
-    }
-    card = TaskCard.from_dict(data)
-    assert len(card.attachments) == 1
-    assert "attachments" not in card.extras
-
-
-def test_task_card_save_is_atomic_on_serialization_crash(tmp_path, monkeypatch):
-    """HATS-716: a crash mid-save must never truncate an existing task.yaml.
-
-    Fails under the legacy ``open(path,'w') + yaml.dump`` (open truncates before
-    yaml.dump writes a byte); passes once save routes through atomic_io
-    (serialize fully, then atomic replace — the target is untouched on failure).
-    """
-    import ai_hats_tracker.models as models_mod
-
-    p = tmp_path / "task.yaml"
-    TaskCard(id="T-1", title="Original").save(p)
-    original = p.read_text()
-
-    def boom(*args, **kwargs):
-        raise RuntimeError("simulated crash during YAML serialization")
-
-    monkeypatch.setattr(models_mod.yaml, "dump", boom)
-
-    with pytest.raises(RuntimeError):
-        TaskCard(id="T-1", title="New title that must not land").save(p)
-
-    assert p.read_text() == original  # never truncated
-    orphans = [f for f in p.parent.iterdir() if f.name.startswith(".task.yaml.")]
-    assert orphans == []
-
-
-=======
->>>>>>> 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
 def test_facade_surface_parity():
     """HATS-863: the pre-split public surface of ``ai_hats.models`` stays
     importable through the facade until T18 dismantles it (wt schema moved to

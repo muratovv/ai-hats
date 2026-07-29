@@ -116,18 +116,9 @@ def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
     _seed(tmp_path)
     _file_meta_proposal(tmp_path, SID, ["output file missing or empty"])
     assert _proposals_count(tmp_path) == 1
-<<<<<<< HEAD
     # Read the filed card back through the rack; unfiltered, so the destructuring
     # still asserts single ownership.
     [prop] = proposals(rack_workspace(tmp_path))
-||||||| parent of 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
-    store = ProposalStore(proposals_dir(tmp_path))
-    [prop] = store.list_all()
-=======
-    props = open_proposals(rack_workspace(tmp_path))
-    assert len(props) == 1
-    prop = props[0]
->>>>>>> 3ca123be (fix(tests): remove deleted tracker imports (HATS-1334))
     assert prop.category == "process"
     assert prop.target == "session-reviewer"
     assert prop.failed_session_id == SID
