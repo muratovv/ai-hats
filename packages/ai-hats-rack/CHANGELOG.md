@@ -3,6 +3,26 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.1.5
+
+- `parent_task` now goes through the same link op as `depends_on` and
+  `transition --link` on every write path (HATS-1333). `create --parent` and
+  `set_parent` each wrote the field raw, so neither validated the target.
+  Consequences:
+  - **A parent that does not exist is refused** (`unknown_task`). This is how
+    malformed ids landed in real backlogs — a card written with `parent_task:
+    1092` (no prefix) is silently orphaned from its epic: epic automation never
+    fires, `ls --deep` does not show it, and parent-context inheritance
+    (`work_policy`) never reaches it.
+  - **Self-parent is one typed `self_link` refusal**, not a bare `ValueError`
+    raised separately per write path. The message now routes through the CLI
+    error table like every other link refusal.
+  - **`create --parent` logs the link** in `work_log`, as `--depends` has since
+    0.1.4.
+- Reading a card that already holds a dangling parent is unchanged and stays
+  tolerant — the tightening is on the write side only, so pre-existing data
+  keeps loading and transitioning.
+
 ## 0.1.4
 
 - `create` now writes its declared links through the same op as

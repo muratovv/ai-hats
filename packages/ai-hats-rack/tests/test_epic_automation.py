@@ -10,6 +10,7 @@ from ai_hats_rack.composition import build_bound_subscribers, stock_factories
 from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.extensions import AUTOMATION_ACTOR, EpicAutomationExtension, decide
 from ai_hats_rack.fsm import load_topology
+from ai_hats_rack.models import TaskCard
 
 from rack_testkit import CollectingSink, make_kernel, walk
 
@@ -330,8 +331,13 @@ def test_no_grandparent_cascade(kernel, cwd):
     assert kernel.get(GRAND).state == "brainstorm"  # untouched
 
 
-def test_dangling_parent_ref_is_noop(kernel, cwd):
-    _create(kernel, cwd, C1, parent="GHOST-1")  # parent never existed
+def test_dangling_parent_ref_is_noop(kernel, cwd, tasks_dir):
+    # Written as yaml — since HATS-1333 `create` refuses a missing parent, so
+    # this shape can only pre-date the guard. Subject unchanged.
+    card = TaskCard(id=C1, title="t", state="brainstorm", parent_task="GHOST-1")
+    path = tasks_dir / C1 / "task.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    card.save(path)
     walk(kernel, C1, "plan", "execute", cwd=cwd)  # must not raise
     assert kernel.get(C1).state == "execute"
 
