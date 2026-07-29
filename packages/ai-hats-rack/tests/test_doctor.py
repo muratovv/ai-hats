@@ -185,3 +185,81 @@ def test_missing_required_and_state_gated_fields_reported(tasks_dir, tmp_path):
     )
     rows = by_check(findings, "missing-field")
     assert {(f.task_id, f.kind) for f in rows} == {("T-1", "severity"), ("T-2", "resolution")}
+
+
+# ----- mirror drift ---------------------------------------------------------
+
+_MIRROR_KINDS = _KINDS + (
+    "    - {name: supersedes, arity: one, inverse: superseded_by, handlers: [mirror-link]}\n"
+    "    - {name: superseded_by, arity: one, inverse: supersedes, handlers: [mirror-link]}\n"
+)
+
+
+def test_stored_inverse_without_back_edge_is_mirror_drift(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1", links={"supersedes": ["T-2"]})
+    make_card(tasks_dir, "T-2")  # no superseded_by back-edge
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _MIRROR_KINDS))
+    rows = by_check(findings, "mirror-drift")
+    assert [(f.task_id, f.kind, f.target) for f in rows] == [("T-1", "supersedes", "T-2")]
+
+
+def test_converged_mirror_pair_is_clean(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1", links={"supersedes": ["T-2"]})
+    make_card(tasks_dir, "T-2", links={"superseded_by": ["T-1"]})
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _MIRROR_KINDS))
+    assert by_check(findings, "mirror-drift") == []
+
+
+def test_derived_inverse_is_not_mirror_checked(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", parent_task="T-1")  # children is derived, no drift
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS))
+    assert by_check(findings, "mirror-drift") == []
+
+
+# ----- clean / workspace ----------------------------------------------------
+
+
+def test_healthy_catalog_yields_no_findings(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", parent_task="T-1", depends_on=["T-1"], related=["T-1"])
+    assert diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS)) == []
+    assert diagnose_catalog(tmp_path / "empty", _registry(tmp_path, _KINDS)) == []
+
+
+_HYP_DEF = (
+    "name: hypotheses\nprefix: HYP\ncli_alias: hyp\n"
+    + _MINIMAL_FSM
+    + "links:\n  kinds:\n"
+    + "    - {name: source_task, arity: one, targets: tasks}\n"
+)
+
+
+def _two_backlog_workspace(tmp_path):
+    from ai_hats_rack.resolver import RackRoot
+    from ai_hats_rack.workspace import Workspace
+
+    project = tmp_path / "proj"
+    tasks = project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks.mkdir(parents=True)
+    hyp = project / ".agent" / "ai-hats" / "tracker" / "hypotheses"
+    hyp.mkdir(parents=True)
+    (hyp / "backlog.yaml").write_text(_HYP_DEF, encoding="utf-8")
+    return Workspace.discover([RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")]), (
+        tasks,
+        hyp,
+    )
+
+
+def test_workspace_scan_labels_backlogs_and_routes_cross_refs(tmp_path):
+    from ai_hats_rack.doctor import diagnose_workspace
+
+    workspace, (tasks, hyp) = _two_backlog_workspace(tmp_path)
+    make_card(tasks, "HATS-1", parent_task="HATS-404")
+    make_card(hyp, "HYP-1", links={"source_task": ["HATS-1"]})  # resolves cross-backlog
+    make_card(hyp, "HYP-2", links={"source_task": ["HATS-404"]})  # dangling cross-backlog
+    findings = diagnose_workspace(workspace)
+    assert {(f.backlog, f.task_id, f.check, f.target) for f in findings} == {
+        ("tasks", "HATS-1", "dangling-link", "HATS-404"),
+        ("hyp", "HYP-2", "dangling-link", "HATS-404"),
+    }

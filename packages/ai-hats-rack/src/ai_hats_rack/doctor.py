@@ -47,6 +47,8 @@ def _load_pass(tasks_dir: Path) -> tuple[dict[str, TaskCard], list[Finding]]:
     FINDING — unlike ``scan_cards``, which silently skips it (linked.py)."""
     cards: dict[str, TaskCard] = {}
     findings: list[Finding] = []
+    if not tasks_dir.is_dir():
+        return cards, findings
     for card_dir in sorted(tasks_dir.iterdir(), key=lambda p: _id_key(p.name)):
         if not card_dir.is_dir() or card_dir.name.startswith("."):
             continue
@@ -182,6 +184,38 @@ def _check_duplicates(registry: LinksRegistry, cards: dict[str, TaskCard]) -> li
     return findings
 
 
+def _check_mirror_drift(registry: LinksRegistry, cards: dict[str, TaskCard]) -> list[Finding]:
+    """Every stored-inverse edge must have its back-edge: the ``mirror-link``
+    reaction keeps the pair convergent at write time (definition.py refuses the
+    kind without it), so a one-sided pair on disk is drift. Derived inverses
+    (children) are computed, symmetric kinds self-pair, and a cross-backlog
+    pair is the sibling catalog's mirror to keep — all skipped. A dangling or
+    unreadable target is already its own finding, not drift too."""
+    findings: list[Finding] = []
+    for kind in registry.stored_kinds():
+        if kind.symmetric or kind.targets or not kind.inverse:
+            continue
+        inverse = registry.get(kind.inverse)
+        if inverse is None or inverse.derived:
+            continue
+        for card in cards.values():
+            for target in _kind_ids_readonly(kind, card):
+                other = cards.get(target)
+                if other is None:
+                    continue
+                if card.id not in _kind_ids_readonly(inverse, other):
+                    findings.append(
+                        Finding(
+                            "mirror-drift",
+                            card.id,
+                            f"{kind.name} -> {target} has no {inverse.name} back-edge",
+                            kind=kind.name,
+                            target=target,
+                        )
+                    )
+    return findings
+
+
 def _check_required_fields(schema: CardSchema, cards: dict[str, TaskCard]) -> list[Finding]:
     """An unconditionally-required field must be non-empty on every card; a
     ``required_on`` field on every card SITTING in a gated state — the same
@@ -226,6 +260,7 @@ def diagnose_catalog(
     cards, findings = _load_pass(tasks_dir)
     findings += _check_dangling(tasks_dir, registry, cards, exists)
     findings += _check_cycles(registry, cards)
+    findings += _check_mirror_drift(registry, cards)
     findings += _check_duplicates(registry, cards)
     if schema is not None:
         findings += _check_required_fields(schema, cards)
@@ -233,4 +268,24 @@ def diagnose_catalog(
         findings = [
             Finding(f.check, f.task_id, f.detail, f.kind, f.target, backlog) for f in findings
         ]
+    return findings
+
+
+def diagnose_workspace(workspace) -> list[Finding]:
+    """Diagnose every backlog mounted in the workspace, each labeled by its CLI
+    name; cross-backlog refs resolve through the same existence checker the
+    kernels use (``kind.targets`` -> sibling catalog)."""
+    from .cardschema import build_card_schema
+    from .composition import stock_validators
+
+    findings: list[Finding] = []
+    for instance in workspace.instances:
+        defn = instance.definition
+        findings += diagnose_catalog(
+            instance.catalog,
+            defn.links_registry,
+            schema=build_card_schema(defn, stock_validators()),
+            exists=workspace._existence_checker_for(instance),
+            backlog=defn.cli_alias or instance.name,
+        )
     return findings
