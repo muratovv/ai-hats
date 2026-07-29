@@ -7,6 +7,7 @@ import pytest
 
 from ai_hats_rack.kernel import UnknownTaskError
 from ai_hats_rack.linked import (
+    ReciprocalLinkError,
     SelfLinkError,
     build_context,
     card_filter,
@@ -105,6 +106,39 @@ def test_link_self_is_refused(tasks_dir):
     make_card(tasks_dir, "T-1")
     with pytest.raises(SelfLinkError):
         link(tasks_dir, "T-1", "T-1")
+
+
+def test_link_reciprocal_depends_is_refused(tasks_dir):
+    """HATS-1327: A depends_on B, then B depends_on A — the mutual deadlock the
+    tracker refused (`_reject_self_or_cycle`) and rack silently accepted."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "depends")
+    with pytest.raises(ReciprocalLinkError) as err:
+        link(tasks_dir, "T-2", "T-1", "depends")
+    assert err.value.kind == "depends_on"
+    assert load(tasks_dir, "T-2").depends_on == []  # refused before any write
+
+
+def test_link_reciprocal_related_is_allowed(tasks_dir):
+    """The guard must NOT fire on a kind declaring an inverse: `related` is
+    symmetric by design, so a mutual pair is correct, not a cycle."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "related")
+    link(tasks_dir, "T-2", "T-1", "related")
+    assert load(tasks_dir, "T-1").related == ["T-2"]
+    assert load(tasks_dir, "T-2").related == ["T-1"]
+
+
+def test_link_reciprocal_folded_into_is_refused(tasks_dir):
+    """`folded_into` is the other stored kind with no declared inverse — a
+    mutual fold is the same nonsense as a mutual dependency."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "folded_into")
+    with pytest.raises(ReciprocalLinkError):
+        link(tasks_dir, "T-2", "T-1", "folded_into")
 
 
 def test_link_unknown_target_is_refused(tasks_dir):

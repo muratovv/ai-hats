@@ -50,6 +50,20 @@ class SelfLinkError(RackError):
         super().__init__(f"Task '{task_id}' cannot link to itself")
 
 
+class ReciprocalLinkError(RackError):
+    """A→B refused because B→A already exists on a kind with no inverse."""
+
+    def __init__(self, kind: str, source: str, target: str) -> None:
+        self.kind = kind
+        self.source = source
+        self.target = target
+        super().__init__(
+            f"Cycle on '{kind}': '{source}' → '{target}' refused because "
+            f"'{target}' → '{source}' already stands. Undo one side first: "
+            f"rack transition {target} --unlink {kind}:{source}"
+        )
+
+
 class EmptyGrepPatternError(RackError):
     def __init__(self, field: str) -> None:
         self.field = field
@@ -107,6 +121,49 @@ def _add_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
         return False
     ids.append(target)
     return True
+
+
+def _kind_ids_readonly(kind: LinkKind, card: TaskCard) -> tuple[str, ...]:
+    """A kind's ids off a card without mutating it — `_kind_ids` would
+    `setdefault` an empty list into `links` on a card we only want to read."""
+    if kind.name in LINK_STORAGE_FIELDS:
+        value = getattr(card, kind.name, None)
+        if isinstance(value, str):
+            return (value,) if value else ()
+        return tuple(value or ())
+    return tuple(card.links.get(kind.name, ()))
+
+
+def reject_reciprocal(kind: LinkKind, source_id: str, target_card: TaskCard) -> None:
+    """Refuse A→B when B→A already stands on a kind declaring no inverse.
+
+    A kind WITH an inverse is bidirectional by design — `related`/`see_also`
+    are their own inverse, `parent_task` declares `children` — so a mutual pair
+    there is correct. A kind without one is directional, and a mutual pair is a
+    deadlock: each side waits for the other.
+
+    Tracker parity (HATS-1327): the immediate pair only. A transitive
+    A→B→C→A needs the graph traversal the tracker also declined to build.
+    """
+    if kind.inverse:
+        return
+    if source_id in _kind_ids_readonly(kind, target_card):
+        raise ReciprocalLinkError(kind.name, source_id, target_card.id)
+
+
+def guard_reciprocal(tasks_dir: Path, kind: LinkKind, source_id: str, target: str) -> None:
+    """Catalog-side half of the guard: load the target, then check it.
+
+    Sits with the caller's existence check by design — `link_on_card` is the
+    lock-free core and owns no catalog (its docstring: the caller owns the lock
+    and the target-existence check). Cross-backlog kinds are skipped: their
+    target is in another catalog and their pairing is the mirror handler's job.
+    """
+    if kind.inverse or kind.targets:
+        return
+    target_card = _load_card(tasks_dir, target)
+    if target_card is not None:
+        reject_reciprocal(kind, source_id, target_card)
 
 
 def _remove_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
@@ -193,6 +250,7 @@ def link(
     exists = exists_checker or (lambda tid, _targets: card_exists(tasks_dir, tid))
     if not exists(target, link_kind.targets or None):
         raise UnknownTaskError(target)
+    guard_reciprocal(tasks_dir, link_kind, task_id, target)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
         result = link_on_card(reg, card, target, kind, actor=actor)
