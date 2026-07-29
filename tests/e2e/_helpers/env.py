@@ -26,6 +26,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
+from ai_hats.retired_dists import ENV_SKIP_PRUNE
 
 # Redirect vars that must not leak into a real-install e2e subprocess. PYTHONPATH
 # is the proven culprit (HATS-685); the rest are defensive siblings that could
@@ -49,6 +50,10 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         # Tests that exercise ownership set them explicitly after copying env.
         "AI_HATS_SESSION_ID",
         "AI_HATS_ROOT_PID",
+        # HATS-1280: tests/conftest.py sets this session-wide so a unit run never
+        # uninstalls from the developer's venv. Inherited by an e2e subprocess it
+        # would silently disable the very prune under test.
+        ENV_SKIP_PRUNE,
     }
 )
 

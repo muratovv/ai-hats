@@ -50,6 +50,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # HATS-1280: converge the venv to what the new version actually declares.
+    # Before do_bump, so a bump failure cannot leave a retired CLI reachable;
+    # its own failures are swallowed and never reach the exit code.
+    from pathlib import Path
+
+    from .retired_dists import prune_retired
+
+    for removed in prune_retired(Path.cwd()):
+        print(f"ai-hats: removed retired {removed}", file=sys.stderr)
+
     from .cli.assembly import do_bump
 
     return do_bump(migrate_force=migrate_force, check_branches=check_branches)

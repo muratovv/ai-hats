@@ -30,6 +30,62 @@ def pytest_runtest_makereport(item, call):  # noqa: ANN001, ANN201
 
 
 @pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
+def _no_retired_prune(request):
+    """Keep the retired-distribution prune out of the developer's own venv.
+
+    HATS-1280: the prune runs from ``_bump_internal`` and uninstalls against the
+    *running* interpreter — which under pytest is this checkout's venv. Any test
+    that reaches that entry point without stubbing the subprocess would really
+    remove the distribution. Opt back in per-test by deleting the var.
+    """
+    try:
+        from ai_hats.retired_dists import ENV_SKIP_PRUNE
+    except ImportError:
+        ENV_SKIP_PRUNE = "AI_HATS_SKIP_RETIRED_PRUNE"
+
+    mp = pytest.MonkeyPatch()
+    mp.setenv(ENV_SKIP_PRUNE, "1")
+    request.addfinalizer(mp.undo)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _wt_sandbox(tmp_path_factory, request):
+    """Redirect every ``ai-hats-wt-*`` worktree birth into a session-owned
+    sandbox so they never pollute the real temp root (HATS-570).
+
+    setup    : a fresh sandbox — self-heals any leftovers a prior crashed
+               run might have left (cleanup is idempotent by construction).
+    teardown : ``rmtree`` ONLY on a fully-green session. A session with
+               failures keeps the sandbox and prints its path so the
+               worktree artefacts survive for triage.
+
+    Redirects BOTH worktree creation paths:
+
+    * in-process ``mgr.create()`` — ``tempfile.gettempdir()`` memoises
+      into ``tempfile.tempdir`` on first use, so patching that cached
+      attribute is REQUIRED; ``setenv`` alone would be too late.
+    * subprocess CLI ``wt create`` — tests run ``env = os.environ.copy()``
+      so ``TMPDIR`` rides along into the child's ``mkdtemp``.
+    """
+    sandbox = tmp_path_factory.mktemp("wt-sandbox")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(tempfile, "tempdir", str(sandbox))
+    mp.setenv("TMPDIR", str(sandbox))
+    try:
+        yield sandbox
+    finally:
+        mp.undo()
+        if request.session.testsfailed == 0:
+            shutil.rmtree(sandbox, ignore_errors=True)
+        else:
+            print(
+                f"\n[wt-sandbox] {request.session.testsfailed} failure(s) — "
+                f"worktree artefacts preserved for triage: {sandbox}"
+            )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _real_repo_integrity_tripwire():
     """Fail the session loud if any test mutated the real repo (HATS-887).
 
