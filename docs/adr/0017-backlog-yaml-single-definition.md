@@ -600,7 +600,7 @@ that work and the multi-backlog phases compose, not conflict:
 | `sync` (STATE.md)             | `DerivedViewsExtension` (post-lock reaction)                                                                                      |
 | `plan-extract`                | port as a verb over the doc store (follow-up task)                                                                                |
 | `attach add/list/show/remove` | `transition --attach/--rm`; list/show ride `context` documents                                                                    |
-| `attach verify`               | doc-store integrity verb (K2); frozen drift already marks in `context`                                                            |
+| `attach verify`               | none, by design — no manifest, so presence *is* registration; `context`/`ls` mark frozen-pin drift live (HATS-1267)               |
 | `hyp create/list/show`        | hypotheses instance: `create` / `ls` / `context`                                                                                  |
 | `hyp set-status`              | `transition` along named edges (confirm/refute/stall/revive) — gains an FSM                                                       |
 | `hyp append-verdict`          | `hyp-verdicts` extension verb (owns `validation_log`)                                                                             |
