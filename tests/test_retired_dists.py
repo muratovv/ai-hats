@@ -14,8 +14,8 @@ T5  no ``uv`` on PATH → clean False, no raise.
 T6  ``uv`` non-zero exit → not-removed, no raise.
 T7  ``subprocess.TimeoutExpired`` → swallowed (a hang is what ``except`` cannot cover).
 T8  ``KeyboardInterrupt`` → swallowed; this is why ``_uninstall`` catches BaseException.
-T9  ``strip_retired_scripts``: removes the retired script, spares the rest,
-    idempotent, survives a missing dir and an unreadable path.
+T9  ``strip_retired_scripts``: removes the retired script, spares the rest and
+    anything still declared, idempotent, survives a missing dir and a bad path.
 T10 ``prune_retired`` never raises even when its internals throw BaseException.
 T11 the uninstall timeout (and ``start_new_session``) really reach ``subprocess.run``.
 
