@@ -505,7 +505,12 @@ def _emit_walk(
     help="With an ID: only follow edge kinds matching this glob; repeatable, "
     "OR-combined (e.g. --link 'parent_task' --link 'children').",
 )
-@click.option("--grep", default=None, help="Case-insensitive substring over title+description.")
+@click.option(
+    "--grep",
+    default=None,
+    help="Case-insensitive substring over title+description, or over one field "
+    "with 'field:pattern' (id, title, description) — e.g. --grep id:PROJ-126.",
+)
 @click.option("--tag", default=None, help="Exact tag match.")
 @click.option("--state", default=None, help="Exact state match.")
 @click.option("--parent", default=None, help="Filter to cards whose parent_task is this id.")
