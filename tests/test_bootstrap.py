@@ -12,6 +12,7 @@ T9  future-dep cycle: new dep declared → verify_after_install installs it.
 T10 integrity: stale first-party provider entry point fails the verify.
 T11 integrity: a failing out-of-tree provider plugin does NOT fail the verify.
 T12 integrity: an ai_hats module that no longer imports fails the verify.
+T13 bootstrap_or_die no-op heal: pip exits 0 but dep still missing → SystemExit(1), no execv (HATS-1359).
 """
 
 from __future__ import annotations
@@ -36,6 +37,25 @@ def _force_missing(monkeypatch, missing_imports: set[str]) -> None:
         return real(name, *a, **kw)
 
     monkeypatch.setattr(_bootstrap.importlib.util, "find_spec", fake)
+
+
+def _force_missing_until_healed(monkeypatch, name: str) -> dict:
+    """Like _force_missing, but find_spec(name) flips to real once state["healed"] is set.
+
+    Lets a test model an ACTUAL heal (the fake pip run really fixes the
+    import) rather than a no-op — set state["healed"] = True from the fake
+    subprocess.run.
+    """
+    state = {"healed": False}
+    real_find = _bootstrap.importlib.util.find_spec
+
+    def fake(name_, *a, **kw):
+        if name_ == name and not state["healed"]:
+            return None
+        return real_find(name_, *a, **kw)
+
+    monkeypatch.setattr(_bootstrap.importlib.util, "find_spec", fake)
+    return state
 
 
 def _fixed_requires(monkeypatch, reqs: list[str]) -> None:
@@ -103,13 +123,14 @@ def test_t3b_handles_extras_brackets(monkeypatch):
 
 
 def test_t4_bootstrap_or_die_success_path(monkeypatch):
-    """Missing dep → pip succeeds → os.execv invoked with fresh interpreter."""
-    _force_missing(monkeypatch, {"ptyprocess"})
+    """Missing dep → pip actually fixes the import → os.execv invoked with fresh interpreter."""
+    state = _force_missing_until_healed(monkeypatch, "ptyprocess")
 
     pip_calls: list[list[str]] = []
 
     def fake_run(cmd, **kw):
         pip_calls.append(list(cmd))
+        state["healed"] = True
         return type("R", (), {"returncode": 0})()
 
     execv_calls: list[tuple] = []
@@ -213,13 +234,13 @@ def test_t7_verify_after_install_failure(monkeypatch):
 
 def test_t8_transitional_wave_one_action(monkeypatch):
     """User upgrades from pre-HATS-207 wheel → first run heals + re-execs."""
-    _force_missing(monkeypatch, {"ptyprocess"})
+    state = _force_missing_until_healed(monkeypatch, "ptyprocess")
 
-    monkeypatch.setattr(
-        _bootstrap.subprocess,
-        "run",
-        lambda *a, **kw: type("R", (), {"returncode": 0})(),
-    )
+    def fake_run(cmd, **kw):
+        state["healed"] = True
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(_bootstrap.subprocess, "run", fake_run)
     execs: list = []
     monkeypatch.setattr(
         _bootstrap.os,
@@ -233,6 +254,38 @@ def test_t8_transitional_wave_one_action(monkeypatch):
     # One user-visible action (the original `ai-hats` invocation) → exactly
     # one re-exec, no SystemExit.
     assert len(execs) == 1
+
+
+# ---------- T13 ----------
+
+
+def test_t13_bootstrap_or_die_noop_heal_fails_loud(monkeypatch, capsys):
+    """HATS-1359: pip exits 0 but the dep is still missing → SystemExit(1), no execv.
+
+    Models the empirically-confirmed no-op-heal shape (stale dist-info, the
+    import stays broken) instead of the pre-fix behaviour of re-exec'ing
+    forever into the identical missing-dep state.
+    """
+    _force_missing(monkeypatch, {"ptyprocess"})  # never actually gets fixed
+
+    monkeypatch.setattr(
+        _bootstrap.subprocess,
+        "run",
+        lambda *a, **kw: type("R", (), {"returncode": 0})(),  # uv "succeeds" — a no-op
+    )
+
+    def boom_execv(*a, **kw):
+        raise AssertionError("execv must NOT be called when the dep is still missing")
+
+    monkeypatch.setattr(_bootstrap.os, "execv", boom_execv)
+
+    with pytest.raises(SystemExit) as exc:
+        _bootstrap.bootstrap_or_die()
+    assert exc.value.code == 1
+
+    err = capsys.readouterr().err
+    assert "ptyprocess" in err
+    assert "uv reported success" in err
 
 
 # ---------- T9 ----------
