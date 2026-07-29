@@ -106,9 +106,7 @@ from .linked import (
     SelfLinkError,
     build_context,
     card_filter,
-    link,
     scan_cards,
-    unlink,
     walk_neighborhood,
 )
 from .matching import Matcher, compile_matcher, matches
@@ -238,7 +236,6 @@ __all__ = [
     "default_card_schema",
     "event_detail",
     "find_project_root",
-    "link",
     "load_backlog",
     "load_packaged_definition",
     "load_registry",
@@ -254,7 +251,6 @@ __all__ = [
     "scan_cards",
     "stock_factories",
     "stock_validators",
-    "unlink",
     "validate_requires_states",
     "walk_neighborhood",
 ]

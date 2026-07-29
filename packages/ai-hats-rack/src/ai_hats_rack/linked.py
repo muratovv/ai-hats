@@ -242,7 +242,10 @@ def link(
     """Add ``target`` to ``task_id`` under any configured, non-derived ``kind``.
     Thin lock wrapper over :func:`link_on_card`; idempotent. ``exists_checker``
     routes the target-existence check cross-backlog by the kind's ``targets``
-    (default: this catalog — today's behavior, ADR-0017 §2)."""
+    (default: this catalog — today's behavior, ADR-0017 §2).
+
+    Fires NO link events (module-internal, out of the package export since
+    HATS-1335) — the event-bearing write path is ``transition --link``."""
     reg = registry if registry is not None else load_registry()
     link_kind = _stored_kind(reg, kind)  # kind refusal before the lock (order parity)
     if target == task_id:
@@ -270,7 +273,8 @@ def unlink(
     lock_timeout: float = LOCK_TIMEOUT,
 ) -> LinkResult:
     """Remove ``target`` from ``task_id``. Thin lock wrapper over
-    :func:`unlink_on_card`; idempotent, a dangling target is removable."""
+    :func:`unlink_on_card`; idempotent, a dangling target is removable.
+    Fires NO link events — same contract as :func:`link` (HATS-1335)."""
     reg = registry if registry is not None else load_registry()
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
