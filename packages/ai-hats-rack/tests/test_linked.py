@@ -342,6 +342,15 @@ def test_scan_skips_corrupt_card(tasks_dir):
     assert [r.id for r in scan_cards(tasks_dir)] == ["T-1"]
 
 
+def test_scan_grep_targets_a_named_field(tasks_dir):
+    # HATS-1324: `id` is not in the default haystack, so an id-shaped needle
+    # matches only cards that *mention* it. `field:` picks the haystack.
+    make_card(tasks_dir, "T-1260", title="S3 unmount", description="no self-id here")
+    make_card(tasks_dir, "T-9", title="Mentions T-1260", description="depends on T-1260")
+    assert [r.id for r in scan_cards(tasks_dir, grep="T-126")] == ["T-9"]
+    assert [r.id for r in scan_cards(tasks_dir, grep="id:T-126")] == ["T-1260"]
+
+
 # ----- context package -----------------------------------------------------------
 
 
