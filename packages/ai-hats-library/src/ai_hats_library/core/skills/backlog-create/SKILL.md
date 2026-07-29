@@ -58,7 +58,8 @@ rack create "Short title" \
 ### Read-only inspections
 
 ```bash
-rack ls                          # open tasks (--grep/--tag/--state/--parent)
+rack ls                          # open tasks: --tag/--state/--parent are exact; --grep last
+rack ls --grep id:PROJ-04        # --grep reads title+description; 'field:' narrows it
 rack context <ID>                # full task card + links + document paths
 ai-hats list …                   # library inspections (skills, rules, traits, tokens)
 ```

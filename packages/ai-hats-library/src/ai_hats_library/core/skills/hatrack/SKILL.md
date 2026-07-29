@@ -35,7 +35,8 @@ Five top-level verbs, each with `--json` (JSON-first):
 
 ```bash
 rack create "Title" --id PROJ-042 --parent PROJ-014 --depends PROJ-041 --tag dx
-rack ls                       # backlog scan (--grep/--tag/--state/--parent)
+rack ls                       # backlog scan: --tag/--state/--parent match exactly; --grep last
+rack ls --grep id:PROJ-04     # --grep is substring over title+description; 'field:' narrows it
 rack ls --backlog hyp         # scan another backlog (repeatable; --all-backlogs for all)
 rack ls --backlog hyp --projects all  # sweep across projects (rack root add/ls/rm; --root <path>)
 rack ls PROJ-042 --deep 1     # graph walk from a card
