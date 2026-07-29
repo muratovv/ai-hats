@@ -392,13 +392,30 @@ class Neighbor:
         }
 
 
+def _stored_inverse_of(registry: LinksRegistry, dk: LinkKind) -> str:
+    """The stored kind a derived kind is the reverse view of.
+
+    Usually its own ``inverse``. A derived kind is not obliged to name it back,
+    though, and the hierarchy pair stays identifiable from the stored side —
+    which is how the pre-HATS-1208 children-only fill found it.
+    """
+    if dk.inverse:
+        return dk.inverse
+    hierarchy = registry.hierarchy_kind
+    children = registry.children_kind
+    if hierarchy is not None and children is not None and children.name == dk.name:
+        return hierarchy.name
+    return ""
+
+
 def _edges_of(kernel: Kernel, registry: LinksRegistry, card: TaskCard) -> list[tuple[LinkKind, str]]:
     """Every outgoing edge of a card as ``(kind, target_id)`` in registry order,
     derived children filled from the kernel reverse scan."""
     derived: dict[str, list[str]] = {}
     for dk in registry.derived_kinds:
-        if dk.inverse:
-            derived[dk.name] = kernel.reverse_links_of(dk.inverse, card.id)
+        stored = _stored_inverse_of(registry, dk)
+        if stored:
+            derived[dk.name] = kernel.reverse_links_of(stored, card.id)
     resolved = resolve_links(registry, card, derived=derived)
     edges: list[tuple[LinkKind, str]] = []
     for kind_name, ids in resolved.items():
@@ -736,8 +753,9 @@ def build_context(
     kernel = Kernel(tasks_dir, registry=reg)
     derived: dict[str, list[str]] = {}
     for dk in reg.derived_kinds:
-        if dk.inverse:
-            derived[dk.name] = kernel.reverse_links_of(dk.inverse, task_id)
+        stored = _stored_inverse_of(reg, dk)
+        if stored:
+            derived[dk.name] = kernel.reverse_links_of(stored, task_id)
     resolved = resolve_links(reg, card, derived=derived)
 
     seen = {task_id}

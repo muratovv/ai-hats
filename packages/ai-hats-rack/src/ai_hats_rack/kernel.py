@@ -45,16 +45,53 @@ def _field_value(task: TaskCard, name: str) -> Any:
 
 
 def _reverse_field_gate(kind: Any) -> re.Pattern[str]:
-    """Cheap text gate: does this card even declare ``kind``'s storage field?
+    """Cheap text gate: does this card plausibly declare ``kind``'s field?
 
-    A SUPERSET of a real match — never narrower — so the parse that follows
-    stays authoritative. Most cards omit the field entirely, so this skips
-    their parse outright.
+    Skips the parse for the majority of cards that omit the field. NOT a strict
+    superset — a quoted key, a space before the colon, a merge anchor or a
+    top-level flow map all read fine and gate out. That matches what
+    ``children_of`` has always done for ``parent_task``; the emitter never
+    writes those shapes.
     """
     field = re.escape(kind.name)
     if kind.name in LINK_STORAGE_FIELDS:
-        return re.compile(rf"^{field}:", re.MULTILINE)
-    return re.compile(rf"^\s*{field}:", re.MULTILINE)
+        return re.compile(rf"^{field}\s*:", re.MULTILINE)  # emitted at column 0
+    return re.compile(rf"^\s*{field}\s*:", re.MULTILINE)  # nested under `links:`
+
+
+def _scalar_reader(name: str) -> re.Pattern[str]:
+    """Reads a scalar link field off the card text, no YAML parse.
+
+    Captures the whole value so an id with spaces survives (``ids.py`` blesses
+    free-form tails); ``_scalar_target`` decides whether it is safe to trust.
+    """
+    return re.compile(rf"^{re.escape(name)}[ \t]*:[ \t]*(.*)$", re.MULTILINE)
+
+
+#: YAML that a flat regex read cannot be trusted with — defer to the parser.
+_YAML_SIGILS = ("&", "*", "!", "|", ">", "{", "[", "#", '"', "'")
+
+
+def _scalar_target(text: str, reader: re.Pattern[str]) -> str | None:
+    """The scalar's value: an id, ``""`` for a definite no-edge, or ``None``
+    when the text is a shape a flat read cannot be trusted with — parse then.
+
+    ``""`` matters as much as the id: an unparented card emits ``parent_task:
+    ''``, so treating empty as "cannot tell" sends the whole catalog through
+    the YAML parser and undoes the point of the fast path.
+    """
+    found = False
+    raw = ""
+    for hit in reader.finditer(text):  # last key wins, as YAML does
+        raw = hit.group(1).strip()
+        found = True
+    if not found:
+        return None
+    if raw in {"", "''", '""', "null", "~"}:
+        return ""
+    if raw.startswith(_YAML_SIGILS):
+        return None
+    return raw
 
 
 class UnknownTaskError(RackError):
@@ -245,7 +282,16 @@ class Kernel:
         return out
 
     def reverse_links_of(self, stored_kind_name: str, task_id: str) -> list[str]:
-        """Ids of cards that link to ``task_id`` via stored link kind ``stored_kind_name``."""
+        """Ids of cards linking to ``task_id`` via ``stored_kind_name``.
+
+        Answers only for kinds something reads in reverse — one a derived kind
+        inverts, plus the hierarchy kind. Any other stored kind (``related``,
+        ``see_also``, …) is nobody's reverse view and comes back empty.
+
+        Backed by a memo this kernel drops on its own writes, so treat the
+        result as a snapshot: a card written through another handle (``link``,
+        ``DocStore``) after the first call is not reflected.
+        """
         if not self.tasks_dir.exists():
             return []
         kind = self.registry.get(stored_kind_name)
@@ -265,19 +311,27 @@ class Kernel:
         if self._reverse_idx:
             return self._reverse_idx
 
-        wanted = {
-            k.inverse: self.registry.get(k.inverse)
-            for k in self.registry.derived_kinds
-            if k.inverse and self.registry.get(k.inverse) is not None
-        }
+        # Every kind a derived kind inverts, PLUS the hierarchy kind — a derived
+        # kind is not obliged to name its inverse back, and dropping the parent
+        # edge here empties the children view (HATS-1208 review).
+        wanted: dict[str, Any] = {}
+        for dk in self.registry.derived_kinds:
+            inverse = self.registry.get(dk.inverse) if dk.inverse else None
+            if inverse is not None:
+                wanted[dk.inverse] = inverse
+        hierarchy = self.registry.hierarchy_kind
+        if hierarchy is not None:
+            wanted.setdefault(hierarchy.name, hierarchy)
+
         indexes: dict[str, dict[str, list[str]]] = {name: {} for name in wanted}
         if not wanted:
             return indexes
         gates = {name: _reverse_field_gate(kind) for name, kind in wanted.items()}
-        # A dedicated scalar field is readable straight off the text, so the
-        # hierarchy kind keeps children_of's parse-free cost.
+        # A dedicated scalar field is usually readable straight off the text, so
+        # the hierarchy kind keeps children_of's parse-free cost; anything the
+        # flat read cannot be trusted with falls through to the parser.
         scalars = {
-            name: re.compile(rf"^{re.escape(name)}:\s*['\"]?([^'\"\s#]+)['\"]?\s*$", re.MULTILINE)
+            name: _scalar_reader(name)
             for name, kind in wanted.items()
             if name in LINK_STORAGE_FIELDS and kind.arity == "one"
         }
@@ -293,20 +347,23 @@ class Kernel:
             source = card_path.parent.name
             card: TaskCard | None = None
             for name in present:
+                targets: Any = None
                 if name in scalars:
-                    hit = scalars[name].search(text)
-                    targets: Any = (hit.group(1),) if hit else ()
-                else:
+                    scalar = _scalar_target(text, scalars[name])
+                    if scalar is not None:
+                        targets = (scalar,) if scalar else ()
+                if targets is None:
                     if card is None:
                         try:
                             card = TaskCard.from_yaml(card_path)
                         except Exception:  # noqa: BLE001 — a broken neighbour must not sink the read
                             break
-                    targets = (
+                    value = (
                         getattr(card, name, None)
                         if name in LINK_STORAGE_FIELDS
                         else card.links.get(name, ())
                     )
+                    targets = (value,) if isinstance(value, str) else value
                 if not isinstance(targets, (list, tuple)):
                     continue
                 for target in targets:

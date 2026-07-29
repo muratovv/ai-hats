@@ -77,10 +77,10 @@ def test_packaged_default_kinds():
     assert reg.require("fold").name == "folded_into"  # legacy spelling resolves
 
 
-def test_hierarchy_kind_requires_arity_one(tmp_path):
-    """Once a many-arity kind can carry a derived inverse (depends_on/blocks),
-    'has a derived inverse' alone would elect the first such kind as the parent
-    edge. Arity is what still separates them (HATS-1208)."""
+def test_hierarchy_kind_prefers_the_scalar_candidate(tmp_path):
+    """Once a many kind can carry a derived inverse too (depends_on/blocks),
+    'has a derived inverse' no longer identifies the parent edge on its own —
+    a scalar candidate wins even when the many one is declared first."""
     reg = _backlog_registry(
         tmp_path,
         "    - {name: depends_on, inverse: blocks}\n"
@@ -90,12 +90,16 @@ def test_hierarchy_kind_requires_arity_one(tmp_path):
     )
     assert reg.hierarchy_kind.name == "parent_task"
 
-    many_only = _backlog_registry(
+
+def test_hierarchy_kind_still_elects_a_lone_many_candidate(tmp_path):
+    """`many` is the arity default, so a registry predating `blocks` never said
+    `arity: one` — disqualifying many would silently kill its epic automation."""
+    reg = _backlog_registry(
         tmp_path,
-        "    - {name: depends_on, inverse: blocks}\n"
-        "    - {name: blocks, derived: true, inverse: depends_on}\n",
+        "    - {name: parents, inverse: children}\n"
+        "    - {name: children, derived: true, inverse: parents}\n",
     )
-    assert many_only.hierarchy_kind is None
+    assert reg.hierarchy_kind.name == "parents"
 
 
 def test_unknown_kind_names_the_configured_set():

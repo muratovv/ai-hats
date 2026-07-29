@@ -180,6 +180,41 @@ def test_blocks_derived_reverse_link_resolution(tasks_dir):
     assert pkg.links["blocks"][0].id == "T-2"
 
 
+def test_reverse_scan_reads_an_id_containing_whitespace(tasks_dir):
+    """Ids carry free-form tails, so the scalar fast path must not stop at the
+    first space — the whole children view rides on it."""
+    make_card(tasks_dir, "T-100 fix")
+    make_card(tasks_dir, "T-200", parent_task="T-100 fix")
+    pkg = build_context(tasks_dir, "T-100 fix")
+    assert [v.id for v in pkg.links.get("children", ())] == ["T-200"]
+
+
+def test_reverse_scan_follows_yaml_on_a_duplicate_scalar_key(tasks_dir):
+    """Last key wins, as the parser reads it — not the first the regex meets."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    make_card(tasks_dir, "T-3", parent_task="T-1")
+    path = tasks_dir / "T-3" / "task.yaml"
+    path.write_text(path.read_text() + "parent_task: T-2\n")
+
+    assert [v.id for v in build_context(tasks_dir, "T-1").links.get("children", ())] == []
+    assert [v.id for v in build_context(tasks_dir, "T-2").links.get("children", ())] == ["T-3"]
+
+
+def test_derived_kind_without_an_inverse_still_resolves(tasks_dir, tmp_path):
+    """A derived kind need not name its inverse back; the hierarchy pair is
+    identifiable from the stored side, and dropping it emptied `children`."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", parent_task="T-1")
+    reg = _backlog_registry(
+        tmp_path,
+        "    - {name: parent_task, arity: one, inverse: children}\n"
+        "    - {name: children, derived: true}\n",
+    )
+    pkg = build_context(tasks_dir, "T-1", registry=reg)
+    assert [v.id for v in pkg.links.get("children", ())] == ["T-2"]
+
+
 def test_corrupt_neighbour_does_not_sink_the_reverse_scan(tasks_dir):
     """The reverse scan parses neighbours the forward read never touched, so one
     unparseable card must fold away rather than take down every context read."""

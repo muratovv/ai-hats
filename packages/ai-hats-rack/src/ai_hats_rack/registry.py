@@ -108,14 +108,25 @@ class LinksRegistry:
     def hierarchy_kind(self) -> LinkKind | None:
         """The stored kind whose inverse is a *derived* kind — the parent edge
         `is_epic` and epic-automation bind to. Structural, not name-based, so a
-        renamed hierarchy kind is still found."""
+        renamed hierarchy kind is still found.
+
+        Once a `many` kind can carry a derived inverse too (`depends_on`/`blocks`,
+        HATS-1208), "has a derived inverse" no longer identifies it alone: a
+        scalar candidate wins, and `many` is only the answer when it is the sole
+        one — so a registry that predates `blocks` keeps its hierarchy.
+        """
+        fallback: LinkKind | None = None
         for kind in self.kinds:
-            if kind.derived or kind.arity != "one":
+            if kind.derived:
                 continue
             inverse = self.get(kind.inverse) if kind.inverse else None
-            if inverse is not None and inverse.derived:
+            if inverse is None or not inverse.derived:
+                continue
+            if kind.arity == "one":
                 return kind
-        return None
+            if fallback is None:
+                fallback = kind
+        return fallback
 
     @property
     def children_kind(self) -> LinkKind | None:
