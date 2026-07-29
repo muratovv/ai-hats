@@ -143,7 +143,66 @@ class LinkMirrorEvent:
         return self.target  # the reaction repairs the target card
 
 
-Event = Union[EdgeEvent, EpicifyEvent, PreDestroyEvent, LinkEvent, LinkMirrorEvent, ReadEvent]
+@dataclass(frozen=True)
+class FieldsEvent:
+    """A field mutation (--set / --append) applied to a card."""
+
+    field: str
+    op: str  # "set" | "append"
+    value: str = ""
+
+    @property
+    def key(self) -> str:
+        return f"op:{self.op}"
+
+    @property
+    def task_id(self) -> str | None:
+        return None
+
+
+@dataclass(frozen=True)
+class DocOpEvent:
+    """A document operation (--attach / --freeze / --rm) applied to a card."""
+
+    op: str  # "attach" | "freeze" | "rm"
+    name: str
+    src: str = ""
+
+    @property
+    def key(self) -> str:
+        return f"op:{self.op}"
+
+    @property
+    def task_id(self) -> str | None:
+        return None
+
+
+@dataclass(frozen=True)
+class LogEvent:
+    """A work_log operation (--log) applied to a card."""
+
+    message: str
+
+    @property
+    def key(self) -> str:
+        return "op:log"
+
+    @property
+    def task_id(self) -> str | None:
+        return None
+
+
+Event = Union[
+    EdgeEvent,
+    EpicifyEvent,
+    PreDestroyEvent,
+    LinkEvent,
+    LinkMirrorEvent,
+    ReadEvent,
+    FieldsEvent,
+    DocOpEvent,
+    LogEvent,
+]
 
 
 def event_detail(event: Event) -> dict[str, str]:
@@ -160,4 +219,17 @@ def event_detail(event: Event) -> dict[str, str]:
         return {"kind": event.kind}
     if isinstance(event, LinkMirrorEvent):
         return {"kind": event.kind, "origin": event.origin, "target": event.target}
+    if isinstance(event, FieldsEvent):
+        d = {"field": event.field, "op": event.op}
+        if event.value:
+            d["value"] = event.value
+        return d
+    if isinstance(event, DocOpEvent):
+        d = {"op": event.op, "name": event.name}
+        if event.src:
+            d["src"] = event.src
+        return d
+    if isinstance(event, LogEvent):
+        return {"message": event.message}
     return {"operation": event.operation}
+

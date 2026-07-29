@@ -23,11 +23,12 @@ from .dispatch import (
     DispatchRecord,
     JournalSink,
     Phase,
+    Set,
     Subscriber,
     SubscriberOutcome,
 )
 from .errors import RackError
-from .events import EdgeEvent, EpicifyEvent, Event, LinkEvent, PreDestroyEvent, event_detail
+from .events import EdgeEvent, EpicifyEvent, Event, FieldsEvent, LinkEvent, PreDestroyEvent, event_detail
 from .fsm import Topology, load_topology
 from .ids import prefix_of
 from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
@@ -708,10 +709,13 @@ class Kernel:
         dispatched: list[Event] = []
         transitions: list[TaskTransition] = []
         txn: OpTxn | None = None
+        old_parent = ""
+        new_parent = ""
         lock = self._task_lock(task_id)
         try:
             with lock:
                 task = self._load(task_id)
+                old_parent = task.parent_task
                 before = self._gate_values(task)
                 entered: list[str] = []
                 txn = OpTxn(
@@ -722,6 +726,7 @@ class Kernel:
                     registry=self.registry,
                     actor=actor,
                     ack_frozen=ack_frozen,
+                    dispatched=dispatched,
                     dispatch_link=self._link_dispatcher(
                         task, task_id, caller_cwd, actor, force, reason, dispatched, outcomes
                     ),
@@ -750,11 +755,16 @@ class Kernel:
                         # gated via _delta_applier — an extension-owned field write
                         # (validation_log/votes) atomic with any StateOp above.
                         self._delta_applier(task, actor)(Delta(fields=op.fields))
+                        for name, field_op in op.fields.items():
+                            op_name = "set" if isinstance(field_op, Set) else "append"
+                            val = str(field_op.value) if isinstance(field_op, Set) else str(field_op.entry)
+                            dispatched.append(FieldsEvent(field=name, op=op_name, value=val))
                         txn.results.append({"op": "fields", "names": sorted(op.fields)})
                     else:
                         apply_non_state_op(txn, op)
                 self._check_state_gates(task, entered, before)
                 self._persist(task)  # the SINGLE persist, always last
+                new_parent = task.parent_task
         except Timeout as exc:
             raise LockTimeoutError(
                 self.tasks_dir / task_id / ".lock", f"transition of {task_id}", self._lock_timeout
@@ -780,6 +790,9 @@ class Kernel:
                     event, task_id, actor, force, reason, outcomes, result="persisted"
                 )
             )
+        if new_parent and new_parent != old_parent:
+            epicify_records = self._dispatch_epicify(new_parent, task_id, actor=actor, caller_cwd=caller_cwd)
+            records.extend(epicify_records)
         return KernelResult(
             task=task,
             transitions=tuple(transitions),
@@ -808,9 +821,9 @@ class Kernel:
 
         def dispatch_link(kind: str, target: str, removed: bool) -> None:
             event = LinkEvent(kind=kind, target=target, removed=removed)
+            dispatched.append(event)
             if not self._dispatcher.subscribers_for(event.key, Phase.IN_LOCK):
                 return
-            dispatched.append(event)
             ctx = self._ctx_factory(
                 event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
             )
@@ -919,6 +932,7 @@ class Kernel:
             with lock:
                 task = self._load(event.target)
                 changed = False
+                apply_delta = self._delta_applier(task, actor)
                 for sub in subs:
                     ctx = DispatchContext(
                         event=event,
@@ -930,6 +944,7 @@ class Kernel:
                     delta = sub.on_event(ctx)
                     if delta is not None:
                         changed = True
+                        apply_delta(delta)
                         outcomes.append(
                             SubscriberOutcome(sub.name, Phase.POST_LOCK, "delta", delta=delta)
                         )

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .fsm import load_topology
 from .journal import CorruptLine, read_journal
@@ -74,17 +74,31 @@ def _matches(
     return True
 
 
+_DETAIL_KEY_HANDLERS: dict[str, Callable[[dict[str, Any]], str]] = {
+    "from": lambda d: f"{d['from']} → {d.get('to', '')}",
+    "child": lambda d: f"child {d['child']}",
+    "kind": lambda d: f"{d['kind']} {d.get('target', '')}".strip(),
+    "field": lambda d: f"{d['field']} {d.get('op', '')}".strip(),
+    "name": lambda d: f"{d.get('op', '')} {d['name']}".strip(),
+    "message": lambda d: f"{d['message']}",
+    "operation": lambda d: f"{d['operation']}",
+}
+
+
+def _format_detail(detail: dict[str, Any]) -> str:
+    for key, handler in _DETAIL_KEY_HANDLERS.items():
+        if key in detail:
+            return f" [{handler(detail)}]"
+    return ""
+
+
 def record_lines(record: dict[str, Any]) -> list[str]:
     """One head line per record + indented reason/outcomes. No truncation."""
-    head = f"{record.get('ts', '?')} {record.get('event', '?')}"
-    detail = record.get("detail") or {}
-    if "from" in detail:
-        head += f" [{detail['from']} → {detail['to']}]"
-    elif "child" in detail:
-        head += f" [child {detail['child']}]"
-    elif "operation" in detail:
-        head += f" [{detail['operation']}]"
-    head += f" actor={record.get('actor', '')} result={record.get('result', '')}"
+    head = (
+        f"{record.get('ts', '?')} {record.get('event', '?')}"
+        f"{_format_detail(record.get('detail') or {})}"
+        f" actor={record.get('actor', '')} result={record.get('result', '')}"
+    )
     marks = _marks(record)
     if marks:
         head += "  [" + ", ".join(marks) + "]"
