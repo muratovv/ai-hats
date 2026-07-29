@@ -50,6 +50,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # HATS-1280: converge the venv to what the new version actually declares.
+    # Before do_bump, so a bump failure cannot leave a retired CLI reachable.
+    # The import is inside the guard too: `retired_dists` reaches `_bootstrap`,
+    # and an ImportError here would skip the re-assembly entirely.
+    try:
+        from pathlib import Path
+
+        from .retired_dists import prune_retired
+
+        for removed in prune_retired(Path.cwd()):
+            print(f"ai-hats: removed retired {removed}", file=sys.stderr)
+    except BaseException as exc:  # noqa: BLE001 - never let a prune cost the bump
+        print(f"ai-hats: retired-distribution prune skipped: {exc!r}", file=sys.stderr)
+
     from .cli.assembly import do_bump
 
     return do_bump(migrate_force=migrate_force, check_branches=check_branches)
