@@ -60,13 +60,14 @@ def remedy_message(repo_root: Path, foreign: Path) -> str:
         f"Fix — step 1, create and provision a dedicated worktree venv using uv:\n"
         f"  uv venv .venv\n"
         f"  VIRTUAL_ENV=.venv uv pip install -e '.[dev]'{pkg_args}\n\n"
-        f"Fix — step 2, put that venv on PATH. Step 1 alone is NOT enough: git\n"
-        f"hooks resolve 'pytest' through PATH, so the pre-commit smoke gate keeps\n"
-        f"spawning the interpreter named above and testing the wrong checkout\n"
-        f"(HATS-1245). Either for this shell:\n"
+        f"Fix — step 2, put that venv on PATH. Step 1 alone is NOT enough for a\n"
+        f"'pytest' you type yourself: the bare name still resolves through PATH to\n"
+        f"the interpreter above, so the next run trips this guard again\n"
+        f"(HATS-1245). The git hooks no longer need this step — they take the\n"
+        f"committed checkout's own .venv (HATS-1291/1314). Either for this shell:\n"
         f'  export PATH="{repo_root}/.venv/bin:$PATH"\n'
         f"or for a single command:\n"
-        f'  PATH="{repo_root}/.venv/bin:$PATH" git commit ...\n\n'
+        f'  PATH="{repo_root}/.venv/bin:$PATH" pytest ...\n\n'
         f"To force execution against the foreign checkout (not recommended):\n"
         f"  export {ENV_IGNORE_FOREIGN_CHECKOUT}=1"
     )
