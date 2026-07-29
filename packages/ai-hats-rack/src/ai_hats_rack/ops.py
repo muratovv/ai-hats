@@ -20,7 +20,7 @@ from typing import Any, Callable, Mapping, Sequence, Union
 from .dispatch import Append, FieldOp, Set
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
-from .events import DocOpEvent, LogEvent
+from .events import DocOpEvent
 from .kernel import UnknownTaskError
 from .linked import guard_reciprocal, link_on_card, unlink_on_card
 from .models import LINK_STORAGE_FIELDS, TaskCard
