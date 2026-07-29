@@ -10,6 +10,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-29
+
 ### Removed
 
 - **The legacy `ai-hats task` CLI is unmounted** (HATS-1260, epic HATS-1159).
@@ -17,14 +19,128 @@ since the latest tag lives under **Unreleased** until the next release.
   (28 verbs) — are gone from the `ai-hats` surface; `rack` is the only backlog
   CLI. Migration: `docs/migration-v0.14.0.md` (ships with the release). An
   unrecognized leading word now follows the standard bare-positional-prompt
-  rule (HATS-087), so `ai-hats task …` no longer errors — it starts a session
-  with that text as the prompt. Recorded behavior change: `task_prefix`
+  rule (HATS-087 covered flag-shaped tokens; bare words became passthrough in
+  HATS-1202, in this same release), so `ai-hats task …` no longer errors — it
+  starts a session with that text as the prompt. Recorded behavior change:
+  `task_prefix`
   auto-detection from pre-existing task folders (with persist-back to
   `ai-hats.yaml`) was a feature of the removed CLI path; rack reads
   `task_prefix` from `ai-hats.yaml` only — legacy projects should set it
   explicitly.
 
+- **The `backlog-manager` skill tree and its git hook are deleted** (HATS-1261,
+  epic HATS-1252). Once `hatrack` became the default manager (HATS-1054) the
+  classic skill was composed by no role and taught a CLI that no longer exists.
+  The skill, its five reference files and the `pre-commit-attachments.sh` hook
+  that guarded the legacy card subtree are gone from `ai-hats-library`;
+  `hatrack` is the only shipped backlog-manager skill. Migration:
+  `docs/migration-v0.14.0.md`.
+
+- **`packages/ai-hats-tracker` is deleted** (HATS-1262, epic HATS-1252). The
+  package backing the retired `ai-hats task` CLI is gone from the uv workspace,
+  the root dependency set, and the publish workflow. Its surviving consumers
+  were re-homed first — the ownership registry, `linked_context` and
+  `TrackerPaths` into `src/ai_hats` (HATS-1258), and the retro window onto the
+  rack facade (HATS-1259). Migration: `docs/migration-v0.14.0.md`. An existing
+  venv keeps the orphaned distribution — and with it a working legacy CLI over
+  the same store — until it is pruned; see `self update` under *Fixed*.
+
 ### Fixed
+
+- **`ai-hats self update` prunes distributions the new version retired**
+  (HATS-1280). `self update` installs, it does not synchronize: a dependency the
+  new version dropped stayed in the venv with its console scripts. After 0.14.0
+  that would leave `ai-hats-tracker` installed alongside — a working legacy
+  backlog CLI over the same store, with a diverging plan-section catalog and no
+  `edge:` bindings — so the exact hazard the cutover exists to remove would
+  survive the upgrade under a different name. The prune runs post-install in the
+  **new** interpreter, so it fires on the upgrade that introduces it rather than
+  one release later, and works from an explicit retired-distribution list rather
+  than generic orphan detection. No-op on the managed blue-green path, stands
+  down on editable installs, and fails open when `uv` is unavailable.
+  Migration: `docs/migration-v0.14.0.md`.
+
+- **`wt merge` refuses a stale ref and never deletes a branch it did not land**
+  (HATS-1346). A live incident dropped two commits: the auto-merge on
+  `review → done` consumed an integration ref prepared by an *earlier* session
+  and fast-forwarded that, then removed the worktree and deleted the branch —
+  whose tip was two commits ahead. The work survived only because the objects
+  were still unreachable-but-present in the shared object store, one `git gc`
+  from gone. `merge` now resolves the task branch tip at merge time; a
+  caller-supplied `expected_tip` that no longer matches is a typed
+  `WorktreeStaleRefError` naming both SHAs, and teardown is gated on containment
+  (`merge-base --is-ancestor <tip> <target>`) rather than on the merge step
+  having returned zero — a target that does not contain the tip raises
+  `WorktreeMergeIncompleteError` and leaves the worktree and branch in place.
+  Both are precondition refusals, so neither is reported as a failed merge. Same
+  defect class as HATS-1307 — validating against cached state instead of live
+  state — this time on the destructive path, where the `review → execute` rework
+  loop makes "another session advanced the branch" a normal condition.
+
+- **A freshly created worktree comes with its own venv** (HATS-1291). A
+  rack-created worktree had none, and the `git-mastery` pre-commit smoke hook
+  resolved `pytest` through `PATH` — landing on the main checkout's interpreter,
+  which the wrong-checkout guard then refused. The very first `git commit` inside
+  a new worktree failed, and the printed remedy was a ten-line manual
+  provisioning recipe. A new `worktree-venv` skill contributes a `wt_in` hook
+  that provisions the venv at worktree creation; the smoke hook now runs the
+  committed checkout's own pytest.
+
+- **The pre-commit smoke hook stops blocking commits in projects without
+  `tests/e2e/`** (HATS-1352). The hook is shipped to consumers through the
+  `git-mastery` skill, and it passed `tests/e2e/` to pytest unconditionally.
+  pytest answers a missing path with rc=4 (usage error) — not the rc=5 the hook
+  treats as "nothing to run" — so any consumer project with an `integration`-
+  tagged task in `execute` and no such directory had **every** commit blocked.
+  The path is now passed only when it exists; without it pytest falls back to the
+  configured `testpaths`, which is the pre-scoping behaviour.
+
+- **`ai-hats-agy` is published** (HATS-1353). The `agy` surface was listed in
+  `KNOWN_SURFACES` and self-heal ran `uv pip install ai-hats-agy` for it, but
+  nothing ever built or published the distribution — so selecting the surface on
+  a stable-channel install ended in a missing package. It now builds and
+  publishes from `release-packages.yml` in its own `pypi-agy` environment, and a
+  test pins that every surface in the registry has a publish job.
+
+- **The `ai-hats` binary runs from inside a worktree** (HATS-1306). The launcher
+  resolved the project venv relative to cwd, so any invocation inside a linked
+  worktree died with `venv missing at <worktree>/.agent/ai-hats/.venv`. That
+  killed `ai-hats wt exec <branch> -- git commit` outright and every hook or
+  script that re-enters ai-hats from inside a worktree. The launcher now hops to
+  the main checkout, guarded on that root actually carrying `.agent/` or
+  `ai-hats.yaml`.
+
+- **`rack transition --append <field>=<json>` can no longer render a card
+  unreadable** (HATS-1299). `--append tags='["x"]'` nested the array as a single
+  entry, and the card then failed strict validation on *read*: `rack context`
+  reported `Task not found`, `--set` could not repair it because it validates
+  before it mutates, and the only way out was hand-editing `task.yaml`. Reads are
+  now tolerant and writes strict: `from_yaml` coerces stray entries and reports
+  them as warnings, `save` refuses any mapping the strict model cannot load back,
+  and an array extends rather than nests.
+
+- **Link, field and document ops reach the audit journal, on both sides of a
+  link** (HATS-1351). Only state transitions and `epicify` ever reached
+  `audit.jsonl` — there were zero records for `--link`, `--unlink`, `--set`,
+  `--append`, `--log` or the document ops. A re-parent left no trace at all, and
+  the mirrored side learned nothing. `transition` now emits `op:*` records
+  carrying the field or document name, and the post-lock mirror delta is
+  persisted on the target card rather than dropped.
+
+- **A second `fold` is refused instead of silently overwriting the first**
+  (HATS-1328). `--link fold:<ID>` on an already-folded card overwrote the scalar
+  link field, so the first fold vanished — silent loss of exactly the audit trail
+  folding exists to leave. It is now a typed `already_folded` refusal naming the
+  current target, and `folded_into` declares the derived inverse `subsumes`, so
+  "what was folded into this card" is answerable again.
+
+- **The documented re-parent command is the one that works** (HATS-1350). The
+  `hatrack` skill and `docs/how-to-hatrack.md` both taught
+  `rack transition <ID> --set parent_task=<EPIC>`, which rack refuses, and the
+  refusal's own suggestion then failed `already_linked` because the field was
+  occupied — an agent following the docs hit two typed refusals in a row. Both
+  now show the working form: `--unlink parent_task:<old> --link
+  parent_task:<new>` in one transition.
 
 - **The drift guard no longer dead-ends `rack transition <id> done`** (HATS-1307).
   Drift was measured against the base SHA snapshotted at `wt create`, so a branch
@@ -2165,7 +2281,8 @@ were maintained in a private repository and documented in commit
 messages rather than this changelog. The Unreleased section above is
 where the public changelog history starts.
 
-[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/muratovv/ai-hats/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/muratovv/ai-hats/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/muratovv/ai-hats/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/muratovv/ai-hats/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/muratovv/ai-hats/compare/v0.12.0...v0.13.0
