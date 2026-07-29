@@ -172,7 +172,7 @@ class DeadCwdError(click.ClickException):
     """The current working directory no longer exists (HATS-788).
 
     Commonly: the linked worktree you were standing in was just torn down by
-    `task transition done` / `wt merge`. Resolving the project root from a
+    `rack transition <id> done` / `wt merge`. Resolving the project root from a
     removed cwd would otherwise crash (`Path.cwd()` → FileNotFoundError on
     macOS) or, on Linux where `os.getcwd()` can return a stale path string,
     silently fall through to the cwd fallback and let `ai_hats_dir()`'s
@@ -306,7 +306,7 @@ def _guard_not_inside_linked_worktree() -> None:
     Callers used to hand this `_project_dir()`, which has already HOPPED to the
     main checkout (HATS-524), so `is_inside_linked_worktree` inspected MAIN and
     the guard silently no-op'd from inside a worktree — letting a
-    teardown command (`wt merge`/`discard`, `task transition done`) run
+    teardown command (`wt merge`/`discard`, `rack transition <id> done`) run
     `git worktree remove --force` on the operator's own cwd. Resolving cwd
     here, once, also keeps the check uncopyable-wrong at the call sites.
 
@@ -314,7 +314,7 @@ def _guard_not_inside_linked_worktree() -> None:
     worktree (and thus cwd) still exists.
 
     Originally inline in ``wt_create`` (HATS-060); lifted to a helper so
-    ``wt_merge`` / ``wt_discard`` / ``wt_list`` / ``task transition`` share it.
+    ``wt_merge`` / ``wt_discard`` / ``wt_list`` / ``rack transition`` share it.
 
     Prints a guidance message and ``sys.exit(1)`` on breach. Returns None
     when CWD is OK (main worktree or non-git path).

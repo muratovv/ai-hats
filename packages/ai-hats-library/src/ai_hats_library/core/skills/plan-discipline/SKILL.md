@@ -21,12 +21,12 @@ A plan is always a task, authored into `<ai_hats_dir>/tracker/backlog/tasks/<ID>
   (it routes Requirements / Scope / Steps / Verification to their owners). Don't
   duplicate that here.
 - Not an enforcement gate: the engine per-section gate (HATS-635) blocks
-  `transition execute` on an empty plan. This skill is the authoring discipline
+  `rack transition <ID> execute` on an empty plan. This skill is the authoring discipline
   upstream of it; the gate is the backstop.
 
 ## Procedure
 
-Run all `task` / `wt` CLI from the **main repo** — the tracker lives under the
+Run all `rack` / `ai-hats wt` CLI from the **main repo** — the tracker lives under the
 gitignored `.agent/`, so a linked worktree has no real tracker.
 
 ### Preferred — plan directly in the tracker (no plan mode)
@@ -41,23 +41,23 @@ tracker — zero round-trip, no `.claude/plans` file.
 
 ### In Claude Code plan mode — two phases
 
-Plan mode is **read-only**: it blocks `task` CLI and every write except
+Plan mode is **read-only**: it blocks the `rack` CLI and every write except
 `.claude/plans/<slug>.md`, so the tracker flow is impossible *until you exit*.
 That's expected — don't fight it, and don't apologise for the draft.
 
 - **Phase 1 — in plan mode:** design; draft into `.claude/plans/<slug>.md`;
-  present via `ExitPlanMode`. Do **not** attempt `task create` / `transition` /
-  tracker writes — they are blocked. The draft is scratch, not the plan of record.
+  present via `ExitPlanMode`. Do **not** attempt `rack create` / `rack transition`
+  / tracker writes — they are blocked. The draft is scratch, not the plan of record.
 - **Phase 2 — immediately on approval / exit:** your **first** action, before any
-  other execute work, is to persist into the tracker — `task create` (if needed)
-  → `transition <ID> plan` → Read the `.claude/plans` draft → Write it into
-  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` → fill/confirm sections → `transition <ID> execute`. There
+  other execute work, is to persist into the tracker — `rack create` (if needed)
+  → `rack transition <ID> plan` → Read the `.claude/plans` draft → Write it into
+  `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` → fill/confirm sections → `rack transition <ID> execute`. There
   is no auto-sync (HATS-637); the `.claude/plans` file is now inert, leave or delete.
 
 ## Completion
 
 - `<ai_hats_dir>/tracker/backlog/tasks/<ID>/plan.md` holds the real plan; no task-bearing file remains in
-  `.claude/plans`; `transition <ID> execute` passes the gate.
+  `.claude/plans`; `rack transition <ID> execute` passes the gate.
 - Handoff: plan in tracker → `plan-gate` (section quality) → engine gate → execute.
 
 ## Anti-Patterns
@@ -66,8 +66,8 @@ That's expected — don't fight it, and don't apologise for the draft.
   Phase-1 scratch; the plan isn't real until transferred to the tracker on exit.
 - Skipping the Phase-2 transfer (or deferring it behind other execute work) —
   persisting into the tracker is the **first** post-approval action.
-- Fighting plan mode by trying `task` CLI / tracker writes while still in it — they
+- Fighting plan mode by trying `rack` CLI / tracker writes while still in it — they
   are blocked; draft, exit, then persist.
 - Drafting a plan without a task — if it's a plan, you made a task.
-- Running `task` / `transition` from inside a worktree — the gitignored tracker
+- Running `rack` from inside a worktree — the gitignored tracker
   isn't there; ids and state desync. Use the main repo.

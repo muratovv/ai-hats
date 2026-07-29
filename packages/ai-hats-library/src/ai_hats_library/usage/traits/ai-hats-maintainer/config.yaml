@@ -130,4 +130,4 @@ injection: |
   ### Anti-patterns to refuse
   - **Memory pattern duplication**: if a pattern lives both in `~/.claude/projects/<proj>/memory/` AND in a role component (skill / rule / trait injection), DELETE the memory file — auto-load duplicates the prompt budget. (See HATS-381 for the consolidation precedent.)
   - **Real-component testing as the only path**: if a test "needs the real subprocess / real LLM / real binary", first ask whether the contract under test can be extracted into a pure function and unit-tested. Use real-subprocess only when the contract IS at the subprocess boundary (see `dev_rule_e2e_gate`).
-  - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `task log <FOLLOW_UP_ID>`, not in a new HYP (see `rule_backlog_discipline §5`).
+  - **HYP-as-technical-risk**: HYP is for agent-behaviour hypotheses. Code / migration / harness risks belong in `rack transition <FOLLOW_UP_ID> --log "…"`, not in a new HYP (see `rule_backlog_discipline §5`).

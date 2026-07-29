@@ -201,7 +201,7 @@ Git worktrees give each task its own working copy: separate branch, separate fil
 
 | Situation                                        | Use a worktree                                                                            |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Non-trivial change you want isolated from master | yes — `ai-hats wt create` (or just `task transition <id> execute`, which does it for you) |
+| Non-trivial change you want isolated from master | yes — `ai-hats wt create` (or just `rack transition <id> execute`, which does it for you) |
 | Parallel sub-agents on independent tasks         | yes — each agent gets its own worktree via `ai-hats agent --isolation`                    |
 | Risky refactor you might abandon                 | yes — `wt discard` cleans the branch + dir in one shot                                    |
 | One-line typo / README fix                       | no — commit on master                                                                     |
@@ -210,7 +210,7 @@ Git worktrees give each task its own working copy: separate branch, separate fil
 ### 2.2 Lifecycle
 
 ```bash
-# Create (or — typically — let `task transition execute` create it for you)
+# Create (or — typically — let `rack transition <id> execute` create it for you)
 ai-hats wt create feat/HATS-NNN
 cd $(git worktree list --porcelain | awk '/^worktree/ {print $2; exit}' | tail -n1)
 # (real path is printed by `wt create`; copy it from there)
@@ -274,16 +274,16 @@ ai-hats agent sre --task "investigate alert XYZ" --isolation
 
 Each agent has its own worktree, branch, and trace dir. Use this when the parent agent needs to keep working on the main task while a side investigation runs in parallel.
 
-Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-200`, `fix/HATS-380`). The `task transition execute` flow picks the branch name automatically from the task ID.
+Branch naming convention: `<type>/<TICKET-ID>` (e.g. `feat/HATS-200`, `fix/HATS-380`). The `rack transition <id> execute` flow picks the branch name automatically from the task ID.
 
 ### 2.5 Pitfalls
 
 - **Uncommitted work in a worktree is NOT protected.** A worktree is a filesystem directory; parallel sessions, cleanup hooks, or `git worktree remove --force` can destroy it without warning, and there is **no recovery** for uncommitted changes. Commit at every meaningful checkpoint (every passing test run, every completed sub-task).
 - **Don't `cp` skill files manually.** At runtime ai-hats materializes the role's skills into the per-session cache (`<ai_hats_dir>/.cache/sessions/<sid>/`) and hands them to the surface by flag — the exact subpath is provider-specific, see [`docs/ARCHITECTURE.md#materialization`](ARCHITECTURE.md#materialization). Edits take effect on the next session without running any command. There is no permanent skill-mirror to maintain at `.claude/skills/` (retired in HATS-294) or `<ai_hats_dir>/library/skills/` (that one holds components **you** author locally). **Never** `cp -r .claude/skills/ ~/.claude/skills/`: ai-hats does not manage user-level Claude skill catalogs, the copy will drift from source-of-truth, and `self init` will print a WARN about the orphan `.ai-hats-managed` marker on every run (HATS-465).
 - **Don't create a worktree from inside a worktree.** `ai-hats wt create` from a linked worktree is blocked. Always `cd` back to the main repo first.
-- **Pre-existing `task/<id>` branches are handled, with one caveat.** Three cases (HATS-517): (1) you ran `git branch task/hats-NNN` ahead of time and the branch isn't checked out anywhere — `task transition execute` attaches the existing branch to a fresh linked worktree, no error; (2) a linked worktree for that branch already exists but its ai-hats state JSON was lost — the transition adopts the existing path and re-persists state; (3) you're **currently on** `task/hats-NNN` (or any non-base branch) in the main repo — the transition refuses, because adopting the main worktree would silently disable auto-merge on `transition done`. Case 3 is intercepted earlier by the HATS-518 canonical-base guard (`WorktreeBaseBranchError`); recovery is `git checkout master` in the main repo, then retry — or `rack transition <id> --state done --force --reason "shipped on main"` if the work already landed.
-- **Don't let the main-repo HEAD wander between `wt create` and `wt merge`.** The merge target is captured at create-time as `_original_branch`, and `wt merge` / `task transition done` invoke `git merge` from the main-repo cwd. If anything moves the main-repo HEAD off `_original_branch` in the window between create and merge — manual `git checkout` to look at another task, an IDE branch-switch, a peer agent that commits directly in the main repo without using a linked worktree — the merge would otherwise land on the **current** branch, not on the merge target. The HATS-533 merge-time guard (`WorktreeBaseBranchMismatchError`) refuses before any mutation; the CLI emits a copy-pasteable recipe (`cd <main-repo>; git checkout <expected>; ai-hats wt merge` — or `… rack transition <id> done` on the transition surface). The worktree branch is preserved across the refusal; no work lost, no commits dropped. `--force` (dirty-worktree consent) and `--accept-drift` (stale-baseline consent) do **not** bypass this guard — they address different safety contracts. Symmetric peer of HATS-518 (which closes the same wrong-branch class at create-time).
-- **Run `wt merge` / `wt discard` / `task transition <id> done` from the main repo, never from inside the worktree** — the teardown runs `git worktree remove` on the cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker (HATS-788). The CLI refuses the in-worktree invocation; `cd` back to the project dir and pass the branch explicitly, or use `ai-hats wt exec` / `wt env` to act on a worktree without leaving it.
+- **Pre-existing `task/<id>` branches are handled, with one caveat.** Three cases (HATS-517): (1) you ran `git branch task/hats-NNN` ahead of time and the branch isn't checked out anywhere — `rack transition <id> execute` attaches the existing branch to a fresh linked worktree, no error; (2) a linked worktree for that branch already exists but its ai-hats state JSON was lost — the transition adopts the existing path and re-persists state; (3) you're **currently on** `task/hats-NNN` (or any non-base branch) in the main repo — the transition refuses, because adopting the main worktree would silently disable auto-merge on `transition done`. Case 3 is intercepted earlier by the HATS-518 canonical-base guard (`WorktreeBaseBranchError`); recovery is `git checkout master` in the main repo, then retry — or `rack transition <id> --state done --force --reason "shipped on main"` if the work already landed.
+- **Don't let the main-repo HEAD wander between `wt create` and `wt merge`.** The merge target is captured at create-time as `_original_branch`, and `wt merge` / `rack transition <id> done` invoke `git merge` from the main-repo cwd. If anything moves the main-repo HEAD off `_original_branch` in the window between create and merge — manual `git checkout` to look at another task, an IDE branch-switch, a peer agent that commits directly in the main repo without using a linked worktree — the merge would otherwise land on the **current** branch, not on the merge target. The HATS-533 merge-time guard (`WorktreeBaseBranchMismatchError`) refuses before any mutation; the CLI emits a copy-pasteable recipe (`cd <main-repo>; git checkout <expected>; ai-hats wt merge` — or `… rack transition <id> done` on the transition surface). The worktree branch is preserved across the refusal; no work lost, no commits dropped. `--force` (dirty-worktree consent) and `--accept-drift` (stale-baseline consent) do **not** bypass this guard — they address different safety contracts. Symmetric peer of HATS-518 (which closes the same wrong-branch class at create-time).
+- **Run `wt merge` / `wt discard` / `rack transition <id> done` from the main repo, never from inside the worktree** — the teardown runs `git worktree remove` on the cwd you are standing in, orphaning your shell so every later `ai-hats` mis-resolves the tracker (HATS-788). The CLI refuses the in-worktree invocation; `cd` back to the project dir and pass the branch explicitly, or use `ai-hats wt exec` / `wt env` to act on a worktree without leaving it.
 
 ### 2.6 Recovery from a stray worktree
 
@@ -303,7 +303,7 @@ ai-hats hardens the worktree subsystem against four classes of race that show up
 | Scenario                                                                        | Outcome                                                                                                                                                                     |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Parallel `wt merge X` and `wt discard X` on the **same** branch                 | Serialized; one wins, the other no-ops with `INFO: Worktree '<branch>' already torn down by a peer`. **No half-merged commit, no branch graveyard.**                        |
-| Two parallel `task transition <id> done` on tasks sharing the **same base** ref | Serialized at the base-branch merge layer; both DONE, both commits land. On a real merge failure the task **stays in `review`** instead of silently going DONE (fail-loud). |
+| Two parallel `rack transition <id> done` on tasks sharing the **same base** ref | Serialized at the base-branch merge layer; both DONE, both commits land. On a real merge failure the task **stays in `review`** instead of silently going DONE (fail-loud). |
 | Parallel `wt create` of the **same** branch                                     | Exactly one winner; the loser sees `WorktreeCreateError: branch already exists`. No leaked `/tmp/ai-hats-wt-*` dir.                                                         |
 | Parallel `wt create` of **different** branches                                  | Both succeed; the create-time `.git/config` contention is absorbed silently.                                                                                                |
 | Long-running IDE / manual `git commit` briefly holding `.git/index.lock`        | ai-hats retries with full-jitter backoff (≤8 attempts, ≤5 s cap); user-facing operation succeeds.                                                                           |
@@ -324,7 +324,7 @@ Full architectural picture, including lock-ordering hierarchy and rationale for 
 ### 2.8 See also
 
 - [8] — `worktree-isolation` skill — in-session checklist composed into every role that owns a lifecycle.
-- [2] — `task transition execute` and `task close` lifecycle (the most common worktree entry/exit points).
+- [2] — `rack transition <id> execute` and `rack transition <id> done` lifecycle (the most common worktree entry/exit points).
 - **ADR-0006** — `docs/adr/0006-worktree-concurrency-layered-defense.md`.
 
 ---
