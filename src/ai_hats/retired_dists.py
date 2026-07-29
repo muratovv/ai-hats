@@ -59,11 +59,28 @@ def _still_declared() -> set[str]:
     Makes "prune something still needed" impossible rather than unlikely: under a
     cherry-pick, a ``--revision`` install, or a future typo in the retired set,
     the name simply resolves as live and is skipped.
+
+    Probing our own dist first is what makes the guard real. ``expected_runtime_deps``
+    swallows a missing ai-hats and answers ``[]`` — indistinguishable from "declares
+    nothing", so an interpreter that cannot read its own metadata (a PYTHONPATH source
+    run, a clobbered dist-info) would otherwise read as "prune everything" (HATS-1280).
     """
+    retired = {_normalise(name) for name in RETIRED_DISTRIBUTIONS}
     try:
-        return {_normalise(dist) for dist, _ in expected_runtime_deps()}
+        importlib.metadata.distribution("ai-hats")
+        declared = {_normalise(dist) for dist, _ in expected_runtime_deps()}
     except Exception:  # noqa: BLE001 - a guard that crashes must not prune
-        return {_normalise(name) for name in RETIRED_DISTRIBUTIONS}
+        return retired
+    return declared or retired
+
+
+def _warn(message: str) -> None:
+    """One line to stderr — a silent failure is indistinguishable from "nothing
+    to do", and the prune gets one shot per user per upgrade."""
+    try:
+        print(f"ai-hats: {message}", file=sys.stderr)
+    except Exception:  # noqa: BLE001 - reporting must not be what raises
+        pass
 
 
 def _is_installed(name: str) -> bool:
@@ -86,6 +103,7 @@ def _uninstall(name: str, python_exe: str) -> bool:
     """
     uv = shutil.which("uv")
     if uv is None:
+        _warn(f"cannot remove retired {name}: uv not on PATH")
         return False
     try:
         proc = subprocess.run(
@@ -95,9 +113,13 @@ def _uninstall(name: str, python_exe: str) -> bool:
             timeout=_UNINSTALL_TIMEOUT_S,
             start_new_session=True,
         )
-    except BaseException:  # noqa: BLE001 - incl. TimeoutExpired and KeyboardInterrupt
+    except BaseException as exc:  # noqa: BLE001 - incl. TimeoutExpired and KeyboardInterrupt
+        _warn(f"cannot remove retired {name}: {type(exc).__name__}")
         return False
-    return proc.returncode == 0
+    if proc.returncode != 0:
+        _warn(f"cannot remove retired {name}: uv exited {proc.returncode}")
+        return False
+    return True
 
 
 def prune_running_interpreter() -> list[str]:
@@ -121,18 +143,26 @@ def strip_retired_scripts(venv_dir: Path, project_dir: Path | None = None) -> li
     """
     from ai_hats_core.safe_delete import discard
 
+    declared = _still_declared()
     removed: list[str] = []
-    for scripts in RETIRED_DISTRIBUTIONS.values():
+    for name, scripts in RETIRED_DISTRIBUTIONS.items():
+        if _normalise(name) in declared:
+            continue
         for script in scripts:
             for path in (venv_dir / "bin" / script, venv_dir / "Scripts" / f"{script}.exe"):
                 try:
-                    if path.is_file() or path.is_symlink():
-                        discard(
-                            path, reason="retired distribution (HATS-1280)", project_dir=project_dir
-                        )
-                        removed.append(str(path))
-                except OSError:
+                    if not (path.is_file() or path.is_symlink()):
+                        continue
+                    discard(
+                        path, reason="retired distribution (HATS-1280)", project_dir=project_dir
+                    )
+                except (OSError, ValueError) as exc:
+                    _warn(f"cannot remove retired {path}: {type(exc).__name__}")
                     continue
+                # State, not the call's return: discard deletes before it records,
+                # so a failed manifest write must still count as removed.
+                if not (path.is_file() or path.is_symlink()):
+                    removed.append(str(path))
     return removed
 
 
@@ -158,6 +188,7 @@ def prune_retired(project_dir: Path) -> list[str]:
         legacy = ai_hats_dir(project_dir) / ".venv"
         if legacy.is_dir() and legacy.resolve() != Path(sys.prefix).resolve():
             removed += strip_retired_scripts(legacy, project_dir)
-    except BaseException:  # noqa: BLE001 - a prune must never fail an upgrade
+    except BaseException as exc:  # noqa: BLE001 - a prune must never fail an upgrade
+        _warn(f"retired-distribution prune aborted: {type(exc).__name__}")
         return removed
     return removed

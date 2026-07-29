@@ -7,7 +7,8 @@ never remove something still needed.
 T1  kill switch: ``ENV_SKIP_PRUNE`` set → ``[]`` and NOT ONE subprocess call.
 T2  declared-dependency guard: a name ai-hats still requires is never uninstalled.
 T2c control: the same setup WITHOUT the guard does uninstall (T2/T3/T4 not vacuous).
-T3  guard failure is conservative: ``expected_runtime_deps`` raising → prune nothing.
+T3  guard failure is conservative: raising, an empty answer, or an ai-hats that
+    cannot resolve its own metadata all → prune nothing.
 T4  not installed → no ``uv``, no subprocess (the "no measurable cost" property).
 T5  no ``uv`` on PATH → clean False, no raise.
 T6  ``uv`` non-zero exit → not-removed, no raise.
@@ -23,11 +24,17 @@ Every test that lets the prune run replaces ``subprocess.run`` and/or
 venv (which is exactly what the session-autouse ``_no_retired_prune`` fixture in
 tests/conftest.py exists to prevent — tests that need the prune ACTIVE delete
 that var explicitly via :func:`_activate_prune`).
+
+``prune_retired`` has TWO early returns, and a test that drives it must neutralise
+BOTH or it passes for the wrong reason: the kill switch (:func:`_activate_prune`)
+AND the editable-install exemption (:func:`_not_editable`) — this checkout and CI
+are both editable installs, so the second one fires in every unit-test run.
 """  # comment-length: allow
 
 from __future__ import annotations
 
 import importlib.metadata
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +46,32 @@ from ai_hats.paths import ai_hats_dir
 
 RETIRED_NAME = "ai-hats-tracker"
 RETIRED_SCRIPT = "ai-hats-tracker"
+
+
+# ---------- the default-deny guard for the whole module ----------
+
+
+@pytest.fixture(autouse=True)
+def _no_real_uv(monkeypatch):
+    """Default-deny the uv lookup for EVERY test here: an unstubbed
+    ``shutil.which`` resolves the developer's real uv and uninstalls out of this
+    very venv. Tests that want uv re-patch it (their setattr runs after and wins).
+
+    Records as well as raises — ``prune_retired`` swallows ``BaseException``, so a
+    breach raised inside it would vanish; the teardown assert is what shows it.
+    """
+    real_which = shutil.which
+    reached: list[str] = []
+
+    def guarded(cmd, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        if cmd == "uv":
+            reached.append(cmd)
+            raise AssertionError("test reached the REAL uv lookup without stubbing it")
+        return real_which(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(retired_dists.shutil, "which", guarded)
+    yield
+    assert reached == [], "a test in this module resolved uv through the real PATH"
 
 
 # ---------- helpers ----------
@@ -156,8 +189,14 @@ def test_retired_set_pins_the_name_this_suite_drives():
 
 
 def test_t1_kill_switch_returns_empty_and_runs_no_subprocess(monkeypatch, tmp_path):
-    """``ENV_SKIP_PRUNE`` short-circuits before any process is spawned."""
+    """``ENV_SKIP_PRUNE`` short-circuits before any process is spawned.
+
+    ``_not_editable`` is what gives the assertions teeth: the editable exemption
+    is the very next early return, so without it deleting the kill switch would
+    still produce ``[]`` and an untouched spy.
+    """
     monkeypatch.setenv(retired_dists.ENV_SKIP_PRUNE, "1")
+    _not_editable(monkeypatch)
     run_spy = _block_subprocess(monkeypatch)
     which_spy = _block_which(monkeypatch)
     # would otherwise be a prime uninstall candidate
@@ -171,9 +210,15 @@ def test_t1_kill_switch_returns_empty_and_runs_no_subprocess(monkeypatch, tmp_pa
 
 def test_t1b_kill_switch_honours_any_truthy_value(monkeypatch, tmp_path):
     monkeypatch.setenv(retired_dists.ENV_SKIP_PRUNE, "0")  # non-empty string is truthy
+    _not_editable(monkeypatch)
     run_spy = _block_subprocess(monkeypatch)
+    which_spy = _block_which(monkeypatch)
+    _declares(monkeypatch, "click")
+    _installed(monkeypatch, True)
+
     assert retired_dists.prune_retired(tmp_path) == []
     assert run_spy.calls == []
+    assert which_spy.calls == []
 
 
 # ---------- T2: declared-dependency guard ----------
@@ -186,7 +231,6 @@ def test_t2_declared_dependency_is_never_uninstalled(monkeypatch):
     still requires the dist. Installed + in RETIRED_DISTRIBUTIONS + guard says
     "declared" → no uninstall.
     """
-    _activate_prune(monkeypatch)
     _declares(monkeypatch, "click", RETIRED_NAME)
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
@@ -199,7 +243,6 @@ def test_t2_declared_dependency_is_never_uninstalled(monkeypatch):
 
 def test_t2b_declared_guard_is_pep503_normalised(monkeypatch):
     """``AI_Hats_Tracker`` declared must shield ``ai-hats-tracker`` retired."""
-    _activate_prune(monkeypatch)
     _declares(monkeypatch, "AI_Hats.Tracker")
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
@@ -215,7 +258,6 @@ def test_t2c_control_without_the_guard_the_uninstall_does_happen(monkeypatch):
     Without it, "no uninstall happened" would be unfalsifiable — every one of
     those tests could pass because the code path is simply never reached.
     """
-    _activate_prune(monkeypatch)
     _declares(monkeypatch, "click")  # tracker NOT declared
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
@@ -235,7 +277,6 @@ def test_t3_guard_failure_treats_everything_as_declared(monkeypatch):
     def boom():
         raise RuntimeError("metadata unreadable")
 
-    _activate_prune(monkeypatch)
     monkeypatch.setattr(retired_dists, "expected_runtime_deps", boom)
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
@@ -247,12 +288,49 @@ def test_t3_guard_failure_treats_everything_as_declared(monkeypatch):
     assert run_spy.calls == [], "a crashed guard let the prune through"
 
 
+def test_t3b_an_empty_declared_set_is_read_as_unreadable_not_as_nothing_declared(monkeypatch):
+    """``expected_runtime_deps`` swallows a missing ai-hats and answers ``[]``.
+
+    Indistinguishable from "declares nothing", so an empty answer must NOT mean
+    "prune everything" — a PYTHONPATH source run would otherwise sweep the venv.
+    """
+    _declares(monkeypatch)  # → []
+    _installed(monkeypatch, True)
+    _fake_uv(monkeypatch)
+    run_spy = _block_subprocess(monkeypatch)
+
+    assert retired_dists._still_declared() == {
+        retired_dists._normalise(n) for n in retired_dists.RETIRED_DISTRIBUTIONS
+    }
+    assert retired_dists.prune_running_interpreter() == []
+    assert run_spy.calls == [], "an empty declared set let the prune through"
+
+
+def test_t3c_own_dist_unreadable_is_read_as_unreadable(monkeypatch):
+    """The probe is the point: a plausible dep list is not trusted if ai-hats
+    itself cannot be resolved (clobbered dist-info, source run)."""
+
+    def boom(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(retired_dists.importlib.metadata, "distribution", boom)
+    _declares(monkeypatch, "click")  # non-empty, tracker absent → would prune
+    _installed(monkeypatch, True)
+    _fake_uv(monkeypatch)
+    run_spy = _block_subprocess(monkeypatch)
+
+    assert retired_dists._still_declared() == {
+        retired_dists._normalise(n) for n in retired_dists.RETIRED_DISTRIBUTIONS
+    }
+    assert retired_dists.prune_running_interpreter() == []
+    assert run_spy.calls == [], "an unresolvable ai-hats let the prune through"
+
+
 # ---------- T4: not installed → no cost ----------
 
 
 def test_t4_not_installed_spawns_nothing(monkeypatch):
     """The steady state after the first upgrade: zero subprocesses, zero uv lookups."""
-    _activate_prune(monkeypatch)
     _declares(monkeypatch, "click")
     _installed(monkeypatch, False)
     run_spy = _block_subprocess(monkeypatch)
@@ -280,7 +358,6 @@ def test_t4b_is_installed_branches(monkeypatch):
 
 def test_t5_no_uv_on_path_returns_cleanly(monkeypatch):
     """``shutil.which`` → None must yield False, never a raise, never a call."""
-    _activate_prune(monkeypatch)
     monkeypatch.setattr(retired_dists.shutil, "which", lambda name: None)
     run_spy = _block_subprocess(monkeypatch)
 
@@ -297,7 +374,6 @@ def test_t5_no_uv_on_path_returns_cleanly(monkeypatch):
 
 
 def test_t6_uv_non_zero_exit_is_not_removed(monkeypatch):
-    _activate_prune(monkeypatch)
     _fake_uv(monkeypatch)
     run, calls = _fake_run(returncode=2)
     monkeypatch.setattr(retired_dists.subprocess, "run", run)
@@ -321,6 +397,7 @@ def test_t7_timeout_expired_is_swallowed(monkeypatch, tmp_path):
     cover on its own, so both halves are pinned separately.
     """
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)  # else the prune_retired leg below returns [] unexercised
     _fake_uv(monkeypatch)
 
     def timeout(*args, **kwargs):
@@ -350,7 +427,6 @@ def test_t8_keyboard_interrupt_from_uv_is_swallowed(monkeypatch):
     ``_uninstall`` catches ``BaseException`` rather than ``Exception``, and a
     refactor to the narrower clause must fail HERE.
     """
-    _activate_prune(monkeypatch)
     _fake_uv(monkeypatch)
 
     def interrupt(*args, **kwargs):
@@ -372,7 +448,6 @@ def test_t8_keyboard_interrupt_from_uv_is_swallowed(monkeypatch):
 
 def test_t8b_system_exit_from_uv_is_swallowed(monkeypatch):
     """The other common ``BaseException`` on the same path."""
-    _activate_prune(monkeypatch)
     _fake_uv(monkeypatch)
 
     def bail(*args, **kwargs):
@@ -390,6 +465,7 @@ def test_t8b_system_exit_from_uv_is_swallowed(monkeypatch):
 
 def test_t9_strips_retired_script_and_spares_the_rest(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    _declares(monkeypatch, "click")  # strip consults the same guard (T9h)
     venv = _fake_venv(tmp_path, RETIRED_SCRIPT, "ai-hats", "python")
 
     removed = retired_dists.strip_retired_scripts(venv, tmp_path)
@@ -402,6 +478,7 @@ def test_t9_strips_retired_script_and_spares_the_rest(monkeypatch, tmp_path):
 
 def test_t9b_strip_is_idempotent(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    _declares(monkeypatch, "click")
     venv = _fake_venv(tmp_path, RETIRED_SCRIPT)
 
     assert retired_dists.strip_retired_scripts(venv, tmp_path)
@@ -412,6 +489,7 @@ def test_t9b_strip_is_idempotent(monkeypatch, tmp_path):
 def test_t9c_strip_handles_a_broken_symlink(monkeypatch, tmp_path):
     """A dangling launcher symlink still counts — ``is_file()`` alone would miss it."""
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    _declares(monkeypatch, "click")
     venv = _fake_venv(tmp_path)
     link = venv / "bin" / RETIRED_SCRIPT
     link.symlink_to(tmp_path / "gone" / "nowhere")
@@ -424,6 +502,7 @@ def test_t9c_strip_handles_a_broken_symlink(monkeypatch, tmp_path):
 
 def test_t9d_strip_covers_the_windows_scripts_layout(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    _declares(monkeypatch, "click")
     venv = tmp_path / ".venv"
     (venv / "Scripts").mkdir(parents=True)
     exe = venv / "Scripts" / f"{RETIRED_SCRIPT}.exe"
@@ -433,7 +512,8 @@ def test_t9d_strip_covers_the_windows_scripts_layout(monkeypatch, tmp_path):
     assert not exe.exists()
 
 
-def test_t9e_missing_venv_dir_returns_empty_without_raising(tmp_path):
+def test_t9e_missing_venv_dir_returns_empty_without_raising(monkeypatch, tmp_path):
+    _declares(monkeypatch, "click")  # so [] means "no such path", not "shielded"
     assert retired_dists.strip_retired_scripts(tmp_path / "no-such-venv") == []
     assert retired_dists.strip_retired_scripts(tmp_path / "no-such-venv", tmp_path) == []
 
@@ -442,6 +522,7 @@ def test_t9f_unreadable_path_is_skipped_not_raised(monkeypatch, tmp_path):
     """``discard`` hitting EACCES must degrade to "nothing removed"."""
     import ai_hats_core.safe_delete as safe_delete
 
+    _declares(monkeypatch, "click")
     venv = _fake_venv(tmp_path, RETIRED_SCRIPT)
 
     def denied(path, **kwargs):
@@ -455,6 +536,7 @@ def test_t9f_unreadable_path_is_skipped_not_raised(monkeypatch, tmp_path):
 
 def test_t9g_stat_failure_is_skipped_not_raised(monkeypatch, tmp_path):
     """An ``OSError`` from the existence probe itself is equally non-fatal."""
+    _declares(monkeypatch, "click")
     venv = _fake_venv(tmp_path, RETIRED_SCRIPT)
 
     def denied(self):
@@ -466,12 +548,30 @@ def test_t9g_stat_failure_is_skipped_not_raised(monkeypatch, tmp_path):
     assert retired_dists.strip_retired_scripts(venv, tmp_path) == []
 
 
+def test_t9h_a_still_declared_dist_keeps_its_script(monkeypatch, tmp_path):
+    """The legacy-venv half honours the same declared-dependency guard.
+
+    Anti-vacuity partner of T9: same venv, same script, only the guard differs.
+    """
+    monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
+    _declares(monkeypatch, "click", RETIRED_NAME)
+    venv = _fake_venv(tmp_path, RETIRED_SCRIPT)
+
+    assert retired_dists.strip_retired_scripts(venv, tmp_path) == []
+    assert (venv / "bin" / RETIRED_SCRIPT).is_file(), "a still-declared script was stripped"
+
+
 # ---------- T10: prune_retired absorbs everything ----------
 
 
 def test_t10_prune_retired_never_raises_on_internal_baseexception(monkeypatch, tmp_path):
-    """Its caller is a bump whose exit code must not depend on this module."""
+    """Its caller is a bump whose exit code must not depend on this module.
+
+    Both early returns must be off or the stub below is never reached and the
+    ``except BaseException`` clause is never the reason this passes.
+    """
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
 
     def boom():
         raise KeyboardInterrupt
@@ -524,16 +624,33 @@ def test_t10c_prune_retired_strips_the_legacy_venv_script(monkeypatch, tmp_path)
 
 
 def test_t10d_no_legacy_venv_is_a_no_op(monkeypatch, tmp_path):
+    """The second half is not even ATTEMPTED without a legacy venv.
+
+    Asserting only the ``[]`` would be unfalsifiable: stripping a directory that
+    does not exist also answers ``[]``, so the spy is what pins ``is_dir()``.
+    """
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [])
+    strip_spy = _Spy("strip_retired_scripts")
+    monkeypatch.setattr(retired_dists, "strip_retired_scripts", strip_spy)
     _block_subprocess(monkeypatch)
 
     assert retired_dists.prune_retired(tmp_path) == []
+    assert strip_spy.calls == [], "the legacy-venv half ran without a legacy venv"
 
 
 def test_t10e_legacy_venv_that_is_the_running_prefix_is_left_alone(monkeypatch, tmp_path):
-    """Never strip the scripts of the interpreter currently executing."""
+    """Never strip the scripts of the interpreter currently executing.
+
+    The ONLY guard on that property — so it must actually reach the comparison:
+    without ``_not_editable`` the editable early return answers ``[]`` for it.
+    """
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
+    # a working trash target too: a discard that merely FAILS would leave the
+    # script in place and let a deleted prefix check pass unnoticed
+    monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [])
     _block_subprocess(monkeypatch)
 
@@ -556,7 +673,6 @@ def test_t11_timeout_and_new_session_reach_subprocess_run(monkeypatch):
     ``start_new_session`` rides along for the same reason: it keeps a terminal
     SIGINT off uv mid-write, and nothing else would ever notice its absence.
     """
-    _activate_prune(monkeypatch)
     _fake_uv(monkeypatch)
     run, calls = _fake_run(returncode=0)
     monkeypatch.setattr(retired_dists.subprocess, "run", run)
@@ -574,7 +690,6 @@ def test_t11_timeout_and_new_session_reach_subprocess_run(monkeypatch):
 
 def test_t11b_uninstall_targets_the_interpreter_it_was_given(monkeypatch):
     """``--python <exe>`` must be explicit — uv otherwise picks its own env."""
-    _activate_prune(monkeypatch)
     _fake_uv(monkeypatch, "/nonexistent/bin/uv")
     run, calls = _fake_run(returncode=0)
     monkeypatch.setattr(retired_dists.subprocess, "run", run)
@@ -594,7 +709,6 @@ def test_t11b_uninstall_targets_the_interpreter_it_was_given(monkeypatch):
 
 def test_t11c_running_interpreter_prune_targets_sys_executable(monkeypatch):
     """The interpreter half must never uninstall out of a foreign env."""
-    _activate_prune(monkeypatch)
     _declares(monkeypatch, "click")
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
@@ -608,12 +722,14 @@ def test_t11c_running_interpreter_prune_targets_sys_executable(monkeypatch):
 # ---------- guard against the suite itself regressing ----------
 
 
-def test_no_test_here_can_reach_a_real_uv(monkeypatch):
-    """Sanity: the module resolves uv through ``shutil.which`` only.
-
-    If a future refactor hard-codes a path or shells out another way, the
-    monkeypatch seam every test above relies on is gone — catch that here rather
+def test_uv_is_spawned_only_through_the_patched_seam(monkeypatch):
+    """The module resolves uv through ``shutil.which`` only — the seam the
+    ``_no_real_uv`` fixture closes. If a refactor hard-codes a path or shells out
+    another way, that default-deny stops covering the suite; catch it here rather
     than by watching a developer's venv lose a distribution.
+
+    Named for what it checks: it greps the SOURCE. The guard over the TESTS is the
+    ``_no_real_uv`` autouse fixture at the top of this file.
     """
     source = Path(retired_dists.__file__).read_text()
     assert 'shutil.which("uv")' in source, "uv is no longer resolved through the patched seam"
@@ -634,8 +750,15 @@ def test_editable_install_is_never_pruned(monkeypatch, tmp_path):
     """A dev checkout resolves packages/* as workspace members, so on a ref
     predating the retirement `uv sync` would reinstall what we removed — the two
     would fight on every update. The editable symptom is a broken script, not a
-    working legacy CLI, so the prune stands down entirely."""
+    working legacy CLI, so the prune stands down entirely.
+
+    Everything else is staged so the prune WOULD uninstall: installed, not
+    declared, uv resolvable. Only the editable verdict stops it — delete that
+    guard and the spy records the call."""
     _activate_prune(monkeypatch)
+    _declares(monkeypatch, "click")  # tracker NOT declared → a prime candidate
+    _installed(monkeypatch, True)
+    _fake_uv(monkeypatch)
     spy = _block_subprocess(monkeypatch)
     monkeypatch.setattr("ai_hats.paths.editable_install_root", lambda _d="ai-hats": tmp_path)
 
@@ -647,7 +770,9 @@ def test_non_editable_install_is_pruned(monkeypatch, tmp_path):
     """Anti-vacuity control for the test above: same setup, not editable → it runs."""
     _activate_prune(monkeypatch)
     _not_editable(monkeypatch)
-    _declares(monkeypatch)
+    # a NON-EMPTY declared set is required: `_still_declared` reads an empty one
+    # as "metadata unreadable" and conservatively shields everything (see T3b)
+    _declares(monkeypatch, "click")
     _installed(monkeypatch, True)
     _fake_uv(monkeypatch)
     run, calls = _fake_run(0)
