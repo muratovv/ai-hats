@@ -177,6 +177,9 @@ def test_rm_carries_trash_path_and_ready_revert_command(tasks_dir, cwd):
 
 def test_unlink_carries_ready_revert_command(tasks_dir, cwd):
     k = make_kernel(tasks_dir)
+    # T-2 first: since HATS-1327 `create --depends` validates the target like
+    # `transition --link` does, so a forward reference no longer lands.
+    k.create(actor="t", caller_cwd=cwd, task_id="T-2", title="b")
     k.create(actor="t", caller_cwd=cwd, task_id="T-1", title="a", depends_on=["T-2"])
     res = k.transition_ops("T-1", parse_ops(["--unlink", "depends:T-2"]), actor="t", caller_cwd=cwd)
     (op,) = res.ops
