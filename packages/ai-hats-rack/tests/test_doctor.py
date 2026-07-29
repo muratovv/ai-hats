@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from ai_hats_rack.cardschema import build_card_schema
 from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.doctor import diagnose_catalog
 from ai_hats_rack.models import TaskCard
@@ -144,3 +145,43 @@ def test_symmetric_kind_pair_is_not_a_cycle(tasks_dir, tmp_path):
     make_card(tasks_dir, "T-2", related=["T-1"])
     findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS))
     assert by_check(findings, "link-cycle") == []
+
+
+# ----- duplicates -----------------------------------------------------------
+
+
+def test_duplicate_ids_in_a_list_kind_are_reported(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", depends_on=["T-1", "T-1"])
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS))
+    rows = by_check(findings, "duplicate-link")
+    assert [(f.task_id, f.kind, f.target) for f in rows] == [("T-2", "depends_on", "T-1")]
+
+
+# ----- required fields ------------------------------------------------------
+
+
+def _gated_backlog(tmp_path):
+    path = tmp_path / "backlog.yaml"
+    path.write_text(
+        "name: t\nprefix: T\n"
+        + _MINIMAL_FSM
+        + "links:\n  kinds:\n"
+        + _KINDS
+        + "fields:\n"
+        + "  - {name: severity, type: str, required: true}\n"
+        + "  - {name: resolution, type: str, default: '', required_on: [document]}\n"
+    )
+    return load_backlog(path)
+
+
+def test_missing_required_and_state_gated_fields_reported(tasks_dir, tmp_path):
+    defn = _gated_backlog(tmp_path)
+    make_card(tasks_dir, "T-1")  # no severity at all
+    make_card(tasks_dir, "T-2", state="document", severity="low")  # empty resolution
+    make_card(tasks_dir, "T-3", state="brainstorm", severity="low")  # gate not entered
+    findings = diagnose_catalog(
+        tasks_dir, defn.links_registry, schema=build_card_schema(defn)
+    )
+    rows = by_check(findings, "missing-field")
+    assert {(f.task_id, f.kind) for f in rows} == {("T-1", "severity"), ("T-2", "resolution")}

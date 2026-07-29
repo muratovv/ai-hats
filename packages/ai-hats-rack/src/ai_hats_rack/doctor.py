@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .cardschema import CardSchema
 from .linked import TargetChecker, _id_key, _kind_ids_readonly, card_exists
 from .models import TaskCard
 from .registry import LinksRegistry
@@ -159,10 +160,65 @@ def _check_cycles(registry: LinksRegistry, cards: dict[str, TaskCard]) -> list[F
     return findings
 
 
+def _check_duplicates(registry: LinksRegistry, cards: dict[str, TaskCard]) -> list[Finding]:
+    """A repeated id inside one list kind — the write path is idempotent, so a
+    duplicate can only come from a raw edit; readers silently collapse it."""
+    findings: list[Finding] = []
+    for card in cards.values():
+        for kind in registry.stored_kinds():
+            if kind.arity != "many":
+                continue
+            ids = _kind_ids_readonly(kind, card)
+            for dup in sorted({t for t in ids if ids.count(t) > 1}, key=_id_key):
+                findings.append(
+                    Finding(
+                        "duplicate-link",
+                        card.id,
+                        f"{kind.name} lists {dup} {ids.count(dup)} times",
+                        kind=kind.name,
+                        target=dup,
+                    )
+                )
+    return findings
+
+
+def _check_required_fields(schema: CardSchema, cards: dict[str, TaskCard]) -> list[Finding]:
+    """An unconditionally-required field must be non-empty on every card; a
+    ``required_on`` field on every card SITTING in a gated state — the same
+    contract the write path enforces on entry (cardschema state gates), here
+    re-checked against data that predates the gate or bypassed it."""
+    findings: list[Finding] = []
+    for card in cards.values():
+        data = card.to_dict()
+        for f in schema.fields:
+            if data.get(f.name):
+                continue
+            if f.required:
+                findings.append(
+                    Finding(
+                        "missing-field",
+                        card.id,
+                        f"required field '{f.name}' is empty",
+                        kind=f.name,
+                    )
+                )
+            elif f.required_on and card.state in f.required_on:
+                findings.append(
+                    Finding(
+                        "missing-field",
+                        card.id,
+                        f"'{f.name}' is required in state '{card.state}' but empty",
+                        kind=f.name,
+                    )
+                )
+    return findings
+
+
 def diagnose_catalog(
     tasks_dir: Path,
     registry: LinksRegistry,
     *,
+    schema: CardSchema | None = None,
     exists: TargetChecker | None = None,
     backlog: str = "",
 ) -> list[Finding]:
@@ -170,6 +226,9 @@ def diagnose_catalog(
     cards, findings = _load_pass(tasks_dir)
     findings += _check_dangling(tasks_dir, registry, cards, exists)
     findings += _check_cycles(registry, cards)
+    findings += _check_duplicates(registry, cards)
+    if schema is not None:
+        findings += _check_required_fields(schema, cards)
     if backlog:
         findings = [
             Finding(f.check, f.task_id, f.detail, f.kind, f.target, backlog) for f in findings
