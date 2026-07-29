@@ -256,3 +256,58 @@ def test_reclaim_if_clean_respects_injected_extra_hold(bare_repo: Path) -> None:
     assert mgr.reclaim_if_clean(has_extra_hold=lambda _p: True) is False
     assert wt_path.exists()
     assert _git(bare_repo, "branch", "--list", "task/epic-held").stdout.strip() != ""
+
+
+def test_merge_refuses_stale_expected_tip(bare_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """HATS-1346: merge() refuses when expected_tip SHA does not match current task branch tip.
+
+    Worktree directory and branch MUST survive untouched.
+    """
+    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
+    mgr = WorktreeManager(bare_repo, branch_name="task/stale-test", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+
+    _commit_in_worktree(wt_path, "file1.txt", "commit A")
+    sha_a = _git(wt_path, "rev-parse", "HEAD").stdout.strip()
+
+    _commit_in_worktree(wt_path, "file2.txt", "commit B")
+    sha_b = _git(wt_path, "rev-parse", "HEAD").stdout.strip()
+
+    assert sha_a != sha_b
+
+    with pytest.raises(wt.WorktreeStaleRefError) as exc_info:
+        mgr.merge(expected_tip=sha_a)
+
+    err_msg = str(exc_info.value)
+    assert sha_a in err_msg
+    assert sha_b in err_msg
+    assert wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/stale-test").stdout.strip() != ""
+
+
+def test_merge_refuses_unmerged_tip_teardown(
+    bare_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1346: merge() refuses teardown if target branch does not contain branch tip.
+
+    Worktree directory and branch MUST survive untouched.
+    """
+    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
+    mgr = WorktreeManager(bare_repo, branch_name="task/unmerged-test", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+
+    _commit_in_worktree(wt_path, "file1.txt", "commit A")
+
+    # Monkeypatch _fast_forward_merge to do nothing so master is not updated
+    monkeypatch.setattr(mgr, "_fast_forward_merge", lambda: None)
+
+    with pytest.raises(wt.WorktreeMergeIncompleteError) as exc_info:
+        mgr.merge()
+
+    err_msg = str(exc_info.value)
+    assert "task/unmerged-test" in err_msg
+    assert wt_path.exists()
+    assert _git(bare_repo, "branch", "--list", "task/unmerged-test").stdout.strip() != ""
+
