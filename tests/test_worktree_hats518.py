@@ -260,59 +260,57 @@ class TestCliWtCreate:
 
 
 # ---------------------------------------------------------------------------
-# Integration: TaskManager transition execute
+# Integration: rack transition execute
 # ---------------------------------------------------------------------------
+
+# Every required plan section filled, so the plan-gate (in-lock priority 10)
+# lets the edge through and the canonical-base guard inside the worktree
+# extension (priority 30) is the only thing left that can refuse.
+_FILLED_PLAN = (
+    "# Plan\n\n## Requirements\nguard.\n\n## Scope & Out-of-scope\nin/out\n\n"
+    "## Steps\n- [ ] do\n\n## Verification Protocol\npytest\n"
+)
 
 
 class TestTransitionExecute:
-    """`task transition <ID> execute` must refuse and keep the card unchanged."""
+    """`rack transition <ID> execute` must refuse and keep the card unchanged."""
 
     @pytest.fixture
-    def task_mgr(self, master_project: Path):
-        """Project with `.agent/` layout + a task seeded directly in PLAN.
+    def task_kernel(self, master_project: Path):
+        """Project with the production tracker layout + a card seeded in `plan`.
 
-        Seeds via ``create_task`` + direct file write rather than walking
-        ``transition(BRAINSTORM → PLAN)`` so the test isn't coupled to the
+        Seeds via ``kernel.create`` + a direct card write rather than walking
+        ``transition(brainstorm → plan)`` so the test isn't coupled to the
         scaffold-creation side effect of that transition (which could
-        gain refusal semantics later for unrelated reasons).
+        gain refusal semantics later for unrelated reasons); ``plan.md`` is
+        written by hand for the same reason.
         """
-        from ai_hats_tracker.models import TaskState
-        from ai_hats_tracker.state import TaskManager
-        from ai_hats.tracker_wiring import tracker_paths
-        from ai_hats.wt_effects import WtWorktreeEffects
+        from ai_hats.rack_wiring import build_rack_kernel
 
-        (master_project / ".agent" / "backlog" / "tasks").mkdir(parents=True)
-        (master_project / ".agent" / "STATE.md").write_text("")
-
-        mgr = TaskManager(
-            master_project,
-            prefix="T",
-            strict_plan_check=False,
-            layout=tracker_paths(master_project),
-            worktree_effects=WtWorktreeEffects(master_project),
+        kernel = build_rack_kernel(master_project, prefix="T")
+        kernel.create(
+            actor="test", caller_cwd=master_project, task_id="T-1", title="HATS-518 probe"
         )
-        mgr.create_task("T-1", "HATS-518 probe")
-        # Promote the seeded card to PLAN by direct file mutation — avoids
-        # the BRAINSTORM→PLAN transition path entirely.
-        card = mgr.get_task("T-1")
-        card.state = TaskState.PLAN
-        mgr._save_task(card)
-        return master_project, mgr
+        # Promote the seeded card to `plan` by direct file mutation — avoids
+        # the brainstorm→plan transition path entirely.
+        card = kernel.get("T-1")
+        card.state = "plan"
+        card.save(kernel.tasks_dir / "T-1" / "task.yaml")
+        (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN, encoding="utf-8")
+        return master_project, kernel
 
-    def test_refuses_and_leaves_card_in_plan(self, task_mgr) -> None:
-        from ai_hats_tracker.models import TaskState
-
-        master_project, mgr = task_mgr
+    def test_refuses_and_leaves_card_in_plan(self, task_kernel) -> None:
+        master_project, kernel = task_kernel
         # Park HEAD on a feature branch.
         _git(master_project, "checkout", "-b", "feat/parking")
 
         with pytest.raises(WorktreeBaseBranchError):
-            mgr.transition("T-1", TaskState.EXECUTE)
+            kernel.transition("T-1", "execute", actor="test", caller_cwd=master_project)
 
-        # Card stays in PLAN — _save_task was never reached.
-        assert mgr.get_task("T-1").state == TaskState.PLAN
+        # Card stays in `plan` — the single persist was never reached.
+        assert kernel.get("T-1").state == "plan"
 
-    def test_refuses_even_with_force(self, task_mgr) -> None:
+    def test_refuses_even_with_force(self, task_kernel) -> None:
         """`--force` overrides the FSM, NOT the safety contract (HATS-518).
 
         Same precedent as merge / discard refusals (HATS-481): destructive
@@ -320,31 +318,29 @@ class TestTransitionExecute:
         invariant. If the operator genuinely wants a non-canonical merge
         target, they must checkout that branch in the main repo first.
         """
-        from ai_hats_tracker.models import TaskState
-
-        master_project, mgr = task_mgr
+        master_project, kernel = task_kernel
         _git(master_project, "checkout", "-b", "feat/parking")
 
         with pytest.raises(WorktreeBaseBranchError):
-            mgr.transition(
+            kernel.transition(
                 "T-1",
-                TaskState.EXECUTE,
+                "execute",
+                actor="test",
+                caller_cwd=master_project,
                 force=True,
                 reason="trying to bypass HATS-518 (must fail)",
             )
 
-        assert mgr.get_task("T-1").state == TaskState.PLAN
+        assert kernel.get("T-1").state == "plan"
 
-    def test_succeeds_when_head_is_master(self, task_mgr) -> None:
-        from ai_hats_tracker.models import TaskState
-        from ai_hats.paths import worktrees_dir
+    def test_succeeds_when_head_is_master(self, task_kernel) -> None:
         from ai_hats_wt import WorktreeManager
 
-        master_project, mgr = task_mgr
+        master_project, kernel = task_kernel
         state_dir = worktrees_dir(master_project)  # D4: where the seam persists state
         try:
-            t, _ = mgr.transition("T-1", TaskState.EXECUTE)
-            assert t.state == TaskState.EXECUTE
+            result = kernel.transition("T-1", "execute", actor="test", caller_cwd=master_project)
+            assert result.task.state == "execute"
             # The wired seam really created the worktree — a silently degraded
             # pure-FSM pass must fail here (HATS-866 review).
             assert (
