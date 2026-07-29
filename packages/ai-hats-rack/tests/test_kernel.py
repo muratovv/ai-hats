@@ -16,6 +16,8 @@ from ai_hats_rack.kernel import (
     UnknownTaskError,
     UnroutableIdError,
 )
+from ai_hats_rack.linked import SelfLinkError
+from ai_hats_rack.models import TaskCard
 
 from rack_testkit import CollectingSink, StubSubscriber, in_lock, make_kernel, post_lock, walk
 
@@ -629,19 +631,72 @@ def test_set_parent_dispatches_epicify(tasks_dir, cwd):
     assert reconciler.contexts[0].event.epic_id == "T-1"
 
 
-def test_create_with_dangling_parent_skips_epicify(tasks_dir, cwd):
-    reconciler = StubSubscriber("reconcile", [post_lock("epicify")])
-    kernel = make_kernel(tasks_dir, subscribers=[reconciler])
-    result = kernel.create(actor="test", caller_cwd=cwd, task_id="T-2", parent_task="T-404", title="t")
-    assert result.journal == ()
-    assert reconciler.contexts == []
+def test_a_dangling_parent_already_on_disk_still_reads(tasks_dir, cwd):
+    """HATS-1333 splits what this test used to conflate. WRITING a dangling
+    parent is now refused, but READING one must stay tolerant: 11 such cards
+    exist in the real backlog (malformed ids) and readers must not crash on
+    them before the repair lands. Written as yaml on purpose — `create` can no
+    longer produce this shape."""
+    card = TaskCard(id="T-2", title="t", state="brainstorm", parent_task="T-404")
+    path = tasks_dir / "T-2" / "task.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    card.save(path)
+    kernel = make_kernel(tasks_dir)
+    assert kernel.get("T-2").parent_task == "T-404"
 
 
 def test_self_parent_refused(tasks_dir, cwd):
+    """One typed refusal now, not a hand-rolled ValueError per write path."""
     kernel = make_kernel(tasks_dir)
     _create(kernel, cwd)
-    with pytest.raises(ValueError, match="own parent"):
+    with pytest.raises(SelfLinkError):
         kernel.set_parent("T-1", "T-1", actor="test", caller_cwd=cwd)
+
+
+# ---------------------------------------------------------------------------
+# HATS-1333: parent_task writes go through the link op on every path
+# ---------------------------------------------------------------------------
+
+
+def test_create_unknown_parent_is_refused(tasks_dir, cwd):
+    """`create --parent` wrote the field raw and accepted an id that does not
+    exist. That is how 11 cards in the real backlog got a malformed parent."""
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(UnknownTaskError) as err:
+        _create(kernel, cwd, task_id="T-1", parent_task="T-404")
+    assert err.value.task_id == "T-404"
+    assert not (tasks_dir / "T-1").exists()
+
+
+def test_set_parent_unknown_target_is_refused(tasks_dir, cwd):
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd)
+    with pytest.raises(UnknownTaskError):
+        kernel.set_parent("T-1", "T-404", actor="test", caller_cwd=cwd)
+    assert kernel.get("T-1").parent_task == ""  # refused before the write
+
+
+def test_create_self_parent_is_refused(tasks_dir, cwd):
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(SelfLinkError):
+        _create(kernel, cwd, task_id="T-1", parent_task="T-1")
+
+
+def test_create_without_a_parent_stays_legal(tasks_dir, cwd):
+    """`parent_task=""` means "no parent" — it must not reach the existence
+    check. The edge case the tightening could most easily break."""
+    kernel = make_kernel(tasks_dir)
+    task = _create(kernel, cwd, task_id="T-1")
+    assert task.parent_task == ""
+
+
+def test_create_with_a_parent_logs_the_link(tasks_dir, cwd):
+    """Behaviour change (HATS-1333, same class as HATS-1327 for --depends)."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    task = _create(kernel, cwd, task_id="T-2", parent_task="T-1")
+    assert task.parent_task == "T-1"
+    assert any("Linked T-1 (parent_task)" in e.message for e in task.work_log)
 
 
 # ---------------------------------------------------------------------------

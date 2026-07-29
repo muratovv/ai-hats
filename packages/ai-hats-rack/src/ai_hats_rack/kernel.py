@@ -293,8 +293,6 @@ class Kernel:
             raise RequiredFieldError("title", "a task requires a non-empty title")
         if task_id is not None and prefix_of(task_id) != self.prefix:
             raise UnroutableIdError(task_id, self.prefix)
-        if parent_task and parent_task == task_id:
-            raise ValueError(f"Task '{task_id}' cannot be its own parent")
         provided: dict[str, Any] = {
             "description": description, "priority": priority, "role": role,
             "reviewer": reviewer, "tags": tags,
@@ -319,13 +317,17 @@ class Kernel:
                     id=task_id,
                     title=title,
                     state=self.topology.initial,
-                    parent_task=parent_task,
                     created=now,
                     updated=now,
                     **resolved,
                 )
-                # HATS-1327: pre-persist, so a refused link leaves nothing on disk.
-                self._apply_declared_links(task, depends_on, actor=actor, caller_cwd=caller_cwd)
+                # HATS-1327/1333: pre-persist, so a refused link writes nothing.
+                self._apply_declared_links(
+                    task,
+                    self._declared_links(parent_task, depends_on),
+                    actor=actor,
+                    caller_cwd=caller_cwd,
+                )
                 self._persist(task)
         except Timeout as exc:
             raise LockTimeoutError(
@@ -335,17 +337,17 @@ class Kernel:
         return KernelResult(task=task, journal=journal)
 
     def _apply_declared_links(
-        self, task: TaskCard, depends_on: Sequence[str], *, actor: str, caller_cwd: Path
+        self, task: TaskCard, links: Sequence[tuple[str, str]], *, actor: str, caller_cwd: Path
     ) -> None:
-        """Apply `create`'s declared links through the transition link op.
+        """Apply declared ``(kind, target)`` links through the transition link op.
 
-        The point of HATS-1327: one write path for a link, so a card cannot be
-        born holding an edge that `transition --link` would have refused. The
-        card is still in memory, so a refusal aborts before any write.
-        ``dispatch_link`` stays None — create never fired link events for these
-        edges, and this is a guard change, not an event change.
+        The point of HATS-1327/1333: one write path for a link, so a card cannot
+        hold an edge that `transition --link` would have refused. The card is
+        mutated in memory, so a refusal aborts before any write.
+        ``dispatch_link`` stays None — these paths never fired link events, and
+        this is a guard change, not an event change.
         """
-        if not depends_on:
+        if not links:
             return
         from .ops import LinkOp, OpTxn, apply_non_state_op
 
@@ -356,10 +358,20 @@ class Kernel:
             caller_cwd=caller_cwd,
             registry=self.registry,
             actor=actor,
-            exists=self.target_exists,
+            # The card being created is not on disk yet, but it exists for link
+            # validation — otherwise a self-reference reads as "target missing"
+            # instead of the precise SelfLinkError.
+            exists=lambda tid, targets: tid == task.id or self.target_exists(tid, targets),
         )
-        for target in depends_on:
-            apply_non_state_op(txn, LinkOp(kind="depends_on", target=target))
+        for kind, target in links:
+            apply_non_state_op(txn, LinkOp(kind=kind, target=target))
+
+    @staticmethod
+    def _declared_links(parent_task: str, depends_on: Sequence[str]) -> list[tuple[str, str]]:
+        """An empty ``parent_task`` means "no parent" — never an existence check."""
+        links: list[tuple[str, str]] = [("parent_task", parent_task)] if parent_task else []
+        links += [("depends_on", t) for t in depends_on]
+        return links
 
     def _next_id(self) -> str:
         max_num = 0
@@ -683,15 +695,21 @@ class Kernel:
     ) -> KernelResult:
         """Reparent a task. Gaining a child epicifies the new parent — a
         first-class dispatcher event, not an FSM edge (HATS-977/979)."""
-        if parent_task == task_id:
-            raise ValueError(f"Task '{task_id}' cannot be its own parent")
         from filelock import Timeout
 
         lock = self._task_lock(task_id)
         try:
             with lock:
                 task = self._load(task_id)
-                task.parent_task = parent_task
+                # HATS-1333: same link op as create and `transition --link`.
+                self._apply_declared_links(
+                    task,
+                    self._declared_links(parent_task, ()),
+                    actor=actor,
+                    caller_cwd=caller_cwd,
+                )
+                if not parent_task:  # clearing is a plain field write, no target
+                    task.parent_task = ""
                 task.updated = utc_now()
                 self._persist(task)
         except Timeout as exc:
