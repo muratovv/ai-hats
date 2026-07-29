@@ -166,7 +166,7 @@ rule carries over unchanged.
 
 `wt:pre-merge` is a **precondition**, in the same class as the accepted
 `WorktreeDirtyError` / `WorktreeDriftError` / `WorktreeMergeConsentError`
-refusals — explicitly *not* the teardown-veto rejected by ADR-0012 / HATS-775,
+refusals — explicitly *not* the teardown-veto rejected by ADR-0012 [1] / HATS-775,
 which fires after the merge commit exists and can only strand a worktree.
 
 `discard` deliberately has no pre-op point: discard is an explicit throw-away.
@@ -200,7 +200,7 @@ not refuse**: a hung check formed no verdict.
 posture). A consumer opts into `warn` explicitly — but **`on_error: warn` is
 rejected at composition for `wt:pre-merge` and `wt:teardown[*]`**: failure policy
 at data-protection points belongs to the point catalog, not the binding author.
-ADR-0012 deliberately put that lever in the engine (`wt_lifecycle.py`) so a
+ADR-0012 [1] deliberately put that lever in the engine (`wt_lifecycle.py`) so a
 component could not opt out; moving it into user YAML would regress that.
 
 `on_error` governs **only the check's own exit status**. A bound script that is
@@ -245,7 +245,7 @@ Existing point-specific variables keep their names; migrated scripts do not chur
   at composition, naming the trait/role and the entry. A gate that silently fails
   to install is the HYP-078 / HATS-961 hole.
 - Unknown *optional field* on a row → warn and ignore, so a newer trait does not
-  hard-fail composition on an older engine (ADR-0012 Revisions #3).
+  hard-fail composition on an older engine (ADR-0012 [1] Revisions #3).
 - Script health-check keeps `lifecycle_hooks._health_check`'s *posture* (missing
   / empty / shebang-less → loud, "a no-op gate is a broken gate") but moves to
   **composition time**, since D9 removes the materialization step it ran in.
@@ -263,9 +263,16 @@ Existing point-specific variables keep their names; migrated scripts do not chur
   to. Checking it beside the shebang costs nothing and converts a runtime *broke*
   into an authoring-time error. (Note the rev-5 text also mis-stated the existing
   `_health_check` as validating executability; it never has.) Audited before
-  adopting: every hook script across `library/core`, `library/usage` and
-  `ai-hats-custom` is `100755` in the git index — the only `100644` entries are
-  data files, not scripts — so this makes nothing that works today fail.
+  adopting: hook scripts across `library/core`, `library/usage` and
+  `ai-hats-custom` are `100755` in the git index with **one exception** —
+  `core/skills/worktree-isolation/hooks/wt_entry_gate.py` is `100644`, and it is
+  a live declared `runtime_hooks.PreToolUse` binding, not a data file. It works
+  today only because the runtime-hook materializer rewrites the mode on copy
+  (`hooks_manager.py`, `mode=0o755`) while the surface then executes the copied
+  path bare. So this check would fail exactly one binding that works today — and
+  that is the argument for it, not against: the exec bit is load-bearing and
+  currently masked by the copy. Adopting the check means fixing that file's mode
+  in the same change.
 - **A binding whose `skill:` an overlay removed is a warning, not an error.**
   Rev 5 listed uncomposed `skill:` among the loud failures. That is right for a
   *typo* and wrong for a deliberate `--remove-skill`, which an overlay may legally
@@ -304,7 +311,7 @@ composed skill tree is *already* materialized per session at
 That was correct when it was written — claude was then the **only** surface with
 a per-session tree.
 
-**What falsified it.** ADR-0018 (epic HATS-1165) landed the artifact-builder and
+**What falsified it.** ADR-0018 [2] (epic HATS-1165) landed the artifact-builder and
 two further surfaces, each materializing its skills where its own third-party
 binary scans:
 
@@ -374,12 +381,16 @@ session already is the key, and a session never holds two provider trees at once
 **Rejected here, and why it belongs elsewhere:** a single ai-hats-owned skill
 tree that all surfaces *deliver from* rather than each materializing its own.
 Its only real argument is layering — "materialization is core, delivery is
-surface" — which is the open question of **HATS-1217**, not of this ADR. It would
-also be a cross-package refactor of three surfaces behind the published
-`ai_hats.providers` entry point, and it would rest on undocumented symlink
-behaviour of three third-party scanners. Nothing is owed to it later: a binding
-names `{skill, script}`, not a path, so if HATS-1217 adopts that shape only the
-resolution root moves.
+surface" — which is not this ADR's question. It currently has **no owner**:
+HATS-1217 is `done` having refuted its own premise (it delivered the ADR-0018
+§2.2 movability test, not a tree consolidation), and the convergence it split
+out, HATS-1271, is `done` too — it unified the copier *function* across agy and
+cline but left the three destination paths intact. The layering question wants a
+fresh card under epic HATS-1092. It would also be a cross-package refactor of
+three surfaces behind the published `ai_hats.providers` entry point, and it
+would rest on undocumented symlink behaviour of three third-party scanners.
+Nothing is owed to it later: a binding names `{skill, script}`, not a path, so
+whoever adopts that shape moves only the resolution root.
 
 ### D8 — Migration: contract *first*, then expand
 
@@ -388,8 +399,8 @@ trail it; the order is inverted, and the deprecation window is replaced by a
 tombstone.*
 
 Expand–contract exists to protect consumers of the thing being removed.
-`lifecycle_hooks` has none — zero declarations across `library/core` (29 skills),
-`library/usage` (70) and `ai-hats-custom`, and two importers. With no consumers,
+`lifecycle_hooks` has none — zero declarations across `library/core`,
+`library/usage` and `ai-hats-custom`, and two importers. With no consumers,
 the window between removing it and shipping `checks` is empty, and the ordering
 is free to be chosen on other grounds. It is chosen thus:
 
@@ -409,7 +420,7 @@ is free to be chosen on other grounds. It is chosen thus:
    leaves behind.
 4. **Defer** folding `worktree.wt_in/wt_out` into `checks:`. Its carry is
    **persisted into worktree state JSON at create and replayed at teardown**
-   (`wt_hooks`, ADR-0013 D5), so live worktrees would replay the old shape. Needs
+   (`wt_hooks`, ADR-0013 [3] D5), so live worktrees would replay the old shape. Needs
    a state-compat shim; its own card (HATS-1146). Note this is the *declaration*
    channel only — moving that channel's *scripts* to `in_process` per D10 is
    independent of `checks` and rides step 1's epic (HATS-1269).
@@ -464,10 +475,18 @@ Two further attributes are today implicit, and silently violated:
   skill's directory whole rather than the one file.
 
 Retrofitting `runtime_hooks` and the worktree channel onto `in_process` is
-deliberately **not** part of this ADR's migration (D8): the worktree carry is
-replayed from the state files of *live* worktrees and needs a compat shim
-(HATS-1146). This ADR fixes the taxonomy; the retrofit follows one channel at a
-time.
+deliberately **not** part of this ADR's migration (D8). Ownership splits the way
+D8 step 4 states it: moving the worktree channel's *scripts* to `in_process` is
+HATS-1269, while folding its *declaration* into `checks:` — the half that needs
+the compat shim, because the carry is replayed from the state files of *live*
+worktrees — is HATS-1146.
+
+One known obstacle for the `runtime_hooks` half: today the materializer copies
+each script and rewrites the mode to `0o755`, which is masking at least one
+`100644` hook in the shipped library (see D6). `in_process` resolves the path
+fresh instead of copying, so that mask disappears and the mode has to be correct
+at rest before the retrofit lands. This ADR fixes the taxonomy; the retrofit
+follows one channel at a time.
 
 ## Consequences
 
@@ -481,7 +500,7 @@ rather than propagated. **Zero changes to any `SKILL.md` schema.**
 defined (dedup by `(skill, script, point)`, strictest `on_error` winning). Two
 concepts coexist during the deprecation window. Binding-site indirection means
 reading `SKILL.md` alone no longer shows where a script fires — mitigated by
-rendering the effective binding table (the `routing.md` precedent). Resolution
+rendering the effective binding table, which nothing renders today. Resolution
 has two modes (D9), in-session and out-of-session, and both must be exercised:
 one of them being tested is how a gate ships half-armed.
 
@@ -651,3 +670,16 @@ out-of-session fallback"; **HATS-1147**'s deletion set grows (manifest, sweep,
 `_assert_manifest_intact`, managed-name helpers); the "binding catalog"
 (`bindings.yaml`) named above is no longer needed as a *materialized* artifact —
 `on_error` travels with the binding in the composition itself.
+
+## References
+
+- [1] `docs/adr/0012-worktree-data-transfer.md` — the worktree data-transfer
+  contract: the teardown-veto this ADR's exit codes deliberately do *not*
+  reintroduce (HATS-775), the engine-side lever in `wt_lifecycle.py`, and
+  Revisions #3 on hard-failing composition against an older engine.
+- [2] `docs/adr/0018-unified-artifact-builder.md` — the unified artifact builder
+  (epic HATS-1165) whose landing falsified rev 5's materialization premise, and
+  whose §2.2 movability test is what HATS-1217 actually delivered.
+- [3] `docs/adr/0013-wt-core-extraction-boundary.md` D5 — `wt_hooks` carry
+  persisted into worktree state JSON at create and replayed at teardown, the
+  reason the declaration fold needs a state-compat shim.
