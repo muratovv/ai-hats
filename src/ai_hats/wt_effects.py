@@ -183,7 +183,7 @@ class WtWorktreeEffects:
         except OriginalBranchMissingError as exc:
             # Original branch deleted — work survives on the worktree branch.
             logger.warning("Worktree merge skipped: %s", exc)
-        except Exception:
+        except Exception as exc:
             if merge:
                 logger.error(
                     "Worktree merge failed for task %s, branch '%s' and "
@@ -193,11 +193,14 @@ class WtWorktreeEffects:
                     active.branch_name,
                 )
                 raise
-            # merge=False (failed / cancelled administrative close): swallow.
+            # merge=False (failed / cancelled administrative close): swallowed,
+            # so the transition succeeds — a stack trace here reads as a crash
+            # for work that completed (HATS-1332). Name the cause on one line.
             logger.warning(
-                "Worktree discard failed, branch '%s' preserved",
+                "Worktree discard failed, branch '%s' preserved: %s: %s",
                 active.branch_name,
-                exc_info=True,
+                type(exc).__name__,
+                exc,
             )
 
     def discard_if_empty(self, task_id: str) -> bool:
