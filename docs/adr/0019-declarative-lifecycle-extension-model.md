@@ -3,13 +3,13 @@
 ## Status
 
 Proposed (HATS-1139, 2026-07-24; last revised at rev 7 — HATS-1240, 2026-07-27).
-Governs two epics. **HATS-1266** fixes the substrate — retiring `lifecycle_hooks`
-(HATS-1147), the execution primitive (HATS-1151, HATS-1161) and moving the
-remaining channels to `in_process` (HATS-1268, HATS-1269) — and runs first, per
-D8. **HATS-1138** then builds the declarative mechanism (HATS-1152 → 1140 → 1241
+Governs epic **HATS-1138** — the declarative mechanism (HATS-1152 → 1140 → 1241
 → 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
-HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). Driver:
-HATS-1134 (incident HATS-1130).
+HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). The substrate
+underneath — retiring `lifecycle_hooks`, the hook-execution primitive, the
+channel postures and the git_hooks orchestrator (epic **HATS-1266**, which runs
+first per D8) — is **ADR-0020 [4]**, split out of this document's rev 7 during
+review. Driver: HATS-1134 (incident HATS-1130).
 
 **It stays `Proposed` on purpose.** This ADR replaces a channel with zero
 declared consumers, and neither candidate consumer is live yet. It becomes
@@ -38,10 +38,12 @@ D9**: rev 5–6 resolved bindings out of the *provider's* per-session skill tree
 which by then existed only for claude — see D9 for what falsified it. Rev 7 also
 amends D6, **inverts D8** (the retirement of `lifecycle_hooks` now leads the
 migration instead of trailing it, and closes by tombstone rather than a
-deprecation window), adds **D10** (channel taxonomy; its `detached` contract
-amended in review 2026-07-29 to a fail-open dispatcher with spawn-time
-resolution — HATS-1266 re-scope) and corrects a stale Risk paragraph in
-*Consequences* that rev 5 had already superseded.
+deprecation window), added **D10** (channel taxonomy) and corrects a stale Risk
+paragraph in *Consequences* that rev 5 had already superseded. **During the
+same review (2026-07-29, supervisor)** D10 — with its `detached` contract
+re-cut to a fail-open dispatcher — and the mechanics halves of D4/D5 were
+**split out to ADR-0020 [4]** before rev 7 merged, so this document carries
+the extension model only.
 
 ## Context
 
@@ -173,30 +175,15 @@ which fires after the merge commit exists and can only strand a worktree.
 
 `discard` deliberately has no pre-op point: discard is an explicit throw-away.
 
-### D4 — Uniform exit-code contract
+### D4 — Outcome policy at the binding
 
-| exit          | meaning                          | effect                                  |
-| ------------- | -------------------------------- | --------------------------------------- |
-| `0`           | pass                             | operation proceeds                      |
-| `2`           | **refuse** — the check's verdict | refused; stdout tail becomes the reason |
-| `1` and other | the check itself broke           | governed by `on_error:`                 |
-
-**Refuse is exit 2, deliberately not 1** (corrected in rev 4 — rev 3 had `1`).
-Under `set -e`, a false `[[ ... ]]`, a `grep` with no match and a failing `jq`
-all abort a bash check with **exit 1**; exit 1 is the status a shell check
-produces *by accident*. It must therefore route to the `on_error` safety valve,
-not be read as a considered verdict. The inverse is live in-repo today:
-`drain-review.sh` does `exit "$rc"` propagating `hunk-notes.sh`'s status (2, 127,
-…) to fail **closed** — under a naive "other = broke" plus `on_error: warn` that
-data-protection script would fail **open**, silently reproducing HATS-1130.
-Precedent for not signalling a verdict by exit status: the runtime-hook channel
-returns 0 and emits `permissionDecision: deny` on stdout (`safety_gate.py`).
-
-Statuses `126`/`127` (not found / not executable) and anything `>128` (signal
-death: 130 SIGINT, 143 SIGTERM) are **broke**, and must be named as such in the
-message. SIGINT aborts the whole operation regardless of `on_error`
-(`worktree_hooks.py:21-22` — SIGINT is never swallowed). A **timeout is broke,
-not refuse**: a hung check formed no verdict.
+The execution mechanics — the exit-code contract (`0` pass / `2` refuse with
+the child's stdout tail as the reason / anything else broke, including
+`126`/`127`, `>128` and timeouts), stdin, per-caller timeout, decoding and the
+shared env base — moved to the execution primitive's contract, **ADR-0020 [4]
+D2** (split 2026-07-29; the "refuse is 2, not 1" rationale and its rev-4
+history travel with it). This section owns what a *binding* does with the
+outcome — the policy layer `checks:` adds on top of the primitive.
 
 `on_error: refuse | warn`, default **`refuse`** (preserves today's fail-closed
 posture). A consumer opts into `warn` explicitly — but **`on_error: warn` is
@@ -226,11 +213,12 @@ task with no worktree must not wedge the backlog. The hunk binding declares
 `on_error: warn` — a *policy* gate fails open, while *data protection*
 (`wt:teardown` harvest) keeps `refuse`.
 
-### D5 — Unified env contract
+### D5 — Check-point env vocabulary
 
-Common to every point: `AI_HATS_HOOK_POINT` (fully-qualified, e.g.
-`edge:review--done`), `AI_HATS_PROJECT_DIR`, `AI_HATS_FORCE`, and — when
-resolvable — `AI_HATS_TASK_ID`, `AI_HATS_WORKTREE_PATH`.
+The shared base every hook receives (project dir, point identifier, force
+flag) is the primitive's contract — **ADR-0020 [4] D2**. Points under this
+ADR add: `AI_HATS_HOOK_POINT` (fully-qualified, e.g. `edge:review--done`),
+and — when resolvable — `AI_HATS_TASK_ID`, `AI_HATS_WORKTREE_PATH`.
 
 `AI_HATS_WORKTREE_PATH` at `edge:` points is a fix, not a nicety: today
 `HookRunnerExtension` passes `AI_HATS_HOOK_TASK_FILE` but not the worktree, so
@@ -338,7 +326,7 @@ borrowing the *provider's* cache instead of owning one.
 2. **Inside a session, the root is ai-hats's own snapshot** at
    `<ai_hats_dir>/.cache/sessions/<sid>/checks/<skill>/` — the declaring skill's
    directory copied *whole*, through the existing `Materializer` port. Whole, not
-   just the script, so sibling data files survive (see **D10**, `bundle`). A
+   just the script, so sibling data files survive (ADR-0020 [4] D1, `bundle`). A
    session must execute the same bytes from start to finish and stay isolated
    from a library being edited concurrently; relying on worktree discipline for
    that isolation would be a policy, not a mechanism, and it lapses at merge.
@@ -424,90 +412,23 @@ is free to be chosen on other grounds. It is chosen thus:
    **persisted into worktree state JSON at create and replayed at teardown**
    (`wt_hooks`, ADR-0013 [3] D5), so live worktrees would replay the old shape. Needs
    a state-compat shim; its own card (HATS-1146). Note this is the *declaration*
-   channel only — moving that channel's *scripts* to `in_process` per D10 is
-   independent of `checks` and rides step 1's epic (HATS-1269).
+   channel only — moving that channel's *scripts* to `in_process` per ADR-0020
+   [4] D4 is independent of `checks` and rides step 1's epic (HATS-1269).
 
 **The cost of leading with the retirement, stated plainly.** Between step 1 and
 step 3 the project has no FSM edge extension point at all. Today that window is
 empty; if an edge gate becomes necessary inside it, the answer is to wait rather
 than to build a temporary fourth channel whose only purpose is deletion.
 
-### D10 — Channel taxonomy: `in_process` vs `detached`
+### D10 — Channel taxonomy (moved to ADR-0020)
 
-*Added at rev 7 (HATS-1240). The `detached` contract was amended during the
-same review (2026-07-29, supervisor, HATS-1266 re-scope): fail-open dispatcher
-with spawn-time resolution, replacing "manifest + fail-closed backstop" —
-implementation HATS-1337.* D9 raises a question the ADR had left implicit:
-if a check can execute from ai-hats's own root, why do the four pre-existing
-channels each keep a copy somewhere else? The answer is that only one of them
-has to — and naming the axis prevents the next channel from picking a shape by
-imitation.
-
-The axis is **not** "snapshot versus live". Nothing in the system snapshots
-*bytes*: even the worktree carry persists only the hook **set**
-(`{skill, script, on}`) into worktree state and re-resolves the content at
-teardown. The axis is **who is guaranteed to be running when the script is
-spawned**:
-
-| mode         | who spawns it                                | what it requires                                                                                                                                                                      |
-| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `in_process` | ai-hats itself                               | an absolute path resolved fresh at spawn; no copy, no manifest, sibling files intact                                                                                                  |
-| `detached`   | a third party, with no ai-hats process alive | one static dispatcher per event, installed at init — no role logic, no venv paths; the gate set resolved at spawn time from ai-hats-owned state; **fail-open** when ai-hats is absent |
-
-Assignment: `in_process` — `checks` (this ADR), `worktree` `wt_in`/`wt_out`,
-`runtime_hooks` on both surfaces. `detached` — **`git_hooks`, alone.**
-
-`git_hooks` cannot move, on two independent constraints. A human `git commit`
-runs the hook with no process able to evaluate `builtin_library_root()` — and
-that resolver is not a stable path source in any case: it is worktree-aware,
-cwd-sensitive, and in the zipimport tier resolves to a temp directory alive only
-for the calling process. Separately, git requires a real executable named exactly
-`<event>` under `core.hooksPath`, and the dispatcher is generated rather than
-shipped by a skill. Note what is *not* a reason: `.githooks/` is git-ignored, so
-"it is committed with the repository" does not apply.
-
-**What `detached` requires — amended 2026-07-29 (HATS-1266 re-scope).** The
-original rev-7 row read "a stable self-describing dir, plus a manifest and a
-fail-closed backstop" — a faithful description of what exists, and the wrong
-contract. The durable artifact is only the **orchestrator**: the per-event
-dispatcher plus `core.hooksPath`, carrying no role logic and no paths into a
-versioned venv, so it survives `self update` unchanged. Gate *content* stays in
-the declaring skills; the dispatcher resolves the gate set at spawn time from
-ai-hats-owned state — no per-gate copies under `<event>.d/`, no
-`.ai-hats-manifest`, no GIT drift arm (resolution mechanism owned by
-HATS-1337's plan). Degradation is **fail-open with a one-line warning**: the
-fail-closed backstop's failure mode is a wedged human commit whose named
-remedy — `ai-hats self init` — needs exactly the binary that is gone. A gate
-that cannot be resolved is a gate that does not run, said out loud; it is
-never a commit that cannot happen. Symlinking gates into the library — the
-rev-7 halfway house — stays rejected, now on staleness grounds: a link into a
-versioned install dies at every `self update`, which is the one lifecycle
-event the orchestrator must survive.
-
-Two further attributes are today implicit, and silently violated:
-
-- **`selection: composed | union`.** Only `lifecycle_hooks` collects over every
-  library skill; every other channel is per-composed-role. **D7** moves this
-  channel to `composed`, after which the divergence disappears.
-- **`bundle: script | dir`.** Whether a hook needs the sibling files shipped
-  beside it. Flatten-copying a single script silently drops them, and two live
-  scripts already read siblings via `__file__` or a repo-relative path. Under
-  `in_process`, `bundle: dir` is free — which is why D9 snapshots the declaring
-  skill's directory whole rather than the one file.
-
-Retrofitting `runtime_hooks` and the worktree channel onto `in_process` is
-deliberately **not** part of this ADR's migration (D8). Ownership splits the way
-D8 step 4 states it: moving the worktree channel's *scripts* to `in_process` is
-HATS-1269, while folding its *declaration* into `checks:` — the half that needs
-the compat shim, because the carry is replayed from the state files of *live*
-worktrees — is HATS-1146.
-
-One known obstacle for the `runtime_hooks` half: today the materializer copies
-each script and rewrites the mode to `0o755`, which is masking at least one
-`100644` hook in the shipped library (see D6). `in_process` resolves the path
-fresh instead of copying, so that mask disappears and the mode has to be correct
-at rest before the retrofit lands. This ADR fixes the taxonomy; the retrofit
-follows one channel at a time.
+*Split out 2026-07-29, during this rev's review (HATS-1240), before rev 7
+merged.* The channel taxonomy (`in_process` vs `detached`), the
+`bundle`/`selection` attributes, the git_hooks orchestrator contract (the
+fail-open dispatcher) and the substrate migration table are epic HATS-1266's
+design of record and live in **ADR-0020 [4]**. This ADR consumes them in two
+places: D9's `checks/` snapshot root is `in_process`, and D8's ordering leans
+on the substrate epic running first.
 
 ## Consequences
 
@@ -572,7 +493,8 @@ no current consumer.
 ## Rev 4 — corrections from adversarial review
 
 > **Reading note (rev 7).** This section is a dated record of a review held on
-> 2026-07-23, kept because it is the evidence behind D4 and D9. Its `file.py:NN`
+> 2026-07-23, kept because it is the evidence behind D4/D9 here and behind the
+> exit-code contract now in ADR-0020 [4] D2. Its `file.py:NN`
 > citations are **as-of that date and are not maintained** — an audit on
 > 2026-07-26 confirmed the cited files and symbols still exist while several line
 > numbers had moved. Chasing them each time the code shifts would give the record
@@ -704,3 +626,8 @@ out-of-session fallback"; **HATS-1147**'s deletion set grows (manifest, sweep,
 - [3] `docs/adr/0013-wt-core-extraction-boundary.md` D5 — `wt_hooks` carry
   persisted into worktree state JSON at create and replayed at teardown, the
   reason the declaration fold needs a state-compat shim.
+- [4] `docs/adr/0020-hook-execution-and-materialization-substrate.md` — the
+  substrate this model binds to (epic HATS-1266): channel taxonomy, the
+  execution primitive's mechanics and shared env base, the git_hooks
+  orchestrator, and the per-channel migration. Split out of this document's
+  rev 7 on 2026-07-29, pre-merge.
