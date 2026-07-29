@@ -63,7 +63,7 @@ fi
 # hook can't leak GIT_DIR into pytest and retarget a test's git off cwd onto real
 # .git (the child `env -u` does not affect the parent commit).
 output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
-    "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider 2>&1)
+    "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider tests/e2e/ 2>&1)
 rc=$?
 
 if [[ $rc -eq 5 ]]; then
