@@ -29,6 +29,7 @@ fields:
   - { name: baseline, type: any }
   - { name: min_sessions_per_bundle, type: int, default: 4 }
   - { name: closed, type: str, default: "", emit: when-set }
+  - { name: origin, type: str, default: "", emit: when-set }
 
 links:
   kinds:

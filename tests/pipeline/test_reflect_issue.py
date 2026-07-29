@@ -127,7 +127,8 @@ def test_reflect_issue_create_full_pipeline(
     # HYP materialized on disk (dir-per-card); read back through the rack.
     saved = _card(project_dir, "HYP-001")
     assert saved.state == "active"
-    assert saved.links["source_task"] == ["supervisor-observation"]
+    assert "source_task" not in saved.links
+    assert saved.extras["origin"] == "supervisor-observation"
     assert saved.title.startswith("agent skips")
     assert saved.extras["exit_criteria"]["confirm"] == ["4 sessions clean"]
 
