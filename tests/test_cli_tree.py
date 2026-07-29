@@ -37,15 +37,14 @@ def _invoke_entry(argv: list[str], capsys) -> tuple[int, str]:
 def test_full_tree_lists_all_top_level_groups():
     code, out = _invoke_main(["--tree"])
     assert code == 0, out
-    for group in ["agent", "config", "list", "reflect", "self", "session", "task", "wt"]:
+    for group in ["agent", "config", "list", "reflect", "self", "session", "wt"]:
         assert group in out, f"group {group!r} missing from --tree output"
 
 
 def test_full_tree_renders_nested_subcommands():
-    """`task hyp append-verdict` is two levels deep — must appear in tree."""
+    """Nested subcommands (`wt merge`, `session retro`) must appear in tree."""
     code, out = _invoke_main(["--tree"])
     assert code == 0
-    assert "append-verdict" in out
     assert "merge" in out
     assert "retro" in out
 
@@ -54,7 +53,7 @@ def test_full_tree_includes_option_help_text():
     code, out = _invoke_main(["--tree"])
     assert code == 0
     assert "--ticket" in out
-    assert "--priority" in out
+    assert "--provider" in out
 
 
 # ---------- Subtree (via main_entry shim, requires real argv) ----------
@@ -68,7 +67,6 @@ def test_subtree_single_level_leaf(capsys):
     # Must NOT contain headlines of sibling groups.
     assert "View and update project configuration" not in out  # config
     assert "Manage git worktrees" not in out  # wt
-    assert "Manage task cards" not in out  # task
     # Should still show options of agent.
     assert "--ticket" in out
 
@@ -103,8 +101,8 @@ def test_subtree_full_tree_when_no_path(capsys):
     """`--tree` alone (no path) renders the full tree via the same shim path."""
     code, out = _invoke_entry(["ai-hats", "--tree"], capsys)
     assert code == 0, out
-    # Sanity: all 8 groups present.
-    for group in ["agent", "config", "list", "reflect", "self", "session", "task", "wt"]:
+    # Sanity: all top-level groups present.
+    for group in ["agent", "config", "list", "reflect", "self", "session", "wt"]:
         assert group in out
 
 

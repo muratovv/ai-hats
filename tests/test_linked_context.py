@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context, load_ticket
-from ai_hats.models import TaskCard, TaskState, WorkLogEntry
+from ai_hats_tracker.models import TaskCard, TaskState, WorkLogEntry
 from ai_hats.paths import tasks_dir
 
 

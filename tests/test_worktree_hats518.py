@@ -276,7 +276,7 @@ class TestTransitionExecute:
         scaffold-creation side effect of that transition (which could
         gain refusal semantics later for unrelated reasons).
         """
-        from ai_hats.models import TaskState
+        from ai_hats_tracker.models import TaskState
         from ai_hats_tracker.state import TaskManager
         from ai_hats.tracker_wiring import tracker_paths
         from ai_hats.wt_effects import WtWorktreeEffects
@@ -300,7 +300,7 @@ class TestTransitionExecute:
         return master_project, mgr
 
     def test_refuses_and_leaves_card_in_plan(self, task_mgr) -> None:
-        from ai_hats.models import TaskState
+        from ai_hats_tracker.models import TaskState
 
         master_project, mgr = task_mgr
         # Park HEAD on a feature branch.
@@ -320,7 +320,7 @@ class TestTransitionExecute:
         invariant. If the operator genuinely wants a non-canonical merge
         target, they must checkout that branch in the main repo first.
         """
-        from ai_hats.models import TaskState
+        from ai_hats_tracker.models import TaskState
 
         master_project, mgr = task_mgr
         _git(master_project, "checkout", "-b", "feat/parking")
@@ -336,7 +336,7 @@ class TestTransitionExecute:
         assert mgr.get_task("T-1").state == TaskState.PLAN
 
     def test_succeeds_when_head_is_master(self, task_mgr) -> None:
-        from ai_hats.models import TaskState
+        from ai_hats_tracker.models import TaskState
         from ai_hats.paths import worktrees_dir
         from ai_hats_wt import WorktreeManager
 

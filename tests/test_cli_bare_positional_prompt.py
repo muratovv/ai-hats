@@ -31,10 +31,10 @@ def test_bare_positional_unquoted_args_passed_to_launch_session() -> None:
 
 
 def test_registered_subcommands_still_route_normally() -> None:
-    """Registered subcommands (e.g. `ai-hats task list`) MUST NOT be treated as positional prompts."""
+    """Registered subcommands (e.g. `ai-hats wt ...`) MUST NOT be treated as positional prompts."""
     runner = CliRunner()
     with patch("ai_hats.cli._launch_session") as mock_launch:
-        result = runner.invoke(main, ["task", "--help"])
+        result = runner.invoke(main, ["wt", "--help"])
         assert result.exit_code == 0, result.output
-        assert "Manage task cards and state machine" in result.output
+        assert "Manage git worktrees" in result.output
         mock_launch.assert_not_called()

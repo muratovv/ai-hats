@@ -1,22 +1,17 @@
-"""End-to-end coverage for `task transition --final-state` (HATS-723).
+"""End-to-end coverage for `rack transition --final-state` (HATS-723).
 
-Audit finding 2b-F8 (HATS-698) fixed two coupled defects in the click wiring:
+Audit finding 2b-F8 (HATS-698) fixed two coupled defects in the legacy click
+wiring; rack carries both contracts (guard restored in HATS-1275):
 
-- `--final-state` on a non-review target was parsed and silently dropped
-  (option-parsed-then-ignored). It must now refuse loudly (exit 1).
-- `--final-state` on the review target was written in a separate lock BEFORE
-  the transition; it now rides the transition's single lock window.
+- `--final-state` on a non-review target must refuse loudly (exit 1), not
+  parse-then-drop.
+- `--final-state` on the review target rides the transition's single lock
+  window and is visible in the `context` read-back.
 
-Per `dev_rule_e2e_gate`, the `src/ai_hats/cli/` surface change needs a real
-subprocess test that fails if the guard is reverted. This test runs the
-**real** launcher + **real** pip install + **real** ai-hats binary. Slow
-(~60s on a warm pip cache). Marked `integration`.
+Re-pointed off the legacy `ai-hats task` CLI (HATS-1260; the wait-on-1275
+noted here since HATS-1263 is over). Real launcher + real pip install +
+real binaries, marked `integration`.
 """
-
-# HATS-1263: still on the legacy CLI. Needs two things rack lacks — the
-# `--final-state is only valid with review` guard, and `final_state` in the
-# `context` read-back (cli_context.py:123-140 renders a fixed key set).
-# Re-point once HATS-1275 lands.
 
 from __future__ import annotations
 
@@ -48,18 +43,18 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
 
 @pytest.mark.integration
 def test_e2e_transition_final_state(shared_launcher, tmp_path):
-    """HATS-723 `--final-state` contract, real subprocess.
+    """HATS-723 `--final-state` contract on rack, real subprocess.
 
     1. Bootstrap: session-shared venv + self init (TST- prefix).
     2. Create a task.
     3. REJECT (fail-under-revert): `transition TST-001 plan --final-state "x"`
-       must exit 1 — under the reverted code the flag is silently dropped and
+       must exit 1 — under the reverted guard the flag is silently dropped and
        the task transitions to plan (exit 0).
     4. RECORD: `transition TST-001 review --force --reason ... --final-state ...`
-       (force bypasses the FSM guard; review has no worktree side-effects) must
-       persist final_state, visible in `task show`.
+       (force relaxes the FSM arrow; review has no worktree side-effects) must
+       persist final_state, visible in `rack context`.
     """
-    launcher_dest, env, _venv = shared_launcher
+    launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
     project.mkdir()
 
@@ -68,6 +63,15 @@ def test_e2e_transition_final_state(shared_launcher, tmp_path):
             [str(launcher_dest), *args],
             cwd=project,
             env=env,
+            timeout=timeout,
+            expect_exit=expect_exit,
+        )
+
+    def rack(*args, expect_exit=0, timeout=180):
+        return _run(
+            [str(venv / "bin" / "rack"), *args],
+            cwd=project,
+            env={**env, "AI_HATS_PLAN_ACK": "1"},
             timeout=timeout,
             expect_exit=expect_exit,
         )
@@ -85,13 +89,12 @@ def test_e2e_transition_final_state(shared_launcher, tmp_path):
     )
 
     # ---- create a task ----
-    ai_hats("task", "create", "Reviewable", "-d", "task", "-p", "medium")
-    res = ai_hats("task", "list", "--all")
+    rack("create", "Reviewable", "--description", "task")
+    res = rack("context", "TST-001")
     assert "TST-001" in res.stdout, f"TST-001 missing:\n{res.stdout}"
 
     # ---- 3. REJECT non-review target (fail-under-revert) ----
-    rej = ai_hats(
-        "task",
+    rej = rack(
         "transition",
         "TST-001",
         "plan",
@@ -99,16 +102,14 @@ def test_e2e_transition_final_state(shared_launcher, tmp_path):
         "x",
         expect_exit=1,
     )
-    assert "final-state" in rej.stdout.lower(), (
-        f"reject message did not mention the flag:\n{rej.stdout}"
-    )
+    combined = (rej.stdout + rej.stderr).lower()
+    assert "final" in combined, f"reject message did not mention the flag:\n{rej.stdout}\n{rej.stderr}"
     # The rejected transition must NOT have moved the task off brainstorm.
-    res = ai_hats("task", "show", "TST-001")
+    res = rack("context", "TST-001")
     assert "state: brainstorm" in res.stdout, f"rejected transition mutated state:\n{res.stdout}"
 
-    # ---- 4. RECORD on the review target (force bypasses FSM, no worktree) ----
-    ai_hats(
-        "task",
+    # ---- 4. RECORD on the review target (force relaxes FSM, no worktree) ----
+    rack(
         "transition",
         "TST-001",
         "review",
@@ -118,7 +119,7 @@ def test_e2e_transition_final_state(shared_launcher, tmp_path):
         "--final-state",
         "shipped feature X",
     )
-    res = ai_hats("task", "show", "TST-001")
+    res = rack("context", "TST-001")
     assert "state: review" in res.stdout, f"not in review:\n{res.stdout}"
     assert "final_state: shipped feature X" in res.stdout, (
         f"final_state not recorded:\n{res.stdout}"

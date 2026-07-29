@@ -19,11 +19,6 @@ def test_assert_command_exists_two_level():
     assert_command_exists("self", "init")
 
 
-def test_assert_command_exists_three_level():
-    """Three-level nested command — `ai-hats task hyp create`."""
-    assert_command_exists("task", "hyp", "create")
-
-
 def test_assert_command_exists_raises_for_missing():
     """Non-existing command path raises AssertionError with stderr in message."""
     with pytest.raises(AssertionError) as excinfo:

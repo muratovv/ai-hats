@@ -16,7 +16,7 @@ from click.testing import CliRunner
 
 from ai_hats_tracker.cli.task import task
 from ai_hats_tracker.linked_context import load_linked_context
-from ai_hats.models import TaskCard, TaskState
+from ai_hats_tracker.models import TaskCard, TaskState
 from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir, tasks_dir
 from ai_hats.runtime import SubAgentRunner
@@ -46,6 +46,17 @@ def project_dir(tmp_path: Path, monkeypatch) -> Path:
     pd = tmp_path / "proj"
     tasks_dir(pd).mkdir(parents=True)
     monkeypatch.chdir(pd)
+    # HATS-1260: the integrator no longer wires the tracker seam; bind the
+    # wt-free manager to this project's AI_HATS_DIR-aware layout explicitly.
+    from ai_hats.tracker_wiring import tracker_paths
+    from ai_hats_tracker.cli import _seam
+    from ai_hats_tracker.state import TaskManager
+
+    monkeypatch.setattr(
+        _seam,
+        "_MANAGER_FACTORY",
+        lambda project_dir=None: TaskManager(pd, layout=tracker_paths(pd)),
+    )
     return pd
 
 

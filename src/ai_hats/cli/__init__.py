@@ -339,12 +339,6 @@ from . import (  # noqa: E402
     session,
     worktree,
 )
-from ai_hats_tracker.cli import (  # noqa: E402
-    attach as attach_mod,
-    hyp as hyp_mod,
-    proposal as proposal_mod,
-    task,
-)
 
 # Config — set + customize + status nest under it (HATS-241, HATS-242).
 # All four touch ai-hats.yaml composition; status is the readout.
@@ -395,42 +389,8 @@ main.add_command(worktree.wt)
 # Session (observability + retro generation)
 main.add_command(session.session)
 
-# Task management — hyp + proposal nest under it (HATS-241).
-# All three are backlog artifacts, so they live as siblings:
-#   ai-hats task list / create / ...
-#   ai-hats task hyp ...
-#   ai-hats task proposal ...
-task.task.add_command(hyp_mod.hyp)
-task.task.add_command(proposal_mod.proposal)
-task.task.add_command(attach_mod.attach)
-main.add_command(task.task)
-
-# HATS-934: tracker CLI (task/attach) defaults to wt-free constructors; the
-# integrator wires the wt-coupled `_helpers` versions here so `ai-hats task`
-# keeps its worktree UX (override the shared `_seam` — reaches every importer).
-from ai_hats_tracker.cli import _seam  # noqa: E402
-from ..paths import (  # noqa: E402
-    hypotheses_dir,
-    hypotheses_flat_dir,
-    proposals_dir,
-    worktrees_dir,
-)
-from ._helpers import (  # noqa: E402
-    _guard_not_inside_linked_worktree,
-    _project_dir,
-    _task_manager,
-)
-
-_seam._MANAGER_FACTORY = _task_manager
-_seam._PROJECT_DIR = _project_dir
-_seam._GUARD_LINKED_WT = _guard_not_inside_linked_worktree
-_seam._CONSOLE = console
-_seam._WORKTREES_DIR = worktrees_dir
-# hyp/prop path resolvers (HATS-935) — AI_HATS_DIR/yaml-aware integrator versions.
-# HATS-1054: _HYPOTHESES_DIR is the new catalog; _HYPOTHESES_FLAT_DIR the legacy flat fallback.
-_seam._HYPOTHESES_DIR = hypotheses_dir
-_seam._HYPOTHESES_FLAT_DIR = hypotheses_flat_dir
-_seam._PROPOSALS_DIR = proposals_dir
+# HATS-1260: the legacy `ai-hats task` groups (task/hyp/proposal/attach) are
+# unmounted — rack is the only backlog surface; the tracker package dies at HATS-1262.
 
 # HATS-952: observe session-browse CLI (list/show/audit) defaults to wt-free
 # resolvers; inject the integrator's AI_HATS_DIR/yaml-aware layout so
@@ -438,6 +398,7 @@ _seam._PROPOSALS_DIR = proposals_dir
 from ai_hats_observe.cli import _seam as _observe_seam  # noqa: E402
 from ..paths import runs_dir  # noqa: E402
 from ..tags import parse_tag_filters  # noqa: E402
+from ._helpers import _project_dir  # noqa: E402
 
 _observe_seam._PROJECT_DIR = _project_dir
 _observe_seam._RUNS_DIR = runs_dir

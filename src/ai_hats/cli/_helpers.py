@@ -15,7 +15,6 @@ import click
 from rich.console import Console
 
 from ..constants import is_debug_mode
-from ..paths import PROJECT_CONFIG
 
 if TYPE_CHECKING:
     from ..composition_seam import MissingProviderError, RoleNotFoundError
@@ -293,29 +292,3 @@ def _guard_not_inside_linked_worktree() -> None:
         console.print("  To act on the active worktree without leaving it, use")
         console.print("  [bold]ai-hats wt exec[/] / [bold]ai-hats wt env[/].")
         sys.exit(1)
-
-
-def _task_manager(project_dir: Path | None = None):
-    """Construct a TaskManager with the project's configured task-id prefix.
-
-    Falls back to auto-detection (and persists the result) when the project
-    has existing task folders but no `task_prefix` in ai-hats.yaml — keeps
-    legacy repos on their historical prefix without manual migration.
-    """
-    with catch_broken_install():
-        from ..models import ProjectConfig
-        from ai_hats_tracker.state import TaskManager
-        from ..tracker_wiring import tracker_paths
-        from ..wt_effects import WtWorktreeEffects
-
-    pdir = project_dir or _project_dir()
-    config_path = pdir / PROJECT_CONFIG
-    prefix = ProjectConfig.resolve_task_prefix(pdir, config_path)
-    # HATS-866/864: the CLI is the integrator chokepoint binding the FSM's
-    # needs_worktree effect to the wt engine and the layout to TrackerPaths.
-    return TaskManager(
-        pdir,
-        prefix=prefix,
-        layout=tracker_paths(pdir),
-        worktree_effects=WtWorktreeEffects(pdir),
-    )

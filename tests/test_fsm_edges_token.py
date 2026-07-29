@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
 
-from ai_hats.models import TaskState
+from ai_hats_tracker.models import TaskState
 from ai_hats.paths import tasks_dir
 from ai_hats.placeholders import (
     FSM_EDGES_TOKEN,

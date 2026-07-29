@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from ai_hats_rack.fsm import load_topology
 
-from ai_hats.models import TaskState
+from ai_hats_tracker.models import TaskState
 
 
 def _tracker_edges() -> dict[str, tuple[str, ...]]:
