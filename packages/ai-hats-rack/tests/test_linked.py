@@ -18,7 +18,7 @@ from ai_hats_rack.linked import (
 )
 from ai_hats_rack.definition import load_backlog
 from ai_hats_rack.models import TaskCard
-from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError
+from ai_hats_rack.registry import DerivedLinkKindError, UnknownLinkKindError, load_registry
 
 # A trivially valid fsm block so the custom kinds are the only variable.
 _MINIMAL_FSM = (
@@ -118,6 +118,21 @@ def test_link_reciprocal_depends_is_refused(tasks_dir):
         link(tasks_dir, "T-2", "T-1", "depends")
     assert err.value.kind == "depends_on"
     assert load(tasks_dir, "T-2").depends_on == []  # refused before any write
+
+
+def test_a_derived_inverse_does_not_exempt_a_kind_from_the_guard(tasks_dir):
+    """`depends_on` declares the derived `blocks` (HATS-1208). A reverse VIEW
+    is not a licence to assert both directions — reading "has an inverse" as
+    "bidirectional by design" silently reopened the deadlock above."""
+    reg = load_registry()
+    assert reg.get("depends_on").inverse == "blocks"  # the exemption's bait
+    assert reg.get("blocks").derived is True
+
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "depends")
+    with pytest.raises(ReciprocalLinkError):
+        link(tasks_dir, "T-2", "T-1", "depends")
 
 
 def test_link_reciprocal_related_is_allowed(tasks_dir):
