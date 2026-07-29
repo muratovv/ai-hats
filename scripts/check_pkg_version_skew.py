@@ -108,6 +108,23 @@ def changed_packages(base_ref: str, packages_dir: Path, repo_root: Path) -> set[
     return changed
 
 
+def resolve_base(base_ref: str, repo_root: Path) -> str | None:
+    """Return base_ref if it exists and shares a merge-base with HEAD, else None."""
+    try:
+        proc = subprocess.run(
+            ["git", "merge-base", base_ref, "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return base_ref
+        return None
+    except Exception:
+        return None
+
+
 def run(repo_root: Path, base_ref: str, *, fetch=None) -> list[Verdict]:
     packages_dir = repo_root / "packages"
     changed = changed_packages(base_ref, packages_dir, repo_root)
@@ -126,7 +143,15 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     base_ref = argv[0] if argv else "origin/master"
     repo_root = Path(_git(["rev-parse", "--show-toplevel"], Path.cwd()).strip())
-    verdicts = run(repo_root, base_ref)
+    resolved = resolve_base(base_ref, repo_root)
+    if resolved is None:
+        print(
+            f"[version-skew] base unusable ({base_ref}) — skipping git diff check; "
+            f"deferring to tests/test_package_version_drift.py",
+            file=sys.stderr,
+        )
+        return 0
+    verdicts = run(repo_root, resolved)
     failed = [v for v in verdicts if not v.ok]
     for v in verdicts:
         print(f"[version-skew] {'FAIL' if not v.ok else 'ok'}: {v.package} — {v.reason}",
@@ -137,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("[version-skew] all workspace packages ahead of / clean vs PyPI.", file=sys.stderr)
     return 0
+
 
 
 if __name__ == "__main__":
