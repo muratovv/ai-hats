@@ -105,6 +105,12 @@ argv order under one task lock with one persist, so any abort rolls the whole
 sequence back. Day-to-day recipes — see [7]; engine reference —
 [`packages/ai-hats-rack/README.md`](../packages/ai-hats-rack/README.md).
 
+`rack doctor` is the read-only integrity report (HATS-1335): it scans every
+backlog mounted in the project for dangling links, transitive link cycles,
+mirror drift, duplicate list entries, missing required fields, and unreadable
+cards. Exit 0 clean, exit 1 with findings; it never repairs — a "fixed" id is
+a guess, so repair stays a human `transition --link/--unlink` decision.
+
 ## Behavior experiment (A/B)
 
 A scripted comparison proving that a library-component edit (skill / rule / trait wording) actually changes subagent behavior, instead of eyeballing it: `1 scenario × N arms × N identical runs`, scored mechanically (HATS-1053). Lives under `experiments/`. Term definitions (arm, scenario, score scripts, runs capture) and the authoring guide — see [10].
