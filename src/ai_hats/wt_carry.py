@@ -40,7 +40,7 @@ def collect_carry_for_role(
     creation.
 
     HATS-833 req-2 — create-time backstop: ``wt create`` runs via bare CLI /
-    ``task transition execute`` / CI, where no session-start drift net fires,
+    ``rack transition <id> execute`` / CI, where no session-start drift net fires,
     so the parent's ``library/wt-hooks/`` may be stale. We materialize the
     wt-hook scripts HERE (the carry-record chokepoint) and only keep a carry
     row whose backing script is present on disk afterwards — so the invariant

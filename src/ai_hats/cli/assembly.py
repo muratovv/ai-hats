@@ -199,8 +199,9 @@ def _build_init_pipeline_state(
     "--task-prefix",
     "task_prefix",
     default=None,
-    help="Task-id prefix for `ai-hats task create` (e.g. ACME). "
-    "Default: TASK for new projects; auto-detected for legacy repos.",
+    help="Task-id prefix for `rack create` (e.g. ACME). "
+    "Default: HATS. Set it explicitly — auto-detection from existing task "
+    "folders went with the removed `ai-hats task` CLI (HATS-1260).",
 )
 @click.option(
     "--ai-hats-dir",
@@ -332,7 +333,7 @@ def init(
     "--task-prefix",
     "task_prefix",
     default=None,
-    help="Task-id prefix for `ai-hats task create` (e.g. ACME). Overwrites existing.",
+    help="Task-id prefix for `rack create` (e.g. ACME). Overwrites existing.",
 )
 @click.option(
     "--venv",
