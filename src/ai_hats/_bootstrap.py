@@ -156,6 +156,17 @@ def bootstrap_or_die() -> None:
         sys.stderr.write("ai-hats: self-heal failed. Run the manual command above, then retry.\n")
         sys.exit(1)
 
+    # HATS-1359: uv can exit 0 as a no-op (stale dist-info, import still
+    # broken) — recheck before re-exec'ing forever into the same state.
+    still_missing = find_missing_runtime_deps()
+    if still_missing:
+        sys.stderr.write(
+            f"ai-hats: uv reported success but {still_missing} is still not "
+            f"importable (stale or orphaned install metadata?).\n"
+            f"  manual command: {_rescue_command(still_missing)}\n"
+        )
+        sys.exit(1)
+
     # Re-exec a fresh interpreter so that freshly-installed modules can be
     # imported. argv[0] becomes the interpreter; the rest is whatever the
     # user originally invoked.
