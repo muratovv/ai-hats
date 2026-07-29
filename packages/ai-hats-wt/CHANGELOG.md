@@ -6,6 +6,30 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Fixed
+
+- **A rebased branch is no longer refused as drifted** (HATS-1307). `_check_drift`
+  asked only whether the base SHA snapshotted at `wt create` still matched the
+  current base, so a branch sitting exactly on the moved base — zero stale work —
+  was still refused. The only exit was `--accept-drift`, a flag the
+  `rack transition <id> done` path cannot pass, so auto-merge dead-ended the
+  moment the base moved. Drift now requires **both** terms: the base moved since
+  create **and** it is not an ancestor of the worktree branch. Real drift is
+  refused exactly as before, and the fork shape (`base_branch` != `merge_target`,
+  HATS-942) — whose target is never an ancestor of the branch by design — keeps
+  merging cleanly.
+
+### Changed
+
+- **`WorktreeDriftError` carries `branch_name` / `base_branch` / `worktree_path`**
+  (HATS-1307) so CLI handlers can print a concrete rebase recipe. The body stays
+  facts-only per the HATS-509 contract.
+- **The drift summary's path list is computed from the merge-base** (three-dot
+  diff, HATS-1307), so it lists only what the base added — the two-dot form also
+  reported the branch's own work as a reversed change.
+
 ## [0.4.1]
 
 ### Fixed

@@ -133,17 +133,24 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
             ],
         )
     if isinstance(exc, WorktreeDriftError):
+        base = getattr(exc, "base_branch", None) or "<base>"
+        wt_path = getattr(exc, "worktree_path", None)
         return (
             "worktree_drift",
             f"Worktree drifted vs original branch — cannot merge for {tid}.",
             [
                 str(exc),
                 "",
-                "Re-verify your changes against the new base, then run:",
+                "Take the new base into the branch, re-verify, then retry:",
+                f"  cd {wt_path}" if wt_path else "  cd <worktree>  # ai-hats wt status",
+                f"  git rebase {base}",
                 *_main_repo_cd(),
-                f"  ai-hats wt merge --accept-drift {branch}",
                 f"  rack transition {tid} --state done",
-                "Note: --accept-drift belongs to `wt merge`, not `rack transition`.",
+                "",
+                "The rebase clears the guard — no flag needed. To merge the stale "
+                "baseline on purpose instead, run "
+                f"`ai-hats wt merge --accept-drift {branch}` from the main repo; "
+                "--accept-drift belongs to `wt merge`, not `rack transition`.",
             ],
         )
     if isinstance(exc, WorktreeBaseBranchMismatchError):

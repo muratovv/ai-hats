@@ -193,26 +193,38 @@ class WorktreeStateIncompleteError(Exception):
 
 
 class WorktreeDriftError(Exception):
-    """Raised when the worktree's original branch moved between create and merge.
+    """Raised when the base holds commits the worktree branch never took in.
 
-    HATS-457 / HYP-017: the base branch SHA captured at ``wt create`` no
-    longer matches the current local (or remote) tip, which means another
-    agent's worktree merge — or an explicit ``git pull`` — landed commits
-    that the current worktree's pre-merge verification never saw.
-
-    Default ``wt merge`` refuses to proceed; the user re-verifies against
-    the new base and re-runs with ``--accept-drift``.
+    HATS-457 / HYP-017: another agent's worktree merge — or an explicit
+    ``git pull`` — landed commits on the base that this worktree's
+    pre-merge verification never saw. HATS-1307: the test is *containment*
+    (is the base an ancestor of the branch), so rebasing clears it; only a
+    consciously accepted stale baseline still needs ``--accept-drift``.
 
     **Body contract (HATS-509)**: the exception message carries
     **facts only** — the drift summary built by ``_check_drift``
     (header, ``local:`` / ``remote:`` sections, ``affected paths:``
     listings). It MUST NOT include user-facing recipe text such as
     "re-run with ``--accept-drift``". The recipe is owned by CLI
-    handlers (``cli/worktree.py wt_merge``, ``cli/task.py
-    task_transition``) so each command surface can name its own flags
-    — historically the literal trailer leaked into ``task transition
-    done``, where the flag does NOT exist.
+    handlers (``cli/worktree.py wt_merge``, ``ai_hats/rack_cli_provider.py``)
+    so each command surface can name its own flags — historically the
+    literal trailer leaked into ``task transition done``, where the flag
+    does NOT exist. The attributes below let those handlers name concrete
+    refs without parsing the body.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        branch_name: str | None = None,
+        base_branch: str | None = None,
+        worktree_path: Path | None = None,
+    ) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        self.worktree_path = worktree_path
+        super().__init__(message)
 
 
 class WorktreeMergeConsentError(Exception):
@@ -670,9 +682,10 @@ class WorktreeManager:
         # create-start. Configured value wins; else the default = current HEAD.
         self._resolved_base_branch = self._base_branch or get_default_base_branch(self.project_dir)
         self._original_branch = self._merge_target or get_default_merge_branch(self.project_dir)
-        # HATS-457: snapshot the base SHA so `wt merge` can detect drift if the
-        # original branch advances between create and merge (concurrent agent
-        # worktrees, manual `git pull`, etc.).
+        # HATS-457: snapshot the merge target — the "did it move since I last
+        # verified" half of the drift check. HATS-1307: still load-bearing in
+        # the fork shape (base != merge_target), where the target is never an
+        # ancestor of the branch and containment alone cannot date the change.
         try:
             self._base_sha_at_create = self._git("rev-parse", self._original_branch).stdout.strip()
         except subprocess.CalledProcessError:
@@ -1804,14 +1817,19 @@ class WorktreeManager:
     _DRIFT_PATH_LIMIT = 50  # max paths printed inline; overflow → "… N more"
 
     def _check_drift(self) -> None:
-        """Raise WorktreeDriftError if the original branch moved since create.
+        """Raise WorktreeDriftError if the base moved and the branch lacks it.
+
+        HATS-1307: drift needs BOTH terms. "Did it move since create" alone
+        false-refuses a rebased branch; "is it contained in the branch" alone
+        false-refuses the fork shape (base != merge_target, HATS-942), where
+        the target is never an ancestor of the branch by design.
 
         Drift sources:
           * local: another worktree's `wt merge` advanced the local
-            original branch.
-          * remote: someone pushed commits to ``origin/<base>`` that the
-            local branch has not pulled — i.e. ``origin/<base>`` is NOT
-            an ancestor of local. ``current_remote != current_local`` is
+            original branch and the worktree branch never took it in.
+          * remote: someone pushed commits to ``origin/<base>`` that
+            neither local nor the branch has — i.e. ``origin/<base>`` is
+            an ancestor of neither. ``current_remote != current_local`` is
             insufficient: that condition also fires for normal unpushed
             local work (HATS-487 false-positive).
 
@@ -1871,7 +1889,12 @@ class WorktreeManager:
         except (subprocess.CalledProcessError, FileNotFoundError):
             current_remote = None
 
-        local_drifted = current_local != self._base_sha_at_create
+        # HATS-1307: moved AND not taken in. The second term spares a rebased
+        # branch; the first spares the fork shape, whose target is never an
+        # ancestor of the branch (HATS-942) yet has not changed under anyone.
+        local_drifted = current_local != self._base_sha_at_create and not self._is_ancestor(
+            current_local, self.branch_name
+        )
         # HATS-487: real remote drift means remote has commits NOT in
         # local — equivalent to "remote is NOT an ancestor of local".
         # Unpushed local work (local is ancestor of remote? — no, the
@@ -1882,27 +1905,32 @@ class WorktreeManager:
             current_remote is not None
             and current_remote != current_local
             and not self._is_ancestor(current_remote, current_local)
+            # HATS-1307: a branch rebased onto origin/<base> contains it too.
+            and not self._is_ancestor(current_remote, self.branch_name)
         )
 
         if not local_drifted and not remote_drifted:
             return
 
-        lines = [f"Worktree base '{self._original_branch}' drifted since worktree was created."]
+        lines = [
+            f"Worktree base '{self._original_branch}' drifted — branch "
+            f"'{self.branch_name}' does not contain its latest commits."
+        ]
         if local_drifted:
-            n, paths = self._drift_summary(self._base_sha_at_create, current_local)
+            n, paths = self._drift_summary(self.branch_name, current_local)
             lines.append(
-                f"  local: {self._short(self._base_sha_at_create)} → "
-                f"{self._short(current_local)} ({n} commit{'s' if n != 1 else ''} ahead)"
+                f"  local: {self._original_branch} ({self._short(current_local)}) is "
+                f"{n} commit{'s' if n != 1 else ''} ahead of the branch's merge-base"
             )
             if paths:
                 lines.append("  affected paths (local drift):")
                 lines.extend(f"    {p}" for p in paths)
         if remote_drifted:
             assert current_remote is not None
-            n_r, paths_r = self._drift_summary(current_local, current_remote)
+            n_r, paths_r = self._drift_summary(self.branch_name, current_remote)
             lines.append(
                 f"  remote: origin/{self._original_branch} is "
-                f"{n_r} commit{'s' if n_r != 1 else ''} ahead of local"
+                f"{n_r} commit{'s' if n_r != 1 else ''} ahead of the branch"
             )
             if paths_r:
                 lines.append("  affected paths (remote drift):")
@@ -1913,17 +1941,27 @@ class WorktreeManager:
         # cli/task.py task_transition) so each command names the correct
         # surface — historically the literal trailer leaked into
         # `task transition done`, where the flag does NOT exist.
-        raise WorktreeDriftError("\n".join(lines))
+        raise WorktreeDriftError(
+            "\n".join(lines),
+            branch_name=self.branch_name,
+            base_branch=self._original_branch,
+            worktree_path=self.worktree_path,
+        )
 
     def _drift_summary(self, base: str, head: str) -> tuple[int, list[str]]:
-        """Return (commit count, capped affected-path list) for base..head."""
+        """Return (commit count, capped affected-path list) for base..head.
+
+        HATS-1307: the path diff is three-dot (from the merge-base) so it
+        lists only what ``head`` added — two-dot also reported ``base``-side
+        work as a reversed change.
+        """
         try:
             n_str = self._git("rev-list", "--count", f"{base}..{head}").stdout.strip()
             n = int(n_str) if n_str else 0
         except (subprocess.CalledProcessError, ValueError):
             n = 0
         try:
-            diff = self._git("diff", "--name-only", f"{base}..{head}").stdout
+            diff = self._git("diff", "--name-only", f"{base}...{head}").stdout
         except subprocess.CalledProcessError:
             diff = ""
         paths = [line for line in diff.splitlines() if line.strip()]

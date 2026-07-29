@@ -14,7 +14,7 @@ The name (or names) of the branch that worktrees are expected to be created from
 - **Two refusal gates.**
   - *Create-time refusal* (HATS-518) — no worktree exists yet; the refusal aborts before `git worktree add` runs. Retry creates the worktree fresh once HEAD is on a canonical base.
   - *Merge-time refusal* (HATS-533) — the worktree dir and worktree branch are preserved untouched; the refusal happens before `_check_clean` / `_check_drift` / the actual `git merge`. Retry from the corrected HEAD finishes the merge as if the refusal hadn't happened.
-- **`--force` / `--accept-drift` do NOT bypass either guard.** `--force` is the dirty-worktree consent; `--accept-drift` is the moved-base consent. Neither addresses wrong-branch protection — three independent safety contracts, three independent flags.
+- **`--force` / `--accept-drift` do NOT bypass either guard.** `--force` is the dirty-worktree consent; `--accept-drift` is the stale-baseline consent (drift itself is cleared by rebasing — HATS-1307). Neither addresses wrong-branch protection — three independent safety contracts, three independent flags.
 - **Configurable per project (HATS-942).** The default is the `master`/`main` two-name set, but a fork/dogfood repo can point the split (base ≠ merge-target) at its own branches via the `worktree` block — full contract in [How to configure](../how-to-configure.md#1a-the-worktree-block--fork-workflows-base--merge-target). When unset, behavior is byte-identical to the historical hardcoded set.
 
 ## Worktree data transfer (carry-in / carry-out)

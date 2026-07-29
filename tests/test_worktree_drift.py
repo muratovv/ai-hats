@@ -1,8 +1,8 @@
 """Drift detection on `wt merge` (HATS-457 / HYP-017).
 
-Covers ``WorktreeManager._check_drift``: snapshot of original-branch
-SHA at create time vs current local + ``origin/<base>`` SHA at merge
-time. Failure surface = silent stale-baseline post-merge breakage
+Covers ``WorktreeManager._check_drift``: is the local base — and
+``origin/<base>`` — contained in the worktree branch (HATS-1307)?
+Failure surface = silent stale-baseline post-merge breakage
 (HATS-361 incident).
 """
 
@@ -106,7 +106,7 @@ class TestDriftDetection:
         assert "--accept-drift" not in msg
 
         # Worktree branch is preserved on drift refusal — user can re-verify
-        # and re-run with --accept-drift.
+        # and rebase onto the new base.
         listing = _git(git_project, "branch", "--list", "task/local-drift").stdout
         assert "task/local-drift" in listing
 
@@ -157,6 +157,141 @@ class TestDriftDetection:
         assert "a.txt" in msg
         assert "b.txt" in msg
         assert "c.txt" in msg
+
+
+class TestRebasedBranchNotDrift:
+    """HATS-1307: drift is *containment*, not "did the base move".
+
+    A branch rebased onto the moved base already contains every base commit —
+    nothing is stale, so a refusal sends the operator to ``--accept-drift``
+    for a no-op. Worse, ``rack transition <id> done`` has no such flag, so the
+    false refusal dead-ends the auto-merge path entirely.
+    """
+
+    def test_rebased_branch_merges_clean(self, git_project: Path) -> None:
+        """`git rebase <base>` in the worktree clears drift without a flag."""
+        base = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        mgr = WorktreeManager(git_project, branch_name="task/rebased")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # Another agent's worktree merged first — base moved under us.
+        _make_main_commit(git_project, "other-agent.txt")
+        # The documented remedy: re-verify against the new base, then rebase.
+        _git(wt_path, "rebase", base)
+
+        mgr.merge()  # no exception
+
+        listing = _git(git_project, "branch", "--list", "task/rebased").stdout
+        assert listing.strip() == ""
+
+    def test_rebased_onto_remote_base_merges_clean(self, git_project: Path, tmp_path: Path) -> None:
+        """Rebasing onto `origin/<base>` clears remote drift too."""
+        base = _git(git_project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        origin = tmp_path / "origin.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(git_project), str(origin)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        _git(git_project, "remote", "add", "origin", str(origin))
+        _git(git_project, "fetch", "origin")
+        _git(git_project, "branch", "--set-upstream-to", f"origin/{base}", base)
+
+        mgr = WorktreeManager(git_project, branch_name="task/rebased-remote")
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        # A colleague pushes to origin; local base stays behind.
+        coworker = tmp_path / "coworker"
+        subprocess.run(
+            ["git", "clone", str(origin), str(coworker)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        _git(coworker, "config", "user.email", "co@test")
+        _git(coworker, "config", "user.name", "Co")
+        (coworker / "remote-only.txt").write_text("from remote\n")
+        _git(coworker, "add", "remote-only.txt")
+        _git(coworker, "commit", "-m", "remote: add remote-only.txt")
+        _git(coworker, "push", "origin", "HEAD")
+
+        # Re-verify against what the remote actually has, then rebase onto it.
+        _git(wt_path, "fetch", "origin")
+        _git(wt_path, "rebase", f"origin/{base}")
+
+        mgr.merge()  # no exception
+
+        listing = _git(git_project, "branch", "--list", "task/rebased-remote").stdout
+        assert listing.strip() == ""
+
+
+class TestForkWorkflowNotDrift:
+    """HATS-942 fork shape: the merge target is *never* an ancestor of the branch.
+
+    With ``base_branch=upstream`` / ``merge_target=trunk`` the worktree is cut
+    from ``upstream``, so ``trunk``'s own commits are legitimately absent from
+    the branch — forever, by design. Containment alone would read that as
+    permanent drift (the HATS-1307 first-cut regression, caught by
+    ``test_wt_fork_base_merge_target_e2e``). Drift needs BOTH terms: the target
+    moved since create AND the branch has not taken the move in.
+    """
+
+    @staticmethod
+    def _fork_shape(project: Path) -> None:
+        """`upstream` = pristine mirror; `trunk` = dev line one commit AHEAD.
+
+        Mirrors the shipped `hunk` fork (main / fork-main). The ahead-ness is
+        what breaks containment: `trunk`'s own commit can never be in a branch
+        cut from `upstream`. HEAD is left on `trunk` (the merge target).
+        """
+        _git(project, "branch", "upstream")
+        _git(project, "checkout", "-b", "trunk")
+        (project / "TRUNK.md").write_text("trunk only\n")
+        _git(project, "add", "TRUNK.md")
+        _git(project, "commit", "-m", "C: trunk only")
+
+    def test_target_not_ancestor_of_branch_is_not_drift(self, git_project: Path) -> None:
+        self._fork_shape(git_project)
+
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/fork",
+            base_branch="upstream",
+            merge_target="trunk",
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        mgr.merge()  # no exception — trunk never moved since create
+
+        listing = _git(git_project, "branch", "--list", "task/fork").stdout
+        assert listing.strip() == ""
+
+    def test_target_moved_after_create_is_still_drift(self, git_project: Path) -> None:
+        """The fork exemption is temporal, not blanket — a moved target refuses."""
+        self._fork_shape(git_project)
+
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="task/fork-moved",
+            base_branch="upstream",
+            merge_target="trunk",
+        )
+        wt_path = mgr.create()
+        mgr.save_state()
+        _commit_in_worktree(wt_path)
+
+        _make_main_commit(git_project, "trunk-moved.txt")
+
+        with pytest.raises(WorktreeDriftError) as exc:
+            mgr.merge()
+        assert "trunk-moved.txt" in str(exc.value)
 
 
 class TestLegacyStateCompat:

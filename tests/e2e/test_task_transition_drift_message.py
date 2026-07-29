@@ -3,8 +3,10 @@ recipe (HATS-509 on the legacy CLI, ported to rack by HATS-1274).
 
 ``WorktreeDriftError``'s body is facts-only by contract, so the recipe is
 owned by the CLI handler — on rack, ``rack_cli_provider._wt_error_shape``.
-It advertises ``--accept-drift``, which lives on ``ai-hats wt merge`` and NOT
-on ``rack transition``, where copy-pasting it fails with ``No such option``.
+It leads with the rebase (HATS-1307: the remedy a flagless ``rack transition``
+can complete) and names ``--accept-drift`` only as the conscious-acceptance
+fallback, on ``ai-hats wt merge`` and NOT on ``rack transition``, where
+copy-pasting it fails with ``No such option``.
 
 **Fail-under-revert**: remove the ``WorktreeDriftError`` branch from
 ``_wt_error_shape`` → the refusal collapses back to the generic
@@ -201,7 +203,13 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     assert "drift" in combined.lower(), f"drift not mentioned in refusal:\n{combined}"
     assert "other.txt" in combined, f"affected path not listed in refusal:\n{combined}"
 
-    # Positive: the recipe — full command form pointing at the right surface.
+    # Positive (HATS-1307): the recipe leads with the rebase — the only remedy
+    # `rack transition done` can actually complete, since it takes no flags.
+    base_branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    assert f"git rebase {base_branch}" in combined, f"recipe missing the rebase step:\n{combined}"
+    assert f"cd {wt_path}" in combined, f"recipe missing the worktree cd:\n{combined}"
+
+    # Positive: the fallback — full command form pointing at the right surface.
     assert f"ai-hats wt merge --accept-drift task/{task_id.lower()}" in combined, (
         f"recipe missing the full `wt merge --accept-drift` command:\n{combined}"
     )
