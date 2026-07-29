@@ -101,10 +101,13 @@ def test_reflect_issue_writes_a_draft_hypothesis(
     # Empty-string is treated as missing — haiku must produce SOMETHING.
     assert data.get("title"), f"empty/missing title in {card}: {data}"
     assert data.get("hypothesis"), f"empty/missing hypothesis in {card}: {data}"
-    # ``source_task`` rides a rack link (defaults to ``supervisor-observation``
-    # when ``--task`` is absent); ``state`` — not ``status`` — carries lifecycle.
-    assert (data.get("links") or {}).get("source_task"), (
-        f"missing source_task link in {card}: {data}"
+    # ``origin`` field carries supervisor-observation when ``--task`` is absent;
+    # ``source_task`` link is absent (not dangling); ``state`` carries lifecycle.
+    assert data.get("origin") == "supervisor-observation", (
+        f"unexpected origin in {card}: {data}"
+    )
+    assert "source_task" not in (data.get("links") or {}), (
+        f"unexpected source_task link in {card}: {data}"
     )
     assert data.get("state") == "active", (
         f"unexpected state {data.get('state')!r} in {card}: {data}"

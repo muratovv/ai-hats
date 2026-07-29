@@ -122,7 +122,8 @@ def test_default_mode_writes_without_prompt(project_dir, monkeypatch):
     assert "Write this intake?" not in res.output
     saved = _card(project_dir, "HYP-001")
     assert saved.state == "active"
-    assert saved.links["source_task"] == ["supervisor-observation"]
+    assert "source_task" not in saved.links
+    assert saved.extras["origin"] == "supervisor-observation"
     assert saved.title.startswith("agent ignores")
     assert saved.extras["exit_criteria"]["confirm"] == ["4 sessions clean"]
 
@@ -230,7 +231,9 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
     )
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
-    assert _card(project_dir, "HYP-001").links["source_task"] == ["HATS-304"]
+    card = _card(project_dir, "HYP-001")
+    assert card.links["source_task"] == ["HATS-304"]
+    assert "origin" not in card.extras or not card.extras["origin"]
 
 
 def test_background_spawns_detached_subprocess_and_returns(

@@ -259,25 +259,35 @@ def _create_card(ws: Workspace, prefix: str, body: dict, links: dict[str, list[s
     return new_id
 
 
+def _is_card_id(ws: Workspace, item_id: str) -> bool:
+    if not item_id:
+        return False
+    try:
+        ws.instance_for(item_id)
+        return True
+    except Exception:
+        return False
+
+
 def create_hypothesis(
     ws: Workspace,
     *,
     title: str,
     hypothesis: str,
-    source_task: str,
+    source_task: str | None = None,
+    origin: str | None = None,
     baseline: str | None = None,
     expected_outcome=(),
     success_criterion: str | None = None,
     exit_criteria: dict | None = None,
 ) -> str:
-    """Create a new active HYP (returns its id). ``source_task`` rides the
-    ``source_task`` link (dangling ok — a sentinel like ``supervisor-observation``
-    is a legal provenance value, never existence-checked)."""
+    """Create a new active HYP (returns its id). Real task IDs ride the
+    ``source_task`` link; non-ID sentinels (like ``supervisor-observation``)
+    land in the ``origin`` field."""
     body: dict = {
         "title": title,
         "state": "active",
         "created": datetime.now(timezone.utc).date().isoformat(),
-        "source_task": source_task,
         "hypothesis": hypothesis,
     }
     if baseline is not None:
@@ -288,9 +298,19 @@ def create_hypothesis(
         body["success_criterion"] = success_criterion
     if exit_criteria is not None:
         body["exit_criteria"] = exit_criteria
-    # source_task is a rack link kind; keep it under links (matches the migration).
-    source = body.pop("source_task")
-    return _create_card(ws, "HYP", body, {"source_task": [source] if source else []})
+
+    links: dict[str, list[str]] = {}
+    if source_task:
+        if _is_card_id(ws, source_task):
+            links["source_task"] = [source_task]
+        else:
+            if not origin:
+                origin = source_task
+
+    if origin:
+        body["origin"] = origin
+
+    return _create_card(ws, "HYP", body, links)
 
 
 def create_proposal(
