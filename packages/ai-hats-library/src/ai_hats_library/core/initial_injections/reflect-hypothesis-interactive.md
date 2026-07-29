@@ -9,8 +9,9 @@ Apply **judge-protocol** end-to-end:
 - Step 1: read the draft cover-to-cover. The `## Proposed mutations`
   section is a CLI checklist Phase 1 recommends.
 - Steps 2 → 3: walk HYPs and PROPs with the supervisor. Execute the
-  ack'd CLI mutations from the whitelist (`task hyp append-verdict`,
-  `task hyp set-status`, `reflect commit`, `task create`).
+  ack'd CLI mutations from the whitelist (`rack hyp append-verdict`,
+  a status move as its named edge — `rack transition <HYP-ID>
+  confirm|refute|stall|revive` — `reflect commit`, `rack create`).
 - Step 3.5: re-run the counter-pass on any NEW negative observations
   that emerge from dialogue.
 - Step 4: write the final report at

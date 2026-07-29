@@ -65,7 +65,7 @@ For a fork/dogfood repo whose dev trunk is **not** the upstream default branch �
 ```yaml
 worktree:
   base_branch: main        # task worktrees are cut FROM this (clean upstream base)
-  merge_target: fork-main  # `wt merge` / `task transition <id> done` land HERE
+  merge_target: fork-main  # `wt merge` / `rack transition <id> done` land HERE
 ```
 
 - **`base_branch`** — the `git worktree add` start-point. Unset ⇒ cut from the main-repo HEAD (today's behavior).

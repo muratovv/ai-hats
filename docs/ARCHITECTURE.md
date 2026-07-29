@@ -205,9 +205,9 @@ Full guide (policies, session-reviewer, manual triage, hypothesis workflow) — 
   hooks/                               # Hook scripts
   backlog/
     tasks/<ID>/                        # Task card + plan.md + retrospective.md
-    proposals/PROP-NNN.yaml            # Improvement proposals (see task proposal)
+    proposals/PROP-NNN.yaml            # Improvement proposals (see `rack proposal`)
   STATE.md                             # Tabular index + current task state
-  hypotheses/HYP-NNN.yaml              # Hypothesis backlog (see task hyp)
+  hypotheses/HYP-NNN.yaml              # Hypothesis backlog (see `rack hyp`)
   retrospectives/
     sessions/<id>.md                   # SessionReviewV1 (facts + narrative + HYP verdicts + PROP actions)
 <ai_hats_dir>/sessions/runs/

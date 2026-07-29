@@ -2,7 +2,7 @@
 
 A collection of common tasks you hit when wiring ai-hats into a project: extending a role with a skill, removing an unneeded component, dropping in your own local skill, switching providers. Each example is a self-contained `ai-hats.yaml` fragment plus the commands to apply it.
 
-> Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`, `ai-hats --tree task hyp`).
+> Full CLI reference with descriptions and options — `ai-hats --tree` (or a subtree: `ai-hats --tree config`), and `rack --help` / `rack hyp --help` for the backlog CLI.
 
 > Changes to `ai-hats.yaml` apply on the next session by themselves — the config is re-read and the role re-composed at every launch (see [8]). Run `ai-hats self init` to validate the config and refresh the project scaffold, not to make the change take effect. Built-in roles (under `library/{core,usage}/roles/` inside the installed package) should **not** be edited directly — use `customizations` (overlay) instead. To author your own roles see [1].
 >

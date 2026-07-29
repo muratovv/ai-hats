@@ -17,9 +17,9 @@ injection: |
   - **Allowed writes:** the single report path declared by the composing
     role's injection. No other filesystem mutation under `.agent/**` or
     elsewhere.
-  - **Allowed CLI:** none. Do not invoke `ai-hats` commands (`task create`,
-    `task hyp …`, `task proposal …`, `list …`). Downstream actions are
-    someone else's job.
+  - **Allowed CLI:** none. Do not invoke backlog-mutating commands (`rack
+    create`, `rack transition …`, `rack hyp …`, `rack proposal …`).
+    Downstream actions are someone else's job.
   - **Allowed source-file edits:** none. L0 does not edit role / skill /
     rule / trait source files.
   - **L2 (source-file edits) is not available** from `base-auditor`. If

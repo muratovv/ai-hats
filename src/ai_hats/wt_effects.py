@@ -1,10 +1,10 @@
-"""Integrator-side worktree effects — the wt binding for the tracker FSM.
+"""Integrator-side worktree effects — the wt binding for the backlog FSM.
 
-ADR-0014 P0 #3 / HATS-866: the tracker FSM (:class:`ai_hats_tracker.state.TaskManager`)
-emits worktree side-effects through the :class:`ai_hats_tracker.state.WorktreeEffects`
-protocol; THIS module is the only binding of those effects to :mod:`ai_hats_wt`.
-``rack_wiring.build_rack_kernel`` injects it (HATS-1260: the legacy CLI seam
-is gone); a ``TaskManager`` without a handler is a pure FSM (no worktree).
+ADR-0014 P0 #3 / HATS-866: the FSM emits worktree side-effects through a
+``WorktreeEffects`` protocol; THIS module is the only binding of those effects
+to :mod:`ai_hats_wt`. ``rack_wiring.build_rack_kernel`` injects it (HATS-1262:
+the `ai_hats_tracker` package that once owned both names is deleted); a kernel
+without a handler is a pure FSM (no worktree).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def collect_carry_for_project(
 
 
 class WtWorktreeEffects:
-    """wt-backed :class:`ai_hats_tracker.state.WorktreeEffects` implementation.
+    """wt-backed ``WorktreeEffects`` implementation.
 
     Bodies moved verbatim from ``TaskManager._setup_worktree`` /
     ``_teardown_worktree`` (HATS-866) — semantics unchanged; wt exceptions
