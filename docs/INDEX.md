@@ -50,6 +50,7 @@ tool when a question goes beyond built-in instructions.
 | [migration-v0.8.0.md](migration-v0.8.0.md)               | Upgrade guide v0.7→v0.8 — `plan-sync` / `self bump` removal                                                                                  | Upgrading across a MAJOR bump    |
 | [migration-v0.9.0.md](migration-v0.9.0.md)               | Upgrade guide v0.8→v0.9 — uv prerequisite, channel model, PyPI `stable`                                                                      | Upgrading across a MAJOR bump    |
 | [migration-v0.10.0.md](migration-v0.10.0.md)             | Upgrade guide v0.9→v0.10 — console-script removal, self-location guard, forward-safe config                                                  | Upgrading across a MAJOR bump    |
+| [migration-v0.14.0.md](migration-v0.14.0.md)             | Upgrade guide v0.13→v0.14 — `ai-hats task` CLI unmounted, `ai-hats-tracker` deleted, retired-dist prune                                      | Upgrading across a MAJOR bump    |
 
 ## Other docs
 
