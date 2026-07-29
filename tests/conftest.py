@@ -21,16 +21,6 @@ import pytest
 sys.dont_write_bytecode = True
 
 
-# HATS-570 (S1) — stash per-phase reports on the item so fixtures can
-# read test outcome. Standard pytest recipe; enables the pass-only
-# cleanup gating used by the venv-tier finalizer (tests/e2e/conftest.py).
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):  # noqa: ANN001, ANN201
-    outcome = yield
-    rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep)  # rep_setup / rep_call / rep_teardown
-
-
 @pytest.fixture(scope="session", autouse=True)
 def _no_retired_prune(request):
     """Keep the retired-distribution prune out of the developer's own venv.
