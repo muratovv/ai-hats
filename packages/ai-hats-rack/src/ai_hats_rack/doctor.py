@@ -101,6 +101,64 @@ def _check_dangling(
     return findings
 
 
+def _cycles(adj: dict[str, list[str]]) -> list[list[str]]:
+    """Every cycle in a digraph, each as its node walk (no closing repeat).
+    Iterative DFS — a pathological parent chain must not hit the recursion
+    limit. A back-edge onto the gray path is a cycle; one DFS pass reports
+    each distinct back-edge once."""
+    white, gray = 0, 1
+    color = dict.fromkeys(adj, white)
+    cycles: list[list[str]] = []
+    for root in adj:
+        if color[root] != white:
+            continue
+        color[root] = gray
+        stack = [(root, iter(adj[root]))]
+        path = [root]
+        while stack:
+            node, edges = stack[-1]
+            nxt = next(edges, None)
+            if nxt is None:
+                color[node] = 2
+                stack.pop()
+                path.pop()
+                continue
+            if color[nxt] == gray:
+                cycles.append(path[path.index(nxt) :])
+            elif color[nxt] == white:
+                color[nxt] = gray
+                stack.append((nxt, iter(adj[nxt])))
+                path.append(nxt)
+    return cycles
+
+
+def _check_cycles(registry: LinksRegistry, cards: dict[str, TaskCard]) -> list[Finding]:
+    """Transitive cycles on directional kinds — the shape the write-time pair
+    guard deliberately leaves uncovered (HATS-1327: immediate A<->B only).
+    Symmetric kinds are bidirectional by design; cross-backlog kinds cannot
+    close a walk inside one catalog."""
+    findings: list[Finding] = []
+    for kind in registry.stored_kinds():
+        if kind.symmetric or kind.targets:
+            continue
+        adj = {
+            cid: [t for t in _kind_ids_readonly(kind, card) if t in cards]
+            for cid, card in cards.items()
+        }
+        for nodes in _cycles(adj):
+            start = min(range(len(nodes)), key=lambda i: _id_key(nodes[i]))
+            walk = nodes[start:] + nodes[:start]
+            findings.append(
+                Finding(
+                    "link-cycle",
+                    walk[0],
+                    " -> ".join([*walk, walk[0]]),
+                    kind=kind.name,
+                )
+            )
+    return findings
+
+
 def diagnose_catalog(
     tasks_dir: Path,
     registry: LinksRegistry,
@@ -111,6 +169,7 @@ def diagnose_catalog(
     """Run every integrity check over one catalog; findings in scan order."""
     cards, findings = _load_pass(tasks_dir)
     findings += _check_dangling(tasks_dir, registry, cards, exists)
+    findings += _check_cycles(registry, cards)
     if backlog:
         findings = [
             Finding(f.check, f.task_id, f.detail, f.kind, f.target, backlog) for f in findings

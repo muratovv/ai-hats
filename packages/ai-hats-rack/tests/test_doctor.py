@@ -121,3 +121,26 @@ def test_cross_backlog_kind_routes_through_injected_checker(tasks_dir, tmp_path)
     rows = by_check(findings, "dangling-link")
     assert [(f.task_id, f.target) for f in rows] == [("T-2", "HATS-404")]
     assert set(seen) == {("HATS-1", "tasks"), ("HATS-404", "tasks")}
+
+
+# ----- cycles ---------------------------------------------------------------
+
+
+def test_transitive_cycle_reported_once_with_path(tasks_dir, tmp_path):
+    # A->B->C->A on depends_on: exactly the shape HATS-1327's pair guard
+    # deliberately does not catch.
+    make_card(tasks_dir, "T-1", depends_on=["T-2"])
+    make_card(tasks_dir, "T-2", depends_on=["T-3"])
+    make_card(tasks_dir, "T-3", depends_on=["T-1"])
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS))
+    rows = by_check(findings, "link-cycle")
+    assert len(rows) == 1
+    assert rows[0].kind == "depends_on"
+    assert rows[0].detail.count("T-1") == 2  # closed walk: T-1 -> T-2 -> T-3 -> T-1
+
+
+def test_symmetric_kind_pair_is_not_a_cycle(tasks_dir, tmp_path):
+    make_card(tasks_dir, "T-1", related=["T-2"])
+    make_card(tasks_dir, "T-2", related=["T-1"])
+    findings = diagnose_catalog(tasks_dir, _registry(tmp_path, _KINDS))
+    assert by_check(findings, "link-cycle") == []
