@@ -156,6 +156,21 @@ def _probe_dist(python_exe: Path, dist: str, env: dict[str, str]) -> dict:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+def _module_importable(python_exe: Path, module: str, env: dict[str, str]) -> bool:
+    """Can that interpreter import ``module``? Identifies WHICH TREE is installed."""
+    assert python_exe.is_file(), f"interpreter missing at {python_exe}"
+    return (
+        subprocess.run(
+            [str(python_exe), "-c", f"import {module}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        ).returncode
+        == 0
+    )
+
+
 @pytest.mark.integration
 def test_e2e_first_managed_update_prunes_retired_console_script(tmp_path: Path) -> None:
     """One managed update off a pre-retirement install must leave the legacy
@@ -492,4 +507,287 @@ def test_inplace_upgrade_prunes_the_distribution(tmp_path: Path) -> None:
     assert not retired_script.exists(), (
         f"{RETIRED_DIST} is uninstalled but its console script survives at "
         f"{retired_script} — the retired CLI is still reachable by name"
+    )
+
+
+@pytest.mark.integration
+def test_downgrade_does_not_prune(tmp_path: Path) -> None:
+    """A DOWNGRADE past the retirement leaves ``ai-hats-tracker`` alone.
+
+    The invariant, named: **the prune always executes the version that was just
+    installed**. ``_bump_internal`` is its only carrier and ``self update``
+    invokes that hook in a fresh interpreter *inside the freshly-installed
+    tree* — so installing a PRE-retirement ai-hats runs that ref's
+    ``_bump_internal``, which has no prune at all. The version that issued the
+    update never gets to synchronise the venv it just built.
+
+    Shape: the mirror image of the first test — a post-retirement managed
+    install, then one ``self update --force-downgrade`` with the source pointed
+    back at ``PRE_RETIREMENT_REF``.
+
+    What would make this pass for the WRONG reason, and the guard for each:
+
+    * *the downgrade never landed* → ``current`` and ``.complete`` are asserted
+      on ``sha_old`` (≠ ``sha_new``), and the freshly-installed tree is proven
+      to be the pre-retirement one by the absence of ``ai_hats.retired_dists``;
+    * *the bump hook never fired, so nothing could have pruned either way* →
+      the ``Re-assembling`` banner is asserted; it is printed immediately before
+      the hook subprocess and only when the hook runs;
+    * *the retired dist was never installed to begin with* → that IS the
+      assertion, so it fails loud rather than vacuously.
+
+    Fail-under-rewiring: move the prune out of the installed tree and into the
+    OUTGOING updater aimed at the venv it just built (the obvious "synchronise
+    what we installed" alternative) and ``versions/<sha_old>`` loses the
+    tracker — both final assertions go red.
+    """  # comment-length: allow
+    if not network_available():
+        venv_unavailable("uv not on PATH — cannot build the launcher venv")
+
+    src_old, src_new = _clone_pair(tmp_path)
+    launcher_dest = tmp_path / "bin" / "ai-hats"
+    project = tmp_path / "project"
+    launcher_dest.parent.mkdir(parents=True)
+    project.mkdir()
+    pin_edge_channel(project)
+    sha_old = _head_sha(src_old)
+    sha_new = _head_sha(src_new)
+    assert sha_old != sha_new, "both clones resolve to the same sha — no version moves here"
+
+    env = os.environ.copy()
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_new)  # start POST-retirement, unlike the tests above
+    env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")
+    env.pop(ENV_AI_HATS_VENV, None)  # a pin routes off the managed path entirely
+    env.pop("PYTHONPATH", None)
+
+    # ----- 1. post-retirement install (no tracker anywhere) -----
+    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
+    _run(
+        [
+            str(launcher_dest),
+            "self",
+            "init",
+            "-r",
+            "assistant",
+            "-p",
+            "claude",
+            "--no-wizard",
+            "--channel",
+            "edge",
+        ],
+        cwd=project,
+        env=env,
+        timeout=300,
+    )
+
+    ai_hats_dir = project / ".agent" / "ai-hats"
+    legacy_venv = ai_hats_dir / ".venv"
+    versions = ai_hats_dir / "versions"
+
+    assert legacy_venv.is_dir(), f"launcher did not bootstrap the venv at {legacy_venv}"
+    assert not versions.exists(), (
+        "versions/ already exists — the update below would not be the first one"
+    )
+    # The starting point is the mirror of the other tests: nothing to prune yet.
+    # Anything the assertions find at the end was installed BY the downgrade.
+    assert not (legacy_venv / "bin" / RETIRED_DIST).exists(), (
+        f"the post-retirement install already carries {RETIRED_DIST} — the "
+        "working tree has not actually retired it and this test has no subject"
+    )
+    assert _module_importable(legacy_venv / "bin" / "python", "ai_hats.retired_dists", env), (
+        "the installed working tree has no ai_hats.retired_dists — the prune "
+        "does not ship in the version issuing the downgrade, so 'it did not run' "
+        "below would be true for a reason this test is not about"
+    )
+
+    # ----- 2. one managed downgrade to the pre-retirement ref -----
+    # --force-downgrade waives the edge ahead/diverged guard — the flag a user
+    # downgrading actually passes.
+    env[ENV_REPO_URL] = str(src_old)
+    result = _run(
+        [str(launcher_dest), "self", "update", "--force-downgrade"],
+        cwd=project,
+        env=env,
+        timeout=600,
+    )
+    combined = result.stdout + result.stderr
+
+    # ----- the downgrade landed, and the hook that carries the prune fired -----
+    assert (versions / "current").read_text().strip() == sha_old, (
+        f"current did not move to the pre-retirement sha {sha_old[:12]} — no "
+        f"downgrade happened, so nothing below is about one:\n{combined}"
+    )
+    assert (versions / sha_old / ".complete").is_file(), (
+        f"the downgrade left versions/{sha_old[:12]} incomplete:\n{combined}"
+    )
+    old_python = versions / sha_old / "bin" / "python"
+    assert not _module_importable(old_python, "ai_hats.retired_dists", env), (
+        f"versions/{sha_old[:12]} can import ai_hats.retired_dists — the tree "
+        "that was just installed is NOT the pre-retirement one, so its "
+        f"_bump_internal is not the prune-less one this test relies on:\n{combined}"
+    )
+    assert "Re-assembling" in combined, (
+        "the update never ran the fresh-interpreter bump — that hook is the "
+        "prune's only call site, so with it skipped this test could not tell a "
+        f"stood-down prune from an absent one:\n{combined}"
+    )
+
+    # ----- THE INVARIANT: the downgrade produced a coherent OLD install -----
+    tracker = _probe_dist(old_python, RETIRED_DIST, env)
+    assert tracker["installed"] is True, (
+        f"{RETIRED_DIST} is not installed in versions/{sha_old[:12]} ({tracker}). "
+        f"The pre-retirement ref declares it, so the downgrade either failed or "
+        "something pruned a dependency the just-installed version still needs — "
+        f"the prune must run FROM the installed tree, never AT it:\n{combined}"
+    )
+    retired_script = versions / sha_old / "bin" / RETIRED_DIST
+    assert retired_script.is_file(), (
+        f"{RETIRED_DIST} is installed in versions/{sha_old[:12]} but its console "
+        f"script is missing from {retired_script.parent} — the downgraded install "
+        f"was gutted rather than left alone:\n{combined}"
+    )
+    cli = subprocess.run(  # noqa: S603 - fixed argv, path built by this test
+        [str(retired_script), "--help"],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert cli.returncode == 0 and RETIRED_DIST in cli.stdout, (
+        f"the retired CLI survives on disk but does not run "
+        f"(exit {cli.returncode})\nstdout:\n{cli.stdout}\nstderr:\n{cli.stderr}"
+    )
+
+
+@pytest.mark.integration
+def test_upgrade_completes_when_the_prune_raises(tmp_path: Path) -> None:
+    """A prune that BLOWS UP mid-removal still cannot fail the managed update.
+
+    The unit suite proves ``prune_retired`` swallows everything; this proves the
+    WIRING does too — ``.complete`` written, ``versions/current`` flipped, exit
+    code 0, and the bump's own exit code untouched.
+
+    How the prune is made to fail: on the managed path its only actionable
+    target is ``strip_retired_scripts`` against the legacy ``.venv`` (the
+    freshly built ``versions/<sha>`` never carries the retired dist, so
+    ``prune_running_interpreter`` has nothing to uninstall there and a
+    broken/absent ``uv`` would be a silent no-op — besides breaking the
+    update's own install first). So the legacy ``.venv/bin`` is made
+    **read-only** for the duration of the update: ``discard``'s
+    ``shutil.move`` fails to rename, falls back to copy-then-unlink, the copy
+    lands in the trash and the unlink raises ``PermissionError`` — which
+    ``strip_retired_scripts`` swallows per path.
+
+    The vacuity trap this test must dodge: "the retired script is still there"
+    is ALSO what you would see if the prune never ran at all — then the fail-open
+    claim would be untested. The trash copy is the disambiguator: only
+    ``discard`` puts an ``ai-hats-tracker`` under ``AI_HATS_TRASH_DIR``, and
+    only ``strip_retired_scripts`` calls ``discard`` on that path. Copy present
+    + original present == the prune ran, reached the removal, and failed. The
+    red baseline (script on disk before the update) and the ``Re-assembling``
+    banner close the two remaining vacuity holes.
+    """  # comment-length: allow
+    if not network_available():
+        venv_unavailable("uv not on PATH — cannot build the launcher venv")
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("running as root — file mode bits do not restrict the delete")
+
+    src_old, src_new = _clone_pair(tmp_path)
+    launcher_dest = tmp_path / "bin" / "ai-hats"
+    project = tmp_path / "project"
+    trash_dir = tmp_path / "trash"
+    launcher_dest.parent.mkdir(parents=True)
+    project.mkdir()
+    pin_edge_channel(project)
+    sha_new = _head_sha(src_new)
+
+    env = os.environ.copy()
+    env[ENV_LAUNCHER_DEST] = str(launcher_dest)
+    env[ENV_REPO_URL] = str(src_old)
+    env["AI_HATS_TRASH_DIR"] = str(trash_dir)
+    env.pop(ENV_AI_HATS_VENV, None)  # a pin routes off the managed path entirely
+    env.pop("PYTHONPATH", None)
+
+    _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
+    _run(
+        [
+            str(launcher_dest),
+            "self",
+            "init",
+            "-r",
+            "assistant",
+            "-p",
+            "claude",
+            "--no-wizard",
+            "--channel",
+            "edge",
+        ],
+        cwd=project,
+        env=env,
+        timeout=300,
+    )
+
+    ai_hats_dir = project / ".agent" / "ai-hats"
+    legacy_venv = ai_hats_dir / ".venv"
+    versions = ai_hats_dir / "versions"
+    bin_dir = legacy_venv / "bin"
+    retired_script = bin_dir / RETIRED_DIST
+
+    assert not versions.exists(), (
+        "versions/ already exists — this would not be the FIRST managed update, "
+        "and the legacy .venv the sabotage targets would be reclaimed instead of "
+        "pruned"
+    )
+    # RED BASELINE — without a script on disk the prune has nothing to attempt
+    # and every assertion below is satisfied by an inert no-op.
+    assert retired_script.is_file(), (
+        f"RED BASELINE BROKEN: the pre-retirement install ({PRE_RETIREMENT_REF[:12]}) "
+        f"carries no {RETIRED_DIST} console script — the prune would have nothing "
+        "to fail at"
+    )
+
+    # ----- sabotage: the removal cannot complete, the detection still can -----
+    # 0o500 keeps r-x (so `is_file()` and the running interpreter's own
+    # bin/python are unaffected) and drops w (so unlink/rename inside fail).
+    env[ENV_REPO_URL] = str(src_new)
+    bin_dir.chmod(0o500)
+    try:
+        result = _run(
+            [str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=600
+        )
+    finally:
+        bin_dir.chmod(0o755)  # never hand pytest a tmp tree it cannot clean up
+    combined = result.stdout + result.stderr
+
+    # ----- the update completed anyway: sentinel, pointer, exit code -----
+    # (`_run` already asserted exit 0 — a failed install exits 1, a lock
+    # contention 2.)
+    assert (versions / sha_new / ".complete").is_file(), (
+        f"the sentinel is missing — the update did not complete:\n{combined}"
+    )
+    assert (versions / "current").read_text().strip() == sha_new, (
+        f"current was not flipped to {sha_new[:12]} — the update did not "
+        f"complete:\n{combined}"
+    )
+    assert "Bump (fresh interpreter)" not in combined, (
+        "the bump reported a non-zero exit — the prune's failure leaked into the "
+        f"exit code it is required to stay out of:\n{combined}"
+    )
+    assert "Re-assembling" in combined, (
+        "the fresh-interpreter bump never ran, so the prune never got a chance "
+        f"to fail and the fail-open claim is untested:\n{combined}"
+    )
+
+    # ----- PROOF the prune ran and FAILED (not that it had nothing to do) -----
+    assert retired_script.is_file(), (
+        f"{retired_script} is gone — the sabotage did not take, so this run "
+        "exercised the ordinary (successful) prune, not the failing one"
+    )
+    trashed = sorted(str(p) for p in trash_dir.rglob(RETIRED_DIST) if p.parent.name == "bin")
+    assert trashed, (
+        f"no {RETIRED_DIST} copy under {trash_dir}: strip_retired_scripts never "
+        f"reached discard(), so the prune did not run at all and 'the script "
+        f"survived' proves nothing about fail-open:\n{combined}"
     )
