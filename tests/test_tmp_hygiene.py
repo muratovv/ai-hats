@@ -1,7 +1,7 @@
 """Behavioural tests for the HATS-570 tmp-dir hygiene machinery.
 
-Two contracts of the autouse ``_wt_sandbox`` session fixture
-(``tests/conftest.py``):
+Two contracts of the autouse ``_wt_sandbox`` session fixture (the
+repo-root ``conftest.py``):
 
 1. **Redirect is live** — ``tempfile.gettempdir()`` (and therefore every
    ``ai-hats-wt-*`` ``mkdtemp`` in ``worktree.py``) points at a
@@ -22,7 +22,7 @@ import pytest
 
 from tests._pytester_env import pythonpath_with_repo_root
 
-_CONFTEST = Path(__file__).resolve().parent / "conftest.py"
+_CONFTEST = Path(__file__).resolve().parent.parent / "conftest.py"
 
 
 def test_redirect_is_live() -> None:
