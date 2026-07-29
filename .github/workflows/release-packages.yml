@@ -1,6 +1,6 @@
 name: release-packages
 
-# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-tracker, ai-hats-observe, ai-hats-library, ai-hats-rack) to PyPI via OIDC
+# Publish the workspace packages (ai-hats-core, ai-hats-wt, ai-hats-observe, ai-hats-library, ai-hats-rack) to PyPI via OIDC
 # trusted publishing — no stored API token. Manual trigger: these packages carry
 # their own static versions in packages/*/pyproject.toml, decoupled from the
 # ai-hats `v*` release tag (release.yml). To cut a package release: bump the
