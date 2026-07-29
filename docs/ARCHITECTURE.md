@@ -151,16 +151,20 @@ The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN
 
 Finding cards and explaining one are different verbs. `rack ls` filters a flat scan; `rack ls <ID> --deep N` walks the link graph out from a card; `rack context <ID>` returns the full package for one.
 
+Reach for an exact filter first — `--tag`, `--state`, `--parent` match a field outright. `--grep` is the fallback for when all you have is a word, and it is the least precise of the set.
+
 ```bash
 rack ls --tag epic                    # all epics (by tag)
-rack ls --grep docs                   # case-insensitive SUBSTRING over title + description
 rack ls --state execute               # exact state match
+rack ls --parent HATS-092             # direct children of an epic
+rack ls --grep docs                   # case-insensitive SUBSTRING over title + description
+rack ls --grep id:HATS-092            # …or over ONE field: id, title, description
 rack ls --state done --all            # terminal cards too, without the 30-row cap
 rack ls HATS-092 --deep 1             # epic + children + cards depending on it
 rack ls HATS-092 --deep 1 --link parent_task   # follow one edge kind only
 ```
 
-`--grep` is a literal substring, not a regex. Filters are read-tolerant: a card lacking the field is excluded rather than erroring.
+`--grep` is a literal substring, not a regex. Bare, it searches title + description — so an id-shaped needle finds the cards that *mention* an id, not the ones that *have* it; `id:` picks the haystack instead. An unknown prefix stays literal, so a `path.py:42` needle still works. Filters are read-tolerant: a card lacking the field is excluded rather than erroring.
 
 ## Reflection loop
 

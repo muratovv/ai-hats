@@ -32,7 +32,7 @@ from .kernel import (
     UnknownTaskError,
     UnroutableIdError,
 )
-from .linked import SelfLinkError
+from .linked import EmptyGrepPatternError, SelfLinkError
 from .models import CardLoadError, UnreadableWriteError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
@@ -117,6 +117,7 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
         },
     ),
     SelfLinkError: lambda e: ("self_link", {"task_id": e.task_id}),
+    EmptyGrepPatternError: lambda e: ("empty_grep_pattern", {"field": e.field}),
     UnknownLinkKindError: lambda e: (
         "unknown_link_kind",
         {"kind": e.kind, "configured": list(e.configured)},

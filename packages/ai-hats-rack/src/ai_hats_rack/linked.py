@@ -50,6 +50,12 @@ class SelfLinkError(RackError):
         super().__init__(f"Task '{task_id}' cannot link to itself")
 
 
+class EmptyGrepPatternError(RackError):
+    def __init__(self, field: str) -> None:
+        self.field = field
+        super().__init__(f"--grep '{field}:' carries no pattern after the field prefix")
+
+
 #: Cross-backlog target-existence seam: ``(target_id, targets_backlog|None) -> bool``.
 TargetChecker = Callable[[str, "str | None"], bool]
 
@@ -449,6 +455,32 @@ class CardRow:
         return row
 
 
+#: ``--grep`` haystacks addressable by a ``field:`` prefix. `tags` / `state` /
+#: `parent_task` are deliberately absent — `--tag` / `--state` / `--parent` match
+#: them exactly, and a substring rival would only be the worse of the two.
+_GREP_FIELDS: dict[str, Callable[[TaskCard], str]] = {
+    "id": lambda c: c.id,
+    "title": lambda c: c.title,
+    "description": lambda c: c.description,
+}
+
+
+def _split_grep(spec: str) -> tuple[Callable[[TaskCard], str] | None, str]:
+    """``field:pattern`` → (haystack, pattern); anything else → (None, spec).
+
+    An unknown prefix stays a literal: `path:line` refs are far more common in
+    card text than field-qualified needles, so only a known field switches modes
+    (HATS-1324). Diverges from ``_split_edge``'s typed refusal on purpose — a
+    bare `--link` id never carries a colon.
+    """
+    field, sep, pattern = spec.partition(":")
+    if not sep or field not in _GREP_FIELDS:
+        return None, spec
+    if not pattern:
+        raise EmptyGrepPatternError(field)
+    return _GREP_FIELDS[field], pattern
+
+
 def card_filter(
     *,
     grep: str | None = None,
@@ -458,7 +490,10 @@ def card_filter(
 ) -> Callable[[TaskCard], bool]:
     """The shared AND-combined card predicate — one home for the ls filters, used
     by both the backlog scan and the neighbourhood walk (HATS-1029)."""
-    needle = grep.lower() if grep else None
+    haystack, needle = (None, None)
+    if grep:
+        haystack, pattern = _split_grep(grep)
+        needle = pattern.lower()
 
     def matches(card: TaskCard) -> bool:
         if state and card.state != state:
@@ -467,8 +502,10 @@ def card_filter(
             return False
         if tag and tag not in card.tags:
             return False
-        if needle and needle not in f"{card.title}\n{card.description}".lower():
-            return False
+        if needle:
+            text = haystack(card) if haystack else f"{card.title}\n{card.description}"
+            if needle not in text.lower():
+                return False
         return True
 
     return matches
