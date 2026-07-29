@@ -27,6 +27,7 @@ HOOK_PATH = (
 # A stub pytest that records the fact it ran, then reports "no tests collected"
 # (exit 5) — the hook treats 5 as a silent pass, so the stub never needs tests.
 _STUB = """#!/usr/bin/env bash
+echo "$@" >> "{marker}.args"
 echo "{tag}" >> "{marker}"
 exit 5
 """
@@ -125,3 +126,18 @@ def test_smoke_hook_in_a_worktree_prefers_the_worktrees_own_venv(tmp_path: Path)
     assert marker.read_text().split() == ["WORKTREE"], (
         f"expected the worktree's own venv pytest, got {marker.read_text()!r}"
     )
+
+
+def test_smoke_hook_passes_e2e_target_path(tmp_path: Path) -> None:
+    """HATS-1345: the smoke hook targets tests/e2e/ so collection errors elsewhere don't block commits."""
+    project, marker = _make_project(tmp_path)
+    path_dir = tmp_path / "pathbin"
+    _install_stub(project / ".venv" / "bin" / "pytest", "VENV", marker)
+
+    result = _run_hook(project, path_dir)
+
+    assert result.returncode == 0, result.stderr
+    args_file = Path(f"{marker}.args")
+    assert args_file.is_file()
+    assert "tests/e2e/" in args_file.read_text().split()
+

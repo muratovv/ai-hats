@@ -111,7 +111,7 @@ backlog task** carries the `integration` tag.
 ### How it works
 
 1. Hook reads `<ai_hats_dir>/tracker/backlog/tasks/*/task.yaml` for any task in `execute` state.
-2. If such a task has `- integration` in its `tags:`, it runs `pytest -m smoke -q --tb=line --no-header`.
+2. If such a task has `- integration` in its `tags:`, it runs `pytest -m smoke -q --tb=line --no-header tests/e2e/`.
 3. All smoke tests pass → commit proceeds.
 4. Any test fails → commit blocked with a short report.
 5. No active task, or active task lacks the `integration` tag → silent no-op (exit 0).
