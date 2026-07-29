@@ -315,9 +315,19 @@ rack transition HATS-042 --unlink HATS-040             # kind optional
 ```
 
 Configured kinds on the tasks backlog: `parent_task`, `depends_on`, `related`,
-`see_also`, `folded_into`, and the derived `children`. An unknown kind is a
-typed refusal listing the legal set. Cross-backlog kinds (`source_task` on a
-HYP, `related_hypotheses` on a PROP) mirror automatically.
+`see_also`, `folded_into`, and the derived `children` and `blocks`. An unknown
+kind is a typed refusal listing the legal set. Cross-backlog kinds
+(`source_task` on a HYP, `related_hypotheses` on a PROP) mirror automatically.
+
+A derived kind is read-only — it is the reverse view of a stored one, so you
+link the stored side and read the other. `blocks` inverts `depends_on`: mark
+what a card waits on, and every card it holds up shows the reverse without a
+second edge to keep in sync.
+
+```bash
+rack transition HATS-042 --link depends_on:HATS-041
+rack context HATS-041                                  # -> Blocks: HATS-042
+```
 
 `related` and `see_also` are both symmetric soft pointers — reach for `related`
 by default and keep `see_also` for the weaker "worth a look" nod. `folded_into`

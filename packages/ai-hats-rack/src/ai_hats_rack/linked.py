@@ -780,7 +780,10 @@ def _run_read_enrichers(
         return ()
     dispatcher = Dispatcher(read_subscribers)
     bind_subscribers(read_subscribers, kernel)
-    is_epic = bool(kernel.children_of(task_id))
+    # Same child-set the caller just resolved, off the kernel's reverse memo —
+    # children_of would re-sweep the whole catalog for an answer we have.
+    hierarchy = kernel.registry.hierarchy_kind
+    is_epic = bool(kernel.reverse_links_of(hierarchy.name, task_id)) if hierarchy else False
 
     def _ctx_for(kind_name: str) -> Callable[[], DispatchContext]:
         def factory() -> DispatchContext:

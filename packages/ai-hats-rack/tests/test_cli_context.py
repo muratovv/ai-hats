@@ -142,6 +142,15 @@ def test_context_human_is_discovery_only(runner, tmp_path):
     assert "epic plan body" not in out and "dep summary body" not in out
 
 
+def test_context_human_renders_the_derived_blocks_section(runner, tmp_path):
+    """HATS-2 depends_on HATS-3, so HATS-3's read must surface the reverse."""
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", "HATS-3", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "Blocks:" in result.output
+    assert "HATS-2 [plan] the task" in result.output
+
+
 def test_context_json_schema(runner, tmp_path):
     _family(tmp_path)
     result = runner.invoke(main, ["context", "HATS-2", *_args(tmp_path), "--json"])

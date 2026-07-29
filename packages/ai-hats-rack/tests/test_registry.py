@@ -77,6 +77,27 @@ def test_packaged_default_kinds():
     assert reg.require("fold").name == "folded_into"  # legacy spelling resolves
 
 
+def test_hierarchy_kind_requires_arity_one(tmp_path):
+    """Once a many-arity kind can carry a derived inverse (depends_on/blocks),
+    'has a derived inverse' alone would elect the first such kind as the parent
+    edge. Arity is what still separates them (HATS-1208)."""
+    reg = _backlog_registry(
+        tmp_path,
+        "    - {name: depends_on, inverse: blocks}\n"
+        "    - {name: blocks, derived: true, inverse: depends_on}\n"
+        "    - {name: parent_task, arity: one, inverse: children}\n"
+        "    - {name: children, derived: true, inverse: parent_task}\n",
+    )
+    assert reg.hierarchy_kind.name == "parent_task"
+
+    many_only = _backlog_registry(
+        tmp_path,
+        "    - {name: depends_on, inverse: blocks}\n"
+        "    - {name: blocks, derived: true, inverse: depends_on}\n",
+    )
+    assert many_only.hierarchy_kind is None
+
+
 def test_unknown_kind_names_the_configured_set():
     reg = load_registry()
     with pytest.raises(UnknownLinkKindError) as err:

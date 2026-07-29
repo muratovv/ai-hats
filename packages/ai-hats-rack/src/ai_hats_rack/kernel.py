@@ -44,27 +44,17 @@ def _field_value(task: TaskCard, name: str) -> Any:
     return getattr(task, name) if name in TaskCard._KNOWN_FIELDS else task.extras.get(name)
 
 
-def _reverse_prefilter(kind: Any, task_id: str) -> tuple[re.Pattern[str], ...]:
-    """Cheap text gates a card must pass before a reverse scan parses it.
+def _reverse_field_gate(kind: Any) -> re.Pattern[str]:
+    """Cheap text gate: does this card even declare ``kind``'s storage field?
 
-    Each gate is a SUPERSET of a real match — never narrower — so the parse
-    that follows stays authoritative. A bare ``\\bID\\b`` also matched the id in
-    prose and work_log, so every read paid a full YAML parse per mention
-    (HATS-1208).
+    A SUPERSET of a real match — never narrower — so the parse that follows
+    stays authoritative. Most cards omit the field entirely, so this skips
+    their parse outright.
     """
-    ident = re.escape(task_id)
+    field = re.escape(kind.name)
     if kind.name in LINK_STORAGE_FIELDS:
-        field = re.escape(kind.name)
-        if kind.arity == "one":
-            return (re.compile(rf"^{field}:\s*['\"]?{ident}['\"]?\s*$", re.MULTILINE),)
-        return (
-            re.compile(rf"^{field}:", re.MULTILINE),
-            re.compile(rf"^\s*-\s*['\"]?{ident}['\"]?\s*$", re.MULTILINE),
-        )
-    return (
-        re.compile(rf"^\s*{re.escape(kind.name)}:", re.MULTILINE),
-        re.compile(rf"\b{ident}\b"),
-    )
+        return re.compile(rf"^{field}:", re.MULTILINE)
+    return re.compile(rf"^\s*{field}:", re.MULTILINE)
 
 
 class UnknownTaskError(RackError):
@@ -175,6 +165,9 @@ class Kernel:
         self._dispatcher = Dispatcher(subscribers)
         self._sink = journal_sink
         self._lock_timeout = lock_timeout
+        # Per-instance reverse-scan memo: a walk shares one Kernel, so without
+        # it every node re-swept the catalog per derived kind (HATS-1208).
+        self._reverse_idx: dict[str, dict[str, list[str]]] = {}
 
     # ----- store primitives -------------------------------------------------
 
@@ -202,6 +195,7 @@ class Kernel:
         return task
 
     def _persist(self, task: TaskCard) -> None:
+        self._reverse_idx.clear()  # a write invalidates the reverse memo
         self._task_path(task.id).parent.mkdir(parents=True, exist_ok=True)
         # The emit gate (schema when-set fields dropped when empty) runs at the
         # single persist, hung off the schema — TaskCard.to_dict stays untouched.
@@ -254,36 +248,73 @@ class Kernel:
         """Ids of cards that link to ``task_id`` via stored link kind ``stored_kind_name``."""
         if not self.tasks_dir.exists():
             return []
-        hierarchy = self.registry.hierarchy_kind
-        if hierarchy is not None and stored_kind_name == hierarchy.name:
-            return self.children_of(task_id)
-
         kind = self.registry.get(stored_kind_name)
         if kind is None or kind.derived:
             return []
+        return list(self._reverse_indexes().get(kind.name, {}).get(task_id, ()))
 
-        gates = _reverse_prefilter(kind, task_id)
-        out: list[str] = []
+    def _reverse_indexes(self) -> dict[str, dict[str, list[str]]]:
+        """``{kind: {target_id: [source_id, ...]}}`` for every kind some derived
+        kind inverts, built in ONE catalog pass and memoized per instance.
+
+        One pass, not one per kind per node: a two-derived-kind registry asking
+        per target re-read the whole catalog twice for every node of a walk
+        (HATS-1208). ``children_of``/``is_epic`` deliberately stay off this —
+        their contract is a fresh count per dispatch.
+        """
+        if self._reverse_idx:
+            return self._reverse_idx
+
+        wanted = {
+            k.inverse: self.registry.get(k.inverse)
+            for k in self.registry.derived_kinds
+            if k.inverse and self.registry.get(k.inverse) is not None
+        }
+        indexes: dict[str, dict[str, list[str]]] = {name: {} for name in wanted}
+        if not wanted:
+            return indexes
+        gates = {name: _reverse_field_gate(kind) for name, kind in wanted.items()}
+        # A dedicated scalar field is readable straight off the text, so the
+        # hierarchy kind keeps children_of's parse-free cost.
+        scalars = {
+            name: re.compile(rf"^{re.escape(name)}:\s*['\"]?([^'\"\s#]+)['\"]?\s*$", re.MULTILINE)
+            for name, kind in wanted.items()
+            if name in LINK_STORAGE_FIELDS and kind.arity == "one"
+        }
+
         for card_path in sorted(self.tasks_dir.glob("*/task.yaml")):
             try:
                 text = card_path.read_text(encoding="utf-8")
-                if not all(g.search(text) for g in gates):
-                    continue
-                card = TaskCard.from_yaml(card_path)
-            except Exception:  # noqa: BLE001, S112 — a broken neighbour must not sink the read
+            except OSError:
                 continue
-            if kind.name in LINK_STORAGE_FIELDS:
-                val = getattr(card, kind.name, None)
-                if kind.arity == "one":
-                    if val == task_id:
-                        out.append(card_path.parent.name)
-                elif isinstance(val, (list, tuple)) and task_id in val:
-                    out.append(card_path.parent.name)
-            else:
-                links = card.links.get(kind.name, ())
-                if task_id in links:
-                    out.append(card_path.parent.name)
-        return out
+            present = [n for n, gate in gates.items() if gate.search(text)]
+            if not present:
+                continue
+            source = card_path.parent.name
+            card: TaskCard | None = None
+            for name in present:
+                if name in scalars:
+                    hit = scalars[name].search(text)
+                    targets: Any = (hit.group(1),) if hit else ()
+                else:
+                    if card is None:
+                        try:
+                            card = TaskCard.from_yaml(card_path)
+                        except Exception:  # noqa: BLE001 — a broken neighbour must not sink the read
+                            break
+                    targets = (
+                        getattr(card, name, None)
+                        if name in LINK_STORAGE_FIELDS
+                        else card.links.get(name, ())
+                    )
+                if not isinstance(targets, (list, tuple)):
+                    continue
+                for target in targets:
+                    if isinstance(target, str) and target:
+                        indexes[name].setdefault(target, []).append(source)
+
+        self._reverse_idx = indexes
+        return indexes
 
     def is_epic(self, task_id: str) -> bool:
         """Category predicate, computed fresh from the CURRENT child-set on

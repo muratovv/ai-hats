@@ -3,6 +3,32 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.1.7
+
+- **`depends_on` has a reverse view: `blocks`** (HATS-1208). Derived-kind
+  resolution stopped being hardcoded to `children` — any kind declaring
+  `derived: true` resolves from the kernel's reverse scan, and the tasks
+  backlog declares `blocks` as the inverse of `depends_on`. `rack context <id>`
+  renders a `Blocks:` section; nothing new is stored, so the two directions
+  cannot drift.
+- Reverse scans are answered from a single catalog pass, memoized per kernel
+  instance and dropped on that kernel's writes. Asking per target re-read the
+  whole catalog once per node, so a `--deep 2` walk of the 871-card ai-hats
+  backlog went from ~2.0 s to ~0.10 s. `children_of` / `is_epic` deliberately
+  stay off the memo — their contract is a fresh count per dispatch.
+- A neighbour card that does not parse no longer sinks the read. The reverse
+  scan reaches cards the forward read never touches, and it caught only
+  `OSError`/`ValueError` — a malformed `task.yaml` (`yaml.ScannerError`) or a
+  `CardLoadError` took down `rack context` for *every* card in the backlog.
+- The scan reads a scalar link field off the card text and defers to the parser
+  for shapes a flat read cannot judge, so an id carrying a free-form tail
+  (`HATS-100 fix`) keeps its children view and a duplicate key resolves the way
+  YAML does — last one wins.
+- `hierarchy_kind` prefers a scalar candidate now that a `many` kind can carry a
+  derived inverse too, and still elects a lone `many` one. Requiring `arity:
+  one` outright would have silently disabled epic automation for any registry
+  written before `blocks`, since `many` is the arity default.
+
 ## 0.1.6
 
 - New verb: **`rack doctor`** — read-only backlog integrity report over every
@@ -71,8 +97,9 @@ the `rack` CLI surface and the backlog-kernel format.
   invisible. Ten cards in the ai-hats backlog were affected.
   - `see_also` — symmetric soft pointer, alongside `related`.
   - `folded_into` — directional, `arity: one`; `--link fold:<ID>` preserves the
-    legacy spelling. Its inverse ("Subsumed by") is not derived: derived kinds
-    are still `children`-only.
+    legacy spelling. Its inverse ("Subsumed by") is not derived. (Derived kinds
+    were `children`-only at the time; 0.1.7 generalised the mechanism and added
+    `blocks`. `folded_into`'s inverse is still not derived.)
 - `rack ls` rows carry `completed_at` when set (HATS-1279) — the first time
   signal on a listing row, so `--state done` can be windowed with `jq` instead
   of a context read per card. Emitted only when set, like `backlog`/`project`.

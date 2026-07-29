@@ -180,6 +180,19 @@ def test_blocks_derived_reverse_link_resolution(tasks_dir):
     assert pkg.links["blocks"][0].id == "T-2"
 
 
+def test_corrupt_neighbour_does_not_sink_the_reverse_scan(tasks_dir):
+    """The reverse scan parses neighbours the forward read never touched, so one
+    unparseable card must fold away rather than take down every context read."""
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2", depends_on=["T-1"])
+    bad = tasks_dir / "T-9" / "task.yaml"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_text("id: T-9\ndepends_on: [T-1\n  bogus: ::: not yaml\n")
+
+    pkg = build_context(tasks_dir, "T-1")
+    assert [v.id for v in pkg.links["blocks"]] == ["T-2"]
+
+
 def test_link_arbitrary_new_kind_lands_in_links_dict(tasks_dir, tmp_path):
     # A configured kind whose name is not a dedicated field is stored under the
     # generic `links:` key — the extras-compatible channel new kinds ride (HATS-1028).
