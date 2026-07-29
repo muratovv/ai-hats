@@ -246,6 +246,40 @@ class WorktreeMergeConsentError(Exception):
         )
 
 
+class WorktreeStaleRefError(Exception):
+    """Raised when expected_tip SHA does not match live branch tip SHA at merge time.
+
+    HATS-1346: validates that the task branch tip has not moved since expected/prepared ref.
+    """
+
+    def __init__(self, branch_name: str, expected_tip: str, current_tip: str) -> None:
+        self.branch_name = branch_name
+        self.expected_tip = expected_tip
+        self.current_tip = current_tip
+        super().__init__(
+            f"Stale ref refusal for '{branch_name}': expected tip {expected_tip}, "
+            f"but current branch tip is {current_tip}."
+        )
+
+
+class WorktreeMergeIncompleteError(Exception):
+    """Raised when post-merge verification shows target base branch does not contain branch tip.
+
+    HATS-1346: prevents deleting worktree dir and branch if branch tip was not fully integrated.
+    """
+
+    def __init__(self, branch_name: str, tip_sha: str, base_branch: str) -> None:
+        self.branch_name = branch_name
+        self.tip_sha = tip_sha
+        self.base_branch = base_branch
+        super().__init__(
+            f"Merge incomplete for '{branch_name}': base branch '{base_branch}' does not contain "
+            f"branch tip {tip_sha}. Worktree and branch preserved."
+        )
+
+
+
+
 class WorktreeBaseBranchError(Exception):
     """Raised when ``wt create`` is invoked with main-repo HEAD not on a
     canonical base branch (``master`` / ``main``).
@@ -820,6 +854,7 @@ class WorktreeManager:
         force: bool = False,
         accept_drift: bool = False,
         skip_hooks: bool = False,
+        expected_tip: str | None = None,
     ) -> None:
         """Merge worktree changes back into the original branch and clean up.
 
@@ -831,6 +866,12 @@ class WorktreeManager:
         accept_drift=True (HATS-457 / HYP-017). ``force`` deliberately
         does not bypass drift — the two checks address different risks
         (uncommitted changes vs stale baseline).
+
+        Raises WorktreeStaleRefError if expected_tip is provided and does not
+        match the live task branch tip SHA (HATS-1346).
+
+        Raises WorktreeMergeIncompleteError if post-merge verification shows
+        the target base branch does not contain the task branch tip SHA (HATS-1346).
 
         Raises OriginalBranchMissingError if the original branch was deleted
         while the worktree was active. Worktree dir is removed but the
@@ -865,6 +906,21 @@ class WorktreeManager:
             if self._original_branch is None:
                 raise WorktreeStateIncompleteError(self.branch_name)
 
+            # HATS-1346: resolve current task branch tip at merge time.
+            current_tip_sha = self._git("rev-parse", self.branch_name).stdout.strip()
+            if expected_tip is not None:
+                expected_sha = (
+                    self._git("rev-parse", expected_tip).stdout.strip()
+                    if self._branch_exists(expected_tip)
+                    else expected_tip.strip()
+                )
+                if current_tip_sha != expected_sha:
+                    raise WorktreeStaleRefError(
+                        branch_name=self.branch_name,
+                        expected_tip=expected_sha,
+                        current_tip=current_tip_sha,
+                    )
+
             # HATS-596: checkout-independent already-merged short-circuit.
             # The task lives on its own branch; the main checkout may be on
             # ANY branch. If the task-branch tip is already an ancestor of the
@@ -879,7 +935,7 @@ class WorktreeManager:
             if (
                 self._original_branch is not None
                 and self._branch_exists(self._original_branch)
-                and self._is_ancestor(self.branch_name, self._original_branch)
+                and self._is_ancestor(current_tip_sha, self._original_branch)
             ):
                 if not force:
                     self._check_clean()
@@ -947,15 +1003,13 @@ class WorktreeManager:
                     self._squash_merge()
                 else:
                     self._fast_forward_merge()
-            except WorktreeMainRepoMidMergeError:
-                # HATS-602: this is a *precondition* refusal raised inside
-                # the base lock (_refuse_if_mid_merge) — no `git merge` ran,
-                # so it is NOT a merge failure. Propagate cleanly so the CLI
-                # surfaces the actionable hint; skip the F5 "merge failed,
-                # left intact for retry" + exc_info traceback below, which is
-                # reserved for genuine merge failures (conflicts, git errors)
-                # and would otherwise dump a misleading stack trace
-                # (regression caught by test_wt_merge_mid_merge_refusal).
+            except (
+                WorktreeMainRepoMidMergeError,
+                WorktreeStaleRefError,
+                WorktreeMergeIncompleteError,
+            ):
+                # HATS-602 / HATS-1346: precondition & containment refusals — no git merge retry,
+                # propagate cleanly so the caller surfaces the actionable hint.
                 raise
             except Exception:
                 # HATS-587 / F5: a failed merge (conflict, mid-resolution
@@ -971,6 +1025,24 @@ class WorktreeManager:
                     exc_info=True,
                 )
                 raise
+
+            # HATS-1346: post-merge containment verification before teardown.
+            if self._original_branch and self._branch_exists(self._original_branch):
+                is_integrated = (
+                    self._is_ancestor(current_tip_sha, self._original_branch)
+                    if not squash
+                    else (
+                        self._git("diff", current_tip_sha, self._original_branch).stdout.strip()
+                        == ""
+                    )
+                )
+                if not is_integrated:
+                    raise WorktreeMergeIncompleteError(
+                        branch_name=self.branch_name,
+                        tip_sha=current_tip_sha,
+                        base_branch=self._original_branch,
+                    )
+
             # HATS-823: harvest before teardown. On failure the branch survives,
             # so a retry hits the HATS-596 short-circuit and re-runs the hook.
             self._fire_before_teardown("merge", skip_hooks=skip_hooks)
