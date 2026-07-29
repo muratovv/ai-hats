@@ -11,8 +11,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
+from ai_hats.rack_workspace import proposals, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
-from ai_hats_tracker.hypothesis import ProposalStore
 
 
 def _seed(pd: Path) -> None:
@@ -151,10 +151,11 @@ def test_commit_changes_status(project_dir: Path):
     )
     assert res.exit_code == 0, res.output
 
-    store = ProposalStore(proposals_dir(project_dir))  # reads dir-per-card via shim
-    assert store.load("PROP-001").status == "accepted"
-    assert store.load("PROP-002").status == "rejected"
-    assert store.load("PROP-003").status == "deferred"
+    # Read back through the rack PROP view the judge/triage consumers use.
+    status = {p.id: p.status for p in proposals(rack_workspace(project_dir))}
+    assert status["PROP-001"] == "accepted"
+    assert status["PROP-002"] == "rejected"
+    assert status["PROP-003"] == "deferred"
 
 
 def test_commit_with_no_changes(project_dir: Path):

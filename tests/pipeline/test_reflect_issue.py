@@ -3,7 +3,7 @@
 Mocks SubAgentRunner so it writes a deterministic intake-result block to
 the session's trace.log. Everything else runs for real: composer →
 PipelineHarness → reflect-issue.yaml → compose_role → resolve_prompt →
-launch_provider → extract_marker → parser → HypothesisStore.
+launch_provider → extract_marker → parser → rack HYP backlog.
 """
 
 from __future__ import annotations
@@ -16,9 +16,23 @@ from click.testing import CliRunner
 
 from ai_hats.cli import main
 from ai_hats.paths import hypotheses_dir
+from ai_hats.rack_workspace import active_hypotheses, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
-from ai_hats_tracker.hypothesis import HypothesisStore
 from ai_hats_observe.artifacts import METRICS_JSON, TRACE_LOG, TRANSCRIPT_TXT, session_dirname
+
+
+def _card(pd: Path, hyp_id: str):
+    """The stored card, read back through the rack kernel that owns the backlog."""
+    card = rack_workspace(pd).kernel_for(hyp_id).get(hyp_id)
+    assert card is not None, f"{hyp_id} is not on disk"
+    return card
+
+
+def _view(pd: Path, hyp_id: str):
+    """The active-HYP view the reflect/judge consumers render."""
+    views = {h.id: h for h in active_hypotheses(rack_workspace(pd))}
+    assert hyp_id in views, f"{hyp_id} is not an active hypothesis"
+    return views[hyp_id]
 
 
 def _install_subagent_trace(monkeypatch, project_dir: Path, body: str) -> dict:
@@ -110,12 +124,12 @@ def test_reflect_issue_create_full_pipeline(
     assert call["role_name"] == "hypothesis-intake"
     assert call["model"] == "haiku"
 
-    # HYP materialized on disk (dir-per-card); read back through the shim.
-    saved = HypothesisStore(hypotheses_dir(project_dir)).load("HYP-001")
-    assert saved.status == "active"
-    assert saved.source_task == "supervisor-observation"
+    # HYP materialized on disk (dir-per-card); read back through the rack.
+    saved = _card(project_dir, "HYP-001")
+    assert saved.state == "active"
+    assert saved.links["source_task"] == ["supervisor-observation"]
     assert saved.title.startswith("agent skips")
-    assert saved.exit_criteria.confirm == ["4 sessions clean"]
+    assert saved.extras["exit_criteria"]["confirm"] == ["4 sessions clean"]
 
 
 def test_reflect_issue_merge_full_pipeline(
@@ -159,12 +173,12 @@ def test_reflect_issue_merge_full_pipeline(
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
 
-    saved = HypothesisStore(hypotheses_dir(project_dir)).load("HYP-001")
+    saved = _view(project_dir, "HYP-001")
     assert len(saved.validation_log) == 1
     entry = saved.validation_log[0]
-    assert entry.verdict == "inconclusive"
-    assert entry.evidence.startswith("same f-string")
-    assert entry.session_id == "20260512-120000-1"
+    assert entry["verdict"] == "inconclusive"
+    assert entry["evidence"].startswith("same f-string")
+    assert entry["session_id"] == "20260512-120000-1"
 
 
 def test_reflect_issue_missing_markers_with_active_hyp_fails(

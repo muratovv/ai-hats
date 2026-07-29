@@ -15,8 +15,8 @@ from ai_hats.cli.reflect_session_main import (
     _file_meta_proposal,
     _harness_check,
 )
+from ai_hats.rack_workspace import proposals, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
-from ai_hats_tracker.hypothesis import ProposalStore
 from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
@@ -116,8 +116,9 @@ def test_file_meta_proposal_creates_one(tmp_path: Path) -> None:
     _seed(tmp_path)
     _file_meta_proposal(tmp_path, SID, ["output file missing or empty"])
     assert _proposals_count(tmp_path) == 1
-    store = ProposalStore(proposals_dir(tmp_path))
-    [prop] = store.list_all()
+    # Read the filed card back through the rack; unfiltered, so the destructuring
+    # still asserts single ownership.
+    [prop] = proposals(rack_workspace(tmp_path))
     assert prop.category == "process"
     assert prop.target == "session-reviewer"
     assert prop.failed_session_id == SID
