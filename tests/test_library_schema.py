@@ -15,6 +15,7 @@ from ai_hats.library_schema import (
 def _lib(root, version=None):
     for layer in ("core", "usage"):
         (root / layer).mkdir(parents=True)
+    (root / "core" / "pipelines").mkdir()  # HATS-1157: a root must serve the manifest
     if version is not None:
         (root / "manifest.yaml").write_text(f"schema_version: {version}\n", encoding="utf-8")
     return root
