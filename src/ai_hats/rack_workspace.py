@@ -29,7 +29,7 @@ from ai_hats_rack.definition import packaged_definition_source
 from ai_hats_rack.resolver import RackRoot
 from ai_hats_rack.workspace import UnknownExtensionError, UnknownPrefixError
 
-from .paths import tasks_dir
+from .paths import ensure_ai_hats_dir, tasks_dir
 
 #: Actor stamped on integrator-side rack writes (reflect/judge provenance).
 REFLECT_ACTOR = "rack:reflect"
@@ -45,10 +45,17 @@ def rack_workspace(project_dir: Path) -> Workspace:
 def ensure_backlog(project_dir: Path, definition_name: str) -> None:
     """Seed a sibling backlog's ``backlog.yaml`` from the packaged definition when
     absent, so a write path (e.g. ``reflect issue``) can mount HYP/PROP on a
-    project that never had one — parity with the pre-rack auto-create; idempotent."""
+    project that never had one — parity with the pre-rack auto-create; idempotent.
+
+    HATS-839 applies here and not on the rack path: the rack has its own validating
+    resolver, but this facade is reached from ``cli/_helpers._project_dir``, which
+    falls back to a bare cwd. Validate before the ``parents=True`` mkdir below, or a
+    stray root gets a phantom tracker (HATS-1264).
+    """
     catalog = tasks_dir(project_dir).parent / definition_name
     dest = catalog / "backlog.yaml"
     if not dest.is_file():
+        ensure_ai_hats_dir(project_dir)
         catalog.mkdir(parents=True, exist_ok=True)
         atomic_write_text(dest, packaged_definition_source(definition_name))
 
