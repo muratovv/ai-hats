@@ -774,6 +774,7 @@ def reflect_issue_cmd(
     By default writes immediately on success. Use ``--preview`` to inspect
     the draft and confirm interactively, or ``--bg`` to detach.
     """
+    from ..composition_seam import MissingProviderError
     from ..retro.intake import IntakeParseError, parse_intake_yaml
 
     if background and preview_mode:
@@ -802,6 +803,8 @@ def reflect_issue_cmd(
                 "reflect-issue pipeline did not emit BEGIN_INTAKE_RESULT/END_INTAKE_RESULT block"
             )
         action = parse_intake_yaml(intake_text)
+    except MissingProviderError:
+        raise
     except (RuntimeError, IntakeParseError) as exc:
         if active:
             raise click.ClickException(
