@@ -62,4 +62,4 @@ def test_out_of_tree_skill_source_is_discovered_by_the_binary(
     assert result.returncode == 0, result.stderr
     assert "acme-skill" in result.stdout, result.stdout
     # discovery augments, not replaces — the built-in library skill is still there
-    assert "backlog-manager" in result.stdout, result.stdout
+    assert "hatrack" in result.stdout, result.stdout

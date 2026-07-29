@@ -14,8 +14,6 @@ from pathlib import Path
 
 from ai_hats_rack.models import TaskCard, WorkLogEntry
 from ai_hats_observe import SessionManager
-from ai_hats.paths import runs_dir, tasks_dir
-from ai_hats.runtime import SubAgentRunner
 
 
 def _runner(project_dir: Path) -> SubAgentRunner:
@@ -64,8 +62,8 @@ def test_load_linked_context_happy_path_and_ordering(tmp_path: Path) -> None:
             state="execute",
             description="EPIC DESCRIPTION BODY",
             work_log=[
-                WorkLogEntry(timestamp="2026-01-01T00:00:00Z", message="OLD EPIC ENTRY"),
-                WorkLogEntry(timestamp="2026-02-02T00:00:00Z", message="LATEST EPIC ENTRY"),
+                {"timestamp": "2026-01-01T00:00:00Z", "message": "OLD EPIC ENTRY"},
+                {"timestamp": "2026-02-02T00:00:00Z", "message": "LATEST EPIC ENTRY"},
             ],
         ),
         plan_body="# EPIC PLAN\nEPIC PLAN BODY",

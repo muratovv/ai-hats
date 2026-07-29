@@ -43,7 +43,7 @@ class TestEvaluate:
         assert v.ok is True
 
     def test_never_published_passes(self):
-        v = skew.evaluate("ai_hats_tracker", Version("0.1.0"), None, src_changed=True)
+        v = skew.evaluate("ai_hats_rack", Version("0.1.0"), None, src_changed=True)
         assert v.ok is True
 
     def test_dynamic_version_skipped(self):

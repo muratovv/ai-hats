@@ -30,6 +30,7 @@ _MENTION = re.compile(r"(?:\*\*|`)([a-z0-9_][a-z0-9_-]*)(?:\*\*|`)")
 _OVERLAP_RATIO = 0.80
 
 _PACKAGE_MARKERS = {
+    "ai_hats_rack": "rack",
     "ai_hats_library": "library",
     "ai_hats_wt": "wt",
     "ai_hats_observe": "observe",
