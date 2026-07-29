@@ -179,12 +179,20 @@ one.
 rack ls                             # the active backlog
 rack ls --state execute             # exact state match
 rack ls --tag docs                  # exact tag match
-rack ls --grep "worktree"           # case-insensitive substring, title+description
 rack ls --parent HATS-092           # direct children of an epic
+rack ls --grep "worktree"           # case-insensitive substring, title+description
+rack ls --grep id:HATS-092          # …or over one field: id, title, description
 rack ls --all                       # lift the 30-row cap
 ```
 
-`--grep` is a **literal substring**, not a regex.
+The first four match a field exactly. `--grep` does not — it is the fallback
+for when all you have is a word, so try the others first.
+
+`--grep` is a **literal substring**, not a regex. Bare, it reads title +
+description, which is why an id-shaped needle returns the cards *citing* an id
+rather than the card that *is* it — `id:` narrows the haystack to one field. A
+prefix that is not a field name stays literal, so `--grep "runner.py:42"`
+still searches for that text.
 
 ```bash
 rack ls HATS-092 --deep 2                      # walk 2 link-edges out
