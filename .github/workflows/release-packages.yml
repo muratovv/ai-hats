@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + observe + library + cline + rack)
+    name: build (core + wt + observe + library + cline + agy + rack)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,6 +38,7 @@ jobs:
           uv build packages/ai-hats-observe -o dist-observe
           uv build packages/ai-hats-library -o dist-library
           uv build packages/surfaces/cline -o dist-cline
+          uv build packages/surfaces/agy -o dist-agy
           uv build packages/ai-hats-rack -o dist-rack
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
@@ -49,6 +50,7 @@ jobs:
             dist-observe/
             dist-library/
             dist-cline/
+            dist-agy/
             dist-rack/
           if-no-files-found: error
 
@@ -169,6 +171,26 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist-cline/
+          skip-existing: true
+
+  publish-agy:
+    name: publish ai-hats-agy (PyPI trusted publishing)
+    # Core first — the agy surface plugin depends on ai-hats-core (and on the
+    # integrator, which ships from release.yml on the v* tag, not from here).
+    needs: publish-core
+    runs-on: ubuntu-latest
+    environment: pypi-agy
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-agy to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-agy/
           skip-existing: true
 
   verify-remote-install:

@@ -125,17 +125,22 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-rack`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-agy`, `ai-hats-rack`)
 
 The workspace packages under `packages/*` (and surface plugins under
-`packages/surfaces/*`, e.g. `ai-hats-cline`) carry their own **static** versions
+`packages/surfaces/*`, e.g. `ai-hats-cline`, `ai-hats-agy`) carry their own
+**static** versions
 (`packages/**/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
 publish through a separate workflow,
 [`release-packages.yml`](../.github/workflows/release-packages.yml) — build each
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
 the `wt` and `observe` packages that depend on it and the data-only
 `library` package, which has no ordering constraint, then the `cline` surface
-that depends on `observe`). It runs on **manual dispatch** and
+that depends on `observe` and the `agy` surface that depends on `core`).
+**Every surface in `KNOWN_SURFACES` needs a job here** — `self_heal` runs
+`uv pip install <package_name>` for a surface the user selects, so a surface
+without one turns automatic repair into a hard failure on a missing
+distribution (HATS-1353). It runs on **manual dispatch** and
 **auto-triggers** on a push to master that touches `packages/*/pyproject.toml`
 or `packages/surfaces/*/pyproject.toml`
 (HATS-943 — bump⇒publish is one step; `skip-existing` no-ops an unchanged
@@ -149,8 +154,8 @@ environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
 (`pypi-core` / `pypi-wt` / `pypi-observe` / `pypi-library` /
-`pypi-cline` / `pypi-rack`) — separate from the `pypi` environment the main
-`ai-hats` release uses.
+`pypi-cline` / `pypi-agy` / `pypi-rack`) — separate from the `pypi` environment
+the main `ai-hats` release uses.
 
 **One-time setup:**
 
@@ -162,6 +167,7 @@ the disambiguator, so each package's publish job runs in its own environment
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-observe
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-library
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-cline
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-agy
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-rack
    ```
 
@@ -177,6 +183,7 @@ the disambiguator, so each package's publish job runs in its own environment
    | `ai-hats-observe` | `pypi-observe`   |
    | `ai-hats-library` | `pypi-library`   |
    | `ai-hats-cline`   | `pypi-cline`     |
+   | `ai-hats-agy`     | `pypi-agy`       |
    | `ai-hats-rack`    | `pypi-rack`      |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
