@@ -12,7 +12,9 @@ reach ``packages/*/tests``.
 
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
 
 import pytest
 
@@ -29,7 +31,6 @@ def pytest_runtest_makereport(item, call):  # noqa: ANN001, ANN201
     setattr(item, f"rep_{rep.when}", rep)  # rep_setup / rep_call / rep_teardown
 
 
-@pytest.fixture(scope="session", autouse=True)
 @pytest.fixture(scope="session", autouse=True)
 def _no_retired_prune(request):
     """Keep the retired-distribution prune out of the developer's own venv.
