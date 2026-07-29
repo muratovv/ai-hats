@@ -87,3 +87,80 @@ class TestLatestPypiVersion:
 
         with pytest.raises(urllib.error.HTTPError):
             skew.latest_pypi_version("ai-hats-core", fetch=fetch)
+
+
+class TestResolveBase:
+    @pytest.fixture
+    def git_repo(self, tmp_path: Path) -> Path:
+        def _git(*args):
+            import subprocess
+
+            subprocess.run(
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                env={
+                    "GIT_AUTHOR_NAME": "test",
+                    "GIT_AUTHOR_EMAIL": "test@example.com",
+                    "GIT_COMMITTER_NAME": "test",
+                    "GIT_COMMITTER_EMAIL": "test@example.com",
+                },
+            )
+
+        _git("init", "-b", "master")
+        (tmp_path / "file.txt").write_text("hello")
+        _git("add", "file.txt")
+        _git("commit", "-m", "initial")
+        return tmp_path
+
+    def test_reachable_base_returns_ref(self, git_repo: Path):
+        assert skew.resolve_base("HEAD", git_repo) == "HEAD"
+
+    def test_unknown_sha_returns_none(self, git_repo: Path):
+        assert skew.resolve_base("deadbeefdeadbeef", git_repo) is None
+
+    def test_unrelated_history_returns_none(self, git_repo: Path):
+        import subprocess
+
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        }
+        subprocess.run(
+            ["git", "checkout", "--orphan", "unrelated"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        (git_repo / "other.txt").write_text("unrelated")
+        subprocess.run(
+            ["git", "add", "other.txt"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "unrelated commit"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+
+        assert skew.resolve_base("master", git_repo) is None
+
+
+class TestMainUnusableBase:
+    def test_unusable_base_prints_notice_and_exits_0(self, capsys):
+        rc = skew.main(["deadbeefdeadbeef"])
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "[version-skew] base unusable" in captured.err
+        assert "deadbeefdeadbeef" in captured.err
+        assert "tests/test_package_version_drift.py" in captured.err
+
