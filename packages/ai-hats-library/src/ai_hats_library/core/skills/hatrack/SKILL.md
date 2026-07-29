@@ -85,7 +85,7 @@ rack transition PROJ-042 --set description="$(cat body.md)"   # verbatim body
 rack transition PROJ-042 --append tags=dx                     # add one tag
 rack transition PROJ-042 --append 'tags=["dx","rack"]'        # add each entry
 rack transition PROJ-042 --set 'tags=["dx"]'                  # replace the list
-rack transition PROJ-042 --set parent_task=PROJ-014           # re-parent
+rack transition PROJ-042 --unlink parent_task:PROJ-010 --link parent_task:PROJ-014   # re-parent
 ```
 
 A JSON array adds its **entries**, never itself — a list nested inside a list

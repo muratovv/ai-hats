@@ -283,7 +283,7 @@ rack transition HATS-042 --set description="$(cat body.md)"
 rack transition HATS-042 --append tags=dx                # one entry
 rack transition HATS-042 --append 'tags=["dx","rack"]'   # each entry
 rack transition HATS-042 --set 'tags=["dx"]'             # replace the list
-rack transition HATS-042 --set parent_task=HATS-014      # re-parent
+rack transition HATS-042 --unlink parent_task:HATS-010 --link parent_task:HATS-014   # re-parent
 ```
 
 A write that would produce a card the reader cannot load back is refused at the
