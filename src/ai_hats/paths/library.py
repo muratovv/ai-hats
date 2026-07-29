@@ -33,7 +33,7 @@ from .constants import (
     LIBRARY_PKG,
     PIPELINES_SUBPATH,
 )
-from .validation import _validated_library_root, is_library_root
+from .validation import _validated_library_root
 
 
 # Layer-root subpaths (from a checkout root) holding the ai_hats_library layers:
@@ -47,9 +47,8 @@ _SOURCE_LIBRARY_SUBPATHS = (
 def _detect_source_library_root(start: Path) -> Path | None:
     """Walk up from ``start`` for an ai-hats-library *source* checkout; return its root.
 
-    A source checkout holds an ``ai_hats_library`` package serving the full manifest
-    (:func:`is_library_root`) — inside the monorepo/worktree
-    (``packages/ai-hats-library/src/…``) or a
+    A source checkout holds the ``ai_hats_library`` package with ``core/``+``usage/``
+    layers — inside the monorepo/worktree (``packages/ai-hats-library/src/…``) or a
     standalone git-split checkout (``src/ai_hats_library``). HATS-876 dropped the
     former ``src/ai_hats`` co-requirement so a **library-only checkout** resolves too
     (ADR-0014 §6); a downstream project has neither layout and stays on the installed
@@ -58,7 +57,7 @@ def _detect_source_library_root(start: Path) -> Path | None:
     for d in (start, *start.parents):
         for parts in _SOURCE_LIBRARY_SUBPATHS:
             root = d.joinpath(*parts)
-            if is_library_root(root):
+            if (root / "core").is_dir() and (root / "usage").is_dir():
                 return root
     return None
 
@@ -95,7 +94,7 @@ def builtin_library_root(project_dir: Path | None = None) -> Path | None:
     Resolution order (HATS-826 / HATS-1127), highest precedence first:
 
     1. ``AI_HATS_LIBRARY_ROOT`` env override — explicit, greppable seam
-       (tests, power users), validated against the full manifest or rejected.
+       (tests, power users), validated both-``core``-and-``usage`` or rejected.
     2. **project_dir or AI_HATS_PROJECT_DIR source auto-detection** — keys off
        ``project_dir`` if passed, or ``AI_HATS_PROJECT_DIR`` env if set.
     3. **cwd auto-detection** of an ai-hats source checkout (only when no
@@ -119,7 +118,7 @@ def builtin_library_root(project_dir: Path | None = None) -> Path | None:
         if root is None:
             root = _detect_source_library_root(Path.cwd())
 
-    if root is not None and is_library_root(root):
+    if root is not None and all((root / layer).is_dir() for layer in LIBRARY_LAYERS):
         return root
     return _importlib_library_root()
 

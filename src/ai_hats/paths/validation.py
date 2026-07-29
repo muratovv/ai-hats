@@ -4,7 +4,7 @@ Holds the validators kept deliberately separate from the path/resolver logic so
 callers (``ProjectConfig`` field validators, the builtin-library resolver) can
 reference them in one place:
 
-  - :func:`is_library_root` / :func:`_validated_library_root` — root manifest + env gate.
+  - :func:`_validated_library_root` — builtin-library root both-or-none gate.
   - :func:`normalize_ai_hats_dir` / :func:`normalize_venv_path` — config-value
     validators used by ``ProjectConfig``.
 """
@@ -14,31 +14,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path, PurePosixPath
 
-from .constants import LIBRARY_LAYERS, PIPELINES_SUBPATH
-
-# What a root must SERVE, not merely contain: `core/`+`usage/` alone is satisfied
-# by a __pycache__ shadow of a half-removed worktree (HATS-1157). `hooks/` stays
-# out — a source tree without it is legal (callers degrade on None).
-_LIBRARY_ROOT_MANIFEST: tuple[tuple[str, ...], ...] = (
-    *((layer,) for layer in LIBRARY_LAYERS),
-    PIPELINES_SUBPATH,
-)
-
-
-def is_library_root(root: Path) -> bool:
-    """Whether ``root`` holds the full builtin-library manifest (HATS-1157).
-
-    THE single answer to "is this a library root?" — the resolver's three entry
-    points (env override, source autodetect, and the post-detect gate) all defer
-    here, so the rule cannot drift between them again. Callers decide what a
-    ``False`` means: the env override rejects loudly, autodetect falls through
-    to the installed package.
-    """
-    return all(root.joinpath(*parts).is_dir() for parts in _LIBRARY_ROOT_MANIFEST)
+from .constants import LIBRARY_LAYERS
 
 
 def _validated_library_root(raw: str | None) -> Path | None:
-    """A builtin-library root is valid only if it serves the full manifest.
+    """A builtin-library root is valid only if it holds BOTH ``core`` and ``usage``.
 
     A partial root (e.g. ``core`` but no ``usage`` — a corrupt/sparse checkout, or
     a leaked stale ``AI_HATS_LIBRARY_ROOT`` pointing at a half-removed worktree)
@@ -48,11 +28,10 @@ def _validated_library_root(raw: str | None) -> Path | None:
     if not raw:
         return None
     root = Path(raw).expanduser()
-    if is_library_root(root):
+    if all((root / layer).is_dir() for layer in LIBRARY_LAYERS):
         return root
     print(
-        f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} does not hold a complete "
-        "builtin library (core/ · usage/ · core/pipelines/); "
+        f"[ai-hats] AI_HATS_LIBRARY_ROOT={raw!r} has no core/+usage/ pair; "
         "ignoring it and resolving the builtin library normally.",
         file=sys.stderr,
     )

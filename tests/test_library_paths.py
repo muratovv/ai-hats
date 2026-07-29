@@ -29,22 +29,20 @@ from ai_hats.paths import (
 from ai_hats.paths import library as libmod
 
 
-def _populate_lib(lib: Path) -> Path:
-    """Build the full root manifest a resolver will accept (HATS-1157)."""
-    for layer in ("core", "usage"):
-        (lib / layer).mkdir(parents=True)
-    (lib / "core" / "pipelines").mkdir()
-    return lib
-
-
 def _make_standalone_lib(root: Path) -> Path:
     """A standalone (git-split) ai-hats-library checkout; return its layer-root."""
-    return _populate_lib(root / "src" / "ai_hats_library")
+    lib = root / "src" / "ai_hats_library"
+    for layer in ("core", "usage"):
+        (lib / layer).mkdir(parents=True)
+    return lib
 
 
 def _make_monorepo_lib(root: Path) -> Path:
     """The monorepo/worktree ai-hats-library layout; return its layer-root."""
-    return _populate_lib(root / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
+    lib = root / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    for layer in ("core", "usage"):
+        (lib / layer).mkdir(parents=True)
+    return lib
 
 
 # ---- _detect_source_library_root -------------------------------------------
@@ -89,46 +87,14 @@ def test_validated_root_requires_both_core_and_usage(tmp_path, capsys):
 
 
 def test_validated_root_accepts_complete(tmp_path):
-    _populate_lib(tmp_path)
+    (tmp_path / "core").mkdir()
+    (tmp_path / "usage").mkdir()
     assert _validated_library_root(str(tmp_path)) == tmp_path
 
 
 def test_validated_root_none_when_unset():
     assert _validated_library_root(None) is None
     assert _validated_library_root("") is None
-
-
-# ---- HATS-1157: a root must SERVE the manifest, not merely look like one ----
-
-
-def _make_pycache_shadow(lib: Path) -> Path:
-    """The incident shape: layer dirs survive as __pycache__ homes, content gone."""
-    for layer in ("core", "usage"):
-        (lib / layer / "__pycache__").mkdir(parents=True)
-    return lib
-
-
-def test_shadow_root_rejected_by_env_override(tmp_path, capsys):
-    # Pre-1157 this passed the core/+usage/ check and failed 200 frames later on a
-    # missing core/pipelines/*.yaml (the live incident).
-    _make_pycache_shadow(tmp_path)
-    assert _validated_library_root(str(tmp_path)) is None
-    assert "AI_HATS_LIBRARY_ROOT" in capsys.readouterr().err
-
-
-def test_shadow_root_rejected_by_source_autodetect(tmp_path):
-    _make_pycache_shadow(tmp_path / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
-    assert _detect_source_library_root(tmp_path) is None
-
-
-def test_shadow_root_falls_through_to_installed_package_silently(tmp_path, monkeypatch, capsys):
-    # Autodetect stays QUIET on rejection: a downstream project legitimately has no
-    # source root, so warning here would fire on every launch.
-    _make_pycache_shadow(tmp_path / "packages" / "ai-hats-library" / "src" / "ai_hats_library")
-    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
-    monkeypatch.chdir(tmp_path)
-    assert builtin_library_root() == libmod._importlib_library_root()
-    assert capsys.readouterr().err == ""
 
 
 # ---- builtin_library_layers precedence -------------------------------------
@@ -178,6 +144,7 @@ def test_root_subpaths_derive_from_resolved_root(tmp_path, monkeypatch):
     # cwd/env signal as the composition layers).
     lib = _make_monorepo_lib(tmp_path)
     (lib / "hooks").mkdir()
+    (lib / "core" / "pipelines").mkdir(parents=True)
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
     monkeypatch.chdir(tmp_path)
 
@@ -241,4 +208,3 @@ def test_ai_hats_project_dir_env_wins_over_cwd(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj_repo"))
 
     assert builtin_library_root() == proj_lib
-
