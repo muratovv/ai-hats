@@ -206,3 +206,33 @@ def test_packaged_tasks_default_loads_with_no_mirror(tmp_path):
     subs = compose_subscribers(defn, tmp_path, stock_factories())
     keys = [sub.event_key for s in subs for sub in s.subscriptions()]
     assert not any(k.startswith("link-target:") for k in keys)
+
+
+# ----- HATS-1351: mirror target receives work_log and audit record ------------
+
+
+def test_mirror_work_log_and_audit_journal_saved_on_target_card(project):
+    from ai_hats_rack.journal import read_journal
+
+    ws, cwd, alpha, beta = project
+    a = ws.kernel_for("AA-1")
+    res = a.transition_ops(
+        "AA-1", parse_ops(["--link", "mirror_to:BB-1"]), actor="t", caller_cwd=cwd
+    )
+    ws.mirror_after("AA-1", res, actor="t", caller_cwd=cwd)
+
+    # 1. Target card BB-1 has reverse edge in YAML
+    target_card = ws.kernel_for("BB-1").get("BB-1")
+    assert target_card.links["mirror_from"] == ["AA-1"]
+
+    # 2. Target card BB-1 has mirror-link work_log entry
+    assert any("mirror-link linked AA-1" in entry.message for entry in target_card.work_log)
+
+    # 3. Target card BB-1 has audit.jsonl record for link-target:mirror_from
+    records, _ = read_journal(beta, "BB-1")
+    assert any(r["event"] == "link-target:mirror_from" for r in records)
+
+    # 4. Origin card AA-1 has audit.jsonl record for link:mirror_to
+    origin_records, _ = read_journal(alpha, "AA-1")
+    assert any(r["event"] == "link:mirror_to" for r in origin_records)
+

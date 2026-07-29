@@ -20,6 +20,7 @@ from typing import Any, Callable, Mapping, Sequence, Union
 from .dispatch import Append, FieldOp, Set
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
+from .events import DocOpEvent, LogEvent
 from .kernel import UnknownTaskError
 from .linked import guard_reciprocal, link_on_card, unlink_on_card
 from .models import LINK_STORAGE_FIELDS, TaskCard
@@ -278,6 +279,7 @@ class OpTxn:
     ack_frozen: bool = False
     undo: list[Callable[[], None]] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
+    dispatched: list[Any] = field(default_factory=list)
     #: in-lock link/unlink dispatch hook (kernel-supplied): ``(kind, target,
     #: removed)`` fires ``link:<kind>``/``unlink:<kind>`` (HATS-1043 §3). None on
     #: the lock-free/test path — link ops then mutate without dispatching.
@@ -312,6 +314,7 @@ def _apply_attach(txn: OpTxn, op: AttachOp) -> None:
     dest.write_bytes(data)
     note = " (overwrote)" if overwrote else ""
     txn.card.log_work(f"Attached {op.name}{note}", actor=txn.actor)
+    txn.dispatched.append(DocOpEvent(op="attach", name=op.name, src=op.src))
     txn.results.append(
         {"op": "attach", "name": op.name, "path": str(dest.absolute()), "overwrote": overwrote}
     )
@@ -323,6 +326,7 @@ def _apply_freeze(txn: OpTxn, op: FreezeOp) -> None:
     info, changed = freeze_on_card(
         txn.card, txn.card_dir, op.name, actor=txn.actor, refreeze=txn.ack_frozen
     )
+    txn.dispatched.append(DocOpEvent(op="freeze", name=op.name))
     txn.results.append(
         {"op": "freeze", "name": op.name, "digest": info.digest, "changed": changed}
     )
@@ -346,6 +350,7 @@ def _apply_rm(txn: OpTxn, op: RmOp) -> None:
         if result.trashed_to is not None
         else None
     )
+    txn.dispatched.append(DocOpEvent(op="rm", name=op.name))
     txn.results.append(
         {
             "op": "rm",

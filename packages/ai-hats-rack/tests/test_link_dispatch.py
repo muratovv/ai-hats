@@ -125,14 +125,14 @@ def test_kind_handler_abort_rolls_the_link_back(tmp_path, cwd):
 
 
 def test_kind_without_handlers_dispatches_nothing(tmp_path, cwd):
-    # The packaged default declares NO kind handlers — a link must fire no link
-    # event (no subscribers, no journal record) yet still apply (zero behavior
-    # change; guards against an event storm on every link).
+    # Non-state link ops fire no subscriber callbacks when none exist,
+    # but still record the link event in journal (HATS-1351).
     tasks = tmp_path / "tasks"
     k = make_kernel(tasks, subscribers=standalone_extensions(tasks))
     _two_cards(k, cwd)
     res = k.transition_ops("T-1", parse_ops(["--link", "related:T-2"]), actor="t", caller_cwd=cwd)
-    assert res.journal == ()  # no edge, no link event → empty journal
+    assert [r.event_key for r in res.journal] == ["link:related"]
+    assert res.journal[0].outcomes == ()  # no subscriber callbacks
     assert res.ops[0]["changed"] is True  # the link itself still happened
     assert "T-2" in k.get("T-1").related
 

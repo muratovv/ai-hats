@@ -82,6 +82,14 @@ def record_lines(record: dict[str, Any]) -> list[str]:
         head += f" [{detail['from']} → {detail['to']}]"
     elif "child" in detail:
         head += f" [child {detail['child']}]"
+    elif "kind" in detail and "target" in detail:
+        head += f" [{detail['kind']} {detail['target']}]"
+    elif "field" in detail:
+        head += f" [{detail['field']} {detail.get('op', '')}]"
+    elif "name" in detail:
+        head += f" [{detail.get('op', '')} {detail['name']}]"
+    elif "message" in detail:
+        head += f" [{detail['message']}]"
     elif "operation" in detail:
         head += f" [{detail['operation']}]"
     head += f" actor={record.get('actor', '')} result={record.get('result', '')}"
