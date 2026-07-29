@@ -71,6 +71,15 @@ def _activate_prune(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(retired_dists.ENV_SKIP_PRUNE, raising=False)
 
 
+def _not_editable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pretend the install is not editable, so the prune proceeds.
+
+    THIS checkout is an editable install, and :func:`prune_retired` stands down on
+    those — without this, every prune-active test would pass for the wrong reason.
+    """
+    monkeypatch.setattr("ai_hats.paths.editable_install_root", lambda _dist="ai-hats": None)
+
+
 def _block_subprocess(monkeypatch: pytest.MonkeyPatch) -> _Spy:
     spy = _Spy("subprocess.run")
     monkeypatch.setattr(retired_dists.subprocess, "run", spy)
@@ -479,6 +488,7 @@ def test_t10_prune_retired_never_raises_on_internal_baseexception(monkeypatch, t
 def test_t10b_prune_retired_keeps_partial_results_when_the_second_half_dies(monkeypatch, tmp_path):
     """What the interpreter half already removed is still reported."""
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [RETIRED_NAME])
 
     def boom(*args, **kwargs):
@@ -495,6 +505,7 @@ def test_t10b_prune_retired_keeps_partial_results_when_the_second_half_dies(monk
 def test_t10c_prune_retired_strips_the_legacy_venv_script(monkeypatch, tmp_path):
     """The happy path across both targets, with the running-interpreter half stubbed."""
     _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
     monkeypatch.setenv("AI_HATS_TRASH_DIR", str(tmp_path / "trash"))
     monkeypatch.setattr(retired_dists, "prune_running_interpreter", lambda: [])
     run_spy = _block_subprocess(monkeypatch)
@@ -614,3 +625,33 @@ def test_no_test_here_can_reach_a_real_uv(monkeypatch):
 def test_importlib_metadata_is_reachable_for_patching():
     """``_is_installed`` must keep going through the module attribute (T4b patches it)."""
     assert retired_dists.importlib.metadata is importlib.metadata
+
+
+# ---- editable installs are exempt (HATS-1280) ----
+
+
+def test_editable_install_is_never_pruned(monkeypatch, tmp_path):
+    """A dev checkout resolves packages/* as workspace members, so on a ref
+    predating the retirement `uv sync` would reinstall what we removed — the two
+    would fight on every update. The editable symptom is a broken script, not a
+    working legacy CLI, so the prune stands down entirely."""
+    _activate_prune(monkeypatch)
+    spy = _block_subprocess(monkeypatch)
+    monkeypatch.setattr("ai_hats.paths.editable_install_root", lambda _d="ai-hats": tmp_path)
+
+    assert retired_dists.prune_retired(tmp_path) == []
+    assert spy.calls == [], "an editable install must not reach uv"
+
+
+def test_non_editable_install_is_pruned(monkeypatch, tmp_path):
+    """Anti-vacuity control for the test above: same setup, not editable → it runs."""
+    _activate_prune(monkeypatch)
+    _not_editable(monkeypatch)
+    _declares(monkeypatch)
+    _installed(monkeypatch, True)
+    _fake_uv(monkeypatch)
+    run, calls = _fake_run(0)
+    monkeypatch.setattr(retired_dists.subprocess, "run", run)
+
+    assert retired_dists.prune_retired(tmp_path) == ["ai-hats-tracker"]
+    assert calls, "a non-editable install must reach uv — otherwise the guard test is vacuous"

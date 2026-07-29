@@ -146,6 +146,12 @@ def prune_retired(project_dir: Path) -> list[str]:
         return []
     removed: list[str] = []
     try:
+        from .paths import editable_install_root
+
+        # A dev checkout resolves `packages/*` as workspace members, so on a ref
+        # predating the retirement `uv sync` reinstalls what we removed, forever.
+        if editable_install_root("ai-hats") is not None:
+            return []
         removed += prune_running_interpreter()
         from .paths import ai_hats_dir
 
