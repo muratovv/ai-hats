@@ -131,6 +131,7 @@ def test_smoke_hook_in_a_worktree_prefers_the_worktrees_own_venv(tmp_path: Path)
 def test_smoke_hook_passes_e2e_target_path(tmp_path: Path) -> None:
     """HATS-1345: the smoke hook targets tests/e2e/ so collection errors elsewhere don't block commits."""
     project, marker = _make_project(tmp_path)
+    (project / "tests" / "e2e").mkdir(parents=True)
     path_dir = tmp_path / "pathbin"
     _install_stub(project / ".venv" / "bin" / "pytest", "VENV", marker)
 
@@ -140,4 +141,26 @@ def test_smoke_hook_passes_e2e_target_path(tmp_path: Path) -> None:
     args_file = Path(f"{marker}.args")
     assert args_file.is_file()
     assert "tests/e2e/" in args_file.read_text().split()
+
+
+def test_smoke_hook_omits_the_target_path_when_absent(tmp_path: Path) -> None:
+    """HATS-1352: no tests/e2e/ => no path argument, so pytest falls back to testpaths.
+
+    Passing a path that does not exist makes pytest answer rc=4 (usage error),
+    which the hook does not treat as "nothing to run" — so a consumer project
+    without the directory had every commit blocked.
+    """
+    project, marker = _make_project(tmp_path)
+    assert not (project / "tests" / "e2e").exists()
+    path_dir = tmp_path / "pathbin"
+    _install_stub(project / ".venv" / "bin" / "pytest", "VENV", marker)
+
+    result = _run_hook(project, path_dir)
+
+    assert result.returncode == 0, result.stderr
+    args_file = Path(f"{marker}.args")
+    assert args_file.is_file(), "the hook never invoked pytest"
+    assert "tests/e2e/" not in args_file.read_text().split(), (
+        f"a non-existent path still reached pytest: {args_file.read_text()!r}"
+    )
 

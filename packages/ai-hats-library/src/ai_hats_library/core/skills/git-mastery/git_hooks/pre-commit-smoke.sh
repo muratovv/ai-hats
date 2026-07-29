@@ -58,12 +58,19 @@ else
     exit 0
 fi
 
+# HATS-1345 scopes the run to tests/e2e/; HATS-1352 only when it exists — pytest
+# answers a missing path with rc=4, not the rc=5 handled below, so a consumer
+# project without the dir had every commit blocked. Empty => no path => testpaths.
+smoke_paths=()
+[[ -d tests/e2e ]] && smoke_paths=(tests/e2e/)
+
 # Run smoke tests (from cwd = worktree root where the code lives).
 # HATS-887: strip GIT_* plumbing so the merge-smoke `git merge` that spawns this
 # hook can't leak GIT_DIR into pytest and retarget a test's git off cwd onto real
 # .git (the child `env -u` does not affect the parent commit).
 output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
-    "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider tests/e2e/ 2>&1)
+    "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider \
+    ${smoke_paths[@]+"${smoke_paths[@]}"} 2>&1)  # ${a[@]+…}: bash 3.2 + set -u
 rc=$?
 
 if [[ $rc -eq 5 ]]; then
