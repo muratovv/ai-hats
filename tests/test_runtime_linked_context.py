@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats_tracker.models import TaskCard, TaskState, WorkLogEntry
+from ai_hats_rack.models import TaskCard, WorkLogEntry
 from ai_hats_observe import SessionManager
 from ai_hats.paths import runs_dir, tasks_dir
 from ai_hats.runtime import SubAgentRunner
@@ -44,6 +44,9 @@ def _null_payload(**kw):
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
     card_dir = tasks_dir(project_dir) / card.id
+    # The rack's atomic write needs the card dir to exist (the tracker's went
+    # through ai_hats_core.atomic_write_text, which created parents itself).
+    card_dir.mkdir(parents=True, exist_ok=True)
     card.save(card_dir / "task.yaml")
     if plan_body is not None:
         (card_dir / "plan.md").write_text(plan_body)
@@ -58,7 +61,7 @@ def test_load_linked_context_happy_path_and_ordering(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-900",
             title="Epic: release train",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="EPIC DESCRIPTION BODY",
             work_log=[
                 WorkLogEntry(timestamp="2026-01-01T00:00:00Z", message="OLD EPIC ENTRY"),
@@ -72,7 +75,7 @@ def test_load_linked_context_happy_path_and_ordering(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-901",
             title="Release 1.2.0",
-            state=TaskState.DONE,
+            state="done",
             description="RELEASE DESCRIPTION BODY",
         ),
     )
@@ -81,7 +84,7 @@ def test_load_linked_context_happy_path_and_ordering(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-902",
             title="Bug in the release",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="the child ticket",
             parent_task="HATS-900",
             related=["HATS-901"],
@@ -109,7 +112,7 @@ def test_load_linked_context_no_links_returns_empty(tmp_path: Path) -> None:
     project_dir.mkdir()
     _write_card(
         project_dir,
-        TaskCard(id="HATS-902", title="lonely ticket", state=TaskState.EXECUTE),
+        TaskCard(id="HATS-902", title="lonely ticket", state="execute"),
     )
     assert _runner(project_dir)._load_linked_context("HATS-902") == ""
 
@@ -122,7 +125,7 @@ def test_load_linked_context_missing_target_is_skipped(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-900",
             title="Real epic",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="REAL EPIC BODY",
         ),
     )
@@ -131,7 +134,7 @@ def test_load_linked_context_missing_target_is_skipped(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-902",
             title="child",
-            state=TaskState.EXECUTE,
+            state="execute",
             parent_task="HATS-900",
             related=["HATS-404"],  # dangling: no such card
         ),
@@ -149,7 +152,7 @@ def test_load_linked_context_epic_without_plan_is_card_only(tmp_path: Path) -> N
         TaskCard(
             id="HATS-900",
             title="Epic no plan",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="EPIC CARD ONLY",
         ),
         # no plan_body → no plan.md written
@@ -159,7 +162,7 @@ def test_load_linked_context_epic_without_plan_is_card_only(tmp_path: Path) -> N
         TaskCard(
             id="HATS-902",
             title="child",
-            state=TaskState.EXECUTE,
+            state="execute",
             parent_task="HATS-900",
         ),
     )
@@ -204,7 +207,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-900",
             title="Epic",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="EPIC BODY FOR AGY",
         ),
     )
@@ -213,7 +216,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-902",
             title="child",
-            state=TaskState.EXECUTE,
+            state="execute",
             parent_task="HATS-900",
         ),
     )
@@ -228,7 +231,7 @@ def test_build_meta_prompt_wires_linked_context_section(tmp_path: Path) -> None:
     # A ticket with no links → no LINKED_CONTEXT section.
     _write_card(
         project_dir,
-        TaskCard(id="HATS-903", title="lonely", state=TaskState.EXECUTE),
+        TaskCard(id="HATS-903", title="lonely", state="execute"),
     )
     out_nolinks = _runner(project_dir)._build_meta_prompt(
         role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id="HATS-903"

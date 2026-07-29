@@ -226,20 +226,26 @@ def test_hyp_revive_edge_name_from_stalled(runner, tmp_path):
 
 def test_proposal_create_vote_accept(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
-    pid = _json(
+    created = _json(
         _run(
             runner, tasks, "proposal", "create", "a proposal",
             "--category", "rule", "--target", "t", "--description", "d", "--rationale", "why",
+            "--failed-session-id", "20260504-120000-1",
             "--json",
         )
-    )["task"]["id"]
+    )
+    pid = created["task"]["id"]
     assert pid == "PROP-001"
+    # meta-proposal marker (HATS-1264): the flag lands on the card at create...
+    assert created["task"]["failed_session_id"] == "20260504-120000-1"
     voted = _json(
         _run(runner, tasks, "proposal", "vote", pid, "--reasoning", "sound", "--session-id", "s1", "--json")
     )
     assert voted["task"]["votes"][-1]["session_id"] == "s1"
     accepted = _json(_run(runner, tasks, "transition", pid, "accept", "--json"))
     assert accepted["task"]["state"] == "accepted"
+    # ...and survives the round-trip through disk on every later read.
+    assert accepted["task"]["failed_session_id"] == "20260504-120000-1"
 
 
 def test_proposal_create_bad_choice_is_typed_refusal(runner, tmp_path):

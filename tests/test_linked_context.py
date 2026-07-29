@@ -5,8 +5,8 @@ the assembly is one seam. These tests pin the module-level API directly (the
 runner-level behaviour is covered by ``test_runtime_linked_context.py``, which
 still passes — proving the move is behaviour-preserving).
 
-HATS-1258: cards are WRITTEN here with the tracker model and READ by the module
-with the rack one, so a green run is the cross-model on-disk parity proof.
+HATS-1264: the tracker package is gone — fixtures now use the rack model the
+module already reads with (same ``task.yaml``, states as plain strings).
 """
 
 from __future__ import annotations
@@ -14,12 +14,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context, load_ticket
-from ai_hats_tracker.models import TaskCard, TaskState, WorkLogEntry
+from ai_hats_rack.models import TaskCard, WorkLogEntry
 from ai_hats.paths import tasks_dir
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
     card_dir = tasks_dir(project_dir) / card.id
+    # The rack's atomic write needs the card dir to exist (the tracker's went
+    # through ai_hats_core.atomic_write_text, which created parents itself).
+    card_dir.mkdir(parents=True, exist_ok=True)
     card.save(card_dir / "task.yaml")
     if plan_body is not None:
         (card_dir / "plan.md").write_text(plan_body)
@@ -33,7 +36,7 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
         TaskCard(
             id="HATS-900",
             title="Epic",
-            state=TaskState.EXECUTE,
+            state="execute",
             description="EPIC DESCRIPTION BODY",
             work_log=[
                 WorkLogEntry(timestamp="2026-01-01T00:00:00Z", message="OLD ENTRY"),
@@ -44,14 +47,14 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
     )
     _write_card(
         project_dir,
-        TaskCard(id="HATS-901", title="Release", state=TaskState.DONE, description="RELEASE BODY"),
+        TaskCard(id="HATS-901", title="Release", state="done", description="RELEASE BODY"),
     )
     _write_card(
         project_dir,
         TaskCard(
             id="HATS-902",
             title="child",
-            state=TaskState.EXECUTE,
+            state="execute",
             parent_task="HATS-900",
             related=["HATS-901"],
         ),
@@ -68,7 +71,7 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
 def test_load_linked_context_module_empty_when_no_links(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
-    _write_card(project_dir, TaskCard(id="HATS-902", title="lonely", state=TaskState.EXECUTE))
+    _write_card(project_dir, TaskCard(id="HATS-902", title="lonely", state="execute"))
     root = tasks_dir(project_dir)
     assert load_linked_context(tasks_root=root, ticket_id="HATS-902") == ""
     assert load_linked_context(tasks_root=root, ticket_id="HATS-404") == ""
@@ -78,7 +81,7 @@ def test_load_linked_context_module_empty_when_no_links(tmp_path: Path) -> None:
 def test_load_ticket_module(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
-    _write_card(project_dir, TaskCard(id="HATS-902", title="t", state=TaskState.EXECUTE))
+    _write_card(project_dir, TaskCard(id="HATS-902", title="t", state="execute"))
     root = tasks_dir(project_dir)
     assert "HATS-902" in load_ticket(tasks_root=root, ticket_id="HATS-902")
     assert load_ticket(tasks_root=root, ticket_id="HATS-404") == ""

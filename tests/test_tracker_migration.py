@@ -85,16 +85,21 @@ def test_tracker_migration_idempotent(tmp_path: Path) -> None:
 
 
 def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
-    """End-to-end: after migration, TaskManager finds the task via new paths."""
-    from ai_hats_tracker.state import TaskManager
-    from ai_hats.tracker_wiring import tracker_paths
+    """End-to-end: after migration, the rack kernel finds the task via new paths.
+
+    The read-back rides the production wiring (HATS-1264): ``build_rack_kernel``
+    resolves its own tracker layout, so a migration that lands the card anywhere
+    else than :func:`tracker_paths` is invisible here — the same proof the
+    retired ``TaskManager(layout=tracker_paths(...))`` read-back carried.
+    """
+    from ai_hats.rack_wiring import build_rack_kernel
 
     _seed_tracker_legacy(tmp_path)
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()
 
-    mgr = TaskManager(tmp_path, prefix="HATS", layout=tracker_paths(tmp_path))
-    task = mgr.get_task("HATS-001")
+    kernel = build_rack_kernel(tmp_path, prefix="HATS")
+    task = kernel.get("HATS-001")
     assert task is not None
     assert task.title == "x"
 

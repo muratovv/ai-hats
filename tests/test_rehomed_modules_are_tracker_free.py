@@ -12,6 +12,7 @@ The rest of ``src/ai_hats`` still imports the tracker on purpose: ``cli/`` (S3),
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "ai_hats"
@@ -42,6 +43,40 @@ def _import_roots(tree: ast.Module) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             roots.add(node.module.split(".", 1)[0])
     return roots
+
+
+def test_tracker_package_is_not_importable():
+    """The deleted package must not resolve — not even as a namespace package.
+
+    HATS-1264 hit this on master: the venv still carried an orphaned
+    ``_editable_impl_ai_hats_tracker.pth`` from the removed workspace member,
+    putting ``packages/ai-hats-tracker/src`` back on ``sys.path``; untracked
+    ``__pycache__`` dirs left the directory in place; the two together resolve
+    ``ai_hats_tracker`` as an *empty namespace package*. Collection errors then
+    read ``unknown location`` instead of ``ModuleNotFoundError``, so a stale
+    environment misreports which imports are really broken.
+    """
+    spec = importlib.util.find_spec(FORBIDDEN)
+    where = getattr(spec, "submodule_search_locations", None)
+    assert spec is None, (
+        f"{FORBIDDEN} is deleted (HATS-1262) but still resolves from {where} — "
+        "drop the orphaned .pth from the venv and remove the stale source tree"
+    )
+
+
+def test_namespace_package_detector_fires(tmp_path, monkeypatch):
+    """A green gate above means 'really gone', not 'find_spec can't see it'.
+
+    Reproduces the exact HATS-1264 shape — a bare directory, no ``__init__.py``,
+    reachable via ``sys.path`` — and proves ``find_spec`` reports it.
+    """
+    (tmp_path / FORBIDDEN).mkdir()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    spec = importlib.util.find_spec(FORBIDDEN)
+    assert spec is not None, "detector blind to a namespace package — the guard is vacuous"
+    assert spec.origin is None, "expected a namespace package (no __init__.py), got a real module"
 
 
 def test_guarded_modules_import_no_tracker():

@@ -1,10 +1,11 @@
 """CLI tests for `ai-hats reflect issue` — mocks pipeline at module boundary.
 
-HATS-1044 R6: the command now writes/reads the HYP backlog through the rack
+HATS-1044 R6: the command writes/reads the HYP backlog through the rack
 workspace (dir-per-card). Fixtures seed the catalog with its ``backlog.yaml`` and
 migrate any flat HYP via the migration tool (good dogfood); assertions read back
-through the tracker compat shim (``HypothesisStore``), which translates the
-migrated rack card to the tracker model.
+through the rack itself (HATS-1264) — the consumer-facing ``HypView`` for what
+``reflect``/``judge`` render, the stored card for the fields that view does not
+carry (source_task link, exit_criteria, baseline).
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ from click.testing import CliRunner
 
 from ai_hats.cli.reflect import reflect
 from ai_hats.paths import hypotheses_dir, runs_dir
+from ai_hats.rack_workspace import HypView, active_hypotheses, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
-from ai_hats_tracker.hypothesis import HypothesisStore
 
 
 def _migrate(pd: Path) -> None:
@@ -50,9 +51,26 @@ def _write_active_hyp(pd: Path, hyp_id: str, **extras) -> None:
     _migrate(pd)  # flat → dir-per-card so the workspace reads it
 
 
-def _load(pd: Path, hyp_id: str):
-    """Read the migrated card back through the compat shim (tracker model view)."""
-    return HypothesisStore(hypotheses_dir(pd)).load(hyp_id)
+def _card(pd: Path, hyp_id: str):
+    """The stored card, read back through the rack kernel that owns the backlog."""
+    card = rack_workspace(pd).kernel_for(hyp_id).get(hyp_id)
+    assert card is not None, f"{hyp_id} is not on disk"
+    return card
+
+
+def _view(pd: Path, hyp_id: str) -> HypView:
+    """The active-HYP view the reflect/judge consumers render. Absent from it ⇒
+    the card is gone or no longer active — both are failures for these tests."""
+    views = {h.id: h for h in active_hypotheses(rack_workspace(pd))}
+    assert hyp_id in views, f"{hyp_id} is not an active hypothesis"
+    return views[hyp_id]
+
+
+def _hyp_ids(pd: Path) -> set[str]:
+    """Every HYP card in the catalog, state-blind — the old ``list_all`` claim.
+    Globs the dir-per-card layout because the rack facade's only listing
+    (``active_hypotheses``) filters by state."""
+    return {p.parent.name for p in hypotheses_dir(pd).glob("HYP-*/task.yaml")}
 
 
 def _flat_files(pd: Path) -> list[Path]:
@@ -102,11 +120,11 @@ def test_default_mode_writes_without_prompt(project_dir, monkeypatch):
     assert "created HYP-001" in res.output
     # No interactive prompt in default mode
     assert "Write this intake?" not in res.output
-    saved = _load(project_dir, "HYP-001")
-    assert saved.status == "active"
-    assert saved.source_task == "supervisor-observation"
+    saved = _card(project_dir, "HYP-001")
+    assert saved.state == "active"
+    assert saved.links["source_task"] == ["supervisor-observation"]
     assert saved.title.startswith("agent ignores")
-    assert saved.exit_criteria.confirm == ["4 sessions clean"]
+    assert saved.extras["exit_criteria"]["confirm"] == ["4 sessions clean"]
 
 
 def test_merge_appends_validation_log_no_new_file(project_dir, monkeypatch):
@@ -130,12 +148,13 @@ def test_merge_appends_validation_log_no_new_file(project_dir, monkeypatch):
     )
     assert res.exit_code == 0, res.output
     assert "merged into HYP-001" in res.output
-    saved = _load(project_dir, "HYP-001")
+    saved = _view(project_dir, "HYP-001")
     assert len(saved.validation_log) == 1
     entry = saved.validation_log[0]
-    assert entry.verdict == "inconclusive"
-    assert entry.evidence.startswith("same pattern")
-    assert entry.session_id == "20260512-120000-1"
+    assert entry["verdict"] == "inconclusive"
+    assert entry["evidence"].startswith("same pattern")
+    assert entry["session_id"] == "20260512-120000-1"
+    assert _hyp_ids(project_dir) == {"HYP-001"}  # merged, not a new card
 
 
 def test_pipeline_failure_with_active_hyps_fails_loud(project_dir, monkeypatch):
@@ -146,7 +165,7 @@ def test_pipeline_failure_with_active_hyps_fails_loud(project_dir, monkeypatch):
     assert res.exit_code != 0
     assert "active hypotheses exist" in res.output
     # No NEW hypothesis was created.
-    assert {h.id for h in HypothesisStore(hypotheses_dir(project_dir)).list_all()} == {"HYP-001"}
+    assert _hyp_ids(project_dir) == {"HYP-001"}
 
 
 def test_pipeline_failure_no_active_hyps_graceful_degrade(project_dir, monkeypatch):
@@ -154,11 +173,11 @@ def test_pipeline_failure_no_active_hyps_graceful_degrade(project_dir, monkeypat
     _mock_pipeline_raises(monkeypatch, RuntimeError("api down"))
     res = CliRunner().invoke(reflect, ["issue", "an observation worth keeping"])
     assert res.exit_code == 0, res.output
-    saved = _load(project_dir, "HYP-001")
-    assert saved.hypothesis == "an observation worth keeping"
+    saved = _card(project_dir, "HYP-001")
+    assert saved.extras["hypothesis"] == "an observation worth keeping"
     assert len(saved.title) <= 60
-    assert saved.baseline is None
-    assert saved.expected_outcome == []
+    assert saved.extras.get("baseline") is None
+    assert saved.extras.get("expected_outcome", []) == []
 
 
 def test_empty_marker_block_triggers_fail_loud(project_dir, monkeypatch):
@@ -179,7 +198,7 @@ def test_preview_mode_shows_draft_and_can_abort(project_dir, monkeypatch):
     assert res.exit_code == 0
     assert "Intake draft:" in res.output
     assert "aborted" in res.output
-    assert HypothesisStore(hypotheses_dir(project_dir)).list_all() == []
+    assert _hyp_ids(project_dir) == set()
 
 
 def test_preview_mode_writes_on_yes(project_dir, monkeypatch):
@@ -211,7 +230,7 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
     )
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
-    assert _load(project_dir, "HYP-001").source_task == "HATS-304"
+    assert _card(project_dir, "HYP-001").links["source_task"] == ["HATS-304"]
 
 
 def test_background_spawns_detached_subprocess_and_returns(
@@ -273,7 +292,6 @@ def test_build_intake_prompt_includes_recent_evidence(project_dir):
     import json
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats.rack_workspace import HypView
 
     h = HypView(
         id="HYP-001",
@@ -312,7 +330,6 @@ def test_build_intake_prompt_omits_evidence_when_empty(project_dir):
     import json
 
     from ai_hats.cli.reflect import _build_intake_prompt
-    from ai_hats.rack_workspace import HypView
 
     h = HypView(
         id="HYP-001",

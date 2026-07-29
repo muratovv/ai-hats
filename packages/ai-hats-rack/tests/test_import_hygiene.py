@@ -15,7 +15,6 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "ai_hats_rack"
 FORBIDDEN = (
     "ai_hats",  # the integrator (prefix-checked: ai_hats.* too)
     "ai_hats_core",
-    "ai_hats_tracker",
     "ai_hats_wt",
     "ai_hats_observe",
     "ai_hats_library",

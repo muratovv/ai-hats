@@ -1,8 +1,9 @@
 """Tests for the ``{{backlog_fsm_edges}}`` FSM-token substitution (HATS-1051).
 
 The token lets the hatrack skill carry the FULL, authoritative backlog edge set
-without a hand-maintained table: it is rendered from ``TaskState`` and injected
-at skill materialization (same gate as the ``<ai_hats_dir>`` placeholder).
+without a hand-maintained table: it is rendered from the live backlog FSM and
+injected at skill materialization (same gate as the ``<ai_hats_dir>``
+placeholder).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from ai_hats_core import ComponentKind, ResolvedComponent
 
-from ai_hats_tracker.models import TaskState
+from ai_hats_rack.fsm import load_topology
 from ai_hats.paths import tasks_dir
 from ai_hats.placeholders import (
     FSM_EDGES_TOKEN,
@@ -88,18 +89,22 @@ def test_malformed_backlog_yields_marker_not_raise(tmp_path: Path, caplog) -> No
     assert "rack ls" in caplog.text
 
 
+# A project with no catalog backlog.yaml (bare tmp_path) renders the PACKAGED
+# default, which is what no-arg ``load_topology()`` loads — so the topology below
+# is the same FSM the renderer resolved, read through the rack's own accessor.
 def test_render_has_a_row_per_state(tmp_path: Path) -> None:
     table = render_backlog_fsm_edges(tmp_path)
-    for state in TaskState:
-        assert f"| `{state.value}` |" in table
+    for state in load_topology().states:
+        assert f"| `{state}` |" in table
 
 
 def test_render_cells_match_valid_transitions(tmp_path: Path) -> None:
     table = render_backlog_fsm_edges(tmp_path)
-    for state, targets in TaskState.valid_transitions().items():
-        row = _row(table, state.value)
-        for target in targets:
-            assert f"`{target.value}`" in row, f"{state.value}->{target.value} missing"
+    topology = load_topology()
+    for state in topology.states:
+        row = _row(table, state)
+        for target in topology.targets(state):
+            assert f"`{target}`" in row, f"{state}->{target} missing"
 
 
 def test_render_marks_terminal_state(tmp_path: Path) -> None:
