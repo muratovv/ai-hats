@@ -372,7 +372,7 @@ def _apply_link(txn: OpTxn, op: LinkOp) -> None:
     if not exists(op.target, targets):
         raise UnknownTaskError(op.target)
     if kind is not None:
-        guard_reciprocal(txn.card_dir.parent, kind, txn.card.id, op.target)
+        guard_reciprocal(txn.card_dir.parent, txn.registry, kind, txn.card.id, op.target)
     result = link_on_card(txn.registry, txn.card, op.target, op.kind, actor=txn.actor)
     if result.changed and txn.dispatch_link is not None:
         # In-lock, card already mutated: a declared handler sees the new link

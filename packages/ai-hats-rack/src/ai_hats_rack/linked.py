@@ -158,31 +158,38 @@ def _kind_ids_readonly(kind: LinkKind, card: TaskCard) -> tuple[str, ...]:
     return tuple(card.links.get(kind.name, ()))
 
 
-def _mutual_pair_is_legal(kind: LinkKind) -> bool:
-    """Whether A→B and B→A may both stand on ``kind``.
+def _mutual_pair_is_legal(registry: LinksRegistry, kind: LinkKind) -> bool:
+    """Whether A->B and B->A may both stand on kind.
 
-    A symmetric kind IS the mutual pair; a scalar hierarchy edge keeps its
-    long-standing exemption; everything else is directional. Merely declaring
-    an inverse does not settle it — `depends_on` gained the derived `blocks`
-    (HATS-1208), and a reverse VIEW says nothing about asserting both
-    directions at once.
+    A symmetric kind IS the mutual pair, and the hierarchy edge has always
+    been exempt. Nothing else: merely declaring an inverse does not settle
+    it, because a derived inverse is a reverse VIEW and says nothing about
+    asserting both directions at once (HATS-1208 depends_on/blocks,
+    HATS-1328 folded_into/subsumes).
     """
-    return kind.symmetric or (kind.arity == "one" and kind.inverse == "children")
+    if kind.symmetric:
+        return True
+    hierarchy = registry.hierarchy_kind
+    return hierarchy is not None and hierarchy.name == kind.name
 
 
-def reject_reciprocal(kind: LinkKind, source_id: str, target_card: TaskCard) -> None:
+def reject_reciprocal(
+    registry: LinksRegistry, kind: LinkKind, source_id: str, target_card: TaskCard
+) -> None:
     """Refuse A→B when B→A already stands on a directional kind.
 
     Tracker parity (HATS-1327): the immediate pair only. A transitive
     A→B→C→A needs the graph traversal the tracker also declined to build.
     """
-    if _mutual_pair_is_legal(kind):
+    if _mutual_pair_is_legal(registry, kind):
         return
     if source_id in _kind_ids_readonly(kind, target_card):
         raise ReciprocalLinkError(kind.name, source_id, target_card.id)
 
 
-def guard_reciprocal(tasks_dir: Path, kind: LinkKind, source_id: str, target: str) -> None:
+def guard_reciprocal(
+    tasks_dir: Path, registry: LinksRegistry, kind: LinkKind, source_id: str, target: str
+) -> None:
     """Catalog-side half of the guard: load the target, then check it.
 
     Sits with the caller's existence check by design — `link_on_card` is the
@@ -190,11 +197,11 @@ def guard_reciprocal(tasks_dir: Path, kind: LinkKind, source_id: str, target: st
     and the target-existence check). Cross-backlog kinds are skipped: their
     target is in another catalog and their pairing is the mirror handler's job.
     """
-    if kind.targets or _mutual_pair_is_legal(kind):
+    if kind.targets or _mutual_pair_is_legal(registry, kind):
         return
     target_card = _load_card(tasks_dir, target)
     if target_card is not None:
-        reject_reciprocal(kind, source_id, target_card)
+        reject_reciprocal(registry, kind, source_id, target_card)
 
 
 def _remove_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
@@ -284,7 +291,7 @@ def link(
     exists = exists_checker or (lambda tid, _targets: card_exists(tasks_dir, tid))
     if not exists(target, link_kind.targets or None):
         raise UnknownTaskError(target)
-    guard_reciprocal(tasks_dir, link_kind, task_id, target)
+    guard_reciprocal(tasks_dir, reg, link_kind, task_id, target)
 
     def op(card: TaskCard) -> tuple[LinkResult, bool]:
         result = link_on_card(reg, card, target, kind, actor=actor)

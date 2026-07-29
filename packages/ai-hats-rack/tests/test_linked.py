@@ -158,6 +158,21 @@ def test_link_reciprocal_folded_into_is_refused(tasks_dir):
         link(tasks_dir, "T-2", "T-1", "folded_into")
 
 
+def test_a_renamed_hierarchy_kind_keeps_the_mutual_pair_exemption(tasks_dir, tmp_path):
+    """The exemption belongs to the hierarchy kind, not to the name
+    'children' — a backlog that renames the pair keeps it."""
+    reg = _backlog_registry(
+        tmp_path,
+        "    - {name: epic_of, arity: one, inverse: subtasks_view}\n"
+        "    - {name: subtasks_view, derived: true, inverse: epic_of}\n",
+    )
+    assert reg.hierarchy_kind.name == "epic_of"
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "epic_of", registry=reg)
+    link(tasks_dir, "T-2", "T-1", "epic_of", registry=reg)  # must not raise
+
+
 def test_link_unknown_target_is_refused(tasks_dir):
     make_card(tasks_dir, "T-1")
     with pytest.raises(UnknownTaskError) as err:
