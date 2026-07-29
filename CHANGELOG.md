@@ -47,6 +47,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **A no-op self-heal no longer deadlocks the CLI in an infinite re-exec loop**
+  (HATS-1359). `bootstrap_or_die()` treated `attempt_self_heal()`'s exit code as
+  proof the missing dependency was importable, then `os.execv`'d
+  unconditionally. But `uv pip install <bare-name>` can exit 0 by auditing an
+  existing dist-info as already-satisfied without the module ever becoming
+  importable — so the re-exec'd process found the identical dep missing and
+  looped forever, until Ctrl-C. Because `cli.main()` calls it before subcommand
+  dispatch, even `ai-hats self update` — the in-band fix — hung, leaving no
+  escape but an out-of-band `uv` command. It now rechecks
+  `find_missing_runtime_deps()` before re-execing (the pattern
+  `verify_after_install()` already used one function over) and fails loud with
+  the rescue command instead of looping. **This release can trigger the
+  condition**: deleting `ai-hats-tracker` (above) leaves an editable install
+  whose metadata predates the removal still declaring a dependency whose source
+  directory is gone. Migration: `docs/migration-v0.14.0.md` §6.
+
 - **`ai-hats self update` prunes distributions the new version retired**
   (HATS-1280). `self update` installs, it does not synchronize: a dependency the
   new version dropped stayed in the venv with its console scripts. After 0.14.0

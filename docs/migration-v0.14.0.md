@@ -156,6 +156,10 @@ files are still read as a fallback. **The tasks catalog is untouched.**
 yanked. Publishing simply stops. `pip install ai-hats-tracker` therefore still
 resolves; do not treat its installability as a sign the CLI is supported.
 
+> **If you run an editable install, read §6 before upgrading.** This deletion is
+> what can strand a pre-0.14.0 editable install in a self-heal loop that also
+> swallows `ai-hats self update`.
+
 ## 4. `ai-hats self update` prunes retired distributions
 
 **What changed (HATS-1280).** `self update` installs, it does not synchronize —
@@ -202,6 +206,52 @@ The exemption is claimed for the consumer set this repository ships. If you
 maintain a project that drove its backlog through `ai-hats task`, you are the
 unenumerated consumer this clause could not buy a cycle for — §1 is your
 migration path, and the boxed warning above is the failure mode to check first.
+
+## 6. If `ai-hats` hangs repeating "missing runtime deps" — recover out of band
+
+**The one failure this release can inflict on the way in.** Symptom, observed
+live in a consuming project:
+
+```console
+$ ai-hats config status
+ai-hats: missing runtime deps ['ai-hats-tracker']; healing via uv…
+ai-hats: missing runtime deps ['ai-hats-tracker']; healing via uv…
+ai-hats: missing runtime deps ['ai-hats-tracker']; healing via uv…
+^C
+```
+
+**Why it happens.** §3 deletes `packages/ai-hats-tracker`. A project whose
+editable `ai-hats` install metadata was written *before* that deletion still
+declares the dependency, while its `.pth` points at a source directory that no
+longer exists. `uv pip install ai-hats-tracker` then audits the stale dist-info
+as already-satisfied and exits 0 **without making the module importable**. The
+old bootstrap trusted that exit code and re-exec'd, met the identical missing
+dep, healed again, re-exec'd again — forever.
+
+**Why you cannot fix it with `ai-hats`.** The bootstrap runs before subcommand
+dispatch, so `ai-hats self update` — the in-band repair — hangs in the same
+loop. This is why the recovery below is a bare `uv` command: at this point no
+`ai-hats` invocation can complete.
+
+**Recover** (point the editable install at your actual ai-hats checkout):
+
+```bash
+uv pip install --python <project-venv>/bin/python -e /path/to/ai-hats
+```
+
+Then confirm and finish the upgrade normally:
+
+```bash
+<project-venv>/bin/python -m ai_hats config status
+ai-hats self update
+```
+
+**Already fixed going forward (HATS-1359).** From this release, the bootstrap
+rechecks whether the dependency actually became importable and, if not, exits 1
+printing the rescue command instead of re-execing. Note the ordering, though:
+the code that runs during *your* upgrade is the version you are upgrading
+**from**, so a pre-0.14.0 install can still hit the loop once — this section is
+the escape hatch for exactly that window.
 
 ## References
 
