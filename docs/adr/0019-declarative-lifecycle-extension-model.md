@@ -38,8 +38,10 @@ D9**: rev 5–6 resolved bindings out of the *provider's* per-session skill tree
 which by then existed only for claude — see D9 for what falsified it. Rev 7 also
 amends D6, **inverts D8** (the retirement of `lifecycle_hooks` now leads the
 migration instead of trailing it, and closes by tombstone rather than a
-deprecation window), adds **D10** (channel taxonomy) and corrects a stale Risk
-paragraph in *Consequences* that rev 5 had already superseded.
+deprecation window), adds **D10** (channel taxonomy; its `detached` contract
+amended in review 2026-07-29 to a fail-open dispatcher with spawn-time
+resolution — HATS-1266 re-scope) and corrects a stale Risk paragraph in
+*Consequences* that rev 5 had already superseded.
 
 ## Context
 
@@ -432,7 +434,10 @@ than to build a temporary fourth channel whose only purpose is deletion.
 
 ### D10 — Channel taxonomy: `in_process` vs `detached`
 
-*Added at rev 7 (HATS-1240).* D9 raises a question the ADR had left implicit:
+*Added at rev 7 (HATS-1240). The `detached` contract was amended during the
+same review (2026-07-29, supervisor, HATS-1266 re-scope): fail-open dispatcher
+with spawn-time resolution, replacing "manifest + fail-closed backstop" —
+implementation HATS-1337.* D9 raises a question the ADR had left implicit:
 if a check can execute from ai-hats's own root, why do the four pre-existing
 channels each keep a copy somewhere else? The answer is that only one of them
 has to — and naming the axis prevents the next channel from picking a shape by
@@ -444,10 +449,10 @@ The axis is **not** "snapshot versus live". Nothing in the system snapshots
 teardown. The axis is **who is guaranteed to be running when the script is
 spawned**:
 
-| mode         | who spawns it                                | what it requires                                                                            |
-| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `in_process` | ai-hats itself                               | an absolute path resolved fresh at spawn; no copy, no manifest, sibling files intact        |
-| `detached`   | a third party, with no ai-hats process alive | materialization to a stable self-describing dir, plus a manifest and a fail-closed backstop |
+| mode         | who spawns it                                | what it requires                                                                                                                                                                      |
+| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in_process` | ai-hats itself                               | an absolute path resolved fresh at spawn; no copy, no manifest, sibling files intact                                                                                                  |
+| `detached`   | a third party, with no ai-hats process alive | one static dispatcher per event, installed at init — no role logic, no venv paths; the gate set resolved at spawn time from ai-hats-owned state; **fail-open** when ai-hats is absent |
 
 Assignment: `in_process` — `checks` (this ADR), `worktree` `wt_in`/`wt_out`,
 `runtime_hooks` on both surfaces. `detached` — **`git_hooks`, alone.**
@@ -459,9 +464,25 @@ cwd-sensitive, and in the zipimport tier resolves to a temp directory alive only
 for the calling process. Separately, git requires a real executable named exactly
 `<event>` under `core.hooksPath`, and the dispatcher is generated rather than
 shipped by a skill. Note what is *not* a reason: `.githooks/` is git-ignored, so
-"it is committed with the repository" does not apply. Symlinking the `.d/`
-entries into the library is not a halfway house either — a broken link trips the
-dispatcher's fail-closed backstop and blocks every commit.
+"it is committed with the repository" does not apply.
+
+**What `detached` requires — amended 2026-07-29 (HATS-1266 re-scope).** The
+original rev-7 row read "a stable self-describing dir, plus a manifest and a
+fail-closed backstop" — a faithful description of what exists, and the wrong
+contract. The durable artifact is only the **orchestrator**: the per-event
+dispatcher plus `core.hooksPath`, carrying no role logic and no paths into a
+versioned venv, so it survives `self update` unchanged. Gate *content* stays in
+the declaring skills; the dispatcher resolves the gate set at spawn time from
+ai-hats-owned state — no per-gate copies under `<event>.d/`, no
+`.ai-hats-manifest`, no GIT drift arm (resolution mechanism owned by
+HATS-1337's plan). Degradation is **fail-open with a one-line warning**: the
+fail-closed backstop's failure mode is a wedged human commit whose named
+remedy — `ai-hats self init` — needs exactly the binary that is gone. A gate
+that cannot be resolved is a gate that does not run, said out loud; it is
+never a commit that cannot happen. Symlinking gates into the library — the
+rev-7 halfway house — stays rejected, now on staleness grounds: a link into a
+versioned install dies at every `self update`, which is the one lifecycle
+event the orchestrator must survive.
 
 Two further attributes are today implicit, and silently violated:
 
