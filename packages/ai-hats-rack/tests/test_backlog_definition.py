@@ -65,6 +65,7 @@ def test_links_match_the_golden_kinds():
         "folded_into",
         "children",
         "blocks",
+        "subsumes",
     )
     assert defn.links_registry.hierarchy_kind.name == "parent_task"
     assert defn.links_registry.children_kind.name == "children"

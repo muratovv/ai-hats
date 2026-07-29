@@ -96,6 +96,8 @@ from .kernel import (
 )
 from .linked import (
     DEFAULT_MAX_BYTES,
+    AlreadyFoldedError,
+    AlreadyLinkedError,
     CardRow,
     ContextPackage,
     DocRef,
@@ -142,6 +144,8 @@ from .workspace import (
 __all__ = [
     "DEFAULT_MAX_BYTES",
     "AbortOperation",
+    "AlreadyFoldedError",
+    "AlreadyLinkedError",
     "AmbiguousExtensionError",
     "AmbiguousPrefixError",
     "Append",

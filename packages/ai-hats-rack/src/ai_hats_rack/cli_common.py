@@ -32,7 +32,13 @@ from .kernel import (
     UnknownTaskError,
     UnroutableIdError,
 )
-from .linked import EmptyGrepPatternError, ReciprocalLinkError, SelfLinkError
+from .linked import (
+    AlreadyFoldedError,
+    AlreadyLinkedError,
+    EmptyGrepPatternError,
+    ReciprocalLinkError,
+    SelfLinkError,
+)
 from .models import CardLoadError, UnreadableWriteError
 from .ops import AttachSourceError, OpParseError
 from .registry import DerivedLinkKindError, UnknownLinkKindError
@@ -117,6 +123,14 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
         },
     ),
     SelfLinkError: lambda e: ("self_link", {"task_id": e.task_id}),
+    AlreadyFoldedError: lambda e: (
+        "already_folded",
+        {"task_id": e.task_id, "current": e.current},
+    ),
+    AlreadyLinkedError: lambda e: (
+        "already_linked",
+        {"task_id": e.task_id, "kind": e.kind, "current": e.current},
+    ),
     ReciprocalLinkError: lambda e: (
         "reciprocal_link",
         {"kind": e.kind, "source": e.source, "target": e.target},

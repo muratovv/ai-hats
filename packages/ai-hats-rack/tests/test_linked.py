@@ -7,6 +7,8 @@ import pytest
 
 from ai_hats_rack.kernel import UnknownTaskError
 from ai_hats_rack.linked import (
+    AlreadyFoldedError,
+    AlreadyLinkedError,
     ReciprocalLinkError,
     SelfLinkError,
     build_context,
@@ -183,7 +185,54 @@ def test_link_unknown_kind_is_typed(tasks_dir):
         "see_also",
         "folded_into",
         "blocks",
+        "subsumes",
     }
+
+
+def test_repeated_fold_raises_already_folded_error(tasks_dir):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    make_card(tasks_dir, "T-3")
+    res1 = link(tasks_dir, "T-1", "T-2", "folded_into")
+    assert res1.changed is True
+    res2 = link(tasks_dir, "T-1", "T-2", "folded_into")
+    assert res2.changed is False
+
+    with pytest.raises(AlreadyFoldedError) as err:
+        link(tasks_dir, "T-1", "T-3", "folded_into")
+    assert err.value.task_id == "T-1"
+    assert err.value.current == "T-2"
+
+    unlink(tasks_dir, "T-1", "T-2", "folded_into")
+    res3 = link(tasks_dir, "T-1", "T-3", "folded_into")
+    assert res3.changed is True
+
+
+def test_repeated_scalar_link_raises_already_linked_error(tasks_dir):
+    make_card(tasks_dir, "P-1")
+    make_card(tasks_dir, "P-2")
+    make_card(tasks_dir, "C-1")
+    link(tasks_dir, "C-1", "P-1", "parent_task")
+    with pytest.raises(AlreadyLinkedError) as err:
+        link(tasks_dir, "C-1", "P-2", "parent_task")
+    assert err.value.task_id == "C-1"
+    assert err.value.kind == "parent_task"
+    assert err.value.current == "P-1"
+
+
+def test_subsumes_derived_reverse_link_resolution(tasks_dir):
+    make_card(tasks_dir, "T-1")
+    make_card(tasks_dir, "T-2")
+    link(tasks_dir, "T-1", "T-2", "folded_into")
+    pkg = build_context(tasks_dir, "T-2")
+    assert "subsumes" in pkg.links
+    assert len(pkg.links["subsumes"]) == 1
+    assert pkg.links["subsumes"][0].id == "T-1"
+
+    with pytest.raises(DerivedLinkKindError) as err:
+        link(tasks_dir, "T-2", "T-1", "subsumes")
+    assert err.value.kind == "subsumes"
+    assert err.value.inverse == "folded_into"
 
 
 def test_blocks_derived_reverse_link_resolution(tasks_dir):

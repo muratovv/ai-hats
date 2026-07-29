@@ -43,7 +43,11 @@ from ai_hats_rack.kernel import (
     TaskExistsError,
     UnknownTaskError,
 )
-from ai_hats_rack.linked import SelfLinkError
+from ai_hats_rack.linked import (
+    AlreadyFoldedError,
+    AlreadyLinkedError,
+    SelfLinkError,
+)
 from ai_hats_rack.models import DeltaFieldError
 from ai_hats_rack.ops import AttachSourceError, OpParseError
 from ai_hats_rack.registry import (
@@ -135,6 +139,16 @@ _CASES = [
         },
     ),
     (SelfLinkError("HATS-1"), "self_link", {"task_id": "HATS-1"}),
+    (
+        AlreadyFoldedError("HATS-1", "HATS-2"),
+        "already_folded",
+        {"task_id": "HATS-1", "current": "HATS-2"},
+    ),
+    (
+        AlreadyLinkedError("HATS-1", "parent_task", "HATS-2"),
+        "already_linked",
+        {"task_id": "HATS-1", "kind": "parent_task", "current": "HATS-2"},
+    ),
     (
         UnknownLinkKindError("wat", ["blocks", "related"]),
         "unknown_link_kind",

@@ -51,9 +51,10 @@ links:
     - { name: depends_on, arity: many, aliases: [depends], inverse: blocks, read_docs: [summary.md, retro.md] }
     - { name: related, arity: many, inverse: related, read_docs: [summary.md, retro.md] }
     - { name: see_also, arity: many, inverse: see_also, read_docs: [summary.md, retro.md] }
-    - { name: folded_into, arity: one, aliases: [fold], read_docs: [summary.md] }
+    - { name: folded_into, arity: one, aliases: [fold], inverse: subsumes, read_docs: [summary.md] }
     - { name: children, derived: true, inverse: parent_task }
     - { name: blocks, derived: true, inverse: depends_on }
+    - { name: subsumes, derived: true, inverse: folded_into }
 
 fields:
   - { name: description, type: str, default: "" }

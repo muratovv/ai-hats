@@ -63,6 +63,7 @@ def test_packaged_default_kinds():
         "folded_into",
         "children",
         "blocks",
+        "subsumes",
     )
     assert reg.hierarchy_kind.name == "parent_task"
     assert reg.children_kind.name == "children"
@@ -73,7 +74,10 @@ def test_packaged_default_kinds():
     # directional scalar kind — FROM.folded_into = TO, no auto-mirror.
     assert reg.get("see_also").symmetric is True
     assert reg.get("folded_into").arity == "one"
+    assert reg.get("folded_into").inverse == "subsumes"
     assert reg.get("folded_into").symmetric is False
+    assert reg.get("subsumes").derived is True
+    assert reg.get("subsumes").inverse == "folded_into"
     assert reg.require("fold").name == "folded_into"  # legacy spelling resolves
 
 
@@ -114,6 +118,7 @@ def test_unknown_kind_names_the_configured_set():
         "folded_into",
         "children",
         "blocks",
+        "subsumes",
     )
 
 

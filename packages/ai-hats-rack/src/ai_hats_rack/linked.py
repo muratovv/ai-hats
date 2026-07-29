@@ -50,6 +50,25 @@ class SelfLinkError(RackError):
         super().__init__(f"Task '{task_id}' cannot link to itself")
 
 
+class AlreadyFoldedError(RackError):
+    """Attempted to fold a task that is already folded into another card."""
+
+    def __init__(self, task_id: str, current: str) -> None:
+        self.task_id = task_id
+        self.current = current
+        super().__init__(f"Task '{task_id}' is already folded into '{current}'")
+
+
+class AlreadyLinkedError(RackError):
+    """Attempted to link a scalar edge when it already holds a target."""
+
+    def __init__(self, task_id: str, kind: str, current: str) -> None:
+        self.task_id = task_id
+        self.kind = kind
+        self.current = current
+        super().__init__(f"Task '{task_id}' already has '{kind}' set to '{current}'")
+
+
 class ReciprocalLinkError(RackError):
     """A→B refused because B→A already exists on a kind with no inverse."""
 
@@ -112,8 +131,13 @@ def _kind_ids(kind: LinkKind, card: TaskCard) -> list[str]:
 def _add_link(kind: LinkKind, card: TaskCard, target: str) -> bool:
     """Add ``target`` under ``kind``; return whether anything changed."""
     if kind.name in LINK_STORAGE_FIELDS and kind.arity == "one":
-        if getattr(card, kind.name) == target:
+        current = getattr(card, kind.name)
+        if current == target:
             return False
+        if current:
+            if kind.name == "folded_into":
+                raise AlreadyFoldedError(card.id, current)
+            raise AlreadyLinkedError(card.id, kind.name, current)
         setattr(card, kind.name, target)
         return True
     ids = _kind_ids(kind, card)
@@ -143,7 +167,7 @@ def _mutual_pair_is_legal(kind: LinkKind) -> bool:
     (HATS-1208), and a reverse VIEW says nothing about asserting both
     directions at once.
     """
-    return kind.symmetric or (kind.arity == "one" and bool(kind.inverse))
+    return kind.symmetric or (kind.arity == "one" and kind.inverse == "children")
 
 
 def reject_reciprocal(kind: LinkKind, source_id: str, target_card: TaskCard) -> None:
