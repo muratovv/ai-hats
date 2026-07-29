@@ -3,6 +3,24 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.1.4
+
+- `create` now writes its declared links through the same op as
+  `transition --link` (HATS-1327). Previously `--depends` wrote the field raw,
+  bypassing every guard the link path applies. Two behaviour changes follow:
+  - **`--depends` validates the target.** A dependency on an id that does not
+    exist is now a typed `unknown_task` refusal, matching `transition --link`;
+    it used to be accepted and persisted as a dangling edge.
+  - **`create --depends` logs what it linked.** The card used to be persisted
+    with an empty `work_log`.
+- A mutual pair on a link kind that declares no `inverse` is refused as
+  `reciprocal_link` (HATS-1327). `A depends_on B` plus `B depends_on A` is a
+  deadlock, not a relationship; the same holds for `folded_into`. Kinds that
+  declare an inverse (`related`, `see_also`, `parent_task`) are bidirectional by
+  design and unaffected. Restores the guard the retired tracker enforced; like
+  the tracker, only the immediate pair is detected, not a transitive
+  `A → B → C → A`.
+
 ## 0.1.3
 
 - Zero-residue docstring fix in `plan_extract.py` (HATS-1262).

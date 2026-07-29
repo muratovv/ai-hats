@@ -21,7 +21,7 @@ from .dispatch import Append, FieldOp, Set
 from .docstore import _require_valid_name, freeze_on_card, remove_on_card
 from .errors import RackError
 from .kernel import UnknownTaskError
-from .linked import link_on_card, unlink_on_card
+from .linked import guard_reciprocal, link_on_card, unlink_on_card
 from .models import LINK_STORAGE_FIELDS, TaskCard
 from .registry import LinksRegistry
 
@@ -371,6 +371,8 @@ def _apply_link(txn: OpTxn, op: LinkOp) -> None:
     exists = txn.exists or (lambda tid, _t: (txn.card_dir.parent / tid / "task.yaml").exists())
     if not exists(op.target, targets):
         raise UnknownTaskError(op.target)
+    if kind is not None:
+        guard_reciprocal(txn.card_dir.parent, kind, txn.card.id, op.target)
     result = link_on_card(txn.registry, txn.card, op.target, op.kind, actor=txn.actor)
     if result.changed and txn.dispatch_link is not None:
         # In-lock, card already mutated: a declared handler sees the new link
