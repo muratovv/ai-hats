@@ -2062,6 +2062,8 @@ class WorktreeManager:
         * Auto-prune is gone unconditionally; orphan admin entries are
           surfaced via ``wt list`` and cleaned by manual ``git worktree
           prune``.
+        * HATS-1332: a path git no longer tracks is already removed, not a
+          failure — see :meth:`_clean_unregistered_shell`.
         """
         if self.worktree_path is None:
             return
@@ -2077,6 +2079,9 @@ class WorktreeManager:
                     "Worktree dir already absent (%s); git removal failed harmlessly",
                     self.worktree_path,
                 )
+                return
+            if not self._is_registered_worktree(self.worktree_path):
+                self._clean_unregistered_shell(self.worktree_path, force_rmtree=force_rmtree)
                 return
             stderr = (exc.stderr or "").strip()
             tail = stderr.splitlines()[-1] if stderr else "<no stderr>"
@@ -2098,6 +2103,45 @@ class WorktreeManager:
                     self.worktree_path,
                     f"rmtree: {rmtree_exc}; git: {tail}",
                 ) from rmtree_exc
+
+    def _is_registered_worktree(self, path: Path) -> bool:
+        """True while git still carries an admin entry for ``path``.
+
+        Probed positively rather than by matching git's stderr: the messages
+        are gettext-translated and no caller pins a locale (HATS-1332).
+        """
+        target = path.resolve()
+        return any(
+            Path(entry["path"]).resolve() == target
+            for entry in self.list_worktrees(self.project_dir)
+            if "path" in entry
+        )
+
+    def _clean_unregistered_shell(self, path: Path, *, force_rmtree: bool) -> None:
+        """Dispose of a leftover dir git no longer tracks (HATS-1332).
+
+        Reached when ``git worktree remove`` failed only because the admin
+        entry is gone — the removal's success condition. git is refusing
+        nothing here, so the HATS-488/B-03 raise would defend nothing; but a
+        shell that still holds files may hold work git can no longer see, so
+        it is removed only when empty (the tmp-reaper shape) or on explicit
+        ``--force-remove`` consent. Never raises: the caller's teardown has
+        already succeeded.
+        """
+        holds_files = any(p.is_file() or p.is_symlink() for p in path.rglob("*"))
+        if holds_files and not force_rmtree:
+            logger.warning(
+                "Worktree %s is no longer registered with git, but its dir still "
+                "holds files — left on disk (rm -rf it, or `wt discard --force-remove`)",
+                path,
+            )
+            return
+        try:
+            shutil.rmtree(path)  # safe-delete: ok unregistered shell (HATS-1332)
+        except OSError as exc:
+            logger.warning("Leftover worktree shell %s could not be removed: %s", path, exc)
+            return
+        logger.info("Worktree %s was already removed from git; leftover shell cleaned", path)
 
     # HATS-482 (B-02): stderr substrings → classified causes for
     # `_delete_branch` failures. Matched case-insensitively.
