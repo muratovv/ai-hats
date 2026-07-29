@@ -3,6 +3,23 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.1.6
+
+- New verb: **`rack doctor`** — read-only backlog integrity report over every
+  backlog mounted in the current project (HATS-1335). Checks: dangling links
+  (all stored kinds, cross-backlog refs routed to their sibling catalog),
+  transitive link cycles on directional kinds (the shape the HATS-1327 pair
+  guard deliberately leaves uncovered), stored-inverse mirror drift, duplicate
+  ids in list kinds, missing `required`/`required_on` fields, and unreadable
+  cards — a card directory `scan_cards` would silently skip is a finding here.
+  Exit 0 clean, exit 1 with findings. No autofix by design: a "fixed" id is a
+  guess; repair stays a human `transition --link/--unlink` decision.
+- `link`/`unlink` are no longer exported from the package root (HATS-1335).
+  They are the lock-free wrappers that fire **no** link events, so a library
+  caller could silently bypass the `mirror-link` reaction; the event-bearing
+  write path is `transition --link`. The functions remain module-internal
+  (`ai_hats_rack.linked`) with the contract documented.
+
 ## 0.1.5
 
 - `parent_task` now goes through the same link op as `depends_on` and
