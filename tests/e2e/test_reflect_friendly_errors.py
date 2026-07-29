@@ -56,6 +56,7 @@ def provider_less_project(tmp_project):
         pytest.param(("reflect", "all"), id="reflect-all"),
         pytest.param(("reflect", "role", "maintainer"), id="reflect-role"),
         pytest.param(("reflect", "roles"), id="reflect-roles"),
+        pytest.param(("reflect", "issue", "something broken"), id="reflect-issue"),
     ],
 )
 def test_e2e_reflect_reports_config_error_without_traceback(
@@ -81,3 +82,8 @@ def test_e2e_reflect_reports_config_error_without_traceback(
         f"traceback leaked to user-facing output:\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+    hyp_dir = provider_less_project.path / ".agent" / "ai-hats" / "tracker" / "backlog" / "hypotheses"
+    created_hyps = list(hyp_dir.glob("HYP-*.yaml")) if hyp_dir.exists() else []
+    assert not created_hyps, f"expected no HYP cards created on error, found: {created_hyps}"
+

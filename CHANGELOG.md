@@ -45,12 +45,9 @@ since the latest tag lives under **Unreleased** until the next release.
   opt out by omission — the 15 per-site handlers are gone and `reflect.py` was
   not touched. In-process invocations (`CliRunner`) get the same rendering as
   the shipped binary, and anything unregistered still surfaces its traceback
-  rather than being flattened into a tidy exit 2. One surface still opts out by
-  catching first: `reflect issue` wraps its intake in `except (RuntimeError,
-  IntakeParseError)`, and `MissingProviderError` is a `RuntimeError`, so a
-  provider-less config there still degrades to a minimal HYP at exit 0 instead
-  of reaching the group. `RoleNotFoundError` and `UnknownProviderError` are not
-  `RuntimeError` subclasses and do reach it.
+  rather than being flattened into a tidy exit 2. (The temporary carve-out
+  where `reflect issue` caught `MissingProviderError` was eliminated in
+  HATS-1348, so all `reflect` subcommands now render consistently.)
 
 - **An empty `provider:` in `ai-hats.yaml` no longer ends in a traceback**
   (HATS-1224). The compose seam raised a bare `RuntimeError` that no CLI arm
