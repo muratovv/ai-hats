@@ -44,7 +44,21 @@ done < <(
 [[ ${#staged[@]} -eq 0 ]] && exit 0
 
 # Resolve the checker command (overridable for tests / interpreter pinning).
-read -r -a _cmd <<< "${AI_HATS_RULE_DELIVERY_CMD:-python3 -m ai_hats.rule_delivery}"
+# The default prefers the committed checkout's own venv over PATH: in a worktree
+# PATH's python3 is MAIN's, and whether IT can import ai_hats decides whether this
+# gate runs at all — a fail-open skip, not a failure (HATS-1314, mirrors
+# pre-commit-smoke.sh). --show-toplevel, not --git-common-dir: the latter points
+# at MAIN from inside a worktree, which is the bug itself.
+if [[ -n "${AI_HATS_RULE_DELIVERY_CMD:-}" ]]; then
+    read -r -a _cmd <<< "$AI_HATS_RULE_DELIVERY_CMD"
+else
+    _toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "$_toplevel" && -x "$_toplevel/.venv/bin/python3" ]]; then
+        _cmd=("$_toplevel/.venv/bin/python3" -m ai_hats.rule_delivery)
+    else
+        _cmd=(python3 -m ai_hats.rule_delivery)
+    fi
+fi
 
 # Fail-open if the runner binary is unavailable.
 if ! command -v "${_cmd[0]}" >/dev/null 2>&1; then

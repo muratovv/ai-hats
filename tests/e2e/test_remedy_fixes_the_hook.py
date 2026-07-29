@@ -8,10 +8,18 @@ not re-typed here: they are **extracted from the message itself** and executed
 against a real git worktree with the real smoke hook installed, and the test
 asserts which interpreter the hook ended up spawning.
 
-Both halves matter. Without the PATH step the hook must still resolve a foreign
-interpreter (that is the bug HATS-1245 reported); with it, the worktree's own.
-The negative half is what proves the added line is load-bearing rather than
-decorative — drop it from ``remedy_message`` and this file goes red.
+The remedy has **two** audiences, and HATS-1314 split the halves along them:
+
+  * the git hooks — since HATS-1291/1314 both interpreter-resolving gates take
+    ``<git-toplevel>/.venv``, so step 1 alone satisfies them;
+  * a ``pytest`` the operator types — ``check_checkout_integrity`` runs on any
+    pytest (``tests/conftest.py``), and for that audience the bare name still
+    resolves through PATH, so step 2 is what actually fixes it.
+
+The negative half is what proves the PATH line is load-bearing rather than
+decorative — drop it from ``remedy_message`` and this file goes red. Until
+HATS-1314 that half was aimed at the hook, which had meanwhile been fixed at the
+source: it asserted a bug that no longer existed.
 
 Fidelity vs cost: the repo under test is synthetic and its ``[dev]`` extra is
 just pytest, so the remedy's commands run verbatim in seconds instead of the
@@ -197,29 +205,65 @@ def _commit_and_read_probe(sandbox: Sandbox, name: str, preamble: str = "") -> P
     return Path(sandbox.probe.read_text().strip())
 
 
-def test_provisioning_alone_leaves_the_hook_on_a_foreign_interpreter(sandbox: Sandbox) -> None:
-    """The bug: step 1 followed, step 2 skipped — the gate still runs elsewhere."""
+def _pytest_and_read_probe(sandbox: Sandbox, preamble: str = "") -> Path:
+    """Run a bare ``pytest`` in the worktree; return the interpreter that served it."""
+    env = clean_env(os.environ)
+    env[PROBE_ENV] = str(sandbox.probe)
+    sandbox.probe.unlink(missing_ok=True)
+
+    res = _bash(f"{preamble}pytest -q", cwd=sandbox.wt, env=env)
+    assert sandbox.probe.is_file(), (
+        f"the probe test never ran — nothing to measure.\n{res.stdout}\n{res.stderr}"
+    )
+    return Path(sandbox.probe.read_text().strip())
+
+
+def test_provisioning_alone_makes_the_hook_use_the_worktree(sandbox: Sandbox) -> None:
+    """Acceptance (a): for the git hooks, step 1 is now the whole fix.
+
+    Was the negative half — until HATS-1291/1314 the gates resolved their
+    interpreter through PATH, so provisioning alone left them on MAIN's. Both
+    hooks now take ``<git-toplevel>/.venv``, so the hook half of the remedy is
+    satisfied by step 1 and this pins that.
+    """
     ran = _commit_and_read_probe(sandbox, "a.txt")
-    assert sandbox.wt not in ran.parents, (
-        f"expected the hook to miss the worktree venv without the PATH step, but it used {ran}"
+    assert sandbox.wt in ran.parents, (
+        f"the hook should take the worktree venv after step 1 alone, but used {ran}"
     )
 
 
-def test_the_printed_path_line_makes_the_hook_use_the_worktree(sandbox: Sandbox) -> None:
-    """Acceptance (b): the remedy's own PATH line, executed, fixes the gate."""
+def test_provisioning_alone_leaves_a_bare_pytest_on_the_foreign_interpreter(
+    sandbox: Sandbox,
+) -> None:
+    """The negative half, on the audience that still needs step 2.
+
+    ``check_checkout_integrity`` runs on ANY pytest (``tests/conftest.py``), so
+    the remedy is also printed to someone who typed ``pytest`` themselves. For
+    them step 1 changes nothing: the bare name still resolves through PATH. This
+    is what keeps the PATH line load-bearing rather than decorative — drop it
+    from ``remedy_message`` and the two tests below go red.
+    """
+    ran = _pytest_and_read_probe(sandbox)
+    assert sandbox.wt not in ran.parents, (
+        f"a bare pytest should still resolve PATH's interpreter, but used {ran}"
+    )
+
+
+def test_the_printed_path_line_fixes_a_bare_pytest(sandbox: Sandbox) -> None:
+    """Acceptance (b): the remedy's own PATH line, executed, redirects pytest."""
     export = _one(sandbox.msg, "export PATH=")
-    ran = _commit_and_read_probe(sandbox, "b.txt", preamble=f"{export}\n")
+    ran = _pytest_and_read_probe(sandbox, preamble=f"{export}\n")
     assert sandbox.wt in ran.parents, (
-        f"the remedy's PATH line did not redirect the hook to the worktree venv: {ran}"
+        f"the remedy's PATH line did not redirect pytest to the worktree venv: {ran}"
     )
 
 
 def test_the_one_shot_form_is_runnable_as_printed(sandbox: Sandbox) -> None:
     """The second form is a copy-paste prefix, so it must survive substitution."""
     one_shot = _one(sandbox.msg, "PATH=")
-    assert one_shot.endswith("git commit ...")
-    prefix = one_shot.removesuffix("git commit ...")
-    ran = _commit_and_read_probe(sandbox, "c.txt", preamble=prefix)
+    assert one_shot.endswith("pytest ...")
+    prefix = one_shot.removesuffix("pytest ...")
+    ran = _pytest_and_read_probe(sandbox, preamble=prefix)
     assert sandbox.wt in ran.parents, (
-        f"the one-shot form did not redirect the hook to the worktree venv: {ran}"
+        f"the one-shot form did not redirect pytest to the worktree venv: {ran}"
     )
