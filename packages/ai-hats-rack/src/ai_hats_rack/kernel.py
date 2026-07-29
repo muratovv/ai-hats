@@ -320,11 +320,12 @@ class Kernel:
                     title=title,
                     state=self.topology.initial,
                     parent_task=parent_task,
-                    depends_on=list(depends_on),
                     created=now,
                     updated=now,
                     **resolved,
                 )
+                # HATS-1327: pre-persist, so a refused link leaves nothing on disk.
+                self._apply_declared_links(task, depends_on, actor=actor, caller_cwd=caller_cwd)
                 self._persist(task)
         except Timeout as exc:
             raise LockTimeoutError(
@@ -332,6 +333,33 @@ class Kernel:
             ) from exc
         journal = self._dispatch_epicify(parent_task, task.id, actor=actor, caller_cwd=caller_cwd)
         return KernelResult(task=task, journal=journal)
+
+    def _apply_declared_links(
+        self, task: TaskCard, depends_on: Sequence[str], *, actor: str, caller_cwd: Path
+    ) -> None:
+        """Apply `create`'s declared links through the transition link op.
+
+        The point of HATS-1327: one write path for a link, so a card cannot be
+        born holding an edge that `transition --link` would have refused. The
+        card is still in memory, so a refusal aborts before any write.
+        ``dispatch_link`` stays None — create never fired link events for these
+        edges, and this is a guard change, not an event change.
+        """
+        if not depends_on:
+            return
+        from .ops import LinkOp, OpTxn, apply_non_state_op
+
+        txn = OpTxn(
+            task_id=task.id,
+            card=task,
+            card_dir=self.tasks_dir / task.id,
+            caller_cwd=caller_cwd,
+            registry=self.registry,
+            actor=actor,
+            exists=self.target_exists,
+        )
+        for target in depends_on:
+            apply_non_state_op(txn, LinkOp(kind="depends_on", target=target))
 
     def _next_id(self) -> str:
         max_num = 0

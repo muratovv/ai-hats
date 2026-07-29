@@ -119,6 +119,51 @@ def test_create_existing_id_refused(tasks_dir, cwd):
         _create(kernel, cwd)
 
 
+# ---------------------------------------------------------------------------
+# HATS-1327: `create` writes links through the SAME path as `transition --link`
+# ---------------------------------------------------------------------------
+
+
+def test_create_depends_on_unknown_target_is_refused(tasks_dir, cwd):
+    """`create --depends` used to write the field raw, so it accepted an id
+    that does not exist while `transition --link` refused it. One write path,
+    one answer. (Absorbs HATS-1331.)"""
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(UnknownTaskError) as err:
+        _create(kernel, cwd, depends_on=["T-404"])
+    assert err.value.task_id == "T-404"
+    assert not (tasks_dir / "T-1").exists()  # refused before the card is persisted
+
+
+def test_create_cannot_build_a_reciprocal_pair(tasks_dir, cwd):
+    """The create-side route to a mutual dependency: it needed a forward
+    reference to a not-yet-existing card. With existence enforced, the first
+    half is already refused, so the pair cannot be assembled this way."""
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(UnknownTaskError):
+        _create(kernel, cwd, task_id="T-1", depends_on=["T-2"])
+    assert not (tasks_dir / "T-1").exists()
+
+
+def test_create_depends_on_logs_the_link(tasks_dir, cwd):
+    """Behaviour change (HATS-1327): routing through the link op means create
+    logs what it linked. It used to persist an empty work_log."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    task = _create(kernel, cwd, task_id="T-2", depends_on=["T-1"])
+    assert task.depends_on == ["T-1"]
+    assert any("Linked T-1 (depends_on)" in e.message for e in task.work_log)
+
+
+def test_create_depends_on_still_persists_in_one_write(tasks_dir, cwd):
+    """The link ops apply to the in-memory card BEFORE the persist, so a card
+    is never on disk without its declared dependencies."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    _create(kernel, cwd, task_id="T-2", depends_on=["T-1"])
+    assert kernel.get("T-2").depends_on == ["T-1"]
+
+
 @pytest.mark.parametrize(
     "task_id",
     ["HYP-999", "FOO-1", "T-fix", "proj:T-1"],
