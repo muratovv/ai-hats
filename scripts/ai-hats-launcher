@@ -16,6 +16,21 @@
 set -euo pipefail
 
 PROJECT="$(pwd)"
+# HATS-1306: linked git worktree resolution — hop to main checkout root when inside a linked worktree,
+# provided that main checkout is an onboarded ai-hats project (.agent/ or ai-hats.yaml).
+if git_dirs="$(git rev-parse --git-dir --git-common-dir 2>/dev/null)" && [[ -n "$git_dirs" ]]; then
+    git_dir="$(echo "$git_dirs" | head -1)"
+    common_dir="$(echo "$git_dirs" | tail -1)"
+    git_dir_abs="$(cd "$git_dir" 2>/dev/null && pwd -P || true)"
+    common_dir_abs="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
+    if [[ -n "$git_dir_abs" && -n "$common_dir_abs" && "$git_dir_abs" != "$common_dir_abs" ]]; then
+        main_root="$(cd "$common_dir_abs/.." 2>/dev/null && pwd -P || true)"
+        if [[ -n "$main_root" && ( -d "$main_root/.agent" || -f "$main_root/ai-hats.yaml" ) ]]; then
+            PROJECT="$main_root"
+        fi
+    fi
+fi
+
 # HATS-766: anonymous git+https default (override still accepts ssh/local).
 REPO_URL="${AI_HATS_REPO_URL:-git+https://github.com/muratovv/ai-hats.git}"
 AH_DIR="$PROJECT/.agent/ai-hats"
@@ -69,7 +84,8 @@ inherited_venv="${AI_HATS_VENV:-}"
 if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
     pin_proj="${AI_HATS_PROJECT_DIR/#\~/$HOME}"
     pin_real="$(cd "$pin_proj" 2>/dev/null && pwd -P || echo "$pin_proj")"
-    if [[ "$pin_real" != "$(pwd -P)" ]]; then
+    proj_real="$(cd "$PROJECT" 2>/dev/null && pwd -P || echo "$PROJECT")"
+    if [[ "$pin_real" != "$proj_real" ]]; then
         if [[ -n "$inherited_venv" ]]; then
             echo "ai-hats: AI_HATS_VENV=$inherited_venv is pinned to project $pin_proj — foreign to $PROJECT; ignoring the leaked session pin." >&2
             inherited_venv=""
