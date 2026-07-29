@@ -18,6 +18,7 @@ from ai_hats.paths import tasks_dir
 from ai_hats.placeholders import (
     FSM_EDGES_TOKEN,
     FSM_EDGES_UNAVAILABLE,
+    _resolve_backlog,
     expand_fsm_edges_token,
     render_backlog_fsm_edges,
 )

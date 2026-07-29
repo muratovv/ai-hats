@@ -14,8 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context, load_ticket
-from ai_hats_rack.models import TaskCard, WorkLogEntry
 from ai_hats.paths import tasks_dir
+from ai_hats_rack.models import TaskCard, WorkLogEntry
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
@@ -39,8 +39,8 @@ def test_load_linked_context_module_assembles_links(tmp_path: Path) -> None:
             state="execute",
             description="EPIC DESCRIPTION BODY",
             work_log=[
-                WorkLogEntry(timestamp="2026-01-01T00:00:00Z", message="OLD ENTRY"),
-                WorkLogEntry(timestamp="2026-02-02T00:00:00Z", message="LATEST ENTRY"),
+                {"timestamp": "2026-01-01T00:00:00Z", "message": "OLD ENTRY"},
+                {"timestamp": "2026-02-02T00:00:00Z", "message": "LATEST ENTRY"},
             ],
         ),
         plan_body="# EPIC PLAN\nEPIC PLAN BODY",

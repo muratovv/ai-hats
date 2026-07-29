@@ -12,6 +12,8 @@ from pathlib import Path
 
 from ai_hats_rack.extensions.sections import DEFAULT_PLAN_SECTIONS
 
+# --- plan-gate orchestrator ↔ engine sync (HATS-636) ----------------------
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAN_GATE_SKILL = (
     REPO_ROOT
