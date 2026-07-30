@@ -31,17 +31,25 @@ def _empty_agg_usage() -> dict[str, int]:
     }
 
 
+# No token-capable source existed, so the zeros in ``model_stats``/``agg_usage``
+# mean "unmeasured", not "measured zero" (HATS-1374). Same spelling the
+# ``usage/v1`` report already uses for this condition.
+FLAG_NO_STRUCTURED_TRANSCRIPT = "no-structured-transcript"
+
+
 @dataclass(frozen=True)
 class ParsedTranscript:
     """A parsed session: turns + optional token telemetry.
 
     ``model_stats``/``agg_usage`` are populated only by structured (JSONL) parses;
-    a trace-only parse leaves them empty/zero (no token data on that surface).
+    a trace-only parse leaves them empty/zero (no token data on that surface) and
+    says so in ``flags`` — read those before treating a zero as measured.
     """
 
     turns: list[Turn]
     model_stats: dict[str, dict] = field(default_factory=dict)
     agg_usage: dict[str, int] = field(default_factory=_empty_agg_usage)
+    flags: list[str] = field(default_factory=list)
 
 
 @runtime_checkable

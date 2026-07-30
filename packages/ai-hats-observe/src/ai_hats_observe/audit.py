@@ -15,8 +15,18 @@ from typing import TYPE_CHECKING
 from ai_hats_core import atomic_write_text
 
 from .artifacts import TRANSCRIPT_TXT, session_start_dt
+from .parsers.base import FLAG_NO_STRUCTURED_TRANSCRIPT
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
+
+
+def _merge_flags(prior: object, new: list[str]) -> list[str]:
+    """Union of a record's existing flags and this parse's, insertion-ordered."""
+    merged = [f for f in prior if isinstance(f, str)] if isinstance(prior, list) else []
+    for flag in new:
+        if flag not in merged:
+            merged.append(flag)
+    return merged
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -156,7 +166,9 @@ class AuditWriter:
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
         audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
-        self._write_metrics(session, turns, parsed.model_stats, parsed.agg_usage)
+        self._write_metrics(
+            session, turns, parsed.model_stats, parsed.agg_usage, flags=parsed.flags
+        )
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
@@ -202,28 +214,49 @@ class AuditWriter:
         turns: list[Turn],
         model_stats: dict[str, dict],
         agg_usage: dict,
+        flags: list[str] | None = None,
     ) -> None:
-        """Overwrite metrics.json with enriched data from the parse."""
-        existing = _load_metrics_safe(session) or {}
+        """Enrich metrics.json with the parse, claiming a count only if measured.
 
-        existing.update({
-            "schema_version": AUDIT_SCHEMA_VERSION,
-            "turns": len(turns),
-            "tokens": {
-                "input": agg_usage.get("input_tokens", 0),
-                "output": agg_usage.get("output_tokens", 0),
-                "cache_read": agg_usage.get("cache_read_input_tokens", 0),
-                "cache_creation": agg_usage.get("cache_creation_input_tokens", 0),
-            },
-            "models": {
-                model: {
-                    "calls": stats["calls"],
-                    "input_tokens": stats["in"],
-                    "output_tokens": stats["out"],
-                }
-                for model, stats in model_stats.items()
-            },
-            "tool_calls": sum(len(t.tools) for t in turns),
-        })
+        HATS-1374 (verdict B7): this used to write the counters unconditionally,
+        so an unreachable transcript was recorded as a hard ``turns: 0`` /
+        ``tokens: {0,...}`` — indistinguishable from a measured zero, and it
+        overwrote SDK ground truth (``num_turns``/``total_cost_usd``) sitting in
+        the same file. Now an unmeasured parse annotates instead of asserting,
+        per ``rule_composition_value_contract §3``.
+        """
+        existing = _load_metrics_safe(session) or {}
+        parse_flags = list(flags or [])
+        existing["schema_version"] = AUDIT_SCHEMA_VERSION
+
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in parse_flags:
+            # Nothing token-capable was read. Leave every counter already in the
+            # record untouched — it belongs to the SDK or to an earlier parse
+            # that did measure — and say why this run added none.
+            existing["flags"] = _merge_flags(existing.get("flags"), parse_flags)
+            existing.setdefault("measured", False)
+        else:
+            existing.update({
+                "measured": True,
+                # Replaces, not merges: the flags describe the current measurement,
+                # so a stale "unmeasured" marker must not survive a good parse.
+                "flags": parse_flags,
+                "turns": len(turns),
+                "tokens": {
+                    "input": agg_usage.get("input_tokens", 0),
+                    "output": agg_usage.get("output_tokens", 0),
+                    "cache_read": agg_usage.get("cache_read_input_tokens", 0),
+                    "cache_creation": agg_usage.get("cache_creation_input_tokens", 0),
+                },
+                "models": {
+                    model: {
+                        "calls": stats["calls"],
+                        "input_tokens": stats["in"],
+                        "output_tokens": stats["out"],
+                    }
+                    for model, stats in model_stats.items()
+                },
+                "tool_calls": sum(len(t.tools) for t in turns),
+            })
 
         atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))

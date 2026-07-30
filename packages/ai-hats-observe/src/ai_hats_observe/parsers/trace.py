@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ..usage import empty_usage_report
-from .base import ParsedTranscript, Turn
+from .base import FLAG_NO_STRUCTURED_TRANSCRIPT, ParsedTranscript, Turn
 
 
 @dataclass
@@ -204,12 +204,17 @@ class TraceParser:
         self, jsonl_path: Path | None, trace_path: Path
     ) -> ParsedTranscript:
         entries = self._parse_trace(trace_path)
-        return ParsedTranscript(turns=self._extract_turns(entries))
+        # Flagged unconditionally: this surface has no token telemetry at all, so
+        # its zeros must never be read as a measurement (HATS-1374).
+        return ParsedTranscript(
+            turns=self._extract_turns(entries),
+            flags=[FLAG_NO_STRUCTURED_TRANSCRIPT],
+        )
 
     def parse_usage(
         self, jsonl_path: Path | None, trace_path: Path
     ) -> dict[str, Any]:
         """No token telemetry on this surface → a well-formed empty ``usage/v1``."""
         report = empty_usage_report(trace_path.name)
-        report["flags"].append("no-structured-transcript")
+        report["flags"].append(FLAG_NO_STRUCTURED_TRANSCRIPT)
         return report
