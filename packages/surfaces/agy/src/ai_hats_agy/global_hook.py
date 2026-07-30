@@ -42,7 +42,7 @@ def ensure_global_dispatcher_hook(settings_path: Path, port: "Materializer") -> 
         data["hooks"] = hooks_root
 
     changed = False
-    for event in ("PreToolUse", "PostToolUse", "Stop", "Notification"):
+    for event in ("PreToolUse", "PostToolUse", "Stop", "Notification", "PostInvocation"):
         event_list = hooks_root.setdefault(event, [])
         if not isinstance(event_list, list):
             event_list = []
