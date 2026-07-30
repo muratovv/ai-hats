@@ -213,8 +213,16 @@ def test_jsonl_path_deletes_trace(tmp_path):
     assert session.audit_path.exists()
 
 
-def test_fallback_path_deletes_trace(tmp_path):
-    """When no JSONL, trace.log must still be deleted after successful audit."""
+def test_fallback_path_keeps_trace(tmp_path):
+    """No JSONL ⇒ trace.log is the only copy of the session text — keep it.
+
+    HATS-1374 inverts the pre-existing contract (this test asserted the delete).
+    On the trace-only surfaces the scrape is lossy: agy yields zero turns because
+    the patterns are Claude's, so the audit came out a header stub and the source
+    went with it. 295 sessions ended up with no session text at all — 134 of them
+    agy. Deletion is now allowed only when a structured transcript both exists on
+    disk and parsed, because that copy outlives us.
+    """
     session = make_session(tmp_path)
     session.trace_path.write_text(
         "18:15:00.000 [SYS] Session started\n18:15:10.000 [REQ] test request\n"
@@ -222,8 +230,23 @@ def test_fallback_path_deletes_trace(tmp_path):
 
     AuditWriter().build(session, jsonl_path=None)
 
-    assert not session.trace_path.exists()
+    assert session.trace_path.exists(), "the only copy of the session text was deleted"
     assert session.audit_path.exists()
+
+
+def test_unparseable_jsonl_keeps_trace(tmp_path):
+    """A structured transcript that yields no turns does not license the delete.
+
+    Guards the other half: `jsonl_path` existing is not proof the text survived
+    — an empty or unreadable transcript leaves the trace as the only record.
+    """
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] Session started\n")
+    empty = make_jsonl(tmp_path, [])
+
+    AuditWriter().build(session, jsonl_path=empty)
+
+    assert session.trace_path.exists()
 
 
 def test_keep_raw_preserves_trace_jsonl(tmp_path):

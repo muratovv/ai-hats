@@ -22,7 +22,7 @@ from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .parsers.base import TranscriptParser, Turn
+    from .parsers.base import ParsedTranscript, TranscriptParser, Turn
 
 
 def _merge_flags(prior: object, new: list[str]) -> list[str]:
@@ -169,7 +169,8 @@ class AuditWriter:
     ) -> None:
         """Build enriched audit.md + metrics.json via the injected parser.
 
-        Deletes trace.log after successful audit unless keep_raw=True.
+        Deletes trace.log only when the session text is safe elsewhere — see
+        ``_may_drop_trace``.
         """
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
@@ -183,9 +184,22 @@ class AuditWriter:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
 
-        # Clean up raw trace — redundant after audit is written. Whitelist.
-        if not keep_raw and session.trace_path.exists():
+        if not keep_raw and self._may_drop_trace(jsonl_path, parsed) and session.trace_path.exists():
             session.trace_path.unlink()  # safe-delete: ok raw-trace (audit superseded)
+
+    @staticmethod
+    def _may_drop_trace(jsonl_path: Path | None, parsed: ParsedTranscript) -> bool:
+        """Whether the session text survives the deletion of trace.log.
+
+        HATS-1374: this used to be unconditional, which destroyed the only copy
+        of 295 sessions' text. The trace is redundant only when a structured
+        transcript both exists on disk (it outlives us) and actually parsed. On
+        the trace-only surfaces the scrape is lossy — agy yields zero turns, so
+        the audit was a header stub and the source went with it.
+        """
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags:
+            return False
+        return bool(jsonl_path and jsonl_path.exists() and parsed.turns)
 
     @staticmethod
     def _with_transcript_fallback(session: Session, audit_content: str) -> str:
