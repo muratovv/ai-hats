@@ -1,11 +1,11 @@
-# How-To: feedback loop (`reflect session` + `reflect all`)
+# How-To: feedback loop (`reflect session` + `reflect hypothesis`)
 
 Guide to setting up and using the retrospective pipeline. Two flows:
 
 - **`ai-hats reflect session`** — per-session retrospective run by the `session-reviewer` role (automatic after every session, or runnable by hand). Votes on every active hypothesis it can test [3] and, on self-problem, files a proposal for the maintainer.
-- **`ai-hats reflect all`** — manual triage of the accumulated HYP / PROP backlog, driven by the `judge` role.
+- **`ai-hats reflect hypothesis`** — two-phase bulk triage of the accumulated HYP / PROP backlog (Phase 1 `judge-auditor`, Phase 2 `judge`).
 
-> **Deprecation note (HATS-513 / ADR-0007).** `ai-hats reflect all` is being replaced by `ai-hats reflect hypothesis`, a two-phase pipeline: Phase 1 (`judge-auditor`, headless, read-only) produces a draft → Phase 2 (`judge`, HITL) discusses and ack's mutations. `--headless` runs Phase 1 only (CI / cron-safe). The recipes below still use `reflect all`; the new command has the same purpose with stronger contracts. Removal of `reflect all` is tracked as a follow-up.
+> **Legacy note:** `ai-hats reflect all` is deprecated and superseded by `ai-hats reflect hypothesis`.
 
 Filing a new HYP yourself while a symptom is fresh is a session-driven flow — see [Quick start (d)](#d-file-a-new-hypothesis-from-a-session).
 
@@ -23,7 +23,7 @@ Core terms (**session**, **HYP**, **PROP**, **SessionReview**, **JudgeReport**) 
 
 > Sample artifacts (synthetic but realistic shape): [4], [5], [6].
 
-**Reflect-all handoff** — `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md`. A markdown pointer doc the pre-flight of `ai-hats reflect all` writes for the `judge` LLM to read.
+**Reflect-hypothesis handoff** — `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`. A draft artifact Phase 1 (`judge-auditor`) writes for the Phase 2 (`judge`) session to consume.
 
 **Verdict** — one entry in a hypothesis's `validation_log`:
 
@@ -69,10 +69,11 @@ Open the latest `<id>.md` — `summary`, `observations`, `hypothesis_verdicts[]`
 ### c) Clear the backlog after a busy week
 
 ```bash
-ai-hats reflect all
-# drops you into an interactive chat with the `judge` role
-# the agent inspects each open PROP and active HYP, asks you for decisions,
-# and records a verdict / triage decision per item
+ai-hats reflect hypothesis
+# Phase 1 runs headless audit (judge-auditor) -> generates draft.md
+# Phase 2 drops you into interactive chat with the `judge` role with draft inlined
+# the agent inspects open PROPs and active HYPs, asks you for decisions,
+# executes approved CLI mutations, and writes final report
 ```
 
 At the end of the chat, statuses are bulk-applied in one call (either the agent runs it as its last action, or you run it yourself):
@@ -101,7 +102,7 @@ rack hyp create "Filters break under sub-agent refactors" \
 rack transition HYP-NNN --link source_task:HATS-029
 ```
 
-The card lands `active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect all` (Recipe c).
+The card lands `active`. From that moment, every subsequent `session-reviewer` run votes on it; you close it via `ai-hats reflect hypothesis` (Recipe c).
 
 Full CLI flags — `rack hyp create --help`. Backlog recipes — [14].
 
@@ -272,28 +273,55 @@ Only builds the handoff, does not invoke an interactive chat. Useful to:
 
 ## How a hypothesis reaches closure
 
+ai-hats reflect session --session 20260512-112233-1
+```
+
+Runs the `session-reviewer` role in the foreground without detaching. Useful when debugging why a review was skipped or produced unexpected output.
+
+---
+
+## Flow 2: backlog triage (`reflect hypothesis`)
+
+Accumulated HYP and PROP items are triaged via `ai-hats reflect hypothesis` (two-phase pipeline).
+
 <p align="center">
-  <img src="assets/diagrams/hypothesis-closure-flow.svg" alt="Hypothesis closure flow" width="420">
+  <img src="assets/diagrams/manual-reflect-all.svg" alt="Manual reflect-all diagram" width="520">
 </p>
 
-1. **Create.** Either by hand or as the follow-up to a `session-reviewer` self-problem. The card carries `success_criterion`, `observation_window`, and `exit_criteria`. Status starts at `active`.
-2. **Accumulate verdicts.** Every subsequent session triggers `session-reviewer`, which appends one entry to `validation_log` per applicable HYP.
-3. **Triage.** During `reflect all`, the pre-flight handoff shows counters per HYP (e.g. "8 confirmed, 1 inconclusive, 0 refuted"). You compare against the HYP's `exit_criteria` and either close it or extend the observation window.
-4. **Close.** Status flips to `confirmed` / `refuted` / `stalled`; `closed: YYYY-MM-DD` is set; the HYP drops out of the active list and `session-reviewer` stops voting on it.
+### The triage lifecycle
 
-Worked example: the synthetic HYP fixture shows a hypothesis after two appended verdicts and the `exit_criteria` thresholds that govern its closure.
+```
+            HYP active
+                │
+                ▼
+  [session-reviewer appends verdicts]
+                │
+                ▼
+  [reflect hypothesis: Phase 1 judge-auditor draft -> Phase 2 judge HITL]
+                │
+      ┌─────────┴─────────┐
+      ▼                   ▼
+HYP closed          PROP triaged
+(confirmed /        (accepted / rejected /
+ refuted / stalled)  deferred / duplicate)
+```
+
+1. **Accumulation.** `session-reviewer` runs after each session and appends verdicts to active HYPs.
+2. **Phase 1 Audit.** `ai-hats reflect hypothesis` launches `judge-auditor` (headless) to build a draft report at `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`.
+3. **Phase 2 Triage.** `judge` (HITL) inlines the draft, discusses decisions with the supervisor, executes approved CLI mutations, and bulk-commits proposal statuses via `ai-hats reflect commit`.
+4. **Close.** HYPs close into `confirmed` / `refuted` / `stalled`; PROPs flip to `accepted` / `rejected` / `deferred` / `duplicate`.
 
 ---
 
 ## Troubleshooting checklist
 
-| Symptom                                       | Where to look                                                                                                                                                                        |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| auto retro does not start                     | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                             |
-| validation_log empty after a session          | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect all`                                                 |
-| meta-PROP with `failed_session_id=...`        | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
-| `reflect all` fails with "claude not in PATH" | install Claude Code or use `--dry-run` and work with the handoff in an editor                                                                                                        |
-| `Overlay: cannot remove ...`                  | unrelated to the feedback loop — see [12]                                                                                                                                            |
+| Symptom                                              | Where to look                                                                                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| auto retro does not start                            | `feedback.session_retro.policy` ≠ `off` and the `smart_threshold` is met                                                                                                             |
+| validation_log empty after a session                 | run `ai-hats reflect session --session <id>` in foreground — you'll see the stack trace, and the meta-PROP surfaces in `reflect hypothesis`                                         |
+| meta-PROP with `failed_session_id=...`               | runtime harness caught a broken SessionReview artifact. Open `<ai_hats_dir>/sessions/retros/sessions/<id>.md`, rerun `ai-hats reflect session --session <id>` in foreground to retry |
+| `reflect hypothesis` fails with "claude not in PATH" | install Claude Code or use `--headless` to run Phase 1 only                                                                                                                          |
+| `Overlay: cannot remove ...`                         | unrelated to the feedback loop — see [12]                                                                                                                                            |                                                                                                 |
 
 ---
 
