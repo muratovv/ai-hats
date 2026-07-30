@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
     "ai-hats",
     "ai-hats-core",
+    "ai-hats-observe>=0.3.0",
     "filelock>=3.0",
 ]
 
@@ -45,3 +46,4 @@ packages = ["src/ai_hats_agy"]
 
 [tool.uv.sources]
 ai-hats = { workspace = true }
+ai-hats-observe = { workspace = true }

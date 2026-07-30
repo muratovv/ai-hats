@@ -269,9 +269,22 @@ def test_ensure_surface_plugin_installed_triggers_installer(monkeypatch) -> None
         installed_pkg.append(pkg)
         installed_state["cline"] = True
 
-    monkeypatch.setattr("ai_hats.surfaces_registry.is_surface_installed", fake_is_installed)
+    monkeypatch.setattr("ai_hats.self_heal._is_surface_module_installed", fake_is_installed)
     monkeypatch.setattr("ai_hats.self_heal.run_editable_heal", lambda repo_root=None: None)
 
     res = ensure_surface_plugin_installed("cline", installer=fake_installer)
     assert res is True
     assert installed_pkg == ["ai-hats-cline"]
+
+
+def test_ensure_surface_plugin_installed_raises_on_installer_error(monkeypatch) -> None:
+    from ai_hats.self_heal import ProviderInstallationError, ensure_surface_plugin_installed
+
+    def fake_installer(pkg: str) -> None:
+        raise RuntimeError("pip download error")
+
+    monkeypatch.setattr("ai_hats.self_heal._is_surface_module_installed", lambda name: False)
+    monkeypatch.setattr("ai_hats.self_heal.run_editable_heal", lambda repo_root=None: None)
+
+    with pytest.raises(ProviderInstallationError, match="Failed to auto-install surface plugin 'cline'"):
+        ensure_surface_plugin_installed("cline", installer=fake_installer)
