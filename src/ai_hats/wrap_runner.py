@@ -36,6 +36,7 @@ from .runtime_common import (
     _print_session_start,
     _print_session_end,
     _finalize_session_basic,
+    _flag_sensor_error,
     _run_finalize_hitl,
 )
 from .startup_notices import (
@@ -653,7 +654,10 @@ class WrapRunner:
                         transcript_resolver=payload.transcript_resolver,
                     )
                 except (Exception, KeyboardInterrupt):
-                    logger.warning("finalize-hitl pipeline failed", exc_info=True)
+                    # HATS-1374: parity with the sub-agent path — a dead sensor
+                    # is recorded in the artifact, not only whispered to a log.
+                    logger.error("finalize-hitl pipeline failed", exc_info=True)
+                    _flag_sensor_error(session)
             finally:
                 # The summary print is the only thing that surfaces the
                 # session id to the user. It MUST run, even on second

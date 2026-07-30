@@ -78,7 +78,9 @@ def test_unreachable_transcript_omits_counters_instead_of_writing_zeros(tmp_path
     assert m["measured"] is False
     assert "no-structured-transcript" in m["flags"]
     for absent in ("turns", "tokens", "models", "tool_calls"):
-        assert absent not in m, f"{absent!r} must be absent when nothing was measured, got {m[absent]!r}"
+        assert absent not in m, (
+            f"{absent!r} must be absent when nothing was measured, got {m[absent]!r}"
+        )
 
 
 def test_unmeasurable_parse_preserves_sdk_ground_truth(tmp_path):
@@ -101,6 +103,37 @@ def test_unmeasurable_parse_preserves_sdk_ground_truth(tmp_path):
     assert m["num_turns"] == 5
     assert m["total_cost_usd"] == pytest.approx(0.0286019)
     assert "turns" not in m, "SDK reported 5 turns — a fabricated turns:0 contradicts the same file"
+
+
+def test_legacy_fabricated_zeros_are_dropped_not_preserved(tmp_path):
+    """Re-enriching a pre-HATS-1374 record must not keep its fabricated zeros.
+
+    Caught only by running the writer over a real artifact: the synthetic cases
+    above have no counters to begin with, so they never exercised this. Verbatim
+    shape of ``experiments/hatrack-hardening/control/runs/new/run-1/sessions/
+    session_20260719-154405-1/metrics.json``. Leaving ``turns: 0`` next to
+    ``measured: false`` keeps every direct-counter consumer lying — it is what
+    still raised a bogus zero-output incident for this session.
+    """
+    session = make_session(
+        tmp_path,
+        {
+            "num_turns": 5,
+            "total_cost_usd": 0.0286019,
+            "turns": 0,
+            "tool_calls": 0,
+            "tokens": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0},
+            "models": {},
+        },
+    )
+
+    AuditWriter().build(session, jsonl_path=None)
+
+    m = read_metrics(session)
+    assert m["measured"] is False
+    for absent in ("turns", "tokens", "models", "tool_calls"):
+        assert absent not in m, f"stale fabricated {absent!r} survived as {m.get(absent)!r}"
+    assert m["num_turns"] == 5, "SDK telemetry is not a fabrication — it stays"
 
 
 def test_malformed_prior_flags_are_dropped_not_propagated(tmp_path):

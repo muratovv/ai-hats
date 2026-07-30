@@ -309,6 +309,16 @@ class SubAgentRunner:
             SurfaceGuard.pre_flight_check(self.project_dir, work_dir, mode, provider_name).unwrap()
             t0 = time.monotonic()
 
+            # One bundle for all four finalize paths — per-site spelling let the
+            # timeout/error paths drift and lose enrichment entirely (HATS-1374).
+            observe_kwargs = {
+                "work_dir": work_dir,
+                "static_cost_analyzer": self.payload.static_cost_analyzer,
+                "session_factory": self.payload.session_factory,
+                "audit_writer_factory": self.payload.audit_writer_factory,
+                "transcript_resolver": self.payload.transcript_resolver,
+            }
+
             try:
                 engine = provider.engine()
                 if engine is not None:
@@ -346,11 +356,7 @@ class SubAgentRunner:
                             "num_turns": run_result.num_turns,
                             "stop_reason": run_result.stop_reason,
                         },
-                        work_dir=work_dir,
-                        static_cost_analyzer=self.payload.static_cost_analyzer,
-                        session_factory=self.payload.session_factory,
-                        audit_writer_factory=self.payload.audit_writer_factory,
-                        transcript_resolver=self.payload.transcript_resolver,
+                        **observe_kwargs,
                     )
                 else:
                     # Legacy subprocess path (Agy and future non-SDK providers).
@@ -380,11 +386,7 @@ class SubAgentRunner:
                         stderr=proc.stderr or "",
                         tags=tags,
                         duration_s=time.monotonic() - t0,
-                        work_dir=work_dir,
-                        static_cost_analyzer=self.payload.static_cost_analyzer,
-                        session_factory=self.payload.session_factory,
-                        audit_writer_factory=self.payload.audit_writer_factory,
-                        transcript_resolver=self.payload.transcript_resolver,
+                        **observe_kwargs,
                     )
 
             except subprocess.TimeoutExpired as exc:
@@ -401,8 +403,7 @@ class SubAgentRunner:
                     timed_out=True,
                     tags=tags,
                     duration_s=time.monotonic() - t0,
-                    work_dir=work_dir,
-                    transcript_resolver=self.payload.transcript_resolver,
+                    **observe_kwargs,
                 )
             except Exception as e:
                 # Catches any unanticipated SDK-path exception too — defence
@@ -420,8 +421,7 @@ class SubAgentRunner:
                     error=str(e),
                     tags=tags,
                     duration_s=time.monotonic() - t0,
-                    work_dir=work_dir,
-                    transcript_resolver=self.payload.transcript_resolver,
+                    **observe_kwargs,
                 )
             finally:
                 # HATS-1045: release-on-finish BEFORE the cache sweep, so a

@@ -26,6 +26,29 @@ PTY_RAW_LOG = "pty_raw.log"
 RETRO_LOG = "retro.log"
 
 
+# The audit/v1 ``flags`` vocabulary — why a record carries no measurement
+# (HATS-1374). Same spelling the sibling ``usage/v1`` report uses.
+FLAG_NO_STRUCTURED_TRANSCRIPT = "no-structured-transcript"
+FLAG_SENSOR_ERROR = "sensor-error"
+FLAG_NOT_FINALIZED = "not-finalized"
+
+
+def is_measured(metrics: dict) -> bool:
+    """Whether this record's counters are a measurement (HATS-1374).
+
+    The read side of the audit/v1 honesty contract: a ``False`` here means
+    ``turns``/``tokens``/``tool_calls`` say nothing about the session, so a
+    consumer must not compare them against a threshold or report them as a
+    total. Pre-HATS-1374 records carry no ``measured`` key and may hold
+    fabricated zeros — a missing ``turns`` is the only tell left, so they read
+    as unmeasured only in that case.
+    """
+    measured = metrics.get("measured")
+    if isinstance(measured, bool):
+        return measured
+    return "turns" in metrics
+
+
 def session_dirname(session_id: str) -> str:
     """Return normalized session directory name for a session ID."""
     return f"{SESSION_PREFIX}{session_id}"
@@ -65,6 +88,10 @@ __all__ = [
     "REASONING_LOG",
     "PTY_RAW_LOG",
     "RETRO_LOG",
+    "FLAG_NO_STRUCTURED_TRANSCRIPT",
+    "FLAG_SENSOR_ERROR",
+    "FLAG_NOT_FINALIZED",
+    "is_measured",
     "session_dirname",
     "strip_session_prefix",
     "session_start_dt",

@@ -14,10 +14,15 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import atomic_write_text
 
-from .artifacts import TRANSCRIPT_TXT, session_start_dt
-from .parsers.base import FLAG_NO_STRUCTURED_TRANSCRIPT
+from .artifacts import FLAG_NO_STRUCTURED_TRANSCRIPT, TRANSCRIPT_TXT, session_start_dt
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .parsers.base import TranscriptParser, Turn
 
 
 def _merge_flags(prior: object, new: list[str]) -> list[str]:
@@ -27,11 +32,6 @@ def _merge_flags(prior: object, new: list[str]) -> list[str]:
         if flag not in merged:
             merged.append(flag)
     return merged
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from .parsers.base import TranscriptParser, Turn
 
 
 class AuditWriter:
@@ -230,11 +230,15 @@ class AuditWriter:
         existing["schema_version"] = AUDIT_SCHEMA_VERSION
 
         if FLAG_NO_STRUCTURED_TRANSCRIPT in parse_flags:
-            # Nothing token-capable was read. Leave every counter already in the
-            # record untouched — it belongs to the SDK or to an earlier parse
-            # that did measure — and say why this run added none.
             existing["flags"] = _merge_flags(existing.get("flags"), parse_flags)
-            existing.setdefault("measured", False)
+            # `measured: True` is the only provenance that makes a counter here
+            # trustworthy (an earlier parse really did measure it). Without it
+            # the value is a pre-HATS-1374 fabrication, and keeping it would
+            # assert a zero and deny the measurement in the same file.
+            if existing.get("measured") is not True:
+                for counter in ("turns", "tokens", "models", "tool_calls"):
+                    existing.pop(counter, None)
+                existing["measured"] = False
         else:
             existing.update({
                 "measured": True,

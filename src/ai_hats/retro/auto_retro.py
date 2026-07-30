@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import FeedbackPolicy, ProjectConfig
-from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, session_dirname
+from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, is_measured, session_dirname
 from ..paths import PROJECT_CONFIG
 from ..constants import ENV_SKIP_RETRO
 from ai_hats_observe.trace import ENV_SESSION_ID
@@ -55,6 +55,11 @@ def should_run(
             metrics = json.load(f)
     except (json.JSONDecodeError, OSError):
         return "skip", "metrics.json unreadable"
+
+    # HATS-1374: the fabricated zeros used to read as a measured miss, so
+    # retro.log claimed "turns=0<5" about a session nobody measured.
+    if not is_measured(metrics):
+        return "skip", "unmeasured (no structured transcript — threshold unevaluable)"
 
     turns = metrics.get("turns", 0)
     tool_calls = metrics.get("tool_calls", 0)

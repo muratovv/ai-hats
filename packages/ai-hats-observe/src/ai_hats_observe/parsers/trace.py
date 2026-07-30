@@ -16,8 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..artifacts import FLAG_NO_STRUCTURED_TRANSCRIPT
 from ..usage import empty_usage_report
-from .base import FLAG_NO_STRUCTURED_TRANSCRIPT, ParsedTranscript, Turn
+from .base import ParsedTranscript, Turn
 
 
 @dataclass

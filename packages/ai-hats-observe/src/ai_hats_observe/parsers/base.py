@@ -31,12 +31,6 @@ def _empty_agg_usage() -> dict[str, int]:
     }
 
 
-# No token-capable source existed, so the zeros in ``model_stats``/``agg_usage``
-# mean "unmeasured", not "measured zero" (HATS-1374). Same spelling the
-# ``usage/v1`` report already uses for this condition.
-FLAG_NO_STRUCTURED_TRANSCRIPT = "no-structured-transcript"
-
-
 @dataclass(frozen=True)
 class ParsedTranscript:
     """A parsed session: turns + optional token telemetry.

@@ -15,6 +15,10 @@ class SessionMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     exit_code: int
+    # False ⇒ the counters below are placeholders, not observations: this
+    # session's transcript was unreachable (HATS-1374). Aggregate over measured
+    # records only and report the unmeasured count — never sum the zeros.
+    measured: bool = True
     turns: int = Field(..., ge=0)
     tool_calls: int = Field(..., ge=0)
     tokens_in: int = Field(0, ge=0)
