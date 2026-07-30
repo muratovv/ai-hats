@@ -528,15 +528,19 @@ def _load_provider_entry_points() -> None:
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
 
+import threading
+
+_ENTRY_POINTS_LOCK = threading.Lock()
 _ENTRY_POINTS_LOADED = False
 
 
-def _ensure_entry_points_loaded() -> None:
+def _ensure_entry_points_loaded(force: bool = False) -> None:
     global _ENTRY_POINTS_LOADED
-    if not _ENTRY_POINTS_LOADED:
-        _ENTRY_POINTS_LOADED = True
-        _register_builtins()
-        _load_provider_entry_points()
+    with _ENTRY_POINTS_LOCK:
+        if not _ENTRY_POINTS_LOADED or force:
+            _ENTRY_POINTS_LOADED = True
+            _register_builtins()
+            _load_provider_entry_points()
 
 
 PROVIDER_ALIASES: dict[str, str] = {
@@ -563,10 +567,27 @@ class UnknownProviderError(ValueError):
 
 
 def get_provider(name: str) -> Provider:
-    """Get a provider instance by name."""
+    """Get a provider instance by name (HATS-1394)."""
     _ensure_entry_points_loaded()
     canonical_name = PROVIDER_ALIASES.get(name, name)
     cls = _PROVIDER_REGISTRY.get(canonical_name)
+    if cls is None:
+        from .paths import editable_install_root
+        from .self_heal import SURFACES_SUBPATH, ensure_surface_plugin_installed
+        from .surfaces_registry import get_surface_info
+
+        root = editable_install_root("ai-hats")
+        in_tree = root.joinpath(*SURFACES_SUBPATH, canonical_name).is_dir() if root else False
+        is_known = get_surface_info(canonical_name) is not None
+
+        if is_known or in_tree:
+            if ensure_surface_plugin_installed(canonical_name):
+                import importlib
+
+                importlib.invalidate_caches()
+                _ensure_entry_points_loaded(force=True)
+                cls = _PROVIDER_REGISTRY.get(canonical_name)
+
     if cls is None:
         raise UnknownProviderError(name, provider_names())
     return cls()

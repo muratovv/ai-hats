@@ -185,3 +185,46 @@ def test_legacy_gemini_alias_resolves_to_agy():
     register_provider("agy", _FakeProvider)
     provider = get_provider("gemini")
     assert isinstance(provider, _FakeProvider)
+
+
+def test_get_provider_auto_installs_known_surface(monkeypatch):
+    called = []
+    monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
+    prov._reset_for_tests()
+
+    def fake_ensure(name):
+        called.append(name)
+        register_provider(name, _FakeProvider)
+        return True
+
+    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
+    provider = get_provider("agy")
+    assert called == ["agy"]
+    assert isinstance(provider, _FakeProvider)
+
+
+def test_get_provider_fast_fails_unknown_surface(monkeypatch):
+    called = []
+
+    def fake_ensure(name):
+        called.append(name)
+        return True
+
+    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
+    with pytest.raises(prov.UnknownProviderError, match="Unknown provider: non_existent_provider"):
+        get_provider("non_existent_provider")
+    assert called == []  # Fast-fail guard skipped ensure_surface_plugin_installed
+
+
+def test_get_provider_propagates_installation_error(monkeypatch):
+    from ai_hats.self_heal import ProviderInstallationError
+
+    monkeypatch.setattr(prov, "_provider_entry_points", lambda: [])
+    prov._reset_for_tests()
+
+    def fake_ensure(name):
+        raise ProviderInstallationError("Network failed")
+
+    monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
+    with pytest.raises(ProviderInstallationError, match="Network failed"):
+        get_provider("agy")
