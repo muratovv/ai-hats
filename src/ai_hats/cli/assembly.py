@@ -201,7 +201,7 @@ def _build_init_pipeline_state(
     default=None,
     help="Task-id prefix for `rack create` (e.g. ACME). "
     "Default: HATS. Set it explicitly — auto-detection from existing task "
-    "folders went with the removed `ai-hats task` CLI (HATS-1260).",
+    "folders went with the removed `ai-hats task` CLI.",
 )
 @click.option(
     "--ai-hats-dir",
