@@ -22,7 +22,9 @@ from ai_hats_observe.cli.session import session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "claude_jsonl" / "three_turns_with_tool.jsonl"
 SESSION_ID = "20260730-120000-1"
-PROVIDER_SESSION_ID = "abc-123"
+# UUID-shaped on purpose: the trace-recovery regex only accepts the shape
+# claude actually emits, so a loose token would not exercise it.
+PROVIDER_SESSION_ID = "5c639a19-5b64-4a91-8813-2937b47e9126"
 
 
 @pytest.fixture
@@ -32,14 +34,16 @@ def project(tmp_path, monkeypatch):
     session_dir = runs / f"session_{SESSION_ID}"
     session_dir.mkdir(parents=True)
     (session_dir / METRICS_JSON).write_text(
-        json.dumps({
-            "role": "maintainer",
-            "provider": "claude",
-            "exit_code": 0,
-            "measured": False,
-            "flags": ["no-structured-transcript"],
-            "claude_session_id": PROVIDER_SESSION_ID,
-        })
+        json.dumps(
+            {
+                "role": "maintainer",
+                "provider": "claude",
+                "exit_code": 0,
+                "measured": False,
+                "flags": ["no-structured-transcript"],
+                "claude_session_id": PROVIDER_SESSION_ID,
+            }
+        )
     )
     transcript = tmp_path / f"{PROVIDER_SESSION_ID}.jsonl"
     shutil.copy(FIXTURE, transcript)
@@ -121,6 +125,53 @@ def test_backfill_refuses_when_no_provider_session_id_recorded(project, monkeypa
     metrics = read_metrics(session_dir)
     del metrics["claude_session_id"]
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert "no provider session id" in result.output
+    assert read_metrics(session_dir)["measured"] is False
+
+
+def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch):
+    """Pre-HATS-1374 records carry no id, but the runner logged the launch line.
+
+    Measured on the real project: of 120 unmeasured sessions, 118 still had
+    trace.log, 34 yielded a ``--session-id``, and 6 of those transcripts were
+    still on disk. Still an exact identity — not the mtime guess.
+    """
+    tmp_path, session_dir, transcript = project
+    metrics = read_metrics(session_dir)
+    del metrics["claude_session_id"]
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    (session_dir / "trace.log").write_text(
+        "12:00:00.000 [SYS] Session started: role=maintainer\n"
+        f"12:00:00.100 [SYS] Launching: claude --settings x.json "
+        f"--session-id {PROVIDER_SESSION_ID}\n"
+    )
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert result.exit_code == 0, result.output
+    assert "id from trace" in result.output
+    m = read_metrics(session_dir)
+    assert m["measured"] is True
+    assert m["turns"] == 2
+    assert m["claude_session_id"] == PROVIDER_SESSION_ID, (
+        "recovered identity must be persisted — the next audit deletes the trace it came from"
+    )
+
+
+def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
+    """Fails closed: a surface whose launch line has no such flag stays refused."""
+    tmp_path, session_dir, transcript = project
+    metrics = read_metrics(session_dir)
+    del metrics["claude_session_id"]
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    (session_dir / "trace.log").write_text(
+        "12:00:00.100 [SYS] Launching: agy -i task list --add-dir /x/rules\n"
+    )
     monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])

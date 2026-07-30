@@ -8,7 +8,11 @@ AI_HATS_DIR/yaml-aware resolvers at mount and re-attaches the retro subcommands
 
 from __future__ import annotations
 
+import json
+import re
 import sys
+
+from ai_hats_core import atomic_write_text
 
 import click
 
@@ -438,6 +442,35 @@ def session_show(session_id: str):
 
 # ---- session backfill ----
 
+_LAUNCH_SESSION_ID = re.compile(
+    r"--session-id[= ]([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+)
+_LAUNCH_PROVIDER = re.compile(r"\[SYS\]\s+Launching:\s+(\S+)")
+
+
+def _identity_from_trace(s) -> tuple[str | None, str | None]:
+    """Recover ``(provider, provider_session_id)`` from the logged launch line.
+
+    Pre-HATS-1374 records persisted neither (and the 48 hardest cases have no
+    metrics.json at all), but the runner logs the whole command —
+    ``[SYS] Launching: claude … --session-id <uuid>`` — into trace.log. Still an
+    exact identity, not the mtime guess. Fails closed: a launch line without the
+    flag yields ``None`` and the session stays refused.
+    """
+    if not s.trace_path.exists():
+        return None, None
+    try:
+        text = s.trace_path.read_text(errors="replace")
+    except OSError:
+        return None, None
+    provider = _LAUNCH_PROVIDER.search(text)
+    session_id = _LAUNCH_SESSION_ID.search(text)
+    return (
+        provider.group(1) if provider else None,
+        session_id.group(1) if session_id else None,
+    )
+
 
 def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     """Re-derive one session's counters from its transcript. Returns a row dict."""
@@ -446,21 +479,30 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     metrics = _load_metrics_safe(s) or {}
     row = {
         "session_id": s.session_id,
-        "provider": metrics.get("provider", "?"),
+        "provider": metrics.get("provider") or "?",
         "before": "measured" if is_measured(metrics) else "unmeasured",
         "after": "-",
         "turns": "-",
         "tool_calls": "-",
         "note": "",
     }
-
-    resolver, parser = _seam._PROVIDER_ADAPTER(metrics.get("provider", ""))
     row["after"] = row["before"]
 
     # Exact match only: live discovery falls back to the freshest transcript,
     # which retroactively resolves a stranger's (HATS-1374 — a dry run
     # attributed one identical turns=5/tools=216 to 60 unrelated sessions).
+    provider = metrics.get("provider") or ""
     provider_session_id = metrics.get("claude_session_id") or None
+    from_trace = False
+    if not provider or not provider_session_id:
+        trace_provider, trace_session_id = _identity_from_trace(s)
+        provider = provider or (trace_provider or "")
+        if not provider_session_id and trace_session_id:
+            provider_session_id = trace_session_id
+            from_trace = True
+        row["provider"] = provider or "?"
+
+    resolver, parser = _seam._PROVIDER_ADAPTER(provider)
     if resolver is None or not provider_session_id:
         row["note"] = "no provider session id"
         return row
@@ -476,14 +518,22 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
 
     writer = AuditWriter(parser) if parser is not None else AuditWriter()
 
+    suffix = " (id from trace)" if from_trace else ""
+
     if dry_run:
         parsed = writer.parser.parse(jsonl_path, s.trace_path)
         measurable = FLAG_NO_STRUCTURED_TRANSCRIPT not in parsed.flags
         row["after"] = "measured" if measurable else "unmeasured"
         row["turns"] = str(len(parsed.turns))
         row["tool_calls"] = str(sum(len(t.tools) for t in parsed.turns))
-        row["note"] = "would rewrite" if measurable else "unparseable"
+        row["note"] = ("would rewrite" if measurable else "unparseable") + suffix
         return row
+
+    if from_trace:
+        # Persist the recovered identity so the link survives the next audit,
+        # which deletes trace.log — the source we just read it from.
+        metrics["claude_session_id"] = provider_session_id
+        atomic_write_text(s.metrics_path, json.dumps(metrics, indent=2))
 
     # keep_raw: a backfill must not consume trace.log — it is the only source
     # left for surfaces whose transcript cannot be recovered (HATS-1374).
@@ -492,7 +542,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     row["after"] = "measured" if is_measured(after) else "unmeasured"
     row["turns"] = str(after.get("turns", "-"))
     row["tool_calls"] = str(after.get("tool_calls", "-"))
-    row["note"] = "rewritten"
+    row["note"] = "rewritten" + suffix
     return row
 
 
