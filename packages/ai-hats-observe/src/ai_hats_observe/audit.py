@@ -49,6 +49,7 @@ class AuditWriter:
         session: Session,
         turns: list[Turn],
         model_stats: dict[str, dict] | None = None,
+        flags: list[str] | None = None,
     ) -> str:
         metrics = _load_metrics_safe(session) or {}
 
@@ -131,7 +132,14 @@ class AuditWriter:
         # `_finalize_sub_agent` extra_metrics keys (claude SDK telemetry).
         lines.append("## Metrics")
         lines.append(f"- **exit_code**: {exit_code}")
-        lines.append(f"- **turns**: {len(turns)}")
+        # HATS-1374: audit.md is what a human and the session-reviewer read, so
+        # it must not assert a turn count the parse never measured — the same
+        # fabrication metrics.json stopped emitting.
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in (flags or []):
+            lines.append("- **measured**: false")
+            lines.append(f"- **flags**: {', '.join(flags or [])}")
+        else:
+            lines.append(f"- **turns**: {len(turns)}")
         _header_keys = {
             "role", "provider", "exit_code", "duration",
             "composition", "models",
@@ -165,7 +173,9 @@ class AuditWriter:
         """
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
-        audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
+        audit_content = self._format_audit(
+            session, turns, model_stats=parsed.model_stats, flags=parsed.flags
+        )
         self._write_metrics(
             session, turns, parsed.model_stats, parsed.agg_usage, flags=parsed.flags
         )

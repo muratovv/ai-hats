@@ -105,6 +105,34 @@ def test_unmeasurable_parse_preserves_sdk_ground_truth(tmp_path):
     assert "turns" not in m, "SDK reported 5 turns — a fabricated turns:0 contradicts the same file"
 
 
+def test_audit_md_does_not_assert_an_unmeasured_turn_count(tmp_path):
+    """The honesty contract must reach audit.md, not stop at metrics.json.
+
+    Found by inspecting a real live session: metrics.json said ``measured:
+    false`` while audit.md's ``## Metrics`` block still printed
+    ``- **turns**: 0``. audit.md is what a human and the session-reviewer read,
+    so that is the same fabrication in the artifact that matters most.
+    """
+    session = make_session(tmp_path)
+
+    AuditWriter().build(session, jsonl_path=None)
+
+    audit = session.audit_path.read_text()
+    assert "- **turns**: 0" not in audit, audit
+    assert "- **measured**: false" in audit
+    assert "no-structured-transcript" in audit
+
+
+def test_audit_md_still_reports_a_measured_turn_count(tmp_path):
+    session = make_session(tmp_path)
+
+    AuditWriter().build(session, jsonl_path=FIXTURE)
+
+    audit = session.audit_path.read_text()
+    assert "- **turns**: 2" in audit
+    assert "- **measured**: false" not in audit
+
+
 def test_legacy_fabricated_zeros_are_dropped_not_preserved(tmp_path):
     """Re-enriching a pre-HATS-1374 record must not keep its fabricated zeros.
 
