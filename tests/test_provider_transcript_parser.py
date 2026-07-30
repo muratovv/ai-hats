@@ -1,10 +1,11 @@
 """HATS-948 (T15) — providers carry the TranscriptParser; the seam injects it.
 
 The parser rides the ``Provider`` set (no separate registry): Claude → structured
-``ClaudeParser``; every other surface defaults to the trace-only fallback. The
-compose seam injects ``partial(AuditWriter, parser=provider.transcript_parser())``.
-RED-under-revert: reverting ``ClaudeProvider`` to the default, or dropping the
-seam's ``partial(parser=...)``, fails the tests below.
+``ClaudeParser``; agy → ``AgyParser`` (HATS-1391), which keeps the trace-only
+fallback inside itself; a surface that declares nothing still gets ``TraceParser``.
+The compose seam injects ``partial(AuditWriter, parser=provider.transcript_parser())``.
+RED-under-revert: reverting ``ClaudeProvider`` or ``AgyProvider`` to the default,
+or dropping the seam's ``partial(parser=...)``, fails the tests below.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 from ai_hats.composition_seam import build_composition_payload
 from ai_hats.surfaces.claude.provider import ClaudeProvider
+from ai_hats_agy.parser import AgyParser
 from ai_hats_agy.provider import AgyProvider
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats_observe.parsers.trace import TraceParser
@@ -23,10 +25,28 @@ def test_claude_provider_uses_claude_parser() -> None:
     assert isinstance(ClaudeProvider().transcript_parser(), ClaudeParser)
 
 
-def test_agy_provider_uses_trace_only_parser() -> None:
+def test_agy_provider_uses_agy_parser() -> None:
     parser = AgyProvider().transcript_parser()
-    assert isinstance(parser, TraceParser)
+    assert isinstance(parser, AgyParser)
     assert not isinstance(parser, ClaudeParser)
+
+
+def test_agy_parser_falls_back_to_trace_without_jsonl(tmp_path: Path) -> None:
+    """The trace-only property the agy surface used to get from ``TraceParser`` itself."""
+    trace = tmp_path / "trace.log"
+    trace.write_text(
+        "12:00:00.000 [REQ] check the plan\n"
+        "12:00:01.000 [RES] ⏺ Read(plan.md)\n"
+        "12:00:02.000 [RES] ⏺ Done.\n"
+    )
+
+    parsed = AgyParser().parse(None, trace)
+    expected = TraceParser().parse(None, trace)
+
+    assert [(t.user_input, t.tools, t.response) for t in parsed.turns] == [
+        (t.user_input, t.tools, t.response) for t in expected.turns
+    ]
+    assert AgyParser().parse_usage(None, trace)["flags"] == ["no-structured-transcript"]
 
 
 def test_seam_injects_provider_parser(tmp_path: Path) -> None:
