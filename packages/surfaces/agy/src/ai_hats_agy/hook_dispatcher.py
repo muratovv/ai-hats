@@ -42,12 +42,26 @@ def dispatch_hook(event: str, tool_name: str | None = None) -> int:
     except (OSError, ValueError):
         return 0
 
-    if not isinstance(data, dict):
-        return 0
+    event_hooks: list[dict] = []
+    if isinstance(data, dict):
+        raw_session_hooks = data.get(event, [])
+        if isinstance(raw_session_hooks, list):
+            event_hooks.extend(h for h in raw_session_hooks if isinstance(h, dict))
+        elif isinstance(raw_session_hooks, dict):
+            event_hooks.append(raw_session_hooks)
 
-    event_hooks = data.get(event, [])
-    if not isinstance(event_hooks, list):
-        return 0
+    user_hooks_file = Path.home() / ".gemini" / "config" / "hooks.json"
+    if user_hooks_file.is_file():
+        try:
+            user_data = json.loads(user_hooks_file.read_text(encoding="utf-8"))
+            if isinstance(user_data, dict):
+                raw_user_hooks = user_data.get(event, [])
+                if isinstance(raw_user_hooks, list):
+                    event_hooks.extend(h for h in raw_user_hooks if isinstance(h, dict))
+                elif isinstance(raw_user_hooks, dict):
+                    event_hooks.append(raw_user_hooks)
+        except (OSError, ValueError):
+            pass
 
     stdin_data = ""
     try:
