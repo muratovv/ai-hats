@@ -97,9 +97,12 @@ def test_agy_session_transcript_resolution_and_audit(
 
 def test_agy_session_records_audit_and_usage(
     tmp_project: Project,
+    requires_agy_auth: None,
     repo_root: Path,
 ) -> None:
     """Real agy session via ai-hats runner → audit.md with turn markers."""
+    del requires_agy_auth
+
     if not _has_agy_plugin():
         pytest.skip("ai-hats-agy plugin not installed in this venv")
 
@@ -123,3 +126,40 @@ def test_agy_session_records_audit_and_usage(
     ).expect_ok().expect_stdout_contains(
         "Provider: agy",
     )
+
+    # 2. execute --batch runs a real headless agy session
+    result = tmp_project.run(
+        "execute",
+        "--batch",
+        "-r",
+        "assistant",
+        "-p",
+        "agy",
+        "--prompt",
+        "Reply with exactly: OK. No other text.",
+        "--json",
+        timeout=120,
+        extra_env=checkout_env,
+    ).expect_ok()
+
+    data = json.loads(result.stdout.strip().splitlines()[-1])
+    assert data["exit_code"] == 0, data
+    session_dir = Path(data["session_dir"])
+
+    # 3. audit.md exists with real turn markers (absent when resolve_transcript → None).
+    audit_path = session_dir / AUDIT_MD
+    assert audit_path.exists(), f"audit.md missing: {audit_path}"
+    audit = audit_path.read_text()
+    assert "- **Provider**: agy" in audit, f"audit.md missing provider marker\naudit:\n{audit}"
+    assert "👤" in audit, (
+        f"audit.md has no 👤 turn markers — transcript not parsed "
+        f"(resolve_transcript may be missing). audit:\n{audit}"
+    )
+
+    # 4. usage.json exists with agy flag
+    usage_path = session_dir / USAGE_JSON
+    if usage_path.exists():
+        usage = json.loads(usage_path.read_text())
+        flags = usage.get("flags", [])
+        assert any("token-telemetry-unavailable" in f for f in flags)
+
