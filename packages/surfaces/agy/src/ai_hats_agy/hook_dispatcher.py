@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 
-def dispatch_hook(event: str, tool_name: str | None = None) -> int:
+def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
     """Read session hooks manifest and execute matching hooks for this event."""
     session_id = os.environ.get("AI_HATS_SESSION_ID")
     project_dir_str = os.environ.get("AI_HATS_PROJECT_DIR")
@@ -22,6 +22,38 @@ def dispatch_hook(event: str, tool_name: str | None = None) -> int:
     if not session_id or not project_dir_str:
         # Standalone agy run outside ai-hats session — no-op exit 0
         return 0
+
+    stdin_data = ""
+    try:
+        if not sys.stdin.isatty():
+            stdin_data = sys.stdin.read()
+    except (OSError, AttributeError):
+        stdin_data = ""
+
+    # Resolve event name from arg, stdin JSON payload, or fallback
+    event = event_arg
+    if not event:
+        if stdin_data:
+            try:
+                payload = json.loads(stdin_data)
+                if isinstance(payload, dict):
+                    event = (
+                        payload.get("hook_event_name")
+                        or payload.get("event_name")
+                        or payload.get("event")
+                        or payload.get("hook")
+                    )
+            except (OSError, ValueError):
+                pass
+    if not event:
+        event = "PreToolUse"
+
+    # Write layer trace log for diagnostic verification
+    try:
+        with open("/tmp/totify-hook-trace.log", "a", encoding="utf-8") as f:
+            f.write(f"[DISPATCHER] event={event} session={session_id} tmux_pane={os.environ.get('TMUX_PANE')}\n")
+    except Exception:
+        pass
 
     project_dir = Path(project_dir_str)
     hooks_file = (
@@ -34,13 +66,12 @@ def dispatch_hook(event: str, tool_name: str | None = None) -> int:
         / "hooks.json"
     )
 
-    if not hooks_file.is_file():
-        return 0
-
-    try:
-        data = json.loads(hooks_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return 0
+    data: dict = {}
+    if hooks_file.is_file():
+        try:
+            data = json.loads(hooks_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
 
     event_hooks: list[dict] = []
     if isinstance(data, dict):
@@ -63,17 +94,15 @@ def dispatch_hook(event: str, tool_name: str | None = None) -> int:
         except (OSError, ValueError):
             pass
 
-    stdin_data = ""
-    try:
-        if not sys.stdin.isatty():
-            stdin_data = sys.stdin.read()
-    except (OSError, AttributeError):
-        stdin_data = ""
-
     for hook in event_hooks:
         if not isinstance(hook, dict):
             continue
         command = hook.get("command")
+        if not command and "hooks" in hook and isinstance(hook["hooks"], list):
+            for inner in hook["hooks"]:
+                if isinstance(inner, dict) and "command" in inner:
+                    command = inner["command"]
+                    break
         if not command or not isinstance(command, str):
             continue
 
@@ -105,9 +134,9 @@ def dispatch_hook(event: str, tool_name: str | None = None) -> int:
 
 
 def main() -> None:
-    event = sys.argv[1] if len(sys.argv) > 1 else "PreToolUse"
+    event_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
     tool_name = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("AGY_TOOL_NAME")
-    sys.exit(dispatch_hook(event, tool_name))
+    sys.exit(dispatch_hook(event_arg, tool_name))
 
 
 if __name__ == "__main__":
