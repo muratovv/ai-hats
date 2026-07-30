@@ -231,6 +231,24 @@ def requires_cline_auth() -> None:
         pytest.skip(f"cline --version exit {cp.returncode}: {cp.stderr[:200]}")
 
 
+@pytest.fixture
+def requires_agy_auth() -> None:
+    """Skip if ``agy`` binary missing (HATS-1391)."""
+    if not shutil.which("agy"):
+        pytest.skip("agy binary not found in PATH")
+    try:
+        cp = subprocess.run(
+            ["agy", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.skip(f"agy --version probe failed: {exc}")
+    if cp.returncode != 0:
+        pytest.skip(f"agy --version exit {cp.returncode}: {cp.stderr[:200]}")
+
+
 @pytest.fixture(scope="session")
 def ai_hats_shim(tmp_path_factory) -> Path:
     """A real ``ai-hats`` executable for e2e tests (HATS-790: no console script).
