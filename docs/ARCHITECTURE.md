@@ -144,8 +144,8 @@ The framework's backlog lives in three parallel state machines: tasks (`HATS-NNN
 <!-- Sources: docs/assets/diagrams/backlog-{task,hyp,prop}-fsm.d2 -->
 
 - **Task (`HATS-NNN`)** — a unit of planned work. Happy path — the fixed pipeline `brainstorm → plan → execute → document → review → done` without skipping states. Side routes: `blocked` (returnable to `plan` or `execute`), `failed` (recoverable via `brainstorm`), `cancelled` (administrative close from any non-terminal state), from `review` a rework path back to `execute` for addressing review comments (no worktree merge, unlike `review → done`), and from `done` a reopen path to `execute` is available for finishing epic scope. Shortcut: `rack transition <id> --state done --force --reason "..."` fast-closes a `brainstorm`/`plan` task straight to `done` when the work shipped on master (no worktree theatre). `--force` relaxes the FSM arrow **only**, requires a reason, and journals it. Cross-references between cards are typed links — `parent_task`, `depends_on`, `related`, `see_also`, the directional `folded_into` (this card was subsumed by that one), and the derived `children` and `blocks` (the read-only reverse of `parent_task` and `depends_on`) — managed via `rack transition <id> --link <kind>:<id>`; an unknown kind is a typed refusal listing the legal set. On the transition to `plan` a `plan.md` scaffold is created and `plan → execute` is consent-gated (`AI_HATS_PLAN_ACK=1`); the work log is written with session tracking; a file lock protects against race conditions.
-- **Hypothesis (`HYP-NNN`)** — a claim about system or process behavior. Stays `active` while sessions accumulate verdicts in `validation_log`; closes into `confirmed`, `refuted`, or `stalled` per `exit_criteria`. Verdicts are written by reflect-session (see below).
-- **Proposal (`PROP-NNN`)** — an improvement suggestion: either from reflect-session on self-problem, or filed by hand. Stays `open` until triaged in `reflect all` → `accepted` / `rejected` / `deferred` / `duplicate`.
+- **Hypothesis (`HYP-NNN`)** — a claim about system or process behavior. Stays `active` while sessions accumulate verdicts in `validation_log`; closes into `confirmed`, `refuted`, or `stalled` per `exit_criteria`.
+- **Proposal (`PROP-NNN`)** — an improvement suggestion: either from reflect-session on self-problem, or filed by hand. Stays `open` until triaged in `reflect hypothesis` → `accepted` / `rejected` / `deferred` / `duplicate`.
 
 ### Searching tasks
 
@@ -170,7 +170,7 @@ rack ls HATS-092 --deep 1 --link parent_task   # follow one edge kind only
 
 Every session becomes a structured retrospective: a pure-Python factual layer (metrics, files, commits, closed tasks) plus an LLM narrative with verdicts on active HYPs and votes on PROPs. Auto-retro is triggered by the `session_end` hook per the `off | always | smart | hint` policy.
 
-The cycle has two parts: **auto reflect-session** (per session) feeds the HYP log and PROP inbox; **manual reflect-all** (user-initiated) triages the accumulated backlog.
+The cycle has two parts: **auto reflect-session** (per session) feeds the HYP log and PROP inbox; **manual reflect hypothesis** (user-initiated, two-phase) triages the accumulated backlog.
 
 **Sample artifacts** (synthetic, realistic shape): one `hats-session-review/v1` markdown [6], one hypothesis with an append-only `validation_log` [7], and one proposal with co-sign `votes[]` [8]. Field reference for both fixture trees — [9].
 
@@ -184,9 +184,9 @@ Triggered after `session_end` when `policy ∈ {always, smart}` and the threshol
 
 <!-- Source: docs/assets/diagrams/auto-reflect-session.d2 -->
 
-### Manual reflect-all (triage)
+### Manual reflect hypothesis (triage)
 
-When HYPs and PROPs have piled up — the user runs `ai-hats reflect all`. Pre-flight builds a handoff from active HYPs and open PROPs, then an interactive chat, and finally `reflect commit` flips statuses in bulk.
+When HYPs and PROPs have piled up — the user runs `ai-hats reflect hypothesis`. Triage runs in two phases (ADR-0007 / HATS-513): Phase 1 (`judge-auditor`, read-only audit) produces a draft report with proposed verdicts and mutations, and Phase 2 (`judge`, HITL) discusses the draft with the supervisor, ack's mutations, and bulk-commits status updates.
 
 <p align="center">
   <img src="assets/diagrams/manual-reflect-all.svg" alt="Manual reflect-all diagram" width="520">
@@ -223,12 +223,12 @@ The shipped library is split into two layers, both shipped as the installed `ai_
 ```
 ai_hats_library/
   core/                              # engine fundament — required at runtime
-    roles/          initial-wizard, session-reviewer, auditor-for-role, judge, judge-for-role, hypothesis-intake, test-agent
+    roles/          initial-wizard, session-reviewer, judge-auditor, judge, judge-for-role, auditor-for-role, hypothesis-intake, test-agent
     traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode
     rules/          global_rule_*, rule_backlog_discipline, dev_rule_comment_discipline, dev_rule_tool_call_hygiene
     skills/         hatrack, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...
-    pipelines/      execute, human, reflect-{session,role,all,issue}
-    initial_injections/   initial-wizard, reflect-all, reflect-role
+    pipelines/      execute, human, reflect-{session,role,all,hypothesis-phase1,hypothesis-phase2,issue}
+    initial_injections/   initial-wizard, reflect-all, reflect-role, reflect-hypothesis, reflect-hypothesis-interactive
     templates/      githooks/ (dispatcher + managed hook scripts)
   usage/                             # curated content catalog — opt-in
     roles/          assistant, dev-python, dev-web, maintainer, architect, sre, go-dev, go-dev-full

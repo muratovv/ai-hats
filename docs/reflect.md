@@ -1,18 +1,20 @@
 # Reflect pipeline
 
-Two subcommands of `ai-hats reflect` cover the retrospective lifecycle:
-`reflect session` (per-session `session-reviewer` run) and `reflect all`
-(interactive triage of the accumulated backlog).
+Subcommands of `ai-hats reflect` cover the retrospective and backlog triage lifecycle:
+
+- `reflect session` — per-session `session-reviewer` run.
+- `reflect hypothesis` — two-phase bulk triage of active HYP + open PROP (`judge-auditor` Phase 1 -> `judge` Phase 2).
+- `reflect role <target>` / `reflect roles` — role coherence audit (`judge-for-role`).
+- `reflect issue <observation>` — Haiku-assisted observation intake (`hypothesis-intake`).
+- `reflect commit` — bulk update proposal statuses.
+- `reflect all` — deprecated single-phase triage (superseded by `reflect hypothesis`).
 
 > Full CLI reference (signatures + flags) — `ai-hats --tree` (subtree: `ai-hats --tree reflect`).
 
-## Pipeline overview (HATS-252)
+## Pipeline overview
 
-Pre-HATS-252 the post-session flow made two LLM calls
-(`SessionRetroBuilder` + `reflect-session`). It is now a single LLM call
-under the `session-reviewer` role; factual fields (metrics, files_changed,
-commits, tasks_closed, links, role, project, date) are computed by pure
-Python before the call.
+### `ai-hats reflect session`
+Post-session retrospective flow (single LLM call under `session-reviewer`). Factual fields (metrics, files_changed, commits, tasks_closed, links) are computed by pure-Python before the LLM call.
 
 ```
 session_end (hook → auto_retro)
@@ -29,72 +31,43 @@ session_end (hook → auto_retro)
                 missing/empty/incomplete → file ONE meta-proposal
                   (category=process, target=session-reviewer,
                    failed_session_id=<sid>; deduped per session)
-
-  Side effects during the LLM call (via CLI from inside the sub-Claude):
-    - rack hyp append-verdict ...              (HYP validation_log)
-    - rack proposal create | vote ...          (inbox grow / co-sign)
-
-  Recursion guard:
-    HATS_SKIP_RETRO=1 propagates to the sub-Claude session via
-    SubAgentRunner; both the shell hook and auto_retro main() honour it
-    and write a `recursion-guard` breadcrumb to retro.log.
-
-ai-hats reflect session [--session ID] [--background]
-  Manual single-session run of session-reviewer.
-
-ai-hats reflect all [--dry-run]
-  Pre-flight (Python): collect active HYP + open PROP into a handoff.md
-  Interactive: os.execvp claude with pointer to the handoff.
-  reflect commit: bulk-update PROP statuses (accept/reject/defer/duplicate).
 ```
 
-## `ai-hats reflect session`
-
-Per-session `session-reviewer` run. Output is `hats-session-review/v1`
-markdown at `<ai_hats_dir>/sessions/retros/sessions/<id>.md`.
-
 Triggers:
-
-- **Auto** on session-end (when `feedback.session_retro.policy=run`); detached background.
+- **Auto** on session-end (when `feedback.session_retro.policy=run` or `smart` threshold met); detached background process.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
-Validation contract:
+### `ai-hats reflect hypothesis` (HATS-513 / ADR-0007)
+Two-phase bulk triage of accumulated HYP and PROP backlog:
 
-- One `hypothesis_verdicts[]` entry per active HYP (no skipping).
-- Verdict ∈ `{confirmed, refuted, inconclusive, n/a}`.
-- `n/a` only when the session physically cannot test the HYP.
-- `summary` is non-empty.
-- Self-problems ⇒ reviewer files a meta-proposal via CLI and lists the
-  resulting PROP-NNN in `self_problems[]`.
-- Single safety net: harness check (pure-Python) at the CLI layer is the
-  sole owner of the failure-proposal — no double-fire from the runner.
+1. **Phase 1 (`judge-auditor`, headless, read-only):** Pipeline `reflect-hypothesis-phase1` generates draft report with proposed verdicts and CLI mutations at `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`.
+2. **Phase 2 (`judge`, HITL):** Pipeline `reflect-hypothesis-phase2` inlines draft body, supervisor discusses + ack's mutations, `judge` executes CLI ops and writes report to `<ai_hats_dir>/sessions/retros/judge/<ts>-report.md`.
 
-## `ai-hats reflect all`
+With `--headless`: runs Phase 1 only (CI/cron-safe).
 
-Manual triage of accumulated backlog. Two stages:
+### `ai-hats reflect role <target>` / `reflect roles`
+Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`. Report is saved to `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md`.
 
-1. Pre-flight builds `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md`
-   listing all active HYP and open PROP.
-2. `os.execvp` to `claude` with a pointer prompt.
-3. After chat: `ai-hats reflect commit --accept PROP-X --reject PROP-Y ...`
-   flips statuses in bulk.
+### `ai-hats reflect issue <text>`
+Observation intake flow. Pipeline `reflect-issue` runs `hypothesis-intake` (Haiku model): checks active HYPs, deduplicates against recent evidence, and either drafts a new HYP (`action: create`) or appends evidence to an existing HYP (`action: merge`).
 
-`--dry-run` builds the handoff but skips the exec — useful for inspection.
+### `ai-hats reflect commit`
+Bulk-applies proposal status changes (`--accept PROP-X --reject PROP-Y ...`) at the end of interactive chat sessions.
+
+### `ai-hats reflect all` (Deprecated)
+Legacy single-phase triage. Replaced by `reflect hypothesis`. Kept for backward compatibility.
 
 ## Storage layout
 
 ```
-.agent/
-  hypotheses/
-    HYP-NNN-<slug>.yaml             # validation_log appended via CLI
-  backlog/
-    tasks/                           # untouched
-    proposals/
-      PROP-NNN.yaml                  # status: open|accepted|rejected|deferred|duplicate
-  retrospectives/
-    sessions/<id>.md                 # SessionReviewV1 (single LLM call)
-    reflect-all/<ts>-handoff.md      # pre-flight pointer
-    reflect-session/<id>.md          # historical only — pre-HATS-252 ReflectSessionV1
+<ai_hats_dir>/
+  sessions/
+    retros/
+      sessions/<id>.md                 # SessionReviewV1
+      judge/<ts>-draft.md              # JudgeDraft (Phase 1)
+      judge/<ts>-report.md             # JudgeReport (Phase 2)
+      role-coherence/<ts>-<target>.md  # RoleCoherenceReport
+      reflect-all/<ts>-handoff.md      # legacy pre-flight handoff
 ```
 
 ## Schema dispatch

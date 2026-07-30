@@ -219,6 +219,19 @@ class TestMakeDecision:
         assert d["background"] is True
         assert d["retro_path"].endswith("/sessions/SID.md")
 
+    def test_hint_populates_reminder(self, tmp_path):
+        from ai_hats.retro.auto_retro import make_decision
+
+        metrics = _setup_project(tmp_path, policy="hint", min_turns=5, min_tool_calls=10)
+        metrics.write_text(json.dumps({"turns": 20, "tool_calls": 50}))
+
+        d = make_decision(tmp_path, "SID")
+        assert d["action"] == "hint"
+        assert d["reminder"] == {
+            "count": 1,
+            "command": "ai-hats reflect hypothesis",
+        }
+
     def test_internal_error_returns_skip(self, tmp_path, monkeypatch):
         """make_decision must not raise; errors collapse into skip."""
         from ai_hats.retro import auto_retro

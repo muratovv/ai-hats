@@ -100,6 +100,7 @@ def make_decision(
             "retro_path": None,
             "log_path": str(_retro_log_path(project_dir, session_id)),
             "wrap_up": None,
+            "reminder": None,
         }
 
     retro_path = retros_dir(project_dir) / "sessions" / f"{session_id}.md"
@@ -113,6 +114,13 @@ def make_decision(
     except Exception:
         wrap_up_info = None
 
+    reminder_info = None
+    if action == "hint":
+        reminder_info = {
+            "count": 1,
+            "command": "ai-hats reflect hypothesis",
+        }
+
     return {
         "action": action,
         "reason": reason,
@@ -120,6 +128,7 @@ def make_decision(
         "retro_path": str(retro_path),
         "log_path": str(_retro_log_path(project_dir, session_id)),
         "wrap_up": wrap_up_info,
+        "reminder": reminder_info,
     }
 
 
