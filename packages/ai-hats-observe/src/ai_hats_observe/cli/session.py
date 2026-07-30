@@ -14,14 +14,17 @@ import click
 
 from ..artifacts import (
     AUDIT_MD,
+    FLAG_NO_STRUCTURED_TRANSCRIPT,
     META_PROMPT_TXT,
     METRICS_JSON,
     REASONING_LOG,
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
+    is_measured,
     session_start_dt,
 )
+from ..session import _load_metrics_safe
 from . import _seam
 
 
@@ -37,6 +40,7 @@ def session():
 @click.argument("session_id", required=False)
 def session_audit(session_id: str | None):
     """Show the audit log for a session (defaults to the most recent)."""
+
     from ..session import SessionManager
 
     pd = _seam._PROJECT_DIR()
@@ -393,6 +397,7 @@ def session_show(session_id: str):
     """Show detailed metrics for a session."""
     import json
 
+
     from ..session import SessionManager
 
     pd = _seam._PROJECT_DIR()
@@ -429,3 +434,135 @@ def session_show(session_id: str):
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
     if artifacts:
         _seam._CONSOLE.print(f"\n[bold]Artifacts:[/] {', '.join(artifacts)}")
+
+
+# ---- session backfill ----
+
+
+def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
+    """Re-derive one session's counters from its transcript. Returns a row dict."""
+    from ..audit import AuditWriter
+
+    metrics = _load_metrics_safe(s) or {}
+    row = {
+        "session_id": s.session_id,
+        "provider": metrics.get("provider", "?"),
+        "before": "measured" if is_measured(metrics) else "unmeasured",
+        "after": "-",
+        "turns": "-",
+        "tool_calls": "-",
+        "note": "",
+    }
+
+    resolver, parser = _seam._PROVIDER_ADAPTER(metrics.get("provider", ""))
+    row["after"] = row["before"]
+
+    # Exact match only: live discovery falls back to the freshest transcript,
+    # which retroactively resolves a stranger's (HATS-1374 — a dry run
+    # attributed one identical turns=5/tools=216 to 60 unrelated sessions).
+    provider_session_id = metrics.get("claude_session_id") or None
+    if resolver is None or not provider_session_id:
+        row["note"] = "no provider session id"
+        return row
+
+    jsonl_path = resolver(project_dir, s.session_id, provider_session_id=provider_session_id)
+    if jsonl_path is None or not jsonl_path.exists():
+        row["note"] = "no transcript"
+        return row
+    if jsonl_path.stem != provider_session_id:
+        # Resolver fell through to its mtime guess — refuse the stranger.
+        row["note"] = "no exact transcript"
+        return row
+
+    writer = AuditWriter(parser) if parser is not None else AuditWriter()
+
+    if dry_run:
+        parsed = writer.parser.parse(jsonl_path, s.trace_path)
+        measurable = FLAG_NO_STRUCTURED_TRANSCRIPT not in parsed.flags
+        row["after"] = "measured" if measurable else "unmeasured"
+        row["turns"] = str(len(parsed.turns))
+        row["tool_calls"] = str(sum(len(t.tools) for t in parsed.turns))
+        row["note"] = "would rewrite" if measurable else "unparseable"
+        return row
+
+    # keep_raw: a backfill must not consume trace.log — it is the only source
+    # left for surfaces whose transcript cannot be recovered (HATS-1374).
+    writer.build(s, jsonl_path=jsonl_path, keep_raw=True)
+    after = _load_metrics_safe(s) or {}
+    row["after"] = "measured" if is_measured(after) else "unmeasured"
+    row["turns"] = str(after.get("turns", "-"))
+    row["tool_calls"] = str(after.get("tool_calls", "-"))
+    row["note"] = "rewritten"
+    return row
+
+
+@session.command("backfill")
+@click.argument("session_ids", nargs=-1)
+@click.option("--last", "last_n", default=0, type=int, help="Backfill the last N sessions.")
+@click.option("--all", "show_all", is_flag=True, help="Backfill every session.")
+@click.option(
+    "--dry-run", is_flag=True, help="Report what would change without writing anything."
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Also re-derive sessions already marked measured (default: skip them).",
+)
+def session_backfill(
+    session_ids: tuple[str, ...], last_n: int, show_all: bool, dry_run: bool, force: bool
+):
+    """Re-derive turns/tokens/tool_calls for past sessions from their transcripts.
+
+    Metrics used to be written once at teardown, so a session whose enrichment
+    failed kept its gap forever even though the transcript was still on disk.
+    """
+    from rich.table import Table
+
+    from ..session import SessionManager
+
+    pd = _seam._PROJECT_DIR()
+    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+
+    if session_ids:
+        sessions = [mgr.get_session(sid) for sid in session_ids]
+        sessions = [s for s in sessions if s is not None]
+    elif show_all:
+        sessions = mgr.list_sessions()
+    elif last_n:
+        sessions = mgr.list_sessions(last_n=last_n)
+    else:
+        raise click.UsageError("pass session ids, or one of --last N / --all")
+
+    if not sessions:
+        _seam._CONSOLE.print("[yellow]No matching sessions[/]")
+        return
+
+    rows, skipped = [], 0
+    for s in sessions:
+        if not force and is_measured(_load_metrics_safe(s) or {}):
+            skipped += 1
+            continue
+        rows.append(_backfill_one(s, project_dir=pd, dry_run=dry_run))
+
+    table = Table(title="session backfill — dry run" if dry_run else "session backfill")
+    table.add_column("session", no_wrap=True)
+    table.add_column("provider")
+    table.add_column("was")
+    table.add_column("now")
+    table.add_column("turns", justify="right")
+    table.add_column("tools", justify="right")
+    table.add_column("note")
+    for r in rows:
+        table.add_row(
+            r["session_id"], r["provider"], r["before"], r["after"],
+            r["turns"], r["tool_calls"], r["note"],
+        )
+    _seam._CONSOLE.print(table)
+
+    recovered = sum(1 for r in rows if r["before"] == "unmeasured" and r["after"] == "measured")
+    no_transcript = sum(1 for r in rows if r["note"].startswith("no "))
+    _seam._CONSOLE.print(
+        f"\n[bold]{len(rows)}[/] examined, [bold green]{recovered}[/] recoverable, "
+        f"[bold]{no_transcript}[/] without a transcript, [bold]{skipped}[/] already measured"
+        + (" [dim](nothing written — dry run)[/]" if dry_run else "")
+    )

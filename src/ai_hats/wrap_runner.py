@@ -641,6 +641,7 @@ class WrapRunner:
                     provider_name=provider_name,
                     tracer=tracer,
                     tags=tags,
+                    claude_session_id=claude_session_id,
                 )
                 try:
                     _run_finalize_hitl(

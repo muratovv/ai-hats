@@ -458,6 +458,7 @@ def _finalize_session_basic(
     provider_name: str,
     tracer: "SidecarTracer",
     tags: dict[str, str] | None = None,
+    claude_session_id: str | None = None,
 ) -> dict:
     """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
 
@@ -499,6 +500,12 @@ def _finalize_session_basic(
             "role": active_role,
             "provider": provider_name,
         }
+        # The link back to the provider's transcript. Only the sub-agent path
+        # used to persist it, so a HITL session's metrics could never be
+        # re-derived later — 947 sessions are permanently unmeasurable for want
+        # of this one field (HATS-1374).
+        if claude_session_id:
+            metrics["claude_session_id"] = claude_session_id
         if tags:
             metrics["tags"] = tags
         session.finalize_audit(metrics)

@@ -51,8 +51,22 @@ def _default_tag_filter_parser(raw: Iterable[str]) -> dict[str, str]:
     return filters
 
 
+def _default_provider_adapter(provider: str) -> tuple[object | None, object | None]:
+    """Standalone: no provider registry, so ``session backfill`` reads nothing.
+
+    Returns ``(transcript_resolver, parser)``. Discovery and parsing both belong
+    to the provider (``resolve_transcript`` / ``transcript_parser``), which the
+    integrator injects — HATS-948 made the writer surface-agnostic and a new
+    command must not re-bake the assumption. ``(None, None)`` makes backfill
+    report "no transcript" instead of guessing a path layout (HATS-1374).
+    """
+    del provider
+    return None, None
+
+
 # Injectable slots — the integrator overrides these at mount (ai_hats.cli).
 _PROJECT_DIR = _default_project_dir
 _RUNS_DIR = _default_runs_dir
 _TAG_FILTER_PARSER = _default_tag_filter_parser
+_PROVIDER_ADAPTER = _default_provider_adapter
 _CONSOLE = Console()
