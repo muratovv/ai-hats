@@ -34,6 +34,9 @@ RETRO_LOG = "retro.log"
 FLAG_NO_STRUCTURED_TRANSCRIPT = "no-structured-transcript"
 FLAG_SENSOR_ERROR = "sensor-error"
 FLAG_NOT_FINALIZED = "not-finalized"
+# HATS-1397: narrower than the three above — the transcript parsed fine, but this
+# surface emits no usage field at all, so only the token counters are unknowable.
+FLAG_NO_TOKEN_TELEMETRY = "token-telemetry-unavailable"  # noqa: S105 — LLM tokens, not a secret
 
 
 def has_real_counters(metrics: dict) -> bool:
@@ -115,6 +118,7 @@ __all__ = [
     "FLAG_NO_STRUCTURED_TRANSCRIPT",
     "FLAG_SENSOR_ERROR",
     "FLAG_NOT_FINALIZED",
+    "FLAG_NO_TOKEN_TELEMETRY",
     "is_measured",
     "session_dirname",
     "strip_session_prefix",

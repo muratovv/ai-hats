@@ -35,9 +35,9 @@ def _empty_agg_usage() -> dict[str, int]:
 class ParsedTranscript:
     """A parsed session: turns + optional token telemetry.
 
-    ``model_stats``/``agg_usage`` are populated only by structured (JSONL) parses;
-    a trace-only parse leaves them empty/zero (no token data on that surface) and
-    says so in ``flags`` — read those before treating a zero as measured.
+    ``model_stats``/``agg_usage`` carry token telemetry only where the surface
+    emits it; a parse without it leaves them empty/zero — structured turns or
+    not — and says so in ``flags``. Read those before treating a zero as measured.
     """
 
     turns: list[Turn]

@@ -18,6 +18,7 @@ from ai_hats_core import atomic_write_text
 
 from .artifacts import (
     FLAG_NO_STRUCTURED_TRANSCRIPT,
+    FLAG_NO_TOKEN_TELEMETRY,
     TRANSCRIPT_JSONL,
     TRANSCRIPT_TXT,
     is_measured,
@@ -303,7 +304,7 @@ class AuditWriter:
                     existing.pop(counter, None)
                 existing["measured"] = False
         else:
-            existing.update({
+            update = {
                 "measured": True,
                 # Replaces, not merges: the flags describe the current measurement,
                 # so a stale "unmeasured" marker must not survive a good parse.
@@ -324,6 +325,13 @@ class AuditWriter:
                     for model, stats in model_stats.items()
                 },
                 "tool_calls": sum(len(t.tools) for t in turns),
-            })
+            }
+            # HATS-1397: the parse measured turns and tools but the surface emits no
+            # usage at all, so only the token counters are withheld — the same
+            # "counter absent, flag says why" the unreachable-transcript branch uses.
+            if FLAG_NO_TOKEN_TELEMETRY in parse_flags:
+                update.pop("tokens")
+                existing.pop("tokens", None)  # on this surface any prior value is fabricated
+            existing.update(update)
 
         atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))

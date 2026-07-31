@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY
 from ai_hats_observe.parsers.base import ParsedTranscript, Turn
 from ai_hats_observe.parsers.trace import TraceParser
 from ai_hats_observe.usage import empty_usage_report
@@ -74,6 +75,8 @@ class AgyParser:
             return self._trace.parse(None, trace_path)
 
         turns = self._parse_lines(lines)
+        # The zeros below are a placeholder, not a reading — the flag is what stops
+        # a consumer treating them as one (HATS-1397).
         return ParsedTranscript(
             turns=turns,
             model_stats={},
@@ -83,6 +86,7 @@ class AgyParser:
                 "cache_read_input_tokens": 0,
                 "cache_creation_input_tokens": 0,
             },
+            flags=[FLAG_NO_TOKEN_TELEMETRY],
         )
 
     def parse_usage(self, jsonl_path: Path | None, trace_path: Path) -> dict[str, Any]:
@@ -95,9 +99,7 @@ class AgyParser:
             if jsonl_path
             else empty_usage_report("transcript.jsonl")
         )
-        report["flags"].append(
-            "token-telemetry-unavailable: agy CLI does not record token metrics in transcript.jsonl"
-        )
+        report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
         turns = self._parse_lines(lines)
         agg = report["aggregates"]
