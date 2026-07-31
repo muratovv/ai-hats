@@ -592,6 +592,48 @@ class Assembler:
             layers.append(pr)
         return layers
 
+    def _classify_component_layer(self, path: Path | None) -> str:
+        """Classify a resolved component directory path into a source layer (HATS-525).
+
+        Returns ``"global"``, ``"project"``, or ``"built-in"``.
+        """
+        if path is None:
+            return "built-in"
+
+        try:
+            resolved = Path(path).resolve()
+        except (OSError, ValueError, TypeError):
+            return "built-in"
+
+        global_lib = (user_home() / ".ai-hats").resolve()
+        if resolved.is_relative_to(global_lib):
+            return "global"
+
+        proj_root = self.project_dir.resolve()
+        for lib in self.library_paths:
+            lib_p = (
+                Path(lib[0])
+                if isinstance(lib, tuple)
+                else (Path(lib) if isinstance(lib, (str, Path)) else None)
+            )
+            if lib_p is None:
+                continue
+            try:
+                lib_resolved = lib_p.resolve()
+            except (OSError, ValueError, TypeError):
+                continue
+            if lib_resolved != global_lib and resolved.is_relative_to(lib_resolved):
+                if lib_resolved.is_relative_to(proj_root):
+                    return "project"
+                for proj_p in self.project_config.library_paths:
+                    try:
+                        if lib_resolved == Path(proj_p).expanduser().resolve():
+                            return "project"
+                    except (OSError, ValueError, TypeError):
+                        pass
+
+        return "built-in"
+
     def _get_overlay_provenance(self, role_name: str) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
@@ -604,16 +646,40 @@ class Assembler:
         ``project`` (last-wins), matching the composer's final state.
         """
         provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
-        # Seed from the resolved role's base composition.
+
+        # Seed path-based provenance for all components in the composed role.
+        try:
+            comp_res = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
+            for r in comp_res.rules:
+                p = self.resolver.resolve_rule_dir(r.name)
+                provenance["rules"][r.name] = self._classify_component_layer(p)
+            for s in comp_res.skills:
+                p = self.resolver.resolve_skill_dir(s.name)
+                provenance["skills"][s.name] = self._classify_component_layer(p)
+        except Exception:
+            pass
+
+        # Seed traits from base config + active overlays
         base_cfg = self.resolver.resolve_role_config(role_name)
-        if base_cfg is not None:
-            for name in base_cfg.composition.traits:
-                provenance["traits"][name] = "built-in"
-            for name in base_cfg.composition.rules:
-                provenance["rules"][name] = "built-in"
-            for name in base_cfg.composition.skills:
-                provenance["skills"][name] = "built-in"
-        # Apply layers in order: each `add` claims provenance, each `remove`
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            self._get_global_overlay(role_name),
+            self._get_overlay(role_name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
+
+        for trait_name in effective_traits:
+            p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
+            provenance["traits"][trait_name] = self._classify_component_layer(p)
+
+        # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
         # drops the entry so a later layer's add can re-claim it.
         for layer, label in (
             (self._get_global_overlay(role_name), "global"),

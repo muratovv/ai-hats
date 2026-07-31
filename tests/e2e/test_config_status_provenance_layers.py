@@ -1,0 +1,102 @@
+"""E2E (HATS-525): ``ai-hats config status`` marks bundled rules of user-global traits as (global).
+
+Verifies that when a role subscribes to a user-global trait (~/.ai-hats/traits/...),
+both the trait itself AND any rules bundled inside that trait display with the ``(global)``
+provenance tag in ``ai-hats config status``, rather than mislabeling bundled rules as ``(built-in)``.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.integration
+
+
+def _run(cmd, *, cwd, env, timeout=30, check=True):
+    result = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if check and result.returncode != 0:
+        raise AssertionError(
+            f"{cmd} exit {result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result
+
+
+@pytest.mark.integration
+def test_e2e_config_status_user_global_rule_provenance(shared_launcher, tmp_path: Path) -> None:
+    launcher_dest, base_env, _venv = shared_launcher
+
+    # 1. Setup isolated user home directory with a global rule and trait bundling it
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+
+    global_rule_dir = user_home_dir / ".ai-hats" / "rules" / "hats525-global-rule"
+    global_rule_dir.mkdir(parents=True)
+    (global_rule_dir / "rule.md").write_text("Rule content for HATS-525 test\n")
+    (global_rule_dir / "config.yaml").write_text("name: hats525-global-rule\n")
+
+    global_trait_dir = user_home_dir / ".ai-hats" / "traits" / "hats525-global-trait"
+    global_trait_dir.mkdir(parents=True)
+    (global_trait_dir / "config.yaml").write_text(
+        "name: hats525-global-trait\n"
+        "composition:\n"
+        "  rules:\n"
+        "    - hats525-global-rule\n"
+    )
+
+    # 2. Setup project directory
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = dict(base_env)
+    env.pop("PYTHONPATH", None)
+    env["AI_HATS_USER_HOME"] = str(user_home_dir)
+
+    _run(
+        [str(launcher_dest), "self", "init", "-p", "claude", "-r", "assistant"],
+        cwd=project,
+        env=env,
+    )
+
+    # 3. Add global trait via config customize
+    _run(
+        [
+            str(launcher_dest),
+            "config",
+            "customize",
+            "assistant",
+            "--add-trait",
+            "hats525-global-trait",
+            "--global",
+        ],
+        cwd=project,
+        env=env,
+    )
+
+    # 4. Check config status output
+    res = _run([str(launcher_dest), "config", "status"], cwd=project, env=env)
+    out = res.stdout + res.stderr
+
+    # Trait MUST be tagged (global)
+    assert "hats525-global-trait" in out, f"global trait missing from status output:\n{out}"
+    assert "hats525-global-trait  (global)" in out or "hats525-global-trait\x1b" in out, (
+        f"trait should be tagged global:\n{out}"
+    )
+
+    # Bundled rule MUST be tagged (global), NOT (built-in)
+    assert "hats525-global-rule" in out, f"bundled global rule missing from status output:\n{out}"
+    assert "hats525-global-rule  (built-in)" not in out, (
+        f"🐛 HATS-525 BUG: bundled global rule was mislabeled as (built-in):\n{out}"
+    )
+    assert "hats525-global-rule  (global)" in out or "hats525-global-rule\x1b" in out, (
+        f"bundled global rule should be tagged (global):\n{out}"
+    )
