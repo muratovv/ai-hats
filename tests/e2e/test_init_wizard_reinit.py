@@ -82,7 +82,7 @@ def test_e2e_reinit_launches_wizard_and_runs_offline(tmp_venv_project, tmp_path)
         proc.terminate(force=True)
     try:
         proc.wait()
-    except Exception:
+    except Exception:  # noqa: S110 — best-effort reap of an already-killed child
         pass
 
     plain = strip_ansi(buf)

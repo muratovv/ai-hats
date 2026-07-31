@@ -25,7 +25,7 @@ def test_no_internal_task_ids_in_user_facing_strings():
 
             try:
                 tree = ast.parse(content, filename=filepath)
-            except Exception:
+            except SyntaxError:
                 continue
 
             for node in ast.walk(tree):

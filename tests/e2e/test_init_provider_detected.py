@@ -83,7 +83,7 @@ def _drive_init_menu(venv_python: Path, project: Path, home: Path) -> tuple[str,
 
     try:
         proc.wait()
-    except Exception:  # noqa: BLE001 — best-effort reap; status read below
+    except Exception:  # noqa: S110 — best-effort reap; exitstatus is read below
         pass
     if proc.isalive():
         proc.terminate(force=True)

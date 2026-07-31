@@ -184,7 +184,7 @@ def test_triple_ctrl_c_force_exits_wedged_provider(tmp_path):
         if proc.isalive():
             try:
                 proc.kill(signal.SIGKILL)
-            except Exception:
+            except Exception:  # noqa: S110 — teardown; the zombie drain below follows
                 pass
         # Drain any orphaned zombies politely so `pytest -x` loops stay clean.
         while True:

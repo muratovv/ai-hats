@@ -55,12 +55,19 @@ def is_broad(handler: ast.ExceptHandler) -> bool:
 
 
 def is_inert(handler: ast.ExceptHandler) -> bool:
-    """No call and no ``raise`` anywhere in the body — nothing can escape."""
-    return not any(
-        isinstance(node, (ast.Call, ast.Raise))
-        for statement in handler.body
-        for node in ast.walk(statement)
-    )
+    """Nothing in the body can carry the failure outward.
+
+    No call and no ``raise`` — and no use of the bound exception either, since
+    ``return False, f"broken: {exc}"`` reports through its return value without
+    calling anything.
+    """
+    for statement in handler.body:
+        for node in ast.walk(statement):
+            if isinstance(node, (ast.Call, ast.Raise)):
+                return False
+            if handler.name and isinstance(node, ast.Name) and node.id == handler.name:
+                return False
+    return True
 
 
 def is_marked(handler: ast.ExceptHandler, lines: list[str]) -> bool:

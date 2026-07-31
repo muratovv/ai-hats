@@ -89,6 +89,23 @@ def test_a_handler_that_reports_via_a_returned_value_passes():
     assert flagged(source) == []
 
 
+def test_a_handler_that_returns_the_exception_in_a_message_passes():
+    """The migration/core.py:162 shape — reports with no call at all, via an f-string."""
+    source = (
+        "try:\n    work()\nexcept Exception as exc:\n"
+        '    return False, f"not loadable as a rack card: {exc}"\n'
+    )
+
+    assert flagged(source) == []
+
+
+def test_an_unused_exception_binding_is_still_inert():
+    """Binding a name you never read reports nothing."""
+    source = "try:\n    work()\nexcept Exception as exc:\n    return None\n"
+
+    assert flagged(source) == [3]
+
+
 def test_a_re_raising_handler_passes():
     assert flagged("try:\n    work()\nexcept Exception:\n    raise\n") == []
 
@@ -158,5 +175,10 @@ def test_every_workspace_package_is_scanned():
     assert any(p.startswith("scripts/") for p in scanned)
 
 
-# The repo-wide assertion lands with the last fix commit — see
-# test_no_inert_broad_handler_survives below once the 46 sites are drained.
+# --- the real repo ---------------------------------------------------------
+
+
+def test_this_repo_has_no_inert_broad_handler():
+    found = mod.scan(REPO_ROOT)
+
+    assert not found, "silent fallbacks:\n" + "\n".join(str(v) for v in found)

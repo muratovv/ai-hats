@@ -172,3 +172,7 @@ jobs:
       - name: Check dependency floors track workspace versions
         if: always()
         run: bash scripts/ci-local.sh dependency-floor
+      # Offline too, and independent of both checks above (HATS-1373).
+      - name: Check no broad handler swallows a failure silently
+        if: always()
+        run: bash scripts/ci-local.sh silent-fallback

@@ -116,7 +116,10 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F"]
+# S110/S112 (try-except-pass/continue) are a strict subset of what
+# scripts/check_silent_fallback.py catches; kept as a second, independent
+# contour so the pass/continue shape stays guarded if that script regresses.
+select = ["E", "F", "S110", "S112"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
