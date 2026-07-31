@@ -171,7 +171,7 @@ def test_run_editable_heal_heals_under_lock(monkeypatch, tmp_path) -> None:
     sentinel = self_heal.HealResult(healed=[], warned=[])
     seen: dict = {}
 
-    def fake_heal(root):
+    def fake_heal(root, **kw):
         seen["root"] = root
         return sentinel
 
@@ -185,6 +185,65 @@ def test_editable_install_root_none_for_unknown_dist() -> None:
     from ai_hats.paths import editable_install_root
 
     assert editable_install_root("no-such-dist-hats966") is None
+
+
+# ---- workspace members, not just surfaces (HATS-1367 §3) ----
+
+
+def _workspace_member(root, name: str, module: str):
+    member = root / "packages" / name
+    (member / "src" / module).mkdir(parents=True)
+    (member / "src" / module / "__init__.py").write_text("")
+    return member
+
+
+def test_workspace_editable_map_keys_on_module(tmp_path) -> None:
+    """A dangling workspace .pth is re-pointable the same way a surface one is."""
+    member = _workspace_member(tmp_path, "ai-hats-wt", "ai_hats_wt")
+
+    assert self_heal.workspace_editable_map(tmp_path) == {"ai_hats_wt": member}
+
+
+def test_workspace_editable_map_skips_the_surfaces_category(tmp_path) -> None:
+    """packages/surfaces is a category dir, not a member — surfaces have their own map."""
+    _workspace_member(tmp_path, "surfaces/cline", "ai_hats_cline")
+
+    assert self_heal.workspace_editable_map(tmp_path) == {}
+
+
+def test_find_broken_editables_reports_an_unresolvable_workspace_member(tmp_path, monkeypatch):
+    """The launcher's heal channel was blind to workspace members entirely."""
+    _workspace_member(tmp_path, "ai-hats-wt", "ai_hats_wt_gone_1367")
+    monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: [])
+
+    broken = self_heal.find_broken_editables(tmp_path)
+
+    assert [b.module for b in broken] == ["ai_hats_wt_gone_1367"]
+
+
+def test_find_broken_editables_ignores_a_resolvable_workspace_member(tmp_path, monkeypatch):
+    """An installed member must not be reinstalled on every launch."""
+    _workspace_member(tmp_path, "ai-hats-sys", "sys")
+    monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: [])
+
+    assert self_heal.find_broken_editables(tmp_path) == []
+
+
+def test_run_editable_heal_repoints_a_workspace_member(tmp_path, monkeypatch) -> None:
+    """End of the orchestration: a broken workspace member reaches the heal with its dir."""
+    member = _workspace_member(tmp_path, "ai-hats-wt", "ai_hats_wt_gone_1367")
+    monkeypatch.setattr(self_heal, "_provider_entry_points", lambda: [])
+    seen: dict = {}
+
+    def fake_heal(root, **kw):
+        seen.update(kw)
+        return self_heal.HealResult(healed=[], warned=[])
+
+    monkeypatch.setattr(self_heal, "heal_surface_editables", fake_heal)
+    self_heal.run_editable_heal(tmp_path, lock_path=tmp_path / "l.lock")
+
+    assert [b.module for b in seen["broken"]] == ["ai_hats_wt_gone_1367"]
+    assert seen["mapping"]["ai_hats_wt_gone_1367"] == member
 
 
 def test_find_uninstalled_surface_members(tmp_path, monkeypatch) -> None:
