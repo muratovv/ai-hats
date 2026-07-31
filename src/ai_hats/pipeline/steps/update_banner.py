@@ -2,7 +2,7 @@
 
 Runs at the tail of ``execute`` / ``human`` pipelines, immediately after
 ``launch_provider`` has emitted the Session-summary block. Reads whatever's
-in ``<ai_hats_dir>/.cache/update-check.json`` (the latest probe result, even
+in ``<cache_root>/update-check.json`` (the latest probe result, even
 if technically stale) and prints a three-line banner when the installed
 SHA differs from the upstream master SHA.
 

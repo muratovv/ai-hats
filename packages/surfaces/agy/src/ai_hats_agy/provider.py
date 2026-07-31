@@ -1,16 +1,17 @@
 """Agy surface adapter — maps the `agy` (Antigravity) CLI to the ai-hats `Provider`.
 
-Materialization contract (driven by ``build_session_artifacts`` / ADR-0018):
+Materialization contract (``build_session_artifacts`` / ADR-0018). ``<sc>`` is the
+out-of-project per-session cache ``<cache_root>/sessions/<sid>/`` (HATS-1398):
 
 - **Role / system prompt** — ``build_system_prompt`` composes PRIORITIES + the
   merged role/trait injection + always-on RULES. Written to
-  ``.cache/sessions/<sid>/rules/GEMINI.md`` and passed via ``--add-dir <rules_dir>``.
+  ``<sc>/rules/GEMINI.md`` and passed via ``--add-dir <rules_dir>``.
   Root ``GEMINI.md`` is untouched and native-by-default.
 - **Skills** — ``materialize_runtime_skills`` mirrors composed skills into
-  ``.cache/sessions/<sid>/rules/.agents/skills/``.
+  ``<sc>/rules/.agents/skills/``.
 - **Hooks** — ``ensure_global_dispatcher_hook`` idempotently ensures the global
   dispatcher (``ai-hats-hook-dispatcher``) is registered in ``~/.gemini/antigravity-cli/settings.json``.
-  Active session hooks are written to ``.cache/sessions/<sid>/hooks.json``.
+  Active session hooks are written to ``<sc>/hooks.json``.
   Zero files created in project root.
 """
 

@@ -1,8 +1,8 @@
 """Claude plugin-dir materialization (HATS-307, refined in HATS-294).
 
 The spawned role's skills are materialized under the per-session cache
-(``<ai_hats_dir>/.cache/sessions/<sid>/plugin/``) and passed to ``claude`` via
-``--plugin-dir``. Lives with the surface, not in core: the ``.claude-plugin``
+(``<cache_root>/sessions/<sid>/plugin/``, outside the project) and passed to
+``claude`` via ``--plugin-dir``. Lives with the surface, not in core: the ``.claude-plugin``
 manifest layout is claude's, not a shared concept (HATS-1211 review).
 """
 

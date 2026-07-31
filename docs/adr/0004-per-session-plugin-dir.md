@@ -48,10 +48,10 @@ A skill name can in principle appear in both `.claude/skills/<X>/` (active-role 
 
 Empirically verified (HATS-307 Step 1 PoC, `notes-poc.md`):
 
-| Scenario                                                | Observed                                          |
-| ------------------------------------------------------- | ------------------------------------------------- |
-| Same name in `.claude/skills/` AND `--plugin-dir`       | Project mirror wins; no fatal error; no warning.  |
-| Skill name unique to `--plugin-dir`                     | Invokable via Skill tool; resolves correctly.     |
+| Scenario                                          | Observed                                         |
+| ------------------------------------------------- | ------------------------------------------------ |
+| Same name in `.claude/skills/` AND `--plugin-dir` | Project mirror wins; no fatal error; no warning. |
+| Skill name unique to `--plugin-dir`               | Invokable via Skill tool; resolves correctly.    |
 
 Conclusion: the project-mirror-wins behavior is acceptable because content equivalence makes "who wins" functionally irrelevant in normal flow. Edge case to track: a future change that lets per-role skill content diverge (e.g. role-scoped skill customization) would silently get the active role's version on collision. Mitigation when that lands: either freeze skill content as immutable per session, or drop the mirror per alternative D.
 
@@ -66,6 +66,8 @@ Conclusion: the project-mirror-wins behavior is acceptable because content equiv
 
 The two-track design described above (permanent `.claude/skills/` mirror **plus** per-session plugin-dir) is no longer current. **HATS-294 implemented Alternative D**: `Provider.export_skills` / `cleanup_skills` / `skills_export_dir` were removed; skills now live exclusively in the per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/<sid>/plugin/`, materialized by `plugin_dir.materialize_plugin_dir` and passed to `claude` via `--plugin-dir`. The original ADR-0004 decision and analysis are retained verbatim above as historical record; the "primary user session unchanged" wording (§Decision) and the "mirror wins on name collision" row (§Edge cases) no longer reflect the system.
 
+Location superseded by **HATS-1398**: the plugin-dir still lives under the per-session cache, but that cache moved out of the project to `<cache_root>/sessions/<sid>/plugin/` (default `~/.cache/ai-hats/<project-key>/`).
+
 Follow-on consequence captured by **HATS-465**: because ai-hats never wrote to `~/.claude/skills/` (and now never writes to `.claude/skills/` either), any `.ai-hats-managed` marker found under `~/.claude/skills/` is an artefact of a pre-v0.7 manual `cp -r .claude/skills/ ~/.claude/skills/`. `self init` now surfaces such orphan markers with a WARN.
 
 ## References
@@ -73,6 +75,7 @@ Follow-on consequence captured by **HATS-465**: because ai-hats never wrote to `
 - HATS-307 — this task.
 - HATS-294 — per-session cache + drop of permanent `.claude/skills` export (realizes Alternative D).
 - HATS-465 — `self init` WARN on orphan `~/.claude/skills/.ai-hats-managed` marker.
+- HATS-1398 — the per-session cache moved out of the workspace (location only; the plugin-dir design is unchanged).
 - HATS-380 — placeholder expansion (`expand_path_placeholders`); reused in the plugin-dir generator.
 - HATS-367 — cross-provider per-step provider selection; Gemini's analog for `--plugin-dir` belongs here.
 - HATS-278 — epic: role-prompt composition. Hosts the on-demand skill model and any follow-up to retire the `.claude/skills/` mirror (alternative D).

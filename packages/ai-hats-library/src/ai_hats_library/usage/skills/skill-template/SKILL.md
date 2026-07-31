@@ -87,7 +87,8 @@ its own. `ai-hats self init` validates the config and refreshes the project
 scaffold; it is not how composition changes take effect.
 
 Skills materialize into the per-session cache under
-`<ai_hats_dir>/.cache/sessions/<sid>/`; the exact subpath is provider-specific
+`<cache_root>/sessions/<sid>/` — outside the project, default
+`~/.cache/ai-hats/`; the exact subpath is provider-specific
 (claude `plugin/`, agy `rules/.agents/skills/`, cline `skills/`).
 
 **Never `cp` skill files by hand** into `.claude/skills/` or
