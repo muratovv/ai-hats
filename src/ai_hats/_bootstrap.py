@@ -78,45 +78,42 @@ def _parse_requirement(req: str) -> str | None:
 def _editable_source_dir() -> str | None:
     """Filesystem path of the editable checkout backing this ai-hats install.
 
-    ``None`` for a wheel install, for missing/malformed PEP 610 metadata, or when
-    the recorded checkout is gone — every caller treats that as "nothing local to
-    re-point at" and keeps its pre-HATS-1367 behaviour. POSIX-only ``file://``
-    handling, matching this module's re-exec contract.
+    Only a local editable install has one. PEP 610 marks it ``dir_info.editable``;
+    a wheel from PyPI carries ``archive_info`` instead, so this returns ``None``
+    there and every caller keeps its pre-HATS-1367 behaviour. ``None`` too when
+    the metadata is absent or malformed, or the recorded checkout is gone —
+    absent, unreadable and foreign all mean the same thing here: nothing local to
+    re-point at. POSIX-only path handling, matching this module's re-exec contract.
     """
-    try:
-        raw = importlib.metadata.distribution("ai-hats").read_text("direct_url.json")
-    except Exception:  # noqa: BLE001 - bootstrap diagnoses, never crashes
-        return None
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(data, dict) or not (data.get("dir_info") or {}).get("editable"):
-        return None
-    url = data.get("url") or ""
-    if not url.startswith("file://"):
-        return None
     from urllib.parse import unquote, urlparse
 
-    path = unquote(urlparse(url).path)
+    try:
+        raw = importlib.metadata.distribution("ai-hats").read_text("direct_url.json")
+        data = json.loads(raw or "")
+        if not data["dir_info"]["editable"]:
+            return None
+        path = unquote(urlparse(data["url"]).path)
+    except Exception:  # noqa: BLE001 - bootstrap diagnoses, never crashes
+        return None
     return path if os.path.isdir(path) else None
 
 
 def _live_pyproject_deps(src: str) -> list[str] | None:
-    """``[project].dependencies`` from the checkout at ``src``; ``None`` on any snag."""
+    """``[project].dependencies`` from the checkout at ``src``; ``None`` on any snag.
+
+    ``src`` is always a local editable checkout — :func:`_editable_source_dir`
+    returns nothing else — so this never reaches for a pyproject.toml inside an
+    installed PyPI package, where sdists may ship one and wheels never do. A
+    checkout without a readable ``[project].dependencies`` (setup.py-only, or
+    moved out from under us) falls back to METADATA like a wheel install.
+    """
     import tomllib
 
     try:
         with open(os.path.join(src, "pyproject.toml"), "rb") as fh:
-            data = tomllib.load(fh)
-    except (OSError, ValueError):
+            deps = tomllib.load(fh)["project"]["dependencies"]
+    except (OSError, ValueError, KeyError, TypeError):
         return None
-    project = data.get("project")
-    if not isinstance(project, dict):
-        return None
-    deps = project.get("dependencies")
     if not isinstance(deps, list):
         return None
     return [d for d in deps if isinstance(d, str)]

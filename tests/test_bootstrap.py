@@ -521,9 +521,29 @@ def test_t14_editable_source_dir_returns_checkout(monkeypatch, tmp_path):
     assert _bootstrap._editable_source_dir() == str(tmp_path)
 
 
-def test_t14b_editable_source_dir_none_for_wheel(monkeypatch):
-    """A non-editable install has nothing to re-point at."""
-    _direct_url(monkeypatch, '{"url": "https://example/ai_hats.whl", "archive_info": {}}')
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(
+            '{"url": "file:///src/ai-hats", "dir_info": {}}',
+            id="local-non-editable",  # what `uv pip install <dir>` really writes
+        ),
+        pytest.param(
+            '{"url": "https://example/ai_hats.whl", "archive_info": {}}', id="direct-url-wheel"
+        ),
+        pytest.param(
+            '{"url": "git+ssh://git@host/ai-hats", "vcs_info": {"vcs": "git"}}', id="vcs"
+        ),
+    ],
+)
+def test_t14b_editable_source_dir_none_for_non_editable(monkeypatch, payload):
+    """A non-editable install has nothing to re-point at, whatever wrote its metadata.
+
+    Verified against real installs (HATS-1368 review): `uv pip install <dir>`
+    writes ``dir_info: {}`` — no ``editable`` key — and a plain index install
+    writes no direct_url.json at all (covered by the None case in T14d).
+    """
+    _direct_url(monkeypatch, payload)
     assert _bootstrap._editable_source_dir() is None
 
 
