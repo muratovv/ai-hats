@@ -76,9 +76,10 @@ class RenderUpdateBanner(Step):
         return StepIO(
             name="render_update_banner",
             requires=frozenset({"project_dir"}),
+            optional=frozenset({"session_dir"}),
         )
 
-    def run(self, *, project_dir: Path, **_: Any) -> dict[str, Any]:
+    def run(self, *, project_dir: Path, session_dir: Any = None, **_: Any) -> dict[str, Any]:
         if is_disabled():
             return {}
         # The behind-upstream predicate (LOCAL channel + has_update + running-SHA
@@ -88,6 +89,23 @@ class RenderUpdateBanner(Step):
         entry = upstream_update(project_dir)
         if entry is None:
             return {}
+        if session_dir is not None:
+            try:
+                from ...startup_notices import save_session_diagnostics
+
+                save_session_diagnostics(
+                    session_dir,
+                    "update_banner",
+                    {
+                        "installed_sha": entry.installed_sha,
+                        "latest_sha": entry.latest_sha,
+                        "installed_label": entry.installed_label,
+                        "latest_label": entry.latest_label,
+                        "behind": entry.behind,
+                    },
+                )
+            except Exception:
+                pass
         sys.stderr.write(_render(entry))
         sys.stderr.flush()
         return {}

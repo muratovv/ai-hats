@@ -41,7 +41,10 @@ from .runtime_common import (
 from .startup_notices import (
     StartupNotice,
     _countdown_hold,
+    _startup_hold_seconds,
+    save_session_diagnostics,
     show_and_hold_startup_notices,
+    strip_ansi_and_control_codes,
 )
 
 if TYPE_CHECKING:
@@ -342,7 +345,11 @@ class WrapRunner:
             session.log_sys(f"skill script collisions: {len(collisions)} finding(s)")
         return [StartupNotice("warn", text) for text in collisions]
 
-    def _hold_before_launch(self, startup_notices: list[StartupNotice]) -> None:
+    def _hold_before_launch(
+        self,
+        startup_notices: list[StartupNotice],
+        env: dict[str, str] | None = None,
+    ) -> None:
         """Show any startup notices and hold before the wrapped TUI spawns
         (HATS-825, HATS-833). Delegates the "notices ⇒ show and wait" policy to
         :func:`show_and_hold_startup_notices`; supplies a Ctrl-C-aware countdown
@@ -354,6 +361,7 @@ class WrapRunner:
                 startup_notices,
                 is_tty=sys.stdin.isatty(),
                 sleep=lambda d: self._sleep_countdown(d, announce=bool(startup_notices)),
+                env=env,
             )
         except KeyboardInterrupt:
             print("\n\033[1;31m  launch aborted\033[0m")
@@ -590,10 +598,29 @@ class WrapRunner:
         tracer = self.tracer_factory(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
         try:
+            # HATS-1221: Save structured startup notices to diagnostics.json
+            save_session_diagnostics(
+                session.session_dir,
+                "startup",
+                {
+                    "hold_seconds": _startup_hold_seconds(
+                        bool(startup_notices),
+                        is_tty=sys.stdin.isatty(),
+                        env=env,
+                    ),
+                    "notices": [
+                        {
+                            "level": n.level,
+                            "text": strip_ansi_and_control_codes(n.text),
+                        }
+                        for n in startup_notices
+                    ],
+                },
+            )
             # HATS-825: brief pre-launch hold so the start banner + any
             # fail-open startup warning are readable before the TUI clobbers
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
-            self._hold_before_launch(startup_notices)
+            self._hold_before_launch(startup_notices, env=env)
             with provider.execution_context(self.project_dir):
                 exit_code = self._pty_spawn(
                     cmd,

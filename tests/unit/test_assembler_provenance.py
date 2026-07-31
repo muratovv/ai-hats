@@ -103,6 +103,7 @@ def test_get_overlay_provenance_bundled_rule(tmp_path: Path, monkeypatch) -> Non
         return None
 
     mock_comp_result = MagicMock()
+    mock_comp_result.with_user_rules.return_value = mock_comp_result
     rule_mock = MagicMock()
     rule_mock.name = "custom-global-rule"
     mock_comp_result.rules = [rule_mock]

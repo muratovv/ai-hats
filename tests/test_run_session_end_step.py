@@ -26,9 +26,8 @@ def test_io_contract():
     assert io.name == "run_session_end"
     # HATS-707: SESSION_END hooks dispatch removed → no mandatory inputs.
     assert io.requires == frozenset()
-    # HATS-530: retro_decision is produced upstream by
-    # MaybeSpawnSessionReviewer; absent it the banner is silently skipped.
-    assert io.optional == frozenset({"retro_decision"})
+    # HATS-530 / HATS-1221: retro_decision and session_dir are optional inputs.
+    assert io.optional == frozenset({"retro_decision", "session_dir"})
     assert io.produces == frozenset()
 
 

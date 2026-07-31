@@ -617,7 +617,7 @@ class Assembler:
 
         # Seed path-based provenance for all components in the composed role.
         try:
-            comp_res = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
+            comp_res = compose_for_role(self, role_name)
             for r in comp_res.rules:
                 p = self.resolver.resolve_rule_dir(r.name)
                 provenance["rules"][r.name] = self._classify_component_layer(p).value

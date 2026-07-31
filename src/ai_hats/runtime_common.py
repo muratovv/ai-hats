@@ -42,7 +42,9 @@ from .startup_notices import (  # noqa: F401
     _print_startup_notices,
     _print_startup_warnings,
     _startup_hold_seconds,
+    save_session_diagnostics,
     show_and_hold_startup_notices,
+    strip_ansi_and_control_codes,
 )
 
 if TYPE_CHECKING:
@@ -245,6 +247,20 @@ def _finalize_sub_agent(
 
     session.finalize_audit(metrics)
 
+    # HATS-1221: Persist completion metrics to diagnostics.json for subagents
+    save_session_diagnostics(
+        session.session_dir,
+        "completion",
+        {
+            "session_id": session.session_id,
+            "exit_code": exit_code,
+            "role": role,
+            "duration_s": round(duration_s, 3) if duration_s is not None else None,
+            "timed_out": timed_out,
+            "error": error,
+        },
+    )
+
     # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
     # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
     claude_session_id = None
@@ -373,6 +389,19 @@ def _print_session_end(
     req_count = trace_stats.get("req_count", 0)
 
     duration = _fmt_duration(session.session_id)
+
+    # HATS-1221: Persist completion diagnostics to diagnostics.json
+    save_session_diagnostics(
+        session.session_dir,
+        "completion",
+        {
+            "session_id": session.session_id,
+            "duration": duration,
+            "req_count": req_count,
+            "audit_info": audit_info,
+            "trace_info": trace_info,
+        },
+    )
 
     # Clear any remnants of the CLI TUI (status bar, cursor position) before printing
     sys.stdout.write("\r\033[J\033[0m\n")

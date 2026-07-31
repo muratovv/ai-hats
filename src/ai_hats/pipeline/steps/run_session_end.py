@@ -48,7 +48,7 @@ class RunSessionEnd(Step):
             # so a finalize pipeline that skips that step (or where the
             # decision crashed) still runs cleanly — the banner is just
             # silently skipped.
-            optional=frozenset({"retro_decision"}),
+            optional=frozenset({"retro_decision", "session_dir"}),
             produces=frozenset(),
         )
 
@@ -56,10 +56,14 @@ class RunSessionEnd(Step):
         self,
         *,
         retro_decision: dict | None = None,
+        session_dir: Any = None,
         **_: Any,
     ) -> dict[str, Any]:
         if retro_decision is not None:
             try:
+                from ...startup_notices import save_session_diagnostics
+
+                save_session_diagnostics(session_dir, "retro_reminder", retro_decision)
                 _print_retro_banner(retro_decision)
             except (Exception, KeyboardInterrupt):
                 logger.warning("retro banner failed", exc_info=True)
