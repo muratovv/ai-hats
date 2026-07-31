@@ -42,7 +42,7 @@ def test_agy_parser_parses_transcript_jsonl(tmp_path: Path) -> None:
             "content": "I am inspecting main.py and running tests.",
         },
     ]
-    jsonl_path.write_text("\n".join(json.dumps(l) for l in lines))
+    jsonl_path.write_text("\n".join(json.dumps(line) for line in lines))
     trace_path = tmp_path / "trace.log"
 
     parser = AgyParser()

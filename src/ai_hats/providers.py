@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import contextlib
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -527,8 +528,6 @@ def _load_provider_entry_points() -> None:
                 raise
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
-
-import threading
 
 _ENTRY_POINTS_LOCK = threading.Lock()
 _ENTRY_POINTS_LOADED = False

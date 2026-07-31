@@ -66,7 +66,6 @@ def _startup_hold_seconds(
     return STARTUP_WARN_HOLD_SECONDS
 
 
-
 def _countdown_hold(seconds, *, render, poll_skip) -> bool:
     """Run a 1 Hz countdown that the user can cut short (HATS-847).
 
@@ -233,4 +232,3 @@ def save_session_diagnostics(
             raise
     except (Exception, KeyboardInterrupt) as exc:
         logger.warning("save_session_diagnostics failed: %s", exc)
-

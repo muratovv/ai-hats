@@ -103,9 +103,7 @@ def test_reflect_issue_writes_a_draft_hypothesis(
     assert data.get("hypothesis"), f"empty/missing hypothesis in {card}: {data}"
     # ``origin`` field carries supervisor-observation when ``--task`` is absent;
     # ``source_task`` link is absent (not dangling); ``state`` carries lifecycle.
-    assert data.get("origin") == "supervisor-observation", (
-        f"unexpected origin in {card}: {data}"
-    )
+    assert data.get("origin") == "supervisor-observation", f"unexpected origin in {card}: {data}"
     assert "source_task" not in (data.get("links") or {}), (
         f"unexpected source_task link in {card}: {data}"
     )

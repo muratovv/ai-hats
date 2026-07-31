@@ -163,4 +163,3 @@ class TestMainUnusableBase:
         assert "[version-skew] base unusable" in captured.err
         assert "deadbeefdeadbeef" in captured.err
         assert "tests/test_package_version_drift.py" in captured.err
-

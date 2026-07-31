@@ -47,10 +47,7 @@ def test_e2e_config_status_user_global_rule_provenance(shared_launcher, tmp_path
     global_trait_dir = user_home_dir / ".ai-hats" / "traits" / "hats525-global-trait"
     global_trait_dir.mkdir(parents=True)
     (global_trait_dir / "config.yaml").write_text(
-        "name: hats525-global-trait\n"
-        "composition:\n"
-        "  rules:\n"
-        "    - hats525-global-rule\n"
+        "name: hats525-global-trait\ncomposition:\n  rules:\n    - hats525-global-rule\n"
     )
 
     # 2. Setup project directory

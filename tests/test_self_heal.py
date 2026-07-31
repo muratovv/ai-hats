@@ -286,5 +286,7 @@ def test_ensure_surface_plugin_installed_raises_on_installer_error(monkeypatch) 
     monkeypatch.setattr("ai_hats.self_heal._is_surface_module_installed", lambda name: False)
     monkeypatch.setattr("ai_hats.self_heal.run_editable_heal", lambda repo_root=None: None)
 
-    with pytest.raises(ProviderInstallationError, match="Failed to auto-install surface plugin 'cline'"):
+    with pytest.raises(
+        ProviderInstallationError, match="Failed to auto-install surface plugin 'cline'"
+    ):
         ensure_surface_plugin_installed("cline", installer=fake_installer)

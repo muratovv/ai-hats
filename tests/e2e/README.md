@@ -36,27 +36,34 @@ handful live. Always prefer free over venv over live.
    # free-tier — see tests/e2e/test_wave1_free_tier.py
    def test_something(tmp_project) -> None:
        tmp_project.run("list", "providers").expect_ok().expect_stdout_contains(
-           "claude", "claude",
+           "claude",
+           "claude",
        )
+
 
    # venv-tier — see tests/e2e/test_wave1_venv_tier.py
    import pytest
+
    pytestmark = pytest.mark.integration
 
+
    def test_something(tmp_venv_project) -> None:
-       tmp_venv_project.run("self", "init", "-r", "assistant", "-p", "claude",
-                            "--no-update").expect_ok()
+       tmp_venv_project.run(
+           "self", "init", "-r", "assistant", "-p", "claude", "--no-update"
+       ).expect_ok()
+
 
    # live-tier — see tests/e2e/test_w0_pilot_session.py
    import asyncio
    from _helpers.live import live_session
 
+
    def test_something(probe_project, requires_claude_auth) -> None:
        async def _drive():
-           async with live_session(probe_project, role="probe",
-                                   max_budget_usd=0.10) as s:
+           async with live_session(probe_project, role="probe", max_budget_usd=0.10) as s:
                r = await s.send("Reply OK!")
                r.expect_no_error().expect_contains_ci("ok")
+
        asyncio.run(_drive())
    ```
 

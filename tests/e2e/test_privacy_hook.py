@@ -239,4 +239,3 @@ def test_non_utf8_text_file_handled_cleanly(privacy_repo: Path):
     assert res.returncode == 0, f"non-utf8 text file caused error:\n{res.stderr}"
     assert "illegal byte sequence" not in res.stderr
     assert res.stderr == ""
-

@@ -46,8 +46,8 @@ import sys
 import tokenize
 
 _KILL_SWITCH = "AI_HATS_COMMENT_LINT_OFF"
-# Ruff-safe suppression token (HATS-888). The legacy ``noqa: comment-length`` is
-# still honored, but as a bare ``#`` comment it trips ruff's ``# noqa:`` parser.
+# Ruff-safe suppression token (HATS-888); the legacy spelling below is still
+# honored but reads as a malformed suppression directive to ruff's parser.
 _MARKERS = ("comment-length: allow", "noqa: comment-length")
 
 
