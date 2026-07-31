@@ -53,6 +53,16 @@ def main() -> int:
 
     project_dir = Path.cwd()
 
+    return run_session_review(session_id, max_retries, project_dir)
+
+
+def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> int:
+    """Run the session-reviewer pipeline in-process; return an exit code.
+
+    Extracted from ``main()`` (HATS-1402) so a caller like
+    ``MaybeSpawnSessionReviewer``'s ``background: false`` branch can run it
+    synchronously in-process instead of only via the CLI subprocess.
+    """
     runner_error: str | None = None
     harness_error: HarnessReliabilityError | None = None
     saved_path: Path | None = None
