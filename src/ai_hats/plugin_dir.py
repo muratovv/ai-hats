@@ -169,8 +169,8 @@ def drop_legacy_root_skills_mirrors(project_dir: Path) -> list[str]:
     """Discard pre-HATS-1165 root skill & artifact mirrors (.agy/skills, .gemini/skills, .cline/skills, .agents).
 
     Clean-root role materialization (HATS-1165) moves all session materializations
-    strictly inside `.cache/sessions/<sid>/`. This function sweeps legacy root-level
-    materialization directories left over in project roots.
+    strictly inside the per-session cache dir (`session_cache_dir`). This function
+    sweeps legacy root-level materialization directories left over in project roots.
     """
     candidates = (
         project_dir / ".agy" / "skills",

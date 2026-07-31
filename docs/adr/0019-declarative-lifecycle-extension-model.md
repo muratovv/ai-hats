@@ -341,6 +341,8 @@ borrowing the *provider's* cache instead of owning one.
    worktree-aware, so a naive resolve inside a worktree would run the branch's
    own half-written check — a gate judging the change it is part of.
 
+Snapshot location superseded by **HATS-1398** — clause 2's root is unchanged as a concept but now resolves outside the project, at `<cache_root>/sessions/<sid>/checks/<skill>/` (default `~/.cache/ai-hats/<project-key>/`); the surface table above shifts with it.
+
 **The out-of-session cost, measured rather than feared.** Rev 5 priced this path
 off the `~99 SKILL.md parses` figure from the HATS-1149 research. That is the
 cost of the **union scan over the whole library**, which **D7 abolishes**: a

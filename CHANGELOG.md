@@ -10,6 +10,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+
 ### Fixed
 
 - **An editable install whose METADATA went stale now heals itself on the next
@@ -40,6 +41,31 @@ since the latest tag lives under **Unreleased** until the next release.
   Unchanged: the `ai-hats` launcher still refuses a venv missing a workspace
   member and points at `ai-hats self update` (HATS-895) — that hint heals via
   the launcher's own path and stays the fail-closed contract.
+
+### Changed
+
+- **The machine-only cache moved out of the project** (HATS-1398, epic
+  HATS-1266, **BREAKING** on-disk layout). Per-session artefacts, the
+  update-check probe mirror and `update-check.json` used to live in the
+  workspace at `<ai_hats_dir>/.cache/`; they now resolve under
+  `<cache_home>/<project-key>/`, where `cache_home()` is
+  `$AI_HATS_CACHE_HOME` → `$XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats` and
+  `project_key()` is `<dirname>-<sha256(abs path)[:8]>`, so two checkouts
+  sharing a basename never collide. Rationale: the project is a tree that
+  file-watchers, `git status`, greps and indexers all pay for, and regenerable
+  state should not be in it. Both env vars name a *base*, never a final root —
+  `cache_root()` always appends the project key, so a var leaked into another
+  project's shell cannot merge two caches. No user action and no migration —
+  a cache is re-derived, not carried: new sessions build in the new root and
+  the session-start sweep deletes the old in-tree `.cache/` (session dirs wait
+  out the TTL, since one may belong to a session that started before the move).
+  The only cost is one re-fetch of the probe mirror.
+  New resolvers `cache_home()` / `project_key()`
+  / `cache_root()` in `src/ai_hats/paths/_dirs.py`; `session_cache_root()` /
+  `session_cache_dir()` keep their names. The standalone agy hook dispatcher
+  runs without importing ai-hats, so it takes the resolved dir from
+  `AI_HATS_SESSION_CACHE_DIR`, pinned into the session env at spawn.
+
 
 ## [0.14.0] - 2026-07-29
 

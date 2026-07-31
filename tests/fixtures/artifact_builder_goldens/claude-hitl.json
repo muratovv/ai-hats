@@ -9,11 +9,11 @@
   "launch": [
     "claude",
     "--system-prompt-file",
-    "<project>/.agent/ai-hats/.cache/sessions/dry-run/prompt.md",
+    "<cache>/sessions/dry-run/prompt.md",
     "--plugin-dir",
-    "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin",
+    "<cache>/sessions/dry-run/plugin",
     "--settings",
-    "<project>/.agent/ai-hats/.cache/sessions/dry-run/settings.json",
+    "<cache>/sessions/dry-run/settings.json",
     "--session-id",
     "<assigned at launch>"
   ],
@@ -25,7 +25,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+      "target": "<cache>/sessions/dry-run"
     },
     {
       "detail": "",
@@ -34,7 +34,7 @@
       "kind": "write_text",
       "size": 81,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/prompt.md"
+      "target": "<cache>/sessions/dry-run/prompt.md"
     },
     {
       "detail": "",
@@ -43,7 +43,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin"
+      "target": "<cache>/sessions/dry-run/plugin"
     },
     {
       "detail": "",
@@ -52,7 +52,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/.claude-plugin"
+      "target": "<cache>/sessions/dry-run/plugin/.claude-plugin"
     },
     {
       "detail": "",
@@ -61,7 +61,7 @@
       "kind": "write_text",
       "size": 49,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/.claude-plugin/plugin.json"
+      "target": "<cache>/sessions/dry-run/plugin/.claude-plugin/plugin.json"
     },
     {
       "detail": "",
@@ -70,7 +70,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/skills"
+      "target": "<cache>/sessions/dry-run/plugin/skills"
     },
     {
       "detail": "",
@@ -79,7 +79,7 @@
       "kind": "copy_tree",
       "size": 38,
       "source": "<tmp>/lib/skills/s",
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/plugin/skills/s"
+      "target": "<cache>/sessions/dry-run/plugin/skills/s"
     },
     {
       "detail": "",
@@ -88,7 +88,7 @@
       "kind": "write_text",
       "size": 326,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/settings.json"
+      "target": "<cache>/sessions/dry-run/settings.json"
     }
   ],
   "notes": [],
@@ -97,7 +97,7 @@
     "hooks": true,
     "settings": true
   },
-  "prompt": "<project>/.agent/ai-hats/.cache/sessions/dry-run/prompt.md",
+  "prompt": "<cache>/sessions/dry-run/prompt.md",
   "provider": "claude",
   "role": "test-role",
   "run_mode": "hitl"

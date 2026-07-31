@@ -1,6 +1,6 @@
-"""Project-local cache for update-check results.
+"""Per-project cache for update-check results.
 
-Stored at ``<ai_hats_dir>/.cache/update-check.json``. TTL is 24h — within
+Stored at ``<cache_root>/update-check.json``. TTL is 24h — within
 that window the pipeline step skips the network probe and re-uses the cache.
 Stale entries are still returned by :func:`read_cache` (with ``is_fresh =
 False``) so the banner step can render even before the background refresh
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ..paths import ai_hats_dir
+from ..paths import cache_root
 
 TTL = timedelta(days=1)
 
@@ -64,7 +64,7 @@ class CacheEntry:
 
 
 def cache_path(project_dir: Path) -> Path:
-    return ai_hats_dir(project_dir) / ".cache" / "update-check.json"
+    return cache_root(project_dir) / "update-check.json"
 
 
 def _parse_iso(s: str) -> datetime:

@@ -14,7 +14,7 @@
     "-s",
     "## PRIORITIES\n1. Quality\n\nRole body.",
     "--config",
-    "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+    "<cache>/sessions/dry-run"
   ],
   "materialized": [
     {
@@ -24,7 +24,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+      "target": "<cache>/sessions/dry-run"
     },
     {
       "detail": "",
@@ -33,7 +33,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/skills"
+      "target": "<cache>/sessions/dry-run/skills"
     },
     {
       "detail": "",
@@ -42,7 +42,7 @@
       "kind": "copy_tree",
       "size": 38,
       "source": "<tmp>/lib/skills/s",
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/skills/s"
+      "target": "<cache>/sessions/dry-run/skills/s"
     }
   ],
   "notes": [],

@@ -85,14 +85,24 @@ root (ADR-0018 / HATS-1170).
 
 **2. Session launch.** The role is composed **in memory, per session** — framework
 rules and skills are never materialized into the canonical tree — and the
-artifacts are written to `<ai_hats_dir>/.cache/sessions/<sid>/`, then handed to
-the surface by flag:
+artifacts are written to a per-session dir **outside the project**:
+`<cache_root>/sessions/<sid>/`, then handed to the surface by flag (`<cache>` in
+the table below is that dir):
 
 | Surface    | Context                                       | Skills                          | Hooks                                         |
 | ---------- | --------------------------------------------- | ------------------------------- | --------------------------------------------- |
 | **claude** | `--system-prompt-file <cache>/prompt.md`      | `--plugin-dir <cache>/plugin`   | `--settings <cache>/settings.json` (additive) |
 | **agy**    | `--add-dir <cache>/rules` (`rules/GEMINI.md`) | `<cache>/rules/.agents/skills/` | `<cache>/hooks.json` + global dispatcher      |
 | **cline**  | `--config <cache>`                            | `<cache>/skills`                | `<cache>`                                     |
+
+**The cache is not in the workspace** (HATS-1398). `<cache_root>` resolves to
+`$AI_HATS_CACHE_HOME` → `$XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats`, plus a
+per-project subdir keyed `<dirname>-<sha256(abs path)[:8]>` — so two checkouts
+sharing a basename never collide. It also holds the update-check probe mirror
+and `update-check.json`. Everything under it is machine-only, regenerable and
+never versioned; keeping it out of the project spares the watchers, `git status`
+runs, greps and indexers that a project tree pays for. Resolvers: `cache_home()`
+/ `project_key()` / `cache_root()` in `src/ai_hats/paths/_dirs.py`.
 
 **What this means in practice.** Nothing about a composition change needs a
 command. `ai-hats.yaml` is re-read and the role re-composed at every launch, so

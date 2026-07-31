@@ -1,8 +1,12 @@
 """Global Hook Dispatcher for AGY surface (HATS-1166).
 
 Located entirely inside `ai_hats_agy` surface package.
-Executes session-specific hooks from `<project_dir>/.agent/ai-hats/.cache/sessions/<session_id>/hooks.json`
-when invoked by the global AGY hook registered in `~/.gemini/antigravity-cli/settings.json`.
+Executes session-specific hooks from `<session_cache_dir>/hooks.json` when invoked
+by the global AGY hook registered in `~/.gemini/antigravity-cli/settings.json`.
+
+The cache dir arrives pre-resolved in `AI_HATS_SESSION_CACHE_DIR` (HATS-1398):
+this process runs on every tool call, so it must not import ai-hats to re-derive
+a path the session builder already knew.
 """
 
 from __future__ import annotations
@@ -12,6 +16,22 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+
+
+def _session_hooks_file() -> Path | None:
+    """This session's hooks manifest, from the dir the builder pinned (HATS-1398).
+
+    An ai-hats session without the pin predates the cache move; say so rather
+    than exit 0, which reads exactly like "no hooks configured".
+    """
+    pinned = os.environ.get("AI_HATS_SESSION_CACHE_DIR")
+    if pinned:
+        return Path(pinned) / "hooks.json"
+    sys.stderr.write(
+        "ai-hats-hook-dispatcher: AI_HATS_SESSION_CACHE_DIR unset — this session "
+        "predates HATS-1398 and its hooks are unreachable; restart it.\n"
+    )
+    return None
 
 
 def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
@@ -48,26 +68,10 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
     if not event:
         event = "PreToolUse"
 
-    # Write layer trace log for diagnostic verification
-    try:
-        with open("/tmp/totify-hook-trace.log", "a", encoding="utf-8") as f:
-            f.write(f"[DISPATCHER] event={event} session={session_id} tmux_pane={os.environ.get('TMUX_PANE')}\n")
-    except Exception:
-        pass
-
-    project_dir = Path(project_dir_str)
-    hooks_file = (
-        project_dir
-        / ".agent"
-        / "ai-hats"
-        / ".cache"
-        / "sessions"
-        / session_id
-        / "hooks.json"
-    )
+    hooks_file = _session_hooks_file()
 
     data: dict = {}
-    if hooks_file.is_file():
+    if hooks_file and hooks_file.is_file():
         try:
             data = json.loads(hooks_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):

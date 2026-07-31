@@ -7,7 +7,7 @@ Coverage:
   canonical baseline captured in
   ``tests/fixtures/role_baselines/v06_compose_assistant.md``.
 - Cache infra: prompt + plugin live under
-  ``<ai_hats_dir>/.cache/sessions/<sid>/``; ``_sweep_orphan_session_caches``
+  ``<cache_root>/sessions/<sid>/``; ``_sweep_orphan_session_caches``
   removes >24h orphans and leaves recent dirs untouched.
 """
 
@@ -165,7 +165,7 @@ def test_composed_default_role_covers_canonical_baseline_content(tmp_path):
 
 
 def test_build_session_prompt_writes_under_cache_dir(project_with_library):
-    """prompt.md and plugin/ live under <ai_hats_dir>/.cache/sessions/<sid>/."""
+    """prompt.md and plugin/ live under <cache_root>/sessions/<sid>/."""
     project, lib = project_with_library
     asm = Assembler(project, library_paths=[lib])
     asm.init()
@@ -215,7 +215,7 @@ def test_sweep_is_idempotent_on_empty_cache_root(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     ProjectConfig().save(project / PROJECT_CONFIG)
-    # No <ai_hats_dir>/.cache/sessions/ exists.
+    # No <cache_root>/sessions/ exists.
     _sweep_orphan_session_caches(project)  # must not raise
 
 
