@@ -98,29 +98,33 @@ while IFS= read -r file; do
         continue
     fi
 
-    # Skip binary files (git diff handles --text by default for the diff body
-    # but git classifies binary on its own; we read added lines via --diff-filter).
-    diff_body="$(git diff --cached -U0 --text -- "$file" 2>/dev/null || true)"
+# HATS-1255 — skip binary files (git diff --numstat outputs `-	-	path` for binary diffs).
+    numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
+    if [[ "$numstat" =~ ^-[[:space:]]+- ]]; then
+        continue
+    fi
+
+    diff_body="$(git diff --cached -U0 -- "$file" 2>/dev/null || true)"
     [[ -z "$diff_body" ]] && continue
     # Only consider added lines (start with `+` but not `+++`).
-    added="$(printf '%s\n' "$diff_body" | grep -E '^\+' | grep -Ev '^\+\+\+ ')"
+    added="$(LC_ALL=C printf '%s\n' "$diff_body" | LC_ALL=C grep -E '^\+' | LC_ALL=C grep -Ev '^\+\+\+ ')"
     [[ -z "$added" ]] && continue
 
     # HATS-633 — drop marker-bearing lines (see PRIVACY_ALLOW_MARKER at top)
     # before scanning, so only that one line is skipped. The marker is only ever
     # seen on added lines here, so it cannot whitelist pre-existing content.
-    added="$(printf '%s\n' "$added" | grep -Fv "$PRIVACY_ALLOW_MARKER")"
+    added="$(LC_ALL=C printf '%s\n' "$added" | LC_ALL=C grep -Fv "$PRIVACY_ALLOW_MARKER")"
     [[ -z "$added" ]] && continue
 
     # HATS-940 — strip the leading diff `+` so patterns match added CONTENT, not
     # the marker. Otherwise a decorator keeps its `+` and the email regex reads
     # marker-as-local-part plus `pytest.fixture` as an address, blocking `@a.b`.
-    added="$(printf '%s\n' "$added" | sed 's/^+//')"
+    added="$(LC_ALL=C printf '%s\n' "$added" | LC_ALL=C sed 's/^+//')"
 
     while IFS= read -r pattern_label; do
         IFS='|' read -r label pattern <<< "$pattern_label"
-        if printf '%s\n' "$added" | grep -Eq -- "$pattern"; then
-            sample="$(printf '%s\n' "$added" | grep -E -- "$pattern" | head -1 | cut -c1-100)"
+        if LC_ALL=C printf '%s\n' "$added" | LC_ALL=C grep -Eq -- "$pattern"; then
+            sample="$(LC_ALL=C printf '%s\n' "$added" | LC_ALL=C grep -E -- "$pattern" | head -1 | cut -c1-100)"
             hard_hits+=("$file: $label — $sample")
         fi
     done <<EOF
