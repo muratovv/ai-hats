@@ -47,7 +47,8 @@ def _active_logs(tasks_dir: Path) -> Iterable[tuple[str, list]]:
     for path in sorted(tasks_dir.glob("*/task.yaml")):
         try:
             card = TaskCard.from_yaml(path)
-        except Exception:  # noqa: BLE001, S112 — one corrupt card must not sink the sweep
+        except Exception:  # noqa: S112
+            # silent-ok: a corrupt card is skipped, not fatal (HATS-1024)
             continue
         if card.state == "active":
             yield card.id, list(card.extras.get("validation_log") or [])

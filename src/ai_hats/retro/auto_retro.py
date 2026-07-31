@@ -116,7 +116,7 @@ def make_decision(
         from . import reminder as reminder_mod
 
         wrap_up_info = reminder_mod.evaluate_wrap_up(project_dir, session_id)
-    except Exception:
+    except Exception:  # silent-ok: the nudge is side-effect-free; any error collapses to None
         wrap_up_info = None
 
     reminder_info = None

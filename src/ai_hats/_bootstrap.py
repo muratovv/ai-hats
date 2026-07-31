@@ -335,7 +335,7 @@ def _check_pycache_coherence() -> list[str]:
     failures: list[str] = []
     try:
         spec = importlib.util.find_spec("ai_hats")
-    except Exception:  # noqa: BLE001
+    except Exception:  # silent-ok: module-presence probe; absence is the answer, not an error
         return failures
 
     if not spec or not spec.submodule_search_locations:

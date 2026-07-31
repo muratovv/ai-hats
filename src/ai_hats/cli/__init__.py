@@ -510,13 +510,13 @@ def _guard_self_location() -> None:
         # we are running from a DIFFERENT one) and clears false-positives for
         # standalone / by-name installs in projects with no managed venv.
         resolved_venv = str(resolved_path) if resolved_path.exists() else None
-    except Exception:  # noqa: BLE001 — fail open on ANY resolution error
+    except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         resolved_venv = None
     try:
         from .maintenance import _is_editable_install
 
         is_editable, _ = _is_editable_install()
-    except Exception:  # noqa: BLE001 — fail open
+    except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         is_editable = False
 
     verdict = classify_invocation(

@@ -185,7 +185,8 @@ def bounded_proc_shutdown(
     # Stage 3: SIGKILL (via ptyprocess so it also closes the master fd).
     try:
         proc.terminate(force=True)
-    except Exception:  # noqa: BLE001 — ptyprocess raises misc on dead children
+    except Exception:  # noqa: S110
+        # silent-ok: stage 3 of a teardown ladder; stage 4 reaps regardless
         pass
 
     # Stage 4: best-effort reap. If the child is truly stuck in `?Es`

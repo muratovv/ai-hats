@@ -198,12 +198,14 @@ def save_session_diagnostics(
                 else:
                     try:
                         diag_file.rename(s_dir / "diagnostics.json.corrupted")
-                    except Exception:
+                    except Exception:  # noqa: S110
+                        # silent-ok: the quarantine rename is itself the recovery
                         pass
             except Exception:
                 try:
                     diag_file.rename(s_dir / "diagnostics.json.corrupted")
-                except Exception:
+                except Exception:  # noqa: S110
+                    # silent-ok: the quarantine rename is itself the recovery
                     pass
 
         existing["schema_version"] = 1
@@ -227,7 +229,7 @@ def save_session_diagnostics(
             try:
                 tmp.close()
                 os.unlink(tmp.name)  # safe-delete: ok tmp-file
-            except Exception:
+            except Exception:  # silent-ok: temp cleanup before the bare raise below  # noqa: S110
                 pass
             raise
     except (Exception, KeyboardInterrupt) as exc:

@@ -276,7 +276,8 @@ class Kernel:
         for card_path in sorted(self.tasks_dir.glob("*/task.yaml")):
             try:
                 card = TaskCard.from_yaml(card_path)
-            except Exception:  # noqa: BLE001, S112 — a broken neighbour must not sink the read
+            except Exception:  # noqa: S112
+                # silent-ok: a broken neighbour must not sink the catalog read
                 continue
             if self.registry.parent_of(card) == task_id:
                 out.append(card_path.parent.name)
@@ -357,7 +358,8 @@ class Kernel:
                     if card is None:
                         try:
                             card = TaskCard.from_yaml(card_path)
-                        except Exception:  # noqa: BLE001 — a broken neighbour must not sink the read
+                        except Exception:
+                            # silent-ok: a broken neighbour must not sink the reverse index
                             break
                     value = (
                         getattr(card, name, None)

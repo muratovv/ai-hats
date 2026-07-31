@@ -121,7 +121,7 @@ def resolve_base(base_ref: str, repo_root: Path) -> str | None:
         if proc.returncode == 0 and proc.stdout.strip():
             return base_ref
         return None
-    except Exception:
+    except Exception:  # silent-ok: no usable base ref is None by contract
         return None
 
 

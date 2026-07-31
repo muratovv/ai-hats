@@ -69,7 +69,7 @@ def _still_declared() -> set[str]:
     try:
         importlib.metadata.distribution("ai-hats")
         declared = {_normalise(dist) for dist, _ in expected_runtime_deps()}
-    except Exception:  # noqa: BLE001 - a guard that crashes must not prune
+    except Exception:  # silent-ok: a guard that crashes must not prune
         return retired
     return declared or retired
 
@@ -79,7 +79,7 @@ def _warn(message: str) -> None:
     to do", and the prune gets one shot per user per upgrade."""
     try:
         print(f"ai-hats: {message}", file=sys.stderr)
-    except Exception:  # noqa: BLE001 - reporting must not be what raises
+    except Exception:  # silent-ok: reporting must not be what raises  # noqa: S110
         pass
 
 
@@ -88,7 +88,7 @@ def _is_installed(name: str) -> bool:
         importlib.metadata.distribution(name)
     except importlib.metadata.PackageNotFoundError:
         return False
-    except Exception:  # noqa: BLE001 - unreadable metadata is not our business
+    except Exception:  # silent-ok: unreadable metadata is not our business
         return False
     return True
 
