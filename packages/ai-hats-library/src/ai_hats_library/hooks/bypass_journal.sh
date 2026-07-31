@@ -50,8 +50,11 @@ ai_hats_journal_bypass() {
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     hook="$(basename "${0:-unknown}")"
     event="${AI_HATS_HOOK_EVENT:-unknown}"
-    head="$(git rev-parse HEAD 2>/dev/null || printf '')"
-    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf '')"
+    # `$(cmd || printf '')` keeps the failed command's stdout: on an empty repo
+    # `git rev-parse HEAD` prints the literal "HEAD" and exits non-zero, which
+    # landed in the field verbatim. Fail the assignment instead.
+    head="$(git rev-parse HEAD 2>/dev/null)" || head=""
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
     session="${AI_HATS_SESSION_ID:-}"
 
     # pre-commit runs before the commit object exists — post-commit stamps `sha`.
@@ -70,5 +73,48 @@ ai_hats_journal_bypass() {
         "$(_ai_hats_json_escape "$sha")" >> "$journal" 2>/dev/null; then
         echo "[bypass-journal] NOT RECORDED ($kind: $reason) — write to $journal failed" >&2
     fi
+    return 0
+}
+
+# ai_hats_journal_stamp_sha
+#   pre-commit records `sha:""` because the commit does not exist yet. Called
+#   from post-commit, this fills it in for the rows this commit came from —
+#   matched on `head_before` == the new commit's parent, same branch. Without it
+#   the journal says "a bypass happened around then", not "THIS commit is
+#   ungated", which is the question the journal exists to answer.
+#
+#   Rebase/amend rewrites the parent, so an old row can stay unstamped. It keeps
+#   `head_before`, so the join is degraded but not lost — and never silent.
+ai_hats_journal_stamp_sha() {
+    local git_dir journal head parent branch tmp
+    git_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
+    journal="${git_dir}/ai-hats/bypasses.jsonl"
+    [[ -f "$journal" ]] || return 0
+
+    head="$(git rev-parse HEAD 2>/dev/null)" || return 0
+    parent="$(git rev-parse HEAD^ 2>/dev/null)" || parent=""
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
+
+    if ! tmp="$(mktemp "${TMPDIR:-/tmp}/ai-hats-bypass.XXXXXX")"; then
+        echo "[bypass-journal] sha NOT STAMPED for $head — mktemp failed" >&2
+        return 0
+    fi
+
+    if awk -v head="$head" -v parent="$parent" -v branch="$branch" '
+        {
+            if ($0 ~ /"sha":""/) {
+                hb = $0; sub(/.*"head_before":"/, "", hb); sub(/".*/, "", hb)
+                br = $0; sub(/.*"branch":"/, "", br); sub(/".*/, "", br)
+                # br == "" means the first commit: pre-commit ran with no
+                # HEAD, so it could not name a branch. head_before still pins it.
+                if (hb == parent && (br == branch || br == "")) \
+                    sub(/"sha":""/, "\"sha\":\"" head "\"")
+            }
+            print
+        }' "$journal" > "$tmp" 2>/dev/null && mv "$tmp" "$journal" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "[bypass-journal] sha NOT STAMPED for $head — rewrite of $journal failed" >&2
     return 0
 }

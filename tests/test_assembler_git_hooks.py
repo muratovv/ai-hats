@@ -191,7 +191,11 @@ def test_manifest_hashed_owner_format(project_with_hook_skill):
     owner_key, entries = sweeper._parse_marker(marker, surface)
     assert owner_key == "git-hooks"
     by_name = {e.name: e for e in entries}
-    assert set(by_name) == {"pre-commit", "pre-commit.d/hook_skill-check.sh"}
+    assert set(by_name) == {
+        "pre-commit",
+        "pre-commit.d/hook_skill-check.sh",
+        GITHOOKS_BYPASS_JOURNAL,  # HATS-1407 — managed, so the sweeper must see it
+    }
     for name, entry in by_name.items():
         on_disk = (project / GITHOOKS_DIR / name).read_bytes()
         assert entry.digest == hashlib.sha256(on_disk).hexdigest()[:12], name

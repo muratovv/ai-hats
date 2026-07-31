@@ -20,6 +20,10 @@ ai_hats:
     # this pre-push hook protects Gemini sessions and direct-terminal pushes.
     pre-push:
       - git_hooks/pre-push-shared-state.sh
+    # HATS-1407: pre-commit records a bypass before the commit exists, so the
+    # SHA is stamped on afterwards — that join is what names the ungated commit.
+    post-commit:
+      - git_hooks/post-commit-bypass-stamp.sh
     # No post-merge/post-checkout self-heal: .githooks/ drift is re-healed by the
     # session-start managed-hook net (Assembler.sync_hooks), not a git-event hook.
 license: MIT

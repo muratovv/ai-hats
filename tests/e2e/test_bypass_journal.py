@@ -151,6 +151,16 @@ def test_pre_commit_leaves_sha_empty_for_the_post_commit_stamp(gated_repo: Path)
 
 
 @pytest.mark.integration
+def test_head_before_is_a_sha_or_empty_never_the_literal_head(gated_repo: Path):
+    """`$(cmd || printf \'\')` keeps a failed git\'s stdout — "HEAD" landed in the field."""
+    res = _run_hook(gated_repo, AI_HATS_PRIVACY_ACK="1")
+    assert res.returncode == 0, res.stderr
+    entry = _journal_lines(gated_repo)[0]
+    assert entry["head_before"] == "", entry
+    assert entry["branch"] == "", entry
+
+
+@pytest.mark.integration
 def test_a_clean_run_records_nothing(gated_repo: Path):
     """Negative control — the journal must mean 'a gate was bypassed', nothing else."""
     res = _run_hook(gated_repo)
@@ -216,3 +226,51 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
     assert lines[0]["reason"] == hatch
     assert lines[0]["kind"] == "hatch"
     assert lines[0]["event"] == event
+
+
+# --- the post-commit stamp closes the join to a real commit ------------------
+
+
+def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
+    """Install a minimal `.githooks/` the way the real installer does."""
+    githooks = repo / ".githooks"
+    event_d = githooks / f"{event}.d"
+    event_d.mkdir(parents=True, exist_ok=True)
+    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
+    for src in hooks:
+        dest = event_d / f"git-mastery-{src.name}"
+        dest.write_bytes(src.read_bytes())
+        dest.chmod(0o755)
+    dispatcher = githooks / event
+    dispatcher.write_bytes(
+        (REPO_ROOT / "src/ai_hats/templates/githooks/dispatcher.sh").read_bytes()
+    )
+    dispatcher.chmod(0o755)
+
+
+@pytest.mark.integration
+def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
+    """The card's question: was THIS commit gated? Unstamped, the journal cannot say."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+
+    _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
+    _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=str(repo), check=True)
+
+    (repo / "a.txt").write_text("first\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    # GIT_* must not leak into a nested git (HATS-886); the hook re-derives its own.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["AI_HATS_PRIVACY_ACK"] = "1"
+    subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
+
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    entries = _journal_lines(repo)
+    assert len(entries) == 1, entries
+    assert entries[0]["sha"] == head, "the bypass is not attributable to its commit"

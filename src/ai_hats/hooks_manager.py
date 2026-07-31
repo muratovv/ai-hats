@@ -872,6 +872,13 @@ def expected_git_hook_files(project_dir: Path, result: CompositionResult) -> dic
             has_entry = True
         if has_entry and GITHOOKS_DISPATCHER_TEMPLATE.exists():
             expected[event] = GITHOOKS_DISPATCHER_TEMPLATE.read_bytes()
+    if expected:
+        # Installed alongside the dispatchers, so it must be expected alongside
+        # them too — otherwise every session reports drift and re-heals forever.
+        src_root = _builtin_library_hooks(project_dir)
+        helper = None if src_root is None else src_root / GITHOOKS_BYPASS_JOURNAL
+        if helper is not None and helper.is_file():
+            expected[GITHOOKS_BYPASS_JOURNAL] = helper.read_bytes()
     return expected
 
 
