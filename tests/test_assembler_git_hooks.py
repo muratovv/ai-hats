@@ -9,6 +9,8 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.hooks_manager import (  # HATS-837: git-hook mechanics merged into hooks_manager
+    _cleanup_managed_git_hooks,
+    GITHOOKS_BYPASS_JOURNAL,
     GITHOOKS_DIR,
     GITHOOKS_DISPATCHER_MARKER,
     GITHOOKS_MANIFEST,
@@ -944,3 +946,72 @@ def test_skill_lint_gate_absent_from_non_authoring_roles():
         assert "skill-lint-gate" not in _composed_skill_names(role), (
             f"{role} unexpectedly received skill-lint-gate"
         )
+
+
+# ----- HATS-1407: the bypass-journal helper ships with the git hooks ---------
+
+
+def test_install_places_bypass_journal_beside_the_dispatcher(project_with_hook_skill):
+    """Hooks source it as `../bypass_journal.sh` from inside `<event>.d/`."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    helper = project / GITHOOKS_DIR / GITHOOKS_BYPASS_JOURNAL
+    assert helper.is_file(), "hatch branches would print to stderr and record nothing"
+    assert helper.stat().st_mode & stat.S_IXUSR
+    assert "ai_hats_journal_bypass" in helper.read_text()
+
+
+def test_bypass_journal_is_not_in_the_event_dir(project_with_hook_skill):
+    """Inside `<event>.d/` the dispatcher would execute the helper as a hook."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    event_d = project / GITHOOKS_DIR / "pre-commit.d"
+    assert not (event_d / GITHOOKS_BYPASS_JOURNAL).exists()
+
+
+def test_bypass_journal_is_manifest_tracked(project_with_hook_skill):
+    """Untracked, it would survive a skill removal as an orphan."""
+    project, lib = project_with_hook_skill
+    asm = Assembler(project, library_paths=[lib])
+    asm.init()
+    asm.set_role("test-role")
+
+    manifest = (project / GITHOOKS_DIR / GITHOOKS_MANIFEST).read_text()
+    assert GITHOOKS_BYPASS_JOURNAL in manifest
+
+
+def test_sweep_removes_the_managed_helper(tmp_path):
+    """Bare manifest entries used to need the DISPATCHER marker, which the
+    helper does not carry — untracked by the sweep it would outlive its skill."""
+    project = tmp_path / "p"
+    githooks = project / GITHOOKS_DIR
+    githooks.mkdir(parents=True)
+    helper = githooks / GITHOOKS_BYPASS_JOURNAL
+    helper.write_text("#!/usr/bin/env bash\n# ai-hats managed — do not edit\n")
+    (githooks / GITHOOKS_MANIFEST).write_text(
+        "# ai-hats managed — do not edit\n" + GITHOOKS_BYPASS_JOURNAL + "\n"
+    )
+
+    _cleanup_managed_git_hooks(project)
+
+    assert not helper.exists()
+
+
+def test_sweep_leaves_a_foreign_bare_file_alone(tmp_path):
+    """Positive control for the marker check — no marker, not ours, not deleted."""
+    project = tmp_path / "p"
+    githooks = project / GITHOOKS_DIR
+    githooks.mkdir(parents=True)
+    foreign = githooks / "pre-commit"
+    foreign.write_text("#!/usr/bin/env bash\n# somebody else's dispatcher\n")
+    (githooks / GITHOOKS_MANIFEST).write_text("# ai-hats managed — do not edit\npre-commit\n")
+
+    _cleanup_managed_git_hooks(project)
+
+    assert foreign.exists()

@@ -581,6 +581,9 @@ GITHOOKS_MANIFEST = ".ai-hats-manifest"
 PREVIOUS_HOOKS_PATH_KEY = "ai-hats.previousHooksPath"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
+#: Lives in `.githooks/`, not `<event>.d/` — the dispatcher executes everything
+#: in `<event>.d/`, and this file is sourced, not run (HATS-1407).
+GITHOOKS_BYPASS_JOURNAL = "bypass_journal.sh"
 
 
 def install_git_hooks(
@@ -617,6 +620,9 @@ def install_git_hooks(
 
     new_manifest: list[str] = []
     warnings: list[str] = []
+
+    if _install_bypass_journal(project_dir, githooks_dir, warnings):
+        new_manifest.append(GITHOOKS_BYPASS_JOURNAL)
 
     for event, entries in declared.items():
         if not entries:
@@ -697,6 +703,28 @@ def _resolve_skill_script(
     return _resolve_runtime_script(result, skill_name, script_path)
 
 
+def _install_bypass_journal(project_dir: Path, githooks_dir: Path, warnings: list[str]) -> bool:
+    """Copy the bypass-journal helper into `.githooks/`. Returns True if installed."""
+    source_root = _builtin_library_hooks(project_dir)
+    src = None if source_root is None else source_root / GITHOOKS_BYPASS_JOURNAL
+    if src is None or not src.is_file():
+        # Every hatch branch sources this file; without it the gates still run
+        # but stop recording bypasses, which is the defect HATS-1407 removes.
+        warnings.append(
+            f"git_hooks: {GITHOOKS_BYPASS_JOURNAL} not found in package data — "
+            "gate bypasses will NOT be journaled"
+        )
+        return False
+    _safe_replace(
+        githooks_dir / GITHOOKS_BYPASS_JOURNAL,
+        src.read_bytes(),
+        reason="githook-bypass-journal",
+        project_dir=project_dir,
+        mode=0o755,
+    )
+    return True
+
+
 def _install_dispatcher(dispatcher_path: Path) -> bool:
     """Write the dispatcher script. Returns True if installed/updated, False on conflict."""
     if dispatcher_path.exists():
@@ -727,12 +755,15 @@ def _cleanup_managed_git_hooks(project_dir: Path) -> None:
     for entry in sorted(entries):
         target = githooks_dir / entry
         if target.is_file():
-            # For dispatcher files, only remove if the marker is still ours.
+            # Bare entries sit in `.githooks/` itself: event dispatchers, plus
+            # the sourced bypass-journal helper. Remove only if still ours —
+            # either marker proves it (HATS-1407 added the second).
             if "/" not in entry:
                 try:
-                    if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
-                        continue
+                    text = target.read_text()
                 except OSError:
+                    continue
+                if GITHOOKS_DISPATCHER_MARKER not in text and _MANAGED_HEADER not in text:
                     continue
             _safe_discard(
                 target,

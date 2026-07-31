@@ -17,8 +17,17 @@ set -uo pipefail
 # HATS-633 — the inline allow-marker string, matched literally (grep -F).
 PRIVACY_ALLOW_MARKER='ai-hats: allow-secret'
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# shellcheck source=../../../../hooks/bypass_journal.sh
+. "$(dirname "$0")/../bypass_journal.sh" 2>/dev/null || true
+
 if [[ "${AI_HATS_PRIVACY_ACK:-}" == "1" ]]; then
     echo "[privacy] override acknowledged via AI_HATS_PRIVACY_ACK=1" >&2
+    if declare -F ai_hats_journal_bypass >/dev/null; then
+        ai_hats_journal_bypass hatch AI_HATS_PRIVACY_ACK
+    else
+        echo "[privacy] bypass NOT RECORDED — bypass_journal.sh missing" >&2
+    fi
     exit 0
 fi
 
