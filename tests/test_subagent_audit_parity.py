@@ -21,14 +21,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ai_hats.paths import claude_transcripts_dir
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_observe import AuditWriter, Session
 from ai_hats.runtime import _finalize_sub_agent
 
 
 def _claude_dir_for(home: Path, work_dir: Path) -> Path:
-    project_key = str(work_dir).replace("/", "-")
-    d = home / ".claude" / "projects" / project_key
+    del home  # Path.home() is already monkeypatched by the caller (HATS-1412).
+    d = claude_transcripts_dir(work_dir)
     d.mkdir(parents=True)
     return d
 
