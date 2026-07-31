@@ -85,3 +85,62 @@ def test_agy_provider_resolve_transcript(tmp_path: Path, monkeypatch) -> None:
     # Exact path via provider_session_id
     exact = provider.resolve_transcript(tmp_path, session_id, provider_session_id="conv-uuid-123")
     assert exact == transcript_file
+
+
+def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path):
+    """agy rotates its brain segment on a checkpoint (HATS-1397).
+
+    Measured on a live HITL run: the resolved transcript held 4 records of a
+    42-record conversation, while trace.log held all 7 user turns. With no
+    provider session id there is no way to resolve the earlier segments, so the
+    parse takes whichever source actually carries the session.
+    """
+    fragment = tmp_path / "transcript.jsonl"
+    fragment.write_text(
+        json.dumps({"type": "USER_INPUT", "content": "last question", "created_at": "2026-07-31T10:04:00"})
+        + "\n"
+        + json.dumps({"type": "PLANNER_RESPONSE", "content": "the tail answer", "created_at": "2026-07-31T10:04:05"})
+        + "\n"
+    )
+    trace = tmp_path / "trace.log"
+    trace.write_text(
+        "12:50:00.000 [REQ] first question\n"
+        "12:50:01.000 [RES] ⏺ Bash(rack ls)\n"
+        "12:50:02.000 [RES] ⏺ here is the backlog\n"
+        "12:55:00.000 [REQ] second question\n"
+        "12:55:01.000 [RES] ⏺ and here is the answer\n"
+        "13:04:00.000 [REQ] last question\n"
+        "13:04:05.000 [RES] ⏺ the tail answer\n"
+    )
+
+    parsed = AgyParser().parse(fragment, trace)
+
+    assert len(parsed.turns) == 3, "the tail fragment displaced the whole conversation"
+    assert parsed.turns[0].user_input == "first question"
+    assert "token-telemetry-unavailable" in parsed.flags
+    assert "no-structured-transcript" not in parsed.flags, (
+        "a structured transcript did exist — marking the record unmeasured would "
+        "drop its counters and make auto_retro skip the session"
+    )
+
+
+def test_the_structured_transcript_wins_when_it_covers_the_session(tmp_path):
+    """The trace scrape is heuristic — it must not displace a complete transcript."""
+    full = tmp_path / "transcript.jsonl"
+    full.write_text(
+        "".join(
+            json.dumps(r) + "\n"
+            for r in (
+                {"type": "USER_INPUT", "content": "one", "created_at": "2026-07-31T10:00:00"},
+                {"type": "PLANNER_RESPONSE", "content": "first", "created_at": "2026-07-31T10:00:01"},
+                {"type": "USER_INPUT", "content": "two", "created_at": "2026-07-31T10:01:00"},
+                {"type": "PLANNER_RESPONSE", "content": "second", "created_at": "2026-07-31T10:01:01"},
+            )
+        )
+    )
+    trace = tmp_path / "trace.log"
+    trace.write_text("13:04:00.000 [REQ] two\n13:04:05.000 [RES] ⏺ second\n")
+
+    parsed = AgyParser().parse(full, trace)
+
+    assert [t.user_input for t in parsed.turns] == ["one", "two"]

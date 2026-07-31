@@ -75,6 +75,16 @@ class AgyParser:
             return self._trace.parse(None, trace_path)
 
         turns = self._parse_lines(lines)
+        # HATS-1397: agy rotates its brain segment on a checkpoint and offers no
+        # link between the pieces, so the resolved transcript can be a tail
+        # fragment of the session. Whichever source carries more of it wins; the
+        # trace-only flag is deliberately NOT inherited, because a structured
+        # transcript did exist and the record must stay measured.
+        traced = self._trace.parse(None, trace_path).turns
+        if len(traced) > len(turns):
+            logger.debug("agy transcript.jsonl covers %d turns, trace %d — using the trace",
+                         len(turns), len(traced))
+            turns = traced
         # The zeros below are a placeholder, not a reading — the flag is what stops
         # a consumer treating them as one (HATS-1397).
         return ParsedTranscript(
