@@ -87,7 +87,10 @@ def test_claude_transcripts_dir_matches_real_claude_code_slug(
     tmp_path, monkeypatch, project_path, expected_key
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert claude_transcripts_dir(Path(project_path)) == tmp_path / ".claude" / "projects" / expected_key
+    assert (
+        claude_transcripts_dir(Path(project_path))
+        == tmp_path / ".claude" / "projects" / expected_key
+    )
 
 
 @pytest.mark.parametrize(
@@ -103,7 +106,10 @@ def test_claude_transcripts_dir_synthetic_special_chars(
     tmp_path, monkeypatch, project_path, expected_key
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert claude_transcripts_dir(Path(project_path)) == tmp_path / ".claude" / "projects" / expected_key
+    assert (
+        claude_transcripts_dir(Path(project_path))
+        == tmp_path / ".claude" / "projects" / expected_key
+    )
 
 
 def test_claude_plugin_layout(tmp_path):
