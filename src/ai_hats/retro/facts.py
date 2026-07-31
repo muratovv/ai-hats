@@ -20,7 +20,13 @@ from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
 
-from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, session_dirname, strip_session_prefix
+from ai_hats_observe.artifacts import (
+    AUDIT_MD,
+    METRICS_JSON,
+    is_measured,
+    session_dirname,
+    strip_session_prefix,
+)
 from .common import SessionArtifacts, SessionLinks, SessionMetrics
 from .window import (
     compute_session_end,
@@ -121,16 +127,24 @@ def _normalize(session_id: str) -> str:
 
 
 def _parse_metrics(session_dir: Path) -> SessionMetrics:
+    """metrics.json → the retro's snapshot, flagged when nothing was measured.
+
+    HATS-1374: a missing or corrupt record used to yield ``exit_code=0,
+    turns=0, tool_calls=0`` — a clean-looking row copied verbatim into retro
+    frontmatter for a session nobody measured.
+    """
     metrics_path = session_dir / METRICS_JSON
+    unmeasured = SessionMetrics(exit_code=0, measured=False, turns=0, tool_calls=0)
     if not metrics_path.exists():
-        return SessionMetrics(exit_code=0, turns=0, tool_calls=0)
+        return unmeasured
     try:
         data = json.loads(metrics_path.read_text())
     except json.JSONDecodeError:
-        return SessionMetrics(exit_code=0, turns=0, tool_calls=0)
+        return unmeasured
     tokens = data.get("tokens") or {}
     return SessionMetrics(
         exit_code=int(data.get("exit_code", 0)),
+        measured=is_measured(data),
         turns=int(data.get("turns", 0)),
         tool_calls=int(data.get("tool_calls", 0)),
         tokens_in=int(tokens.get("input", 0)),

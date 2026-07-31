@@ -18,6 +18,7 @@ from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol
 
 from .artifacts import (
     AUDIT_MD,
+    FLAG_NOT_FINALIZED,
     META_PROMPT_TXT,
     METRICS_JSON,
     PTY_RAW_LOG,
@@ -197,6 +198,21 @@ class Session:
             return False
         return turns > 0 and tool_calls > 0
 
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        """Persist the transcript link at launch, while the session is still alive.
+
+        HATS-1397: it used to be written only at teardown, so every killed
+        session lost the one field that says which transcript was ours. An empty
+        id means the provider never took it (see ``consumed_session_id``) — then
+        nothing is written, because naming a session no surface has is worse
+        than naming none.
+        """
+        if not provider_session_id:
+            return
+        metrics = _load_metrics_safe(self) or {}
+        metrics["claude_session_id"] = provider_session_id
+        atomic_write_text(self.metrics_path, json.dumps(metrics, indent=2))
+
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
@@ -257,6 +273,29 @@ class Session:
             header += self._render_composition_md(composition) + "\n"
         header += "## Events\n\n"
         self.audit_path.write_text(header)
+        self._write_metrics_stub(role=role, provider=provider, model=model)
+
+    def _write_metrics_stub(self, *, role: str, provider: str, model: str) -> None:
+        """Open metrics.json now, so a session killed mid-run is still readable.
+
+        HATS-1374: metrics.json was written only from ``finalize_audit``, i.e.
+        only if the teardown ``finally`` ran. A SIGKILLed session left audit.md
+        (written just above) and no metrics at all — 48 such dirs on disk, which
+        every consumer read as "no session" rather than "not finalized".
+        """
+        stub = {
+            "schema_version": AUDIT_SCHEMA_VERSION,
+            "finalized": False,
+            "measured": False,
+            "flags": [FLAG_NOT_FINALIZED],
+            "role": role,
+            "provider": provider,
+        }
+        if model:
+            stub["model"] = model
+        if self._composition is not None:
+            stub["composition"] = self._composition
+        atomic_write_text(self.metrics_path, json.dumps(stub, indent=2))
 
     @staticmethod
     def _render_composition_md(composition: dict) -> str:
@@ -308,7 +347,9 @@ class Session:
 
         # Save metrics as JSON too — fold in the composition snapshot
         # if init_audit was called with one.
-        out = {"schema_version": AUDIT_SCHEMA_VERSION, **metrics}
+        # `finalized` supersedes the init_audit stub: teardown reached its end,
+        # so the not-finalized marker goes with it (HATS-1374).
+        out = {"schema_version": AUDIT_SCHEMA_VERSION, "finalized": True, **metrics}
         composition = getattr(self, "_composition", None)
         if composition is not None:
             out["composition"] = composition

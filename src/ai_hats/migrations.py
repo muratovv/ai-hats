@@ -173,6 +173,54 @@ def _m_strip_orphaned_claude_scaffold(a: "Assembler") -> None:
     )
 
 
+def _m_retire_agy_token_zeros(a: "Assembler") -> None:
+    """Withdraw the token counts agy never emitted (HATS-1397).
+
+    agy has no usage field, so every ``tokens`` block ever written for it is a
+    placeholder — and it read as a measurement: on the real archive 119 of 237
+    agy sessions answered ``is_zero_output`` with True, one of them a 55-turn
+    session. ``session backfill`` cannot repair them, because agy never receives
+    a provider session id and its attribution guard refuses all 237. Nothing is
+    re-derived here; the claim is simply withdrawn, and the counters agy did
+    measure (``turns``/``tool_calls``) stay.
+    """  # comment-length: allow — names the measurement that justifies a data migration
+    import json
+
+    from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, METRICS_JSON
+
+    from .paths import runs_dir
+
+    runs = runs_dir(a.project_dir)
+    if not runs.is_dir():
+        return
+
+    for metrics_path in sorted(runs.glob(f"session_*/{METRICS_JSON}")):
+        try:
+            record = json.loads(metrics_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("provider") != "agy":
+            continue
+        flags = record.get("flags")
+        flags = [f for f in flags if isinstance(f, str)] if isinstance(flags, list) else []
+        if FLAG_NO_TOKEN_TELEMETRY in flags:
+            continue
+        tokens = record.get("tokens")
+        # Defensive: a non-zero block would be telemetry from somewhere, and
+        # dropping it would destroy a measurement rather than a placeholder.
+        if isinstance(tokens, dict) and any(tokens.values()):
+            continue
+
+        record.pop("tokens", None)
+        record["flags"] = [*flags, FLAG_NO_TOKEN_TELEMETRY]
+        _safe_replace(
+            metrics_path,
+            (json.dumps(record, indent=2) + "\n").encode("utf-8"),
+            reason="agy-token-zeros-retired",
+            project_dir=a.project_dir,
+        )
+
+
 # ----- v4-layout migration logic (HATS-715: moved out of Assembler) --------
 #
 # Take the Assembler for shared helpers (a._idempotent_move /
@@ -402,6 +450,11 @@ MIGRATIONS: list[Migration] = [
         step=7,
         run=_m_strip_orphaned_claude_scaffold,
         label="drop orphaned claude.md scaffold HATS-1201",
+    ),
+    Migration(
+        step=8,
+        run=_m_retire_agy_token_zeros,
+        label="retire fabricated agy token zeros HATS-1397",
     ),
 ]
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ai_hats_observe.artifacts import REASONING_LOG
+from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, REASONING_LOG, is_measured
 
 if TYPE_CHECKING:
     from ai_hats_observe import Session
@@ -30,6 +30,16 @@ def is_zero_output(metrics: dict[str, Any]) -> bool:
     remains the safety net until sub-agent enrichment lands as a
     follow-up.
     """
+    # HATS-1374: gate on `measured` first. Key-absence alone was not enough — a
+    # pre-fix record carries stale fabricated zeros, so a productive session
+    # whose transcript was unreachable raised a bogus incident.
+    if not is_measured(metrics):
+        return False
+    # HATS-1397: this step discards the sub-agent's output, so it asks the flag
+    # itself rather than trusting the writer to have withheld the counter.
+    flags = metrics.get("flags")
+    if isinstance(flags, list) and FLAG_NO_TOKEN_TELEMETRY in flags:
+        return False
     tokens = metrics.get("tokens")
     if not isinstance(tokens, dict) or "output" not in tokens:
         return False

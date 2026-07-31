@@ -388,6 +388,25 @@ _observe_seam._RUNS_DIR = runs_dir
 _observe_seam._TAG_FILTER_PARSER = parse_tag_filters
 _observe_seam._CONSOLE = console
 
+
+def _observe_provider_adapter(provider: str):
+    """Transcript discovery + parser of the surface that recorded the session.
+
+    Backfill must read each session through its own provider, not a fixed one
+    (HATS-1374). An unrecorded or retired provider name yields no reader, so the
+    session is reported as having no transcript instead of being mis-parsed.
+    """
+    from ..providers import UnknownProviderError, get_provider
+
+    try:
+        p = get_provider(provider)
+    except (UnknownProviderError, ValueError):
+        return None, None
+    return p.resolve_transcript, p.transcript_parser()
+
+
+_observe_seam._PROVIDER_ADAPTER = _observe_provider_adapter
+
 # Reflect (post-session retro)
 main.add_command(reflect_mod.reflect)
 

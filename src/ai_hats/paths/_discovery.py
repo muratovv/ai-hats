@@ -61,9 +61,15 @@ def resolve_transcript(
     *,
     exact_path: Path | None = None,
 ) -> Path | None:
-    """Exact path if it exists, else mtime-window discovery."""
-    if exact_path is not None and exact_path.exists():
-        return exact_path
+    """The transcript that is provably ours; the mtime guess only when we have no id.
+
+    HATS-1397: ``exact_path`` used to be a hint, and a miss fell through to
+    ``discover_recent_by_mtime`` — the freshest file, which retroactively is a
+    stranger's. A caller holding the provider's session id has an exact answer
+    or none; guessing is honest only for a caller that has no id at all.
+    """
+    if exact_path is not None:
+        return exact_path if exact_path.exists() else None
     return discover_recent_by_mtime(transcripts_dir, glob_pattern, session_id)
 
 

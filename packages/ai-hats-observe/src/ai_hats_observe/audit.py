@@ -9,19 +9,40 @@ It holds ZERO provider parsing — every JSONL/trace assumption lives in the par
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from ai_hats_core import atomic_write_text
 
-from .artifacts import TRANSCRIPT_TXT, session_start_dt
+from .artifacts import (
+    FLAG_NO_STRUCTURED_TRANSCRIPT,
+    FLAG_NO_TOKEN_TELEMETRY,
+    TRANSCRIPT_JSONL,
+    TRANSCRIPT_TXT,
+    is_measured,
+    session_start_dt,
+)
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
+
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .parsers.base import TranscriptParser, Turn
+    from .parsers.base import ParsedTranscript, TranscriptParser, Turn
+
+logger = logging.getLogger(__name__)
+
+
+def _merge_flags(prior: object, new: list[str]) -> list[str]:
+    """Union of a record's existing flags and this parse's, insertion-ordered."""
+    merged = [f for f in prior if isinstance(f, str)] if isinstance(prior, list) else []
+    for flag in new:
+        if flag not in merged:
+            merged.append(flag)
+    return merged
 
 
 class AuditWriter:
@@ -105,10 +126,12 @@ class AuditWriter:
             for tool in turn.tools:
                 lines.append(f"🔧 {tool}")
             if turn.response:
-                resp = turn.response
-                if len(resp) > 500:
-                    resp = resp[:500] + "…"
-                lines.append(f"👾 {resp}")
+                # HATS-1397: lossless, on the same grounds HATS-683 gave for
+                # user_input — audit *size* is bounded at the delivery layer
+                # (`_truncate_audit`), not by truncating the canonical record.
+                # The 500-char cut hit 97% of replies, so only ~3% of the
+                # agent's own prose reached the one artifact anyone reads.
+                lines.append(f"👾 {turn.response}")
             lines.append("")
 
         # HATS-561: emit ALL metric keys (not just ``exit_code`` + ``turns``)
@@ -119,12 +142,24 @@ class AuditWriter:
         # This restores the ``**total_cost_usd**`` / ``**claude_session_id**``
         # markers the golden-path test asserts and the
         # `_finalize_sub_agent` extra_metrics keys (claude SDK telemetry).
+        # HATS-1397: `build` rewrites metrics.json BEFORE calling us, so this
+        # block renders that record rather than racing it. The five keys below
+        # used to arrive twice — once as a fresh claim, once in the verbatim dump
+        # of every non-header key — printing `measured: false` beside the
+        # `turns: 42` it contradicts.
         lines.append("## Metrics")
         lines.append(f"- **exit_code**: {exit_code}")
-        lines.append(f"- **turns**: {len(turns)}")
+        if "measured" in metrics:
+            lines.append(f"- **measured**: {str(metrics['measured']).lower()}")
+        if metrics.get("flags"):
+            lines.append(f"- **flags**: {', '.join(str(f) for f in metrics['flags'])}")
+        for counter in ("turns", "tool_calls", "tokens"):
+            if counter in metrics:
+                lines.append(f"- **{counter}**: {metrics[counter]}")
         _header_keys = {
             "role", "provider", "exit_code", "duration",
             "composition", "models",
+            "measured", "flags", "turns", "tool_calls", "tokens",
             "schema_version",  # machine-only tag (metrics.json), not human MD
         }
         for k, v in metrics.items():
@@ -148,22 +183,63 @@ class AuditWriter:
         session: Session,
         jsonl_path: Path | None = None,
         keep_raw: bool = False,
+        transcript_verified: bool = False,
     ) -> None:
         """Build enriched audit.md + metrics.json via the injected parser.
 
-        Deletes trace.log after successful audit unless keep_raw=True.
+        ``transcript_verified`` says the caller matched ``jsonl_path`` to this
+        session by provider session id rather than by mtime. Only that licenses
+        deleting trace.log — see ``_may_drop_trace``. Default False: a caller
+        that cannot vouch for the attribution keeps the raw record.
         """
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
+        # Metrics first: `_format_audit` renders metrics.json, so reading it
+        # before the rewrite printed the previous run's counters (HATS-1397).
+        self._write_metrics(
+            session, turns, parsed.model_stats, parsed.agg_usage, flags=parsed.flags
+        )
         audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
-        self._write_metrics(session, turns, parsed.model_stats, parsed.agg_usage)
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
 
-        # Clean up raw trace — redundant after audit is written. Whitelist.
-        if not keep_raw and session.trace_path.exists():
-            session.trace_path.unlink()  # safe-delete: ok raw-trace (audit superseded)
+        preserved = self._preserve_transcript(session, jsonl_path)
+        droppable = self._may_drop_trace(parsed, preserved and transcript_verified)
+        if not keep_raw and droppable and session.trace_path.exists():
+            session.trace_path.unlink()  # safe-delete: ok raw-trace (source copied in)
+
+    @staticmethod
+    def _preserve_transcript(session: Session, jsonl_path: Path | None) -> bool:
+        """Copy the provider's transcript into the session dir; True once it is there.
+
+        HATS-1397: the deletion used to be licensed by that transcript existing
+        *somewhere*. Claude expires its JSONL after ~30–40 days — on this corpus
+        only 178 of 374 sessions with a known id still had one — so the trace was
+        traded for a copy running on someone else's retention clock.
+        """
+        if jsonl_path is None or not jsonl_path.exists():
+            return False
+        try:
+            shutil.copyfile(jsonl_path, session.session_dir / TRANSCRIPT_JSONL)
+        except OSError:
+            logger.warning("could not copy %s into the session dir", jsonl_path, exc_info=True)
+            return False
+        return True
+
+    @staticmethod
+    def _may_drop_trace(parsed: ParsedTranscript, preserved_and_verified: bool) -> bool:
+        """Whether the session text survives the deletion of trace.log.
+
+        HATS-1374: this used to be unconditional, which destroyed the only copy
+        of 295 sessions' text. HATS-1397: the licence is a **verified** copy in
+        the session dir. A guessed one is not enough — agy rotates its brain
+        segment on a checkpoint, so the freshest transcript can be a 4-record
+        tail of a 42-record conversation, and the trace held all of it.
+        """
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags:
+            return False
+        return bool(preserved_and_verified and parsed.turns)
 
     @staticmethod
     def _with_transcript_fallback(session: Session, audit_content: str) -> str:
@@ -202,28 +278,60 @@ class AuditWriter:
         turns: list[Turn],
         model_stats: dict[str, dict],
         agg_usage: dict,
+        flags: list[str] | None = None,
     ) -> None:
-        """Overwrite metrics.json with enriched data from the parse."""
-        existing = _load_metrics_safe(session) or {}
+        """Enrich metrics.json with the parse, claiming a count only if measured.
 
-        existing.update({
-            "schema_version": AUDIT_SCHEMA_VERSION,
-            "turns": len(turns),
-            "tokens": {
-                "input": agg_usage.get("input_tokens", 0),
-                "output": agg_usage.get("output_tokens", 0),
-                "cache_read": agg_usage.get("cache_read_input_tokens", 0),
-                "cache_creation": agg_usage.get("cache_creation_input_tokens", 0),
-            },
-            "models": {
-                model: {
-                    "calls": stats["calls"],
-                    "input_tokens": stats["in"],
-                    "output_tokens": stats["out"],
-                }
-                for model, stats in model_stats.items()
-            },
-            "tool_calls": sum(len(t.tools) for t in turns),
-        })
+        HATS-1374 (verdict B7): this used to write the counters unconditionally,
+        so an unreachable transcript was recorded as a hard ``turns: 0`` /
+        ``tokens: {0,...}`` — indistinguishable from a measured zero, and it
+        overwrote SDK ground truth (``num_turns``/``total_cost_usd``) sitting in
+        the same file. Now an unmeasured parse annotates instead of asserting,
+        per ``rule_composition_value_contract §3``.
+        """
+        existing = _load_metrics_safe(session) or {}
+        parse_flags = list(flags or [])
+        existing["schema_version"] = AUDIT_SCHEMA_VERSION
+
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in parse_flags:
+            existing["flags"] = _merge_flags(existing.get("flags"), parse_flags)
+            # HATS-1397: ask the reader's question, so writer and reader cannot
+            # disagree. Demanding `measured: true` erased genuine legacy counters
+            # — no pre-HATS-1374 record has the key — while `is_measured` called
+            # those same records measured, and the destructive side won.
+            if not is_measured(existing):
+                for counter in ("turns", "tokens", "models", "tool_calls"):
+                    existing.pop(counter, None)
+                existing["measured"] = False
+        else:
+            update = {
+                "measured": True,
+                # Replaces, not merges: the flags describe the current measurement,
+                # so a stale "unmeasured" marker must not survive a good parse.
+                "flags": parse_flags,
+                "turns": len(turns),
+                "tokens": {
+                    "input": agg_usage.get("input_tokens", 0),
+                    "output": agg_usage.get("output_tokens", 0),
+                    "cache_read": agg_usage.get("cache_read_input_tokens", 0),
+                    "cache_creation": agg_usage.get("cache_creation_input_tokens", 0),
+                },
+                "models": {
+                    model: {
+                        "calls": stats["calls"],
+                        "input_tokens": stats["in"],
+                        "output_tokens": stats["out"],
+                    }
+                    for model, stats in model_stats.items()
+                },
+                "tool_calls": sum(len(t.tools) for t in turns),
+            }
+            # HATS-1397: the parse measured turns and tools but the surface emits no
+            # usage at all, so only the token counters are withheld — the same
+            # "counter absent, flag says why" the unreachable-transcript branch uses.
+            if FLAG_NO_TOKEN_TELEMETRY in parse_flags:
+                update.pop("tokens")
+                existing.pop("tokens", None)  # on this surface any prior value is fabricated
+            existing.update(update)
 
         atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))

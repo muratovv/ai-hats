@@ -201,7 +201,10 @@ class TestMakeDecision:
         from ai_hats.retro.auto_retro import make_decision
 
         metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
-        metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
+        # `measured` is what makes a threshold evaluable at all (HATS-1397): a
+        # bare `turns: 0` is a pre-HATS-1374 fabrication, and skipping it as
+        # "below threshold" claims a comparison nobody could have made.
+        metrics.write_text(json.dumps({"measured": True, "turns": 0, "tool_calls": 0}))
 
         d = make_decision(tmp_path, "SID")
         assert d["action"] == "skip"
@@ -295,7 +298,10 @@ class TestMainHookWritesLog:
         from ai_hats.retro import auto_retro
 
         metrics = _setup_project(tmp_path, min_turns=5, min_tool_calls=10)
-        metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
+        # `measured` is what makes a threshold evaluable at all (HATS-1397): a
+        # bare `turns: 0` is a pre-HATS-1374 fabrication, and skipping it as
+        # "below threshold" claims a comparison nobody could have made.
+        metrics.write_text(json.dumps({"measured": True, "turns": 0, "tool_calls": 0}))
 
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv(ENV_SESSION_ID, "SID")

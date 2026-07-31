@@ -43,29 +43,29 @@ def _make_session(tmp_path: Path, metrics: dict | None = None, *, stderr: str = 
 
 
 def test_is_zero_output_true_when_both_zero():
-    assert is_zero_output({"tokens": {"output": 0}, "tool_calls": 0}) is True
+    assert is_zero_output({"turns": 1, "tokens": {"output": 0}, "tool_calls": 0}) is True
 
 
 def test_is_zero_output_false_when_tokens_positive():
-    assert is_zero_output({"tokens": {"output": 5}, "tool_calls": 0}) is False
+    assert is_zero_output({"turns": 1, "tokens": {"output": 5}, "tool_calls": 0}) is False
 
 
 def test_is_zero_output_false_when_tool_calls_positive():
-    assert is_zero_output({"tokens": {"output": 0}, "tool_calls": 3}) is False
+    assert is_zero_output({"turns": 1, "tokens": {"output": 0}, "tool_calls": 3}) is False
 
 
 def test_is_zero_output_false_when_tokens_absent():
     # Sub-agent metrics (basic _finalize) have no tokens dict — guard must
     # not fire defensively (false positives are worse than misses).
-    assert is_zero_output({"exit_code": 0, "tool_calls": 0}) is False
+    assert is_zero_output({"exit_code": 0, "turns": 1, "tool_calls": 0}) is False
 
 
 def test_is_zero_output_false_when_tool_calls_absent():
-    assert is_zero_output({"tokens": {"output": 0}}) is False
+    assert is_zero_output({"turns": 1, "tokens": {"output": 0}}) is False
 
 
 def test_is_zero_output_false_when_tokens_not_a_dict():
-    assert is_zero_output({"tokens": "n/a", "tool_calls": 0}) is False
+    assert is_zero_output({"turns": 1, "tokens": "n/a", "tool_calls": 0}) is False
 
 
 # ---- diagnose_silent_session ----
@@ -112,7 +112,7 @@ def test_diagnose_handles_corrupt_metrics(tmp_path: Path):
 def test_guard_noop_when_policy_none(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 0, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     apply_post_run_guard(session, None)  # must not raise
 
@@ -120,7 +120,7 @@ def test_guard_noop_when_policy_none(tmp_path: Path):
 def test_guard_noop_when_reporting_false(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 0, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     apply_post_run_guard(session, HarnessPolicy(reporting=False))
 
@@ -128,7 +128,7 @@ def test_guard_noop_when_reporting_false(tmp_path: Path):
 def test_guard_noop_when_on_zero_output_ignore(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 0, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     apply_post_run_guard(
         session,
@@ -139,7 +139,7 @@ def test_guard_noop_when_on_zero_output_ignore(tmp_path: Path):
 def test_guard_raises_on_zero_output_with_reporting(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 0, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     with pytest.raises(HarnessZeroOutputError) as exc_info:
         apply_post_run_guard(
@@ -153,7 +153,7 @@ def test_guard_raises_on_zero_output_with_reporting(tmp_path: Path):
 def test_guard_zero_output_error_is_reliability_error(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 0, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 0, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     with pytest.raises(HarnessReliabilityError):
         apply_post_run_guard(
@@ -165,7 +165,7 @@ def test_guard_zero_output_error_is_reliability_error(tmp_path: Path):
 def test_guard_noop_on_non_zero_exit(tmp_path: Path):
     session = _make_session(
         tmp_path,
-        {"exit_code": 1, "tokens": {"output": 0}, "tool_calls": 0},
+        {"exit_code": 1, "turns": 1, "tokens": {"output": 0}, "tool_calls": 0},
     )
     apply_post_run_guard(session, HarnessPolicy(reporting=True))
 
@@ -225,3 +225,23 @@ def test_zero_output_error_carries_session_and_diagnostic():
     assert err.diagnostic == "exit_code=0; turns=0"
     assert "sid-1" in str(err)
     assert "exit_code=0" in str(err)
+
+
+def test_is_zero_output_false_when_unmeasured():
+    """HATS-1374: an unmeasured record's zeros are not an observation.
+
+    The pre-fix writer emitted them for every session whose transcript was
+    unreachable, so a productive agy session raised a bogus incident.
+    """
+    assert (
+        is_zero_output(
+            {
+                "measured": False,
+                "flags": ["no-structured-transcript"],
+                "turns": 0,
+                "tokens": {"output": 0},
+                "tool_calls": 0,
+            }
+        )
+        is False
+    )

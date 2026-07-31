@@ -17,8 +17,11 @@ from typing import TYPE_CHECKING
 # beside the other recovery passes (bundled and run at the create_session
 # chokepoint). Re-exported so existing callers/tests keep importing it from
 # ``ai_hats.runtime``.
+from ai_hats_core import atomic_write_text
+
 from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from ai_hats_observe.artifacts import (
+    FLAG_SENSOR_ERROR,
     REASONING_LOG,
     TRANSCRIPT_TXT,
 )
@@ -158,6 +161,27 @@ def _session_timed_out(session: Session) -> bool:
     return bool(metrics.get("timed_out"))
 
 
+def _flag_sensor_error(session: Session) -> None:
+    """Record in metrics.json that enrichment blew up, so the gap is readable.
+
+    HATS-1374: the enrichment pipeline is ``failure_policy=continue`` and its
+    exception was swallowed into a log line, so a session with no counters was
+    indistinguishable from one that legitimately had none.
+    """
+    try:
+        metrics = json.loads(session.metrics_path.read_text())
+        flags = metrics.get("flags")
+        metrics["flags"] = (
+            [f for f in flags if isinstance(f, str)] if isinstance(flags, list) else []
+        )
+        if FLAG_SENSOR_ERROR not in metrics["flags"]:
+            metrics["flags"].append(FLAG_SENSOR_ERROR)
+        metrics.setdefault("measured", False)
+        atomic_write_text(session.metrics_path, json.dumps(metrics, indent=2))
+    except (OSError, ValueError):
+        logger.error("could not flag sensor error on %s", session.metrics_path, exc_info=True)
+
+
 def _finalize_sub_agent(
     session: Session,
     *,
@@ -279,7 +303,11 @@ def _finalize_sub_agent(
                 transcript_resolver=transcript_resolver,
             )
         except (Exception, KeyboardInterrupt):
-            logger.warning("finalize-subagent pipeline failed", exc_info=True)
+            # HATS-1374: escalated from warning, and recorded in the artifact —
+            # a broken sensor that only whispers into a log is how RC-C stayed
+            # invisible across 74 sessions.
+            logger.error("finalize-subagent pipeline failed", exc_info=True)
+            _flag_sensor_error(session)
 
 
 def _highlight_hash(version: str) -> str:
@@ -430,6 +458,7 @@ def _finalize_session_basic(
     provider_name: str,
     tracer: "SidecarTracer",
     tags: dict[str, str] | None = None,
+    claude_session_id: str | None = None,
 ) -> dict:
     """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
 
@@ -471,6 +500,12 @@ def _finalize_session_basic(
             "role": active_role,
             "provider": provider_name,
         }
+        # The link back to the provider's transcript. Only the sub-agent path
+        # used to persist it, so a HITL session's metrics could never be
+        # re-derived later — 947 sessions are permanently unmeasurable for want
+        # of this one field (HATS-1374).
+        if claude_session_id:
+            metrics["claude_session_id"] = claude_session_id
         if tags:
             metrics["tags"] = tags
         session.finalize_audit(metrics)
@@ -481,24 +516,6 @@ def _finalize_session_basic(
         trace_stats = _collect_trace_stats(session)
     except (Exception, KeyboardInterrupt):
         logger.warning("trace stats collection failed", exc_info=True)
-
-    # Smoke-test: non-error session should have turns after enrichment.
-    # NB: enrichment now happens in ``MakeAudit`` (downstream); this
-    # smoke test fires before that, so the warning is a no-op until the
-    # finalize-hitl pipeline runs. Kept here for parity with the
-    # pre-HATS-535 placement; the meaningful check is the metrics.json
-    # state at session-end print time.
-    try:
-        if exit_code == 0 and session.metrics_path.exists():
-            metrics = json.loads(session.metrics_path.read_text())
-            if metrics.get("turns", 0) == 0:
-                logger.debug(
-                    "session %s: exit_code=0 but turns=0 pre-enrichment — "
-                    "expected; MakeAudit will populate from JSONL",
-                    session.session_id,
-                )
-    except (Exception, KeyboardInterrupt):
-        pass
 
     return trace_stats
 

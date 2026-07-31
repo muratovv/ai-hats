@@ -90,7 +90,7 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
     captured: dict = {}
 
     class _CapturingAuditWriter:
-        def build(self, session, jsonl_path=None, keep_raw=False):
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
             captured["jsonl_path"] = jsonl_path
             captured["session"] = session
 
@@ -110,14 +110,17 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
     assert delta == {"audit_path": session.audit_path}
 
 
-def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
+def test_discovers_the_jsonl_when_no_session_id_was_taken(
     tmp_path,
     monkeypatch,
 ):
-    """Resume-mode regression (HATS-272): configured ``claude_session_id``
-    points nowhere; ``_discover_claude_jsonl`` picks the most-recent
-    JSONL under the project_key dir, and that path is what
-    ``AuditWriter`` receives."""
+    """Resume-mode (HATS-272): claude keeps its own id on ``--resume``, so we hold
+    none and discovery picks the most-recent JSONL under the project_key dir.
+
+    HATS-1397 narrowed the input. This used to pass a uuid4 that never reached
+    claude and lean on the resolver guessing once the exact path missed — the
+    same guess that attributed strangers' transcripts. The id is blanked at
+    launch now (``consumed_session_id``), so discovery runs on an honest absence."""
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     session = make_session(tmp_path)
     session.init_audit(role="primary", provider="claude")
@@ -133,14 +136,14 @@ def test_falls_back_to_discovered_jsonl_when_configured_path_missing(
     captured: dict = {}
 
     class _CapturingAuditWriter:
-        def build(self, session, jsonl_path=None, keep_raw=False):
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
             captured["jsonl_path"] = jsonl_path
 
     step = MakeAudit()
     step.run(
         session_id=session.session_id,
         session_dir=session.session_dir,
-        claude_session_id="dead-uuid-never-passed-to-claude",
+        claude_session_id="",
         project_dir=project_dir,
         transcript_resolver=_claude_resolver,
         exit_code=0,

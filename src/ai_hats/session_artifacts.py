@@ -63,6 +63,17 @@ def assemble_launch_command(
     return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
 
 
+def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
+    """The id this session may claim as its identity — ``""`` when unclaimed.
+
+    HATS-1397: only a surface that puts the id on its own command line will
+    write a transcript under it. agy deletes it, cline inherits the base
+    no-op, and claude omits it on ``--resume``. Recording it regardless names
+    a session that exists nowhere, which also hides the trace-recovery path.
+    """
+    return provider_session_id if provider_session_id in cmd else ""
+
+
 @dataclass
 class BuiltArtifacts:
     cli_args: list[str] = field(

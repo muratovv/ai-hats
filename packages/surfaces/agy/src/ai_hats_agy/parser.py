@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY
 from ai_hats_observe.parsers.base import ParsedTranscript, Turn
 from ai_hats_observe.parsers.trace import TraceParser
 from ai_hats_observe.usage import empty_usage_report
@@ -74,6 +75,18 @@ class AgyParser:
             return self._trace.parse(None, trace_path)
 
         turns = self._parse_lines(lines)
+        # HATS-1397: agy rotates its brain segment on a checkpoint and offers no
+        # link between the pieces, so the resolved transcript can be a tail
+        # fragment of the session. Whichever source carries more of it wins; the
+        # trace-only flag is deliberately NOT inherited, because a structured
+        # transcript did exist and the record must stay measured.
+        traced = self._trace.parse(None, trace_path).turns
+        if len(traced) > len(turns):
+            logger.debug("agy transcript.jsonl covers %d turns, trace %d — using the trace",
+                         len(turns), len(traced))
+            turns = traced
+        # The zeros below are a placeholder, not a reading — the flag is what stops
+        # a consumer treating them as one (HATS-1397).
         return ParsedTranscript(
             turns=turns,
             model_stats={},
@@ -83,6 +96,7 @@ class AgyParser:
                 "cache_read_input_tokens": 0,
                 "cache_creation_input_tokens": 0,
             },
+            flags=[FLAG_NO_TOKEN_TELEMETRY],
         )
 
     def parse_usage(self, jsonl_path: Path | None, trace_path: Path) -> dict[str, Any]:
@@ -95,9 +109,7 @@ class AgyParser:
             if jsonl_path
             else empty_usage_report("transcript.jsonl")
         )
-        report["flags"].append(
-            "token-telemetry-unavailable: agy CLI does not record token metrics in transcript.jsonl"
-        )
+        report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
         turns = self._parse_lines(lines)
         agg = report["aggregates"]

@@ -8,20 +8,27 @@ AI_HATS_DIR/yaml-aware resolvers at mount and re-attaches the retro subcommands
 
 from __future__ import annotations
 
+import json
+import re
 import sys
+
+from ai_hats_core import atomic_write_text
 
 import click
 
 from ..artifacts import (
     AUDIT_MD,
+    FLAG_NO_STRUCTURED_TRANSCRIPT,
     META_PROMPT_TXT,
     METRICS_JSON,
     REASONING_LOG,
     TRACE_LOG,
     TRANSCRIPT_TXT,
     USAGE_JSON,
+    is_measured,
     session_start_dt,
 )
+from ..session import _load_metrics_safe
 from . import _seam
 
 
@@ -37,6 +44,7 @@ def session():
 @click.argument("session_id", required=False)
 def session_audit(session_id: str | None):
     """Show the audit log for a session (defaults to the most recent)."""
+
     from ..session import SessionManager
 
     pd = _seam._PROJECT_DIR()
@@ -393,6 +401,7 @@ def session_show(session_id: str):
     """Show detailed metrics for a session."""
     import json
 
+
     from ..session import SessionManager
 
     pd = _seam._PROJECT_DIR()
@@ -429,3 +438,192 @@ def session_show(session_id: str):
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
     if artifacts:
         _seam._CONSOLE.print(f"\n[bold]Artifacts:[/] {', '.join(artifacts)}")
+
+
+# ---- session backfill ----
+
+# One match, one line: `.` never crosses a newline, so provider and id cannot be
+# paired across the file. The `[SYS]` prefix is anchored because trace.log is the
+# whole PTY stream — `[RES]` lines are terminal output and may contain anything.
+_LAUNCH_LINE = re.compile(
+    r"^\d{2}:\d{2}:\d{2}\.\d{3} \[SYS\] Launching: (?P<provider>\S+)"
+    r"(?:.*?--session-id[= ](?P<session_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))?",
+    re.MULTILINE,
+)
+
+
+def _identity_from_trace(s) -> tuple[str | None, str | None]:
+    """Recover ``(provider, provider_session_id)`` from the logged launch line.
+
+    Pre-HATS-1374 records persisted neither (and the 48 hardest cases have no
+    metrics.json at all), but the runner logs the whole command —
+    ``[SYS] Launching: claude … --session-id <uuid>`` — into trace.log.
+
+    HATS-1397: both halves must come from the SAME launch line. Two independent
+    searches over the whole stream paired this session's provider with a uuid
+    printed later by the terminal, and ``_backfill_one`` persisted it forever.
+    Fails closed: a ``--resume`` launch carries no flag, so the id stays ``None``.
+    """
+    if not s.trace_path.exists():
+        return None, None
+    try:
+        text = s.trace_path.read_text(errors="replace")
+    except OSError:
+        return None, None
+    launch = _LAUNCH_LINE.search(text)
+    if launch is None:
+        return None, None
+    return launch.group("provider"), launch.group("session_id")
+
+
+def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
+    """Re-derive one session's counters from its transcript. Returns a row dict."""
+    from ..audit import AuditWriter
+
+    metrics = _load_metrics_safe(s) or {}
+    row = {
+        "session_id": s.session_id,
+        "provider": metrics.get("provider") or "?",
+        "before": "measured" if is_measured(metrics) else "unmeasured",
+        "after": "-",
+        "turns": "-",
+        "tool_calls": "-",
+        "note": "",
+    }
+    row["after"] = row["before"]
+
+    # HATS-1397: `build` replaces audit.md wholesale, so rewriting a session that
+    # is still running destroys the `## Events` log it is appending to and races
+    # `finalize_audit` for metrics.json. `finalized` exists to answer this.
+    if metrics.get("finalized") is False:
+        row["note"] = "not finalized (session still running)"
+        return row
+
+    # Exact match only: live discovery falls back to the freshest transcript,
+    # which retroactively resolves a stranger's (HATS-1374 — a dry run
+    # attributed one identical turns=5/tools=216 to 60 unrelated sessions).
+    provider = metrics.get("provider") or ""
+    provider_session_id = metrics.get("claude_session_id") or None
+    from_trace = False
+    if not provider or not provider_session_id:
+        trace_provider, trace_session_id = _identity_from_trace(s)
+        provider = provider or (trace_provider or "")
+        if not provider_session_id and trace_session_id:
+            provider_session_id = trace_session_id
+            from_trace = True
+        row["provider"] = provider or "?"
+
+    resolver, parser = _seam._PROVIDER_ADAPTER(provider)
+    if resolver is None or not provider_session_id:
+        row["note"] = "no provider session id"
+        return row
+
+    # HATS-1397: the resolver refuses to guess once given an id, so the stem check
+    # that used to sit here is gone — it only ever described claude's filenames and
+    # rejected agy (`…/<psid>/…/transcript.jsonl`) and cline (`<psid>.messages`).
+    jsonl_path = resolver(project_dir, s.session_id, provider_session_id=provider_session_id)
+    if jsonl_path is None or not jsonl_path.exists():
+        row["note"] = "no transcript"
+        return row
+
+    writer = AuditWriter(parser) if parser is not None else AuditWriter()
+
+    suffix = " (id from trace)" if from_trace else ""
+
+    if dry_run:
+        parsed = writer.parser.parse(jsonl_path, s.trace_path)
+        measurable = FLAG_NO_STRUCTURED_TRANSCRIPT not in parsed.flags
+        row["after"] = "measured" if measurable else "unmeasured"
+        row["turns"] = str(len(parsed.turns))
+        row["tool_calls"] = str(sum(len(t.tools) for t in parsed.turns))
+        row["note"] = ("would rewrite" if measurable else "unparseable") + suffix
+        return row
+
+    if from_trace:
+        # Persist the recovered identity so the link survives the next audit,
+        # which deletes trace.log — the source we just read it from.
+        metrics["claude_session_id"] = provider_session_id
+        atomic_write_text(s.metrics_path, json.dumps(metrics, indent=2))
+
+    # keep_raw: a backfill must not consume trace.log — it is the only source
+    # left for surfaces whose transcript cannot be recovered (HATS-1374).
+    writer.build(s, jsonl_path=jsonl_path, keep_raw=True)
+    after = _load_metrics_safe(s) or {}
+    row["after"] = "measured" if is_measured(after) else "unmeasured"
+    row["turns"] = str(after.get("turns", "-"))
+    row["tool_calls"] = str(after.get("tool_calls", "-"))
+    row["note"] = "rewritten" + suffix
+    return row
+
+
+@session.command("backfill")
+@click.argument("session_ids", nargs=-1)
+@click.option("--last", "last_n", default=0, type=int, help="Backfill the last N sessions.")
+@click.option("--all", "show_all", is_flag=True, help="Backfill every session.")
+@click.option(
+    "--dry-run", is_flag=True, help="Report what would change without writing anything."
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Also re-derive sessions already marked measured (default: skip them).",
+)
+def session_backfill(
+    session_ids: tuple[str, ...], last_n: int, show_all: bool, dry_run: bool, force: bool
+):
+    """Re-derive turns/tokens/tool_calls for past sessions from their transcripts.
+
+    Metrics used to be written once at teardown, so a session whose enrichment
+    failed kept its gap forever even though the transcript was still on disk.
+    """
+    from rich.table import Table
+
+    from ..session import SessionManager
+
+    pd = _seam._PROJECT_DIR()
+    mgr = SessionManager(pd, runs_dir=_seam._RUNS_DIR(pd))
+
+    if session_ids:
+        sessions = [mgr.get_session(sid) for sid in session_ids]
+        sessions = [s for s in sessions if s is not None]
+    elif show_all:
+        sessions = mgr.list_sessions()
+    elif last_n:
+        sessions = mgr.list_sessions(last_n=last_n)
+    else:
+        raise click.UsageError("pass session ids, or one of --last N / --all")
+
+    if not sessions:
+        _seam._CONSOLE.print("[yellow]No matching sessions[/]")
+        return
+
+    rows, skipped = [], 0
+    for s in sessions:
+        if not force and is_measured(_load_metrics_safe(s) or {}):
+            skipped += 1
+            continue
+        rows.append(_backfill_one(s, project_dir=pd, dry_run=dry_run))
+
+    table = Table(title="session backfill — dry run" if dry_run else "session backfill")
+    table.add_column("session", no_wrap=True)
+    table.add_column("provider")
+    table.add_column("was")
+    table.add_column("now")
+    table.add_column("turns", justify="right")
+    table.add_column("tools", justify="right")
+    table.add_column("note")
+    for r in rows:
+        table.add_row(
+            r["session_id"], r["provider"], r["before"], r["after"],
+            r["turns"], r["tool_calls"], r["note"],
+        )
+    _seam._CONSOLE.print(table)
+
+    recovered = sum(1 for r in rows if r["before"] == "unmeasured" and r["after"] == "measured")
+    no_transcript = sum(1 for r in rows if r["note"].startswith("no "))
+    _seam._CONSOLE.print(
+        f"\n[bold]{len(rows)}[/] examined, [bold green]{recovered}[/] recoverable, "
+        f"[bold]{no_transcript}[/] without a transcript, [bold]{skipped}[/] already measured"
+        + (" [dim](nothing written — dry run)[/]" if dry_run else "")
+    )
