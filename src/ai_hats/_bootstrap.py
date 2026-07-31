@@ -12,9 +12,10 @@ the project itself is what may be missing dependencies.
 
 Two entry points:
 
-* :func:`bootstrap_or_die` — called first in ``cli.main()``. Detects missing
-  runtime deps; uv-installs them; ``os.execv`` re-execs the same command
-  in a fresh interpreter so freshly-installed modules are importable.
+* :func:`bootstrap_or_die` — called first in ``__main__.main()``, ahead of the
+  ``ai_hats.cli`` import it protects (HATS-1368). Detects missing runtime deps;
+  uv-installs them; ``os.execv`` re-execs the same command in a fresh
+  interpreter so freshly-installed modules are importable.
 * :func:`verify_after_install` — called via ``python -m ai_hats._bootstrap
   verify`` from ``cli.maintenance.update()`` as a stage-2 check inside a
   fresh subprocess. Heals without re-exec (we are already exiting).
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -73,21 +75,83 @@ def _parse_requirement(req: str) -> str | None:
     return m.group(0) if m else None
 
 
-def expected_runtime_deps() -> list[tuple[str, str]]:
-    """Return ``[(dist_name, import_name), ...]`` for runtime deps of ai-hats.
+def _editable_source_dir() -> str | None:
+    """Filesystem path of the editable checkout backing this ai-hats install.
 
-    Source of truth is ``importlib.metadata.requires("ai-hats")`` — auto-
-    syncs with ``pyproject.toml`` so any new dep is protected without
-    touching this module.
+    ``None`` for a wheel install, for missing/malformed PEP 610 metadata, or when
+    the recorded checkout is gone — every caller treats that as "nothing local to
+    re-point at" and keeps its pre-HATS-1367 behaviour. POSIX-only ``file://``
+    handling, matching this module's re-exec contract.
     """
     try:
-        raw = importlib.metadata.requires("ai-hats") or []
+        raw = importlib.metadata.distribution("ai-hats").read_text("direct_url.json")
+    except Exception:  # noqa: BLE001 - bootstrap diagnoses, never crashes
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not (data.get("dir_info") or {}).get("editable"):
+        return None
+    url = data.get("url") or ""
+    if not url.startswith("file://"):
+        return None
+    from urllib.parse import unquote, urlparse
+
+    path = unquote(urlparse(url).path)
+    return path if os.path.isdir(path) else None
+
+
+def _live_pyproject_deps(src: str) -> list[str] | None:
+    """``[project].dependencies`` from the checkout at ``src``; ``None`` on any snag."""
+    import tomllib
+
+    try:
+        with open(os.path.join(src, "pyproject.toml"), "rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return None
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return None
+    deps = project.get("dependencies")
+    if not isinstance(deps, list):
+        return None
+    return [d for d in deps if isinstance(d, str)]
+
+
+def _declared_requirements() -> list[str]:
+    """Requirement lines ai-hats declares — live pyproject first, METADATA second.
+
+    HATS-1368: on an editable install METADATA is a snapshot taken at install
+    time, and its drift from the code actually on ``.pth`` is one-sided in BOTH
+    directions — it can under-declare (a workspace member added since, invisible
+    to the gate) or over-declare (a member deleted since, healed forever as a
+    no-op). The checkout's own pyproject.toml cannot drift from the code it sits
+    next to. A wheel install has no such gap, so it keeps reading METADATA.
+    """
+    src = _editable_source_dir()
+    if src is not None:
+        live = _live_pyproject_deps(src)
+        if live is not None:
+            return live
+    try:
+        return list(importlib.metadata.requires("ai-hats") or [])
     except importlib.metadata.PackageNotFoundError:
         return []
 
+
+def expected_runtime_deps() -> list[tuple[str, str]]:
+    """Return ``[(dist_name, import_name), ...]`` for runtime deps of ai-hats.
+
+    Source of truth is :func:`_declared_requirements` — auto-syncs with
+    ``pyproject.toml`` so any new dep is protected without touching this module.
+    """
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for req in raw:
+    for req in _declared_requirements():
         dist = _parse_requirement(req)
         if not dist:
             continue
@@ -121,23 +185,71 @@ def attempt_self_heal(missing: list[str]) -> bool:
     """
     if not missing:
         return True
-    cmd = ["uv", "pip", "install", "--python", sys.executable, *missing]
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(_repair_argv(missing), check=False)
     except OSError:
         return False
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    _refresh_import_paths()
+    return True
+
+
+def _refresh_import_paths() -> None:
+    """Make what uv just installed visible to THIS interpreter.
+
+    HATS-1368: an editable install lands as a ``.pth`` file, and ``.pth`` files
+    are processed only at interpreter startup — without re-running the site hook
+    the healed module stays unimportable here, and the HATS-1359 recheck reads a
+    successful heal as a no-op.
+    """
+    import site
+    import sysconfig
+
+    try:
+        site.addsitedir(sysconfig.get_paths()["purelib"])
+    except Exception:  # noqa: BLE001,S110 - a refresh that fails must not abort the heal
+        pass
+    importlib.invalidate_caches()
+
+
+def _repair_argv(missing: list[str]) -> list[str]:
+    """The one repair invocation — what bootstrap runs and what it tells users to run.
+
+    HATS-1367: installing an editable install's deps BY NAME is the no-op uv
+    audits as already-satisfied; only re-pointing the checkout rewrites the
+    metadata that went stale. Two renderings of one command, so the printed
+    rescue can never drift from the attempted heal.
+    """
+    src = _editable_source_dir()
+    tail = ["-e", src] if src is not None else list(missing)
+    return ["uv", "pip", "install", "--python", sys.executable, *tail]
 
 
 def _rescue_command(missing: list[str]) -> str:
-    quoted = " ".join(f"'{m}'" for m in missing)
-    return f"uv pip install --python {sys.executable} {quoted}"
+    argv = _repair_argv(missing)
+    head, tail = argv[:5], argv[5:]
+    return " ".join([*head, *(a if a == "-e" else f"'{a}'" for a in tail)])
+
+
+def repair_command() -> str:
+    """The command to hand a user whose install is broken in an unknown way.
+
+    HATS-1368: ``self update`` is a dead end when the import that broke is the
+    CLI that would run it — an editable install with stale metadata answers the
+    advice with the very error that produced it. Re-pointing the checkout is the
+    repair that runs from outside the broken tree.
+    """
+    src = _editable_source_dir()
+    if src is None:
+        return "python -m ai_hats self update (or 'ai-hats self update')"
+    return _rescue_command([])
 
 
 def bootstrap_or_die() -> None:
     """Detect missing runtime deps; uv-install + re-exec, or die loudly.
 
-    Called as the very first action in :func:`ai_hats.cli.main`. Side effects:
+    Called as the very first action in :func:`ai_hats.__main__.main`. Side effects:
     prints to stderr, runs uv in a subprocess, and on success replaces the
     current process via :func:`os.execv` so freshly-installed modules become
     importable for the actual command the user invoked.

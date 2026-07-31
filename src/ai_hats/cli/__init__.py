@@ -194,13 +194,6 @@ def main(
     Without a subcommand, launches a wrapped provider CLI session.
     Positional text or unknown flags are passed through to the provider.
     """
-    # HATS-213: heal a half-finished self-update (missing runtime dep) before
-    # touching anything else. On success this re-execs the same command in a
-    # fresh interpreter; on failure it sys.exit(1)s with a rescue command.
-    from .._bootstrap import bootstrap_or_die
-
-    bootstrap_or_die()
-
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
 
@@ -589,10 +582,7 @@ def main_entry() -> None:
                     raise
                 from ..startup_notices import show_fatal_notice_and_exit
 
-                show_fatal_notice_and_exit(
-                    f"Inconsistent or broken ai-hats installation ({exc}).\n"
-                    "Likely cause: package files are out of sync or corrupted.\n"
-                    "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
-                    "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
-                )
+                from ._helpers import broken_install_notice
+
+                show_fatal_notice_and_exit(broken_install_notice(exc))
         raise

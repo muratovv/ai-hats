@@ -59,11 +59,19 @@ def _force_missing_until_healed(monkeypatch, name: str) -> dict:
 
 
 def _fixed_requires(monkeypatch, reqs: list[str]) -> None:
+    """Pin the METADATA snapshot. Detaches the editable path too (HATS-1368).
+
+    The dev checkout is itself an editable install, so without this the live
+    pyproject.toml would outrank the pinned list and these tests would assert
+    against the repo's real dependency set. Tests that WANT the editable branch
+    re-point ``_editable_source_dir`` after calling this.
+    """
     monkeypatch.setattr(
         _bootstrap.importlib.metadata,
         "requires",
         lambda dist: list(reqs),
     )
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
 
 
 @pytest.fixture
@@ -125,6 +133,9 @@ def test_t3b_handles_extras_brackets(monkeypatch):
 def test_t4_bootstrap_or_die_success_path(monkeypatch):
     """Missing dep → pip actually fixes the import → os.execv invoked with fresh interpreter."""
     state = _force_missing_until_healed(monkeypatch, "ptyprocess")
+    # Wheel install: the by-name heal this test asserts. The editable branch
+    # (HATS-1367) re-points the checkout instead and has its own tests.
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
 
     pip_calls: list[list[str]] = []
 
@@ -488,3 +499,221 @@ def test_check_pycache_coherence_reports_failure_when_unlink_fails(tmp_path, mon
     failures = _bootstrap._check_pycache_coherence()
     assert len(failures) == 1
     assert "stale __pycache__" in failures[0]
+
+
+# ---------- T14: editable source detection (HATS-1368/HATS-1367) ----------
+
+
+def _direct_url(monkeypatch, payload: str | None) -> None:
+    """Stub the PEP 610 direct_url.json the active ai-hats install carries."""
+
+    class _Dist:
+        def read_text(self, name):
+            assert name == "direct_url.json"
+            return payload
+
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", lambda _: _Dist())
+
+
+def test_t14_editable_source_dir_returns_checkout(monkeypatch, tmp_path):
+    """dir_info.editable + an on-disk file:// url → that path."""
+    _direct_url(monkeypatch, f'{{"url": "file://{tmp_path}", "dir_info": {{"editable": true}}}}')
+    assert _bootstrap._editable_source_dir() == str(tmp_path)
+
+
+def test_t14b_editable_source_dir_none_for_wheel(monkeypatch):
+    """A non-editable install has nothing to re-point at."""
+    _direct_url(monkeypatch, '{"url": "https://example/ai_hats.whl", "archive_info": {}}')
+    assert _bootstrap._editable_source_dir() is None
+
+
+def test_t14c_editable_source_dir_none_when_path_gone(monkeypatch, tmp_path):
+    """The checkout was moved or deleted → no path worth printing."""
+    gone = tmp_path / "gone"
+    _direct_url(monkeypatch, f'{{"url": "file://{gone}", "dir_info": {{"editable": true}}}}')
+    assert _bootstrap._editable_source_dir() is None
+
+
+@pytest.mark.parametrize("payload", [None, "", "{not json", '{"dir_info": {"editable": true}}'])
+def test_t14d_editable_source_dir_fails_open(monkeypatch, payload):
+    """Missing, empty, malformed, or url-less metadata never crashes bootstrap."""
+    _direct_url(monkeypatch, payload)
+    assert _bootstrap._editable_source_dir() is None
+
+
+def test_t14e_editable_source_dir_none_when_not_installed(monkeypatch):
+    """No ai-hats distribution at all (running from a source tree) → None."""
+
+    def boom(_):
+        raise _bootstrap.importlib.metadata.PackageNotFoundError("ai-hats")
+
+    monkeypatch.setattr(_bootstrap.importlib.metadata, "distribution", boom)
+    assert _bootstrap._editable_source_dir() is None
+
+
+# ---------- T15: the live pyproject outranks frozen METADATA (HATS-1368) ----------
+
+
+def _editable_checkout(monkeypatch, tmp_path, deps: list[str] | None, *, body=None) -> None:
+    """Point _editable_source_dir at tmp_path and give it a pyproject with ``deps``."""
+    if body is None:
+        rendered = ", ".join(f'"{d}"' for d in (deps or []))
+        body = f'[project]\nname = "ai-hats"\ndependencies = [{rendered}]\n'
+    (tmp_path / "pyproject.toml").write_text(body)
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: str(tmp_path))
+
+
+def test_t15_underdeclared_metadata_no_longer_hides_a_dep(monkeypatch, tmp_path):
+    """Class B: METADATA predates the workspace split; the live pyproject exposes the gap."""
+    _fixed_requires(monkeypatch, ["click>=8.1"])  # 0.8.x-era snapshot: no first-party deps
+    _editable_checkout(monkeypatch, tmp_path, ["click>=8.1", "ai-hats-wt>=0.4.2"])
+    _force_missing(monkeypatch, {"ai_hats_wt"})
+
+    assert "ai-hats-wt" in _bootstrap.find_missing_runtime_deps()
+
+
+def test_t15b_overdeclared_metadata_no_longer_invents_a_dep(monkeypatch, tmp_path):
+    """Class A: METADATA still names a deleted workspace member; the live pyproject doesn't."""
+    _fixed_requires(monkeypatch, ["click>=8.1", "ai-hats-tracker>=0.6.1"])
+    _editable_checkout(monkeypatch, tmp_path, ["click>=8.1"])
+    _force_missing(monkeypatch, {"ai_hats_tracker"})
+
+    assert _bootstrap.find_missing_runtime_deps() == []
+
+
+def test_t15c_wheel_install_still_reads_metadata(monkeypatch, tmp_path):
+    """No editable checkout → METADATA is authoritative and stays the source."""
+    _fixed_requires(monkeypatch, ["ai-hats-wt>=0.4.2"])
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "ai-hats"\ndependencies = []\n')
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
+    _force_missing(monkeypatch, {"ai_hats_wt"})
+
+    assert _bootstrap.find_missing_runtime_deps() == ["ai-hats-wt"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["not = [toml", '[project]\nname = "ai-hats"\n', '[build-system]\nrequires = []\n'],
+    ids=["malformed", "no-dependencies", "no-project-table"],
+)
+def test_t15d_unreadable_pyproject_falls_back_to_metadata(monkeypatch, tmp_path, body):
+    """Fail-open: an unusable checkout must never leave the gate with no source at all."""
+    _fixed_requires(monkeypatch, ["ai-hats-wt>=0.4.2"])
+    _editable_checkout(monkeypatch, tmp_path, None, body=body)
+    _force_missing(monkeypatch, {"ai_hats_wt"})
+
+    assert _bootstrap.find_missing_runtime_deps() == ["ai-hats-wt"]
+
+
+def test_t15e_missing_pyproject_falls_back_to_metadata(monkeypatch, tmp_path):
+    """The checkout exists but carries no pyproject.toml at all."""
+    _fixed_requires(monkeypatch, ["ai-hats-wt>=0.4.2"])
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: str(tmp_path))
+    _force_missing(monkeypatch, {"ai_hats_wt"})
+
+    assert _bootstrap.find_missing_runtime_deps() == ["ai-hats-wt"]
+
+
+# ---------- T16: the rescue command must actually repair the venv (HATS-1367) ----------
+
+
+def test_t16_rescue_command_reinstalls_the_editable_checkout(monkeypatch):
+    """Naming the dist is a no-op on an editable install — re-point the checkout instead."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
+
+    cmd = _bootstrap._rescue_command(["ai-hats-wt"])
+
+    assert cmd == f"uv pip install --python {sys.executable} -e '/src/ai-hats'"
+
+
+def test_t16b_rescue_command_unchanged_for_wheel_install(monkeypatch):
+    """A wheel install has no checkout to re-point — install the dists by name."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
+
+    cmd = _bootstrap._rescue_command(["ptyprocess", "click"])
+
+    assert cmd == f"uv pip install --python {sys.executable} 'ptyprocess' 'click'"
+
+
+def test_t16c_self_heal_reinstalls_the_editable_checkout(monkeypatch):
+    """The command bootstrap RUNS branches with the one it PRINTS — same repair, one source."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(_bootstrap.subprocess, "run", fake_run)
+
+    assert _bootstrap.attempt_self_heal(["ai-hats-wt"]) is True
+    assert calls == [["uv", "pip", "install", "--python", sys.executable, "-e", "/src/ai-hats"]]
+
+
+def test_t16d_self_heal_unchanged_for_wheel_install(monkeypatch):
+    """Non-editable keeps the pre-HATS-1367 by-name install."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(_bootstrap.subprocess, "run", fake_run)
+
+    assert _bootstrap.attempt_self_heal(["ptyprocess"]) is True
+    assert calls == [["uv", "pip", "install", "--python", sys.executable, "ptyprocess"]]
+
+
+# ---------- T17: the broken-install notice must not advise a dead end (HATS-1368) ----------
+
+
+def test_t17_repair_command_repoints_an_editable_checkout(monkeypatch):
+    """`self update` cannot run when the import that broke is the CLI it lives in."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
+
+    assert _bootstrap.repair_command() == (
+        f"uv pip install --python {sys.executable} -e '/src/ai-hats'"
+    )
+
+
+def test_t17b_repair_command_keeps_self_update_for_wheel(monkeypatch):
+    """A wheel install has no checkout to re-point — `self update` is the repair."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
+
+    assert _bootstrap.repair_command() == "python -m ai_hats self update (or 'ai-hats self update')"
+
+
+# ---------- T18: a .pth heal is invisible until the site hook re-runs (HATS-1368) ----------
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"), [(0, True), (1, False)], ids=["success", "failure"]
+)
+def test_t18_self_heal_refreshes_import_paths_only_on_success(monkeypatch, returncode, expected):
+    """Without the refresh the HATS-1359 recheck reads an editable heal as a no-op."""
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: None)
+    monkeypatch.setattr(
+        _bootstrap.subprocess,
+        "run",
+        lambda *a, **kw: type("R", (), {"returncode": returncode})(),
+    )
+    refreshed: list[bool] = []
+    monkeypatch.setattr(_bootstrap, "_refresh_import_paths", lambda: refreshed.append(True))
+
+    assert _bootstrap.attempt_self_heal(["ptyprocess"]) is expected
+    assert bool(refreshed) is expected
+
+
+def test_t18b_refresh_survives_an_unusable_site_dir(monkeypatch):
+    """A refresh that cannot run must not take the heal down with it."""
+
+    def boom(_):
+        raise OSError("no such directory")
+
+    monkeypatch.setattr(_bootstrap.importlib, "invalidate_caches", lambda: None)
+    import site
+
+    monkeypatch.setattr(site, "addsitedir", boom)
+
+    _bootstrap._refresh_import_paths()  # must not raise
