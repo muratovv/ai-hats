@@ -93,7 +93,7 @@ def _editable_source_dir() -> str | None:
         if not data["dir_info"]["editable"]:
             return None
         path = unquote(urlparse(data["url"]).path)
-    except Exception:  # noqa: BLE001 - bootstrap diagnoses, never crashes
+    except Exception:  # silent-ok: absent, unreadable and foreign all mean None here
         return None
     return path if os.path.isdir(path) else None
 
@@ -205,7 +205,7 @@ def _refresh_import_paths() -> None:
 
     try:
         site.addsitedir(sysconfig.get_paths()["purelib"])
-    except Exception:  # noqa: BLE001,S110 - a refresh that fails must not abort the heal
+    except Exception:  # silent-ok: a refresh that fails must not abort the heal  # noqa: S110
         pass
     importlib.invalidate_caches()
 
