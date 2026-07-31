@@ -14,6 +14,7 @@ Subcommands of `ai-hats reflect` cover the retrospective and backlog triage life
 ## Pipeline overview
 
 ### `ai-hats reflect session`
+
 Post-session retrospective flow (single LLM call under `session-reviewer`). Factual fields (metrics, files_changed, commits, tasks_closed, links) are computed by pure-Python before the LLM call.
 
 ```
@@ -27,6 +28,9 @@ session_end (hook → auto_retro)
            │    3. merge facts + analysis → SessionReviewV1
            │    4. write <ai_hats_dir>/sessions/retros/sessions/<id>.md
            │       (schema: hats-session-review/v1)
+           ├─ harvest_verdicts (pure-Python)
+           │    non-`n/a` hypothesis_verdicts → append_verdict into each
+           │    HYP's validation_log (actor=rack:session-reviewer)
            └─ harness_check (pure-Python)
                 missing/empty/incomplete → file ONE meta-proposal
                   (category=process, target=session-reviewer,
@@ -34,10 +38,14 @@ session_end (hook → auto_retro)
 ```
 
 Triggers:
+
 - **Auto** on session-end (when `feedback.session_retro.policy=run` or `smart` threshold met); detached background process.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
+`harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It runs whenever the doc parses, even when the pipeline run itself errored (a stale/partial doc still has verdicts worth harvesting). `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
+
 ### `ai-hats reflect hypothesis` (HATS-513 / ADR-0007)
+
 Two-phase bulk triage of accumulated HYP and PROP backlog:
 
 1. **Phase 1 (`judge-auditor`, headless, read-only):** Pipeline `reflect-hypothesis-phase1` generates draft report with proposed verdicts and CLI mutations at `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`.
@@ -46,15 +54,19 @@ Two-phase bulk triage of accumulated HYP and PROP backlog:
 With `--headless`: runs Phase 1 only (CI/cron-safe).
 
 ### `ai-hats reflect role <target>` / `reflect roles`
+
 Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`. Report is saved to `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md`.
 
 ### `ai-hats reflect issue <text>`
+
 Observation intake flow. Pipeline `reflect-issue` runs `hypothesis-intake` (Haiku model): checks active HYPs, deduplicates against recent evidence, and either drafts a new HYP (`action: create`) or appends evidence to an existing HYP (`action: merge`).
 
 ### `ai-hats reflect commit`
+
 Bulk-applies proposal status changes (`--accept PROP-X --reject PROP-Y ...`) at the end of interactive chat sessions.
 
 ### `ai-hats reflect all` (Deprecated)
+
 Legacy single-phase triage. Replaced by `reflect hypothesis`. Kept for backward compatibility.
 
 ## Storage layout
