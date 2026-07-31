@@ -1,7 +1,9 @@
 {
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
-  "env_keys": [],
+  "env_keys": [
+    "AI_HATS_SESSION_CACHE_DIR"
+  ],
   "escapes": [],
   "launch": [
     "agy",
@@ -16,7 +18,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run"
+      "target": "<cache>/sessions/dry-run"
     },
     {
       "detail": "",
@@ -25,7 +27,7 @@
       "kind": "mkdir",
       "size": 0,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills"
+      "target": "<cache>/sessions/dry-run/rules/.agents/skills"
     },
     {
       "detail": "",
@@ -34,7 +36,7 @@
       "kind": "copy_tree",
       "size": 38,
       "source": "<tmp>/lib/skills/s",
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/rules/.agents/skills/s"
+      "target": "<cache>/sessions/dry-run/rules/.agents/skills/s"
     },
     {
       "detail": "+hooks",
@@ -52,7 +54,7 @@
       "kind": "write_text",
       "size": 3,
       "source": null,
-      "target": "<project>/.agent/ai-hats/.cache/sessions/dry-run/hooks.json"
+      "target": "<cache>/sessions/dry-run/hooks.json"
     }
   ],
   "notes": [],

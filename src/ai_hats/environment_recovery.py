@@ -38,7 +38,7 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
-from .paths import session_cache_root, versions_root
+from .paths import legacy_session_cache_root, session_cache_root, versions_root
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
 from .version_recovery import (
     reclaim_legacy_venv,
@@ -62,20 +62,34 @@ def _sweep_orphan_session_caches(
     HATS-649 so it sits beside the other recovery passes; ``runtime`` re-exports
     it for backward compatibility.)
     """
-    root = session_cache_root(project_dir)
-    if not root.exists():
-        return
     cutoff = time.time() - ttl_hours * 3600
-    for entry in root.iterdir():
-        if not entry.is_dir():
+    # HATS-1398 leaves pre-move session dirs in place rather than yanking one from
+    # a live session, so the legacy arm is what eventually drains the workspace.
+    for root in (session_cache_root(project_dir), legacy_session_cache_root(project_dir)):
+        if not root.exists():
             continue
+        for entry in root.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                if entry.stat().st_mtime < cutoff:
+                    shutil.rmtree(
+                        entry, ignore_errors=True
+                    )  # safe-delete: ok session-cache (TTL sweep)
+            except OSError:
+                pass
+        _drop_drained_legacy_cache(root)
+
+
+def _drop_drained_legacy_cache(root: Path) -> None:
+    """Remove the emptied in-tree ``.cache/`` skeleton so the workspace ends clean."""
+    if root.name != "sessions" or root.parent.name != ".cache":
+        return
+    for path in (root, root.parent):
         try:
-            if entry.stat().st_mtime < cutoff:
-                shutil.rmtree(
-                    entry, ignore_errors=True
-                )  # safe-delete: ok session-cache (TTL sweep)
+            path.rmdir()  # safe-delete: ok — rmdir refuses a non-empty dir by contract
         except OSError:
-            pass
+            return
 
 
 class EnvironmentRecovery:
