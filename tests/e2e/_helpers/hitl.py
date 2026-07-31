@@ -73,7 +73,9 @@ DEFAULT_EXIT_PAYLOAD = "/exit\n\x03\x03"
 #: claude finds its config + credentials cache; ``PATH`` for the
 #: launcher's pip / python lookup; ``TERM`` so the PTY layer can pick
 #: a sane default. ``LANG`` / ``LC_*`` keep unicode glyphs (✨ etc.)
-#: rendering correctly so banner assertions hit.
+#: rendering correctly so banner assertions hit. ``AI_HATS_USER_HOME`` is the
+#: pinned test home the out-of-tree cache root bottoms out on — without it the
+#: child writes to the developer's real ``~/.cache/ai-hats`` (HATS-1398).
 DEFAULT_ENV_ALLOWLIST: tuple[str, ...] = (
     "PATH",
     "HOME",
@@ -81,6 +83,7 @@ DEFAULT_ENV_ALLOWLIST: tuple[str, ...] = (
     "LANG",
     "LC_ALL",
     "LC_CTYPE",
+    "AI_HATS_USER_HOME",
 )
 
 
