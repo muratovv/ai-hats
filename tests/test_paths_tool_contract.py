@@ -7,6 +7,8 @@ tool paths via the helpers, so a typo in a helper fails here and only here.
 
 from pathlib import Path
 
+import pytest
+
 from ai_hats.paths import (
     AI_HATS_MANAGED_MARKER,
     CLAUDE_MD_FILENAME,
@@ -59,6 +61,49 @@ def test_claude_transcripts_location(tmp_path, monkeypatch):
     transcripts = tmp_path / ".claude" / "projects" / "-Users-alice-dev-proj"
     assert claude_transcripts_dir(project) == transcripts
     assert claude_transcript_path(project, "abc-123") == transcripts / "abc-123.jsonl"
+
+
+# HATS-1412: real (project path, Claude-Code-created dir) pairs, sampled from
+# ~/.claude/projects/ and cross-checked against each transcript's own "cwd".
+REAL_PROJECT_KEY_PAIRS = [
+    # The exact live repro this task was opened from.
+    (
+        "/private/var/folders/q5/_t4msh1j5yjfqkrq8w4xx5x00000gn/T/ai-hats-wt-task-hats-1402-6n008_h6",
+        "-private-var-folders-q5--t4msh1j5yjfqkrq8w4xx5x00000gn-T-ai-hats-wt-task-hats-1402-6n008-h6",
+    ),
+    # A second real sample with two underscores (tempfile.mkdtemp suffix),
+    # confirming the rule generalizes beyond the single-underscore repro.
+    (
+        "/private/var/folders/q5/_t4msh1j5yjfqkrq8w4xx5x00000gn/T"
+        "/ai-hats-wt-agent-exp-agent-20260719-110108-1-_ky_i3th",
+        "-private-var-folders-q5--t4msh1j5yjfqkrq8w4xx5x00000gn-T"
+        "-ai-hats-wt-agent-exp-agent-20260719-110108-1--ky-i3th",
+    ),
+]
+
+
+@pytest.mark.parametrize("project_path,expected_key", REAL_PROJECT_KEY_PAIRS)
+def test_claude_transcripts_dir_matches_real_claude_code_slug(
+    tmp_path, monkeypatch, project_path, expected_key
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert claude_transcripts_dir(Path(project_path)) == tmp_path / ".claude" / "projects" / expected_key
+
+
+@pytest.mark.parametrize(
+    "project_path,expected_key",
+    [
+        ("/Users/alice/dev/proj", "-Users-alice-dev-proj"),
+        ("/Users/alice/dev/my_proj", "-Users-alice-dev-my-proj"),
+        ("/Users/alice/dev/my.proj v2", "-Users-alice-dev-my-proj-v2"),
+        ("/Users/alice/dev/a_b.c d-e", "-Users-alice-dev-a-b-c-d-e"),
+    ],
+)
+def test_claude_transcripts_dir_synthetic_special_chars(
+    tmp_path, monkeypatch, project_path, expected_key
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert claude_transcripts_dir(Path(project_path)) == tmp_path / ".claude" / "projects" / expected_key
 
 
 def test_claude_plugin_layout(tmp_path):

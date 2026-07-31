@@ -26,8 +26,17 @@
 #   AI_HATS_RULE_DELIVERY_ACK=1 git commit ...
 set -uo pipefail
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# shellcheck source=../../../../hooks/bypass_journal.sh
+if ! . "$(dirname "$0")/../bypass_journal.sh" 2>/dev/null; then
+    ai_hats_journal_bypass() {
+        echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+
 if [[ "${AI_HATS_RULE_DELIVERY_ACK:-}" == "1" ]]; then
     echo "[rule-delivery] AI_HATS_RULE_DELIVERY_ACK=1 — allowing commit" >&2
+    ai_hats_journal_bypass hatch AI_HATS_RULE_DELIVERY_ACK
     exit 0
 fi
 
@@ -63,11 +72,13 @@ fi
 # Fail-open if the runner binary is unavailable.
 if ! command -v "${_cmd[0]}" >/dev/null 2>&1; then
     echo "[rule-delivery] '${_cmd[0]}' not found — rule-delivery check SKIPPED (fail-open)" >&2
+    ai_hats_journal_bypass fail_open "${_cmd[0]} not found"
     exit 0
 fi
 # Fail-open if ai_hats is not importable (the default python invocation).
 if [[ "${_cmd[0]}" == python* ]] && ! "${_cmd[0]}" -c "import ai_hats" >/dev/null 2>&1; then
     echo "[rule-delivery] ai_hats not importable — rule-delivery check SKIPPED (fail-open)" >&2
+    ai_hats_journal_bypass fail_open "ai_hats not importable"
     exit 0
 fi
 

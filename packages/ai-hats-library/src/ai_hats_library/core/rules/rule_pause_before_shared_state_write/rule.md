@@ -40,6 +40,11 @@ agent** — that is the point:
    agent — an export in the launching shell, or the `env` block of whatever
    settings file your harness reads — pre-approving the whole session.
 
+Either way the ack is recorded: the hook appends the bypass to
+`.git/ai-hats/bypasses.jsonl`, and the next `git push` prints what rode along
+(HATS-1407). Consent is auditable after the fact, so there is no version of
+"nobody will know".
+
 Writing `AI_HATS_SHARED_STATE_ACK=1 <command>` as a prefix on the agent's own
 command does **nothing**: the hook runs before that command exists as a process,
 so the assignment never reaches it. The hook used to instruct exactly that and

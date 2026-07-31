@@ -22,8 +22,17 @@
 
 set -uo pipefail
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# shellcheck source=../../../../hooks/bypass_journal.sh
+if ! . "$(dirname "$0")/../bypass_journal.sh" 2>/dev/null; then
+    ai_hats_journal_bypass() {
+        echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+
 if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
     echo "[shared-state-guard] AI_HATS_SHARED_STATE_ACK=1 — allowing forced push" >&2
+    ai_hats_journal_bypass hatch AI_HATS_SHARED_STATE_ACK
     exit 0
 fi
 

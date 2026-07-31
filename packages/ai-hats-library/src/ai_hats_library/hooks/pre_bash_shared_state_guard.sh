@@ -36,6 +36,14 @@ set -uo pipefail
 HOOK_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CLASSIFIER="${HOOK_DIR}/shared_state_classifier.sh"
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# shellcheck source=bypass_journal.sh
+if ! . "${HOOK_DIR}/bypass_journal.sh" 2>/dev/null; then
+    ai_hats_journal_bypass() {
+        echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+
 # --- 1. Read tool-input JSON from stdin --------------------------------
 payload="$(cat || true)"
 if [[ -z "$payload" ]]; then
@@ -100,6 +108,7 @@ if [[ ! -f "$CLASSIFIER" ]]; then
     # Classifier missing — emit a stderr breadcrumb and allow. The Level 2
     # rule still warns the agent; we refuse to break the user's flow.
     echo "[shared-state-guard] classifier not found at $CLASSIFIER — allowing" >&2
+    ai_hats_journal_bypass fail_open "classifier not found"
     exit 0
 fi
 
@@ -124,6 +133,7 @@ esac
 # --- 4. Gate on ack ------------------------------------------------------
 if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
     echo "[shared-state-guard] AI_HATS_SHARED_STATE_ACK=1 — allowing $verdict: $cmd" >&2
+    ai_hats_journal_bypass hatch AI_HATS_SHARED_STATE_ACK
     exit 0
 fi
 

@@ -255,8 +255,8 @@ def test_print_session_end_does_not_emit_reminder_banner(tmp_path, capsys):
 
 
 def _claude_dir_for(home: Path, project_dir: Path) -> Path:
-    project_key = str(project_dir).replace("/", "-")
-    d = home / ".claude" / "projects" / project_key
+    del home  # Path.home() is already monkeypatched by the caller (HATS-1412).
+    d = claude_transcripts_dir(project_dir)
     d.mkdir(parents=True)
     return d
 
