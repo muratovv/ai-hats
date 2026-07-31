@@ -50,7 +50,8 @@ def get_installed_providers() -> dict[str, Provider]:
     for name in provider_names():
         try:
             providers[name] = get_provider(name)
-        except Exception:
+        except Exception:  # noqa: S110
+            # silent-ok: a surface that will not import is not installed
             pass
     return providers
 
@@ -62,7 +63,7 @@ def is_surface_installed(provider_name: str) -> bool:
     try:
         get_provider(provider_name)
         return True
-    except Exception:
+    except Exception:  # silent-ok: a surface that will not import is not installed
         return False
 
 

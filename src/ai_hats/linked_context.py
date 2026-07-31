@@ -10,9 +10,12 @@ graceful on missing targets (skip, never raise).
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from ai_hats_rack.models import TaskCard
+
+logger = logging.getLogger(__name__)
 
 
 def load_ticket(*, tasks_root: Path, ticket_id: str) -> str:
@@ -49,7 +52,12 @@ def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
         return ""
     try:
         card = TaskCard.from_yaml(card_path)
-    except Exception:
+    except Exception as exc:
+        # The subject's OWN card, unlike the neighbours skipped below: folding a
+        # corrupt one into "" hands the agent a prompt with no epic, no
+        # depends_on and no plan, indistinguishable from a card with no links
+        # (HATS-1373). The module contract forbids raising, so it must be loud.
+        logger.error("linked context: subject card %s did not load: %r", card_path, exc)
         return ""
 
     # Salience order, parent first; dedup on id, never pull self.
@@ -75,7 +83,8 @@ def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
             continue  # graceful: dangling link, skip
         try:
             linked = TaskCard.from_yaml(linked_path)
-        except Exception:
+        except Exception:  # noqa: S112
+            # silent-ok: a dangling link target is skipped, as in the branch above
             continue
         blocks.append(render_linked_card(kind, linked, base))
     return "\n\n".join(blocks)

@@ -33,7 +33,7 @@ dependencies = [
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
-    "ai-hats-rack>=0.1.7",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-rack>=0.1.8",  # floor tracks the workspace version (HATS-1399)
     "ai-hats-observe>=0.5.0",  # is_measured + FLAG_SENSOR_ERROR, imported at module level (0.5.0, HATS-1374)
     "ai-hats-library>=0.5.1",  # floor tracks the workspace version (HATS-1399)
     "click>=8.1",
@@ -116,7 +116,10 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F"]
+# S110/S112 (try-except-pass/continue) are a strict subset of what
+# scripts/check_silent_fallback.py catches; kept as a second, independent
+# contour so the pass/continue shape stays guarded if that script regresses.
+select = ["E", "F", "S110", "S112"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]

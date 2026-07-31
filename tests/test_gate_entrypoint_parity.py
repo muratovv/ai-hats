@@ -17,7 +17,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Commands that decide pass/fail for a gate. Spelling one of these out anywhere
 # but ci-local.sh forks the definition of "the gate".
-_RUNNERS = ("ruff", "pytest", "bandit", "pip_audit", "pip-audit", "check_pkg_version_skew.py")
+_RUNNERS = (
+    "ruff",
+    "pytest",
+    "bandit",
+    "pip_audit",
+    "pip-audit",
+    "check_pkg_version_skew.py",
+    # HATS-1373: check_dependency_floor.py was absent here since HATS-1399 —
+    # a gate script this ratchet was silently not ratcheting.
+    "check_dependency_floor.py",
+    "check_silent_fallback.py",
+)
 
 # The two sanctioned entry points: the CI stage dispatcher and the thin e2e
 # wrapper that delegates to the pre-push gate's run mode.

@@ -62,7 +62,7 @@ def count_tokens_sdk(
             )
             counts.append(result.input_tokens)
         return counts
-    except Exception:
+    except Exception:  # silent-ok: the anthropic SDK is optional; None means 'cannot count'
         return None
 
 

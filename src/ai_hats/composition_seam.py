@@ -329,7 +329,7 @@ def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
     if provider_name:
         try:
             return get_provider(provider_name)
-        except Exception:
+        except Exception:  # silent-ok: best-effort provider resolution for --help
             return None
 
     if role_name:
@@ -338,7 +338,7 @@ def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
             eff = cfg.provider
             if eff:
                 return get_provider(eff)
-        except Exception:
+        except Exception:  # silent-ok: best-effort provider resolution for --help  # noqa: S110
             pass
 
     return None

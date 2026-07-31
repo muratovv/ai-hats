@@ -161,7 +161,7 @@ def _load_cards(catalog: Path | None):
     for path in sorted(catalog.glob("*/task.yaml"), key=lambda p: _id_key(p.parent.name)):
         try:
             cards.append(TaskCard.from_yaml(path))
-        except Exception:  # noqa: BLE001, S112 — one corrupt card must not sink the listing
+        except Exception:  # silent-ok: one corrupt card must not sink the listing  # noqa: S112
             continue
     return cards
 
@@ -270,7 +270,7 @@ def _is_card_id(ws: Workspace, item_id: str) -> bool:
     try:
         ws.instance_for(item_id)
         return True
-    except Exception:
+    except (UnknownExtensionError, UnknownPrefixError):
         return False
 
 

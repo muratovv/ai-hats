@@ -370,7 +370,7 @@ def _load_card(tasks_dir: Path, task_id: str) -> TaskCard | None:
         return None
     try:
         return TaskCard.from_yaml(path)
-    except Exception:  # noqa: BLE001 — a broken neighbour must not sink the package
+    except Exception:  # silent-ok: graceful by contract: a dangling or corrupt target is None
         return None
 
 
@@ -648,7 +648,7 @@ def scan_cards(
     for card_path in sorted(tasks_dir.glob("*/task.yaml"), key=lambda p: _id_key(p.parent.name)):
         try:
             card = TaskCard.from_yaml(card_path)
-        except Exception:  # noqa: BLE001, S112 — one corrupt card must not kill the listing
+        except Exception:  # silent-ok: one corrupt card must not kill the listing  # noqa: S112
             continue
         if not predicate(card):
             continue

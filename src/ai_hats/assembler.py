@@ -624,8 +624,10 @@ class Assembler:
             for s in comp_res.skills:
                 p = self.resolver.resolve_skill_dir(s.name)
                 provenance["skills"][s.name] = self._classify_component_layer(p).value
-        except Exception:
-            pass
+        except Exception as exc:
+            # A partial failure leaves some components tagged and the rest not,
+            # which `config status` renders as "role has no rules" (HATS-1373).
+            logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
         # Seed traits from base config + active overlays
         base_cfg = self.resolver.resolve_role_config(role_name)
@@ -1104,8 +1106,15 @@ class Assembler:
         try:
             provider = get_provider(self.project_config.provider)
             prompt_path = provider.system_prompt_path(self.project_dir)
-        except Exception:
-            prompt_path = None
+        except Exception as exc:
+            # An unresolvable provider used to drop the key entirely, so the
+            # report read as "nothing to check" — the one failure this check
+            # exists to catch (HATS-1373).
+            logger.warning(
+                "health: provider %r did not resolve: %r", self.project_config.provider, exc
+            )
+            health["system_prompt"] = HealthStatus.UNKNOWN
+            return health
 
         if prompt_path is not None:
             health["system_prompt"] = (
@@ -1626,6 +1635,8 @@ class Assembler:
 class HealthStatus(str, Enum):
     OK = "OK"
     MISSING = "Missing"
+    #: The probe itself could not run — distinct from a resolved MISSING artefact.
+    UNKNOWN = "Unknown"
 
 
 class AssemblyError(RuntimeError):

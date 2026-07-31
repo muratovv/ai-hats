@@ -173,7 +173,7 @@ def _ambient_workspace() -> Workspace | None:
         return Workspace.discover([root])
     except NoProjectRootError:
         return None
-    except Exception:  # noqa: BLE001 — a malformed sibling never bricks --help
+    except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
         return None
 
 

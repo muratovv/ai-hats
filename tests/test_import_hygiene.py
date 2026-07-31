@@ -227,7 +227,9 @@ def test_leaf_modules_are_pure():
                 refs += [
                     t
                     for t in _targets(m, path.name == "__init__.py", node, nodeset)
-                    if t != name and not t.startswith(prefix) and t != f"{PKG}.env"  # ignore intra-leaf / base-leaf imports
+                    if t != name
+                    and not t.startswith(prefix)
+                    and t != f"{PKG}.env"  # ignore intra-leaf / base-leaf imports
                 ]
         if refs:
             offenders[leaf] = sorted(set(refs))

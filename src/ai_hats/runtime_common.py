@@ -351,7 +351,7 @@ def _fmt_duration(session_id: str) -> str:
         start = datetime.strptime(session_id[:15], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
         secs = int((datetime.now(timezone.utc) - start).total_seconds())
         return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
-    except Exception:
+    except Exception:  # silent-ok: '?' is the user-visible unknown marker
         return "?"
 
 

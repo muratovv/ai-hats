@@ -104,7 +104,8 @@ class RenderUpdateBanner(Step):
                         "behind": entry.behind,
                     },
                 )
-            except Exception:
+            except Exception:  # noqa: S110
+                # silent-ok: the banner is cosmetic; its absence is not a failure
                 pass
         sys.stderr.write(_render(entry))
         sys.stderr.flush()

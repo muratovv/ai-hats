@@ -36,7 +36,9 @@ SESSION_ID = "hats1369-e2e-fixture-session"
 FIXTURE_EVIDENCE = "e2e fixture: no supporting evidence observed this session"
 
 
-def _run_reflect_session_main(project_dir: Path, session_id: str) -> subprocess.CompletedProcess[str]:
+def _run_reflect_session_main(
+    project_dir: Path, session_id: str
+) -> subprocess.CompletedProcess[str]:
     """Real subprocess — same argv shape as
     ``auto_retro._spawn_session_reviewer_background`` (production caller)."""
     from _helpers.env import clean_env

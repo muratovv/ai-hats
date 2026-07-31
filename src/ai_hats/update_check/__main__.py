@@ -23,7 +23,7 @@ def main() -> int:
         return 1
     try:
         run_check(project_dir)
-    except Exception:
+    except Exception:  # silent-ok: the exit code is ignored by the caller, by contract
         return 1
     return 0
 

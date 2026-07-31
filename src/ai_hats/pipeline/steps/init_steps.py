@@ -38,6 +38,19 @@ class InitProviderRequiredError(ClickException):
         )
 
 
+class InitConfigUnreadableError(ClickException):
+    """Raised when re-running init on a project whose existing config will not load."""
+
+    exit_code = 2
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(
+            f"[red]Existing ai-hats.yaml could not be read[/]: {reason}\n"
+            "Refusing to continue: init would silently reset this project's provider. "
+            "Fix or remove the config, then re-run."
+        )
+
+
 class SelectProviderStep(Step):
     """Select or resolve the provider for project initialization.
 
@@ -91,7 +104,8 @@ class SelectProviderStep(Step):
                 if already:
                     try:
                         cur_ch = _assembler(project_dir).project_config.harness.channel.value
-                    except Exception:
+                    except Exception:  # noqa: S110
+                        # silent-ok: only prefills the wizard default; having none is fine
                         pass
                 res_channel = _wizard_harness_prompt(cur_ch)
 
@@ -103,8 +117,11 @@ class SelectProviderStep(Step):
             if already:
                 try:
                     res_provider = _assembler(project_dir).project_config.provider
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Swallowing this reset an existing project to claude with no
+                    # message — an agy/cline project silently reconfigured by a
+                    # re-run of init (HATS-1373).
+                    raise InitConfigUnreadableError(repr(exc)) from exc
             if res_provider is None:
                 res_provider = PROVIDER_CLAUDE
 
