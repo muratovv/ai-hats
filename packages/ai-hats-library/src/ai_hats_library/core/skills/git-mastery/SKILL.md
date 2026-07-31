@@ -20,6 +20,8 @@ ai_hats:
     # this pre-push hook protects Gemini sessions and direct-terminal pushes.
     pre-push:
       - git_hooks/pre-push-shared-state.sh
+      # HATS-1407: a journal with no reader is a sensor with no consumer.
+      - git_hooks/pre-push-bypass-report.sh
     # HATS-1407: pre-commit records a bypass before the commit exists, so the
     # SHA is stamped on afterwards — that join is what names the ungated commit.
     post-commit:

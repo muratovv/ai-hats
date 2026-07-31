@@ -103,6 +103,12 @@ def _run_hook(repo: Path, **env_overrides: str) -> subprocess.CompletedProcess:
     )
 
 
+def _rev(repo: Path, ref: str) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", ref], cwd=str(repo), capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
 def _journal_lines(repo: Path) -> list[dict]:
     path = repo / JOURNAL_REL
     if not path.exists():
@@ -274,3 +280,81 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     entries = _journal_lines(repo)
     assert len(entries) == 1, entries
     assert entries[0]["sha"] == head, "the bypass is not attributable to its commit"
+
+
+# --- the consumer: a journal nobody reads is a sensor nobody consumes --------
+
+
+@pytest.mark.integration
+def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    (repo / "a.txt").write_text("one\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=str(repo), check=True)
+    base = _rev(repo, "HEAD")
+
+    (repo / "b.txt").write_text("two\n")
+    subprocess.run(["git", "add", "b.txt"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True)
+    head = _rev(repo, "HEAD")
+
+    journal = repo / ".git/ai-hats"
+    journal.mkdir(parents=True)
+    (journal / "bypasses.jsonl").write_text(
+        json.dumps({f: "" for f in EXPECTED_FIELDS} | {"reason": "AI_HATS_SMOKE_SKIP", "sha": head})
+        + "\n"
+    )
+
+    hook = LIB / f"{GM}/pre-push-bypass-report.sh"
+    res = subprocess.run(
+        ["bash", str(hook), "origin", "https://example.invalid/r.git"],
+        cwd=str(repo),
+        input=f"refs/heads/master {head} refs/heads/master {base}\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+    )
+
+    assert res.returncode == 0, "reporting is not blocking — the hatch was deliberate"
+    assert "AI_HATS_SMOKE_SKIP" in res.stderr, res.stderr
+    assert "1 gate bypass" in res.stderr, res.stderr
+
+
+@pytest.mark.integration
+def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
+    """Negative control — the report must mean 'these commits skipped a gate'."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    (repo / "a.txt").write_text("one\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=str(repo), check=True)
+    base = _rev(repo, "HEAD")
+    (repo / "b.txt").write_text("two\n")
+    subprocess.run(["git", "add", "b.txt"], cwd=str(repo), check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "clean"], cwd=str(repo), check=True)
+    head = _rev(repo, "HEAD")
+
+    journal = repo / ".git/ai-hats"
+    journal.mkdir(parents=True)
+    # A bypass on an UNRELATED commit must not be reported for this range.
+    (journal / "bypasses.jsonl").write_text(
+        json.dumps({f: "" for f in EXPECTED_FIELDS} | {"sha": "d" * 40}) + "\n"
+    )
+
+    res = subprocess.run(
+        ["bash", str(LIB / f"{GM}/pre-push-bypass-report.sh"), "origin", "url"],
+        cwd=str(repo),
+        input=f"refs/heads/master {head} refs/heads/master {base}\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+    )
+    assert res.returncode == 0
+    assert "gate bypass" not in res.stderr, res.stderr
