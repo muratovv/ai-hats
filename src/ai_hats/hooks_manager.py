@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 
 _MANAGED_HEADER = "# ai-hats managed — do not edit"
 
+#: Package-data guard extensions. The writer and the drift detector MUST read
+#: the same list, or an in-sync tree reports as stale (HATS-1407).
+_RUNTIME_GUARD_SUFFIXES = (".sh", ".py")
+
 # HATS-905: retiring this mechanism = dropping this line; the unclaimed-marker
 # sweeper then reclaims marker-listed .githooks/ artifacts on next init/bump.
 owners.register_owner("git-hooks", module=__name__)
@@ -230,10 +234,12 @@ class HooksManager:
         )
 
     def _write_runtime_guards(self, target_dir: Path, source_root: Path) -> set[str]:
-        """Copy package-data ``*.sh`` guards into ``target_dir``; return their names."""
+        """Copy package-data guards into ``target_dir``; return their names.
+
+        ``.py`` joined at HATS-1407 for the sibling-imported journal."""
         names: set[str] = set()
         for src in sorted(source_root.iterdir()):
-            if not src.is_file() or src.suffix != ".sh":
+            if not src.is_file() or src.suffix not in _RUNTIME_GUARD_SUFFIXES:
                 continue
             names.add(src.name)
             _safe_replace(
@@ -462,7 +468,7 @@ class HooksManager:
             )  # worktree-aware builtin resolver (HATS-831 / HATS-1127)
             if src_root is not None and src_root.is_dir():
                 for src in src_root.iterdir():
-                    if src.is_file() and src.suffix == ".sh":
+                    if src.is_file() and src.suffix in _RUNTIME_GUARD_SUFFIXES:
                         expected[src.name] = src.read_bytes()
         except OSError:
             return []  # broken install — let the loud materialize path own it

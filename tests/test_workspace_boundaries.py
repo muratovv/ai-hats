@@ -92,12 +92,23 @@ def _top_level_import_roots(tree: ast.Module) -> set[str]:
     return roots
 
 
+#: Not a dependency — PreToolUse hooks are FLATTENED into one directory at
+#: install time, so this resolves to a sibling file, never a distribution.
+FLATTENED_HOOK_SIBLINGS = {"bypass_journal"}
+
+
 def _boundary_offenders(src: Path, allowed: set[str]) -> dict[str, list[str]]:
     """file -> forbidden import roots, for every module under ``src``."""
     offenders: dict[str, list[str]] = {}
     for path in sorted(src.rglob("*.py")):
         roots = _top_level_import_roots(ast.parse(path.read_text()))
-        bad = sorted(r for r in roots if r not in allowed and r not in sys.stdlib_module_names)
+        bad = sorted(
+            r
+            for r in roots
+            if r not in allowed
+            and r not in sys.stdlib_module_names
+            and r not in FLATTENED_HOOK_SIBLINGS
+        )
         if bad:
             offenders[str(path.relative_to(src))] = bad
     return offenders
