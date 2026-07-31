@@ -30,11 +30,16 @@ since the latest tag lives under **Unreleased** until the next release.
   Three fixes ride along. The gate moved ahead of the `ai_hats.cli` import it
   protects (a venv missing a workspace member used to die importing the module
   that held the gate, and the "broken install" notice it printed advised
-  `self update` — the very CLI that had just failed). The HATS-1359 no-op-heal
-  recheck no longer misreads a successful editable heal as a no-op: `.pth`
-  files are processed only at interpreter startup, so the site hook is re-run
-  before the recheck. And `heal-editables`, the launcher's channel, now covers
-  `packages/*` workspace members, not only `packages/surfaces/*`.
+  `python -m ai_hats self update` — which re-enters the same failing import).
+  The HATS-1359 no-op-heal recheck no longer misreads a successful editable
+  heal as a no-op: `.pth` files are processed only at interpreter startup, so
+  the site hook is re-run before the recheck. And `heal-editables`, the
+  launcher's heal channel, now covers `packages/*` workspace members, not only
+  `packages/surfaces/*`.
+
+  Unchanged: the `ai-hats` launcher still refuses a venv missing a workspace
+  member and points at `ai-hats self update` (HATS-895) — that hint heals via
+  the launcher's own path and stays the fail-closed contract.
 
 ## [0.14.0] - 2026-07-29
 

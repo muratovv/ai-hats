@@ -260,7 +260,9 @@ METADATA, so it sees the real dependency set and re-points the checkout itself.
 The same applies to the mirror-image failure this section does not cover — an
 install whose metadata predates the workspace split and declares no first-party
 deps at all, which used to die with a bare `ModuleNotFoundError: ai_hats_wt`.
-Both now heal on the next `ai-hats` invocation.
+Both now heal on the next `python -m ai_hats …`. Invoked through the `ai-hats`
+launcher, a venv missing a workspace member is still refused up front with a
+`self update` hint (HATS-895) — run that, and the heal happens there.
 
 ## References
 
