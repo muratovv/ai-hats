@@ -11,6 +11,10 @@ framework-managed artefacts live under ``<ai_hats_dir>/`` — by default
   - ``library/``   — managed mirrors of the role composition (rules,
     skills, hooks) for external consumers.
 
+A fourth class, the machine-only cache (sessions, probe-mirror,
+update-check), deliberately lives OUTSIDE the project — see
+:func:`cache_root` (HATS-1398).
+
 Resolution of ``ai_hats_dir`` itself follows the precedence chain:
 
   1. ``AI_HATS_DIR`` env var — runtime override (tests, sandbox, debug).
@@ -29,6 +33,7 @@ refuses a non-project root — or a sanctioned explicit ``mkdir`` at a write sit
 
 from __future__ import annotations
 
+import hashlib
 import warnings
 from pathlib import Path
 from typing import Literal
@@ -108,6 +113,7 @@ def user_home() -> Path:
       - :meth:`UserConfig.default_path`
       - :class:`Assembler` global library layer
       - ``cli.maintenance._snapshot_library``
+      - :func:`cache_home` (HATS-1398)
 
     Other ``Path.home()`` usages in the codebase (e.g. ``~/.claude/``
     skills marker, expanding user-supplied ``~`` in CLI paths) are
@@ -314,21 +320,73 @@ def state_md_path(project_dir: Path) -> Path:
     return ai_hats_dir(project_dir) / "STATE.md"
 
 
-# ---------- Session cache (HATS-294) ----------
+# ---------- Cache class (HATS-294; moved out of the workspace in HATS-1398) ----------
+
+
+def cache_home() -> Path:
+    """Cache-class base, outside any project: ``AI_HATS_CACHE_HOME`` →
+    ``XDG_CACHE_HOME``/ai-hats → ``<user_home()>/.cache/ai-hats`` (HATS-1398).
+
+    Both env vars name a BASE, never a final root — :func:`cache_root` always
+    appends :func:`project_key`, so a leaked var cannot merge two projects'
+    caches, and this resolver needs no pair-pinning (:func:`_env_ai_hats_dir`).
+    """
+    raw = env.cache_home_override()
+    if raw:
+        return Path(raw).expanduser()
+    xdg = env.xdg_cache_home()
+    if xdg:
+        return Path(xdg).expanduser() / "ai-hats"
+    return user_home() / ".cache" / "ai-hats"
+
+
+def project_key(project_dir: Path) -> str:
+    """Stable per-project dir name: ``<slug>-<sha256(abs path)[:8]>`` (HATS-1398).
+
+    The digest is what makes it unique (two checkouts sharing a basename get
+    different keys); the slug is there so a human can read `ls ~/.cache/ai-hats`.
+    A rename does NOT carry the key — the cache is regenerable and the orphan is
+    swept by TTL, so a registry lookup on the session-build hot path would buy
+    nothing (plan R4).
+    """
+    resolved = project_dir.expanduser().resolve()
+    digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:8]
+    slug = "".join(c if (c.isalnum() or c in "._-") else "-" for c in resolved.name)
+    slug = slug.strip("-.") or "project"
+    return f"{slug}-{digest}"
+
+
+def cache_root(project_dir: Path) -> Path:
+    """This project's cache root: ``<cache_home()>/<project_key>/`` (HATS-1398).
+
+    Machine-only, regenerable, never versioned — and deliberately OUTSIDE the
+    project, which is a tree that watchers, ``git status``, greps and indexers
+    all pay for (epic HATS-1266, R16). Holds ``sessions/``, ``probe-mirror/``
+    and ``update-check.json``.
+    """
+    return cache_home() / project_key(project_dir)
 
 
 def session_cache_root(project_dir: Path) -> Path:
-    """Root dir for per-session ephemeral artefacts: ``<ai_hats_dir>/.cache/sessions/``.
+    """Root dir for per-session ephemeral artefacts: ``<cache_root>/sessions/``.
 
     Each session keeps its composed prompt and plugin-dir under
-    ``<root>/<session_id>/``. The whole ``.cache/`` tree is gitignored
-    and swept by TTL on session_start.
+    ``<root>/<session_id>/``, swept by TTL on session_start.
+    """
+    return cache_root(project_dir) / "sessions"
+
+
+def legacy_session_cache_root(project_dir: Path) -> Path:
+    """Pre-HATS-1398 in-tree session cache: ``<ai_hats_dir>/.cache/sessions/``.
+
+    Kept for the TTL sweep's legacy arm and the agy dispatcher's fallback, so a
+    session built before the move is still reachable. Nothing writes here.
     """
     return ai_hats_dir(project_dir) / ".cache" / "sessions"
 
 
 def session_cache_dir(project_dir: Path, session_id: str) -> Path:
-    """Per-session cache dir: ``<ai_hats_dir>/.cache/sessions/<session_id>/``."""
+    """Per-session cache dir: ``<cache_root>/sessions/<session_id>/``."""
     return session_cache_root(project_dir) / session_id
 
 
@@ -695,7 +753,11 @@ __all__ = [
     "hypotheses_flat_dir",
     "decisions_dir",
     "state_md_path",
+    "cache_home",
+    "project_key",
+    "cache_root",
     "session_cache_root",
+    "legacy_session_cache_root",
     "session_cache_dir",
     "library_dir",
     "rules_dir",

@@ -10,7 +10,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, gemini_md
+from ai_hats.paths import PROJECT_CONFIG, gemini_md, session_cache_dir
 from ai_hats_agy.provider import AgyProvider
 
 
@@ -52,7 +52,7 @@ def test_wrap_materializes_skills_into_session_skills_dir(agy_project) -> None:
 
     provider.build_session_prompt(project, result, "sid-1")
 
-    skills_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-1" / "rules" / ".agents" / "skills"
+    skills_dir = session_cache_dir(project, "sid-1") / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
 
 
@@ -63,7 +63,7 @@ def test_automate_hook_materializes_and_returns_no_args(agy_project) -> None:
     args = provider.materialize_runtime_skills(project, result, "sid-2")
 
     assert args == []
-    skills_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-2" / "rules" / ".agents" / "skills"
+    skills_dir = session_cache_dir(project, "sid-2") / "rules" / ".agents" / "skills"
     assert (skills_dir / "s" / "SKILL.md").is_file()
 
 
@@ -83,7 +83,8 @@ def test_wrap_prompt_channel_is_add_dir(agy_project) -> None:
     assert args[0] == "--add-dir"
     session_md = Path(args[1]) / "GEMINI.md"
     assert session_md.read_text() == prompt
-    assert env == {}
+    # The only env the prompt channel carries: the dispatcher's cache-dir pin (HATS-1398).
+    assert env == {"AI_HATS_SESSION_CACHE_DIR": str(session_cache_dir(project, "sid-4"))}
 
 
 def test_wrap_session_dirs_isolated_per_session(agy_project) -> None:
@@ -200,7 +201,9 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatc
     provider = AgyProvider()
     provider.materialize_runtime_skills(project, result, "sid-wt")
 
-    wt_skill_dir = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-wt" / "rules" / ".agents" / "skills" / "worktree-isolation"
+    wt_skill_dir = (
+        session_cache_dir(project, "sid-wt") / "rules" / ".agents" / "skills" / "worktree-isolation"
+    )
     assert (wt_skill_dir / "SKILL.md").is_file()
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
 
@@ -224,7 +227,7 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
     assert not root_settings.exists(), "Clean-Root Invariant: .gemini/settings.json must not be created in project root"
 
     # Session hooks manifest must be in session cache
-    cache_hooks = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-sp-settings" / "hooks.json"
+    cache_hooks = session_cache_dir(project, "sid-sp-settings") / "hooks.json"
     assert cache_hooks.is_file()
     data = json.loads(cache_hooks.read_text())
     pre_tool_hooks = data.get("PreToolUse", [])
@@ -293,7 +296,7 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     )
 
     # 1. Manifest written in AUTOMATE session cache
-    cache_hooks = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-auto" / "hooks.json"
+    cache_hooks = session_cache_dir(project, "sid-auto") / "hooks.json"
     assert cache_hooks.is_file(), "hooks.json must be materialized in session cache under AUTOMATE mode"
     data = json.loads(cache_hooks.read_text())
     pre_tool_hooks = data.get("PreToolUse", [])
@@ -304,9 +307,13 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     assert "## PRIORITIES" in artifacts.full_content
     assert "Hook role body." in artifacts.full_content
 
-    # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session
+    # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session.
+    #    The env comes from the builder, so the pin the dispatcher reads is the one the
+    #    session actually exports (HATS-1398) — not a value this test invented.
     monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-auto")
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    for key, value in artifacts.extra_env.items():
+        monkeypatch.setenv(key, value)
     res = dispatch_hook("PreToolUse", tool_name="Edit")
     assert res == 0
     assert marker.is_file()

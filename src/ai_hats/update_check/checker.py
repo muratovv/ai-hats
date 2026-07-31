@@ -238,13 +238,13 @@ def _fetch_into_pkg(remote_url: str, ref: str = "master") -> bool:
 def _probe_mirror_dir(project_dir: Path) -> Path:
     """Path to the bare probe-mirror used as the local object graph for
     non-editable / wheel installs (HATS-458)."""
-    from ..paths import ai_hats_dir
+    from ..paths import cache_root
 
-    return ai_hats_dir(project_dir) / ".cache" / "probe-mirror"
+    return cache_root(project_dir) / "probe-mirror"
 
 
 def _ensure_probe_mirror(project_dir: Path) -> Path | None:
-    """Init or reuse a bare probe-mirror at ``<ai_hats_dir>/.cache/probe-mirror/``.
+    """Init or reuse a bare probe-mirror at ``<cache_root>/probe-mirror/``.
 
     HATS-458: when ``_fetch_into_pkg`` refuses (no usable ``.git`` next to
     the installed package — the common non-editable layout), the mirror is

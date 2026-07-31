@@ -189,7 +189,12 @@ class AgyProvider(Provider):
 
     def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
         """Global dispatcher registration (HATS-1166) plus the session manifest it reads."""
+        from ai_hats.env import ENV_SESSION_CACHE_DIR
+
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
+        # The dispatcher is a standalone process on every tool call — hand it the
+        # resolved dir rather than have it import ai-hats to re-derive it (HATS-1398).
+        artifacts.extra_env[ENV_SESSION_CACHE_DIR] = str(cache_dir)
         ensure_global_dispatcher_hook(agy_user_settings_json(), artifacts.port)
 
         manifest = self._hooks_manifest(project_dir, result, session_id)

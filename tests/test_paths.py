@@ -6,9 +6,12 @@ import pytest
 
 from ai_hats.paths import (
     LEGACY_PATH_MAP,
+    _is_safe_sha_component,
     ai_hats_dir,
     audits_dir,
     backlog_dir,
+    cache_home,
+    cache_root,
     complete_sentinel,
     current_pointer,
     decisions_dir,
@@ -21,16 +24,20 @@ from ai_hats.paths import (
     is_usable_version,
     last_backup_path,
     legacy_paths_by_class,
+    legacy_session_cache_root,
     library_dir,
     normalize_ai_hats_dir,
     normalize_venv_path,
     NotAnAiHatsProjectError,
     pipeline_steps_dir,
+    project_key,
     proposals_dir,
     read_current_sha,
     retros_dir,
     rules_dir,
     runs_dir,
+    session_cache_dir,
+    session_cache_root,
     sessions_dir,
     skills_dir,
     state_md_path,
@@ -504,6 +511,110 @@ def test_user_home_env_empty_string_falls_back(monkeypatch):
 
     monkeypatch.setenv("AI_HATS_USER_HOME", "")
     assert user_home() == Path.home()
+
+
+# ---------- cache class, out of the workspace (HATS-1398) ----------
+
+
+@pytest.fixture
+def _no_cache_env(monkeypatch):
+    for var in ("AI_HATS_CACHE_HOME", "XDG_CACHE_HOME", "AI_HATS_USER_HOME"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_cache_home_precedence_ai_hats_var_wins(tmp_path, monkeypatch, _no_cache_env):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "explicit"))
+    assert cache_home() == tmp_path / "explicit"
+
+
+def test_cache_home_falls_back_to_xdg(tmp_path, monkeypatch, _no_cache_env):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    assert cache_home() == tmp_path / "xdg" / "ai-hats"
+
+
+def test_cache_home_bottoms_out_on_user_home(tmp_path, monkeypatch, _no_cache_env):
+    """Bottom of the chain is ``user_home()``, so AI_HATS_USER_HOME isolates e2e."""
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(tmp_path))
+    assert cache_home() == tmp_path / ".cache" / "ai-hats"
+
+
+def test_cache_home_expands_user(tmp_path, monkeypatch, _no_cache_env):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", "~/cache")
+    assert cache_home() == tmp_path / "cache"
+
+
+def test_project_key_is_stable_across_calls(tmp_path):
+    assert project_key(tmp_path) == project_key(tmp_path)
+
+
+def test_project_key_separates_same_basename_projects(tmp_path):
+    """Two checkouts sharing a dirname must not share a cache root."""
+    a = tmp_path / "a" / "proj"
+    b = tmp_path / "b" / "proj"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    assert project_key(a) != project_key(b)
+    assert project_key(a).startswith("proj-")
+    assert project_key(b).startswith("proj-")
+
+
+def test_project_key_normalizes_dotdot_and_symlinks(tmp_path):
+    """A path spelled differently is the same project — resolve before hashing."""
+    real = tmp_path / "proj"
+    real.mkdir()
+    spelled = tmp_path / "proj" / ".." / "proj"
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    assert project_key(spelled) == project_key(real)
+    assert project_key(link) == project_key(real)
+
+
+def test_project_key_sanitizes_unsafe_dirname(tmp_path):
+    """The slug is a single safe path component, whatever the dirname holds."""
+    weird = tmp_path / "my proj:v2"
+    weird.mkdir()
+    key = project_key(weird)
+    assert "/" not in key and " " not in key and ":" not in key
+    assert _is_safe_sha_component(key)
+
+
+def test_cache_root_appends_project_key_to_any_base(tmp_path, monkeypatch, _no_cache_env):
+    """The per-project segment is unconditional — a leaked var cannot merge caches."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "base"))
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    assert cache_root(a).parent == tmp_path / "base"
+    assert cache_root(a) != cache_root(b)
+
+
+def test_cache_class_lives_outside_the_project(tmp_path, monkeypatch, _no_cache_env):
+    """R16: no member of the cache class resolves inside the workspace."""
+    from ai_hats.update_check.cache import cache_path
+
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "base"))
+    project = tmp_path / "proj"
+    (project / ".agent" / "ai-hats").mkdir(parents=True)
+
+    for path in (
+        session_cache_dir(project, "sid-1"),
+        session_cache_root(project),
+        cache_root(project) / "probe-mirror",
+        cache_path(project),
+    ):
+        assert not path.is_relative_to(project), path
+
+
+def test_legacy_session_cache_root_still_points_in_tree(tmp_path, monkeypatch):
+    """The legacy arm keeps resolving the pre-move location — sweep + fallback need it."""
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "proj" / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj"))
+    project = tmp_path / "proj"
+    assert legacy_session_cache_root(project) == (
+        project / ".agent" / "ai-hats" / ".cache" / "sessions"
+    )
 
 
 # ---------- HATS-647: versioned install layout + lazy-migration resolve ----------

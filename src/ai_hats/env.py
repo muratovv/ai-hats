@@ -15,6 +15,9 @@ ENV_AI_HATS_DIR = "AI_HATS_DIR"
 AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
 ENV_AI_HATS_VENV = "AI_HATS_VENV"
 ENV_LIBRARY_ROOT = "AI_HATS_LIBRARY_ROOT"
+ENV_AI_HATS_CACHE_HOME = "AI_HATS_CACHE_HOME"
+ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME"
+ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 
 
 def _read(name: str) -> str | None:
@@ -80,16 +83,42 @@ def tool_home_override(env_var: str) -> str | None:
     return _read(env_var)
 
 
+def cache_home_override() -> str | None:
+    """Read ``AI_HATS_CACHE_HOME`` env var.
+
+    Meaning: Runtime override for the BASE of the machine-only cache class, which lives
+    outside the project. Never a project's final cache root — ``paths.cache_root`` always
+    appends the per-project key, so a leaked value cannot merge two projects' caches.
+    Documentation: ``docs/ARCHITECTURE.md`` (Materialization), HATS-1398.
+    """
+    return _read(ENV_AI_HATS_CACHE_HOME)
+
+
+def xdg_cache_home() -> str | None:
+    """Read ``XDG_CACHE_HOME`` env var.
+
+    Meaning: Platform cache base; ai-hats appends ``ai-hats/`` to it. Ranks below
+    ``AI_HATS_CACHE_HOME`` and above ``user_home()`` when resolving the cache class.
+    Documentation: ``docs/ARCHITECTURE.md`` (Materialization), HATS-1398.
+    """
+    return _read(ENV_XDG_CACHE_HOME)
+
+
 __all__ = [
     "ENV_AI_HATS_USER_HOME",
     "ENV_AI_HATS_DIR",
     "AI_HATS_PROJECT_DIR_ENV",
     "ENV_AI_HATS_VENV",
     "ENV_LIBRARY_ROOT",
+    "ENV_AI_HATS_CACHE_HOME",
+    "ENV_XDG_CACHE_HOME",
+    "ENV_SESSION_CACHE_DIR",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",
     "venv_override",
     "library_root_override",
     "tool_home_override",
+    "cache_home_override",
+    "xdg_cache_home",
 ]
