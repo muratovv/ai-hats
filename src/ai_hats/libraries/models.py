@@ -5,6 +5,8 @@ rule/skill metadata, hook wiring. T18 (HATS-876) lifts this module into the
 
 from __future__ import annotations
 
+import difflib
+import sys
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,10 @@ class ComponentType(str, Enum):
 
 
 class Composition(_YamlModel):
+    # HATS-1152: guards construction paths that bypass ``from_yaml``; the
+    # user-facing channel for a yaml typo is the pre-strip WARN below.
+    model_config = ConfigDict(extra="forbid")
+
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
@@ -50,9 +56,36 @@ class ComponentConfig(_YamlModel):
     @classmethod
     def from_yaml(cls, path: Path) -> ComponentConfig:
         data = yaml.safe_load(path.read_text()) or {}
+        cls._strip_unknown_composition_keys(data, path)
         return cls.model_validate(
             {**data, "source_path": path, "name": data.get("name") or path.parent.name}
         )
+
+    @staticmethod
+    def _strip_unknown_composition_keys(data: dict[str, Any], path: Path) -> None:
+        """Pop keys under ``composition:`` no field owns; one stderr WARN each.
+
+        HATS-1152 under the HATS-581 policy: strip, so an OLDER binary survives a
+        config a NEWER one wrote — but never silently, because a mistyped binding
+        is a gate that never installs. Unlike ``ProjectConfig``, the popped value
+        is not stashed for round-trip: library configs have no ``save()`` path.
+
+        Channel is plain stderr, mirroring ``ProjectConfig._strip_unknown_fields``
+        — fires at yaml-load and must be visible regardless of log level.
+        """
+        composition = data.get("composition")
+        if not isinstance(composition, dict):
+            return
+        known = sorted(Composition.model_fields)
+        for key in [k for k in composition if k not in known]:
+            composition.pop(key)
+            close = difflib.get_close_matches(key, known, n=1)
+            suggestion = f" — did you mean {close[0]!r}?" if close else ""
+            print(
+                f"WARN: {path}: dropping unknown key {key!r} under 'composition:'"
+                f"{suggestion} (known: {', '.join(known)})",
+                file=sys.stderr,
+            )
 
 
 class RuleMetadata(_YamlModel):
