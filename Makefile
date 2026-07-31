@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit e2e lint check gates coverage security version-skew relay-server relay-client
+.PHONY: help tests unit e2e lint check gates coverage security version-skew dependency-floor relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -57,6 +57,9 @@ security: ## Run the security stage (bandit + pip-audit; env-scoped, CI is autho
 
 version-skew: ## Check workspace packages are ahead of PyPI (needs network)
 	$(CI_LOCAL) version-skew $(ARGS)
+
+dependency-floor: ## Check every pin on a workspace package tracks its version
+	$(CI_LOCAL) dependency-floor
 
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))

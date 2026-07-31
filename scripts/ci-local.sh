@@ -12,7 +12,7 @@
 # interpreter with PYTHON=/path/to/python.
 #
 # Usage:
-#   scripts/ci-local.sh            # local bundle: lint unit coverage merge-smoke
+#   scripts/ci-local.sh            # local bundle: lint dependency-floor unit coverage merge-smoke
 #   scripts/ci-local.sh lint       # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage   # the stage that was the sole failing executor
 #   scripts/ci-local.sh security   # CI-only stage; env-scoped (see NOTE below)
@@ -67,6 +67,12 @@ ci_merge_smoke() {
     "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
 }
 
+# Offline and instant, so unlike version-skew it belongs in the `all` bundle.
+ci_dependency_floor() {
+    echo "[ci-local] dependency-floor (pins vs workspace versions)" >&2
+    "$PY" scripts/check_dependency_floor.py
+}
+
 # The full maintainer tier (~25 min). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -91,11 +97,13 @@ case "$stage" in
     coverage) ci_coverage ${@+"$@"} ;;
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
+    dependency-floor) ci_dependency_floor ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_lint
+        ci_dependency_floor
         ci_unit
         ci_coverage
         ci_merge_smoke
@@ -103,7 +111,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | version-skew | all" >&2
+        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | dependency-floor | version-skew | all" >&2
         exit 2
         ;;
 esac

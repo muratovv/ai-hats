@@ -167,3 +167,8 @@ jobs:
         env:
           SKEW_BASE: ${{ steps.base.outputs.sha }}
         run: bash scripts/ci-local.sh version-skew
+      # The consumer side of the same skew (HATS-1399): offline, so it runs
+      # regardless of whether the PyPI query above succeeded.
+      - name: Check dependency floors track workspace versions
+        if: always()
+        run: bash scripts/ci-local.sh dependency-floor
