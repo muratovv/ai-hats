@@ -199,3 +199,44 @@ def test_env_secret_still_blocks_after_anchor_change(privacy_repo: Path):
     res = _stage_and_run(privacy_repo, "API_KEY=supersecretvalue123")
     assert res.returncode == 1, res.stderr
     assert "env-style secret" in res.stderr
+
+
+# --- HATS-1255: Binary files and non-UTF-8 text files must pass cleanly -------
+
+
+def _stage_and_run_bytes(repo: Path, content: bytes, *, filename: str = "leak.bin"):
+    """Write binary `content`, stage it, then run the privacy hook from the repo root."""
+    (repo / filename).write_bytes(content)
+    subprocess.run(["git", "add", filename], cwd=str(repo), check=True)
+    env = os.environ.copy()
+    env.pop("AI_HATS_PRIVACY_ACK", None)
+    return subprocess.run(
+        ["bash", str(PRIVACY_HOOK)],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+
+
+@pytest.mark.integration
+def test_binary_png_file_allowed_without_warnings(privacy_repo: Path):
+    """PNG image header + null bytes must pass silently with returncode 0 and empty stderr."""
+    png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
+    res = _stage_and_run_bytes(privacy_repo, png_bytes, filename="screenshot.png")
+    assert res.returncode == 0, f"binary file falsely blocked:\n{res.stderr}"
+    assert "warning:" not in res.stderr
+    assert "illegal byte sequence" not in res.stderr
+    assert res.stderr == ""
+
+
+@pytest.mark.integration
+def test_non_utf8_text_file_handled_cleanly(privacy_repo: Path):
+    """Non-UTF-8 text file (CP1251) must be scanned without sed illegal byte sequence errors."""
+    cp1251_bytes = "Привет мир".encode("cp1251")
+    res = _stage_and_run_bytes(privacy_repo, cp1251_bytes, filename="doc_cp1251.txt")
+    assert res.returncode == 0, f"non-utf8 text file caused error:\n{res.stderr}"
+    assert "illegal byte sequence" not in res.stderr
+    assert res.stderr == ""
+
