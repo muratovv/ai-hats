@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe import AuditWriter, Session
-from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON, TRANSCRIPT_JSONL
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -211,6 +211,62 @@ def test_jsonl_path_deletes_trace(tmp_path):
 
     assert not session.trace_path.exists()
     assert session.audit_path.exists()
+
+
+def test_a_long_reply_reaches_audit_md_whole(tmp_path):
+    """The canonical record is lossless; size is bounded at delivery (HATS-1397).
+
+    Measured over 184 sessions: the 500-char cut hit 97% of replies, leaving
+    ~3% of the agent's own prose in the one artifact ``session-reviewer`` reads.
+    ``turn.user_input`` was already exempt (HATS-683) — the reply was an oversight.
+    """
+    session = make_session(tmp_path)
+    reply = "ы" * 4000
+    jsonl = make_jsonl(tmp_path, [user_msg("go"), assistant_msg([{"type": "text", "text": reply}])])
+
+    AuditWriter().build(session, jsonl_path=jsonl)
+
+    audit = session.audit_path.read_text()
+    assert reply in audit, "the canonical record was truncated"
+    assert "…" not in audit
+
+
+def test_the_trace_is_traded_for_a_copy_that_lives_here(tmp_path):
+    """Deletion is licensed by a copy in the session dir, not by a file elsewhere.
+
+    HATS-1397: ``_may_drop_trace`` assumed the provider's transcript outlives us.
+    Claude expires its JSONL after ~30–40 days — measured on this corpus, only
+    178 of 374 sessions with a known id still had one — so the trace was traded
+    for a copy that then vanished, leaving audit.md as the sole record.
+    """
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
+    jsonl = make_jsonl(
+        tmp_path,
+        [user_msg("привет"), assistant_msg([{"type": "text", "text": "Привет!"}])],
+    )
+
+    AuditWriter().build(session, jsonl_path=jsonl)
+
+    copy = session.session_dir / TRANSCRIPT_JSONL
+    assert copy.read_bytes() == jsonl.read_bytes(), "the source must survive next to the session"
+    assert not session.trace_path.exists()
+
+
+def test_an_unwritable_session_dir_keeps_the_trace(tmp_path):
+    """No copy, no delete: the trade must not become a loss."""
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
+    jsonl = make_jsonl(
+        tmp_path,
+        [user_msg("привет"), assistant_msg([{"type": "text", "text": "Привет!"}])],
+    )
+    # A directory where the copy wants to be: the write fails, nothing else does.
+    (session.session_dir / TRANSCRIPT_JSONL).mkdir()
+
+    AuditWriter().build(session, jsonl_path=jsonl)
+
+    assert session.trace_path.exists(), "the only copy of the session text was deleted"
 
 
 def test_fallback_path_keeps_trace(tmp_path):

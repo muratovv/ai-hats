@@ -150,13 +150,15 @@ def test_rendered_audit_header_and_metrics_markers(tmp_path):
     ``_finalize_sub_agent`` had already written to ``metrics.json``.
     """
     session = Session(session_id="t", session_dir=tmp_path)
-    # Seeded metrics mirror the shape ``_finalize_sub_agent`` produces
-    # after a real Claude SDK run.
+    # Seeded metrics mirror the shape ``_finalize_sub_agent`` produces after a
+    # real Claude SDK run. HATS-1397: `measured`/`turns` are part of that shape —
+    # `build` writes metrics.json BEFORE rendering, so `_format_audit` reports
+    # the record rather than synthesizing a count from its own arguments.
     session.metrics_path.write_text(
         '{"role": "assistant", "provider": "claude", '
         '"model": "claude-haiku-4-5", "isolation_mode": "discard", '
         '"exit_code": 0, "claude_session_id": "abc-123", '
-        '"total_cost_usd": 0.012, "num_turns": 2, '
+        '"total_cost_usd": 0.012, "num_turns": 2, "measured": true, "turns": 2, '
         '"stop_reason": "end_turn", "duration_s": 4.2}'
     )
 

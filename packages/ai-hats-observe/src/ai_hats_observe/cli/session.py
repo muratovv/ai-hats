@@ -442,11 +442,15 @@ def session_show(session_id: str):
 
 # ---- session backfill ----
 
-_LAUNCH_SESSION_ID = re.compile(
-    r"--session-id[= ]([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+# One match, one line: `.` never crosses a newline, so provider and id cannot be
+# paired across the file. The `[SYS]` prefix is anchored because trace.log is the
+# whole PTY stream — `[RES]` lines are terminal output and may contain anything.
+_LAUNCH_LINE = re.compile(
+    r"^\d{2}:\d{2}:\d{2}\.\d{3} \[SYS\] Launching: (?P<provider>\S+)"
+    r"(?:.*?--session-id[= ](?P<session_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))?",
+    re.MULTILINE,
 )
-_LAUNCH_PROVIDER = re.compile(r"\[SYS\]\s+Launching:\s+(\S+)")
 
 
 def _identity_from_trace(s) -> tuple[str | None, str | None]:
@@ -454,9 +458,12 @@ def _identity_from_trace(s) -> tuple[str | None, str | None]:
 
     Pre-HATS-1374 records persisted neither (and the 48 hardest cases have no
     metrics.json at all), but the runner logs the whole command —
-    ``[SYS] Launching: claude … --session-id <uuid>`` — into trace.log. Still an
-    exact identity, not the mtime guess. Fails closed: a launch line without the
-    flag yields ``None`` and the session stays refused.
+    ``[SYS] Launching: claude … --session-id <uuid>`` — into trace.log.
+
+    HATS-1397: both halves must come from the SAME launch line. Two independent
+    searches over the whole stream paired this session's provider with a uuid
+    printed later by the terminal, and ``_backfill_one`` persisted it forever.
+    Fails closed: a ``--resume`` launch carries no flag, so the id stays ``None``.
     """
     if not s.trace_path.exists():
         return None, None
@@ -464,12 +471,10 @@ def _identity_from_trace(s) -> tuple[str | None, str | None]:
         text = s.trace_path.read_text(errors="replace")
     except OSError:
         return None, None
-    provider = _LAUNCH_PROVIDER.search(text)
-    session_id = _LAUNCH_SESSION_ID.search(text)
-    return (
-        provider.group(1) if provider else None,
-        session_id.group(1) if session_id else None,
-    )
+    launch = _LAUNCH_LINE.search(text)
+    if launch is None:
+        return None, None
+    return launch.group("provider"), launch.group("session_id")
 
 
 def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
@@ -487,6 +492,13 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
         "note": "",
     }
     row["after"] = row["before"]
+
+    # HATS-1397: `build` replaces audit.md wholesale, so rewriting a session that
+    # is still running destroys the `## Events` log it is appending to and races
+    # `finalize_audit` for metrics.json. `finalized` exists to answer this.
+    if metrics.get("finalized") is False:
+        row["note"] = "not finalized (session still running)"
+        return row
 
     # Exact match only: live discovery falls back to the freshest transcript,
     # which retroactively resolves a stranger's (HATS-1374 — a dry run

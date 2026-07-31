@@ -17,6 +17,9 @@ SESSION_PREFIX = "session_"
 TRACE_LOG = "trace.log"
 AUDIT_MD = "audit.md"
 TRANSCRIPT_TXT = "transcript.txt"
+# HATS-1397: the provider's structured transcript, copied in before the trace is
+# dropped. audit.md is a summary; this is the source it was summarised from.
+TRANSCRIPT_JSONL = "transcript.jsonl"
 METRICS_JSON = "metrics.json"
 USAGE_JSON = "usage.json"
 META_PROMPT_TXT = "meta_prompt.txt"
@@ -33,20 +36,41 @@ FLAG_SENSOR_ERROR = "sensor-error"
 FLAG_NOT_FINALIZED = "not-finalized"
 
 
+def has_real_counters(metrics: dict) -> bool:
+    """Whether a counter here holds a value no failed parse could have invented.
+
+    A fabricated record is all-zero by construction — HATS-1374 wrote the absence
+    of a measurement as ``turns: 0`` — so one non-zero counter is proof that some
+    earlier parse really measured this session, with or without the ``measured``
+    key that only post-HATS-1374 records carry.
+    """
+    if metrics.get("turns") or metrics.get("tool_calls"):
+        return True
+    tokens = metrics.get("tokens")
+    if isinstance(tokens, dict) and any(tokens.values()):
+        return True
+    models = metrics.get("models")
+    return bool(isinstance(models, dict) and models)
+
+
 def is_measured(metrics: dict) -> bool:
     """Whether this record's counters are a measurement (HATS-1374).
 
     The read side of the audit/v1 honesty contract: a ``False`` here means
     ``turns``/``tokens``/``tool_calls`` say nothing about the session, so a
     consumer must not compare them against a threshold or report them as a
-    total. Pre-HATS-1374 records carry no ``measured`` key and may hold
-    fabricated zeros — a missing ``turns`` is the only tell left, so they read
-    as unmeasured only in that case.
+    total.
+
+    HATS-1397: pre-HATS-1374 records carry no ``measured`` key, and this used to
+    read the mere presence of ``turns`` as provenance — so a fabricated
+    ``turns: 0`` passed as measured (raising bogus zero-output incidents) while
+    ``_write_metrics``, which trusted only ``measured: true``, erased genuine
+    legacy counters. One predicate now answers for both sides.
     """
     measured = metrics.get("measured")
     if isinstance(measured, bool):
         return measured
-    return "turns" in metrics
+    return has_real_counters(metrics)
 
 
 def session_dirname(session_id: str) -> str:

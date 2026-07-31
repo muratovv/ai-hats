@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_observe import AuditWriter, Session
-from ai_hats_observe.artifacts import METRICS_JSON
+from ai_hats_observe.artifacts import METRICS_JSON, is_measured
 
 FIXTURE = Path(__file__).parent / "fixtures" / "claude_jsonl" / "three_turns_with_tool.jsonl"
 
@@ -133,6 +133,26 @@ def test_audit_md_still_reports_a_measured_turn_count(tmp_path):
     assert "- **measured**: false" not in audit
 
 
+def test_audit_md_never_contradicts_itself(tmp_path):
+    """F3: the record already HAS counters — the case the 1374 test omitted.
+
+    ``_format_audit`` ran before ``_write_metrics``, read metrics.json in its old
+    state, and dumped every non-header key verbatim, so a stale ``turns: 42``
+    printed beside the fresh ``measured: false`` it contradicts. The 1374 test
+    passed because its fixture had no ``turns`` at all.
+    """
+    session = make_session(tmp_path, {"measured": True, "turns": 42, "tool_calls": 216})
+
+    AuditWriter().build(session, jsonl_path=None)
+
+    audit = session.audit_path.read_text()
+    assert audit.count("- **measured**") == 1, audit
+    assert audit.count("- **turns**") == 1, audit
+    # Counters survived (S6), so the document must agree they did.
+    assert "- **measured**: true" in audit.lower()
+    assert "- **turns**: 42" in audit
+
+
 def test_legacy_fabricated_zeros_are_dropped_not_preserved(tmp_path):
     """Re-enriching a pre-HATS-1374 record must not keep its fabricated zeros.
 
@@ -162,6 +182,68 @@ def test_legacy_fabricated_zeros_are_dropped_not_preserved(tmp_path):
     for absent in ("turns", "tokens", "models", "tool_calls"):
         assert absent not in m, f"stale fabricated {absent!r} survived as {m.get(absent)!r}"
     assert m["num_turns"] == 5, "SDK telemetry is not a fabrication — it stays"
+
+
+def test_legacy_real_counters_survive_an_unreachable_transcript(tmp_path):
+    """The other half of the legacy case — and the one that destroyed data (F4).
+
+    Verbatim shape of ``session_20260529-093014-1``: a pre-HATS-1374 record has
+    no ``measured`` key at all, so "reset anything without ``measured: true``"
+    erased genuine measurements. ``is_measured`` called the very same record
+    measured, so reader and writer disagreed by construction and the destructive
+    one won. ``session backfill --all --force`` would have run this over ~1005
+    archived sessions.
+    """
+    session = make_session(
+        tmp_path,
+        {
+            "turns": 2,
+            "tool_calls": 6,
+            "tokens": {
+                "input": 16378,
+                "output": 2075,
+                "cache_read": 314832,
+                "cache_creation": 51791,
+            },
+            "models": {"claude-opus-4-8": {"calls": 11, "input_tokens": 16378, "output_tokens": 2075}},
+        },
+    )
+
+    AuditWriter().build(session, jsonl_path=None)
+
+    m = read_metrics(session)
+    assert m["turns"] == 2
+    assert m["tool_calls"] == 6
+    assert m["tokens"]["cache_read"] == 314832
+    assert m["models"]["claude-opus-4-8"]["calls"] == 11
+    assert "no-structured-transcript" in m["flags"], "this run's failure is still recorded"
+
+
+def test_reader_and_writer_agree_on_what_a_measurement_is(tmp_path):
+    """The invariant behind F4: one predicate, not two that can diverge.
+
+    Whatever ``is_measured`` calls a measurement, ``_write_metrics`` must keep;
+    whatever it calls a fabrication, the writer may reset. Asserted over the
+    record shapes that actually occur on disk, legacy ones included.
+    """
+    shapes = [
+        {},
+        {"turns": 0, "tool_calls": 0, "tokens": {"input": 0, "output": 0}},
+        {"turns": 2, "tool_calls": 6, "tokens": {"input": 16378, "output": 2075}},
+        {"measured": True, "turns": 7, "tool_calls": 12},
+        {"measured": False, "flags": ["sensor-error"]},
+        {"turns": 0, "tool_calls": 0, "tokens": {"input": 0, "output": 121}},
+    ]
+    for i, shape in enumerate(shapes):
+        case = tmp_path / f"case{i}"
+        case.mkdir()
+        session = make_session(case, shape)
+        claimed = is_measured({**{"role": "maintainer"}, **shape})
+
+        AuditWriter().build(session, jsonl_path=None)
+
+        kept = "turns" in read_metrics(session)
+        assert kept == claimed, f"reader and writer disagree on {shape!r}"
 
 
 def test_malformed_prior_flags_are_dropped_not_propagated(tmp_path):

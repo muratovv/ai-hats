@@ -198,6 +198,55 @@ def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
     assert read_metrics(session_dir)["measured"] is False
 
 
+def test_a_stray_uuid_in_terminal_output_is_not_our_identity(project, monkeypatch):
+    """trace.log is the whole PTY stream, not a launch record (HATS-1397, F5).
+
+    The launch line of a ``--resume`` session carries no ``--session-id``, and
+    ``[RES]`` is whatever the terminal printed afterwards. Two independent
+    searches over the whole file paired this session's provider with a uuid from
+    someone else's output, and the backfill persisted that forever.
+    """
+    tmp_path, session_dir, transcript = project
+    metrics = read_metrics(session_dir)
+    del metrics["claude_session_id"]
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    (session_dir / "trace.log").write_text(
+        "12:00:00.100 [SYS] Launching: claude --settings x.json --resume\n"
+        f"12:00:31.400 [RES] resuming session --session-id {PROVIDER_SESSION_ID}\n"
+    )
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert "no provider session id" in result.output
+    m = read_metrics(session_dir)
+    assert m["measured"] is False
+    assert "claude_session_id" not in m, "a uuid seen in terminal output is not an identity"
+
+
+def test_backfill_refuses_a_live_session(project, monkeypatch):
+    """``--all`` must not rewrite a session that is still running (HATS-1397, F6).
+
+    ``build`` replaces audit.md wholesale, so the incremental ``## Events`` log a
+    live session is still appending to would be destroyed — and it races
+    ``finalize_audit`` for metrics.json. ``finalized`` was added in HATS-1374 for
+    exactly this question and then never asked.
+    """
+    tmp_path, session_dir, transcript = project
+    metrics = read_metrics(session_dir)
+    metrics["finalized"] = False
+    (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
+    (session_dir / "audit.md").write_text("# Session Audit: live\n\n## Events\n\n- started\n")
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
+
+    result = CliRunner().invoke(session, ["backfill", SESSION_ID])
+
+    assert result.exit_code == 0, result.output
+    assert "not finalized" in result.output
+    assert "## Events" in (session_dir / "audit.md").read_text()
+    assert "turns" not in read_metrics(session_dir)
+
+
 def test_backfill_keeps_trace_log(project, monkeypatch):
     """``AuditWriter.build`` deletes trace.log by default; a backfill must not.
 

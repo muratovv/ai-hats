@@ -9,12 +9,20 @@ It holds ZERO provider parsing — every JSONL/trace assumption lives in the par
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from ai_hats_core import atomic_write_text
 
-from .artifacts import FLAG_NO_STRUCTURED_TRANSCRIPT, TRANSCRIPT_TXT, session_start_dt
+from .artifacts import (
+    FLAG_NO_STRUCTURED_TRANSCRIPT,
+    TRANSCRIPT_JSONL,
+    TRANSCRIPT_TXT,
+    is_measured,
+    session_start_dt,
+)
 from .parsers.claude import ClaudeParser
 from .session import AUDIT_SCHEMA_VERSION, Session, _load_metrics_safe
 
@@ -23,6 +31,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .parsers.base import ParsedTranscript, TranscriptParser, Turn
+
+logger = logging.getLogger(__name__)
 
 
 def _merge_flags(prior: object, new: list[str]) -> list[str]:
@@ -49,7 +59,6 @@ class AuditWriter:
         session: Session,
         turns: list[Turn],
         model_stats: dict[str, dict] | None = None,
-        flags: list[str] | None = None,
     ) -> str:
         metrics = _load_metrics_safe(session) or {}
 
@@ -116,10 +125,12 @@ class AuditWriter:
             for tool in turn.tools:
                 lines.append(f"🔧 {tool}")
             if turn.response:
-                resp = turn.response
-                if len(resp) > 500:
-                    resp = resp[:500] + "…"
-                lines.append(f"👾 {resp}")
+                # HATS-1397: lossless, on the same grounds HATS-683 gave for
+                # user_input — audit *size* is bounded at the delivery layer
+                # (`_truncate_audit`), not by truncating the canonical record.
+                # The 500-char cut hit 97% of replies, so only ~3% of the
+                # agent's own prose reached the one artifact anyone reads.
+                lines.append(f"👾 {turn.response}")
             lines.append("")
 
         # HATS-561: emit ALL metric keys (not just ``exit_code`` + ``turns``)
@@ -130,19 +141,24 @@ class AuditWriter:
         # This restores the ``**total_cost_usd**`` / ``**claude_session_id**``
         # markers the golden-path test asserts and the
         # `_finalize_sub_agent` extra_metrics keys (claude SDK telemetry).
+        # HATS-1397: `build` rewrites metrics.json BEFORE calling us, so this
+        # block renders that record rather than racing it. The five keys below
+        # used to arrive twice — once as a fresh claim, once in the verbatim dump
+        # of every non-header key — printing `measured: false` beside the
+        # `turns: 42` it contradicts.
         lines.append("## Metrics")
         lines.append(f"- **exit_code**: {exit_code}")
-        # HATS-1374: audit.md is what a human and the session-reviewer read, so
-        # it must not assert a turn count the parse never measured — the same
-        # fabrication metrics.json stopped emitting.
-        if FLAG_NO_STRUCTURED_TRANSCRIPT in (flags or []):
-            lines.append("- **measured**: false")
-            lines.append(f"- **flags**: {', '.join(flags or [])}")
-        else:
-            lines.append(f"- **turns**: {len(turns)}")
+        if "measured" in metrics:
+            lines.append(f"- **measured**: {str(metrics['measured']).lower()}")
+        if metrics.get("flags"):
+            lines.append(f"- **flags**: {', '.join(str(f) for f in metrics['flags'])}")
+        for counter in ("turns", "tool_calls", "tokens"):
+            if counter in metrics:
+                lines.append(f"- **{counter}**: {metrics[counter]}")
         _header_keys = {
             "role", "provider", "exit_code", "duration",
             "composition", "models",
+            "measured", "flags", "turns", "tool_calls", "tokens",
             "schema_version",  # machine-only tag (metrics.json), not human MD
         }
         for k, v in metrics.items():
@@ -174,32 +190,51 @@ class AuditWriter:
         """
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
-        audit_content = self._format_audit(
-            session, turns, model_stats=parsed.model_stats, flags=parsed.flags
-        )
+        # Metrics first: `_format_audit` renders metrics.json, so reading it
+        # before the rewrite printed the previous run's counters (HATS-1397).
         self._write_metrics(
             session, turns, parsed.model_stats, parsed.agg_usage, flags=parsed.flags
         )
+        audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
         session.audit_path.write_text(audit_content)
 
-        if not keep_raw and self._may_drop_trace(jsonl_path, parsed) and session.trace_path.exists():
-            session.trace_path.unlink()  # safe-delete: ok raw-trace (audit superseded)
+        preserved = self._preserve_transcript(session, jsonl_path)
+        if not keep_raw and self._may_drop_trace(parsed, preserved) and session.trace_path.exists():
+            session.trace_path.unlink()  # safe-delete: ok raw-trace (source copied in)
 
     @staticmethod
-    def _may_drop_trace(jsonl_path: Path | None, parsed: ParsedTranscript) -> bool:
+    def _preserve_transcript(session: Session, jsonl_path: Path | None) -> bool:
+        """Copy the provider's transcript into the session dir; True once it is there.
+
+        HATS-1397: the deletion used to be licensed by that transcript existing
+        *somewhere*. Claude expires its JSONL after ~30–40 days — on this corpus
+        only 178 of 374 sessions with a known id still had one — so the trace was
+        traded for a copy running on someone else's retention clock.
+        """
+        if jsonl_path is None or not jsonl_path.exists():
+            return False
+        try:
+            shutil.copyfile(jsonl_path, session.session_dir / TRANSCRIPT_JSONL)
+        except OSError:
+            logger.warning("could not copy %s into the session dir", jsonl_path, exc_info=True)
+            return False
+        return True
+
+    @staticmethod
+    def _may_drop_trace(parsed: ParsedTranscript, preserved: bool) -> bool:
         """Whether the session text survives the deletion of trace.log.
 
         HATS-1374: this used to be unconditional, which destroyed the only copy
-        of 295 sessions' text. The trace is redundant only when a structured
-        transcript both exists on disk (it outlives us) and actually parsed. On
-        the trace-only surfaces the scrape is lossy — agy yields zero turns, so
-        the audit was a header stub and the source went with it.
+        of 295 sessions' text. On the trace-only surfaces the scrape is lossy —
+        agy yields zero turns, so the audit was a header stub and the source went
+        with it. HATS-1397: the licence is a copy in the session dir, not a file
+        somewhere else.
         """
         if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags:
             return False
-        return bool(jsonl_path and jsonl_path.exists() and parsed.turns)
+        return bool(preserved and parsed.turns)
 
     @staticmethod
     def _with_transcript_fallback(session: Session, audit_content: str) -> str:
@@ -255,11 +290,11 @@ class AuditWriter:
 
         if FLAG_NO_STRUCTURED_TRANSCRIPT in parse_flags:
             existing["flags"] = _merge_flags(existing.get("flags"), parse_flags)
-            # `measured: True` is the only provenance that makes a counter here
-            # trustworthy (an earlier parse really did measure it). Without it
-            # the value is a pre-HATS-1374 fabrication, and keeping it would
-            # assert a zero and deny the measurement in the same file.
-            if existing.get("measured") is not True:
+            # HATS-1397: ask the reader's question, so writer and reader cannot
+            # disagree. Demanding `measured: true` erased genuine legacy counters
+            # — no pre-HATS-1374 record has the key — while `is_measured` called
+            # those same records measured, and the destructive side won.
+            if not is_measured(existing):
                 for counter in ("turns", "tokens", "models", "tool_calls"):
                     existing.pop(counter, None)
                 existing["measured"] = False

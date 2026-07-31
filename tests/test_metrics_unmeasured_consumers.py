@@ -42,8 +42,12 @@ MEASURED = {"role": "maintainer", "provider": "claude", "exit_code": 0, "measure
         # measured:True with a stale flag — an earlier parse's counters survived
         # a later transcript-less run, so the counters are still real.
         ({"measured": True, "turns": 7, "flags": ["no-structured-transcript"]}, True),
-        # Pre-HATS-1374 record: no `measured` key, counters may be fabricated.
-        ({"turns": 0, "tool_calls": 0}, True),
+        # Pre-HATS-1374 record, no `measured` key. All-zero is exactly the shape
+        # a failed parse wrote, so it reads as unmeasured (HATS-1397) — calling
+        # it measured is what kept raising bogus zero-output incidents.
+        ({"turns": 0, "tool_calls": 0}, False),
+        # Same vintage, but carrying a value no failed parse could have invented.
+        ({"turns": 0, "tool_calls": 0, "tokens": {"output": 121}}, True),
         ({"role": "maintainer"}, False),
     ],
 )
