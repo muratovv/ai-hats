@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ai_hats.linked_context import load_linked_context, load_ticket
 from ai_hats.paths import tasks_dir
-from ai_hats_rack.models import TaskCard, WorkLogEntry
+from ai_hats_rack.models import TaskCard
 
 
 def _write_card(project_dir: Path, card: TaskCard, plan_body: str | None = None) -> None:
