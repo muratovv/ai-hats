@@ -90,11 +90,15 @@ def main() -> int:
         )
         return 2
 
-    # HATS-1369: harvest whatever verdicts the doc carries into validation_log,
-    # independent of _harness_check's full-active-coverage gate below.
-    persisted = _maybe_harvest_verdicts(project_dir, session_id)
+    # HATS-1369: parse the doc ONCE — shared by the harvest below and
+    # _harness_check, instead of each re-reading/re-parsing it independently.
+    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
 
-    issues = _harness_check(project_dir, session_id, runner_error)
+    # Harvest whatever verdicts the doc carries into validation_log,
+    # independent of _harness_check's full-active-coverage gate below.
+    persisted = _maybe_harvest_verdicts(project_dir, session_id, raw)
+
+    issues = _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
     if issues:
         _file_meta_proposal(
             project_dir,
@@ -149,11 +153,16 @@ def _harness_check(
     project_dir: Path,
     session_id: str,
     runner_error: str | None,
+    raw: dict | None,
+    parse_issues: list[str],
 ) -> list[str]:
-    """Return a list of issue strings; empty means pass."""
-    out_path = _review_doc_path(project_dir, session_id)
-    raw, issues = _load_review_doc(out_path)
+    """Return a list of issue strings; empty means pass.
+
+    ``raw``/``parse_issues`` come from ONE ``_load_review_doc`` call made by
+    the caller (``main()``) — this function does not re-read/re-parse.
+    """
     if raw is None:
+        issues = list(parse_issues)
         if runner_error and issues == [_MISSING_ISSUE]:
             issues = [f"{_MISSING_ISSUE} (runner: {runner_error[:200]})"]
         return issues
@@ -208,11 +217,11 @@ def _load_active_hyp_ids(project_dir: Path) -> set[str]:
 # ---- verdict harvest (HATS-1369) ----
 
 
-def _maybe_harvest_verdicts(project_dir: Path, session_id: str) -> list[str]:
-    """Harvest whatever verdicts the review doc carries; skip (``[]``) when the
-    doc is missing or its frontmatter doesn't parse — nothing to harvest."""
-    out_path = _review_doc_path(project_dir, session_id)
-    raw, _issues = _load_review_doc(out_path)
+def _maybe_harvest_verdicts(project_dir: Path, session_id: str, raw: dict | None) -> list[str]:
+    """Harvest whatever verdicts ``raw`` carries; ``[]`` when ``raw`` is
+    ``None`` (doc missing/unparseable — nothing to harvest) or its
+    ``hypothesis_verdicts`` isn't a list. ``raw`` comes from the caller's
+    single ``_load_review_doc`` call — this does not re-read/re-parse."""
     if raw is None:
         return []
     verdicts = raw.get("hypothesis_verdicts")

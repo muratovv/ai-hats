@@ -14,6 +14,8 @@ import yaml
 from ai_hats.cli.reflect_session_main import (
     _file_meta_proposal,
     _harness_check,
+    _load_review_doc,
+    _review_doc_path,
 )
 from ai_hats.rack_workspace import proposals, rack_workspace
 from ai_hats_rack.migration import migrate_catalog
@@ -21,6 +23,14 @@ from ai_hats.paths import hypotheses_dir, proposals_dir, retros_dir
 
 
 SID = "20260506-100000-1"
+
+
+def _check(project_dir: Path, session_id: str, runner_error: str | None = None) -> list[str]:
+    """Mirror main()'s single-parse contract: load the doc once, then hand
+    (raw, parse_issues) to _harness_check — the same call shape production
+    uses, so this test file never re-introduces the double-parse (HATS-1369)."""
+    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
+    return _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
 
 
 def _seed(project_dir: Path) -> None:
@@ -75,37 +85,37 @@ def _proposals_count(project_dir: Path) -> int:
 
 def test_harness_passes_on_valid_output(tmp_path: Path) -> None:
     _make_review_file(tmp_path, summary="x")
-    issues = _harness_check(tmp_path, SID, runner_error=None)
+    issues = _check(tmp_path, SID)
     assert issues == []
 
 
 def test_harness_flags_missing_file(tmp_path: Path) -> None:
-    issues = _harness_check(tmp_path, SID, runner_error=None)
+    issues = _check(tmp_path, SID)
     assert any("missing" in i or "empty" in i for i in issues)
 
 
 def test_harness_flags_empty_summary(tmp_path: Path) -> None:
     _make_review_file(tmp_path, summary="")
-    issues = _harness_check(tmp_path, SID, runner_error=None)
+    issues = _check(tmp_path, SID)
     assert any("summary" in i for i in issues)
 
 
 def test_harness_flags_missing_active_hyp_verdict(tmp_path: Path) -> None:
     _add_active_hyp(tmp_path, "HYP-007")
     _make_review_file(tmp_path, summary="ok", verdicts=[])
-    issues = _harness_check(tmp_path, SID, runner_error=None)
+    issues = _check(tmp_path, SID)
     assert any("HYP-007" in i for i in issues)
 
 
 def test_harness_passes_when_no_active_hyps_and_empty_verdicts(tmp_path: Path) -> None:
     _make_review_file(tmp_path, summary="ok", verdicts=[])
-    issues = _harness_check(tmp_path, SID, runner_error=None)
+    issues = _check(tmp_path, SID)
     assert issues == []
 
 
 def test_harness_surfaces_runner_error_even_with_valid_file(tmp_path: Path) -> None:
     _make_review_file(tmp_path, summary="ok")
-    issues = _harness_check(tmp_path, SID, runner_error="LLM TimeoutError")
+    issues = _check(tmp_path, SID, "LLM TimeoutError")
     assert any("runner reported" in i for i in issues)
 
 
