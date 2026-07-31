@@ -56,11 +56,29 @@ def project(tmp_path, monkeypatch):
     return tmp_path, session_dir, transcript
 
 
-def _adapter(resolved: Path | None):
-    """Stand in for the integrator's provider adapter."""
+def _adapter(transcripts_dir: Path):
+    """The integrator's provider adapter, wired to the real resolution rule.
+
+    HATS-1397: this used to return a fixed path whatever id it was handed — a
+    resolver no surface implements. Refusing a stranger is the resolver's job
+    now, so a stub that cannot refuse would prove nothing about the refusal.
+    """
+    from ai_hats.paths import resolve_transcript
 
     def adapter(_provider):
-        return (lambda _pd, _sid, provider_session_id=None: resolved), None
+        def resolver(_pd, sid, provider_session_id=None):
+            return resolve_transcript(
+                transcripts_dir,
+                "*.jsonl",
+                sid,
+                exact_path=(
+                    transcripts_dir / f"{provider_session_id}.jsonl"
+                    if provider_session_id
+                    else None
+                ),
+            )
+
+        return resolver, None
 
     return adapter
 
@@ -71,7 +89,7 @@ def read_metrics(session_dir) -> dict:
 
 def test_dry_run_reports_recovery_without_writing(project, monkeypatch):
     tmp_path, session_dir, transcript = project
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID, "--dry-run"])
 
@@ -84,7 +102,7 @@ def test_dry_run_reports_recovery_without_writing(project, monkeypatch):
 
 def test_backfill_recovers_counters(project, monkeypatch):
     tmp_path, session_dir, transcript = project
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -97,22 +115,22 @@ def test_backfill_recovers_counters(project, monkeypatch):
     assert m["claude_session_id"] == PROVIDER_SESSION_ID, "identity survives the rewrite"
 
 
-def test_backfill_refuses_a_transcript_that_is_not_an_exact_match(project, monkeypatch):
-    """The 60-session mis-attribution guard.
+def test_backfill_refuses_a_stranger_when_our_transcript_is_gone(project, monkeypatch):
+    """The 60-session mis-attribution guard — now enforced by the resolver itself.
 
-    A resolver that fell through to its mtime guess returns some *other*
-    session's transcript. Its stem does not match the recorded provider session
-    id, and a stranger's numbers are worse than an honest gap.
+    Claude expires its JSONL after ~30–40 days, so the common archive shape is
+    "ours is gone, someone else's is newer". HATS-1397 moved the refusal into
+    ``resolve_transcript``: a caller holding an id gets the exact file or None.
     """
-    tmp_path, session_dir, _transcript = project
-    stranger = tmp_path / "totally-different-uuid.jsonl"
-    shutil.copy(FIXTURE, stranger)
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(stranger))
+    tmp_path, session_dir, transcript = project
+    transcript.unlink()
+    shutil.copy(FIXTURE, tmp_path / "totally-different-uuid.jsonl")
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
     assert result.exit_code == 0, result.output
-    assert "no exact transcript" in result.output
+    assert "no transcript" in result.output
     m = read_metrics(session_dir)
     assert m["measured"] is False
     assert "turns" not in m
@@ -125,7 +143,7 @@ def test_backfill_refuses_when_no_provider_session_id_recorded(project, monkeypa
     metrics = read_metrics(session_dir)
     del metrics["claude_session_id"]
     (session_dir / METRICS_JSON).write_text(json.dumps(metrics))
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -149,7 +167,7 @@ def test_identity_is_recovered_from_the_logged_launch_line(project, monkeypatch)
         f"12:00:00.100 [SYS] Launching: claude --settings x.json "
         f"--session-id {PROVIDER_SESSION_ID}\n"
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -172,7 +190,7 @@ def test_trace_without_a_session_id_flag_still_refuses(project, monkeypatch):
     (session_dir / "trace.log").write_text(
         "12:00:00.100 [SYS] Launching: agy -i task list --add-dir /x/rules\n"
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -189,7 +207,7 @@ def test_backfill_keeps_trace_log(project, monkeypatch):
     tmp_path, session_dir, transcript = project
     trace = session_dir / "trace.log"
     trace.write_text("12:00:00.000 [SYS] Session started: role=maintainer\n")
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     CliRunner().invoke(session, ["backfill", SESSION_ID])
 
@@ -201,7 +219,7 @@ def test_already_measured_sessions_are_skipped_without_force(project, monkeypatc
     (session_dir / METRICS_JSON).write_text(
         json.dumps({"provider": "claude", "measured": True, "turns": 9, "tool_calls": 3})
     )
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(transcript))
+    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", _adapter(tmp_path))
 
     result = CliRunner().invoke(session, ["backfill", SESSION_ID])
 

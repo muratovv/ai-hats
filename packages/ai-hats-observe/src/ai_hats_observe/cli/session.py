@@ -507,13 +507,12 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
         row["note"] = "no provider session id"
         return row
 
+    # HATS-1397: the resolver refuses to guess once given an id, so the stem check
+    # that used to sit here is gone — it only ever described claude's filenames and
+    # rejected agy (`…/<psid>/…/transcript.jsonl`) and cline (`<psid>.messages`).
     jsonl_path = resolver(project_dir, s.session_id, provider_session_id=provider_session_id)
     if jsonl_path is None or not jsonl_path.exists():
         row["note"] = "no transcript"
-        return row
-    if jsonl_path.stem != provider_session_id:
-        # Resolver fell through to its mtime guess — refuse the stranger.
-        row["note"] = "no exact transcript"
         return row
 
     writer = AuditWriter(parser) if parser is not None else AuditWriter()
