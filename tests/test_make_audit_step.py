@@ -90,7 +90,7 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
     captured: dict = {}
 
     class _CapturingAuditWriter:
-        def build(self, session, jsonl_path=None, keep_raw=False):
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
             captured["jsonl_path"] = jsonl_path
             captured["session"] = session
 
@@ -136,7 +136,7 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
     captured: dict = {}
 
     class _CapturingAuditWriter:
-        def build(self, session, jsonl_path=None, keep_raw=False):
+        def build(self, session, jsonl_path=None, keep_raw=False, transcript_verified=False):
             captured["jsonl_path"] = jsonl_path
 
     step = MakeAudit()

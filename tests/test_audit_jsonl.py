@@ -196,7 +196,7 @@ def test_fallback_to_trace_when_no_jsonl(tmp_path):
 
 
 def test_jsonl_path_deletes_trace(tmp_path):
-    """When JSONL is available, trace.log must be deleted after build."""
+    """A VERIFIED transcript still buys the trace — the claude case (HATS-1397)."""
     session = make_session(tmp_path)
     session.trace_path.write_text("18:15:00.000 [SYS] dummy trace\n")
     jsonl = make_jsonl(
@@ -207,7 +207,7 @@ def test_jsonl_path_deletes_trace(tmp_path):
         ],
     )
 
-    AuditWriter().build(session, jsonl_path=jsonl)
+    AuditWriter().build(session, jsonl_path=jsonl, transcript_verified=True)
 
     assert not session.trace_path.exists()
     assert session.audit_path.exists()
@@ -246,11 +246,33 @@ def test_the_trace_is_traded_for_a_copy_that_lives_here(tmp_path):
         [user_msg("привет"), assistant_msg([{"type": "text", "text": "Привет!"}])],
     )
 
-    AuditWriter().build(session, jsonl_path=jsonl)
+    AuditWriter().build(session, jsonl_path=jsonl, transcript_verified=True)
 
     copy = session.session_dir / TRANSCRIPT_JSONL
     assert copy.read_bytes() == jsonl.read_bytes(), "the source must survive next to the session"
     assert not session.trace_path.exists()
+
+
+def test_an_unverified_transcript_never_licenses_the_delete(tmp_path):
+    """A guessed transcript may cover a fraction of the session — keep the trace.
+
+    Measured on a real agy HITL run (2026-07-31): agy rotates its brain segment on
+    a checkpoint, so one session spans several provider transcripts. Holding no
+    provider session id, the resolver falls back to mtime and takes the freshest —
+    the post-checkpoint tail, 4 records where the conversation had 42. The trace
+    held all 7 user turns and 13 tool calls, and was deleted in exchange for it.
+    """
+    session = make_session(tmp_path)
+    session.trace_path.write_text("18:15:00.000 [SYS] the whole session lives here\n")
+    tail = make_jsonl(
+        tmp_path,
+        [user_msg("last question"), assistant_msg([{"type": "text", "text": "answer"}])],
+    )
+
+    AuditWriter().build(session, jsonl_path=tail, transcript_verified=False)
+
+    assert session.trace_path.exists(), "a guessed transcript bought the only complete record"
+    assert (session.session_dir / TRANSCRIPT_JSONL).exists(), "the copy is still worth keeping"
 
 
 def test_an_unwritable_session_dir_keeps_the_trace(tmp_path):

@@ -88,7 +88,15 @@ class MakeAudit(Step):
                 if transcript_resolver is not None
                 else None
             )
-            audit_writer_factory().build(session, jsonl_path=jsonl_path)
+            # HATS-1397: holding the id is the whole difference between "this
+            # transcript is ours" and "this one was the freshest". Only the
+            # former may cost the trace — agy has no id and rotates its brain
+            # segment mid-session, so the freshest is often a tail fragment.
+            audit_writer_factory().build(
+                session,
+                jsonl_path=jsonl_path,
+                transcript_verified=bool(claude_session_id),
+            )
         except (Exception, KeyboardInterrupt):
             logger.warning("audit writer failed", exc_info=True)
 

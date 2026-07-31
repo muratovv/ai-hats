@@ -182,11 +182,14 @@ class AuditWriter:
         session: Session,
         jsonl_path: Path | None = None,
         keep_raw: bool = False,
+        transcript_verified: bool = False,
     ) -> None:
         """Build enriched audit.md + metrics.json via the injected parser.
 
-        Deletes trace.log only when the session text is safe elsewhere — see
-        ``_may_drop_trace``.
+        ``transcript_verified`` says the caller matched ``jsonl_path`` to this
+        session by provider session id rather than by mtime. Only that licenses
+        deleting trace.log — see ``_may_drop_trace``. Default False: a caller
+        that cannot vouch for the attribution keeps the raw record.
         """
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
@@ -201,7 +204,8 @@ class AuditWriter:
         session.audit_path.write_text(audit_content)
 
         preserved = self._preserve_transcript(session, jsonl_path)
-        if not keep_raw and self._may_drop_trace(parsed, preserved) and session.trace_path.exists():
+        droppable = self._may_drop_trace(parsed, preserved and transcript_verified)
+        if not keep_raw and droppable and session.trace_path.exists():
             session.trace_path.unlink()  # safe-delete: ok raw-trace (source copied in)
 
     @staticmethod
@@ -223,18 +227,18 @@ class AuditWriter:
         return True
 
     @staticmethod
-    def _may_drop_trace(parsed: ParsedTranscript, preserved: bool) -> bool:
+    def _may_drop_trace(parsed: ParsedTranscript, preserved_and_verified: bool) -> bool:
         """Whether the session text survives the deletion of trace.log.
 
         HATS-1374: this used to be unconditional, which destroyed the only copy
-        of 295 sessions' text. On the trace-only surfaces the scrape is lossy —
-        agy yields zero turns, so the audit was a header stub and the source went
-        with it. HATS-1397: the licence is a copy in the session dir, not a file
-        somewhere else.
+        of 295 sessions' text. HATS-1397: the licence is a **verified** copy in
+        the session dir. A guessed one is not enough — agy rotates its brain
+        segment on a checkpoint, so the freshest transcript can be a 4-record
+        tail of a 42-record conversation, and the trace held all of it.
         """
         if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags:
             return False
-        return bool(preserved and parsed.turns)
+        return bool(preserved_and_verified and parsed.turns)
 
     @staticmethod
     def _with_transcript_fallback(session: Session, audit_content: str) -> str:
