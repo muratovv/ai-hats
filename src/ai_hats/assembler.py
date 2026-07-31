@@ -23,6 +23,7 @@ from ai_hats_core import CompositionResult, atomic_write_bytes
 from .composer import Composer
 from .hooks_manager import HooksManager
 from .materialize import compose_for_role, discover_user_rules
+from .provenance import ComponentLayer, classify_component_layer
 from .resolver import LibraryResolver
 from .models import (
     ComponentType,
@@ -592,6 +593,15 @@ class Assembler:
             layers.append(pr)
         return layers
 
+    def _classify_component_layer(self, path: Path | None) -> ComponentLayer:
+        """Classify a resolved component directory path into a ComponentLayer enum (HATS-525)."""
+        return classify_component_layer(
+            path,
+            project_dir=self.project_dir,
+            library_paths=self.library_paths,
+            project_config_paths=self.project_config.library_paths,
+        )
+
     def _get_overlay_provenance(self, role_name: str) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
@@ -604,20 +614,44 @@ class Assembler:
         ``project`` (last-wins), matching the composer's final state.
         """
         provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
-        # Seed from the resolved role's base composition.
+
+        # Seed path-based provenance for all components in the composed role.
+        try:
+            comp_res = self.composer.compose(role_name, overlays=self._get_overlays(role_name))
+            for r in comp_res.rules:
+                p = self.resolver.resolve_rule_dir(r.name)
+                provenance["rules"][r.name] = self._classify_component_layer(p).value
+            for s in comp_res.skills:
+                p = self.resolver.resolve_skill_dir(s.name)
+                provenance["skills"][s.name] = self._classify_component_layer(p).value
+        except Exception:
+            pass
+
+        # Seed traits from base config + active overlays
         base_cfg = self.resolver.resolve_role_config(role_name)
-        if base_cfg is not None:
-            for name in base_cfg.composition.traits:
-                provenance["traits"][name] = "built-in"
-            for name in base_cfg.composition.rules:
-                provenance["rules"][name] = "built-in"
-            for name in base_cfg.composition.skills:
-                provenance["skills"][name] = "built-in"
-        # Apply layers in order: each `add` claims provenance, each `remove`
+        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (
+            self._get_global_overlay(role_name),
+            self._get_overlay(role_name),
+        ):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in effective_traits:
+                    effective_traits.remove(name)
+            for name in layer.add_traits:
+                if name not in effective_traits:
+                    effective_traits.append(name)
+
+        for trait_name in effective_traits:
+            p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
+            provenance["traits"][trait_name] = self._classify_component_layer(p).value
+
+        # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
         # drops the entry so a later layer's add can re-claim it.
         for layer, label in (
-            (self._get_global_overlay(role_name), "global"),
-            (self._get_overlay(role_name), "project"),
+            (self._get_global_overlay(role_name), ComponentLayer.GLOBAL.value),
+            (self._get_overlay(role_name), ComponentLayer.PROJECT.value),
         ):
             if layer is None:
                 continue
