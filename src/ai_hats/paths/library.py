@@ -20,14 +20,12 @@ from __future__ import annotations
 
 import atexit
 import functools
-import os
 from contextlib import ExitStack
 from importlib.resources import as_file, files
 from pathlib import Path
 
+from . import _env
 from .constants import (
-    AI_HATS_PROJECT_DIR_ENV,
-    ENV_LIBRARY_ROOT,
     HOOKS_DIRNAME,
     LIBRARY_LAYERS,
     LIBRARY_PKG,
@@ -106,14 +104,14 @@ def builtin_library_root(project_dir: Path | None = None) -> Path | None:
     Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
     ``None`` on a broken install. All builtin-library subpaths derive from here.
     """
-    root = _validated_library_root(os.environ.get(ENV_LIBRARY_ROOT))
+    root = _validated_library_root(_env.library_root_override())
     if root is not None:
         return root
 
     if project_dir is not None:
         root = _detect_source_library_root(project_dir)
     else:
-        env_proj = os.environ.get(AI_HATS_PROJECT_DIR_ENV)
+        env_proj = _env.project_dir_pin()
         if env_proj:
             root = _detect_source_library_root(Path(env_proj))
         if root is None:
