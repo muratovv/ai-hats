@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import _env
+from .. import env
 
 
 def tool_home(name: str, env_var: str) -> Path:
     """``$env_var`` or ``~/.{name}`` — the shared home-dir pattern."""
-    override = _env.tool_home_override(env_var)
+    override = env.tool_home_override(env_var)
     return Path(override) if override else Path.home() / f".{name}"
 
 

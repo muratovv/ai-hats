@@ -24,7 +24,7 @@ from contextlib import ExitStack
 from importlib.resources import as_file, files
 from pathlib import Path
 
-from . import _env
+from .. import env
 from .constants import (
     HOOKS_DIRNAME,
     LIBRARY_LAYERS,
@@ -104,14 +104,14 @@ def builtin_library_root(project_dir: Path | None = None) -> Path | None:
     Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
     ``None`` on a broken install. All builtin-library subpaths derive from here.
     """
-    root = _validated_library_root(_env.library_root_override())
+    root = _validated_library_root(env.library_root_override())
     if root is not None:
         return root
 
     if project_dir is not None:
         root = _detect_source_library_root(project_dir)
     else:
-        env_proj = _env.project_dir_pin()
+        env_proj = env.project_dir_pin()
         if env_proj:
             root = _detect_source_library_root(Path(env_proj))
         if root is None:

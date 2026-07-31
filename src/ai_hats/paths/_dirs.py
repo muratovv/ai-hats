@@ -35,7 +35,7 @@ from typing import Literal
 
 import yaml
 
-from . import _env
+from .. import env
 from .constants import (
     ENV_AI_HATS_DIR as ENV_AI_HATS_DIR,
     ENV_AI_HATS_VENV as ENV_AI_HATS_VENV,
@@ -114,7 +114,7 @@ def user_home() -> Path:
     NOT covered by this override — they're not ai-hats-managed global
     state.
     """
-    raw = _env.user_home_override()
+    raw = env.user_home_override()
     return Path(raw).expanduser() if raw else Path.home()
 
 
@@ -143,10 +143,10 @@ def _env_ai_hats_dir(project_dir: Path) -> Path | None:
     the override is ignored (+warn). A bare ``AI_HATS_DIR`` without the pair
     keeps its historical env-wins semantics.
     """
-    raw = _env.ai_hats_dir_override()
+    raw = env.ai_hats_dir_override()
     if not raw:
         return None
-    pin = _env.project_dir_pin()
+    pin = env.project_dir_pin()
     if pin and Path(pin).expanduser().resolve() != project_dir.resolve():
         warnings.warn(
             f"AI_HATS_DIR={raw!r} is pinned to project {pin!r} — foreign to "
@@ -437,7 +437,7 @@ def venv_path(project_dir: Path) -> Path:
     Returns the absolute path without ``mkdir`` — venv creation is owned
     by ``bash bootstrap`` / ``self update`` (HATS-339), not by callers.
     """
-    raw_env = _env.venv_override()
+    raw_env = env.venv_override()
     if raw_env:
         return Path(raw_env).expanduser()
     raw_yaml = _read_venv_path_from_yaml(project_dir)

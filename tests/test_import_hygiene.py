@@ -35,6 +35,7 @@ SRC = Path(__file__).resolve().parent.parent / "src" / PKG
 # gate enforces.
 LEAF_MODULES = (
     "constants",
+    "env",  # HATS-1414: centralized env var access leaf
     "paths",  # HATS-862: git_env + safe_delete -> core
     "fs_digest",  # HATS-1217: shared by the port, the sweeper and the legacy sweep
 )
@@ -226,7 +227,7 @@ def test_leaf_modules_are_pure():
                 refs += [
                     t
                     for t in _targets(m, path.name == "__init__.py", node, nodeset)
-                    if t != name and not t.startswith(prefix)  # ignore intra-leaf imports
+                    if t != name and not t.startswith(prefix) and t != f"{PKG}.env"  # ignore intra-leaf / base-leaf imports
                 ]
         if refs:
             offenders[leaf] = sorted(set(refs))
