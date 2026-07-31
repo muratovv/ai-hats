@@ -18,21 +18,24 @@
 
 # Exported so the contract test can source this file and diff the list against
 # the Python twin's — the two writers must not drift apart.
-export AI_HATS_BYPASS_FIELDS="ts event hook kind reason head_before branch session_id sha"
+export AI_HATS_BYPASS_FIELDS="ts event hook kind reason cmd head_before branch session_id sha"
 
 _ai_hats_json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
     printf '%s' "$s"
 }
 
-# ai_hats_journal_bypass <kind> <reason>
+# ai_hats_journal_bypass <kind> <reason> [cmd] [session_id]
 #   kind   : hatch | fail_open
 #   reason : the env var name (hatch) or the missing prerequisite (fail_open)
 ai_hats_journal_bypass() {
-    local kind="${1:-unknown}" reason="${2:-unspecified}"
-    local git_dir journal ts hook event head branch session
+    local kind="${1:-unknown}" reason="${2:-unspecified}" cmd_arg="${3:-}" session_arg="${4:-}"
+    local git_dir journal ts hook event head branch session cmd
 
     if ! git_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
         # Not a git repo (or git is broken). Refusing to be silent about it:
@@ -55,18 +58,20 @@ ai_hats_journal_bypass() {
     # landed in the field verbatim. Fail the assignment instead.
     head="$(git rev-parse HEAD 2>/dev/null)" || head=""
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || branch=""
-    session="${AI_HATS_SESSION_ID:-}"
+    cmd="$cmd_arg"
+    session="${session_arg:-${AI_HATS_SESSION_ID:-}}"
 
     # pre-commit runs before the commit object exists — post-commit stamps `sha`.
     local sha=""
     [[ "$event" == "pre-commit" ]] || sha="$head"
 
-    if ! printf '{"ts":"%s","event":"%s","hook":"%s","kind":"%s","reason":"%s","head_before":"%s","branch":"%s","session_id":"%s","sha":"%s"}\n' \
+    if ! printf '{"ts":"%s","event":"%s","hook":"%s","kind":"%s","reason":"%s","cmd":"%s","head_before":"%s","branch":"%s","session_id":"%s","sha":"%s"}\n' \
         "$(_ai_hats_json_escape "$ts")" \
         "$(_ai_hats_json_escape "$event")" \
         "$(_ai_hats_json_escape "$hook")" \
         "$(_ai_hats_json_escape "$kind")" \
         "$(_ai_hats_json_escape "$reason")" \
+        "$(_ai_hats_json_escape "$cmd")" \
         "$(_ai_hats_json_escape "$head")" \
         "$(_ai_hats_json_escape "$branch")" \
         "$(_ai_hats_json_escape "$session")" \

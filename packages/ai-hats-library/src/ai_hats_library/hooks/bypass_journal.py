@@ -24,6 +24,7 @@ FIELDS = (
     "hook",
     "kind",
     "reason",
+    "cmd",
     "head_before",
     "branch",
     "session_id",
@@ -46,7 +47,14 @@ def _git(*args: str) -> str:
     return res.stdout.strip() if res.returncode == 0 else ""
 
 
-def journal_bypass(kind: str, reason: str, *, hook: str | None = None) -> bool:
+def journal_bypass(
+    kind: str,
+    reason: str,
+    *,
+    hook: str | None = None,
+    cmd: str = "",
+    session_id: str = "",
+) -> bool:
     """Append one bypass record. Returns False (loudly) if it could not.
 
     Never raises: a hook must not die because the journal is unwritable. It must
@@ -64,9 +72,10 @@ def journal_bypass(kind: str, reason: str, *, hook: str | None = None) -> bool:
         "hook": hook_name,
         "kind": kind,
         "reason": reason,
+        "cmd": cmd,
         "head_before": _git("rev-parse", "HEAD"),
         "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
-        "session_id": os.environ.get("AI_HATS_SESSION_ID", ""),
+        "session_id": session_id or os.environ.get("AI_HATS_SESSION_ID", ""),
         "sha": "",
     }
     # A PreToolUse hook fires outside any commit, so the tool call it waved

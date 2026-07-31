@@ -36,10 +36,14 @@ def _entry(
     )
 
 
-def test_cache_path_is_under_ai_hats_dir(tmp_path, monkeypatch):
+def test_cache_path_is_under_the_out_of_tree_cache_root(tmp_path, monkeypatch):
+    """HATS-1398: the update-check cache is machine state, so it leaves the project."""
+    from ai_hats.paths import cache_root
+
     monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "ai-hats-data"))
     p = cache_path(tmp_path)
-    assert p == tmp_path / "ai-hats-data" / ".cache" / "update-check.json"
+    assert p == cache_root(tmp_path) / "update-check.json"
+    assert not p.is_relative_to(tmp_path / "ai-hats-data")
 
 
 def test_read_cache_missing(tmp_path, monkeypatch):

@@ -169,6 +169,42 @@ def test_sweep_orphan_session_caches_moved(tmp_path):
     assert recent.exists()
 
 
+@pytest.fixture
+def legacy_cache(tmp_path, monkeypatch):
+    """The pre-HATS-1398 in-tree cache dir of a project."""
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path))
+    legacy = tmp_path / ".agent" / "ai-hats" / ".cache"
+    legacy.mkdir(parents=True)
+    return legacy
+
+
+def test_sweep_drops_the_whole_in_tree_cache(tmp_path, legacy_cache):
+    """The cache is regenerable, so the old root is dropped — not migrated."""
+    mirror = legacy_cache / "probe-mirror"
+    mirror.mkdir()
+    (mirror / "HEAD").write_text("ref: refs/heads/master\n")
+    (legacy_cache / "update-check.json").write_text("{}")
+    aged = legacy_cache / "sessions" / "old-sid"
+    aged.mkdir(parents=True)
+    old = time.time() - 48 * 3600
+    os.utime(aged, (old, old))
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert not legacy_cache.exists(), "no cache may survive inside the workspace"
+
+
+def test_sweep_spares_an_in_tree_session_dir_that_may_still_be_live(tmp_path, legacy_cache):
+    """A recent pre-move dir may belong to a session still reading it."""
+    live = legacy_cache / "sessions" / "live-sid"
+    live.mkdir(parents=True)
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert live.exists()
+
+
 # ---------- SessionManager DI ----------
 
 

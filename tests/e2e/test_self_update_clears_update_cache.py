@@ -5,7 +5,7 @@ a 24h TTL. Without invalidation, a reinstall within that window leaves the
 session-end Update banner reporting the PRE-update installed SHA and a stale
 ``behind`` count — nagging "update available" the instant the user finished
 updating. ``self update`` must unlink
-``<project>/.agent/ai-hats/.cache/update-check.json`` on success so the next
+``<cache_root>/update-check.json`` on success so the next
 session re-probes from scratch.
 
 Fail-under-revert: drop the ``_invalidate_update_cache(project_dir)`` call from
@@ -19,6 +19,8 @@ success exit where the unlink is wired.
 """
 
 from __future__ import annotations
+
+from ai_hats.paths import cache_root
 
 import json
 import os
@@ -82,7 +84,7 @@ def test_e2e_self_update_clears_update_cache(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # ----- seed a stale update-check cache before the update -----
-    cache_file = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
+    cache_file = cache_root(project) / "update-check.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(
         json.dumps(

@@ -54,6 +54,10 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         # uninstalls from the developer's venv. Inherited by an e2e subprocess it
         # would silently disable the very prune under test.
         ENV_SKIP_PRUNE,
+        # HATS-1398: either of these outranks the pinned user home when the cache
+        # root resolves, so an ambient one sends e2e writes to the real cache.
+        "AI_HATS_CACHE_HOME",
+        "XDG_CACHE_HOME",
     }
 )
 
@@ -76,7 +80,9 @@ def clean_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     run against the installed package rather than the source tree.
     """
     src = os.environ if base is None else base
-    return {k: v for k, v in src.items() if k not in ENV_DENYLIST}
+    env = {k: v for k, v in src.items() if k not in ENV_DENYLIST}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
 
 
 def launcher_subprocess_env(

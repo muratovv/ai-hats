@@ -86,3 +86,53 @@ def test_both_writers_produce_the_same_keys_on_a_real_repo(tmp_path: Path):
     assert set(shell_entry) == set(py_entry)
     assert shell_entry["reason"] == "SHELL_VAR"
     assert py_entry["reason"] == "PY_VAR"
+
+
+@pytest.mark.integration
+def test_both_writers_handle_multiline_and_escaping_identically(tmp_path: Path):
+    """Assert both shell and python writers emit strictly valid single-line JSONL for multiline commands and quotes."""
+    import os
+
+    subprocess.run(["git", "init", "--quiet"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
+
+    multiline_cmd = 'echo "hello"\necho "world"\ttab'
+
+    env = dict(os.environ)
+    env["CMD_VAL"] = multiline_cmd
+    subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'. "{SH}" && ai_hats_journal_bypass hatch SHELL_VAR "$CMD_VAL" "session-1"',
+        ],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import sys; sys.path.insert(0, {str(HOOKS)!r});"
+            " from bypass_journal import journal_bypass;"
+            " journal_bypass('hatch', 'PY_VAR', cmd=sys.argv[1], session_id='session-1')",
+            multiline_cmd,
+        ],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+    )
+
+    raw_content = (tmp_path / ".git/ai-hats/bypasses.jsonl").read_text()
+    lines = raw_content.splitlines()
+    assert len(lines) == 2, f"Expected 2 lines in JSONL, got {len(lines)}. Raw:\n{raw_content}"
+
+    shell_entry = json.loads(lines[0])
+    py_entry = json.loads(lines[1])
+
+    assert shell_entry["cmd"] == multiline_cmd
+    assert py_entry["cmd"] == multiline_cmd
