@@ -54,6 +54,7 @@ EXPECTED_FIELDS = {
     "hook",
     "kind",
     "reason",
+    "cmd",
     "head_before",
     "branch",
     "session_id",
@@ -358,3 +359,36 @@ def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
     )
     assert res.returncode == 0
     assert "gate bypass" not in res.stderr, res.stderr
+
+
+@pytest.mark.integration
+def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
+    """3a and 3b: pre_bash_shared_state_guard records cmd and session_id from stdin JSON payload."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+
+    guard = LIB / "hooks/pre_bash_shared_state_guard.sh"
+    payload = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "git push origin master"},
+            "session_id": "test-session-123",
+        }
+    )
+    res = subprocess.run(
+        ["bash", str(guard)],
+        cwd=str(repo),
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=dict(os.environ) | {"AI_HATS_SHARED_STATE_ACK": "1"},
+    )
+    assert res.returncode == 0
+    lines = _journal_lines(repo)
+    assert len(lines) == 1
+    entry = lines[0]
+    assert entry["cmd"] == "git push origin master"
+    assert entry["session_id"] == "test-session-123"

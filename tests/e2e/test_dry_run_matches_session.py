@@ -30,9 +30,15 @@ LIB_USAGE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_librar
 pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
-def _fingerprint(root: Path) -> dict[str, str]:
+def _fingerprint(project: Path) -> dict[str, str]:
+    """Digest both roots — the cache left the project in HATS-1398, and a
+    project-only walk would pass while a build wrote freely to the real target."""
+    from ai_hats.paths import cache_root
+
     return {
-        str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+        str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+        for root in (project, cache_root(project))
+        if root.is_dir()
         for p in sorted(root.rglob("*"))
         if p.is_file()
     }

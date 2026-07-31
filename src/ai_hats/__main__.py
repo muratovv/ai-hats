@@ -6,6 +6,13 @@ from .constants import is_debug_mode
 
 
 def main() -> None:
+    # HATS-1368: the gate runs BEFORE `.cli` is imported. Its subcommand package
+    # imports workspace members at module level, so a venv missing one of them
+    # never reaches the in-CLI gate — it dies importing the module that holds it.
+    from ._bootstrap import bootstrap_or_die
+
+    bootstrap_or_die()
+
     try:
         from .cli import main_entry
 
@@ -20,12 +27,15 @@ def main() -> None:
 
             _handle_broken_install_or_die(exc)
         except Exception:
+            # Last resort: cli._helpers is itself unimportable, so the notice is
+            # rendered from _bootstrap — stdlib-only, and thus always available.
+            from ._bootstrap import repair_command
             from .startup_notices import show_fatal_notice_and_exit
 
             show_fatal_notice_and_exit(
                 f"Inconsistent or broken ai-hats installation ({exc}).\n"
                 "Likely cause: package files are out of sync or corrupted.\n"
-                "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
+                f"Repair command: {repair_command()}\n"
                 "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
             )
 

@@ -103,12 +103,32 @@ print(data.get("hook_event_name") or "")
 }
 hook_event="$(extract_hook_event)"
 
+extract_session_id() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '.session_id // .sessionId // empty' <<<"$payload"
+        return
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+print(data.get("session_id") or data.get("sessionId") or "")
+' <<<"$payload"
+        return
+    fi
+    echo ""
+}
+session_id="$(extract_session_id)"
+
 # --- 3. Classify -------------------------------------------------------
 if [[ ! -f "$CLASSIFIER" ]]; then
     # Classifier missing — emit a stderr breadcrumb and allow. The Level 2
     # rule still warns the agent; we refuse to break the user's flow.
     echo "[shared-state-guard] classifier not found at $CLASSIFIER — allowing" >&2
-    ai_hats_journal_bypass fail_open "classifier not found"
+    ai_hats_journal_bypass fail_open "classifier not found" "$cmd" "$session_id"
     exit 0
 fi
 
@@ -133,7 +153,7 @@ esac
 # --- 4. Gate on ack ------------------------------------------------------
 if [[ "${AI_HATS_SHARED_STATE_ACK:-}" == "1" ]]; then
     echo "[shared-state-guard] AI_HATS_SHARED_STATE_ACK=1 — allowing $verdict: $cmd" >&2
-    ai_hats_journal_bypass hatch AI_HATS_SHARED_STATE_ACK
+    ai_hats_journal_bypass hatch AI_HATS_SHARED_STATE_ACK "$cmd" "$session_id"
     exit 0
 fi
 

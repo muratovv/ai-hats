@@ -38,7 +38,7 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
-from .paths import session_cache_root, versions_root
+from .paths import ai_hats_dir, session_cache_root, versions_root
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
 from .version_recovery import (
     reclaim_legacy_venv,
@@ -62,20 +62,55 @@ def _sweep_orphan_session_caches(
     HATS-649 so it sits beside the other recovery passes; ``runtime`` re-exports
     it for backward compatibility.)
     """
-    root = session_cache_root(project_dir)
-    if not root.exists():
-        return
     cutoff = time.time() - ttl_hours * 3600
+    _expire_session_dirs(session_cache_root(project_dir), cutoff)
+    _drain_workspace_cache(ai_hats_dir(project_dir) / ".cache", cutoff)
+
+
+def _expire_session_dirs(root: Path, cutoff: float) -> None:
+    if not root.is_dir():
+        return
     for entry in root.iterdir():
         if not entry.is_dir():
             continue
         try:
             if entry.stat().st_mtime < cutoff:
-                shutil.rmtree(
-                    entry, ignore_errors=True
-                )  # safe-delete: ok session-cache (TTL sweep)
+                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (TTL)
         except OSError:
             pass
+
+
+def _drain_workspace_cache(legacy: Path, cutoff: float) -> None:
+    """Delete the pre-HATS-1398 in-tree cache; nothing writes there any more.
+
+    The cache is regenerable, so it is dropped rather than migrated. Only session
+    dirs wait for the TTL — one may belong to a session that started before the
+    move and is still reading it.
+    """
+    if not legacy.is_dir():
+        return
+    for entry in legacy.iterdir():
+        if entry.name == "sessions":
+            _expire_session_dirs(entry, cutoff)
+            _rmdir_quiet(entry)
+            continue
+        logger.info("dropping stale in-tree cache %s (HATS-1398)", entry)
+        try:
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
+            else:
+                entry.unlink()  # safe-delete: ok regenerable cache
+        except OSError:
+            pass
+    _rmdir_quiet(legacy)
+
+
+def _rmdir_quiet(path: Path) -> None:
+    """Drop ``path`` only when empty — ``rmdir`` refuses a non-empty dir by contract."""
+    try:
+        path.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        pass
 
 
 class EnvironmentRecovery:

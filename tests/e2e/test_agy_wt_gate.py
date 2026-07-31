@@ -18,6 +18,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE
+from ai_hats.paths import session_cache_dir
 from ai_hats_agy.provider import AgyProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -45,7 +46,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     provider = AgyProvider()
     provider.build_session_prompt(main, result, "sid-agy-gate")
 
-    hooks_file = main / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-agy-gate" / "hooks.json"
+    hooks_file = session_cache_dir(main, "sid-agy-gate") / "hooks.json"
     assert hooks_file.is_file(), "hooks.json must be created in session cache"
     hooks_data = json.loads(hooks_file.read_text())
     pre_tool_hooks = hooks_data.get("PreToolUse", [])
@@ -56,12 +57,7 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     ), "wt_gate.py PreToolUse matcher in agy hooks.json must include Create"
 
     hook_script = (
-        main
-        / ".agent"
-        / "ai-hats"
-        / ".cache"
-        / "sessions"
-        / "sid-agy-gate"
+        session_cache_dir(main, "sid-agy-gate")
         / "rules"
         / ".agents"
         / "skills"
@@ -117,12 +113,7 @@ def test_agy_wt_gate_denies_create_and_target_file_keys(tmp_path: Path) -> None:
     provider.ensure_runtime_hooks(main, result, session_id="sid-agy-gate-create")
 
     hook_script = (
-        main
-        / ".agent"
-        / "ai-hats"
-        / ".cache"
-        / "sessions"
-        / "sid-agy-gate-create"
+        session_cache_dir(main, "sid-agy-gate-create")
         / "rules"
         / ".agents"
         / "skills"

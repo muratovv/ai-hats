@@ -686,7 +686,7 @@ def test_agy_build_session_prompt_creates_rules_dir(project_with_library):
     args, env, _ = provider.build_session_prompt(project, result, "test-sid")
 
     assert args[0] == "--add-dir"
-    assert env == {}
+    assert set(env) == {"AI_HATS_SESSION_CACHE_DIR"}  # the dispatcher pin (HATS-1398)
     rules_dir = Path(args[1])
     assert rules_dir.exists()
 

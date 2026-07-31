@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Repo layout: surface-plugin members live at ``<repo>/packages/surfaces/<name>``.
 SURFACES_SUBPATH = ("packages", "surfaces")
+WORKSPACE_SUBDIR = SURFACES_SUBPATH[0]
 
 
 def is_broken_install_exception(exc: Exception) -> bool:
@@ -150,6 +151,43 @@ def surface_editable_map(repo_root: Path) -> dict[str, Path]:
     return out
 
 
+def workspace_editable_map(repo_root: Path) -> dict[str, Path]:
+    """Map top-level module -> canonical ``packages/*`` workspace member dir.
+
+    HATS-1367: the surface map covers plugins only, so a workspace member whose
+    editable ``.pth`` went dangling (the ``ai-hats-tracker`` shape) had no
+    canonical dir to be re-pointed at. ``packages/surfaces`` is the plugin
+    category dir, not a member — :func:`surface_editable_map` owns what's inside.
+    """
+    out: dict[str, Path] = {}
+    packages = repo_root / WORKSPACE_SUBDIR
+    if not packages.is_dir():
+        return out
+    for member in sorted(p for p in packages.iterdir() if p.is_dir()):
+        if member.name == SURFACES_SUBPATH[-1]:
+            continue
+        for init in sorted(member.glob("src/*/__init__.py")):
+            out[init.parent.name] = member
+    return out
+
+
+def find_broken_workspace_members(repo_root: Path) -> list[BrokenProvider]:
+    """Workspace members present in the tree whose module doesn't import here."""
+    return [
+        BrokenProvider(ep_name=member.name, module=module)
+        for module, member in workspace_editable_map(repo_root).items()
+        if not _module_resolves(module)
+    ]
+
+
+def find_broken_editables(repo_root: Path) -> list[BrokenProvider]:
+    """Every re-pointable editable that doesn't resolve — surfaces and workspace."""
+    broken = find_broken_surface_providers(repo_root=repo_root)
+    seen = {b.module for b in broken}
+    broken.extend(m for m in find_broken_workspace_members(repo_root) if m.module not in seen)
+    return broken
+
+
 def _uv_reinstall_editable(package_dir: Path) -> None:
     """Re-point a stale editable to ``package_dir`` in THIS venv.
 
@@ -258,13 +296,16 @@ def run_editable_heal(
     lock_path: Path | None = None,
     lock_timeout: float = 120,
 ) -> HealResult | None:
-    """Detect + re-point stale surface-plugin editables (HATS-966).
+    """Detect + re-point stale editables — surface plugins and workspace members.
 
     Business logic only — the caller renders the result. Returns ``None`` when
-    there is nothing to do: not an editable dev checkout, or no broken provider
+    there is nothing to do: not an editable dev checkout, or nothing broken
     (fast path, no lock taken). Otherwise serialized behind a venv-scoped filelock
     so concurrent launches/updates never race on ``uv pip install``; a held lock
     is best-effort skipped (a peer is already healing).
+
+    HATS-966 covered ``packages/surfaces/*``; HATS-1367 widened it to the rest of
+    ``packages/*``, whose dangling ``.pth`` this channel used to walk straight past.
     """
     from filelock import FileLock, Timeout
 
@@ -272,13 +313,15 @@ def run_editable_heal(
 
     if repo_root is None:
         repo_root = editable_install_root("ai-hats")
-    if repo_root is None or not repo_root.joinpath(*SURFACES_SUBPATH).is_dir():
+    if repo_root is None or not (repo_root / WORKSPACE_SUBDIR).is_dir():
         return None
-    if not find_broken_surface_providers(repo_root=repo_root):
+    broken = find_broken_editables(repo_root)
+    if not broken:
         return None
+    mapping = {**surface_editable_map(repo_root), **workspace_editable_map(repo_root)}
     try:
         with FileLock(str(lock_path or _default_lock_path()), timeout=lock_timeout):
-            return heal_surface_editables(repo_root)
+            return heal_surface_editables(repo_root, broken=broken, mapping=mapping)
     except Timeout:
         return None
 

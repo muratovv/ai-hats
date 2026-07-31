@@ -136,7 +136,7 @@ def _scan_escape(
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     """Remove the session's per-session cache dir (HATS-294).
 
-    Drops the whole ``<ai_hats_dir>/.cache/sessions/<session_id>/`` tree
+    Drops the whole ``<cache_root>/sessions/<session_id>/`` tree
     (prompt.md + plugin/ + anything else providers stashed there).
     ``ignore_errors`` keeps us robust against repeated cleanup attempts,
     missing paths, and SIGKILL-orphans (TTL sweep mops those up later).

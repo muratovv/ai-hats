@@ -21,9 +21,10 @@ touching the network.
 Assertion: `python -m ai_hats config status` exits 1 quickly (bounded by a
 subprocess timeout — the bug this guards against hangs, it doesn't merely
 slow down) with the still-missing dep and the rescue command on stderr.
-``--version``/``--help`` are click eager options that short-circuit before
-``cli.main()``'s body (and therefore ``bootstrap_or_die()``) ever runs, so a
-real subcommand is required to actually exercise the gate.
+(A real subcommand was once required here, back when the gate sat inside
+``cli.main()``'s body and click's eager ``--version``/``--help`` short-circuited
+past it; since HATS-1368 the gate runs in ``__main__.main()`` and every
+invocation reaches it.)
 
 Fail-under-revert: drop the ``still_missing`` recheck in
 ``bootstrap_or_die()`` (restore the old unconditional ``os.execv``) and this
@@ -84,9 +85,6 @@ def test_bootstrap_or_die_fails_loud_on_noop_heal(tmp_path: Path) -> None:
     env = os.environ.copy()
     env["UV_OFFLINE"] = "1"  # a real fetch would mask the no-op-heal premise
 
-    # A real subcommand, not --version/--help (click eager options that
-    # short-circuit before cli.main()'s body — and bootstrap_or_die() with it
-    # — ever runs).
     result = subprocess.run(
         [str(venv_python), "-m", "ai_hats", "config", "status"],
         capture_output=True,

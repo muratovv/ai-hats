@@ -11,7 +11,8 @@ to [Semantic Versioning](https://semver.org/).
 - Cline now runs through the unified artifact-builder (ADR-0018,
   `build_category_artifact`) on the clean-root invariant, both HITL and
   Automate. Role skills materialize into the **per-session cache**
-  (`<ai_hats_dir>/.cache/sessions/<sid>/skills`) and reach cline via
+  (`<cache_root>/sessions/<sid>/skills` — outside the project, default
+  `~/.cache/ai-hats/<project-key>/`, HATS-1398) and reach cline via
   `--config <cache>` (cline scans `<base>/skills`; the spike HATS-1191 proved
   the flag). Nothing is written into the project root — no `.cline/`, no
   `.gitignore` mutation. Each session owns its cache dir, so the old

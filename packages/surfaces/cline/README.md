@@ -33,7 +33,8 @@ $ ai-hats -p cline -r <role>          # HITL: launches an interactive cline TUI
     headless (`cline --yolo --json "<prompt>"`);
   - `--worktree` is never passed (ai-hats-wt owns isolation);
   - the role's skills are materialized into the **per-session cache**
-    (`<ai_hats_dir>/.cache/sessions/<sid>/skills`) and delivered to cline via
+    (`<cache_root>/sessions/<sid>/skills` — outside the project, default
+    `~/.cache/ai-hats/<project-key>/`, HATS-1398) and delivered to cline via
     `--config <cache>` (cline scans `<base>/skills`) — nothing lands in the
     project root (clean-root invariant, HATS-1171). `CLINE_DATA_DIR` is pinned
     to the real cline home so `--config` keeps the machine's auth.

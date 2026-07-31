@@ -19,12 +19,20 @@ from ai_hats.dry_run import dry_run_automate, dry_run_hitl
 SURFACES = ["claude", "agy", "cline"]
 
 
-def _fingerprint(root: Path) -> dict[str, str]:
-    """Path -> content digest for every file under ``root``."""
+def _fingerprint(project: Path) -> dict[str, str]:
+    """Path -> content digest across every root a dry-run could write to.
+
+    HATS-1398 moved the cache out of the project, so walking the project alone
+    would pass while a build wrote freely to the real target — the guarantee has
+    to cover the cache root too, or it only proves the empty half.
+    """
+    from ai_hats.paths import cache_root
+
     out: dict[str, str] = {}
-    for p in sorted(root.rglob("*")):
-        if p.is_file():
-            out[str(p.relative_to(root))] = hashlib.sha256(p.read_bytes()).hexdigest()
+    for root in (project, cache_root(project)):
+        for p in sorted(root.rglob("*")) if root.is_dir() else ():
+            if p.is_file():
+                out[str(p)] = hashlib.sha256(p.read_bytes()).hexdigest()
     return out
 
 

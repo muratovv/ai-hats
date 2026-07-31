@@ -187,17 +187,23 @@ class DeadCwdError(click.ClickException):
         )
 
 
+def broken_install_notice(exc: Exception) -> str:
+    """The one broken-install notice, rendered for THIS install shape (HATS-1368)."""
+    from .._bootstrap import repair_command
+
+    return (
+        f"Inconsistent or broken ai-hats installation ({exc}).\n"
+        "Likely cause: package files are out of sync or corrupted.\n"
+        f"Repair command: {repair_command()}\n"
+        "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
+    )
+
+
 class InconsistentInstallError(click.ClickException):
     """Raised when an internal import fails due to a broken or inconsistent install (HATS-1120)."""
 
     def __init__(self, exc: Exception) -> None:
-        msg = (
-            f"Inconsistent or broken ai-hats installation ({exc}).\n"
-            "Likely cause: package files are out of sync or corrupted.\n"
-            "Repair command: python -m ai_hats self update (or 'ai-hats self update')\n"
-            "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
-        )
-        super().__init__(msg)
+        super().__init__(broken_install_notice(exc))
 
     def show(self, file=None) -> None:
         from ..startup_notices import show_fatal_notice_and_exit
