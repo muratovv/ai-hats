@@ -261,7 +261,11 @@ your responsibility to keep the repo clean. Particularly:
 - **API keys, bearer tokens, `.env` files** — the hook will block these
   outright. If a false positive blocks a legitimate commit, use
   `AI_HATS_PRIVACY_ACK=1 git commit ...` for that single invocation and
-  explain in the commit body why the override is safe.
+  explain in the commit body why the override is safe. Every hatch
+  (`AI_HATS_*_ACK` / `_SKIP` / `_OFF` / `YOLO`) and every fail-open skip is
+  recorded to `$(git rev-parse --git-common-dir)/ai-hats/bypasses.jsonl`, and
+  `git push` prints the bypasses carried by the commits it is pushing
+  (HATS-1407) — the override is a documented act, not a hidden one.
 - **Binary fixtures larger than ~5 KB under `tests/fixtures/`** — the
   hook flags these as soft warnings. Synthetic fixtures should fit in
   under a kilobyte.
