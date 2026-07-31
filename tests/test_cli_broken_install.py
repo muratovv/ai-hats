@@ -6,6 +6,8 @@ import sys
 from unittest.mock import patch
 
 import pytest
+from ai_hats import _bootstrap
+from ai_hats._bootstrap import repair_command
 from ai_hats.cli import main_entry
 from ai_hats.cli._helpers import (
     _handle_broken_install_or_die,
@@ -106,9 +108,26 @@ def test_handle_broken_install_normal_mode(
     assert "Inconsistent or broken ai-hats installation" in captured.err
     assert "cannot import name PROVIDER_GEMINI" in captured.err
     assert "Likely cause: package files are out of sync or corrupted." in captured.err
-    assert "python -m ai_hats self update" in captured.err
+    assert f"Repair command: {repair_command()}" in captured.err
     assert "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_repair_command_is_the_editable_reinstall_when_editable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1368: `self update` runs the CLI that is broken — advise the repair that doesn't."""
+    monkeypatch.delenv("AI_HATS_DEBUG", raising=False)
+    monkeypatch.delenv("AI_HATS_VERBOSE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["ai-hats", "task", "ls"])
+    monkeypatch.setattr(_bootstrap, "_editable_source_dir", lambda: "/src/ai-hats")
+
+    with pytest.raises(SystemExit):
+        _handle_broken_install_or_die(ImportError("No module named 'ai_hats_wt'"))
+
+    err = capsys.readouterr().err
+    assert f"Repair command: uv pip install --python {sys.executable} -e '/src/ai-hats'" in err
+    assert "self update" not in err
 
 
 def test_catch_broken_install_context_manager(
@@ -161,5 +180,5 @@ def test_main_entry_catches_import_error(
     captured = capsys.readouterr()
     assert "Inconsistent or broken ai-hats installation" in captured.err
     assert "module 'ai_hats.constants' has no attribute 'PROVIDER_GEMINI'" in captured.err
-    assert "python -m ai_hats self update" in captured.err
+    assert f"Repair command: {repair_command()}" in captured.err
     assert "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v" in captured.err
