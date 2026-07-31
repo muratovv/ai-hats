@@ -178,8 +178,10 @@ def main() -> int:
 
     try:
         payload = json.loads(sys.stdin.read())
-    except Exception:
-        return 0  # unparsable / empty -> fail-open allow
+    except Exception as exc:
+        # Fail-open, but recorded (HATS-1373).
+        journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="wt_gate.py")
+        return 0
 
     # Dual-payload parsing:
     # Claude Code sends arguments in `tool_input`.

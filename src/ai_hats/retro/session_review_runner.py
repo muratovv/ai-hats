@@ -343,7 +343,7 @@ class SessionReviewRunner:
             return ""
         try:
             cfg = ProjectConfig.from_yaml(cfg_path)
-        except Exception:
+        except Exception:  # silent-ok: unreadable config means "no override" — see docstring
             return ""
         sr = cfg.feedback.session_retro
         return sr.review_model or sr.reflect_model or ""

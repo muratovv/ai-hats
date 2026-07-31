@@ -159,7 +159,9 @@ def main() -> int:
         return 0
     try:
         payload = json.loads(sys.stdin.read())
-    except Exception:
+    except Exception as exc:
+        # Fail-open, but recorded (HATS-1373).
+        journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="comment_length_lint.py")
         return 0
 
     file_path = (payload.get("tool_input") or {}).get("file_path") or ""

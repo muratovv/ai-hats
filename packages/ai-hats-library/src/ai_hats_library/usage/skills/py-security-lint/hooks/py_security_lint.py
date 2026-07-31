@@ -59,8 +59,10 @@ def main() -> int:
 
     try:
         payload = json.loads(sys.stdin.read())
-    except Exception:
-        return 0  # unparsable / empty -> fail-open allow
+    except Exception as exc:
+        # Fail-open, but recorded (HATS-1373).
+        journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="py_security_lint.py")
+        return 0
 
     file_path = (payload.get("tool_input") or {}).get("file_path") or ""
     if not file_path.endswith(".py") or not os.path.isfile(file_path):
@@ -80,8 +82,10 @@ def main() -> int:
             text=True,
             timeout=10,
         )
-    except Exception:
-        return 0  # ruff crash / timeout -> fail-open
+    except Exception as exc:
+        # A linter that always crashes is a linter that always passes (HATS-1373).
+        journal_bypass("fail-open", f"ruff crash/timeout: {exc!r}", hook="py_security_lint.py")
+        return 0
 
     findings = proc.stdout.strip()
     if not findings:

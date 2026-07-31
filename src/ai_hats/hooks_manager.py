@@ -572,7 +572,7 @@ class HooksManager:
             from .update_check import upstream_update
 
             return upstream_update(self.project_dir) is not None
-        except Exception:  # noqa: BLE001 — version-skew detection is best-effort
+        except Exception:  # silent-ok: unknown means "not behind" — see docstring
             return False
 
 

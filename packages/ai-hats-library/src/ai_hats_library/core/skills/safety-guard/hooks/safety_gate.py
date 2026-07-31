@@ -219,8 +219,11 @@ def main() -> int:
 
     try:
         payload = json.loads(sys.stdin.read())
-    except Exception:
-        return 0  # unparsable / empty -> fail-open allow
+    except Exception as exc:
+        # Fail-open, but recorded: a gate that stopped seeing its payload looks
+        # exactly like a gate with nothing to block (HATS-1373).
+        journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook="safety_gate.py")
+        return 0
 
     tool_input = payload.get("tool_input")
     if not tool_input:
