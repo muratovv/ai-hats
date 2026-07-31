@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 
+from ai_hats.paths import claude_transcripts_dir
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_observe import Session
 from ai_hats.pipeline.steps.make_audit import MakeAudit
@@ -29,8 +30,8 @@ def make_session(tmp_path: Path) -> Session:
 
 
 def _claude_dir_for(home: Path, project_dir: Path) -> Path:
-    project_key = str(project_dir).replace("/", "-")
-    d = home / ".claude" / "projects" / project_key
+    del home  # Path.home() is already monkeypatched by the caller (HATS-1412).
+    d = claude_transcripts_dir(project_dir)
     d.mkdir(parents=True)
     return d
 
