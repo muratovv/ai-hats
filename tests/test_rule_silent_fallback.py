@@ -17,7 +17,10 @@ from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
-RULE_DIR = LIBRARY / "core/rules/dev_rule_silent_fallback"
+#: usage/, not core/: the body is Python-specific (``except`` syntax, ruff codes),
+#: and core/ ships to every consumer — a Go project would receive it too
+#: (rule_core_vs_usage_split). Same placement as dev_rule_secure_coding.
+RULE_DIR = LIBRARY / "usage/rules/dev_rule_silent_fallback"
 
 
 def test_rule_files_exist() -> None:
@@ -50,9 +53,34 @@ def test_rule_states_what_the_gate_cannot_prove() -> None:
     assert "cannot prove" in body
 
 
-def test_rule_listed_in_trait_se_mindset_composition() -> None:
-    trait = ComponentConfig.from_yaml(LIBRARY / "usage/traits/trait-se-mindset/config.yaml")
+def test_rule_listed_in_the_python_trait_composition() -> None:
+    trait = ComponentConfig.from_yaml(LIBRARY / "usage/traits/dev/python/config.yaml")
     assert "dev_rule_silent_fallback" in trait.composition.rules
+
+
+def test_the_rule_does_not_ride_a_language_agnostic_trait() -> None:
+    """The point of the move: the carrier must be the python trait, not SE mindset."""
+    se_mindset = ComponentConfig.from_yaml(LIBRARY / "usage/traits/trait-se-mindset/config.yaml")
+
+    assert "dev_rule_silent_fallback" not in se_mindset.composition.rules
+    assert "dev_rule_silent_fallback" not in se_mindset.injection
+
+
+def test_a_go_role_is_not_handed_a_python_rule() -> None:
+    """The concrete leak this placement fixes.
+
+    ``go-dev`` composes trait-se-mindset alongside dev::go-core, so hanging the
+    rule on SE mindset shipped ``except`` / ``# noqa: S110`` guidance to a Go
+    developer. Delivery is gated by the composed rule set
+    (``providers.build_system_prompt`` filters ALWAYS_ON_RULES by result.rules),
+    so the trait a rule hangs on decides who reads it.
+    """
+    asm = Assembler(REPO_ROOT)
+    result = asm.composer.compose("go-dev", overlays=asm._get_overlays("go-dev"))
+    composed = ClaudeProvider().build_system_prompt(result)
+
+    assert "dev_rule_silent_fallback" not in {r.name for r in result.rules}
+    assert "dev_rule_silent_fallback" not in composed
 
 
 def test_rule_is_always_on() -> None:

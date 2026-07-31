@@ -4,7 +4,6 @@ composition:
   rules:
     - dev_rule_secure_coding
     - dev_rule_comment_discipline
-    - dev_rule_silent_fallback
   skills:
     - systematic-debugging
     - audit-reviewer
@@ -34,9 +33,6 @@ injection: |
   Evidence-first; isolate bugs with a failing test before fixing — full protocol in skill **systematic-debugging**.
 
   Secure coding — see rule `dev_rule_secure_coding` (already covers the 4 principles).
-
-  ### Error handling
-  A fallback that cannot report is forbidden: if an `except` body neither raises nor reports (log, domain call, or a returned value carrying the error), it hides the failure from every test and log. Breadth of the catch is not the defect — silence of the body is. Declare a deliberate one with `# silent-ok: <reason>`, and never add a fallback without a test that exercises it. See rule `dev_rule_silent_fallback`.
 
   ### Comments
   Default to **no comment** — good names make code obvious. Add one only for a non-obvious WHY, in **one line**; history → a `# TASK-NNN` pointer (where `TASK-` is *this* repo's ticket prefix, not a literal), not a retelling; long rationale → ADR/task card (linked); never a stale-able count. See rule `dev_rule_comment_discipline`.
