@@ -34,6 +34,11 @@ from .paths import ensure_ai_hats_dir, tasks_dir
 #: Actor stamped on integrator-side rack writes (reflect/judge provenance).
 REFLECT_ACTOR = "rack:reflect"
 
+#: Actor stamped on the automatic post-session verdict harvest (HATS-1369) —
+#: distinct from REFLECT_ACTOR (interactive judge) so a validation_log entry
+#: shows which mechanism wrote it.
+SESSION_REVIEWER_ACTOR = "rack:session-reviewer"
+
 
 def rack_workspace(project_dir: Path) -> Workspace:
     """Discover the workspace for a project: the tasks catalog plus the sibling
@@ -385,6 +390,7 @@ __all__ = [
     "HypView",
     "PropView",
     "REFLECT_ACTOR",
+    "SESSION_REVIEWER_ACTOR",
     "active_hypotheses",
     "active_hypothesis_ids",
     "append_verdict",
