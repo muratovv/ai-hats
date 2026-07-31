@@ -16,10 +16,9 @@
 # `sha` is empty for pre-commit (the commit does not exist yet) and stamped by
 # the post-commit hook; `head_before` pins the parent so the two can be joined.
 
-# Schema — the field order of every journal line. The Python twin
-# (bypass_journal.py) pins the same list; tests/test_bypass_journal_contract.py
-# fails if the two drift.
-AI_HATS_BYPASS_FIELDS="ts event hook kind reason head_before branch session_id sha"
+# Exported so the contract test can source this file and diff the list against
+# the Python twin's — the two writers must not drift apart.
+export AI_HATS_BYPASS_FIELDS="ts event hook kind reason head_before branch session_id sha"
 
 _ai_hats_json_escape() {
     local s="$1"

@@ -23,6 +23,28 @@ LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 JOURNAL_HELPER = LIB / "hooks/bypass_journal.sh"
 PRIVACY_HOOK = LIB / "core/skills/git-mastery/git_hooks/pre-commit-privacy.sh"
 
+GM = "core/skills/git-mastery/git_hooks"
+
+#: (hook relpath, git event, hatch env var). Every git-hook hatch in the repo —
+#: `test_bypass_journal_coverage.py` fails if one is added without a row here.
+GIT_HOOK_HATCHES = [
+    (f"{GM}/pre-commit-privacy.sh", "pre-commit", "AI_HATS_PRIVACY_ACK"),
+    (f"{GM}/pre-commit-smoke.sh", "pre-commit", "AI_HATS_SMOKE_SKIP"),
+    (f"{GM}/pre-commit-docs-index.sh", "pre-commit", "AI_HATS_DOCS_INDEX_ACK"),
+    (f"{GM}/pre-commit-no-raw-destructive.sh", "pre-commit", "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP"),
+    (f"{GM}/pre-push-shared-state.sh", "pre-push", "AI_HATS_SHARED_STATE_ACK"),
+    (
+        "usage/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh",
+        "pre-commit",
+        "AI_HATS_RULE_DELIVERY_ACK",
+    ),
+    (
+        "usage/skills/skill-lint-gate/git_hooks/pre-commit-skill-lint.sh",
+        "pre-commit",
+        "AI_HATS_SKILL_LINT_ACK",
+    ),
+]
+
 JOURNAL_REL = ".git/ai-hats/bypasses.jsonl"
 
 #: Every line must carry these keys — the contract the Python twin also honours.
@@ -145,3 +167,52 @@ def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     assert res.returncode == 0, "a broken journal must not block the commit"
     assert "NOT RECORDED" in res.stderr, res.stderr
     assert _journal_lines(gated_repo) == []
+
+
+# --- every git-hook hatch, in the real install layout ------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("hook_rel", "event", "hatch"),
+    GIT_HOOK_HATCHES,
+    ids=[Path(h).stem for h, _, _ in GIT_HOOK_HATCHES],
+)
+def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: str, hatch: str):
+    """One row per hatch: tripping it must leave a line naming that variable."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+
+    githooks = repo / ".githooks"
+    event_d = githooks / f"{event}.d"
+    event_d.mkdir(parents=True)
+    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
+    hook = event_d / f"skill-{Path(hook_rel).name}"
+    hook.write_bytes((LIB / hook_rel).read_bytes())
+    hook.chmod(0o755)
+
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("AI_HATS_"):
+            env.pop(key)
+    env["AI_HATS_HOOK_EVENT"] = event
+    env[hatch] = "1"
+
+    res = subprocess.run(
+        ["bash", str(hook)],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        input="",
+        env=env,
+    )
+    assert res.returncode == 0, f"hatch should skip the gate, not fail\n{res.stderr}"
+
+    lines = _journal_lines(repo)
+    assert len(lines) == 1, f"expected one line, got {lines}\nstderr: {res.stderr}"
+    assert lines[0]["reason"] == hatch
+    assert lines[0]["kind"] == "hatch"
+    assert lines[0]["event"] == event
