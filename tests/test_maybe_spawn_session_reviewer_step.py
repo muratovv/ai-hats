@@ -9,6 +9,7 @@ inside ``RunSessionEnd``.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -113,15 +114,21 @@ def test_writes_runtime_decision_line_for_skip(tmp_path):
 
 
 def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
-    """Threshold met → ``_spawn_session_reviewer_background`` invoked."""
+    """Threshold met, ``background=True`` (default) → detached Popen path
+    invoked; the synchronous in-process path (HATS-1402) is NOT used."""
     session = _make_session(tmp_path)
-    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=True)
     metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
 
     spawned: list[tuple] = []
     monkeypatch.setattr(
         "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
         lambda pd, sid: spawned.append((pd, sid)),
+    )
+    sync_calls: list[tuple] = []
+    monkeypatch.setattr(
+        "ai_hats.cli.reflect_session_main.run_session_review",
+        lambda sid, max_retries, pd: sync_calls.append((sid, max_retries, pd)),
     )
     monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
 
@@ -132,7 +139,103 @@ def test_spawns_reviewer_when_threshold_met(tmp_path, monkeypatch):
     )
 
     assert spawned == [(tmp_path, "test")]
+    assert sync_calls == [], "background=True must use the detached Popen path, not sync"
     assert delta["retro_decision"]["action"] == "run"
+    assert delta["retro_decision"]["background"] is True
+
+
+# ---------------------------------------------------------------------------
+# Sync in-process run — background: false (HATS-1402)
+# ---------------------------------------------------------------------------
+
+
+def test_background_false_runs_sync_in_process(tmp_path, monkeypatch):
+    """``background: false`` → ``run_session_review`` is called in-process
+    (max_retries=1, matching the Popen path's default), and the detached
+    ``_spawn_session_reviewer_background`` path is NOT used."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    spawned: list[tuple] = []
+    monkeypatch.setattr(
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
+        lambda pd, sid: spawned.append((pd, sid)),
+    )
+    sync_calls: list[tuple] = []
+    monkeypatch.setattr(
+        "ai_hats.cli.reflect_session_main.run_session_review",
+        lambda sid, max_retries, pd: sync_calls.append((sid, max_retries, pd)),
+    )
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    delta = step.run(
+        session_id=session.session_id,
+        project_dir=tmp_path,
+    )
+
+    assert sync_calls == [("test", 1, tmp_path)]
+    assert spawned == [], "background=False must not use the detached Popen path"
+    assert delta["retro_decision"]["action"] == "run"
+    assert delta["retro_decision"]["background"] is False
+
+
+def test_background_false_sets_and_clears_recursion_guard(tmp_path, monkeypatch):
+    """The recursion guard is set to ``"1"`` only for the duration of the
+    synchronous call, then cleared — a caller running many sessions
+    in-process (e.g. a test loop) must not be left with a stuck guard."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    seen_during_call: list[str | None] = []
+
+    def _fake_run_session_review(sid, max_retries, pd):
+        seen_during_call.append(os.environ.get(ENV_SKIP_RETRO))
+
+    monkeypatch.setattr(
+        "ai_hats.cli.reflect_session_main.run_session_review",
+        _fake_run_session_review,
+    )
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(
+        session_id=session.session_id,
+        project_dir=tmp_path,
+    )
+
+    assert seen_during_call == ["1"], "guard must be set to '1' for the duration of the sync call"
+    assert os.environ.get(ENV_SKIP_RETRO) is None, "guard must be cleared after run() returns"
+
+
+def test_background_false_sync_failure_does_not_raise(tmp_path, monkeypatch):
+    """A ``run_session_review`` exception on the sync path must not
+    propagate (mirrors the existing spawn-failure invariant) and the
+    recursion guard must still be cleared afterward."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    def _boom(sid, max_retries, pd):
+        raise RuntimeError("sync boom")
+
+    monkeypatch.setattr(
+        "ai_hats.cli.reflect_session_main.run_session_review",
+        _boom,
+    )
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    # Must not raise.
+    delta = step.run(
+        session_id=session.session_id,
+        project_dir=tmp_path,
+    )
+
+    assert delta["retro_decision"]["action"] == "run"
+    assert os.environ.get(ENV_SKIP_RETRO) is None, "guard must be cleared even after a failure"
 
 
 def test_recursion_guard_blocks_spawn(tmp_path, monkeypatch):

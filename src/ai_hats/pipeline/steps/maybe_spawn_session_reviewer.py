@@ -9,8 +9,9 @@ per the HATS-086 invariant (a second Ctrl+C during cleanup must not propagate):
 
 1. **Retro decision** — ``make_decision`` + ``write_retro_log`` so the decision
    survives even if the spawn crashes.
-2. **Spawn** — when ``retro.action == "run"`` and not ``HATS_SKIP_RETRO=1``, fire
-   ``_spawn_session_reviewer_background``.
+2. **Spawn** — when ``retro.action == "run"`` and not ``HATS_SKIP_RETRO=1``: fire
+   ``_spawn_session_reviewer_background`` (default), or run synchronously
+   in-process (HATS-1402) when ``retro.background is False``.
 3. **Return delta** — emit ``retro_decision`` for a downstream banner step.
 
 ``failure_policy = "continue"`` — finalization is best-effort. The retro banner
@@ -52,6 +53,7 @@ class MaybeSpawnSessionReviewer(Step):
         project_dir: Path,
         **_: Any,
     ) -> dict[str, Any]:
+        from ...cli import reflect_session_main
         from ...retro.auto_retro import (
             _spawn_session_reviewer_background,
             make_decision,
@@ -76,13 +78,27 @@ class MaybeSpawnSessionReviewer(Step):
             and retro_decision.get("action") == "run"
             and os.environ.get(ENV_SKIP_RETRO) != "1"
         ):
-            try:
-                _spawn_session_reviewer_background(project_dir, session_id)
-            except (Exception, KeyboardInterrupt):
-                logger.warning(
-                    "session-reviewer spawn failed",
-                    exc_info=True,
-                )
+            if retro_decision.get("background") is False:
+                # HATS-1402: sync in-process run; recursion guard scoped via
+                # try/finally since there's no child process to scope it to.
+                try:
+                    os.environ[ENV_SKIP_RETRO] = "1"
+                    reflect_session_main.run_session_review(session_id, 1, project_dir)
+                except (Exception, KeyboardInterrupt):
+                    logger.warning(
+                        "session-reviewer sync run failed",
+                        exc_info=True,
+                    )
+                finally:
+                    os.environ.pop(ENV_SKIP_RETRO, None)
+            else:
+                try:
+                    _spawn_session_reviewer_background(project_dir, session_id)
+                except (Exception, KeyboardInterrupt):
+                    logger.warning(
+                        "session-reviewer spawn failed",
+                        exc_info=True,
+                    )
 
         if retro_decision is not None:
             return {"retro_decision": retro_decision}
