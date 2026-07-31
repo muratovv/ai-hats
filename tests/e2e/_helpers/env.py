@@ -76,7 +76,9 @@ def clean_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     run against the installed package rather than the source tree.
     """
     src = os.environ if base is None else base
-    return {k: v for k, v in src.items() if k not in ENV_DENYLIST}
+    env = {k: v for k, v in src.items() if k not in ENV_DENYLIST}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
 
 
 def launcher_subprocess_env(
