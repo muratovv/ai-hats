@@ -34,7 +34,7 @@ dependencies = [
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
     "ai-hats-rack>=0.1.0",
-    "ai-hats-observe>=0.3.0",  # + usage/v1 behind the parser adapter (usage) — T15/0.3.0 (HATS-953)
+    "ai-hats-observe>=0.5.0",  # is_measured + FLAG_SENSOR_ERROR, imported at module level (0.5.0, HATS-1374)
     "ai-hats-library>=0.2.1",  # supervised-close worktree-isolation + shared-state rule row (0.2.1, HATS-1019)
     "click>=8.1",
     "pyyaml>=6.0",
