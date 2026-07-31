@@ -65,7 +65,10 @@ def test_e2e_broken_install_friendly_error(tmp_project, tmp_path: Path) -> None:
     assert "Likely cause: package files are out of sync or corrupted." in result.stderr, (
         result.stderr
     )
-    assert "python -m ai_hats self update" in result.stderr, result.stderr
+    # HATS-1368: the repair is rendered for the install shape under test — an
+    # editable checkout is re-pointed, since `self update` runs the broken CLI.
+    assert "Repair command: uv pip install" in result.stderr, result.stderr
+    assert " -e " in result.stderr, result.stderr
     assert (
         "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v" in result.stderr
     ), result.stderr

@@ -11,6 +11,21 @@ import os
 import shlex
 import sys
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# The hooks are stdlib-only, so the journal arrives as a flattened sibling.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from bypass_journal import journal_bypass
+except ImportError:  # helper absent -> say so; never skip quietly
+
+    def journal_bypass(kind: str, reason: str, **_kw) -> bool:
+        print(
+            f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — bypass_journal.py missing",
+            file=sys.stderr,
+        )
+        return False
+
+
 #: Set to "1" when the supervisor approved a specific destructive command.
 #: Mirrors AI_HATS_PLAN_ACK / AI_HATS_MERGE_ACK.
 DESTRUCTIVE_ACK = "AI_HATS_DESTRUCTIVE_ACK"
@@ -60,8 +75,19 @@ def get_bin(tokens):
     return ""
 
 
+#: One line per process: the ack is documented as per-single-command, so its
+#: presence means THIS command was waved through (HATS-1407).
+_journaled = False
+
+
 def _acked() -> bool:
-    return os.environ.get(DESTRUCTIVE_ACK) == "1"
+    global _journaled
+    if os.environ.get(DESTRUCTIVE_ACK) != "1":
+        return False
+    if not _journaled:
+        _journaled = True
+        journal_bypass("hatch", DESTRUCTIVE_ACK, hook="safety_gate.py")
+    return True
 
 
 def _ack_hint(reason: str) -> str:
@@ -188,6 +214,7 @@ def check_command(cmd_string: str) -> str:
 
 def main() -> int:
     if os.environ.get("AI_HATS_YOLO") == "1":
+        journal_bypass("hatch", "AI_HATS_YOLO", hook="safety_gate.py")
         return 0
 
     try:

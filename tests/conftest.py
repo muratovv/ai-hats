@@ -277,6 +277,11 @@ def _isolate_ai_hats_user_home(monkeypatch, tmp_path):
     home = tmp_path / "_ai_hats_user_home"
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("AI_HATS_USER_HOME", str(home))
+    # HATS-1398: the cache class bottoms out on user_home(), but either override
+    # beats it — an ambient XDG_CACHE_HOME would send test writes to the
+    # developer's real cache and quietly un-hermetic the suite.
+    monkeypatch.delenv("AI_HATS_CACHE_HOME", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     yield
 
 

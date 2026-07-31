@@ -26,11 +26,11 @@ classifiers = [
 ]
 # ADR-0014: an entry-point provider plugin depends on the `ai-hats` integrator
 # (for the `Provider` ABC) and registers via entry points (IoC) — NOT a
-# core-only leaf. `ai-hats-observe>=0.3.0` carries the `TranscriptParser` base +
+# core-only leaf. `ai-hats-observe` carries the `TranscriptParser` base +
 # `usage/v1` schema that `ClineParser` (HATS-960) subclasses/reuses.
 dependencies = [
     "ai-hats",
-    "ai-hats-observe>=0.3.0",
+    "ai-hats-observe>=0.5.0",  # floor tracks the workspace version (HATS-1399)
     "filelock>=3.0",  # HATS-963: concurrent-session guard for .cline/skills/ rebuild
 ]
 

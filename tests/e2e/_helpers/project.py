@@ -118,6 +118,13 @@ class Project:
     ai_hats_binary: Path
     env: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Every driver (``run``, ``drive_bare_hitl``) merges this dict, so pinning
+        # here keeps them on ONE cache root. Unpinned, the child resolves it under
+        # the real home — ``clean_env`` drops AI_HATS_USER_HOME and the hitl
+        # allowlist is minimal — and litters it per tmp project (HATS-1398).
+        self.env.setdefault("AI_HATS_CACHE_HOME", str(self.path.parent / "_cache_home"))
+
     @property
     def yaml(self) -> Path:
         return self.path / PROJECT_CONFIG

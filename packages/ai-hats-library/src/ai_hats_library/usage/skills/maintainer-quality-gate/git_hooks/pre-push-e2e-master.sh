@@ -146,6 +146,26 @@ EOF
         exit 1
     fi
 
+    # HATS-726: the marker has to mean "everything CI checks is green". Before
+    # this preamble the gate ran only the e2e tier, so a ruff error passed the
+    # most expensive gate in the repo and turned master red minutes later.
+    local dispatcher="$repo_root/scripts/ci-local.sh"
+    if [[ -f "$dispatcher" ]]; then
+        local stage
+        for stage in lint unit; do
+            if ! bash "$dispatcher" "$stage"; then
+                cat >&2 <<EOF
+
+[e2e-gate] the '$stage' stage FAILED — gate ABORTED, no marker written.
+Fix it and re-run; the e2e tier was not started (it takes ~25 min).
+EOF
+                exit 1
+            fi
+        done
+    else
+        echo "[e2e-gate] no scripts/ci-local.sh here — preamble skipped, marker covers the e2e tier only" >&2
+    fi
+
     echo "[e2e-gate] running e2e+smoke suite out of band (HATS-686, no bypass)" >&2
 
     # HATS-568: clean stale wheel-build artefacts (worktree-tier e2e tests

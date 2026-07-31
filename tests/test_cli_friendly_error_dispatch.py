@@ -29,13 +29,19 @@ def _cases():
     return [
         pytest.param(RoleNotFoundError("ghost", ["judge"]), "ghost", id="role"),
         pytest.param(
-            UnknownProviderError("nope", ["claude"]), "nope", id="unknown-provider",
+            UnknownProviderError("nope", ["claude"]),
+            "nope",
+            id="unknown-provider",
         ),
         pytest.param(
-            MissingProviderError(["claude"]), "no provider configured", id="missing-provider",
+            MissingProviderError(["claude"]),
+            "no provider configured",
+            id="missing-provider",
         ),
         pytest.param(
-            NotAnAiHatsProjectError(Path("/tmp/nowhere")), "nowhere", id="not-a-project",
+            NotAnAiHatsProjectError(Path("/tmp/nowhere")),
+            "nowhere",
+            id="not-a-project",
         ),
     ]
 
@@ -68,9 +74,7 @@ def test_group_renders_registered_error_as_exit_2(exc, marker, argv) -> None:
     result = CliRunner().invoke(_root(exc), argv)
 
     assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}"
-    assert marker in _output(result), (
-        f"output missing marker {marker!r}: {_output(result)!r}"
-    )
+    assert marker in _output(result), f"output missing marker {marker!r}: {_output(result)!r}"
     assert "Traceback" not in _output(result)
 
 

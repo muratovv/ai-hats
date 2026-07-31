@@ -351,6 +351,118 @@ def test_mixed_payload_requires_marker_for_master_line(tmp_path: Path):
 
 
 # ===========================================================================
+# RUN MODE — the ci-local preamble (HATS-726)
+# ===========================================================================
+
+
+def _commit_dispatcher(repo: Path, *, lint_rc: int, unit_rc: int) -> Path:
+    """Commit a fake ``scripts/ci-local.sh`` with controlled per-stage exit codes.
+
+    It must be committed, not merely written: the gate refuses to write a
+    marker for a dirty tree, which would mask what these cases assert.
+    """
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    dispatcher = scripts / "ci-local.sh"
+    # The log lands OUTSIDE the repo: a stray file would dirty the tree and the
+    # gate withholds the marker on a dirty tree, masking what these cases assert.
+    dispatcher.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$1" >> "{repo.parent / "stages_run"}"\n'
+        'case "$1" in\n'
+        f"  lint) exit {lint_rc} ;;\n"
+        f"  unit) exit {unit_rc} ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    dispatcher.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    env["GIT_CONFIG_SYSTEM"] = "/dev/null"
+    for args in (("add", "-A"), ("commit", "-qm", "add dispatcher")):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=env)
+    return dispatcher
+
+
+def _stages_run(repo: Path) -> list[str]:
+    log = repo.parent / "stages_run"
+    return log.read_text().split() if log.exists() else []
+
+
+@pytest.mark.integration
+def test_run_mode_lint_failure_blocks_before_the_e2e_tier(tmp_path: Path):
+    """A red lint stage aborts the gate without starting the 25-minute suite.
+
+    This is the case that reached master on 2026-07-29: 66 ruff errors passed
+    the gate untouched because it ran only e2e+smoke.
+    Fail-under-revert: drop the preamble → pytest runs and a marker appears.
+    """
+    repo = _git_repo(tmp_path)
+    _commit_dispatcher(repo, lint_rc=1, unit_rc=0)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 1, res.stderr
+    assert "'lint' stage FAILED" in res.stderr
+    assert "no marker written" in res.stderr
+    assert not (bindir / "last_argv").exists(), "e2e tier ran despite a red preamble"
+    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
+
+
+@pytest.mark.integration
+def test_run_mode_unit_failure_blocks_and_names_the_stage(tmp_path: Path):
+    """A green lint but red unit stage still aborts, naming `unit`."""
+    repo = _git_repo(tmp_path)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=1)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 1, res.stderr
+    assert "'unit' stage FAILED" in res.stderr
+    assert _stages_run(repo) == ["lint", "unit"]
+    assert not (bindir / "last_argv").exists()
+
+
+@pytest.mark.integration
+def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
+    """Green lint + unit → both stages ran, the suite ran, the marker is written."""
+    repo = _git_repo(tmp_path)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=0)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 0, res.stderr
+    assert _stages_run(repo) == ["lint", "unit"]
+    assert (bindir / "last_argv").exists(), "e2e tier did not run"
+    assert (_marker_dir(repo) / _head(repo)).exists()
+
+
+@pytest.mark.integration
+def test_run_mode_without_a_dispatcher_says_the_marker_is_narrower(tmp_path: Path):
+    """A project with no ci-local.sh keeps the old contract, but says so.
+
+    The hook ships to any project composing maintainer-quality-gate; there is
+    no stage set to enforce there, so it must not pretend the marker covers one.
+    """
+    repo = _git_repo(tmp_path)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 0, res.stderr
+    assert "no scripts/ci-local.sh here" in res.stderr
+    assert "e2e tier only" in res.stderr
+    assert (_marker_dir(repo) / _head(repo)).exists()
+
+
+# ===========================================================================
 # RUN MODE — suite + marker side effects (HATS-686 core)
 # ===========================================================================
 

@@ -21,8 +21,19 @@
 # asymmetry: Claude consumes this; the Gemini provider is a no-op.
 set -uo pipefail
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# shellcheck source=../../../hooks/bypass_journal.sh
+if ! . "$(dirname "$0")/bypass_journal.sh" 2>/dev/null; then
+    ai_hats_journal_bypass() {
+        echo "[bypass-journal] NOT RECORDED ($1: $2) — bypass_journal.sh missing" >&2
+    }
+fi
+
 # --- kill switch -------------------------------------------------------------
-[[ "${AI_HATS_TOOL_HYGIENE_OFF:-}" == "1" ]] && exit 0
+if [[ "${AI_HATS_TOOL_HYGIENE_OFF:-}" == "1" ]]; then
+    ai_hats_journal_bypass hatch AI_HATS_TOOL_HYGIENE_OFF
+    exit 0
+fi
 
 # --- read payload + extract the command --------------------------------------
 payload="$(cat || true)"

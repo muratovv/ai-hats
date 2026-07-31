@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import contextlib
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -364,10 +365,10 @@ class Provider(abc.ABC):
         """Build CLI args and env vars for a per-session composed prompt.
 
         Called for EVERY session (default role and explicit ``--role`` alike).
-        ``session_id`` keys the per-session cache dir under
-        ``<ai_hats_dir>/.cache/sessions/<session_id>/`` — provider writes the
-        prompt file and plugin-dir there. Caller owns dir cleanup at
-        session_end (``_cleanup_session_cache`` in runtime.py).
+        ``session_id`` keys the per-session cache dir
+        ``<cache_root>/sessions/<session_id>/`` — outside the project — where
+        the provider writes the prompt file and plugin-dir. Caller owns dir
+        cleanup at session_end (``_cleanup_session_cache`` in runtime.py).
 
         Returns ``(extra_args, extra_env, meta_prompt)``. ``meta_prompt`` is
         the EXACT bytes that the provider will see as system-prompt override
@@ -527,8 +528,6 @@ def _load_provider_entry_points() -> None:
                 raise
             logger.warning("skipping provider entry point %r: %s", ep.name, exc)
 
-
-import threading
 
 _ENTRY_POINTS_LOCK = threading.Lock()
 _ENTRY_POINTS_LOADED = False

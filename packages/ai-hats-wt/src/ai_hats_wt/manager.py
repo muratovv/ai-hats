@@ -278,6 +278,28 @@ class WorktreeMergeIncompleteError(Exception):
         )
 
 
+class WorktreeRebasedBranchError(Exception):
+    """Raised when a branch's commits are already patch-integrated into base under different SHAs.
+
+    HATS-1370: prevents automatic re-merging of rebased commits (which would create duplicate
+    commit history on base). Refuses by default unless accept_drift=True or force=True is passed.
+    Body contract (HATS-509): facts only in message.
+    """
+
+    def __init__(
+        self,
+        branch_name: str,
+        base_branch: str,
+        *,
+        worktree_path: Path | None = None,
+    ) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        self.worktree_path = worktree_path
+        super().__init__(
+            f"Branch '{branch_name}' commits are already integrated into base '{base_branch}' "
+            f"under different SHAs (rebased). Automatic merge refused to prevent duplicate history."
+        )
 
 
 class WorktreeBaseBranchError(Exception):
@@ -932,26 +954,49 @@ class WorktreeManager:
             # `_check_clean` is still honored (force-bypassable) so uncommitted
             # edits aren't dropped; drift is skipped (work already integrated).
             # Recorded local base only — origin/<base> out of scope.
-            if (
-                self._original_branch is not None
-                and self._branch_exists(self._original_branch)
-                and self._is_ancestor(current_tip_sha, self._original_branch)
-            ):
-                if not force:
-                    self._check_clean()
-                # HATS-823: short-circuit still destroys the dir → harvest first.
-                self._fire_before_teardown("merge", skip_hooks=skip_hooks)
-                self._remove_worktree()
-                self._delete_branch()
-                self._clear_state()
-                self.worktree_path = None
-                logger.info(
-                    "Worktree '%s' already merged into '%s' — torn down "
-                    "without re-merge (HATS-596)",
-                    self.branch_name,
-                    self._original_branch,
-                )
-                return
+            if self._original_branch is not None and self._branch_exists(self._original_branch):
+                if self._is_ancestor(current_tip_sha, self._original_branch):
+                    if not force:
+                        self._check_clean()
+                    # HATS-823: short-circuit still destroys the dir → harvest first.
+                    self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+                    self._remove_worktree()
+                    self._delete_branch()
+                    self._clear_state()
+                    self.worktree_path = None
+                    logger.info(
+                        "Worktree '%s' already merged into '%s' — torn down "
+                        "without re-merge (HATS-596)",
+                        self.branch_name,
+                        self._original_branch,
+                    )
+                    return
+
+                # HATS-1370: rebased/patch-integrated branch check.
+                # If all commits in branch are already patch-equivalent on base (git cherry),
+                # running `git merge` would pull duplicate pre-rebase commits into base.
+                # Refuse by default (WorktreeRebasedBranchError) unless accept_drift=True or force=True.
+                if self._is_patch_integrated(self.branch_name, self._original_branch):
+                    if not accept_drift and not force:
+                        raise WorktreeRebasedBranchError(
+                            self.branch_name,
+                            self._original_branch,
+                            worktree_path=self.worktree_path,
+                        )
+                    if not force:
+                        self._check_clean()
+                    self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+                    self._remove_worktree()
+                    self._delete_branch()
+                    self._clear_state()
+                    self.worktree_path = None
+                    logger.info(
+                        "Worktree '%s' already integrated into '%s' via rebase/patch-equivalence — "
+                        "torn down without re-merge (HATS-1370)",
+                        self.branch_name,
+                        self._original_branch,
+                    )
+                    return
 
             # HATS-1019: consent gate AFTER the HATS-596 short-circuit —
             # already-merged cleanup publishes nothing and must stay ack-free
@@ -1315,9 +1360,7 @@ class WorktreeManager:
         return cls._load_by_key(project_dir, key, lifecycle=lifecycle, state_dir=state_dir)
 
     @classmethod
-    def branch_exists(
-        cls, project_dir: Path, branch: str, *, timeout: float | None = None
-    ) -> bool:
+    def branch_exists(cls, project_dir: Path, branch: str, *, timeout: float | None = None) -> bool:
         """Check whether ``branch`` exists as a local ref in ``project_dir``.
 
         Probe-only — does NOT touch worktree state. Used by
@@ -1372,6 +1415,17 @@ class WorktreeManager:
             return None
 
     @classmethod
+    def _is_patch_integrated_probe(
+        cls, project_dir: Path, branch: str, base: str, timeout: float | None = None
+    ) -> bool:
+        """Probe if all commits in ``branch`` are patch-equivalent on ``base`` (HATS-1370)."""
+        res = cls._git_probe(project_dir, "cherry", base, branch, timeout=timeout)
+        if res is None or res.returncode != 0:
+            return False
+        lines = res.stdout.splitlines()
+        return not any(line.startswith("+") for line in lines)
+
+    @classmethod
     def branch_merged_into_canonical_base(
         cls,
         project_dir: Path,
@@ -1386,6 +1440,7 @@ class WorktreeManager:
         Resolves the base from the first existing of ``bases`` (injected for
         testability, R6) and tests ``git merge-base --is-ancestor``. ``None``
         on a genuine divergence, no canonical base, or an unreadable repo.
+        HATS-1370: falls back to ``_is_patch_integrated_probe`` for rebased branches.
         """
         for base in bases:
             exists = cls._git_probe(
@@ -1396,7 +1451,10 @@ class WorktreeManager:
             anc = cls._git_probe(
                 project_dir, "merge-base", "--is-ancestor", branch, base, timeout=timeout
             )
-            return base if anc is not None and anc.returncode == 0 else None
+            if anc is not None and anc.returncode == 0:
+                return base
+            if cls._is_patch_integrated_probe(project_dir, branch, base, timeout=timeout):
+                return base
         return None
 
     @classmethod
@@ -1408,13 +1466,21 @@ class WorktreeManager:
         HATS-697: clears the stale ``task/<id>`` ref after a state-lost
         finalize; ``-d`` refuses an un-merged branch, so failure is logged,
         never raised — finalize must not hinge on cleanup. True iff deleted.
+        HATS-1370: if ``git branch -d`` fails on a rebased branch whose integration
+        is confirmed by ``branch_merged_into_canonical_base``, falls back to ``git branch -D``.
         """
         res = cls._git_probe(project_dir, "branch", "-d", branch, timeout=timeout)
-        if res is None or res.returncode != 0:
-            detail = (res.stderr.strip() if res else "git unavailable") or "<no stderr>"
-            logger.warning("Merged-branch cleanup skipped for '%s': %s", branch, detail)
-            return False
-        return True
+        if res is not None and res.returncode == 0:
+            return True
+        # HATS-1370: Fallback for rebased branches where git branch -d refuses unmerged SHAs
+        base = cls.branch_merged_into_canonical_base(project_dir, branch, timeout=timeout)
+        if base is not None:
+            res_force = cls._git_probe(project_dir, "branch", "-D", branch, timeout=timeout)
+            if res_force is not None and res_force.returncode == 0:
+                return True
+        detail = (res.stderr.strip() if res else "git unavailable") or "<no stderr>"
+        logger.warning("Merged-branch cleanup skipped for '%s': %s", branch, detail)
+        return False
 
     @staticmethod
     def _migrate_legacy_lowercase_state(state_path: Path, key: str) -> None:
@@ -1879,6 +1945,19 @@ class WorktreeManager:
         try:
             self._git("merge-base", "--is-ancestor", maybe_ancestor, descendant)
             return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def _is_patch_integrated(self, branch: str, base: str) -> bool:
+        """True iff all commits in ``branch`` are already patch-equivalent on ``base`` (HATS-1370).
+
+        Uses ``git cherry <base> <branch>``. Output lines starting with '+' indicate
+        commits NOT present on base. If no lines start with '+', returns True.
+        """
+        try:
+            res = self._git("cherry", base, branch)
+            lines = res.stdout.splitlines()
+            return not any(line.startswith("+") for line in lines)
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 

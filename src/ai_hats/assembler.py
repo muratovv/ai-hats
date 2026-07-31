@@ -1520,7 +1520,7 @@ class Assembler:
         ``Provider.skills_export_dir`` for Claude pointed at the
         project-level ``<project>/.claude/skills`` mirror; HATS-294
         removed permanent export entirely in favor of the per-session
-        plugin-dir under ``<ai_hats_dir>/.cache/sessions/<sid>/plugin/``.
+        plugin-dir under ``<cache_root>/sessions/<sid>/plugin/``.
         Yet some user environments carry
         ``~/.claude/skills/.ai-hats-managed`` from a manual
         ``cp -r .claude/skills/ ~/.claude/skills/`` (the marker tagged

@@ -31,7 +31,8 @@ PROJECT_CONFIG = "ai-hats.yaml"
 # Env override for the builtin-library root (validated both-core-and-usage).
 ENV_LIBRARY_ROOT = "AI_HATS_LIBRARY_ROOT"
 
-# Env-var names read inside the paths leaf (HATS-917)
+# Env-var names read inside the paths leaf (HATS-917, HATS-1414)
+ENV_AI_HATS_USER_HOME = "AI_HATS_USER_HOME"
 ENV_AI_HATS_DIR = "AI_HATS_DIR"
 ENV_AI_HATS_VENV = "AI_HATS_VENV"
 AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
@@ -44,6 +45,7 @@ __all__ = [
     "PIPELINES_SUBPATH",
     "PROJECT_CONFIG",
     "ENV_LIBRARY_ROOT",
+    "ENV_AI_HATS_USER_HOME",
     "ENV_AI_HATS_DIR",
     "ENV_AI_HATS_VENV",
     "AI_HATS_PROJECT_DIR_ENV",

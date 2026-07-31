@@ -10,7 +10,6 @@ from pathlib import Path
 
 from ai_hats import skill_aggregate as agg
 from ai_hats.paths import builtin_library_layers
-from ai_hats.skill_sources import skill_source_roots
 
 
 def _skill(root: Path, name: str, body: str = "", desc: str = "d") -> None:

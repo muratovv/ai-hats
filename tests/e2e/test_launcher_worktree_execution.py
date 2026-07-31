@@ -54,17 +54,11 @@ def _fake_venv(venv_path: Path, *, ai_hats_echo: str = "ai-hats-stub") -> None:
 
 def _init_git_repo(repo_path: Path) -> None:
     subprocess.run(["git", "init", "--quiet", str(repo_path)], check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
-    )
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
     (repo_path / "README.md").write_text("initial")
     subprocess.run(["git", "add", "README.md"], cwd=repo_path, check=True)
-    subprocess.run(
-        ["git", "commit", "--quiet", "-m", "initial commit"], cwd=repo_path, check=True
-    )
+    subprocess.run(["git", "commit", "--quiet", "-m", "initial commit"], cwd=repo_path, check=True)
 
 
 def test_launcher_worktree_execution_success(tmp_path: Path) -> None:

@@ -60,7 +60,8 @@ def provider_less_project(tmp_project):
     ],
 )
 def test_e2e_reflect_reports_config_error_without_traceback(
-    provider_less_project, argv,
+    provider_less_project,
+    argv,
 ) -> None:
     """Every ``reflect`` subcommand that composes → exit 2, friendly."""
     result = provider_less_project.run(*argv, timeout=30.0)
@@ -73,8 +74,7 @@ def test_e2e_reflect_reports_config_error_without_traceback(
 
     for marker in ("no provider configured", "ai-hats config set -p"):
         assert marker in result.stderr, (
-            f"stderr missing marker {marker!r}\n"
-            f"stderr (tail 800):\n{result.stderr[-800:]}"
+            f"stderr missing marker {marker!r}\nstderr (tail 800):\n{result.stderr[-800:]}"
         )
 
     combined = result.stdout + result.stderr
@@ -83,7 +83,8 @@ def test_e2e_reflect_reports_config_error_without_traceback(
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
 
-    hyp_dir = provider_less_project.path / ".agent" / "ai-hats" / "tracker" / "backlog" / "hypotheses"
+    hyp_dir = (
+        provider_less_project.path / ".agent" / "ai-hats" / "tracker" / "backlog" / "hypotheses"
+    )
     created_hyps = list(hyp_dir.glob("HYP-*.yaml")) if hyp_dir.exists() else []
     assert not created_hyps, f"expected no HYP cards created on error, found: {created_hyps}"
-

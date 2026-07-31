@@ -90,4 +90,3 @@ def test_e2e_wt_stale_ref_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert _git(project, "branch", "--list", "task/stale-ref-e2e").stdout.strip() == ""
     # sha_b is integrated into main
     assert _git(project, "merge-base", "--is-ancestor", sha_b, "HEAD").returncode == 0
-

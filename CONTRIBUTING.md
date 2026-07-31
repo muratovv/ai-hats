@@ -96,17 +96,25 @@ confirming which mode you're in.
 
 ## Testing
 
-Prefer `make` targets to run tests with automatic timeout protection:
+Every `make` target delegates to a `scripts/ci-local.sh` stage, so a target and
+the CI job of the same name cannot disagree — `tests/test_gate_entrypoint_parity.py`
+fails the build if either spells a check command out itself.
 
-- `make tests` (or `make unit` / `make check`) — run unit test suite bounded by timeout (default 300s, ~2x observed execution time).
-- `make e2e` — run e2e integration tests bounded by timeout (default 3600s, ~2x observed execution time).
-- `make lint` — run ruff linter and formatter check.
+- `make check` — the fast inner loop: `lint` + `unit` only.
+- `make gates` — everything CI runs locally: lint, unit, coverage, merge-smoke.
+  This is the parity gate; `check` is a subset of it.
+- `make unit` (or `make tests`) — the unit stage, bounded by timeout (default 300s).
+- `make lint` — `ruff check .` plus the formatter check on `src/ tests/`.
+- `make e2e` — the maintainer tier, the same selection the master pre-push gate
+  runs, bounded by timeout (default 3600s).
+- `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
 - `make help` — display available Makefile targets.
 
 Options:
 
 - Pass custom pytest flags via `ARGS`: `make tests ARGS="-k test_something"`
 - Override timeout via `TIMEOUT_TESTS` or `TIMEOUT_E2E`: `make e2e TIMEOUT_E2E=1200`
+- Point the stages at a specific interpreter via `PYTHON`: `make check PYTHON=.venv/bin/python`
 
 Direct `pytest` invocation:
 
@@ -141,7 +149,7 @@ PATH=/tmp/e2e-venv/bin:$PATH git commit ...
 A change is **not done** until:
 
 1. Tests pass locally.
-2. `ruff check .` is clean.
+2. `make lint` is clean (`ruff check .` plus the formatter check).
 3. The privacy pre-commit hook (`.githooks/pre-commit`) lets the commit
    through (it ships configured automatically via `core.hooksPath`).
 
@@ -253,7 +261,11 @@ your responsibility to keep the repo clean. Particularly:
 - **API keys, bearer tokens, `.env` files** — the hook will block these
   outright. If a false positive blocks a legitimate commit, use
   `AI_HATS_PRIVACY_ACK=1 git commit ...` for that single invocation and
-  explain in the commit body why the override is safe.
+  explain in the commit body why the override is safe. Every hatch
+  (`AI_HATS_*_ACK` / `_SKIP` / `_OFF` / `YOLO`) and every fail-open skip is
+  recorded to `$(git rev-parse --git-common-dir)/ai-hats/bypasses.jsonl`, and
+  `git push` prints the bypasses carried by the commits it is pushing
+  (HATS-1407) — the override is a documented act, not a hidden one.
 - **Binary fixtures larger than ~5 KB under `tests/fixtures/`** — the
   hook flags these as soft warnings. Synthetic fixtures should fit in
   under a kilobyte.

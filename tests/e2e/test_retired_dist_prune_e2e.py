@@ -754,9 +754,7 @@ def test_upgrade_completes_when_the_prune_raises(tmp_path: Path) -> None:
     env[ENV_REPO_URL] = str(src_new)
     bin_dir.chmod(0o500)
     try:
-        result = _run(
-            [str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=600
-        )
+        result = _run([str(launcher_dest), "self", "update"], cwd=project, env=env, timeout=600)
     finally:
         bin_dir.chmod(0o755)  # never hand pytest a tmp tree it cannot clean up
     combined = result.stdout + result.stderr
@@ -768,8 +766,7 @@ def test_upgrade_completes_when_the_prune_raises(tmp_path: Path) -> None:
         f"the sentinel is missing — the update did not complete:\n{combined}"
     )
     assert (versions / "current").read_text().strip() == sha_new, (
-        f"current was not flipped to {sha_new[:12]} — the update did not "
-        f"complete:\n{combined}"
+        f"current was not flipped to {sha_new[:12]} — the update did not complete:\n{combined}"
     )
     assert "Bump (fresh interpreter)" not in combined, (
         "the bump reported a non-zero exit — the prune's failure leaked into the "

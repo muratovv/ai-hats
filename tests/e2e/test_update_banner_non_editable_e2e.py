@@ -42,6 +42,8 @@ Deliberate long e2e scenario contract — noqa: comment-length.
 
 from __future__ import annotations
 
+from ai_hats.paths import cache_root
+
 import json
 import os
 import subprocess
@@ -207,11 +209,11 @@ def test_e2e_update_banner_fires_for_non_editable_install(tmp_path: Path) -> Non
     )
 
     # ----- assert mirror was used + cache reflects behind=LAG_COMMITS -----
-    mirror = project / ".agent" / "ai-hats" / ".cache" / "probe-mirror"
+    mirror = cache_root(project) / "probe-mirror"
     assert mirror.is_dir(), f"probe-mirror directory missing at {mirror}"
     assert (mirror / "HEAD").is_file(), "probe-mirror was not initialized (HEAD missing)"
 
-    cache_path = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
+    cache_path = cache_root(project) / "update-check.json"
     assert cache_path.is_file(), f"cache file missing at {cache_path}"
     cache_data = json.loads(cache_path.read_text())
     # ``__commit_id__`` is a short SHA (9 chars); compare against the

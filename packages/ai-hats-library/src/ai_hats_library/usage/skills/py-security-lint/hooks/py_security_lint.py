@@ -34,11 +34,27 @@ import shutil
 import subprocess
 import sys
 
+# HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
+# The hooks are stdlib-only, so the journal arrives as a flattened sibling.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from bypass_journal import journal_bypass
+except ImportError:  # helper absent -> say so; never skip quietly
+
+    def journal_bypass(kind: str, reason: str, **_kw) -> bool:
+        print(
+            f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — bypass_journal.py missing",
+            file=sys.stderr,
+        )
+        return False
+
+
 _KILL_SWITCH = "AI_HATS_SECURITY_LINT_OFF"
 
 
 def main() -> int:
     if os.environ.get(_KILL_SWITCH) == "1":
+        journal_bypass("hatch", _KILL_SWITCH, hook="py_security_lint.py")
         return 0
 
     try:

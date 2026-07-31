@@ -288,7 +288,7 @@ class ClaudeProvider(Provider):
         """Materialize composed role's skills into a per-session plugin-dir.
 
         Returns ``["--plugin-dir", <cache_dir>/plugin]``. The dir lives under
-        ``<ai_hats_dir>/.cache/sessions/<session_id>/plugin/`` and is cleaned
+        ``<cache_root>/sessions/<session_id>/plugin/`` and is cleaned
         with the whole cache dir at session_end. Empty skill list still
         produces a valid (empty) plugin-dir so the argument is always
         consistent — the no-skills case is free.

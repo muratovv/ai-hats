@@ -50,7 +50,9 @@ def test_agy_session_transcript_resolution_and_audit(
     monkeypatch.setenv("GEMINI_CONFIG_DIR", str(gemini_home))
 
     session_id = "20260730-120000-1-99999"
-    brain_dir = gemini_home / "antigravity-cli" / "brain" / "conv-test-uuid" / ".system_generated" / "logs"
+    brain_dir = (
+        gemini_home / "antigravity-cli" / "brain" / "conv-test-uuid" / ".system_generated" / "logs"
+    )
     brain_dir.mkdir(parents=True)
 
     transcript_file = brain_dir / "transcript.jsonl"
@@ -68,11 +70,13 @@ def test_agy_session_transcript_resolution_and_audit(
             "type": "PLANNER_RESPONSE",
             "created_at": "2026-07-30T15:00:02Z",
             "thinking": "Calculation",
-            "tool_calls": [{"name": "run_command", "args": {"CommandLine": "python3 -c 'print(2+2)'"}}],
+            "tool_calls": [
+                {"name": "run_command", "args": {"CommandLine": "python3 -c 'print(2+2)'"}}
+            ],
             "content": "Result is 4.",
         },
     ]
-    transcript_file.write_text("\n".join(json.dumps(l) for l in lines))
+    transcript_file.write_text("\n".join(json.dumps(line) for line in lines))
 
     provider = AgyProvider()
     resolved = provider.resolve_transcript(tmp_path, session_id)
@@ -162,4 +166,3 @@ def test_agy_session_records_audit_and_usage(
         usage = json.loads(usage_path.read_text())
         flags = usage.get("flags", [])
         assert any("token-telemetry-unavailable" in f for f in flags)
-

@@ -289,6 +289,7 @@ def wt_merge(
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
         WorktreeMergeConsentError,  # HATS-1019
         WorktreePartialCleanupError,
+        WorktreeRebasedBranchError,  # HATS-1370
         WorktreeRemoveError,
         WorktreeStateIncompleteError,  # HATS-714
         WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
@@ -384,6 +385,15 @@ def wt_merge(
             soft_wrap=True,
         )
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
+        sys.exit(1)
+    except WorktreeRebasedBranchError as e:
+        from rich.markup import escape as _escape
+
+        console.print(f"[red]Refused (rebased branch)[/]: {_escape(str(e))}")
+        console.print(
+            "To confirm cleanup of this rebased worktree branch without re-merging, re-run with "
+            "[cyan]--accept-drift[/]."
+        )
         sys.exit(1)
     except WorktreeDriftError as e:
         # Drift message embeds filenames from the diverged commits — escape

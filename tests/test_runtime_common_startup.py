@@ -127,7 +127,6 @@ class TestDiagnosticsPersistence:
         assert "role foo not found" in diag["startup"]["notices"][0]["text"]
 
 
-
 class TestFormatHookHeal:
     def test_groups_by_surface_and_names_kinds(self):
         text = _format_hook_heal(

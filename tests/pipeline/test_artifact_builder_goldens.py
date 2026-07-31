@@ -26,7 +26,7 @@ import pytest
 from ai_hats.assembler import Assembler
 from ai_hats.dry_run import dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.paths import PROJECT_CONFIG, cache_root
 from ai_hats.session_artifacts import SessionPolicy
 
 SURFACES = ["claude", "agy", "cline"]
@@ -80,7 +80,10 @@ def _normalize(obj, subs: list[tuple[str, str]]):
 def _payload(report, project: Path) -> dict:
     # Longest first: <project> lives under <tmp>, so substituting <tmp> first
     # would leave a half-rewritten project path behind.
+    # <cache> first: it lives under <tmp> and carries a path-derived digest that
+    # would otherwise pin a machine-specific key into the golden (HATS-1398).
     subs = [
+        (str(cache_root(project)), "<cache>"),
         (str(project), "<project>"),
         (str(project.parent / "home"), "<home>"),
         (str(project.parent), "<tmp>"),

@@ -22,6 +22,8 @@ fail with an ``ImportError``; reverting the YAML edits makes
 
 from __future__ import annotations
 
+from ai_hats.paths import cache_root
+
 import json
 import os
 import subprocess
@@ -79,7 +81,7 @@ def _seed_cache(
     installed_label: str | None = None,
     latest_label: str | None = None,
 ) -> Path:
-    cache = project / ".agent" / "ai-hats" / ".cache" / "update-check.json"
+    cache = cache_root(project) / "update-check.json"
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
         json.dumps(

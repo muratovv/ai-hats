@@ -205,7 +205,9 @@ def test_legacy_real_counters_survive_an_unreachable_transcript(tmp_path):
                 "cache_read": 314832,
                 "cache_creation": 51791,
             },
-            "models": {"claude-opus-4-8": {"calls": 11, "input_tokens": 16378, "output_tokens": 2075}},
+            "models": {
+                "claude-opus-4-8": {"calls": 11, "input_tokens": 16378, "output_tokens": 2075}
+            },
         },
     )
 

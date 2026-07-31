@@ -10,6 +10,63 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+
+### Fixed
+
+- **An editable install whose METADATA went stale now heals itself on the next
+  run** (HATS-1368, HATS-1367, epic HATS-1364). METADATA is written once, at
+  install time, and then drifts from the code the `.pth` points at — in both
+  directions. A sweep of 16 consumer venvs on 2026-07-30 found 11 broken by
+  that drift: 8 with metadata predating the workspace split (it declares no
+  first-party deps, so the startup gate saw nothing missing and the process
+  died importing `ai_hats_wt`) and 3 still declaring the `ai-hats-tracker`
+  deleted in 0.14.0 (healed forever as an already-satisfied no-op). On an
+  editable install the gate now reads the checkout's own `pyproject.toml`,
+  which cannot drift from the code beside it; wheel installs keep reading
+  METADATA. Both the repair it runs and the one it prints re-point the
+  checkout (`uv pip install --python <exe> -e <path>`) instead of naming
+  distributions — the form that no-ops, or, since the workspace members are
+  published, quietly replaces the developer's checkout with PyPI wheels.
+
+  Three fixes ride along. The gate moved ahead of the `ai_hats.cli` import it
+  protects (a venv missing a workspace member used to die importing the module
+  that held the gate, and the "broken install" notice it printed advised
+  `python -m ai_hats self update` — which re-enters the same failing import).
+  The HATS-1359 no-op-heal recheck no longer misreads a successful editable
+  heal as a no-op: `.pth` files are processed only at interpreter startup, so
+  the site hook is re-run before the recheck. And `heal-editables`, the
+  launcher's heal channel, now covers `packages/*` workspace members, not only
+  `packages/surfaces/*`.
+
+  Unchanged: the `ai-hats` launcher still refuses a venv missing a workspace
+  member and points at `ai-hats self update` (HATS-895) — that hint heals via
+  the launcher's own path and stays the fail-closed contract.
+
+### Changed
+
+- **The machine-only cache moved out of the project** (HATS-1398, epic
+  HATS-1266, **BREAKING** on-disk layout). Per-session artefacts, the
+  update-check probe mirror and `update-check.json` used to live in the
+  workspace at `<ai_hats_dir>/.cache/`; they now resolve under
+  `<cache_home>/<project-key>/`, where `cache_home()` is
+  `$AI_HATS_CACHE_HOME` → `$XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats` and
+  `project_key()` is `<dirname>-<sha256(abs path)[:8]>`, so two checkouts
+  sharing a basename never collide. Rationale: the project is a tree that
+  file-watchers, `git status`, greps and indexers all pay for, and regenerable
+  state should not be in it. Both env vars name a *base*, never a final root —
+  `cache_root()` always appends the project key, so a var leaked into another
+  project's shell cannot merge two caches. No user action and no migration —
+  a cache is re-derived, not carried: new sessions build in the new root and
+  the session-start sweep deletes the old in-tree `.cache/` (session dirs wait
+  out the TTL, since one may belong to a session that started before the move).
+  The only cost is one re-fetch of the probe mirror.
+  New resolvers `cache_home()` / `project_key()`
+  / `cache_root()` in `src/ai_hats/paths/_dirs.py`; `session_cache_root()` /
+  `session_cache_dir()` keep their names. The standalone agy hook dispatcher
+  runs without importing ai-hats, so it takes the resolved dir from
+  `AI_HATS_SESSION_CACHE_DIR`, pinned into the session env at spawn.
+
+
 ## [0.14.0] - 2026-07-29
 
 ### Removed
