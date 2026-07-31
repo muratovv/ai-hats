@@ -4,7 +4,7 @@ Pure-method assertions (no real cline, no auth): the CLI-shape, env, inline
 `-s` role delivery, and the per-session-cache skill materialization the ai-hats
 runners depend on. HATS-1171: cline runs through the unified artifact-builder
 (ADR-0018) on the clean-root invariant — skills land in
-``<ai_hats_dir>/.cache/sessions/<sid>/skills`` (delivered via ``--config``),
+``<cache_root>/sessions/<sid>/skills`` (delivered via ``--config``),
 never in the project root; the dead TS hook plugin is gone.
 """
 
