@@ -57,9 +57,7 @@ def test_task_group_is_unmounted(tmp_path: Path) -> None:
         env=env,
         timeout=30.0,
     )
-    assert r.returncode == 0, (
-        f"legacy `task` group still mounted on main\nSTDERR:\n{r.stderr}"
-    )
+    assert r.returncode == 0, f"legacy `task` group still mounted on main\nSTDERR:\n{r.stderr}"
 
 
 def test_top_level_help_lists_no_task_group(tmp_path: Path) -> None:

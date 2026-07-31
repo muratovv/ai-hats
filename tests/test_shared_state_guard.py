@@ -15,8 +15,7 @@ from pathlib import Path
 import pytest
 
 HOOKS_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "packages/ai-hats-library/src/ai_hats_library/hooks"
+    Path(__file__).resolve().parents[1] / "packages/ai-hats-library/src/ai_hats_library/hooks"
 )
 GUARD = HOOKS_DIR / "pre_bash_shared_state_guard.sh"
 CLASSIFIER = HOOKS_DIR / "shared_state_classifier.sh"

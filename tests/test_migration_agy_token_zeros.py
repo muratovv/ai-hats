@@ -50,8 +50,15 @@ def test_a_productive_agy_session_stops_reading_as_silent(tmp_path):
     path = _session(
         project,
         "20260722-082353-1",
-        {"provider": "agy", "role": "maintainer", "exit_code": 0,
-         "turns": 55, "tool_calls": 0, "tokens": dict(ZEROS), "models": {}},
+        {
+            "provider": "agy",
+            "role": "maintainer",
+            "exit_code": 0,
+            "turns": 55,
+            "tool_calls": 0,
+            "tokens": dict(ZEROS),
+            "models": {},
+        },
     )
     assert is_zero_output(_read(path)) is True, "precondition: the record lies today"
 
@@ -70,8 +77,13 @@ def test_records_of_other_surfaces_are_untouched(tmp_path):
     path = _session(
         project,
         "20260722-090000-1",
-        {"provider": "claude", "measured": True, "turns": 3,
-         "tool_calls": 0, "tokens": dict(ZEROS)},
+        {
+            "provider": "claude",
+            "measured": True,
+            "turns": 3,
+            "tool_calls": 0,
+            "tokens": dict(ZEROS),
+        },
     )
 
     run_pending(Assembler(project))
@@ -84,8 +96,13 @@ def test_the_step_is_idempotent_and_keeps_prior_flags(tmp_path):
     path = _session(
         project,
         "20260722-091000-1",
-        {"provider": "agy", "turns": 2, "tool_calls": 0,
-         "tokens": dict(ZEROS), "flags": ["not-finalized"]},
+        {
+            "provider": "agy",
+            "turns": 2,
+            "tool_calls": 0,
+            "tokens": dict(ZEROS),
+            "flags": ["not-finalized"],
+        },
     )
 
     run_pending(Assembler(project))

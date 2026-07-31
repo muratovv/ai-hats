@@ -103,7 +103,9 @@ def test_e2e_transition_final_state(shared_launcher, tmp_path):
         expect_exit=1,
     )
     combined = (rej.stdout + rej.stderr).lower()
-    assert "final" in combined, f"reject message did not mention the flag:\n{rej.stdout}\n{rej.stderr}"
+    assert "final" in combined, (
+        f"reject message did not mention the flag:\n{rej.stdout}\n{rej.stderr}"
+    )
     # The rejected transition must NOT have moved the task off brainstorm.
     res = rack("context", "TST-001")
     assert "state: brainstorm" in res.stdout, f"rejected transition mutated state:\n{res.stdout}"
