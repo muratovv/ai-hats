@@ -115,8 +115,7 @@ def _parse_hook(kind: str, row: Any, skill_name: str) -> WorktreeHook:
             on = ()
         case _:
             raise ValueError(
-                f"skill {skill_name!r}: worktree[{kind!r}] entry must "
-                f"have a 'script' — got {row!r}"
+                f"skill {skill_name!r}: worktree[{kind!r}] entry must have a 'script' — got {row!r}"
             )
     if kind == "wt_in":
         if on:
