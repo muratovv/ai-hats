@@ -183,8 +183,8 @@ and venv. `cd` into it and carry on, or name it with `-C` from outside — never
 `cd` to an absolute worktree path:
 
 ```bash
-cd relay && ai-hats wt exec -- pytest         # from inside the worktree
-ai-hats wt exec task/hats-1 -C relay -- pytest  # from the main checkout
+cd packages/ai-hats-wt && ai-hats wt exec -- pytest         # from inside the worktree
+ai-hats wt exec task/hats-1 -C packages/ai-hats-wt -- pytest  # from the main checkout
 ```
 
 PYTHONPATH follows the project that **owns** the directory you run in: the

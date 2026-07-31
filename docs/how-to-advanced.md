@@ -244,7 +244,7 @@ It is an environment wrapper, not a teleporter: the command runs **where you sta
 To reach a subproject without leaving the main checkout, name it with `-C` (worktree-relative) rather than `cd`-ing to an absolute worktree path:
 
 ```bash
-ai-hats wt exec task/hats-1193 -C relay -- pytest
+ai-hats wt exec task/hats-1193 -C packages/ai-hats-observe -- pytest
 ```
 
 A leading token that names an **active branch** is a worktree selector, and it always beats cwd — so the reach-in form works from anywhere, including from inside a *different* worktree (HATS-1213). A first token that names no active worktree is just the command:
