@@ -12,7 +12,9 @@ failure-proposal lives here (not in the runner) to avoid double-fire.
 
 from __future__ import annotations
 
+import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -27,6 +29,8 @@ from ..pipeline.keys import (
     PIPELINE_REFLECT_SESSION,
 )
 from ..retro.session_review_runner import SessionReviewError
+
+logger = logging.getLogger(__name__)
 
 
 # HATS-378: meta-PROP targets. session-reviewer = role's own output failed
@@ -86,6 +90,10 @@ def main() -> int:
         )
         return 2
 
+    # HATS-1369: harvest whatever verdicts the doc carries into validation_log,
+    # independent of _harness_check's full-active-coverage gate below.
+    persisted = _maybe_harvest_verdicts(project_dir, session_id)
+
     issues = _harness_check(project_dir, session_id, runner_error)
     if issues:
         _file_meta_proposal(
@@ -97,7 +105,41 @@ def main() -> int:
         return 2
     if saved_path is not None:
         print(f"session-reviewer saved to {saved_path}")
+    if persisted:
+        print(f"harvested {len(persisted)} verdict(s): {persisted}")
     return 0
+
+
+# ---- shared doc parse (HATS-1369: one parse, shared by harness_check + harvest) ----
+
+_MISSING_ISSUE = "output file missing or empty"
+
+
+def _review_doc_path(project_dir: Path, session_id: str) -> Path:
+    from ..paths import retros_dir
+
+    return retros_dir(project_dir) / "sessions" / f"{session_id}.md"
+
+
+def _load_review_doc(out_path: Path) -> tuple[dict | None, list[str]]:
+    """Read + parse the review doc's frontmatter into a mapping.
+
+    Returns ``(mapping, issues)``: ``mapping`` is ``None`` when the file is
+    missing/empty, its frontmatter fails to parse, or the frontmatter isn't a
+    YAML mapping — ``issues`` names which (exactly one entry). Shared by
+    ``_harness_check`` and ``_maybe_harvest_verdicts`` so the doc is parsed once.
+    """
+    if not out_path.exists() or out_path.stat().st_size == 0:
+        return None, [_MISSING_ISSUE]
+    try:
+        raw = yaml.safe_load(_extract_frontmatter(out_path.read_text()))
+    except yaml.YAMLError as e:
+        return None, [f"frontmatter parse error: {e}"]
+    except (OSError, ValueError) as e:
+        return None, [f"output unreadable: {e}"]
+    if not isinstance(raw, dict):
+        return None, ["frontmatter is not a YAML mapping"]
+    return raw, []
 
 
 # ---- harness check (pure-Python, no LLM) ----
@@ -109,29 +151,14 @@ def _harness_check(
     runner_error: str | None,
 ) -> list[str]:
     """Return a list of issue strings; empty means pass."""
-    from ..paths import retros_dir
-
-    issues: list[str] = []
-    out_path = retros_dir(project_dir) / "sessions" / f"{session_id}.md"
-    if not out_path.exists() or out_path.stat().st_size == 0:
-        msg = "output file missing or empty"
-        if runner_error:
-            msg += f" (runner: {runner_error[:200]})"
-        issues.append(msg)
+    out_path = _review_doc_path(project_dir, session_id)
+    raw, issues = _load_review_doc(out_path)
+    if raw is None:
+        if runner_error and issues == [_MISSING_ISSUE]:
+            issues = [f"{_MISSING_ISSUE} (runner: {runner_error[:200]})"]
         return issues
 
-    try:
-        raw = yaml.safe_load(_extract_frontmatter(out_path.read_text()))
-        if not isinstance(raw, dict):
-            issues.append("frontmatter is not a YAML mapping")
-            return issues
-    except yaml.YAMLError as e:
-        issues.append(f"frontmatter parse error: {e}")
-        return issues
-    except (OSError, ValueError) as e:
-        issues.append(f"output unreadable: {e}")
-        return issues
-
+    issues = []
     summary = raw.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         issues.append("`summary` missing or empty")
@@ -176,6 +203,64 @@ def _load_active_hyp_ids(project_dir: Path) -> set[str]:
     from ..rack_workspace import active_hypothesis_ids, rack_workspace
 
     return active_hypothesis_ids(rack_workspace(project_dir))
+
+
+# ---- verdict harvest (HATS-1369) ----
+
+
+def _maybe_harvest_verdicts(project_dir: Path, session_id: str) -> list[str]:
+    """Harvest whatever verdicts the review doc carries; skip (``[]``) when the
+    doc is missing or its frontmatter doesn't parse — nothing to harvest."""
+    out_path = _review_doc_path(project_dir, session_id)
+    raw, _issues = _load_review_doc(out_path)
+    if raw is None:
+        return []
+    verdicts = raw.get("hypothesis_verdicts")
+    if not isinstance(verdicts, list):
+        return []
+    return _harvest_verdicts(project_dir, session_id, verdicts)
+
+
+def _harvest_verdicts(project_dir: Path, session_id: str, verdicts: list) -> list[str]:
+    """Persist each non-``n/a`` verdict into its HYP's ``validation_log``.
+
+    ``session_id`` is this function's OWN argument — the session under
+    review, never a judge/session-reviewer's own id — so quorum_autoclose's
+    independent-session count attributes correctly. ``evidence``/
+    ``recommendation`` are copied verbatim, never reformulated. A verdict
+    without ``hyp_id`` or with ``verdict: n/a`` is skipped; one
+    ``append_verdict`` failure (unknown/inactive hyp_id, race) is logged and
+    does not abort the rest. Returns the hyp_ids actually persisted.
+    """
+    from ..rack_workspace import SESSION_REVIEWER_ACTOR, append_verdict, rack_workspace
+
+    ws = rack_workspace(project_dir)
+    now = datetime.now(timezone.utc)
+    persisted: list[str] = []
+    for v in verdicts:
+        if not isinstance(v, dict):
+            continue
+        hyp_id = v.get("hyp_id")
+        verdict = v.get("verdict")
+        if not hyp_id or verdict is None or verdict == "n/a":
+            continue
+        entry = {
+            "verdict": verdict,
+            "evidence": v.get("evidence"),
+            "recommendation": v.get("recommendation"),
+            "session_id": session_id,
+            "date": v.get("date") or now.date().isoformat(),
+            "timestamp": v.get("timestamp") or now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        try:
+            append_verdict(ws, hyp_id, entry, caller_cwd=project_dir, actor=SESSION_REVIEWER_ACTOR)
+        except (Exception, KeyboardInterrupt):
+            logger.warning(
+                "verdict harvest failed for %s (session %s)", hyp_id, session_id, exc_info=True
+            )
+            continue
+        persisted.append(hyp_id)
+    return persisted
 
 
 # ---- meta-proposal filing ----
