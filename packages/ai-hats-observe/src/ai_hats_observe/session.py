@@ -198,6 +198,21 @@ class Session:
             return False
         return turns > 0 and tool_calls > 0
 
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        """Persist the transcript link at launch, while the session is still alive.
+
+        HATS-1397: it used to be written only at teardown, so every killed
+        session lost the one field that says which transcript was ours. An empty
+        id means the provider never took it (see ``consumed_session_id``) — then
+        nothing is written, because naming a session no surface has is worse
+        than naming none.
+        """
+        if not provider_session_id:
+            return
+        metrics = _load_metrics_safe(self) or {}
+        metrics["claude_session_id"] = provider_session_id
+        atomic_write_text(self.metrics_path, json.dumps(metrics, indent=2))
+
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]

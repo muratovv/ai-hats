@@ -26,7 +26,13 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
-from .session_artifacts import BuiltArtifacts, RunMode, SessionPolicy, assemble_launch_command
+from .session_artifacts import (
+    BuiltArtifacts,
+    RunMode,
+    SessionPolicy,
+    assemble_launch_command,
+    consumed_session_id,
+)
 from .session_report import SessionReport
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
@@ -499,6 +505,11 @@ class WrapRunner:
             session_args=session_args,
             provider_session_id=claude_session_id,
         )
+        # HATS-1397: the argv the provider built is the only honest answer to
+        # "is this id ours?", and the link is persisted here rather than at
+        # teardown so a killed session still names its transcript.
+        claude_session_id = consumed_session_id(cmd, claude_session_id)
+        session.record_provider_session_id(claude_session_id)
 
         # HATS-1216: persist launch record as role_materialization.json
         env_map = {
