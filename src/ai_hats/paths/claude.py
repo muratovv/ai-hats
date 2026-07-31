@@ -7,10 +7,14 @@ move when the live layout does.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
 AI_HATS_MANAGED_MARKER = ".ai-hats-managed"
+
+# Claude Code's project-key slugification: every non-alphanumeric byte -> "-" (HATS-1412).
+_NON_ALNUM_RE = re.compile(r"[^A-Za-z0-9]")
 
 _CLAUDE_DIRNAME = ".claude"
 _CLAUDE_SKILLS_DIRNAME = "skills"
@@ -59,8 +63,8 @@ def claude_md(project_dir: Path) -> Path:
 
 
 def _project_key(project_dir: Path) -> str:
-    """Claude Code's transcript-dir key: absolute project path, ``/`` → ``-``."""
-    return str(project_dir).replace("/", "-")
+    """Claude Code's transcript-dir key: absolute project path, non-alnum → ``-``."""
+    return _NON_ALNUM_RE.sub("-", str(project_dir))
 
 
 def claude_transcripts_dir(project_dir: Path) -> Path:
