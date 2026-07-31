@@ -598,7 +598,7 @@ def wt_exec(subdir: str | None, cmd_args: tuple[str, ...]):
     \b
         ai-hats wt exec -- pytest tests/test_foo.py -xvs      # sole/inside wt
         ai-hats wt exec task/hats-1 -- ruff check src/        # pick a worktree
-        ai-hats wt exec task/hats-1 -C relay -- pytest        # a subproject
+        ai-hats wt exec task/hats-1 -C packages/ai-hats-wt -- pytest  # a subproject
         ai-hats wt exec task/hats-1 python -c 'import ai_hats'
     """
     args = list(cmd_args)
