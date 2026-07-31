@@ -164,4 +164,6 @@ jobs:
           fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
       - name: Check workspace packages are ahead of PyPI
-        run: python scripts/check_pkg_version_skew.py "${{ steps.base.outputs.sha }}"
+        env:
+          SKEW_BASE: ${{ steps.base.outputs.sha }}
+        run: bash scripts/ci-local.sh version-skew

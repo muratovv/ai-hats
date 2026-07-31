@@ -34,13 +34,16 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 ci_lint() {
-    echo "[ci-local] lint (ruff)" >&2
+    echo "[ci-local] lint (ruff check + format)" >&2
     "$PY" -m ruff check .
+    # HATS-1372: the formatter check lived only in `make lint`, behind a failing
+    # `ruff check` — so 20 unformatted files sat on master unseen for weeks.
+    "$PY" -m ruff format --check src/ tests/
 }
 
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
-    "$PY" -m pytest -m "not integration" -q
+    "$PY" -m pytest -m "not integration" -q ${@+"$@"}
 }
 
 ci_coverage() {
@@ -50,7 +53,7 @@ ci_coverage() {
         --cov-report=term-missing \
         --cov-report=xml \
         --cov-fail-under=78 \
-        -q
+        -q ${@+"$@"}
 }
 
 ci_security() {
@@ -61,7 +64,15 @@ ci_security() {
 
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
-    "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q
+    "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
+}
+
+# The full maintainer tier (~25 min). Excluded from `all`; this is the selection
+# the master pre-push gate runs, kept here so `make e2e` cannot mean something
+# narrower than the gate that guards the push (HATS-1372).
+ci_e2e() {
+    echo "[ci-local] e2e (integration + smoke, quarantine excluded)" >&2
+    "$PY" -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
@@ -73,13 +84,15 @@ ci_version_skew() {
 }
 
 stage="${1:-all}"
+shift 2>/dev/null || true   # remaining argv is passed through to the pytest stages
 case "$stage" in
-    lint) ci_lint ;;
-    unit) ci_unit ;;
-    coverage) ci_coverage ;;
-    security) ci_security ;;
-    merge-smoke) ci_merge_smoke ;;
-    version-skew) ci_version_skew ;;
+    lint) ci_lint ${@+"$@"} ;;
+    unit) ci_unit ${@+"$@"} ;;
+    coverage) ci_coverage ${@+"$@"} ;;
+    security) ci_security ${@+"$@"} ;;
+    merge-smoke) ci_merge_smoke ${@+"$@"} ;;
+    e2e) ci_e2e ${@+"$@"} ;;
+    version-skew) ci_version_skew ${@+"$@"} ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_lint
@@ -90,7 +103,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | version-skew | all" >&2
+        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | version-skew | all" >&2
         exit 2
         ;;
 esac
