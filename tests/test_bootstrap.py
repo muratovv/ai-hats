@@ -593,7 +593,7 @@ def test_t15c_wheel_install_still_reads_metadata(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize(
     "body",
-    ["not = [toml", '[project]\nname = "ai-hats"\n', '[build-system]\nrequires = []\n'],
+    ["not = [toml", '[project]\nname = "ai-hats"\n', "[build-system]\nrequires = []\n"],
     ids=["malformed", "no-dependencies", "no-project-table"],
 )
 def test_t15d_unreadable_pyproject_falls_back_to_metadata(monkeypatch, tmp_path, body):

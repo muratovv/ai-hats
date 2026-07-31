@@ -10,6 +10,32 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An editable install whose METADATA went stale now heals itself on the next
+  run** (HATS-1368, HATS-1367, epic HATS-1364). METADATA is written once, at
+  install time, and then drifts from the code the `.pth` points at — in both
+  directions. A sweep of 16 consumer venvs on 2026-07-30 found 11 broken by
+  that drift: 8 with metadata predating the workspace split (it declares no
+  first-party deps, so the startup gate saw nothing missing and the process
+  died importing `ai_hats_wt`) and 3 still declaring the `ai-hats-tracker`
+  deleted in 0.14.0 (healed forever as an already-satisfied no-op). On an
+  editable install the gate now reads the checkout's own `pyproject.toml`,
+  which cannot drift from the code beside it; wheel installs keep reading
+  METADATA. Both the repair it runs and the one it prints re-point the
+  checkout (`uv pip install --python <exe> -e <path>`) instead of naming
+  distributions — the form that no-ops, or, since the workspace members are
+  published, quietly replaces the developer's checkout with PyPI wheels.
+
+  Three fixes ride along. The gate moved ahead of the `ai_hats.cli` import it
+  protects (a venv missing a workspace member used to die importing the module
+  that held the gate, and the "broken install" notice it printed advised
+  `self update` — the very CLI that had just failed). The HATS-1359 no-op-heal
+  recheck no longer misreads a successful editable heal as a no-op: `.pth`
+  files are processed only at interpreter startup, so the site hook is re-run
+  before the recheck. And `heal-editables`, the launcher's channel, now covers
+  `packages/*` workspace members, not only `packages/surfaces/*`.
+
 ## [0.14.0] - 2026-07-29
 
 ### Removed

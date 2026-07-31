@@ -13,7 +13,9 @@ import subprocess
 from pathlib import Path
 
 
-def build_editable_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
+def build_editable_venv(
+    work_dir: Path, repo_root: Path, *, venv_name: str = "venv"
+) -> tuple[Path, Path]:
     """``uv venv`` + ``uv pip install -e <repo_root>``. Returns ``(venv_python, checkout)``.
 
     Installs the working tree, NOT a clone: a clone carries committed state only,
@@ -22,7 +24,7 @@ def build_editable_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     Nothing here writes to ``repo_root`` — the breakage is applied to the venv.
     """
     checkout = repo_root
-    venv = work_dir / "venv"
+    venv = work_dir / venv_name
     subprocess.run(
         ["uv", "venv", str(venv), "--python", "3.11"],
         check=True,

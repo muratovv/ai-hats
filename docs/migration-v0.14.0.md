@@ -253,6 +253,15 @@ the code that runs during *your* upgrade is the version you are upgrading
 **from**, so a pre-0.14.0 install can still hit the loop once — this section is
 the escape hatch for exactly that window.
 
+**Healed automatically after 0.14.0 (HATS-1368/HATS-1367).** Past that window
+the recovery above is what the bootstrap now runs for you: on an editable
+install it reads your checkout's `pyproject.toml` rather than the frozen
+METADATA, so it sees the real dependency set and re-points the checkout itself.
+The same applies to the mirror-image failure this section does not cover — an
+install whose metadata predates the workspace split and declares no first-party
+deps at all, which used to die with a bare `ModuleNotFoundError: ai_hats_wt`.
+Both now heal on the next `ai-hats` invocation.
+
 ## References
 
 **[1]** — [`docs/RELEASING.md`](RELEASING.md) — SemVer policy and the

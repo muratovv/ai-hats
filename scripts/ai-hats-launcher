@@ -361,10 +361,17 @@ if [[ ! -x "$VENV/bin/python" ]]; then
     exit 1
 fi
 if ! probe_imports; then
-    echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable ($PROBE_REASON)." >&2
-    echo "  (a workspace package may be missing)" >&2
-    missing_venv_hint
-    exit 1
+    # HATS-1368: the probe imports ai_hats.cli, which imports workspace members,
+    # so an editable install whose METADATA under-declares them dies here —
+    # before the exec that would let the startup gate heal it. The bootstrap
+    # verify is that gate, minus the re-exec; re-probe before giving up.
+    "$VENV/bin/python" -m ai_hats._bootstrap verify >&2 || true
+    if ! probe_imports; then
+        echo "ai-hats: venv exists at $VENV but the ai-hats CLI is not importable ($PROBE_REASON)." >&2
+        echo "  (a workspace package may be missing)" >&2
+        missing_venv_hint
+        exit 1
+    fi
 fi
 # HATS-966: core is importable but the probe flagged a stale surface-plugin
 # editable (dangling .pth). Best-effort re-point before exec — never block the CLI
