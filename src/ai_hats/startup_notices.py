@@ -10,10 +10,27 @@ setup; a clean start holds for nothing. Extracted from ``runtime_common``
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import re
 import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NoReturn
+
+logger = logging.getLogger(__name__)
+
+_ANSI_REGEX = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])|\r")
+
+
+def strip_ansi_and_control_codes(text: str) -> str:
+    """Remove ANSI escape sequences and control characters from banner text."""
+    if not text:
+        return ""
+    return _ANSI_REGEX.sub("", text)
+
 
 STARTUP_WARN_HOLD_SECONDS = 10.0
 
@@ -29,12 +46,15 @@ def _startup_hold_seconds(
     Policy: ``10s`` when a fail-open startup step emitted a warning, otherwise
     **no hold** — a clean start has nothing to surface, and a **non-tty**
     (headless/CI) run must not be delayed (the ``never block session start``
-    fail-open invariant). ``AI_HATS_STARTUP_HOLD`` overrides the delay for
-    every case (set ``0`` to disable, including in tests); a malformed value
-    is ignored. Pure over its inputs so the policy is unit-testable without
+    fail-open invariant). ``AI_HATS_NON_INTERACTIVE`` overrides everything to ``0.0``.
+    ``AI_HATS_STARTUP_HOLD`` overrides the delay (set ``0`` to disable, including in tests);
+    a malformed value is ignored. Pure over its inputs so the policy is unit-testable without
     sleeping or a real terminal.
     """
     env = env if env is not None else os.environ
+    non_interactive = env.get("AI_HATS_NON_INTERACTIVE", "").strip().lower()
+    if non_interactive in ("1", "true", "yes", "on"):
+        return 0.0
     override = env.get("AI_HATS_STARTUP_HOLD")
     if override is not None:
         try:
@@ -44,6 +64,7 @@ def _startup_hold_seconds(
     if not is_tty or not has_warnings:
         return 0.0
     return STARTUP_WARN_HOLD_SECONDS
+
 
 
 def _countdown_hold(seconds, *, render, poll_skip) -> bool:
@@ -126,7 +147,90 @@ def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
     sleep(delay)
 
 
-def show_fatal_notice_and_exit(text: str, *, exit_code: int = 1) -> NoReturn:
+def show_fatal_notice_and_exit(
+    text: str,
+    *,
+    exit_code: int = 1,
+    session_dir: Path | str | None = None,
+) -> NoReturn:
     """Render a fatal notice via the banner channel and terminate the session immediately."""
+    clean_text = strip_ansi_and_control_codes(text)
+    if session_dir is not None:
+        save_session_diagnostics(
+            session_dir,
+            "startup",
+            {
+                "hold_seconds": 0.0,
+                "notices": [{"level": "fatal", "text": clean_text}],
+            },
+        )
     _print_startup_notices([StartupNotice("fatal", text)])
     sys.exit(exit_code)
+
+
+def save_session_diagnostics(
+    session_dir: Path | str | None,
+    key: str,
+    data: dict,
+) -> None:
+    """Atomic read-modify-write persistence for service-channel diagnostics into `<session_dir>/diagnostics.json`.
+
+    HATS-1221: Captures both pre-session notices and post-session banners into
+    top-level keys (`startup`, `completion`, `retro_reminder`, `update_banner`).
+
+    Fail-soft (HATS-086): catches (Exception, KeyboardInterrupt) so a diagnostic write failure
+    or SIGINT never crashes session setup or teardown. Uses in-dir atomic temporary files to
+    avoid cross-device link errors (`EXDEV`).
+    """
+    if session_dir is None:
+        return
+    try:
+        s_dir = Path(session_dir)
+        if not s_dir.exists() or not s_dir.is_dir():
+            return
+
+        diag_file = s_dir / "diagnostics.json"
+        existing: dict = {}
+        if diag_file.is_file():
+            try:
+                raw = json.loads(diag_file.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    existing = raw
+                else:
+                    try:
+                        diag_file.rename(s_dir / "diagnostics.json.corrupted")
+                    except Exception:
+                        pass
+            except Exception:
+                try:
+                    diag_file.rename(s_dir / "diagnostics.json.corrupted")
+                except Exception:
+                    pass
+
+        existing["schema_version"] = 1
+        existing[key] = data
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=s_dir,
+            prefix="diag_",
+            suffix=".tmp",
+            delete=False,
+            encoding="utf-8",
+        )
+        try:
+            json.dump(existing, tmp, indent=2, ensure_ascii=False)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp.close()
+            os.replace(tmp.name, diag_file)
+        except BaseException:
+            try:
+                tmp.close()
+                os.unlink(tmp.name)  # safe-delete: ok tmp-file
+            except Exception:
+                pass
+            raise
+    except (Exception, KeyboardInterrupt) as exc:
+        logger.warning("save_session_diagnostics failed: %s", exc)
+

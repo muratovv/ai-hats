@@ -102,3 +102,88 @@ def test_session_cli_import_pulls_no_integrator() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, env=env
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+
+def test_session_show_renders_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    """`ai-hats session show` renders Startup Diagnostics and Post-Session Banners when present."""
+    runs = tmp_path / ".agent" / "sessions" / "runs"
+    sid = "20260401T100000Z_diag"
+    _make_session(runs, sid, metrics={"role": "test", "provider": "claude"})
+    sdir = runs / session_dirname(sid)
+
+    diag_payload = {
+        "schema_version": 1,
+        "startup": {
+            "hold_seconds": 0.0,
+            "notices": [
+                {"level": "note", "text": "managed hooks healed at start"},
+                {"level": "warn", "text": "skills mirror drift detected"},
+            ],
+        },
+        "completion": {
+            "duration": "1m 30s",
+            "req_count": 4,
+        },
+        "retro_reminder": {
+            "reminder": {"count": 3, "command": "ai-hats task reflect"},
+            "wrap_up": {"tasks_closed": 2, "duration_min": 15},
+        },
+        "update_banner": {
+            "installed_label": "0.14.0",
+            "latest_label": "0.15.0",
+            "behind": 5,
+        },
+    }
+    (sdir / "diagnostics.json").write_text(json.dumps(diag_payload))
+
+    monkeypatch.chdir(tmp_path)
+    _pin_wt_free_seam(monkeypatch)
+    runner = CliRunner()
+
+    shown = runner.invoke(session, ["show", sid])
+    assert shown.exit_code == 0, shown.output
+    assert "Startup Diagnostics" in shown.output
+    assert "managed hooks healed at start" in shown.output
+    assert "skills mirror drift detected" in shown.output
+    assert "Post-Session Diagnostics & Banners" in shown.output
+    assert "Retro Reminder" in shown.output
+    assert "Update Available" in shown.output
+    assert "diagnostics.json" in shown.output
+
+
+def test_session_show_renders_subagent_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    """`ai-hats session show` renders subagent completion fields cleanly (role, exit_code, duration_s)."""
+    runs = tmp_path / ".agent" / "sessions" / "runs"
+    sid = "20260401T100000Z_subdiag"
+    _make_session(runs, sid, metrics={"role": "subagent-test", "provider": "claude"})
+    sdir = runs / session_dirname(sid)
+
+    diag_payload = {
+        "schema_version": 1,
+        "startup": {
+            "hold_seconds": 0.0,
+            "notices": [],
+        },
+        "completion": {
+            "session_id": sid,
+            "exit_code": 0,
+            "role": "subagent-test",
+            "duration_s": 14.5,
+            "timed_out": False,
+            "error": None,
+        },
+    }
+    (sdir / "diagnostics.json").write_text(json.dumps(diag_payload))
+
+    monkeypatch.chdir(tmp_path)
+    _pin_wt_free_seam(monkeypatch)
+    runner = CliRunner()
+
+    shown = runner.invoke(session, ["show", sid])
+    assert shown.exit_code == 0, shown.output
+    assert "Startup Diagnostics" in shown.output
+    assert "Clean start" in shown.output
+    assert "Post-Session Diagnostics & Banners" in shown.output
+    assert "duration 14.5s" in shown.output
+    assert "role 'subagent-test'" in shown.output
+    assert "exit 0" in shown.output

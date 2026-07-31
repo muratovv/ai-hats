@@ -305,6 +305,88 @@ def _render_usage(session) -> None:
         _seam._CONSOLE.print(line, markup=False)
 
 
+def _render_diagnostics(session) -> None:
+    """Render startup diagnostics and post-session banners from diagnostics.json."""
+    import json
+
+    diag_file = session.session_dir / "diagnostics.json"
+    if not diag_file.exists():
+        return
+    try:
+        diag = json.loads(diag_file.read_text(encoding="utf-8"))
+        if not isinstance(diag, dict):
+            return
+    except (json.JSONDecodeError, OSError):
+        return
+
+    startup = diag.get("startup")
+    if isinstance(startup, dict):
+        notices = startup.get("notices") or []
+        hold = startup.get("hold_seconds", 0.0)
+        _seam._CONSOLE.print(f"\n[bold]Startup Diagnostics[/] ([dim]hold: {hold}s[/]):")
+        if not notices:
+            _seam._CONSOLE.print("  [green]✓ Clean start (no warnings or notes)[/]")
+        else:
+            for n in notices:
+                lvl = n.get("level", "info")
+                txt = n.get("text", "")
+                if lvl == "note":
+                    _seam._CONSOLE.print(f"  [green]✓ {txt}[/]", markup=False)
+                elif lvl == "fatal":
+                    _seam._CONSOLE.print(f"  [red]✕ {txt}[/]", markup=False)
+                else:
+                    _seam._CONSOLE.print(f"  [yellow]⚠ {txt}[/]", markup=False)
+
+    completion = diag.get("completion")
+    retro = diag.get("retro_reminder")
+    update = diag.get("update_banner")
+
+    if completion or retro or update:
+        _seam._CONSOLE.print("\n[bold]Post-Session Diagnostics & Banners[/]:")
+
+        if isinstance(completion, dict):
+            dur = completion.get("duration")
+            if dur is None and "duration_s" in completion:
+                ds = completion.get("duration_s")
+                if ds is not None:
+                    dur = f"{ds:.1f}s"
+            dur_str = dur if dur is not None else "?"
+
+            turns = completion.get("req_count")
+            role = completion.get("role")
+            exit_code = completion.get("exit_code")
+            error = completion.get("error")
+            timed_out = completion.get("timed_out")
+
+            parts = [f"duration {dur_str}"]
+            if turns is not None:
+                parts.append(f"{turns} turns")
+            if role is not None:
+                parts.append(f"role '{role}'")
+            if exit_code is not None:
+                parts.append(f"exit {exit_code}")
+            if timed_out:
+                parts.append("TIMED OUT")
+            if error:
+                parts.append(f"error: {error}")
+
+            _seam._CONSOLE.print(f"  ✨ [green]Completion[/]: {', '.join(parts)}")
+
+        if isinstance(retro, dict):
+            rem = retro.get("reminder")
+            if isinstance(rem, dict):
+                _seam._CONSOLE.print(f"  📝 [cyan]Retro Reminder[/]: Reflect through {rem.get('count')} sessions (`{rem.get('command')}`)")
+            wrap = retro.get("wrap_up")
+            if isinstance(wrap, dict):
+                _seam._CONSOLE.print(f"  🧹 [cyan]Wrap Up[/]: {wrap.get('tasks_closed')} tasks closed in {wrap.get('duration_min')}m")
+
+        if isinstance(update, dict):
+            inst = update.get("installed_label") or update.get("installed_sha", "?")
+            latest = update.get("latest_label") or update.get("latest_sha", "?")
+            behind = update.get("behind", 0)
+            _seam._CONSOLE.print(f"  🚀 [yellow]Update Available[/]: {inst} → {latest} (+{behind} commits). Run: ai-hats self update")
+
+
 @session.command("show")
 @click.argument("session_id")
 def session_show(session_id: str):
@@ -337,10 +419,11 @@ def session_show(session_id: str):
         except (json.JSONDecodeError, OSError) as e:
             _seam._CONSOLE.print(f"[yellow]Cannot read metrics: {e}[/]")
 
+    _render_diagnostics(s)
     _render_usage(s)
 
     artifacts = []
-    for name in (AUDIT_MD, METRICS_JSON, USAGE_JSON, TRACE_LOG, TRANSCRIPT_TXT, REASONING_LOG, META_PROMPT_TXT):
+    for name in ("diagnostics.json", AUDIT_MD, METRICS_JSON, USAGE_JSON, TRACE_LOG, TRANSCRIPT_TXT, REASONING_LOG, META_PROMPT_TXT):
         p = s.session_dir / name
         if p.exists() and p.stat().st_size > 0:
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
