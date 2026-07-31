@@ -170,10 +170,10 @@ class FdPtyTap:
                 pass
             if self._pending_r:
                 self._pending_r = False
-                try:
-                    self._inject(b"\r")
-                except Exception:  # noqa: S110, BLE001
-                    pass
+                # Deliberately unguarded, like the direct _inject calls in
+                # _handle_raw_input — a swallowed failure here drops the user's
+                # Enter with no trace (HATS-1373).
+                self._inject(b"\r")
             return
 
         if fd == self._in_fd:
