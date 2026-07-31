@@ -21,6 +21,4 @@ def test_paths_package_single_env_reader() -> None:
             if "os.environ" in line:
                 violations.append(f"paths/{py_file.name}:{idx}: {line.strip()}")
 
-    assert not violations, (
-        "os.environ found outside env.py in paths:\n" + "\n".join(violations)
-    )
+    assert not violations, "os.environ found outside env.py in paths:\n" + "\n".join(violations)

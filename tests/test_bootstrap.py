@@ -531,9 +531,7 @@ def test_t14_editable_source_dir_returns_checkout(monkeypatch, tmp_path):
         pytest.param(
             '{"url": "https://example/ai_hats.whl", "archive_info": {}}', id="direct-url-wheel"
         ),
-        pytest.param(
-            '{"url": "git+ssh://git@host/ai-hats", "vcs_info": {"vcs": "git"}}', id="vcs"
-        ),
+        pytest.param('{"url": "git+ssh://git@host/ai-hats", "vcs_info": {"vcs": "git"}}', id="vcs"),
     ],
 )
 def test_t14b_editable_source_dir_none_for_non_editable(monkeypatch, payload):
