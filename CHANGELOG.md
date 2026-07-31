@@ -55,12 +55,12 @@ since the latest tag lives under **Unreleased** until the next release.
   file-watchers, `git status`, greps and indexers all pay for, and regenerable
   state should not be in it. Both env vars name a *base*, never a final root —
   `cache_root()` always appends the project key, so a var leaked into another
-  project's shell cannot merge two caches. No user action: migration step 9
-  carries `probe-mirror` (a bare clone, hundreds of MB — a full refetch is the
-  cost of losing it) and `update-check.json` to the new root; per-session dirs
-  stay put, since one may belong to a session running right now, and are
-  drained within the day by the TTL sweep's legacy arm
-  (`legacy_session_cache_root`). New resolvers `cache_home()` / `project_key()`
+  project's shell cannot merge two caches. No user action and no migration —
+  a cache is re-derived, not carried: new sessions build in the new root and
+  the session-start sweep deletes the old in-tree `.cache/` (session dirs wait
+  out the TTL, since one may belong to a session that started before the move).
+  The only cost is one re-fetch of the probe mirror.
+  New resolvers `cache_home()` / `project_key()`
   / `cache_root()` in `src/ai_hats/paths/_dirs.py`; `session_cache_root()` /
   `session_cache_dir()` keep their names. The standalone agy hook dispatcher
   runs without importing ai-hats, so it takes the resolved dir from

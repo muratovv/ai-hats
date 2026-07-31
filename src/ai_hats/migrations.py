@@ -221,34 +221,6 @@ def _m_retire_agy_token_zeros(a: "Assembler") -> None:
         )
 
 
-def _m_relocate_cache_out_of_workspace(a: "Assembler") -> None:
-    """Move the durable cache members to the out-of-tree root (HATS-1398).
-
-    Only ``probe-mirror`` (a bare git mirror, ~200 MB) and ``update-check.json``
-    are carried: rebuilding the mirror costs a full refetch. Per-session dirs are
-    left where they are — a live session is still reading its own, and the TTL
-    sweep's legacy arm reaps them within the day.
-    """
-    from .paths import ai_hats_dir, cache_root
-
-    legacy = ai_hats_dir(a.project_dir) / ".cache"
-    if not legacy.is_dir():
-        return
-
-    target = cache_root(a.project_dir)
-    for name in ("probe-mirror", "update-check.json"):
-        src = legacy / name
-        if not src.exists() or (target / name).exists():
-            continue
-        try:
-            target.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(target / name))
-        except OSError as err:
-            # Regenerable either way — leave the source alone and let the next
-            # probe rebuild rather than lose it half-moved.
-            logger.warning("could not relocate %s: %s", src, err)
-
-
 # ----- v4-layout migration logic (HATS-715: moved out of Assembler) --------
 #
 # Take the Assembler for shared helpers (a._idempotent_move /
@@ -483,11 +455,6 @@ MIGRATIONS: list[Migration] = [
         step=8,
         run=_m_retire_agy_token_zeros,
         label="retire fabricated agy token zeros HATS-1397",
-    ),
-    Migration(
-        step=9,
-        run=_m_relocate_cache_out_of_workspace,
-        label="relocate cache out of the workspace HATS-1398",
     ),
 ]
 

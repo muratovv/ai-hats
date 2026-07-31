@@ -111,7 +111,7 @@ def test_dispatcher_fires_a_hook_from_the_out_of_tree_cache(agy_session) -> None
     assert marker.read_text().strip() == "FIRED"
 
 
-def test_dispatcher_without_the_pin_says_so_before_falling_back(agy_session) -> None:
+def test_dispatcher_without_the_pin_says_so(agy_session) -> None:
     """A pre-move session must degrade loudly, not look like 'no hooks here'."""
     project, env, _marker = agy_session
     env.pop("AI_HATS_SESSION_CACHE_DIR")

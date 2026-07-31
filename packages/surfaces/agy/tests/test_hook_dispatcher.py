@@ -60,20 +60,18 @@ def test_dispatcher_executes_hook_from_pinned_cache_dir(tmp_path: Path, monkeypa
     assert marker_file.read_text().strip() == "OK"
 
 
-def test_dispatcher_falls_back_to_legacy_in_tree_path_out_loud(
+def test_dispatcher_without_the_pin_says_so_instead_of_exiting_quietly(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    """A session built before the move still fires — and says so (HATS-1373 class)."""
-    project = tmp_path / "project"
-    legacy = project / ".agent" / "ai-hats" / ".cache" / "sessions" / "sid-legacy"
-    marker_file, hook_script = _marker_hook(tmp_path)
-    _seed_manifest(legacy, hook_script)
+    """An ai-hats session with no pin predates the move — say it (HATS-1373 class).
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-legacy")
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    Exit 0 alone is what "this session has no hooks" looks like, so silence here
+    would hide unreachable hooks rather than report them.
+    """
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-stale")
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "project"))
     monkeypatch.delenv("AI_HATS_SESSION_CACHE_DIR", raising=False)
 
     res = dispatch_hook("PreToolUse", tool_name="Edit")
     assert res == 0
-    assert marker_file.read_text().strip() == "OK"
     assert "AI_HATS_SESSION_CACHE_DIR unset" in capsys.readouterr().err

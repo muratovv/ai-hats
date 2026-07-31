@@ -24,7 +24,6 @@ from ai_hats.paths import (
     is_usable_version,
     last_backup_path,
     legacy_paths_by_class,
-    legacy_session_cache_root,
     library_dir,
     normalize_ai_hats_dir,
     normalize_venv_path,
@@ -605,16 +604,6 @@ def test_cache_class_lives_outside_the_project(tmp_path, monkeypatch, _no_cache_
         cache_path(project),
     ):
         assert not path.is_relative_to(project), path
-
-
-def test_legacy_session_cache_root_still_points_in_tree(tmp_path, monkeypatch):
-    """The legacy arm keeps resolving the pre-move location — sweep + fallback need it."""
-    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "proj" / ".agent" / "ai-hats"))
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj"))
-    project = tmp_path / "proj"
-    assert legacy_session_cache_root(project) == (
-        project / ".agent" / "ai-hats" / ".cache" / "sessions"
-    )
 
 
 # ---------- HATS-647: versioned install layout + lazy-migration resolve ----------

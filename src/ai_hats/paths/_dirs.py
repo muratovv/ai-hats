@@ -376,15 +376,6 @@ def session_cache_root(project_dir: Path) -> Path:
     return cache_root(project_dir) / "sessions"
 
 
-def legacy_session_cache_root(project_dir: Path) -> Path:
-    """Pre-HATS-1398 in-tree session cache: ``<ai_hats_dir>/.cache/sessions/``.
-
-    Kept for the TTL sweep's legacy arm and the agy dispatcher's fallback, so a
-    session built before the move is still reachable. Nothing writes here.
-    """
-    return ai_hats_dir(project_dir) / ".cache" / "sessions"
-
-
 def session_cache_dir(project_dir: Path, session_id: str) -> Path:
     """Per-session cache dir: ``<cache_root>/sessions/<session_id>/``."""
     return session_cache_root(project_dir) / session_id
@@ -757,7 +748,6 @@ __all__ = [
     "project_key",
     "cache_root",
     "session_cache_root",
-    "legacy_session_cache_root",
     "session_cache_dir",
     "library_dir",
     "rules_dir",
