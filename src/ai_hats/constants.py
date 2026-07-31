@@ -32,6 +32,10 @@ ALWAYS_ON_RULES = {
     # HATS-842: promoted so the agent reads the exact few-shot guide at
     # authoring time; dropped from SUMMARIZED_IN_INJECTION.
     "dev_rule_comment_discipline",
+    # HATS-1373: the distinction it draws — breadth of the catch is fine,
+    # silence of the body is not — does not survive being summarized into a
+    # bullet, which reads as the opposite lesson ("never catch broadly").
+    "dev_rule_silent_fallback",
 }
 
 
