@@ -23,6 +23,7 @@ from .config import (  # noqa: F401
     WorktreeConfig,
     _DEPRECATED_PROJECT_FIELDS,
 )
+from .provenance import ComponentLayer  # noqa: F401
 from .libraries.models import (  # noqa: F401
     GIT_HOOK_EVENTS,
     RUNTIME_HOOK_EVENTS,

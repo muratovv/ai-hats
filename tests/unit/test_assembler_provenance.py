@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentType, ProjectConfig, UserConfig
+from ai_hats.provenance import ComponentLayer, classify_component_layer
 
 
 def _make_assembler(tmp_path: Path) -> Assembler:
@@ -28,21 +29,57 @@ def test_classify_component_layer(tmp_path: Path, monkeypatch) -> None:
     # 1. Global path
     global_path = user_home_dir / ".ai-hats" / "rules" / "global-rule"
     global_path.mkdir(parents=True)
-    assert assembler._classify_component_layer(global_path) == "global"
+    assert (
+        classify_component_layer(
+            global_path,
+            project_dir=assembler.project_dir,
+            library_paths=assembler.library_paths,
+            project_config_paths=assembler.project_config.library_paths,
+        )
+        == ComponentLayer.GLOBAL
+    )
+    assert assembler._classify_component_layer(global_path) == ComponentLayer.GLOBAL
 
     # 2. Project-local path
     proj_lib_path = tmp_path / "project" / "libraries" / "rules" / "proj-rule"
     proj_lib_path.mkdir(parents=True)
     assembler.library_paths.append(tmp_path / "project" / "libraries")
-    assert assembler._classify_component_layer(proj_lib_path) == "project"
+    assert (
+        classify_component_layer(
+            proj_lib_path,
+            project_dir=assembler.project_dir,
+            library_paths=assembler.library_paths,
+            project_config_paths=assembler.project_config.library_paths,
+        )
+        == ComponentLayer.PROJECT
+    )
+    assert assembler._classify_component_layer(proj_lib_path) == ComponentLayer.PROJECT
 
     # 3. Built-in path (or arbitrary path outside global/project)
     builtin_path = tmp_path / "builtin" / "rules" / "core-rule"
     builtin_path.mkdir(parents=True)
-    assert assembler._classify_component_layer(builtin_path) == "built-in"
+    assert (
+        classify_component_layer(
+            builtin_path,
+            project_dir=assembler.project_dir,
+            library_paths=assembler.library_paths,
+            project_config_paths=assembler.project_config.library_paths,
+        )
+        == ComponentLayer.BUILT_IN
+    )
+    assert assembler._classify_component_layer(builtin_path) == ComponentLayer.BUILT_IN
 
     # 4. None path
-    assert assembler._classify_component_layer(None) == "built-in"
+    assert (
+        classify_component_layer(
+            None,
+            project_dir=assembler.project_dir,
+            library_paths=assembler.library_paths,
+            project_config_paths=assembler.project_config.library_paths,
+        )
+        == ComponentLayer.BUILT_IN
+    )
+    assert assembler._classify_component_layer(None) == ComponentLayer.BUILT_IN
 
 
 def test_get_overlay_provenance_bundled_rule(tmp_path: Path, monkeypatch) -> None:
@@ -77,4 +114,4 @@ def test_get_overlay_provenance_bundled_rule(tmp_path: Path, monkeypatch) -> Non
         patch.object(assembler.composer, "compose", return_value=mock_comp_result),
     ):
         provenance = assembler._get_overlay_provenance("assistant")
-        assert provenance["rules"].get("custom-global-rule") == "global"
+        assert provenance["rules"].get("custom-global-rule") == ComponentLayer.GLOBAL.value
