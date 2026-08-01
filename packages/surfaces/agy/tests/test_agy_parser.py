@@ -59,7 +59,7 @@ def test_agy_parser_parses_transcript_jsonl(tmp_path: Path) -> None:
 
     usage = parser.parse_usage(jsonl_path, trace_path)
     assert usage["aggregates"]["tool_calls"] == 2
-    assert "token-telemetry-unavailable" not in usage["flags"]
+    assert "token-telemetry-unavailable" in usage["flags"]
     assert usage["aggregates"]["input_tokens"] > 0 or usage["aggregates"]["output_tokens"] > 0
 
 
@@ -173,7 +173,7 @@ def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path)
 
     assert len(parsed.turns) == 3, "the tail fragment displaced the whole conversation"
     assert parsed.turns[0].user_input == "first question"
-    assert "token-telemetry-unavailable" not in parsed.flags
+    assert "token-telemetry-unavailable" in parsed.flags
     assert "no-structured-transcript" not in parsed.flags, (
         "a structured transcript did exist — marking the record unmeasured would "
         "drop its counters and make auto_retro skip the session"
@@ -242,7 +242,7 @@ def test_agy_parser_extracts_tokens_from_trace_log(tmp_path: Path) -> None:
     parsed = parser.parse(None, trace)
     assert parsed.agg_usage["output_tokens"] == 495
     assert parsed.agg_usage["input_tokens"] == 4200
-    assert "token-telemetry-unavailable" not in parsed.flags
+    assert "token-telemetry-unavailable" in parsed.flags
 
 
 def test_agy_parser_does_not_drop_same_second_tool_calls_with_empty_content(tmp_path: Path) -> None:
