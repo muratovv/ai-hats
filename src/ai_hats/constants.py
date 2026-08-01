@@ -36,6 +36,10 @@ ALWAYS_ON_RULES = {
     # silence of the body is not — does not survive being summarized into a
     # bullet, which reads as the opposite lesson ("never catch broadly").
     "dev_rule_silent_fallback",
+    # HATS-1430: the invariant is whose status you read; a summarized bullet
+    # collapses back into a list of masking spellings, which is the enumeration
+    # that let `pytest …; echo "EXIT=$?"` through.
+    "dev_rule_exit_code_provenance",
 }
 
 
