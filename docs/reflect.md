@@ -4,7 +4,7 @@ Subcommands of `ai-hats reflect` cover the retrospective and backlog triage life
 
 - `reflect session` — per-session `session-reviewer` run.
 - `reflect hypothesis` — two-phase bulk triage of active HYP + open PROP (`judge-auditor` Phase 1 -> `judge` Phase 2).
-- `reflect role <target>` / `reflect roles` — role coherence audit (`judge-for-role`).
+- `reflect role <target>` / `reflect roles` — role coherence audit (`role-judge`).
 - `reflect issue <observation>` — Haiku-assisted observation intake (`hypothesis-intake`).
 - `reflect commit` — bulk update proposal statuses.
 - `reflect all` — deprecated single-phase triage (superseded by `reflect hypothesis`).
@@ -41,12 +41,13 @@ session end
     │      3. merge facts + analysis → SessionReviewV1
     │      4. write <ai_hats_dir>/sessions/retros/sessions/<id>.md
     │         (schema: hats-session-review/v1)
-    ├─ on HarnessReliabilityError → file ONE meta-proposal
-    │    (target=harness-incident) and `return 2` — the harvest and
-    │    harness check below are SKIPPED entirely
     ├─ _maybe_harvest_verdicts → _harvest_verdicts   # pure-Python
     │    non-`n/a` hypothesis_verdicts → append_verdict into each
-    │    HYP's validation_log (actor=rack:session-reviewer)
+    │    HYP's validation_log (actor=rack:session-reviewer).
+    │    Runs before either error branch below (HATS-1422)
+    ├─ on HarnessReliabilityError → file ONE meta-proposal
+    │    (target=harness-incident) and `return 2` — the harvest above
+    │    already ran; only the harness check below is skipped
     └─ _harness_check (pure-Python)
          missing/empty/incomplete → file ONE meta-proposal
            (category=process, target=session-reviewer,
@@ -58,7 +59,7 @@ Triggers:
 - **Auto** on session end (when `feedback.session_retro.policy=always`, or `policy=smart` with the `smart_threshold` met — `off` and `hint` never spawn a run). Detached background process, unless `background: false` selects the in-process branch.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
-`_maybe_harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `_harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It survives a `SessionReviewError` (a stale/partial doc still has verdicts worth harvesting), but **not** a `HarnessReliabilityError`: that branch returns before the doc is ever loaded, so a subprocess timeout or a zero-output guard drops the harvest even when a doc with verdicts is on disk. `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
+`_maybe_harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `_harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It survives **both** error branches (HATS-1422): the doc is loaded and harvested before either is handled, so a `SessionReviewError` or a harness-layer failure — subprocess timeout, zero-output guard — no longer drops verdicts that are already on disk. A stale or partial doc still carries verdicts worth harvesting. `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
 
 Meta-proposals are deduped per `(failed_session_id, target)` pair, not per session — the `harness-incident` and `session-reviewer` facets coexist, so one session id can carry two.
 
@@ -75,9 +76,9 @@ Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats
 
 ### `ai-hats reflect role <target>` / `reflect roles`
 
-Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`.
+Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `role-judge`.
 
-The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/judge-for-role/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
+The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/role-judge/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
 
 ### `ai-hats reflect issue <text>`
 

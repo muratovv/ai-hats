@@ -8,7 +8,7 @@ license: MIT
 
 Narrow companion to **hatrack** for roles authorized to file tasks
 but not to drive the full lifecycle (transitions, hyp/proposal mutations).
-Used by L1 analyst roles like `judge-for-role` whose mutation policy
+Used by L1 analyst roles like `role-judge` whose mutation policy
 whitelists exactly `rack create` + `ai-hats list …`.
 
 For the full backlog lifecycle (state machine, hyp / proposal verbs,
@@ -19,7 +19,7 @@ For the full backlog lifecycle (state machine, hyp / proposal verbs,
 **Prefer the sibling hatrack for anything past `rack create`** —
 a state transition, a work-log entry, a hyp/proposal verb, `plan-extract`. This
 skill is the file-only subset for L1 roles whose mutation policy whitelists
-task-create + read-only listing and nothing more (e.g. `judge-for-role`). The
+task-create + read-only listing and nothing more (e.g. `role-judge`). The
 moment you want to *move* the task you just filed, you've left this skill's remit
 for hatrack's.
 

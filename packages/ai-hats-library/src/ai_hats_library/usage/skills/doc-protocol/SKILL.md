@@ -77,7 +77,7 @@ At plan stage, do NOT plan to enumerate every item. Instead:
 2. **Present a keep / drop / merge triage** via `AskUserQuestion` or as an explicit plan-stage fork.
 3. **Defaults:**
    - Keep **≤5** items.
-   - **Merge clusters** that share an audience (e.g., "judge / judge-for-role / auditor-for-role" → one entry for the reflection-role cluster).
+   - **Merge clusters** that share an audience (e.g., "judge / role-judge / role-auditor" → one entry for the reflection-role cluster).
    - **Drop low-surface items** (engine-internal plumbing, names referenced only from code).
 
 Treat the task-description enumeration as **research notes** (which items

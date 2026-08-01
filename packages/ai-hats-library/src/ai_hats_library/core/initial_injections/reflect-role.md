@@ -1,6 +1,6 @@
 # Role coherence audit — {target_role}
 
-Apply **role-coherence-protocol** end-to-end. You are `judge-for-role`,
+Apply **role-coherence-protocol** end-to-end. You are `role-judge`,
 so deliver the report via the Write tool at session exit (see your
 role injection for the path) — do NOT emit `BEGIN_REFLECT` /
 `END_REFLECT` markers. The supervisor may interact mid-session; see

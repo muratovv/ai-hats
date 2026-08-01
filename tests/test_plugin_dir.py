@@ -44,9 +44,9 @@ def test_returns_target_plugin_dir(tmp_path: Path) -> None:
 
 def test_plugin_json_shape(tmp_path: Path) -> None:
     target = tmp_path / "plugin"
-    out = materialize_plugin_dir("judge-for-role", [], tmp_path, target, ApplyMaterializer())
+    out = materialize_plugin_dir("role-judge", [], tmp_path, target, ApplyMaterializer())
     manifest = json.loads((claude_plugin_manifest(out)).read_text())
-    assert manifest["name"] == "ai-hats-judge-for-role"
+    assert manifest["name"] == "ai-hats-role-judge"
     assert "version" in manifest
 
 
@@ -59,7 +59,7 @@ def test_copies_skill_directory(tmp_path: Path) -> None:
         body="---\nname: role-coherence-protocol\ndescription: x\n---\n# body\n",
     )
     out = materialize_plugin_dir(
-        "judge-for-role", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
+        "role-judge", [skill], tmp_path, tmp_path / "plugin", ApplyMaterializer()
     )
     copied = out / "skills" / "role-coherence-protocol" / "SKILL.md"
     assert copied.exists()

@@ -6,7 +6,7 @@ Accepted (HATS-307, 2026-05-18).
 
 ## Context
 
-Sub-agent sessions spawned via `ai-hats reflect role` / `execute` cannot invoke role-specific skills through the Skill tool. Example: `Skill('role-coherence-protocol')` raises `Error: Unknown skill` inside `auditor-for-role` / `judge-for-role`, even though the skill is in the spawned role's composition.
+Sub-agent sessions spawned via `ai-hats reflect role` / `execute` cannot invoke role-specific skills through the Skill tool. Example: `Skill('role-coherence-protocol')` raises `Error: Unknown skill` inside `role-auditor` / `role-judge`, even though the skill is in the spawned role's composition.
 
 Root cause: the project's `.claude/skills/` mirror is populated by `Assembler.set_role` and reflects the *active* role (typically `assistant`). Spawned roles run in the same `project_dir` and therefore read the active role's mirror — so any skill that lives only in the spawned role's composition is physically absent from Claude Code's Skill registry.
 

@@ -1,13 +1,13 @@
 ---
 name: role-coherence-protocol
-description: "Audit a composed role against the user's project context for contradictions and interference, producing free-form findings with proposed fixes. Use when launched as a role-auditing role (auditor-for-role, judge-for-role, or sibling) whose first user message contains the target role's composed text plus the project context to audit against it."
+description: "Audit a composed role against the user's project context for contradictions and interference, producing free-form findings with proposed fixes. Use when launched as a role-auditing role (role-auditor, role-judge, or sibling) whose first user message contains the target role's composed text plus the project context to audit against it."
 license: MIT
 ---
 
 # Role Coherence Protocol
 
-Audit method for any role-auditing role (`auditor-for-role`,
-`judge-for-role`, and future role-audit family). Verifies that a target
+Audit method for any role-auditing role (`role-auditor`,
+`role-judge`, and future role-audit family). Verifies that a target
 role's composed instructions are internally consistent and do not
 interfere with the user's project files (`./CLAUDE.md`,
 `.agent/ai-hats/user-rules/*.md`). Run by `ai-hats reflect role <name>`
@@ -20,8 +20,8 @@ base trait — `base-auditor` (no CLI / no dialogue) vs `base-judge`
 
 ## When to Use
 
-You were launched as a role-auditing role (`auditor-for-role`,
-`judge-for-role`, or sibling). The first user message contains the
+You were launched as a role-auditing role (`role-auditor`,
+`role-judge`, or sibling). The first user message contains the
 target role's composed text plus the project context that should be
 audited against it. Apply this protocol end-to-end and deliver the
 report per §Step 3 — the delivery branch (markers vs Write tool) is
@@ -159,9 +159,9 @@ the **Write** tool to save the report directly to the path declared in
 your role injection (typically
 `<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`). Do
 NOT emit `BEGIN_REFLECT` / `END_REFLECT` markers — the pipeline does
-not extract them on this path. Used by `judge-for-role` via
+not extract them on this path. Used by `role-judge` via
 `ai-hats reflect role` and manual `ai-hats execute --role
-judge-for-role`.
+role-judge`.
 
 ## Edge Cases
 

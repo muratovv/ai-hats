@@ -10,6 +10,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- **The two role-audit roles were renamed** (HATS-1425): `auditor-for-role` →
+  `role-auditor`, `judge-for-role` → `role-judge`. The system carries two
+  headless-auditor → HITL-judge pairs, and only this one was named off-pattern
+  (`judge-auditor` → `judge` beside `auditor-for-role` → `judge-for-role`),
+  which read as if the auditor were a curator rather than its opposite. Neither
+  role's composition, protocol, or contract changed. **If a customization
+  block, project `ai-hats.yaml`, or script names either old role, update it:
+  `ComponentConfig` is declared `extra="ignore"`, so a stale role key is
+  dropped silently — the customization simply stops applying, with no error.**
 
 ### Fixed
 
@@ -65,7 +76,6 @@ since the latest tag lives under **Unreleased** until the next release.
   `session_cache_dir()` keep their names. The standalone agy hook dispatcher
   runs without importing ai-hats, so it takes the resolved dir from
   `AI_HATS_SESSION_CACHE_DIR`, pinned into the session env at spawn.
-
 
 ## [0.14.0] - 2026-07-29
 

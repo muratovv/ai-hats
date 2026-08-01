@@ -1,4 +1,4 @@
-name: auditor-for-role
+name: role-auditor
 priorities:
   - Coherence
   - Specificity-of-findings

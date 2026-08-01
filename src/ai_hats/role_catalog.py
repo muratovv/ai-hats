@@ -10,7 +10,7 @@ never appeared. Instead, the wizard injection now carries the
 with the **live** catalog the resolver actually sees.
 
 ``user_facing=True`` drops engine-internal (``core``-layer) roles — the
-wizard must never recommend ``judge`` / ``auditor-for-role`` / itself.
+wizard must never recommend ``judge`` / ``role-auditor`` / itself.
 Layer is derived from the resolved role directory: a role lives at
 ``<libroot>/roles/<name>``, so the libroot's own name (``core`` / ``usage``
 / anything else) classifies it.

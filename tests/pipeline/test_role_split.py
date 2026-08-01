@@ -241,8 +241,8 @@ def test_glossary_has_reflect_role_mapping_table() -> None:
     body = _read("docs/glossary.md")
     # Compact table introduced by HATS-381 promoting reference_ai_hats_reflect_roles.
     assert "ai-hats reflect roles" in body
-    assert "auditor-for-role" in body
-    assert "judge-for-role" in body
+    assert "role-auditor" in body
+    assert "role-judge" in body
 
 
 def test_contributing_has_maintainer_pointer() -> None:
