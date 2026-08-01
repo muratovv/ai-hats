@@ -309,7 +309,7 @@ def reflect_hypothesis_cmd(headless: bool, dry_run: bool):
         raise click.ClickException(
             "built-in initial_injection 'reflect-hypothesis-interactive' not found"
         )
-    preamble2 = preamble2_path.read_text()
+    preamble2 = _fill_inbox_digest(preamble2_path.read_text(), project_dir)
     combined2 = preamble2.replace("{draft_body}", draft_path.read_text())
 
     console.print("[cyan]→ Phase 2 — judge (HITL session with draft inlined)[/]")
@@ -954,3 +954,81 @@ def _build_handoff(project_dir: Path) -> Path:
 
     path.write_text("\n".join(parts))
     return path
+
+
+# ---- open-PROP digest (Phase 2 preamble; HATS-1385) ----
+
+#: What the runtime safety net stamps on an auto-filed PROP — see
+#: `cli/reflect_session_main.py` TARGET_* and `_build_meta_proposal_body`.
+_AUTO_TARGETS = frozenset({"harness-incident", "session-reviewer"})
+_AUTO_TITLES = ("harness incident: ", "session-reviewer incomplete: ")
+
+_DIGEST_TOP = 5
+
+
+def _is_auto_filed(prop) -> bool:
+    """Target AND title AND no vote — each clause has a measured victim without
+    the others (HATS-1385): a card *about* the harness wears the harness target
+    (PROP-107, 5 votes), and `--failed-session-id` marks authorship, not origin."""
+    return prop.target in _AUTO_TARGETS and prop.title.startswith(_AUTO_TITLES) and not prop.votes
+
+
+def _prop_number(prop_id: str) -> int:
+    """`PROP-107` → 107. Ids are monotonic, so id order is filing order — the
+    age axis needs no date field on the card."""
+    tail = prop_id.rpartition("-")[2]
+    return int(tail) if tail.isdigit() else 0
+
+
+def _build_inbox_digest(project_dir: Path) -> str:
+    """Compact open-PROP inventory for the Phase 2 preamble.
+
+    A digest, not the handoff's dump: that section measured ~126K chars on a
+    147-card inbox, and the judge handed it still missed the inbox (HATS-1323).
+    Ranked on two axes — votes AND age — because vote counts predating the
+    HATS-1397 reviewer fix are systematically depressed.
+    """
+    props = open_proposals(rack_workspace(project_dir))
+    if not props:
+        return "## PROP inbox\n\n(inbox empty — 0 open proposals)\n"
+
+    auto = [p for p in props if _is_auto_filed(p)]
+    rest = [p for p in props if not _is_auto_filed(p)]
+    lines = [
+        f"## PROP inbox — {len(props)} open",
+        "",
+        f"- auto-filed, unvoted: {len(auto)} — ONE batch decision under a shared "
+        "criterion (**review-proposal** Step 3b), not that many judgements",
+        f"- everything else: {len(rest)} — the half that needs you",
+    ]
+    if rest:
+        lines += ["", f"Leaders by votes (top {_DIGEST_TOP}):"]
+        by_votes = sorted(rest, key=lambda p: (-len(p.votes), _prop_number(p.id)))
+        lines += [f"- {p.id} ({len(p.votes)} votes) — {p.title}" for p in by_votes[:_DIGEST_TOP]]
+        lines += [
+            "",
+            f"Longest open (top {_DIGEST_TOP}) — the second axis: votes cast before "
+            "the HATS-1397 reviewer fix run low, so age carries what votes cannot:",
+        ]
+        by_age = sorted(rest, key=lambda p: _prop_number(p.id))
+        lines += [f"- {p.id} ({len(p.votes)} votes) — {p.title}" for p in by_age[:_DIGEST_TOP]]
+    lines += [
+        "",
+        "Full inventory: `rack ls --backlog proposal --state open --all` "
+        "(**judge-protocol** Step 0).",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _fill_inbox_digest(preamble: str, project_dir: Path) -> str:
+    """Substitute `{inbox_digest}`; append it when an overridden injection has
+    dropped the placeholder — a judge silently launched without the inbox is the
+    HATS-1323 failure itself, so this says so rather than shipping the gap."""
+    digest = _build_inbox_digest(project_dir)
+    if "{inbox_digest}" in preamble:
+        return preamble.replace("{inbox_digest}", digest)
+    console.print(
+        "[yellow]![/] reflect-hypothesis-interactive carries no {inbox_digest} "
+        "placeholder — appending the PROP inbox digest at the end."
+    )
+    return f"{preamble}\n\n---\n\n{digest}"
