@@ -92,8 +92,9 @@ def _seed_project(project: Path, env: dict[str, str]) -> dict[str, Path]:
         f"{_digest(original_edited)}  pre-commit.d/edited.sh\n"
     )
 
-    # Live surface: runtime-hooks is registered in the running binary, so
-    # the sweeper must skip this file entirely (byte-identical after bump).
+    # HATS-1336: runtime-hooks is unregistered now, so this is a DEAD surface —
+    # tagged entry reclaimed, user entry kept ("live owner ⇒ skip" still covered
+    # by test_sweeper.py::test_living_owner_settings_untouched).
     settings = project / ".claude" / "settings.json"
     settings.parent.mkdir()
     settings.write_text(
@@ -192,8 +193,13 @@ def test_e2e_bump_sweeps_dead_owner_marker(swept_env, repo_root, tmp_path):
     assert "pre-commit.d/edited.sh" in marker_text
     assert "pre-commit.d/retired.sh" not in marker_text
 
-    # Live surface untouched — byte-identical.
-    assert paths["settings"].read_bytes() == settings_before
+    # Dead surface swept surgically: tagged entry gone, user entry intact.
+    surviving = json.loads(paths["settings"].read_text()).get("hooks", {})
+    entries = [entry for event_list in surviving.values() for entry in event_list]
+    assert entries == [
+        {"matcher": "*", "hooks": [{"type": "command", "command": "user-own.sh"}]}
+    ], entries
+    assert b"ai-hats:hats-437" in settings_before  # the seed really carried it
 
     # Bump never commits.
     assert _git_log_count(project, env) == before_commits
