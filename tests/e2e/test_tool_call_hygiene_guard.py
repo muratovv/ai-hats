@@ -139,15 +139,15 @@ def test_noncovered_command_forms_get_no_nudge(command):
         "pytest tests/ | head -n 10",
         "pytest tests/ | grep FAILED",
         "pytest tests/ | tee /tmp/gate.log",
-        "pytest tests/ > /tmp/gate.log 2>&1; echo \"EXIT=$?\"",
+        'pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"',
         "pytest tests/ ; true",
-        "pytest tests/ || echo \"failed\"",
+        'pytest tests/ || echo "failed"',
         "pytest tests/ || true",
         "ruff check src/ | tail",
         "make test | grep Error",
         "ci-local.sh | tail",
         "npm test | head",
-        "python -m pytest tests/ > /tmp/gate.log 2>&1; echo \"EXIT=$?\"",
+        'python -m pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"',
     ],
 )
 def test_exit_code_masking_nudges(command):
@@ -174,7 +174,6 @@ def test_exit_code_preservation_gets_no_nudge(command):
     res = _run(command)
     assert res.returncode == 0, res.stderr
     assert _nudge(res) is None, f"unexpected nudge for {command!r}: {res.stdout!r}"
-
 
 
 # --- fail-safe edge cases ----------------------------------------------------

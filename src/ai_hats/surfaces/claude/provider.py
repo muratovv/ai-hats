@@ -150,7 +150,6 @@ class ClaudeProvider(Provider):
             end_ts=end_ts,
         )
 
-
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         """HATS-1170/1238: Claude uses per-session prompt cache; no root CLAUDE.md managed."""
         del project_dir

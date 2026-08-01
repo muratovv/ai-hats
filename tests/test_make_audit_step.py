@@ -158,7 +158,6 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
     )
 
 
-
 def test_swallows_audit_writer_exception(tmp_path):
     """AuditWriter raising MUST NOT propagate — failure_policy is continue
     but the step itself wraps the body too (HATS-086 invariant inherited

@@ -92,4 +92,3 @@ __all__ = [
     "discover_all_by_mtime",
     "resolve_transcript",
 ]
-
