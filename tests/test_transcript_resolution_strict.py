@@ -36,7 +36,7 @@ def test_a_known_id_never_resolves_to_a_stranger(tmp_path: Path) -> None:
 
     resolved = resolve_transcript(d, "*.jsonl", SESSION_ID, exact_path=d / f"{OURS}.jsonl")
 
-    assert resolved is None
+    assert resolved == []
 
 
 def test_a_known_id_resolves_to_its_own_transcript(tmp_path: Path) -> None:
@@ -45,7 +45,7 @@ def test_a_known_id_resolves_to_its_own_transcript(tmp_path: Path) -> None:
     ours.write_text('{"type":"user"}\n')
     (d / f"{STRANGER}.jsonl").write_text('{"type":"user"}\n')
 
-    assert resolve_transcript(d, "*.jsonl", SESSION_ID, exact_path=ours) == ours
+    assert resolve_transcript(d, "*.jsonl", SESSION_ID, exact_path=ours) == [ours]
 
 
 def test_without_an_id_the_mtime_window_still_applies(tmp_path: Path) -> None:
@@ -54,7 +54,7 @@ def test_without_an_id_the_mtime_window_still_applies(tmp_path: Path) -> None:
     only = d / f"{STRANGER}.jsonl"
     only.write_text('{"type":"user"}\n')
 
-    assert resolve_transcript(d, "*.jsonl", SESSION_ID, exact_path=None) == only
+    assert resolve_transcript(d, "*.jsonl", SESSION_ID, exact_path=None) == [only]
 
 
 def test_surfaces_whose_filename_is_not_the_id_still_resolve(tmp_path: Path, monkeypatch) -> None:
@@ -78,5 +78,28 @@ def test_surfaces_whose_filename_is_not_the_id_still_resolve(tmp_path: Path, mon
         (ClineProvider(), cline / f"{OURS}.messages.json"),
     ):
         resolved = provider.resolve_transcript(tmp_path, SESSION_ID, provider_session_id=OURS)
-        assert resolved == expected
-        assert resolved.stem != OURS, "the guard this replaces compared exactly this"
+        assert resolved == [expected]
+        assert resolved[0].stem != OURS, "the guard this replaces compared exactly this"
+
+
+def test_end_ts_filters_out_future_transcripts(tmp_path: Path) -> None:
+    d = _transcripts(tmp_path)
+    file1 = d / "transcript_1.jsonl"
+    file2 = d / "transcript_2.jsonl"
+
+    file1.write_text('{"type":"user"}\n')
+    file2.write_text('{"type":"user"}\n')
+
+    # Set mtimes explicitly
+    import os
+    os.utime(file1, (1767268800.0, 1767268800.0))  # 2026-01-01 12:00:00 UTC
+    os.utime(file2, (1767272400.0, 1767272400.0))  # 2026-01-01 13:00:00 UTC (1 hr later)
+
+    # Without end_ts, both are resolved
+    res_all = resolve_transcript(d, "*.jsonl", "20260101-120000-1")
+    assert res_all == [file1, file2]
+
+    # With end_ts set before file2's mtime, only file1 is resolved
+    res_bounded = resolve_transcript(d, "*.jsonl", "20260101-120000-1", end_ts=1767270000.0)
+    assert res_bounded == [file1]
+

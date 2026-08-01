@@ -12,7 +12,9 @@ import json
 import logging
 import shutil
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 
 from ai_hats_core import atomic_write_text
 
@@ -181,17 +183,11 @@ class AuditWriter:
     def build(
         self,
         session: Session,
-        jsonl_path: Path | None = None,
-        keep_raw: bool = False,
+        jsonl_path: Path | list[Path] | None = None,
         transcript_verified: bool = False,
+        keep_raw: bool = False,
     ) -> None:
-        """Build enriched audit.md + metrics.json via the injected parser.
-
-        ``transcript_verified`` says the caller matched ``jsonl_path`` to this
-        session by provider session id rather than by mtime. Only that licenses
-        deleting trace.log — see ``_may_drop_trace``. Default False: a caller
-        that cannot vouch for the attribution keeps the raw record.
-        """
+        """Rebuild session audit.md from structured log or trace.log fallback."""
         parsed = self.parser.parse(jsonl_path, session.trace_path)
         turns = parsed.turns
         # Metrics first: `_format_audit` renders metrics.json, so reading it
@@ -210,20 +206,68 @@ class AuditWriter:
             session.trace_path.unlink()  # safe-delete: ok raw-trace (source copied in)
 
     @staticmethod
-    def _preserve_transcript(session: Session, jsonl_path: Path | None) -> bool:
-        """Copy the provider's transcript into the session dir; True once it is there.
-
-        HATS-1397: the deletion used to be licensed by that transcript existing
-        *somewhere*. Claude expires its JSONL after ~30–40 days — on this corpus
-        only 178 of 374 sessions with a known id still had one — so the trace was
-        traded for a copy running on someone else's retention clock.
-        """
-        if jsonl_path is None or not jsonl_path.exists():
+    def _preserve_transcript(session: Session, jsonl_path: Path | list[Path] | None) -> bool:
+        """Copy or merge the provider's transcript(s) into the session dir; True once there (HATS-1400)."""
+        if jsonl_path is None:
             return False
+        paths = [Path(p) for p in jsonl_path] if isinstance(jsonl_path, (list, tuple)) else [Path(jsonl_path)]
+        existing = [p for p in paths if p.exists()]
+        if not existing:
+            return False
+        dest = session.session_dir / TRANSCRIPT_JSONL
         try:
-            shutil.copyfile(jsonl_path, session.session_dir / TRANSCRIPT_JSONL)
+            if len(existing) == 1:
+                shutil.copyfile(existing[0], dest)
+            else:
+                from ai_hats_observe.artifacts import session_start_dt
+                s_dt = session_start_dt(session.session_id)
+                min_ts = s_dt.timestamp() if s_dt else 0.0
+
+                records: list[dict[str, Any]] = []
+                seen_fps: set[tuple[Any, ...]] = set()
+                for p in existing:
+                    for line in p.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            rec = json.loads(line)
+                            if isinstance(rec, dict):
+                                ts_raw = rec.get("created_at") or ""
+                                try:
+                                    t = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")).timestamp()
+                                except (ValueError, TypeError):
+                                    t = 0.0
+                                if min_ts > 0.0 and t > 0.0 and t < min_ts:
+                                    continue
+                                fp = (
+                                    rec.get("created_at"),
+                                    rec.get("type"),
+                                    rec.get("source"),
+                                    rec.get("step_index"),
+                                    str(rec.get("content")),
+                                    json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
+                                )
+                                if fp not in seen_fps:
+                                    seen_fps.add(fp)
+                                    records.append(rec)
+                        except json.JSONDecodeError:
+                            continue
+                def _ts_key(r: dict[str, Any]) -> tuple[float, int]:
+                    ts = r.get("created_at") or ""
+                    try:
+                        t = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+                    except (ValueError, TypeError):
+                        t = 0.0
+                    return (t, r.get("step_index") or 0)
+                records.sort(key=_ts_key)
+                dest.write_text(
+                    "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
+                    encoding="utf-8",
+                )
+
         except OSError:
-            logger.warning("could not copy %s into the session dir", jsonl_path, exc_info=True)
+            logger.warning("could not copy/merge transcripts into %s", dest, exc_info=True)
             return False
         return True
 
@@ -237,8 +281,9 @@ class AuditWriter:
         segment on a checkpoint, so the freshest transcript can be a 4-record
         tail of a 42-record conversation, and the trace held all of it.
         """
-        if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags:
+        if FLAG_NO_STRUCTURED_TRANSCRIPT in parsed.flags or "trace-used" in parsed.flags:
             return False
+
         return bool(preserved_and_verified and parsed.turns)
 
     @staticmethod

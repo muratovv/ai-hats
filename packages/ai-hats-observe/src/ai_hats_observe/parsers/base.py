@@ -56,12 +56,13 @@ class TranscriptParser(Protocol):
     """
 
     def parse(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | list[Path] | None, trace_path: Path
     ) -> ParsedTranscript: ...
 
     def parse_usage(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | list[Path] | None, trace_path: Path
     ) -> dict[str, Any]:
+
         """Build this surface's ``usage/v1`` report (context-cost + timeline).
 
         A distinct, richer parse than ``parse`` — a surface with a structured

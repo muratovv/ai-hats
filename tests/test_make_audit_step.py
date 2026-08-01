@@ -107,7 +107,7 @@ def test_passes_configured_jsonl_path_when_present(tmp_path, monkeypatch):
         audit_writer_factory=_CapturingAuditWriter,
     )
 
-    assert captured["jsonl_path"] == real_jsonl
+    assert captured["jsonl_path"] == [real_jsonl]
     assert delta == {"audit_path": session.audit_path}
 
 
@@ -152,10 +152,11 @@ def test_discovers_the_jsonl_when_no_session_id_was_taken(
         audit_writer_factory=_CapturingAuditWriter,
     )
 
-    assert captured["jsonl_path"] == real_jsonl, (
+    assert captured["jsonl_path"] == [real_jsonl], (
         "HATS-272 resume-mode JSONL discovery must still work after "
         "HATS-535 extraction into MakeAudit."
     )
+
 
 
 def test_swallows_audit_writer_exception(tmp_path):

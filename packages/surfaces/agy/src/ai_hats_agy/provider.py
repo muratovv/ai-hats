@@ -77,8 +77,13 @@ class AgyProvider(Provider):
         return AgyParser()
 
     def resolve_transcript(
-        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
-    ) -> Path | None:
+        self,
+        project_dir: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+        end_ts: float | None = None,
+    ) -> list[Path]:
         from ai_hats.paths import resolve_transcript, tool_home
 
         brain_dir = tool_home("gemini", "GEMINI_CONFIG_DIR") / "antigravity-cli" / "brain"
@@ -92,7 +97,9 @@ class AgyProvider(Provider):
             "*/.system_generated/logs/transcript.jsonl",
             session_id,
             exact_path=exact_path,
+            end_ts=end_ts,
         )
+
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         return gemini_md(project_dir)

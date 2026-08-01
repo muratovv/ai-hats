@@ -50,7 +50,7 @@ class ClineParser:
 
     # -- parse -> ParsedTranscript ------------------------------------------
 
-    def parse(self, jsonl_path: Path | None, trace_path: Path) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | list[Path] | None, trace_path: Path) -> ParsedTranscript:
         doc = self._load(jsonl_path)
         if doc is None:
             if jsonl_path:
@@ -59,14 +59,15 @@ class ClineParser:
         turns, model_stats, agg_usage = self._parse_messages(doc.get("messages", []))
         return ParsedTranscript(turns=turns, model_stats=model_stats, agg_usage=agg_usage)
 
-    def parse_usage(self, jsonl_path: Path | None, trace_path: Path) -> dict[str, Any]:
+    def parse_usage(self, jsonl_path: Path | list[Path] | None, trace_path: Path) -> dict[str, Any]:
         """cline ``.messages.json`` present → the measured ``usage/v1`` report;
         else the trace fallback (no token telemetry)."""
         doc = self._load(jsonl_path)
         if doc is None:
             return self._trace.parse_usage(None, trace_path)
 
-        report = empty_usage_report(Path(jsonl_path).name)  # type: ignore[arg-type]
+        p = Path(jsonl_path[0]) if isinstance(jsonl_path, (list, tuple)) and jsonl_path else (Path(jsonl_path) if jsonl_path else Path("messages.json"))
+        report = empty_usage_report(p.name)  # type: ignore[arg-type]
         report["session_id"] = doc.get("sessionId")
         types_seen = report["entry_types_seen"]
         totals = report["usage_totals"]

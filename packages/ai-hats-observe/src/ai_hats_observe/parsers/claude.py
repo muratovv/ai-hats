@@ -29,25 +29,36 @@ class ClaudeParser:
     def __init__(self) -> None:
         self._trace = TraceParser()
 
+    @staticmethod
+    def _first_path(jsonl_path: Path | list[Path] | None) -> Path | None:
+        if jsonl_path is None:
+            return None
+        if isinstance(jsonl_path, (list, tuple)):
+            return Path(jsonl_path[0]) if jsonl_path else None
+        return Path(jsonl_path)
+
     def parse(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | list[Path] | None, trace_path: Path
     ) -> ParsedTranscript:
-        if jsonl_path and jsonl_path.exists():
-            turns, model_stats, agg_usage = self._parse_jsonl(jsonl_path)
+        p = self._first_path(jsonl_path)
+        if p and p.exists():
+            turns, model_stats, agg_usage = self._parse_jsonl(p)
             return ParsedTranscript(
                 turns=turns, model_stats=model_stats, agg_usage=agg_usage
             )
-        if jsonl_path:
-            logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
+        if p:
+            logger.debug("JSONL not found at %s — falling back to trace", p)
         return self._trace.parse(None, trace_path)
 
     def parse_usage(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | list[Path] | None, trace_path: Path
     ) -> dict[str, Any]:
         """JSONL present → the measured ``usage/v1`` report; else trace fallback."""
-        if jsonl_path and jsonl_path.exists():
-            return _usage.parse_session_usage(jsonl_path)
+        p = self._first_path(jsonl_path)
+        if p and p.exists():
+            return _usage.parse_session_usage(p)
         return self._trace.parse_usage(None, trace_path)
+
 
     def _parse_jsonl(self, jsonl_path: Path) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse Claude Code JSONL → (turns, per-model stats, aggregated usage)."""
