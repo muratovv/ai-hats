@@ -240,7 +240,6 @@ class Provider(abc.ABC):
         del project_dir, session_id, provider_session_id, end_ts
         return []
 
-
     def leaked_user_global_project_hooks(self, home: Path) -> list[str]:
         """ai-hats project-hook commands this surface leaked into user-global config.
 

@@ -92,6 +92,7 @@ def test_end_ts_filters_out_future_transcripts(tmp_path: Path) -> None:
 
     # Set mtimes explicitly
     import os
+
     os.utime(file1, (1767268800.0, 1767268800.0))  # 2026-01-01 12:00:00 UTC
     os.utime(file2, (1767272400.0, 1767272400.0))  # 2026-01-01 13:00:00 UTC (1 hr later)
 
@@ -102,4 +103,3 @@ def test_end_ts_filters_out_future_transcripts(tmp_path: Path) -> None:
     # With end_ts set before file2's mtime, only file1 is resolved
     res_bounded = resolve_transcript(d, "*.jsonl", "20260101-120000-1", end_ts=1767270000.0)
     assert res_bounded == [file1]
-

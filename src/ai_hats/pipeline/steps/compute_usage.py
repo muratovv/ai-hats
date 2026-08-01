@@ -109,7 +109,6 @@ class ComputeUsage(Step):
                 logger.debug("compute_usage: no transcript for %s", claude_session_id)
                 return {}
 
-
             report = parser.parse_usage(jsonl_path, session_dir / TRACE_LOG)
             self._attach_session_meta(report, session_dir, role)
             if report.get("role") and static_cost_analyzer is not None:
