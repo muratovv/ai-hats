@@ -74,10 +74,12 @@ def run_worktree_hook(
     corrupt alike — comes back as ``ok=False``, so a ``wt_out`` gate cannot fail
     open on a hook that merely failed to start.
     """
+    budget = resolve_hook_timeout() if timeout is None else timeout
     run = run_hook(
         script,
-        timeout=resolve_hook_timeout() if timeout is None else timeout,
+        timeout=budget,
         project_dir=project_dir,
+        log_header=f"# wt-hook event={event} script={script} timeout={budget}s",
         env={
             **os.environ,
             "AI_HATS_WORKTREE_PATH": str(worktree_path),
