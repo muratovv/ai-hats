@@ -778,3 +778,41 @@ def test_validation_alignment_ignores_future_active_hypotheses(tmp_path: Path):
     runner._validate_analysis_shape(raw, SID)
     review = runner._merge(_facts(SID), raw)
     runner._validate_integrity(review, SID)
+
+
+def test_build_prompt_states_verdict_semantics(tmp_path: Path):
+    """HATS-1418 — the four verdict values must be DEFINED in the prompt.
+
+    Measured on a 27-run corpus: the semantics live only in
+    review-hypothesis/SKILL.md, no reviewer run opens it, and each model then
+    guesses from its own prior. agy/gemini-flash emitted 0 `inconclusive`
+    across 171 verdicts until these lines were inlined.
+    """
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _add_active_hyp(tmp_path, "HYP-601")
+    out = SessionReviewRunner(tmp_path)._build_prompt(_facts())
+
+    for value in ("confirmed", "refuted", "inconclusive", "n/a"):
+        assert f"      {value}" in out, f"verdict {value!r} is listed but never defined"
+    assert "mixed,\n" in out, "`inconclusive` must be defined as mixed/partial evidence"
+    assert "PHYSICALLY CANNOT test" in out, "`n/a` must be defined as untestable"
+
+
+def test_build_prompt_states_the_two_easy_to_confuse_bars(tmp_path: Path):
+    """HATS-1418 — the two failure modes the corpus actually exhibited.
+
+    Cheap arms over-used `n/a` when merely unsure, and read the ABSENCE of a
+    failure as proof the guard prevented it (a false `confirmed` on HYP-081
+    that the observed audit line 191 directly contradicts).
+    """
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _add_active_hyp(tmp_path, "HYP-602")
+    out = SessionReviewRunner(tmp_path)._build_prompt(_facts())
+
+    assert "`inconclusive`, never `n/a`" in out, "unsure-is-not-n/a bar missing"
+    assert "Absence of the failure a guard prevents is NOT evidence" in out, (
+        "absence-is-not-evidence bar missing — this is what produced false `confirmed`"
+    )
+    assert "never `confirmed`" in out
