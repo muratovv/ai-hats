@@ -113,3 +113,67 @@ def test_broken_predicate_exits_2_not_124(tmp_project, predicate: str, label: st
         f"{label}: expected exit 2, got {result.exit_code} "
         f"(124 would mean the break was swallowed as a timeout)"
     )
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "bad_flag"),
+    [
+        (("--poll", "0", "--timeout", "3"), "--poll"),
+        (("--poll", "-5", "--timeout", "3"), "--poll"),
+        (("--poll", "-0.5", "--timeout", "3"), "--poll"),
+        (("--poll", "nan", "--timeout", "3"), "--poll"),
+        (("--poll", "inf", "--timeout", "3"), "--poll"),
+        (("--poll", "0.2", "--timeout", "-1"), "--timeout"),
+        (("--poll", "0.2", "--timeout", "nan"), "--timeout"),
+        (("--poll", "0.2", "--timeout", "inf"), "--timeout"),
+    ],
+)
+def test_non_positive_poll_or_bad_timeout_rejected_at_input(
+    tmp_project, extra_args: tuple[str, ...], bad_flag: str
+) -> None:
+    """``--poll <= 0`` (or non-finite) and a negative/non-finite ``--timeout``
+    must be refused before polling starts (HATS-1452) — else they collapse
+    into a busy-loop (``time.sleep(max(nap, 0.0))`` naps for 0s on any of
+    these). The predicate is already-true ``true`` in every case: without the
+    guard this exits 0 immediately, so a green run here means the guard is
+    missing, not that the wait "happened to be fast".
+    """
+    result = tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "true",
+        *extra_args,
+        timeout=30.0,
+        extra_env=_env(),
+    )
+
+    assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stderr[-300:]}"
+    assert result.duration_s < 5.0, (
+        f"took {result.duration_s:.1f}s — rejection must happen before polling starts, "
+        f"not after a busy-loop"
+    )
+    assert bad_flag in result.stderr, f"stderr should name {bad_flag}: {result.stderr[-300:]}"
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ("--poll", "0.2", "--timeout", "0"),
+        ("--poll", "1.1", "--timeout", "1e2"),
+    ],
+    ids=["timeout-zero-waits-forever", "fractional-and-exponential-values"],
+)
+def test_legal_poll_and_timeout_values_accepted(tmp_project, extra_args: tuple[str, ...]) -> None:
+    """Legal float values must pass the guard untouched (HATS-1452 regression):
+    ``--timeout 0`` keeps meaning "wait forever" rather than being caught by the
+    negative-timeout guard, and a fractional or scientific-notation value (both
+    valid ``float`` syntax) must not be rejected by the finite/positive check.
+    """
+    tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "true",
+        *extra_args,
+        timeout=30.0,
+        extra_env=_env(),
+    ).expect_ok()

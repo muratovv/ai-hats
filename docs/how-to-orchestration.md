@@ -132,11 +132,11 @@ ai-hats wait --until-cmd 'test -f /tmp/build.done' --poll 10 --timeout 900
 Read the exit code — the three outcomes are the reason to prefer this over a
 hand-rolled `until` loop:
 
-| Exit code | Meaning                                                              |
-| --------- | -------------------------------------------------------------------- |
-| 0         | the event happened; a summary line with the timestamp goes to stdout |
-| 124       | `--timeout` elapsed first — GNU coreutils convention, as above       |
-| 2         | the predicate itself is broken (bad shell, unknown card, no project) |
+| Exit code | Meaning                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 0         | the event happened; a summary line with the timestamp goes to stdout                                                            |
+| 124       | `--timeout` elapsed first — GNU coreutils convention, as above                                                                  |
+| 2         | the predicate itself is broken (bad shell, unknown card, no project), or a bad flag value (`--poll <= 0`, negative `--timeout`) |
 
 That last row is the point. A shell `until` loop treats every non-zero probe as
 "not yet", so a typo'd predicate waits forever and the silence is

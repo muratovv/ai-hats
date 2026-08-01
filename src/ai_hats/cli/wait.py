@@ -7,6 +7,7 @@ silence reads exactly like a successful wait.
 
 from __future__ import annotations
 
+import math
 import subprocess
 import sys
 import time
@@ -111,7 +112,12 @@ def _now_stamp() -> str:
     help="Target state for --task; repeat to accept any of several.",
 )
 @click.option(
-    "--poll", type=float, default=5.0, show_default=True, metavar="SEC", help="Probe interval."
+    "--poll",
+    type=float,
+    default=5.0,
+    show_default=True,
+    metavar="SEC",
+    help="Probe interval. Must be greater than 0.",
 )
 @click.option(
     "--timeout",
@@ -119,15 +125,23 @@ def _now_stamp() -> str:
     default=0.0,
     show_default=True,
     metavar="SEC",
-    help="Give up after SEC seconds; 0 waits forever.",
+    help="Give up after SEC seconds; 0 waits forever. Negative values are rejected.",
 )
 def wait_cmd(
     until_cmd: str | None, task: str | None, until: tuple[str, ...], poll: float, timeout: float
 ) -> None:
     """Block until an event happens, then continue in the same session.
 
-    Exit 0 = happened, 124 = timed out, 2 = the predicate itself is broken.
+    Exit 0 = happened, 124 = timed out, 2 = the predicate itself is broken or
+    a flag value is bad (--poll <= 0, negative --timeout).
     """
+    if not math.isfinite(poll) or poll <= 0:
+        raise click.UsageError(f"--poll must be finite and positive, got {poll!r}.")
+    if not math.isfinite(timeout) or timeout < 0:
+        raise click.UsageError(
+            f"--timeout must be finite and 0 (wait forever) or positive, got {timeout!r}."
+        )
+
     try:
         probe = _build_predicate(until_cmd, task, until)
     except _Broken as broken:
