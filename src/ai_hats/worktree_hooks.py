@@ -16,7 +16,6 @@ from pathlib import Path
 
 from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
 from .hook_exec import HookRun, HookVerdict, run_hook
-from .paths import AI_HATS_PROJECT_DIR_ENV
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).
@@ -74,24 +73,26 @@ def run_worktree_hook(
     corrupt alike — comes back as ``ok=False``, so a ``wt_out`` gate cannot fail
     open on a hook that merely failed to start.
     """
-    budget = resolve_hook_timeout() if timeout is None else timeout
     run = run_hook(
         script,
-        timeout=budget,
+        point=_wt_point(event),
+        timeout=resolve_hook_timeout() if timeout is None else timeout,
         project_dir=project_dir,
-        log_header=f"# wt-hook event={event} script={script} timeout={budget}s",
-        env={
-            **os.environ,
-            "AI_HATS_WORKTREE_PATH": str(worktree_path),
-            AI_HATS_PROJECT_DIR_ENV: str(project_dir),
-            "AI_HATS_BRANCH_NAME": branch_name,
-            "AI_HATS_EVENT": event,
-        },
+        worktree_path=worktree_path,
+        # This channel's own vocabulary, kept verbatim: `AI_HATS_EVENT` has live
+        # readers outside this repo, and renaming it is HATS-1142's migration.
+        extra_env={"AI_HATS_BRANCH_NAME": branch_name, "AI_HATS_EVENT": event},
         log_path=log_path,
     )
     if run.ok:
         return HookOutcome(True, run.exit_code, "ok")
     return HookOutcome(False, run.exit_code, _wt_reason(run, script))
+
+
+def _wt_point(event: str) -> str:
+    """This channel's event → the catalog's fully-qualified point name
+    (``check_points._static_points``), which is what the shared env carries."""
+    return "wt:create" if event == "wt_in" else f"wt:teardown[{event}]"
 
 
 def _wt_reason(run: HookRun, script: Path) -> str:

@@ -18,6 +18,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
+from .paths import AI_HATS_PROJECT_DIR_ENV
+
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
 _STDERR_TAIL_BYTES = 4096
@@ -61,29 +63,32 @@ class HookRun:
 def run_hook(
     script: Path,
     *,
+    point: str,
     timeout: float,
     project_dir: Path,
-    env: Mapping[str, str] | None = None,
+    force: bool = False,
+    task_id: str | None = None,
+    worktree_path: Path | None = None,
+    extra_env: Mapping[str, str] | None = None,
     log_path: Path | None = None,
-    log_header: str | None = None,
     tail_bytes: int = REASON_TAIL_BYTES,
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
-    ``script`` must already be absolute — resolution (and its containment
-    question) belongs to the caller. ``KeyboardInterrupt`` propagates: SIGINT
-    aborts the whole operation regardless of the caller's error policy.
-
-    ``log_header`` is the caller's provenance line for the top of the log; it is
-    excluded from the reason by offset, never read back as the hook's own words.
+    ``point`` is the fully-qualified attachment point (``edge:review--done``,
+    ``wt:teardown[discard]``); it names the run in the env and the log header,
+    so a channel never hands in its own strings for those. ``script`` must
+    already be absolute — resolution belongs to the caller. ``KeyboardInterrupt``
+    propagates regardless of the caller's error policy.
     """
     if not script.is_file():
         return _corrupt(f"hook script missing: {script}", None)
     if not os.access(script, os.X_OK):
         return _corrupt(f"hook script not executable: {script}", None)
 
+    header = f"# hook point={point} script={script} timeout={timeout}s"
     try:
-        sink, sink_path, said_from = _open_stdout_sink(log_path, log_header)
+        sink, sink_path, said_from = _open_stdout_sink(log_path, header)
     except OSError as exc:
         # Fail closed and name the path: the caller asked for a log there, and
         # running the gate while silently dropping its evidence is the absence
@@ -97,7 +102,7 @@ def run_hook(
             proc = subprocess.run(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
                 [str(script)],
                 cwd=str(project_dir),
-                env=dict(env) if env is not None else None,
+                env=_hook_env(point, project_dir, force, task_id, worktree_path, extra_env),
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
                 stderr=err_sink,
@@ -151,6 +156,41 @@ def run_hook(
         err_path.unlink(missing_ok=True)  # safe-delete: ok own scratch sink, already read
         if log_path is None:
             sink_path.unlink(missing_ok=True)  # safe-delete: ok own scratch sink, already read
+
+
+def _hook_env(
+    point: str,
+    project_dir: Path,
+    force: bool,
+    task_id: str | None,
+    worktree_path: Path | None,
+    extra: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """The shared base every hook receives (ADR-0020 D2), then the caller's own
+    point-specific vocabulary on top.
+
+    An unresolvable value is REMOVED from the inherited environment rather than
+    left alone: the ambient one may carry another worktree's path, and a check
+    that validates the wrong tree and passes is worse than one that crashes
+    (ADR-0019 D5/D7).
+    """
+    env = dict(os.environ)
+    env["AI_HATS_HOOK_POINT"] = point
+    env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
+    # A check must not re-enter the per-task lock from a subprocess (D5).
+    env["AI_HATS_IN_HOOK"] = "1"
+    _put(env, "AI_HATS_FORCE", "1" if force else None)
+    _put(env, "AI_HATS_TASK_ID", task_id)
+    _put(env, "AI_HATS_WORKTREE_PATH", str(worktree_path) if worktree_path else None)
+    env.update(extra or {})
+    return env
+
+
+def _put(env: dict[str, str], name: str, value: str | None) -> None:
+    if value is None:
+        env.pop(name, None)
+    else:
+        env[name] = value
 
 
 def _classify(code: int) -> HookVerdict:

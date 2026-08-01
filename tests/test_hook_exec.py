@@ -10,13 +10,21 @@ import os
 import tracemalloc
 from pathlib import Path
 
-from ai_hats.hook_exec import HookVerdict, run_hook
+from ai_hats.hook_exec import HookVerdict
+from ai_hats.hook_exec import run_hook as _run_hook
 
 
 def _script(p: Path, body: str) -> Path:
     p.write_text("#!/usr/bin/env bash\n" + body)
     p.chmod(0o755)
     return p
+
+
+def run_hook(script, **kw):
+    """``point`` is required by the contract; the tests that are not about it
+    take this stand-in rather than repeat a point they never assert on."""
+    kw.setdefault("point", "edge:review--done")
+    return _run_hook(script, **kw)
 
 
 def test_refusal_carries_the_scripts_own_words(tmp_path):
@@ -255,18 +263,19 @@ def test_the_log_says_who_ran_and_the_reason_never_repeats_it(tmp_path):
     sink records where the child's output starts and the tail begins there.
     """
     log = tmp_path / "wt.log"
-    header = "# wt-hook event=discard script=mute.sh timeout=45s"
 
     run = run_hook(
         _script(tmp_path / "mute.sh", "exit 2\n"),
+        point="wt:teardown[discard]",
         timeout=10,
         project_dir=tmp_path,
         log_path=log,
-        log_header=header,
     )
 
-    assert header in log.read_text()
-    assert "wt-hook event" not in run.reason
+    header = log.read_text().splitlines()[0]
+    assert "wt:teardown[discard]" in header
+    assert "mute.sh" in header
+    assert "wt:teardown" not in run.reason
     assert "refused" in run.reason
 
 
@@ -339,18 +348,51 @@ def test_stdin_is_closed_so_a_reading_hook_cannot_hang(tmp_path):
     assert run.verdict is HookVerdict.PASS
 
 
-def test_cwd_and_env_come_from_the_caller(tmp_path):
+def test_the_shared_env_base_comes_from_the_primitive(tmp_path):
+    """ADR-0020 D2: the base is the primitive's contract, not each channel's.
+
+    Every caller hand-rolling it is how the channels drifted apart in the first
+    place — and a second hand-built copy was exactly what HATS-1141 was about to
+    add. The caller supplies only its own point-specific vocabulary.
+    """
     proj = tmp_path / "proj"
     proj.mkdir()
-    script = _script(tmp_path / "e.sh", 'echo "$AI_HATS_EVENT|$(pwd -P)"\nexit 2\n')
+    script = _script(
+        tmp_path / "e.sh",
+        'echo "$AI_HATS_HOOK_POINT|$AI_HATS_PROJECT_DIR|$AI_HATS_IN_HOOK|$AI_HATS_EVENT|$(pwd -P)"\n'
+        "exit 2\n",
+    )
 
     run = run_hook(
         script,
+        point="edge:review--done",
         timeout=10,
         project_dir=proj,
-        env={"AI_HATS_EVENT": "edge:review--done", "PATH": "/usr/bin:/bin"},
+        extra_env={"AI_HATS_EVENT": "wt_in"},
     )
 
-    event, cwd = run.reason.split("|")
-    assert event == "edge:review--done"
+    point, project_dir, in_hook, event, cwd = run.reason.split("|")
+    assert point == "edge:review--done"
+    assert Path(project_dir).resolve() == proj.resolve()
+    assert in_hook == "1"  # a check must not re-enter the per-task lock (D5)
+    assert event == "wt_in"  # the caller's own vocabulary rides along
     assert Path(cwd).resolve() == proj.resolve()
+
+
+def test_an_unresolvable_worktree_path_is_unset_not_inherited(tmp_path, monkeypatch):
+    """ADR-0019 D5/D7: a stale value is a wrong-answer pass, worse than a crash.
+
+    The ambient environment of whoever launched the session may well carry a
+    path from some other worktree; inheriting it would let a check validate the
+    wrong tree and report success.
+    """
+    monkeypatch.setenv("AI_HATS_WORKTREE_PATH", "/stale/from/another/worktree")
+    monkeypatch.setenv("AI_HATS_TASK_ID", "HATS-0001")
+    script = _script(
+        tmp_path / "w.sh",
+        'echo "[${AI_HATS_WORKTREE_PATH-unset}|${AI_HATS_TASK_ID-unset}]"\nexit 2\n',
+    )
+
+    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+
+    assert run.reason == "[unset|unset]"
