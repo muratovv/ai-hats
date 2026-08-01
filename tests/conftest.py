@@ -20,6 +20,7 @@ import tempfile
 import pytest
 
 sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 # HATS-1429: dropped at conftest import, not in the autouse fixture below — modules
 # resolve library layers at *collection* time, earlier than any fixture can reach.
@@ -160,7 +161,7 @@ def _dev_environment_integrity_tripwire():
         deltas.append(f"version: {before_ver} -> {after_ver}")
     if before_eps != after_eps:
         deltas.append(f"providers entry-points: {before_eps} -> {after_eps}")
-    if after_pyc > before_pyc:
+    if after_pyc > before_pyc and not os.environ.get("PYTEST_XDIST_WORKER"):
         deltas.append(f"*.pyc count under src/: {before_pyc} -> {after_pyc}")
 
     if deltas:
