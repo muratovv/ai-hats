@@ -117,6 +117,22 @@ injection: |
   - Never attach a project-specific rule to a base trait (`trait-agent`,
     `trait-base`) — pollutes universal traits with narrow concerns.
 
+  ### Reflexive loop (map: `docs/reflect.md`)
+  The framework audits its own sessions. These components EXIST — name them,
+  do not invent a replacement when reasoning about "an LLM auditor":
+  - `session-reviewer` — the per-session LLM auditor (`ai-hats reflect
+    session`); writes `sessions/retros/sessions/<id>.md`. The non-`n/a`
+    verdicts in that doc are what land in each HYP's `validation_log`.
+  - `judge-auditor` -> `judge` — two-phase bulk triage of HYP + PROP
+    (`ai-hats reflect hypothesis`, ADR-0007).
+  - `judge-for-role` — role-coherence audit (`ai-hats reflect role`).
+  - `hypothesis-intake` — observation intake (`ai-hats reflect issue`).
+
+  Anything you touch under session artifacts, retro storage, metrics, or a
+  task's `audit.md` feeds these — that file IS the reviewer's input, so
+  trimming it silently blinds the loop (HATS-1374). Read `docs/reflect.md`
+  before changing the contour; setup + policies: `docs/how-to-feedback-loop.md`.
+
   ### Architectural defaults (project conventions)
   - **Strict typed contracts** > loose dict access. Explicit `requires/optional/produces` in pipeline steps, explicit field lists in config schemas.
   - **Immutable state + deltas** > mutable envelopes. Steps return deltas; runtime composes. Tests pass dict in, assert dict out.
