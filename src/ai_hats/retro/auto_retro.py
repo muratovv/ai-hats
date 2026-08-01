@@ -16,6 +16,7 @@ SIGKILL), there is still a persistent trace.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -26,6 +27,8 @@ from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, is_measured, sess
 from ..paths import PROJECT_CONFIG
 from ..constants import ENV_SKIP_RETRO
 from ai_hats_observe.trace import ENV_SESSION_ID
+
+logger = logging.getLogger(__name__)
 
 
 def should_run(
@@ -85,25 +88,27 @@ def make_decision(
 ) -> dict:
     """Run policy decision and return a dict rich enough to drive UI + log.
 
-    Never raises — any exception is captured into action="skip" so the
-    caller can surface "skipped (internal error: ...)" without crashing.
+    Never raises — the failure is captured into action="skip" so the caller can
+    surface "skipped (internal error: ...)" without crashing. HATS-1426: the
+    promise excluded ``KeyboardInterrupt`` and, worse, the path resolution
+    below sat outside the guard — the two lines the incident died on.
     """
     from ..paths import retros_dir, runs_dir
 
     config_path = project_dir / PROJECT_CONFIG
-    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
     try:
+        metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
         action, reason = should_run(config_path, metrics_path)
         config = ProjectConfig.from_yaml(config_path)
         sr = config.feedback.session_retro
         background = sr.background
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt) as exc:
         return {
             "action": "skip",
             "reason": f"internal error: {exc!r}",
             "background": None,
             "retro_path": None,
-            "log_path": str(_retro_log_path(project_dir, session_id)),
+            "log_path": _safe_log_path(project_dir, session_id),
             "wrap_up": None,
             "reminder": None,
         }
@@ -184,6 +189,15 @@ def _retro_log_path(project_dir: Path, session_id: str) -> Path:
     from ..paths import runs_dir
 
     return runs_dir(project_dir) / session_dirname(session_id) / RETRO_LOG
+
+
+def _safe_log_path(project_dir: Path, session_id: str) -> str | None:
+    """Resolving this path reads ai-hats.yaml — the very thing that may be broken."""
+    try:
+        return str(_retro_log_path(project_dir, session_id))
+    except (Exception, KeyboardInterrupt) as exc:
+        logger.warning("retro log path unresolvable: %r", exc)
+        return None
 
 
 def write_retro_log(

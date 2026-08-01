@@ -7,8 +7,11 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import signal
 import sys
+import time
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -90,6 +93,7 @@ _ESCAPE_CTRL_C = 0x03  # the Ctrl-C byte (VINTR) forwarded in raw mode
 _ESCAPE_COUNT = 3  # consecutive Ctrl-C presses that trip the hatch
 _ESCAPE_WINDOW_S = 1.5  # they must fall within this sliding window
 _ESCAPE_NOTICE = b"\r\n[ai-hats] provider not responding to Ctrl-C; forcing exit (code 130).\r\n"
+_SHIELD_ABORT_NOTICE = "[ai-hats] finalize aborted by operator (code 130)."
 
 
 def _scan_escape(
@@ -122,15 +126,96 @@ def _scan_escape(
     """
     for i, byte in enumerate(chunk):
         if byte == _ESCAPE_CTRL_C:
-            presses.append(now)
-            while presses and now - presses[0] > window_s:
-                presses.popleft()
-            if len(presses) >= count:
-                presses.clear()
+            if _press_trips(presses, now, count=count, window_s=window_s):
                 return chunk[:i], True
         else:
             presses.clear()
     return chunk, False
+
+
+def _press_trips(
+    presses: deque[float],
+    now: float,
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+) -> bool:
+    """Bank one Ctrl-C press; ``True`` once ``count`` of them fall within ``window_s``.
+
+    Both escape hatches count through this one accumulator (HATS-1426): the PTY
+    byte-scanner above and the finalize-window SIGINT shield below. ``presses``
+    is mutated in place — stale timestamps drop off the left, and a trip clears
+    the deque so the next streak starts fresh.
+    """
+    presses.append(now)
+    while presses and now - presses[0] > window_s:
+        presses.popleft()
+    if len(presses) >= count:
+        presses.clear()
+        return True
+    return False
+
+
+class FinalizeAborted(BaseException):
+    """The operator tripped the escape hatch during session finalize (HATS-1426).
+
+    Deliberately neither an ``Exception`` nor a ``KeyboardInterrupt``: every
+    finalize phase catches ``(Exception, KeyboardInterrupt)`` per the HATS-086
+    invariant, so either spelling would be swallowed by the very next phase and
+    finalize would grind on against the operator's intent.
+    """
+
+
+def _shield_notice(stream, text: str) -> None:
+    try:
+        stream.write(f"\n{text}\n")
+        stream.flush()
+    except (OSError, ValueError):  # silent-ok: a closed TTY must not break finalize
+        pass
+
+
+@contextmanager
+def sigint_shield(
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+    notice=None,
+):
+    """Hold SIGINT off the finalize window; ``count`` presses in ``window_s`` still abort.
+
+    Once the provider exits the terminal is back in cooked mode, so a stray
+    Ctrl-C lands as ``KeyboardInterrupt`` inside whichever finalize step is
+    running — one press used to cost that whole step, silently (HATS-1426).
+    Sub-threshold presses print a line and are dropped; the trip raises
+    :class:`FinalizeAborted`. Counting matches the PTY hatch (HATS-679).
+    Fail-open off the main thread — unshielded finalize beats no finalize.
+    """
+    presses: deque[float] = deque()
+    stream = notice if notice is not None else sys.stderr
+    hold_text = (
+        f"[ai-hats] finalizing session — press Ctrl-C {count}× within {window_s:g}s to abort."
+    )
+
+    def _on_sigint(_sig, _frame):
+        if _press_trips(presses, time.monotonic(), count=count, window_s=window_s):
+            _shield_notice(stream, _SHIELD_ABORT_NOTICE)
+            raise FinalizeAborted(_SHIELD_ABORT_NOTICE)
+        _shield_notice(stream, hold_text)
+
+    try:
+        previous = signal.signal(signal.SIGINT, _on_sigint)
+    except (ValueError, OSError) as exc:
+        logger.warning("SIGINT shield not installed — finalize runs unshielded: %r", exc)
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous)
+        except (ValueError, OSError) as exc:
+            logger.warning("SIGINT shield not restored: %r", exc)
 
 
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
@@ -236,78 +321,84 @@ def _finalize_sub_agent(
     keep producing the meta-only ``audit.md`` they always did — opt-in
     enrichment, no behaviour change for the unfixed callsites.
     """
-    if stdout:
-        (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
-    if stderr:
-        (session.session_dir / REASONING_LOG).write_text(stderr)
+    # HATS-1426: same shield as the HITL arm — a stray Ctrl-C here costs
+    # audit.md and metrics for the whole sub-agent run.
+    try:
+        with sigint_shield():
+            if stdout:
+                (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
+            if stderr:
+                (session.session_dir / REASONING_LOG).write_text(stderr)
 
-    metrics: dict = {
-        "exit_code": exit_code,
-        "role": role,
-        # HATS-561: provider was previously omitted from the SubAgent
-        # finalize path's base metrics dict (only the HITL counterpart
-        # `_finalize_session_basic` wrote it). The downstream
-        # `AuditWriter._render_audit` then read `metrics.get("provider",
-        # "unknown")` → audit.md said `Provider: unknown` for every
-        # SubAgent / `execute --batch` session. Provider is known by
-        # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
-        # and is threaded through here.
-        "provider": provider,
-        "model": model,
-        "isolation_mode": isolation_mode,
-    }
-    if timed_out:
-        metrics["timed_out"] = True
-    if error is not None:
-        metrics["error"] = error
-    if tags:
-        metrics["tags"] = tags
-    if duration_s is not None:
-        metrics["duration_s"] = round(duration_s, 3)
-    if extra_metrics:
-        for k, v in extra_metrics.items():
-            if v is not None:
-                metrics[k] = v
+            metrics: dict = {
+                "exit_code": exit_code,
+                "role": role,
+                # HATS-561: provider was previously omitted from the SubAgent
+                # finalize path's base metrics dict (only the HITL counterpart
+                # `_finalize_session_basic` wrote it). The downstream
+                # `AuditWriter._render_audit` then read `metrics.get("provider",
+                # "unknown")` → audit.md said `Provider: unknown` for every
+                # SubAgent / `execute --batch` session. Provider is known by
+                # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
+                # and is threaded through here.
+                "provider": provider,
+                "model": model,
+                "isolation_mode": isolation_mode,
+            }
+            if timed_out:
+                metrics["timed_out"] = True
+            if error is not None:
+                metrics["error"] = error
+            if tags:
+                metrics["tags"] = tags
+            if duration_s is not None:
+                metrics["duration_s"] = round(duration_s, 3)
+            if extra_metrics:
+                for k, v in extra_metrics.items():
+                    if v is not None:
+                        metrics[k] = v
 
-    session.finalize_audit(metrics)
+            session.finalize_audit(metrics)
 
-    # HATS-1221: Persist completion metrics to diagnostics.json for subagents
-    save_session_diagnostics(
-        session.session_dir,
-        "completion",
-        {
-            "session_id": session.session_id,
-            "exit_code": exit_code,
-            "role": role,
-            "duration_s": round(duration_s, 3) if duration_s is not None else None,
-            "timed_out": timed_out,
-            "error": error,
-        },
-    )
-
-    # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
-    # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
-    claude_session_id = None
-    if extra_metrics:
-        claude_session_id = extra_metrics.get("claude_session_id")
-    if work_dir is not None and (claude_session_id or transcript_resolver):
-        try:
-            _run_finalize_subagent(
-                session,
-                claude_session_id=claude_session_id or "",
-                project_dir=work_dir,
-                exit_code=exit_code,
-                static_cost_analyzer=static_cost_analyzer,
-                session_factory=session_factory,
-                audit_writer_factory=audit_writer_factory,
-                transcript_resolver=transcript_resolver,
+            # HATS-1221: Persist completion metrics to diagnostics.json for subagents
+            save_session_diagnostics(
+                session.session_dir,
+                "completion",
+                {
+                    "session_id": session.session_id,
+                    "exit_code": exit_code,
+                    "role": role,
+                    "duration_s": round(duration_s, 3) if duration_s is not None else None,
+                    "timed_out": timed_out,
+                    "error": error,
+                },
             )
-        except (Exception, KeyboardInterrupt):
-            # HATS-1374: escalated from warning, and recorded in the artifact —
-            # a broken sensor that only whispers into a log is how RC-C stayed
-            # invisible across 74 sessions.
-            logger.error("finalize-subagent pipeline failed", exc_info=True)
-            _flag_sensor_error(session)
+
+            # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
+            # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
+            claude_session_id = None
+            if extra_metrics:
+                claude_session_id = extra_metrics.get("claude_session_id")
+            if work_dir is not None and (claude_session_id or transcript_resolver):
+                try:
+                    _run_finalize_subagent(
+                        session,
+                        claude_session_id=claude_session_id or "",
+                        project_dir=work_dir,
+                        exit_code=exit_code,
+                        static_cost_analyzer=static_cost_analyzer,
+                        session_factory=session_factory,
+                        audit_writer_factory=audit_writer_factory,
+                        transcript_resolver=transcript_resolver,
+                    )
+                except (Exception, KeyboardInterrupt):
+                    # HATS-1374: escalated from warning, and recorded in the artifact —
+                    # a broken sensor that only whispers into a log is how RC-C stayed
+                    # invisible across 74 sessions.
+                    logger.error("finalize-subagent pipeline failed", exc_info=True)
+                    _flag_sensor_error(session)
+    except FinalizeAborted:
+        logger.warning("sub-agent finalize aborted by operator")
 
 
 def _highlight_hash(version: str) -> str:
