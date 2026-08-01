@@ -609,6 +609,7 @@ class WrapRunner:
         # never prevents the session-id print (HATS-086 invariant).
         tracer = self.tracer_factory(session)
         exit_code = 130  # canonical SIGINT default if _pty_spawn raises pre-assignment
+        t0 = time.monotonic()
         try:
             # HATS-1221: Save structured startup notices to diagnostics.json
             save_session_diagnostics(
@@ -643,6 +644,7 @@ class WrapRunner:
         except KeyboardInterrupt:
             exit_code = 130
         finally:
+            duration_s = time.monotonic() - t0
             trace_stats: dict = {}
             try:
                 trace_stats = _finalize_session_basic(
@@ -653,6 +655,7 @@ class WrapRunner:
                     tracer=tracer,
                     tags=tags,
                     claude_session_id=claude_session_id,
+                    duration_s=duration_s,
                 )
                 try:
                     _run_finalize_hitl(

@@ -19,9 +19,11 @@ def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:
 def test_dispatcher_noop_when_hooks_json_missing(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "project"
     project.mkdir()
+    cache_dir = tmp_path / "cache"
 
     monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-test")
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache_dir))
 
     res = dispatch_hook("PreToolUse")
     assert res == 0

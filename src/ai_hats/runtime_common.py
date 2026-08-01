@@ -459,6 +459,7 @@ def _finalize_session_basic(
     tracer: "SidecarTracer",
     tags: dict[str, str] | None = None,
     claude_session_id: str | None = None,
+    duration_s: float | None = None,
 ) -> dict:
     """Per-runner minimal HITL finalize: log + metrics.json + smoke test.
 
@@ -508,6 +509,8 @@ def _finalize_session_basic(
             metrics["claude_session_id"] = claude_session_id
         if tags:
             metrics["tags"] = tags
+        if duration_s is not None:
+            metrics["duration_s"] = round(duration_s, 3)
         session.finalize_audit(metrics)
     except (Exception, KeyboardInterrupt):
         logger.warning("audit finalization failed", exc_info=True)

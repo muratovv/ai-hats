@@ -4,6 +4,7 @@ Extracted from runtime.py (HATS-715); shared helpers live in runtime_common."""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -375,6 +376,30 @@ class SubAgentRunner:
                             timeout=timeout_s,
                         )
                     session.log_res(f"Exit code: {proc.returncode}")
+                    stdout_str = proc.stdout or ""
+                    extra_metrics: dict = {}
+                    if stdout_str.strip().startswith("{") and stdout_str.strip().endswith("}"):
+                        try:
+                            parsed_json = json.loads(stdout_str.strip())
+                            if isinstance(parsed_json, dict):
+                                if isinstance(parsed_json.get("response"), str):
+                                    stdout_str = parsed_json["response"]
+                                usage = parsed_json.get("usage")
+                                if isinstance(usage, dict):
+                                    extra_metrics["tokens"] = {
+                                        "input": usage.get("input_tokens", 0),
+                                        "output": usage.get("output_tokens", 0),
+                                        "cache_read": usage.get("cache_read_tokens", 0),
+                                        "cache_creation": usage.get("cache_creation_tokens", 0),
+                                    }
+                                if cid := parsed_json.get("conversation_id"):
+                                    extra_metrics["provider_session_id"] = str(cid)
+                                for key in ("num_turns", "duration_seconds"):
+                                    if (val := parsed_json.get(key)) is not None:
+                                        extra_metrics[key] = val
+                        except (json.JSONDecodeError, ValueError) as exc:
+                            logger.debug("could not parse sub-agent stdout as JSON: %s", exc)
+
                     _finalize_sub_agent(
                         session,
                         role=role_name,
@@ -382,10 +407,11 @@ class SubAgentRunner:
                         model=model,
                         isolation_mode=mode.value,
                         exit_code=proc.returncode,
-                        stdout=proc.stdout or "",
+                        stdout=stdout_str,
                         stderr=proc.stderr or "",
                         tags=tags,
                         duration_s=time.monotonic() - t0,
+                        extra_metrics=extra_metrics if extra_metrics else None,
                         **observe_kwargs,
                     )
 

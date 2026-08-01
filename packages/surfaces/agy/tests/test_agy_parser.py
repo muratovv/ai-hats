@@ -144,3 +144,33 @@ def test_the_structured_transcript_wins_when_it_covers_the_session(tmp_path):
     parsed = AgyParser().parse(full, trace)
 
     assert [t.user_input for t in parsed.turns] == ["one", "two"]
+
+
+def test_agy_parser_extracts_tokens_from_metrics_json(tmp_path: Path) -> None:
+    trace = tmp_path / "trace.log"
+    trace.write_text("13:00:00.000 [REQ] test\n13:00:01.000 [RES] ⏺ ok\n")
+
+    metrics_file = tmp_path / "metrics.json"
+    metrics_file.write_text(
+        json.dumps({
+            "tokens": {
+                "input": 150,
+                "output": 50,
+                "cache_read": 1000,
+                "cache_creation": 200,
+            }
+        })
+    )
+
+    parser = AgyParser()
+    parsed = parser.parse(None, trace)
+    assert parsed.agg_usage["input_tokens"] == 150
+    assert parsed.agg_usage["output_tokens"] == 50
+    assert parsed.agg_usage["cache_read_input_tokens"] == 1000
+    assert parsed.agg_usage["cache_creation_input_tokens"] == 200
+    assert "token-telemetry-unavailable" not in parsed.flags
+
+    usage = parser.parse_usage(None, trace)
+    assert usage["aggregates"]["input_tokens"] == 150
+    assert usage["aggregates"]["output_tokens"] == 50
+    assert "token-telemetry-unavailable" not in usage["flags"]

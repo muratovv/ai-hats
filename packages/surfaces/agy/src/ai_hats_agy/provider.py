@@ -301,7 +301,7 @@ class AgyProvider(Provider):
         cmd: list[str],
         meta_prompt: str,
     ) -> list[str]:
-        return cmd + ["-p", meta_prompt]
+        return cmd + ["--output-format", "json", "-p", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         import sys

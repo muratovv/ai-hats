@@ -57,10 +57,30 @@ def _summarize_tool_args(name: str, args: dict[str, Any]) -> str:
     return str(args)[:80]
 
 
+def _get_tokens_from_metrics(trace_path: Path) -> dict[str, int] | None:
+    session_dir = trace_path.parent
+    metrics_file = session_dir / "metrics.json"
+    if not metrics_file.is_file():
+        return None
+    try:
+        data = json.loads(metrics_file.read_text(encoding="utf-8"))
+        tokens = data.get("tokens")
+        if isinstance(tokens, dict) and (tokens.get("input") or tokens.get("output")):
+            return {
+                "input_tokens": tokens.get("input", 0),
+                "output_tokens": tokens.get("output", 0),
+                "cache_read_input_tokens": tokens.get("cache_read", 0),
+                "cache_creation_input_tokens": tokens.get("cache_creation", 0),
+            }
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
 class AgyParser:
     """Parse an `agy` (Antigravity CLI) `transcript.jsonl` into `ParsedTranscript` / `usage/v1`.
 
-    JSONL present → structured turns + tool calls (token metrics unavailable/unmeasured);
+    JSONL present → structured turns + tool calls (token metrics from session metrics if measured);
     else → trace-log fallback (`TraceParser`).
     """
 
@@ -72,7 +92,17 @@ class AgyParser:
         if lines is None:
             if jsonl_path:
                 logger.debug("agy transcript.jsonl unusable at %s — trace fallback", jsonl_path)
-            return self._trace.parse(None, trace_path)
+            parsed = self._trace.parse(None, trace_path)
+            agg_tokens = _get_tokens_from_metrics(trace_path)
+            if agg_tokens:
+                flags = [f for f in parsed.flags if f != FLAG_NO_TOKEN_TELEMETRY]
+                return ParsedTranscript(
+                    turns=parsed.turns,
+                    model_stats=parsed.model_stats,
+                    agg_usage=agg_tokens,
+                    flags=flags,
+                )
+            return parsed
 
         turns = self._parse_lines(lines)
         # HATS-1397: agy rotates its brain segment on a checkpoint and offers no
@@ -85,31 +115,55 @@ class AgyParser:
             logger.debug("agy transcript.jsonl covers %d turns, trace %d — using the trace",
                          len(turns), len(traced))
             turns = traced
-        # The zeros below are a placeholder, not a reading — the flag is what stops
-        # a consumer treating them as one (HATS-1397).
-        return ParsedTranscript(
-            turns=turns,
-            model_stats={},
-            agg_usage={
+
+        agg_tokens = _get_tokens_from_metrics(trace_path)
+        if agg_tokens:
+            agg_usage = agg_tokens
+            flags: list[str] = []
+        else:
+            agg_usage = {
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "cache_read_input_tokens": 0,
                 "cache_creation_input_tokens": 0,
-            },
-            flags=[FLAG_NO_TOKEN_TELEMETRY],
+            }
+            flags = [FLAG_NO_TOKEN_TELEMETRY]
+
+        return ParsedTranscript(
+            turns=turns,
+            model_stats={},
+            agg_usage=agg_usage,
+            flags=flags,
         )
 
     def parse_usage(self, jsonl_path: Path | None, trace_path: Path) -> dict[str, Any]:
         lines = self._load_lines(jsonl_path)
         if lines is None:
-            return self._trace.parse_usage(None, trace_path)
+            report = self._trace.parse_usage(None, trace_path)
+            agg_tokens = _get_tokens_from_metrics(trace_path)
+            if agg_tokens:
+                agg = report["aggregates"]
+                agg["input_tokens"] = agg_tokens["input_tokens"]
+                agg["output_tokens"] = agg_tokens["output_tokens"]
+                agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
+                agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
+                report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
+            return report
 
         report = (
             empty_usage_report(Path(jsonl_path).name)
             if jsonl_path
             else empty_usage_report("transcript.jsonl")
         )
-        report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
+        agg_tokens = _get_tokens_from_metrics(trace_path)
+        if agg_tokens:
+            agg = report["aggregates"]
+            agg["input_tokens"] = agg_tokens["input_tokens"]
+            agg["output_tokens"] = agg_tokens["output_tokens"]
+            agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
+            agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
+        else:
+            report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
         turns = self._parse_lines(lines)
         agg = report["aggregates"]

@@ -28,12 +28,14 @@ def test_claude_get_run_command() -> None:
 
 def test_agy_get_run_command() -> None:
     p = AgyProvider()
-    assert p.get_run_command(["agy"], "hi") == ["agy", "-p", "hi"]
+    assert p.get_run_command(["agy"], "hi") == ["agy", "--output-format", "json", "-p", "hi"]
     # With flags appended by harness
     assert p.get_run_command(["agy", "--model", "agy-2.0-flash"], "hi") == [
         "agy",
         "--model",
         "agy-2.0-flash",
+        "--output-format",
+        "json",
         "-p",
         "hi",
     ]
