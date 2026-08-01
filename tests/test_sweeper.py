@@ -375,6 +375,9 @@ def test_default_surfaces_cover_all_known_owners():
     assert keys == [
         "git-hooks",
         "runtime-hooks",
+        # HATS-1336: agy's pre-1166 root remnant. A location outlives its
+        # owner, so it gets its own key rather than riding runtime-hooks.
+        "agy-root-runtime-hooks",
         "skills-export",
         "claude-publish",
         "root-skills-export",

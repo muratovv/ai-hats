@@ -24,14 +24,13 @@ from .provider_entry_points import (
     _provider_entry_points,
 )
 from .resolver import read_rule_body
-from . import owners
 
 
 logger = logging.getLogger(__name__)
 
-# HATS-905: retiring the managed settings.json hooks mechanism = dropping this
-# line; the unclaimed-marker sweeper then strips ai-hats:* tagged entries.
-owners.register_owner("runtime-hooks", module=__name__)
+# HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
+# designed switch, so the sweeper now reclaims the root ai-hats:* entries.
+
 # HATS-865: definition moved to the constants leaf; re-exported here for the
 # existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
 from .constants import (  # noqa: E402
