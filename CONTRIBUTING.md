@@ -146,6 +146,74 @@ interpreter instead of reaching for `AI_HATS_SMOKE_SKIP=1`:
 PATH=/tmp/e2e-venv/bin:$PATH git commit ...
 ```
 
+### Verifying library changes from a worktree
+
+The section above is about the *package*; this one is about the *library*. They
+break independently — a worktree run can import exactly the code you wrote and
+still compose `library/` from **main**, so the check reports on content you did
+not change. Success looks like success and failure looks like failure; nothing in
+the output says which checkout was measured.
+
+The cause is precedence. `builtin_library_root()` ranks `AI_HATS_PROJECT_DIR`
+above cwd auto-detection, and an agent session exports that var pinned to the main
+checkout — so it wins from inside a worktree, and `wt exec` does not repoint it.
+
+For the test suite this is handled: `tests/conftest.py` drops the pin pair at
+import — both halves, since `AI_HATS_DIR` is scoped *by* the pin — then refuses the
+session outright if the layers still resolve outside the rootdir. For anything you
+run **by hand**, pin the library explicitly:
+
+```bash
+# `ai-hats list roles` resolves via _project_dir(), which deliberately hops to
+# the main checkout (a worktree carries no .agent/), so it reports main's library.
+export AI_HATS_LIBRARY_ROOT="$PWD/packages/ai-hats-library/src/ai_hats_library"
+ai-hats list roles
+```
+
+`AI_HATS_LIBRARY_ROOT` is the highest-precedence seam, so it beats both the pin
+and cwd. Point it at the **library package dir** shown above, not at the checkout
+root: the value is validated against the manifest (`core/` · `usage/` ·
+`core/pipelines/`), and a checkout root fails that check, so the override is
+dropped and resolution falls back to exactly what you were trying to override. It
+says so on stderr — `does not hold a complete builtin library` — so read that line
+rather than trusting the output that follows it.
+
+### Probing a role's behavior before merge
+
+`ai-hats agent <role>` runs the sub-agent in a worktree cut from the canonical
+base branch — `assert_head_is_canonical_base` refuses a non-canonical HEAD on
+purpose — so a probe launched from your branch still exercises the library
+**without** your changes. An agent answering correctly there proves nothing about
+your edit.
+
+Pin the library to the branch checkout instead:
+
+```bash
+export AI_HATS_LIBRARY_ROOT="$PWD/packages/ai-hats-library/src/ai_hats_library"
+ai-hats agent <role>
+```
+
+A worktree is still cut — `--isolation` has no CLI opt-out, and `NONE` is not an
+exposed choice — but the sub-agent env is built as `{**os.environ, …}`, so the
+override rides in, and the provider only re-pins `AI_HATS_DIR` /
+`AI_HATS_PROJECT_DIR`, which the override already outranks. The agent therefore
+runs against base-branch *source* while composing your branch's `library/`. For an
+injection or role change that is the isolation you want: the artifact under test is
+the composed prompt, not the source tree.
+
+Confirm before trusting the answer — an agent sounding right is not evidence that
+its prompt changed. The composed prompt is written per run (sessions live in the
+main checkout, since a worktree carries no `.agent/`):
+
+```bash
+# git's commondir points a worktree back at the main checkout, which owns .agent/
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+grep -c "<a phrase from your edit>" \
+  "$MAIN"/.agent/ai-hats/sessions/runs/session_*/meta_prompt.txt | tail -1
+```
+
+A zero there means the probe measured the old library, whatever the agent said.
+
 A change is **not done** until:
 
 1. Tests pass locally.

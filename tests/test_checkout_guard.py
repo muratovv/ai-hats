@@ -1,4 +1,4 @@
-"""Tests for tests._checkout_guard (HATS-1242)."""
+"""Tests for tests._checkout_guard (HATS-1242, HATS-1429)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,11 @@ import pytest
 from tests._checkout_guard import (
     ENV_IGNORE_FOREIGN_CHECKOUT,
     check_checkout_integrity,
+    check_library_integrity,
     discover_subpackages,
+    foreign_library_layers,
     foreign_source_checkout,
+    library_remedy_message,
     remedy_message,
 )
 
@@ -115,3 +118,103 @@ def test_check_checkout_integrity_ignored(tmp_path: Path, monkeypatch: pytest.Mo
 
     # Should not raise when env flag set
     check_checkout_integrity(init_py, repo_root)
+
+
+# --- library-layer provenance (HATS-1429) ----------------------------------
+# The guard above checks where the *package* resolves; these check where the
+# *library layers* resolve — the axis it is blind to.
+
+LAYER_SUBPATH = ("packages", "ai-hats-library", "src", "ai_hats_library")
+
+
+def _make_layers(checkout: Path) -> list[Path]:
+    """Build ``[core, usage]`` under a checkout, as builtin_library_layers returns."""
+    root = checkout.joinpath(*LAYER_SUBPATH)
+    layers = [root / "core", root / "usage"]
+    for layer in layers:
+        layer.mkdir(parents=True)
+    return layers
+
+
+def test_foreign_library_layers_inside_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "worktree"
+    layers = _make_layers(repo_root)
+
+    assert foreign_library_layers(layers, repo_root) is None
+
+
+def test_foreign_library_layers_in_another_checkout(tmp_path: Path) -> None:
+    """The live defect: tests in the worktree, layers resolved in main."""
+    repo_root = tmp_path / "worktree"
+    main_checkout = tmp_path / "main_repo"
+    repo_root.mkdir()
+    layers = _make_layers(main_checkout)
+
+    assert foreign_library_layers(layers, repo_root) == main_checkout.resolve()
+
+
+def test_foreign_library_layers_site_packages_is_not_foreign(tmp_path: Path) -> None:
+    """A wheel install is a legitimate downstream resolution, not a wrong checkout."""
+    repo_root = tmp_path / "worktree"
+    repo_root.mkdir()
+    site_packages = tmp_path / ".venv" / "lib" / "python3.11" / "site-packages"
+    layers = [site_packages / "ai_hats_library" / name for name in ("core", "usage")]
+    for layer in layers:
+        layer.mkdir(parents=True)
+
+    assert foreign_library_layers(layers, repo_root) is None
+
+
+def test_foreign_library_layers_empty_is_not_foreign(tmp_path: Path) -> None:
+    """A broken install resolves to no layers; that is the install's problem, not ours."""
+    assert foreign_library_layers([], tmp_path) is None
+
+
+def test_library_remedy_message_names_both_paths(tmp_path: Path) -> None:
+    """The message must state what was measured vs what was expected.
+
+    An operator hitting this has just been handed a plausible-looking result from
+    the wrong checkout; the message's whole job is to name both ends of the split.
+    """
+    repo_root = tmp_path / "worktree"
+    foreign = tmp_path / "main_repo"
+
+    msg = library_remedy_message(repo_root, foreign)
+
+    assert "WRONG library" in msg
+    assert str(repo_root) in msg
+    assert str(foreign) in msg
+
+
+def test_library_remedy_names_a_cause_conftest_has_not_already_fixed(tmp_path: Path) -> None:
+    """The remedy must be actionable, not describe an already-neutralized cause.
+
+    conftest drops the AI_HATS_PROJECT_DIR/AI_HATS_DIR pin at import, so "unset the
+    pin" cannot be the advice — by the time this fires, the pin is long gone and the
+    operator would be chasing a variable that is not set. The live causes are the
+    library-root override and cwd.
+    """
+    msg = library_remedy_message(tmp_path / "worktree", tmp_path / "main_repo")
+
+    assert "AI_HATS_LIBRARY_ROOT" in msg
+    assert "cwd" in msg
+
+
+def test_check_library_integrity_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(ENV_IGNORE_FOREIGN_CHECKOUT, raising=False)
+    repo_root = tmp_path / "worktree"
+    repo_root.mkdir()
+    layers = _make_layers(tmp_path / "main_repo")
+
+    with pytest.raises(RuntimeError, match="WRONG library"):
+        check_library_integrity(layers, repo_root)
+
+
+def test_check_library_integrity_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shares the 1242 escape hatch — one flag for 'I know, run it anyway'."""
+    monkeypatch.setenv(ENV_IGNORE_FOREIGN_CHECKOUT, "1")
+    repo_root = tmp_path / "worktree"
+    repo_root.mkdir()
+    layers = _make_layers(tmp_path / "main_repo")
+
+    check_library_integrity(layers, repo_root)

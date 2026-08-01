@@ -12,6 +12,7 @@ reach ``packages/*/tests``.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
@@ -19,6 +20,13 @@ import tempfile
 import pytest
 
 sys.dont_write_bytecode = True
+
+# HATS-1429: dropped at conftest import, not in the autouse fixture below — modules
+# resolve library layers at *collection* time, earlier than any fixture can reach.
+# Both halves, never one: HATS-897 scopes AI_HATS_DIR *by* the pin, so dropping the
+# pin alone would promote a scoped override into a global one.
+for _pinned in ("AI_HATS_PROJECT_DIR", "AI_HATS_DIR"):
+    os.environ.pop(_pinned, None)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -184,6 +192,27 @@ def _check_foreign_checkout(request: pytest.FixtureRequest) -> None:
         check_checkout_integrity(resolved_init, rootdir)
     except RuntimeError as err:
         pytest.fail(str(err), pytrace=False)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Refuse the session if the composed library layers are foreign (HATS-1429).
+
+    ``_check_foreign_checkout`` proves the *package* is ours; this proves the
+    *library* is too — independent axes.
+
+    A hook, not a session fixture, because the damage lands at COLLECTION time:
+    ``test_cli_init_flow`` parametrizes its matrix from the library at import, and
+    under ``--collect-only`` a fixture never fires at all.
+    """
+    from pathlib import Path
+    from ai_hats.paths.library import builtin_library_layers
+    from tests._checkout_guard import check_library_integrity
+
+    rootdir = Path(config.rootdir).resolve()
+    try:
+        check_library_integrity(builtin_library_layers(), rootdir)
+    except RuntimeError as err:
+        raise pytest.UsageError(str(err)) from None
 
 
 @pytest.fixture(autouse=True)

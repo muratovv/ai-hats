@@ -27,6 +27,19 @@ def test_ambient_ai_hats_dir_is_neutralized():
     assert os.environ.get(ENV_AI_HATS_DIR) is None
 
 
+def test_the_project_dir_pin_is_dropped_as_a_pair():
+    """Both halves go, or neither (HATS-1429 drops them at conftest import).
+
+    HATS-897 scopes ``AI_HATS_DIR`` *by* ``AI_HATS_PROJECT_DIR``: a bare
+    ``AI_HATS_DIR`` with no pin keeps env-wins semantics. Dropping the pin alone
+    therefore does not neutralize the ambient dir — it PROMOTES it from an override
+    scoped to one project into a global one, which is how
+    ``test_agy_provider::test_get_env`` began resolving into the real repo.
+    """
+    assert os.environ.get("AI_HATS_PROJECT_DIR") is None
+    assert os.environ.get(ENV_AI_HATS_DIR) is None
+
+
 def test_save_artifact_judge_template_stays_in_project_dir(tmp_path: Path):
     """The exact path that leaked (HATS-671) must resolve under the caller's
     ``project_dir`` — never an ambient env override nor the process CWD.
