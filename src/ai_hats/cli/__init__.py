@@ -313,6 +313,7 @@ from . import (  # noqa: E402
     maintenance,
     reflect as reflect_mod,
     session,
+    wait as wait_mod,
     worktree,
 )
 
@@ -364,6 +365,9 @@ main.add_command(worktree.wt)
 
 # Session (observability + retro generation)
 main.add_command(session.session)
+
+# Wait — block-in-session until an event happens (HATS-986)
+main.add_command(wait_mod.wait_cmd)
 
 # HATS-1260: the legacy `ai-hats task` groups (task/hyp/proposal/attach) are
 # unmounted — rack is the only backlog surface; the tracker package dies at HATS-1262.
