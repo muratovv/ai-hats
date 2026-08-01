@@ -37,6 +37,9 @@ FLAG_NOT_FINALIZED = "not-finalized"
 # HATS-1397: narrower than the three above — the transcript parsed fine, but this
 # surface emits no usage field at all, so only the token counters are unknowable.
 FLAG_NO_TOKEN_TELEMETRY = "token-telemetry-unavailable"  # noqa: S105 — LLM tokens, not a secret
+# HATS-1433: the counters exist but nobody measured them — they were scraped from
+# rendered output or estimated from text length, so no consumer may read them as fact.
+FLAG_TOKEN_TELEMETRY_ESTIMATED = "token-telemetry-estimated"  # noqa: S105 — LLM tokens, not a secret
 
 
 def has_real_counters(metrics: dict) -> bool:
@@ -119,6 +122,7 @@ __all__ = [
     "FLAG_SENSOR_ERROR",
     "FLAG_NOT_FINALIZED",
     "FLAG_NO_TOKEN_TELEMETRY",
+    "FLAG_TOKEN_TELEMETRY_ESTIMATED",
     "is_measured",
     "session_dirname",
     "strip_session_prefix",

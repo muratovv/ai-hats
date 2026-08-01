@@ -1,4 +1,5 @@
-"""A surface with no token telemetry never records a token count (HATS-1397).
+"""A surface with no token telemetry never passes a number off as measured
+(HATS-1397, contract widened by HATS-1433).
 
 The third state ``test_metrics_sensor_honesty`` misses: the sensor DID fire —
 turns and tool calls are real — but one counter family is unmeasurable because
@@ -6,6 +7,11 @@ the surface never emits it. Nothing in agy's ``transcript.jsonl`` carries usage.
 Live damage, session ``20260731-100500-1-40786``: a ``session-reviewer`` returned
 2.9 KB of YAML verdicts, its record said ``measured: true`` beside
 ``tokens: {output: 0}``, and ``is_zero_output`` read that as proof of silence.
+
+HATS-1427 then began recovering a count by scraping the rendered trace and
+estimating off text length. That is allowed to be written — HATS-1433 only
+insists the record says which of the two it is, because every consumer
+downstream reads an unqualified number as fact.
 """
 
 from __future__ import annotations
@@ -18,7 +24,11 @@ from ai_hats.harness.guard import apply_post_run_guard
 from ai_hats.pipeline.harness_policy import HarnessPolicy
 from ai_hats_agy.parser import AgyParser
 from ai_hats_observe import AuditWriter, Session
-from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, METRICS_JSON
+from ai_hats_observe.artifacts import (
+    FLAG_NO_TOKEN_TELEMETRY,
+    FLAG_TOKEN_TELEMETRY_ESTIMATED,
+    METRICS_JSON,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "agy_jsonl" / "one_turn_no_telemetry.jsonl"
 
@@ -43,25 +53,29 @@ def read_metrics(session: Session) -> dict:
     return json.loads(session.metrics_path.read_text())
 
 
-def test_agy_parse_flags_the_missing_telemetry_on_both_reports():
-    """``parse_usage`` already said so; ``parse`` — the path feeding metrics.json
-    — returned a hard-zero ``agg_usage`` and no flag, so the writer had nothing
-    to distinguish "no telemetry" from "measured zero". One shared constant, so
-    a consumer can compare rather than substring-match a prose sentence."""
+def test_agy_parse_flags_the_estimate_on_both_reports():
+    """``parse`` — the path feeding metrics.json — used to return a hard-zero
+    ``agg_usage`` and no flag, so the writer had nothing to distinguish "no
+    telemetry" from "measured zero". HATS-1433 keeps that shared-constant
+    argument and splits the third state out: this fixture carries turn text, so
+    the HATS-1427 recovery ladder estimates a count off it — and an estimate has
+    to say so, or it is read as the measurement this surface never makes."""
     trace = FIXTURE.parent / "absent-trace.log"
 
     parsed = AgyParser().parse(FIXTURE, trace)
     usage = AgyParser().parse_usage(FIXTURE, trace)
 
     assert parsed.turns, "the transcript is structured — turns are measurable"
-    assert FLAG_NO_TOKEN_TELEMETRY in parsed.flags
-    assert FLAG_NO_TOKEN_TELEMETRY in usage["flags"]
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in parsed.flags
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in usage["flags"]
+    assert FLAG_NO_TOKEN_TELEMETRY not in parsed.flags, "an estimate is not an absence"
 
 
-def test_measurable_counters_survive_the_unmeasurable_ones(tmp_path):
-    """Turns and tool calls came off the same parse and are real; only the token
-    block is unknowable, so only it is withheld. Writing it as zeros is what put
-    ``tokens: {output: 0}`` next to ``measured: true`` in the live record."""
+def test_an_estimated_count_never_lands_unmarked(tmp_path):
+    """Turns and tool calls came off the same parse and are real; the token block
+    is a guess off string lengths. It may be written — but never beside a bare
+    ``measured: true``, which is the shape that put ``tokens: {output: 0}`` into
+    the live record as fact."""
     session = agy_session(tmp_path)
 
     AuditWriter(AgyParser()).build(session, jsonl_path=FIXTURE)
@@ -70,14 +84,16 @@ def test_measurable_counters_survive_the_unmeasurable_ones(tmp_path):
     assert m["measured"] is True
     assert m["turns"] == 1
     assert m["tool_calls"] == 0
-    assert FLAG_NO_TOKEN_TELEMETRY in m["flags"]
-    assert "tokens" not in m, f"a surface with no telemetry claimed {m.get('tokens')!r}"
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in m["flags"], (
+        f"tokens {m.get('tokens')!r} reached metrics.json with flags "
+        f"{m.get('flags')!r} — indistinguishable from a measurement"
+    )
 
 
-def test_re_enrichment_drops_the_zeros_already_written_to_disk(tmp_path):
+def test_re_enrichment_relabels_the_zeros_already_written_to_disk(tmp_path):
     """Verbatim counters of the live record, which ``observe session backfill``
-    re-enriches. A record carrying the flag AND a token count contradicts itself,
-    and the count is the half every direct-counter consumer reads."""
+    re-enriches. The pre-fix record carries a token count and an empty ``flags``;
+    re-enrichment must not leave that claim standing unqualified."""
     session = agy_session(
         tmp_path,
         {
@@ -94,9 +110,27 @@ def test_re_enrichment_drops_the_zeros_already_written_to_disk(tmp_path):
 
     m = read_metrics(session)
     assert m["turns"] == 1
-    assert FLAG_NO_TOKEN_TELEMETRY in m["flags"]
-    assert "tokens" not in m, f"stale fabricated tokens survived as {m.get('tokens')!r}"
-    assert "- **tokens**" not in session.audit_path.read_text()
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in m["flags"]
+    assert m["tokens"]["output"] > 0, "the stale fabricated zeros survived re-enrichment"
+
+
+def test_an_estimate_never_gets_a_run_discarded(tmp_path):
+    """Same defense-in-depth as the flag below, one state over: ``is_zero_output``
+    decides whether a sub-agent's work is thrown away, and an estimate is not the
+    measurement that decision needs."""
+    estimated = {
+        "exit_code": 0,
+        "role": "session-reviewer",
+        "provider": "agy",
+        "measured": True,
+        "flags": [FLAG_TOKEN_TELEMETRY_ESTIMATED],
+        "turns": 1,
+        "tokens": {"input": 12, "output": 0, "cache_read": 0, "cache_creation": 0},
+        "models": {},
+        "tool_calls": 0,
+    }
+
+    assert is_zero_output(estimated) is False
 
 
 def test_the_guard_reads_the_flag_not_only_the_missing_key():

@@ -24,6 +24,29 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **An estimated token count no longer reaches `metrics.json` looking measured**
+  (HATS-1433). The agy recovery ladder (HATS-1427) falls back from the real
+  count in `metrics.json` to scraping the rendered TUI trace and, failing that,
+  to estimating off text length — and any of the three cleared the record's
+  flags, so a guess landed beside `measured: true` and read as fact to every
+  consumer, including the cost comparison between provider arms. Since agy emits
+  no token telemetry at source (HATS-1420), the guessing tiers are the ones that
+  actually run there. The counts are still written, now carrying
+  `token-telemetry-estimated`; `is_zero_output` refuses to discard a sub-agent's
+  work on the strength of one; and a half-scraped count no longer pads its
+  missing half with an invented `100`/`10`. Also unblocks the local gate, which
+  had been failing at its first stage on an `E402` in the same file.
+
+  Folds in HATS-1441, which fixed the same defect in parallel with a two-value
+  vocabulary. Three states are real — measured, estimated, nothing to measure —
+  and two values cannot spell them without lying, which is how `metrics.json`
+  came to say "no telemetry" while `usage.json` showed 4200 input tokens for the
+  same session. Both reports now derive from one ladder that returns the counts
+  *and* their provenance, and a test asserts they agree across seven input
+  shapes — the guard neither fix had, and the reason the drift survived two
+  attempts. Writing that test revived the estimate tier in the usage fallback,
+  dead since HATS-1427 because `getattr(report, "turns")` read a dict.
+
 - **A stray Ctrl-C at session end no longer costs a finalize step** (HATS-1426).
   Once the provider exits, the terminal is back in cooked mode, so a press that
   used to reach the child as a byte now arrives at the parent as a real SIGINT —

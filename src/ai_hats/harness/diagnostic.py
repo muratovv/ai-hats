@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY, REASONING_LOG, is_measured
+from ai_hats_observe.artifacts import (
+    FLAG_NO_TOKEN_TELEMETRY,
+    FLAG_TOKEN_TELEMETRY_ESTIMATED,
+    REASONING_LOG,
+    is_measured,
+)
 
 if TYPE_CHECKING:
     from ai_hats_observe import Session
@@ -37,8 +42,12 @@ def is_zero_output(metrics: dict[str, Any]) -> bool:
         return False
     # HATS-1397: this step discards the sub-agent's output, so it asks the flag
     # itself rather than trusting the writer to have withheld the counter.
+    # HATS-1433: an estimate is not a measurement either — this step destroys the
+    # sub-agent's output, and a guess about token counts must never be the reason.
     flags = metrics.get("flags")
-    if isinstance(flags, list) and FLAG_NO_TOKEN_TELEMETRY in flags:
+    if isinstance(flags, list) and (
+        FLAG_NO_TOKEN_TELEMETRY in flags or FLAG_TOKEN_TELEMETRY_ESTIMATED in flags
+    ):
         return False
     tokens = metrics.get("tokens")
     if not isinstance(tokens, dict) or "output" not in tokens:
