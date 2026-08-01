@@ -3,6 +3,7 @@ name: doc-protocol
 description: Plan-stage style forks, scope triage, and pre-commit artifact verification for documentation tasks. Use when a task changes any docs/*.md, README.md, or CONTRIBUTING.md, lifts structure from a precedent doc, enumerates six or more items to document, or adds/renames names of code-side artifacts (skills, roles, paths, CLI).
 license: MIT
 ---
+
 # Doc Protocol
 
 Three coordinated checks for any task that **changes documentation text**
@@ -36,6 +37,10 @@ Doc tasks accumulate review rounds when style conventions are settled silently.
 **Surface them as explicit forks at plan stage** — saves 2–3 review iterations.
 
 ### Fork checklist (include in `plan.md` under `## Style conventions`)
+
+Any style convention that would earn a review comment if you guessed wrong is a
+plan-stage fork. The six below are the ones that recur — surface others as you
+meet them (line-wrap width, heading numbering, table-vs-list are common).
 
 1. **Reference format** — inline `[text](url)` / inline link with title / numbered footnote `[N]` / markdown reference-style.
 2. **Voice** — imperative ("Run …") / descriptive ("The runner runs …").
@@ -98,40 +103,43 @@ Result with triage: 4 hours saved + tighter doc.
 
 ---
 
-## Section 3: Pre-Commit Artifact Verification
+## Section 3: Pre-Commit Claim Verification
 
-Doc text accumulates phantom references: skill/role/path/CLI names that no
-longer match the code (renames, removed components, drift). Catch them before
-the user does.
+Doc text accumulates claims that were true once — a renamed skill, a moved
+path, a glob that stopped matching, a count that drifted. The invariant and the
+four kinds of checkable claim are rule `rule_verify_authored_claims`; this
+section is the doc-side recipe for applying it.
 
 ### Verification procedure (before commit)
 
-When the doc names code-side artifacts (skills, roles, schemas, file paths,
-CLI commands), run a `grep` pass for each:
+Unroll every claim the doc makes about code-side artifacts. Names are the
+common case, not the whole job: a glob, an "every"/"always", and a count rot
+the same way and are just as invisible to the test suite.
 
 ```bash
-# Extract artifact-name candidates from the doc
-grep -oE "[a-z][a-z_-]*-[a-z][a-z_-]*-(skill|role)|library/(core|usage)/(skills|roles|traits|rules)/[a-z_-]+" docs/<file>.md | sort -u
+# Resolve the library from the checkout you are IN — never hard-code the root,
+# it has moved once already, and a literal path silently measures main.
+LIB=$(python3 -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)')
 
-# For each candidate, verify it exists in source
-for name in <list>; do
-    test -e "library/core/skills/$name" \
-        || test -e "library/usage/skills/$name" \
-        || test -e "library/core/roles/$name" \
-        || test -e "library/usage/roles/$name" \
-        || echo "MISSING: $name"
+# Names: does each one resolve, here, now?
+for name in <candidates>; do
+    find "$LIB" -maxdepth 3 -type d -name "$name" | grep -q . || echo "MISSING: $name"
 done
+
+# Globs: expand and READ the match list — is the set the one you meant?
+# `find -name`, not a shell glob: under zsh a non-matching brace arm aborts
+# the whole line before anything prints.
+find "$LIB"/core/skills "$LIB"/usage/skills -maxdepth 1 -name '<your-glob>'
+
+# CLI: the subcommand and the flag both have to exist.
+ai-hats <subcommand> --help
 ```
 
-Also grep CLI commands referenced in prose against actual CLI:
+Quantifiers and counts have no one-liner: for "every X does Y" find the branch
+that breaks it; for a number, count it or drop it.
 
-```bash
-ai-hats --help | grep <subcommand>
-ai-hats <subcommand> --help | grep <flag>
-```
-
-Surface any phantom references **before commit**. Update the doc, file a
-backlog item, or delete the reference.
+Surface anything unresolved **before commit** — fix the doc, file a backlog
+item, or delete the claim.
 
 ### INDEX.md freshness
 
@@ -171,7 +179,7 @@ Applies to **translation tasks** (`feedback-doc-style-upfront`) AND
 
 - **Settling style silently** — landing the PR and discovering 6 style questions only in review.
 - **Enumerating all ≥6 items** because they were listed in the task description — enumeration ≠ contract.
-- **Skipping artifact verification** on a doc that mentions code-side names — phantom refs accumulate.
+- **Verifying only the names** on a doc that also asserts a glob, an "every"/"always", or a count — they rot the same way (rule `rule_verify_authored_claims`).
 - **Lifting precedent doc structure** without asking "keep this or simplify?" — precedent drift bypasses user approval.
 - **Bundling style decisions into review feedback** — pay 2-3 rounds upstream of writing.
 
@@ -179,14 +187,15 @@ Applies to **translation tasks** (`feedback-doc-style-upfront`) AND
 
 A doc task passes this protocol when:
 
-- `plan.md` has a `## Style conventions` section with the 6 forks resolved.
+- `plan.md` has a `## Style conventions` section resolving the recurring six plus any further fork this doc raises.
 - If enumeration ≥6: triage was performed and ≤5 items remain (or user explicitly waived).
-- Every named code artifact in the doc passes a `grep` check against source.
+- Every checkable claim in the doc — name, glob, quantifier, count — was unrolled against source.
 - Numbered-refs convention from CONTRIBUTING followed (if cross-doc/cross-file/fixture links).
 - `docs/INDEX.md` updated when the task adds, removes, or renames a file under `docs/`.
 
 ## See also
 
+- `rule_verify_authored_claims` — the invariant §3 applies; covers injections and `SKILL.md` too, which this skill does not.
 - `design-minimalism` — same upstream principle (curate, don't enumerate), applied at design phase.
 - `scope-guard` — implementation-stage scope discipline.
 - `CONTRIBUTING.md#documentation-references` — numbered-refs format spec.

@@ -40,6 +40,10 @@ ALWAYS_ON_RULES = {
     # collapses back into a list of masking spellings, which is the enumeration
     # that let `pytest …; echo "EXIT=$?"` through.
     "dev_rule_exit_code_provenance",
+    # HATS-1430: the four kinds it names (name / glob / quantifier / count) are
+    # the rule; a summarized bullet collapses back to "check the names", which
+    # is the doc-protocol enumeration this replaced.
+    "rule_verify_authored_claims",
 }
 
 
