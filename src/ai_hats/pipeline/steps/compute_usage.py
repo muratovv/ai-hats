@@ -100,9 +100,15 @@ class ComputeUsage(Step):
                 if transcript_resolver is not None
                 else None
             )
-            if jsonl_path is None or not jsonl_path.exists():
+            has_existing = (
+                any(p.exists() for p in jsonl_path)
+                if isinstance(jsonl_path, (list, tuple))
+                else (jsonl_path is not None and jsonl_path.exists())
+            )
+            if not jsonl_path or not has_existing:
                 logger.debug("compute_usage: no transcript for %s", claude_session_id)
                 return {}
+
 
             report = parser.parse_usage(jsonl_path, session_dir / TRACE_LOG)
             self._attach_session_meta(report, session_dir, role)

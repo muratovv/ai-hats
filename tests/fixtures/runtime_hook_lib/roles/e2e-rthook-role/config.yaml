@@ -6,7 +6,6 @@ composition:
   rules: []
   skills:
     - e2e-rthook
-  hooks: {}
 injection: |
   # ROLE: E2E-RTHOOK-ROLE
 

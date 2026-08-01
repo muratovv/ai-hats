@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from ai_hats.models import (
     KNOWN_SCHEMA_VERSION,
@@ -226,6 +227,62 @@ injection: |
     assert config.priorities == ["Safety", "Speed"]
     assert config.composition.traits == ["trait-base"]
     assert "Test injection" in config.injection
+
+
+# -- HATS-1152: unknown keys under composition: are loud, not silent --
+
+
+def test_composition_unknown_key_is_stripped_with_warning(tmp_path, capsys):
+    """HATS-1152: a key under ``composition:`` that no field owns used to be
+    dropped by ``extra="ignore"`` before any validator ran — a mistyped gate
+    binding was silently never installed. Policy mirrors HATS-581: strip so an
+    OLDER binary survives a config a NEWER one wrote, but WARN so it is visible.
+    """
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  traits: [t]\n  hooks: {}\n")
+
+    config = ComponentConfig.from_yaml(config_file)
+
+    assert config.composition.traits == ["t"]
+    assert not hasattr(config.composition, "hooks")
+    err = capsys.readouterr().err
+    assert "dropping unknown key 'hooks'" in err
+    assert str(config_file) in err
+
+
+def test_composition_typo_key_warning_suggests_the_field(tmp_path, capsys):
+    """HATS-1152: a near-miss of a real field is the case the card exists for —
+    the WARN must name the intended key, not just report an unknown one. Once
+    HATS-1140 adds ``checks``, a mistyped ``cheks:`` gets this for free."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  skils: [s]\n")
+
+    ComponentConfig.from_yaml(config_file)
+
+    err = capsys.readouterr().err
+    assert "dropping unknown key 'skils'" in err
+    assert "did you mean 'skills'?" in err
+
+
+def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
+    """HATS-1152: no near match (likely a config from a NEWER ai-hats) — no
+    misleading suggestion, but the known set so the reader can orient."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  widgets: [w]\n")
+
+    ComponentConfig.from_yaml(config_file)
+
+    err = capsys.readouterr().err
+    assert "did you mean" not in err
+    assert "known: rules, skills, traits" in err
+
+
+def test_composition_rejects_unknown_key_when_loader_bypassed():
+    """HATS-1152: ``from_yaml`` strips (forward-compat), but a caller building a
+    Composition directly gets no such courtesy — extra="forbid" is the
+    defense-in-depth for paths that never see the pre-strip."""
+    with pytest.raises(ValidationError):
+        Composition.model_validate({"traits": [], "bogus": 1})
 
 
 # -- OverlayConfig tests --

@@ -313,11 +313,11 @@ def test_guard_script_allows_safe() -> None:
 
 
 def test_resolve_transcript_returns_none_when_dir_absent(tmp_path, monkeypatch) -> None:
-    """No ~/.cline/data/sessions/ → None (cline not installed / never run)."""
+    """No ~/.cline/data/sessions/ → [] (cline not installed / never run)."""
     monkeypatch.delenv("CLINE_DATA_DIR", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
     provider = ClineProvider()
-    assert provider.resolve_transcript(tmp_path, "20260720-120000-1") is None
+    assert provider.resolve_transcript(tmp_path, "20260720-120000-1") == []
 
 
 def test_resolve_transcript_finds_recent_messages_json(tmp_path, monkeypatch) -> None:
@@ -337,7 +337,7 @@ def test_resolve_transcript_finds_recent_messages_json(tmp_path, monkeypatch) ->
 
     provider = ClineProvider()
     found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
-    assert found == msg
+    assert found == [msg]
 
 
 def test_resolve_transcript_skips_older_messages_json(tmp_path, monkeypatch) -> None:
@@ -357,4 +357,5 @@ def test_resolve_transcript_skips_older_messages_json(tmp_path, monkeypatch) -> 
 
     provider = ClineProvider()
     found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
-    assert found is None
+    assert found == []
+

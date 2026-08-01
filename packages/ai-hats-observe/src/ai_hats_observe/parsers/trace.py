@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ..artifacts import FLAG_NO_STRUCTURED_TRANSCRIPT
 from ..usage import empty_usage_report
@@ -202,7 +202,7 @@ class TraceParser:
         return turns
 
     def parse(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> ParsedTranscript:
         entries = self._parse_trace(trace_path)
         # Flagged unconditionally: this surface has no token telemetry at all, so
@@ -213,9 +213,10 @@ class TraceParser:
         )
 
     def parse_usage(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> dict[str, Any]:
         """No token telemetry on this surface → a well-formed empty ``usage/v1``."""
         report = empty_usage_report(trace_path.name)
         report["flags"].append(FLAG_NO_STRUCTURED_TRANSCRIPT)
         return report
+
