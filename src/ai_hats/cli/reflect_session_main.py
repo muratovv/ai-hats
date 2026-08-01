@@ -193,7 +193,7 @@ def _harness_check(
         verdicts = []
 
     try:
-        active_ids = _load_active_hyp_ids(project_dir)
+        active_ids = _load_active_hyp_ids(project_dir, session_id)
     except Exception as e:  # noqa: BLE001 — observability over correctness
         issues.append(f"could not enumerate active HYPs: {e}")
         active_ids = set()
@@ -223,10 +223,14 @@ def _extract_frontmatter(text: str) -> str:
     return rest[:end]
 
 
-def _load_active_hyp_ids(project_dir: Path) -> set[str]:
-    from ..rack_workspace import active_hypothesis_ids, rack_workspace
+def _load_active_hyp_ids(project_dir: Path, session_id: str) -> set[str]:
+    from ..rack_workspace import active_hypotheses, created_at_or_before, rack_workspace
+    from ..retro.window import session_cut
 
-    return active_hypothesis_ids(rack_workspace(project_dir))
+    ws = rack_workspace(project_dir)
+    every = active_hypotheses(ws)
+    kept = created_at_or_before(every, session_cut(project_dir, session_id))
+    return {h.id for h in kept}
 
 
 # ---- verdict harvest (HATS-1369) ----

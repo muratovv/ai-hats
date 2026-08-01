@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ai_hats_observe.artifacts import METRICS_JSON, strip_session_prefix
+from ai_hats_observe.artifacts import METRICS_JSON, session_dirname, strip_session_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +93,33 @@ def parse_task_timestamp(value: str) -> datetime | None:
         return None
 
 
+def session_cut(project_dir: Path, session_id: str) -> datetime:
+    """Верхняя граница «что уже существовало» для сессии: старт + duration_s,
+    либо конец дня старта, когда метрики длительности не несут.
+
+    НЕ ``compute_session_end``: его fallback — ``now()``, а это (а) не отсекает
+    ничего на историческом корпусе и (б) даёт раннеру и inbox-валидатору разные
+    наборы (HATS-1445).
+    """
+    from ..paths import runs_dir
+
+    start = parse_session_start(session_id)
+    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
+    if metrics_path.exists():
+        try:
+            data = json.loads(metrics_path.read_text())
+            duration_s = data.get("duration_s")
+            if duration_s is not None and float(duration_s) > 0:
+                return start + timedelta(seconds=float(duration_s))
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.info("session_cut: metrics.json unreadable/invalid for %s (%s)", session_id, e)
+    return start.replace(hour=23, minute=59, second=59, microsecond=0)
+
+
 __all__ = [
     "compute_session_end",
     "parse_session_start",
     "parse_task_timestamp",
+    "session_cut",
     "tasks_closed_in_window",
 ]

@@ -24,13 +24,21 @@ from pydantic import ValidationError
 
 from ..harness.diagnostic import diagnose_silent_session
 from ..harness.errors import HarnessReliabilityError
-from ..rack_workspace import active_hypotheses, open_proposals, rack_workspace
+from ..rack_workspace import (
+    HypView,
+    PropView,
+    active_hypotheses,
+    created_at_or_before,
+    open_proposals,
+    rack_workspace,
+)
 from ai_hats_observe.artifacts import AUDIT_MD, METRICS_JSON, TRANSCRIPT_TXT, session_dirname
 from ..paths import PROJECT_CONFIG
 from .facts import compute_facts
 from .loader import parse
 from .reflect_session_schema import HypothesisVerdict, ProposalAction
 from .session_review_schema import SCHEMA_VERSION, SessionReviewV1
+from .window import session_cut
 from .writer import dump
 
 if TYPE_CHECKING:
@@ -50,6 +58,11 @@ _ALLOWED_LLM_KEYS = {
     "proposal_actions",
     "self_problems",
 }
+
+_HIDDEN_NOTE = (
+    "({n} more {kind} hidden — created after this session ended, so this session "
+    "cannot be evidence for them. The list above is not the whole backlog.)"
+)
 
 
 class SessionReviewError(Exception):
@@ -118,6 +131,18 @@ class SessionReviewRunner:
 
     # ---- prompt ----
 
+    def _hyps(self, session_id: str) -> tuple[list[HypView], int]:
+        """Кандидаты сессии и число скрытых как более поздних."""
+        every = active_hypotheses(self._ws)
+        kept = created_at_or_before(every, session_cut(self.project_dir, session_id))
+        return kept, len(every) - len(kept)
+
+    def _props(self, session_id: str) -> tuple[list[PropView], int]:
+        """Кандидаты сессии и число скрытых как более поздних."""
+        every = open_proposals(self._ws)
+        kept = created_at_or_before(every, session_cut(self.project_dir, session_id))
+        return kept, len(every) - len(kept)
+
     def _build_prompt(self, facts) -> str:
         sid = facts.session_id
         sections: list[str] = []
@@ -128,8 +153,8 @@ class SessionReviewRunner:
             f"{REVIEW_DELIM_END}. The mapping MUST contain ONLY: summary, "
             "observations, hypothesis_verdicts, proposal_actions, self_problems."
         )
-        sections.append(self._render_active_hypotheses())
-        sections.append(self._render_open_proposals())
+        sections.append(self._render_active_hypotheses(sid))
+        sections.append(self._render_open_proposals(sid))
         composition_section = self._render_composition(facts)
         if composition_section:
             sections.append(composition_section)
@@ -169,10 +194,14 @@ class SessionReviewRunner:
         sections.append(f"\n{REVIEW_DELIM_START}\n... your YAML here ...\n{REVIEW_DELIM_END}\n")
         return "\n\n".join(sections)
 
-    def _render_active_hypotheses(self) -> str:
-        active = active_hypotheses(self._ws)
+    def _render_active_hypotheses(self, session_id: str = "") -> str:
+        if session_id:
+            active, hidden = self._hyps(session_id)
+        else:
+            active, hidden = active_hypotheses(self._ws), 0
+        note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='hypotheses')}" if hidden > 0 else ""
         if not active:
-            return "## Active hypotheses\n\n(none — emit empty hypothesis_verdicts list)"
+            return f"## Active hypotheses\n\n(none — emit empty hypothesis_verdicts list){note}"
         lines = ["## Active hypotheses (vote per each below — do not skip)"]
         for h in active:
             lines.append(
@@ -186,6 +215,8 @@ class SessionReviewRunner:
             if vp:
                 indented = "\n".join(f"    {line}" for line in str(vp).splitlines())
                 lines.append(f"  verification_protocol: |\n{indented}")
+        if note:
+            lines.append(note.lstrip())
         return "\n".join(lines)
 
     @staticmethod
@@ -223,18 +254,24 @@ class SessionReviewRunner:
         ]
         return "\n".join(lines)
 
-    def _render_open_proposals(self) -> str:
-        open_props = open_proposals(self._ws)
+    def _render_open_proposals(self, session_id: str = "") -> str:
+        if session_id:
+            open_props, hidden = self._props(session_id)
+        else:
+            open_props, hidden = open_proposals(self._ws), 0
+        note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='open proposals')}" if hidden > 0 else ""
         if not open_props:
             return (
                 "## Open proposals\n\n(inbox empty — create new ones with "
-                "`rack proposal create` if you spot improvements)"
+                f"`rack proposal create` if you spot improvements){note}"
             )
         lines = ["## Open proposals (vote on similar; create only if novel)"]
         for p in open_props:
             lines.append(
                 f"- **{p.id}** [{p.category}/{p.target}] {p.title}\n  description: {p.description}"
             )
+        if note:
+            lines.append(note.lstrip())
         return "\n".join(lines)
 
     def _render_session_evidence(self, session_id: str) -> str:
@@ -473,7 +510,7 @@ class SessionReviewRunner:
             HypothesisVerdict.model_validate(entry)
         for entry in raw.get("proposal_actions", []) or []:
             ProposalAction.model_validate(entry)
-        active_ids = {h.id for h in active_hypotheses(self._ws)}
+        active_ids = {h.id for h in self._hyps(session_id)[0]}
         verdict_ids = {v["hyp_id"] for v in verdicts if isinstance(v, dict)}
         missing = active_ids - verdict_ids
         if missing:
@@ -557,7 +594,8 @@ class SessionReviewRunner:
                 f"session_id mismatch: review has {review.session_id!r}, "
                 f"expected {expected_session_id!r}"
             )
-        active_ids = {h.id for h in active_hypotheses(self._ws)}
+        active_ids = {h.id for h in self._hyps(expected_session_id)[0]}
+
         verdict_ids = {v.hyp_id for v in review.hypothesis_verdicts}
         missing = active_ids - verdict_ids
         if missing:
