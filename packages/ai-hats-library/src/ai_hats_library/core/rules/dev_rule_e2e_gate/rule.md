@@ -6,13 +6,22 @@ the real command chain.
 
 ## 1. Trigger surface
 
-The rule fires if the task changed any of:
+**The invariant:** the rule fires on any change to code that runs *outside* the
+Python process — an entry point, a shell script, the install/venv flow, or any
+script the assembler installs as a hook. That is where the contract lives at a
+subprocess boundary the unit suite cannot observe. The list below names the
+current surfaces; a path that is not on it but crosses the same boundary
+triggers the gate all the same.
+
+Concretely, the rule fires if the task changed any of:
 
 - `src/ai_hats/cli/**/*.py` — click commands, command nesting, CLI args/flags.
 - `scripts/*.sh` — shell scripts (`install-launcher.sh`, `bootstrap.sh`, etc.).
 - `src/ai_hats/_bootstrap.py`, `src/ai_hats/cli/maintenance.py` — pip install / launcher / venv flow.
 - `[project.scripts]` block in `pyproject.toml` — new or renamed entry-points.
-- `packages/ai-hats-library/**/hooks/**` — PreToolUse / PostToolUse hook scripts.
+- `packages/ai-hats-library/**/hooks/**` and `**/git_hooks/**` — PreToolUse /
+  PostToolUse hook scripts and the installed git hooks (`git_hooks` is a
+  distinct segment: a `**/hooks/**` glob does not match it).
   Highest blast radius in the repo: a hook gates *every* tool call of *every*
   role composing it, so a four-line change can disable every agent. The test
   must drive the **composed chain** (all hooks on the matcher, in order) via
