@@ -122,6 +122,20 @@ def test_blocks_when_staged_skill_fails(repo: Path, tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_fires_on_the_monorepo_layout(repo: Path, tmp_path: Path):
+    """HATS-1437 — the real path the library lives at, not the pre-monorepo one."""
+    stub = _make_stub(tmp_path / "fail.sh", rc=1, message="AS-001 missing frontmatter")
+    _stage_skill(
+        repo,
+        "packages/ai-hats-library/src/ai_hats_library/core/skills/broken/SKILL.md",
+    )
+    res = _run_hook(repo, env={"AI_HATS_SKILL_LINT_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert "[skill-lint] BLOCKED" in res.stderr
+    assert "AS-001" in res.stderr
+
+
+@pytest.mark.integration
 def test_allows_when_staged_skill_passes(repo: Path, tmp_path: Path):
     """A staged skill that agnix accepts is allowed through."""
     stub = _make_stub(tmp_path / "pass.sh", rc=0)

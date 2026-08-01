@@ -6,7 +6,7 @@
 # trait → installed only for the `maintainer` and `role-curator` roles (the two
 # roles that author library traits/roles).
 #
-# Scope: fires only when a commit stages a `library/**/config.yaml` (a trait/role
+# Scope: fires only when a commit stages a library config.yaml (any of the three layouts named at the filter).
 # injection — the place a dangling pointer is introduced). The check itself scans
 # the whole working-tree `library/` (a pointer's deliverability depends on the
 # global ALWAYS_ON_RULES + SUMMARIZED_IN_INJECTION + every config), so it cannot
@@ -42,12 +42,15 @@ fi
 
 # Staged (added/copied/modified) trait/role injections. Collected without
 # `mapfile` so the hook runs on macOS system bash 3.2.
+# Three spellings, because the library has moved once already: the monorepo
+# package (ai_hats_library), the pre-monorepo root (library/, still used by the
+# e2e fixtures), and a consumer project's local layer (libraries/). HATS-1437.
 staged=()
 while IFS= read -r _f; do
     [[ -n "$_f" ]] && staged+=("$_f")
 done < <(
-    git diff --cached --name-only --diff-filter=ACM \
-        | grep -E '^library/.*/config\.yaml$' \
+    git diff --cached --name-only --diff-filter=ACM |
+        grep -E '(^|/)(ai_hats_library|library|libraries)/.*/config\.yaml$' \
         || true
 )
 [[ ${#staged[@]} -eq 0 ]] && exit 0
@@ -82,7 +85,32 @@ if [[ "${_cmd[0]}" == python* ]] && ! "${_cmd[0]}" -c "import ai_hats" >/dev/nul
     exit 0
 fi
 
-output="$("${_cmd[@]}" library 2>&1)"
+# Resolve the library root: prefer relative paths in cwd if present,
+# otherwise resolve from the package via python (HATS-1437).
+_libroot=""
+if [[ -d "packages/ai-hats-library/src/ai_hats_library" ]]; then
+    _libroot="packages/ai-hats-library/src/ai_hats_library"
+elif [[ -d "library" ]]; then
+    _libroot="library"
+else
+    _py="${_cmd[0]}"
+    if [[ "$_py" != *python* ]]; then
+        _toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+        if [[ -n "$_toplevel" && -x "$_toplevel/.venv/bin/python3" ]]; then
+            _py="$_toplevel/.venv/bin/python3"
+        else
+            _py="python3"
+        fi
+    fi
+    _libroot="$("$_py" -c 'import ai_hats_library,pathlib;print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"
+fi
+
+if [[ -z "$_libroot" || ! -d "$_libroot" ]]; then
+    echo "[rule-delivery] library root unresolved — check SKIPPED (fail-open)" >&2
+    ai_hats_journal_bypass fail_open "library root unresolved"
+    exit 0
+fi
+output="$("${_cmd[@]}" "$_libroot" 2>&1)"
 rc=$?
 
 if [[ $rc -ne 0 ]]; then

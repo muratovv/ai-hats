@@ -11,7 +11,7 @@ A pointer to an undelivered, unregistered rule is the HATS-700 bug class: the
 agent is told "see rule X" for a rule it can never read. This checker is the
 single source of that invariant — the G2 unit test runs it over the whole
 shipped library; the ``rule-delivery-gate`` pre-commit hook runs it (via
-``python -m ai_hats.rule_delivery``) over staged ``library/**/config.yaml`` edits.
+``python -m ai_hats.rule_delivery``) over a commit's staged library config.yaml files.
 """
 
 from __future__ import annotations
@@ -67,9 +67,16 @@ def find_dangling_rule_pointers(library_root: Path) -> list[DanglingPointer]:
     return violations
 
 
+def _installed_library_root() -> Path:
+    """The shipped library tree, resolved from the package (HATS-1437)."""
+    import ai_hats_library
+
+    return Path(ai_hats_library.__file__).parent
+
+
 def _main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    root = Path(args[0]) if args else Path("library")
+    root = Path(args[0]) if args else _installed_library_root()
     violations = find_dangling_rule_pointers(root)
     if not violations:
         return 0
