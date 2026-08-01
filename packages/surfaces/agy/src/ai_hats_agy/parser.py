@@ -189,9 +189,14 @@ class AgyParser:
             if jsonl_path:
                 logger.debug("agy transcript.jsonl unusable at %s — trace fallback", jsonl_path)
             parsed = self._trace.parse(None, trace_path)
-            agg_tokens = _resolve_agy_tokens(trace_path, parsed.turns)
+            measured_tokens = _get_tokens_from_metrics(trace_path)
+            agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(parsed.turns)
             if agg_tokens:
-                flags = [f for f in parsed.flags if f != FLAG_NO_TOKEN_TELEMETRY]
+                flags = list(parsed.flags)
+                if measured_tokens and FLAG_NO_TOKEN_TELEMETRY in flags:
+                    flags.remove(FLAG_NO_TOKEN_TELEMETRY)
+                elif not measured_tokens and FLAG_NO_TOKEN_TELEMETRY not in flags:
+                    flags.append(FLAG_NO_TOKEN_TELEMETRY)
                 return ParsedTranscript(
                     turns=parsed.turns,
                     model_stats=parsed.model_stats,
@@ -210,18 +215,21 @@ class AgyParser:
             turns = traced
             used_trace = True
 
-        agg_tokens = _resolve_agy_tokens(trace_path, turns)
-        if agg_tokens:
-            agg_usage = agg_tokens
-            flags: list[str] = ["trace-used"] if used_trace else []
-        else:
-            agg_usage = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cache_read_input_tokens": 0,
-                "cache_creation_input_tokens": 0,
-            }
-            flags = [FLAG_NO_TOKEN_TELEMETRY, "trace-used"] if used_trace else [FLAG_NO_TOKEN_TELEMETRY]
+        measured_tokens = _get_tokens_from_metrics(trace_path)
+        agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(turns)
+
+        flags: list[str] = []
+        if used_trace:
+            flags.append("trace-used")
+        if not measured_tokens:
+            flags.append(FLAG_NO_TOKEN_TELEMETRY)
+
+        agg_usage = agg_tokens or {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
 
         return ParsedTranscript(
             turns=turns,
@@ -234,13 +242,15 @@ class AgyParser:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             report = self._trace.parse_usage(None, trace_path)
-            agg_tokens = _resolve_agy_tokens(trace_path, getattr(report, "turns", None))
+            measured_tokens = _get_tokens_from_metrics(trace_path)
+            agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path)
             if agg_tokens:
                 agg = report["aggregates"]
                 agg["input_tokens"] = agg_tokens["input_tokens"]
                 agg["output_tokens"] = agg_tokens["output_tokens"]
                 agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
                 agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
+            if measured_tokens:
                 report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
             return report
 
@@ -260,15 +270,16 @@ class AgyParser:
                 first_name = Path(p_list[0]).name
 
         report = empty_usage_report(first_name)
-        agg_tokens = _resolve_agy_tokens(trace_path, turns)
+        measured_tokens = _get_tokens_from_metrics(trace_path)
+        agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(turns)
         if agg_tokens:
             agg = report["aggregates"]
             agg["input_tokens"] = agg_tokens["input_tokens"]
             agg["output_tokens"] = agg_tokens["output_tokens"]
             agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
             agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
-            report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
-        else:
+
+        if not measured_tokens:
             report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
         agg = report["aggregates"]
