@@ -5,7 +5,7 @@
 # trait → installed only for the `maintainer` and `role-curator` roles (the
 # two roles that author library skills).
 #
-# Scope: only STAGED `library/**/SKILL.md` files are checked, EXCLUDING the
+# Scope: only STAGED library SKILL.md files (any of the three layouts named at the filter) are checked, EXCLUDING the
 # third-party `golang-*` pack (HATS-627 decision — pack drift is handled
 # separately, not as a blocking gate). Changed-files scope means the gate only
 # fires on commits that touch an authored skill; it never retro-blocks the
@@ -46,12 +46,15 @@ fi
 # derived content this guard protects. Rules: R1 every SKILL.md carries a
 # `license:`; R2 a declared-derived skill (sibling metadata.yaml has `upstream:`)
 # ships its co-located LICENSE.
+# Three spellings, because the library has moved once already: the monorepo
+# package (ai_hats_library), the pre-monorepo root (library/, still used by the
+# e2e fixtures), and a consumer project's local layer (libraries/). HATS-1437.
 lic_files=()
 while IFS= read -r _f; do
     [[ -n "$_f" ]] && lic_files+=("$_f")
 done < <(
-    git diff --cached --name-only --diff-filter=ACM \
-        | grep -E '^library/.*/SKILL\.md$' \
+    git diff --cached --name-only --diff-filter=ACM |
+        grep -E '(^|/)(ai_hats_library|library|libraries)/.*/SKILL\.md$' \
         || true
 )
 
@@ -90,7 +93,7 @@ while IFS= read -r _f; do
     [[ -n "$_f" ]] && files+=("$_f")
 done < <(
     git diff --cached --name-only --diff-filter=ACM \
-        | grep -E '^library/.*/SKILL\.md$' \
+        | grep -E '(^|/)(ai_hats_library|library|libraries)/.*/SKILL\.md$' \
         | grep -vE '(^|/)golang-[^/]+/SKILL\.md$' \
         || true
 )

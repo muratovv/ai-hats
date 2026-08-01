@@ -95,6 +95,21 @@ def test_blocks_when_checker_fails(repo: Path, tmp_path: Path):
 
 
 @pytest.mark.integration
+def test_fires_on_the_monorepo_layout(repo: Path, tmp_path: Path):
+    """HATS-1437 — the real path the library lives at, not the pre-monorepo one."""
+    stub = _make_stub(tmp_path / "fail.sh", rc=1, message="see rule `rule_nope`")
+    _stage_cfg(
+        repo,
+        "packages/ai-hats-library/src/ai_hats_library/core/traits/trait-new/config.yaml",
+        _NEW_CFG,
+    )
+    res = _run_hook(repo, env={"AI_HATS_RULE_DELIVERY_CMD": f"bash {stub}"})
+    assert res.returncode == 1, res.stderr
+    assert "[rule-delivery] BLOCKED" in res.stderr
+    assert "rule_nope" in res.stderr
+
+
+@pytest.mark.integration
 def test_allows_when_checker_passes(repo: Path, tmp_path: Path):
     stub = _make_stub(tmp_path / "pass.sh", rc=0)
     _stage_cfg(repo, "library/core/traits/trait-new/config.yaml", _NEW_CFG)
