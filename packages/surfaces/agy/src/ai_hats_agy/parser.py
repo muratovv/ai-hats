@@ -15,7 +15,10 @@ import re
 from typing import Any, Iterable
 
 
-from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY
+from ai_hats_observe.artifacts import (
+    FLAG_NO_TOKEN_TELEMETRY,
+    FLAG_TOKEN_TELEMETRY_ESTIMATED,
+)
 from ai_hats_observe.parsers.base import ParsedTranscript, Turn
 from ai_hats_observe.parsers.trace import TraceParser
 from ai_hats_observe.usage import empty_usage_report
@@ -144,33 +147,76 @@ def _estimate_tokens_from_turns(turns: list[Turn] | None) -> dict[str, int] | No
 
     if in_toks or out_toks:
         return {
-            "input_tokens": max(in_toks, 1),
-            "output_tokens": max(out_toks, 1),
+            "input_tokens": in_toks,
+            "output_tokens": out_toks,
             "cache_read_input_tokens": 0,
             "cache_creation_input_tokens": 0,
         }
     return None
+
+
+MEASURED = "measured"
+ESTIMATED = "estimated"
 
 
 def _resolve_agy_tokens(
     trace_path: Path, turns: list[Turn] | None = None
-) -> dict[str, int] | None:
+) -> tuple[dict[str, int] | None, str | None]:
+    """Token counts plus where they came from — the one ladder both reports use.
+
+    Only metrics.json is a measurement (HATS-1433). Scraping the rendered TUI
+    text and counting characters are guesses; a guess that reaches a record
+    unmarked is read as fact by every consumer downstream. Returning the
+    provenance here is what keeps ``metrics.json`` and ``usage.json`` from
+    describing the same session differently.
+    """
     if tokens := _get_tokens_from_metrics(trace_path):
-        return tokens
+        return tokens, MEASURED
     extracted = _extract_tokens_from_trace(trace_path)
     estimated = _estimate_tokens_from_turns(turns)
     if extracted:
-        in_t = extracted["input_tokens"] or (estimated["input_tokens"] if estimated else 100)
-        out_t = extracted["output_tokens"] or (estimated["output_tokens"] if estimated else 10)
+        # A half the scrape missed falls back to the text estimate, never to a
+        # constant — an invented 100/10 is a number with no source at all.
+        fallback = estimated or {"input_tokens": 0, "output_tokens": 0}
         return {
-            "input_tokens": in_t,
-            "output_tokens": out_t,
+            "input_tokens": extracted["input_tokens"] or fallback["input_tokens"],
+            "output_tokens": extracted["output_tokens"] or fallback["output_tokens"],
             "cache_read_input_tokens": 0,
             "cache_creation_input_tokens": 0,
-        }
+        }, ESTIMATED
     if estimated:
-        return estimated
-    return None
+        return estimated, ESTIMATED
+    return None, None
+
+
+def _telemetry_flags(provenance: str | None) -> list[str]:
+    if provenance == MEASURED:
+        return []
+    if provenance == ESTIMATED:
+        return [FLAG_TOKEN_TELEMETRY_ESTIMATED]
+    return [FLAG_NO_TOKEN_TELEMETRY]
+
+
+_ZERO_TOKENS = {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+}
+
+
+def _apply_tokens(report: dict, tokens: dict[str, int] | None, provenance: str | None) -> None:
+    """Write the resolved counts and their provenance flag into a usage report.
+
+    The usage half of the same decision ``parse`` makes, so the two reports of
+    one session cannot describe it differently (HATS-1433).
+    """
+    agg = report.get("aggregates")
+    if isinstance(agg, dict):
+        for key, value in (tokens or _ZERO_TOKENS).items():
+            agg[key] = value
+    kept = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
+    report["flags"] = kept + _telemetry_flags(provenance)
 
 
 class AgyParser:
@@ -189,21 +235,14 @@ class AgyParser:
             if jsonl_path:
                 logger.debug("agy transcript.jsonl unusable at %s — trace fallback", jsonl_path)
             parsed = self._trace.parse(None, trace_path)
-            measured_tokens = _get_tokens_from_metrics(trace_path)
-            agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(parsed.turns)
-            if agg_tokens:
-                flags = list(parsed.flags)
-                if measured_tokens and FLAG_NO_TOKEN_TELEMETRY in flags:
-                    flags.remove(FLAG_NO_TOKEN_TELEMETRY)
-                elif not measured_tokens and FLAG_NO_TOKEN_TELEMETRY not in flags:
-                    flags.append(FLAG_NO_TOKEN_TELEMETRY)
-                return ParsedTranscript(
-                    turns=parsed.turns,
-                    model_stats=parsed.model_stats,
-                    agg_usage=agg_tokens,
-                    flags=flags,
-                )
-            return parsed
+            agg_tokens, provenance = _resolve_agy_tokens(trace_path, parsed.turns)
+            structural = [f for f in parsed.flags if f != FLAG_NO_TOKEN_TELEMETRY]
+            return ParsedTranscript(
+                turns=parsed.turns,
+                model_stats=parsed.model_stats,
+                agg_usage=agg_tokens or _ZERO_TOKENS.copy(),
+                flags=structural + _telemetry_flags(provenance),
+            )
 
         turns = self._parse_lines(lines)
         # HATS-1397 / HATS-1400: agy rotates its brain segment on a checkpoint.
@@ -215,21 +254,11 @@ class AgyParser:
             turns = traced
             used_trace = True
 
-        measured_tokens = _get_tokens_from_metrics(trace_path)
-        agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(turns)
+        agg_tokens, provenance = _resolve_agy_tokens(trace_path, turns)
 
-        flags: list[str] = []
-        if used_trace:
-            flags.append("trace-used")
-        if not measured_tokens:
-            flags.append(FLAG_NO_TOKEN_TELEMETRY)
-
-        agg_usage = agg_tokens or {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 0,
-        }
+        flags: list[str] = ["trace-used"] if used_trace else []
+        flags += _telemetry_flags(provenance)
+        agg_usage = agg_tokens or _ZERO_TOKENS.copy()
 
         return ParsedTranscript(
             turns=turns,
@@ -238,27 +267,28 @@ class AgyParser:
             flags=flags,
         )
 
-    def parse_usage(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> dict[str, Any]:
+    def parse_usage(
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
+    ) -> dict[str, Any]:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             report = self._trace.parse_usage(None, trace_path)
-            measured_tokens = _get_tokens_from_metrics(trace_path)
-            agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path)
-            if agg_tokens:
-                agg = report["aggregates"]
-                agg["input_tokens"] = agg_tokens["input_tokens"]
-                agg["output_tokens"] = agg_tokens["output_tokens"]
-                agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
-                agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
-            if measured_tokens:
-                report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
+            # Turns off the trace parse, not off `report`: the old
+            # getattr(report, "turns") read a dict and always saw None, leaving
+            # the estimate tier dead on this path since HATS-1427.
+            traced_turns = self._trace.parse(None, trace_path).turns
+            agg_tokens, provenance = _resolve_agy_tokens(trace_path, traced_turns)
+            _apply_tokens(report, agg_tokens, provenance)
             return report
 
         turns = self._parse_lines(lines)
         traced = self._trace.parse(None, trace_path).turns
         if len(traced) > len(turns):
-            logger.debug("agy transcript.jsonl covers %d turns, trace %d — using trace for usage",
-                         len(turns), len(traced))
+            logger.debug(
+                "agy transcript.jsonl covers %d turns, trace %d — using trace for usage",
+                len(turns),
+                len(traced),
+            )
             return self._trace.parse_usage(None, trace_path)
 
         first_name = "transcript.jsonl"
@@ -270,17 +300,8 @@ class AgyParser:
                 first_name = Path(p_list[0]).name
 
         report = empty_usage_report(first_name)
-        measured_tokens = _get_tokens_from_metrics(trace_path)
-        agg_tokens = measured_tokens or _extract_tokens_from_trace(trace_path) or _estimate_tokens_from_turns(turns)
-        if agg_tokens:
-            agg = report["aggregates"]
-            agg["input_tokens"] = agg_tokens["input_tokens"]
-            agg["output_tokens"] = agg_tokens["output_tokens"]
-            agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
-            agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
-
-        if not measured_tokens:
-            report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
+        agg_tokens, provenance = _resolve_agy_tokens(trace_path, turns)
+        _apply_tokens(report, agg_tokens, provenance)
 
         agg = report["aggregates"]
         timeline = report["timeline"]
@@ -300,7 +321,11 @@ class AgyParser:
     ) -> list[dict[str, Any]] | None:
         if not jsonl_path:
             return None
-        paths = [Path(jsonl_path)] if isinstance(jsonl_path, (Path, str)) else [Path(p) for p in jsonl_path]
+        paths = (
+            [Path(jsonl_path)]
+            if isinstance(jsonl_path, (Path, str))
+            else [Path(p) for p in jsonl_path]
+        )
         all_records: list[dict[str, Any]] = []
         seen_fps: set[tuple[Any, ...]] = set()
 
@@ -325,7 +350,9 @@ class AgyParser:
                             rec.get("source"),
                             rec.get("step_index"),
                             str(rec.get("content")),
-                            json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
+                            json.dumps(rec.get("tool_calls"), sort_keys=True)
+                            if rec.get("tool_calls")
+                            else "",
                         )
                         if fp not in seen_fps:
                             seen_fps.add(fp)
@@ -336,10 +363,10 @@ class AgyParser:
         if not all_records:
             return None
 
-        all_records.sort(key=lambda r: (_parse_created_at(r.get("created_at")), r.get("step_index") or 0))
+        all_records.sort(
+            key=lambda r: (_parse_created_at(r.get("created_at")), r.get("step_index") or 0)
+        )
         return all_records
-
-
 
     def _parse_lines(self, records: list[dict[str, Any]]) -> list[Turn]:
         turns: list[Turn] = []

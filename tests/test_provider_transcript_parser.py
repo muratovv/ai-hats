@@ -46,7 +46,13 @@ def test_agy_parser_falls_back_to_trace_without_jsonl(tmp_path: Path) -> None:
     assert [(t.user_input, t.tools, t.response) for t in parsed.turns] == [
         (t.user_input, t.tools, t.response) for t in expected.turns
     ]
-    assert AgyParser().parse_usage(None, trace)["flags"] == ["no-structured-transcript"]
+    # HATS-1433: the trace text yields an estimated count, and usage.json now says
+    # so — it used to carry the number with no provenance flag at all, which is
+    # what let it contradict metrics.json for the same session.
+    assert AgyParser().parse_usage(None, trace)["flags"] == [
+        "no-structured-transcript",
+        "token-telemetry-estimated",
+    ]
 
 
 def test_seam_injects_provider_parser(tmp_path: Path) -> None:

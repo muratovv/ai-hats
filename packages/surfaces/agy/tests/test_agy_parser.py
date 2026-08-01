@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from ai_hats_agy.parser import AgyParser
+from ai_hats_observe.artifacts import (
+    FLAG_NO_TOKEN_TELEMETRY,
+    FLAG_TOKEN_TELEMETRY_ESTIMATED,
+)
 from ai_hats_agy.provider import AgyProvider
 
 
@@ -59,7 +63,9 @@ def test_agy_parser_parses_transcript_jsonl(tmp_path: Path) -> None:
 
     usage = parser.parse_usage(jsonl_path, trace_path)
     assert usage["aggregates"]["tool_calls"] == 2
-    assert "token-telemetry-unavailable" in usage["flags"]
+    # HATS-1433: counts exist here (estimated off turn text), so the record says
+    # "estimated" rather than "unavailable" — the number is not absent, just unmeasured.
+    assert "token-telemetry-estimated" in usage["flags"]
     assert usage["aggregates"]["input_tokens"] > 0 or usage["aggregates"]["output_tokens"] > 0
 
 
@@ -74,7 +80,9 @@ def test_agy_provider_resolve_transcript(tmp_path: Path, monkeypatch) -> None:
     assert provider.resolve_transcript(tmp_path, session_id) == []
 
     # Create brain transcript 1
-    log_dir1 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-123" / ".system_generated" / "logs"
+    log_dir1 = (
+        gemini_home / "antigravity-cli" / "brain" / "conv-uuid-123" / ".system_generated" / "logs"
+    )
     log_dir1.mkdir(parents=True)
     transcript_file1 = log_dir1 / "transcript.jsonl"
     transcript_file1.write_text("{}")
@@ -95,12 +103,16 @@ def test_agy_provider_resolve_transcript_multiple_segments(tmp_path: Path, monke
     provider = AgyProvider()
     session_id = "20260730-120000-1-12345"
 
-    log_dir1 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-1" / ".system_generated" / "logs"
+    log_dir1 = (
+        gemini_home / "antigravity-cli" / "brain" / "conv-uuid-1" / ".system_generated" / "logs"
+    )
     log_dir1.mkdir(parents=True)
     t1 = log_dir1 / "transcript.jsonl"
     t1.write_text('{"step_index":0}')
 
-    log_dir2 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-2" / ".system_generated" / "logs"
+    log_dir2 = (
+        gemini_home / "antigravity-cli" / "brain" / "conv-uuid-2" / ".system_generated" / "logs"
+    )
     log_dir2.mkdir(parents=True)
     t2 = log_dir2 / "transcript.jsonl"
     t2.write_text('{"step_index":1}')
@@ -113,16 +125,42 @@ def test_agy_provider_resolve_transcript_multiple_segments(tmp_path: Path, monke
 def test_agy_parser_merges_multiple_jsonl_paths(tmp_path: Path) -> None:
     seg1 = tmp_path / "seg1.jsonl"
     seg1.write_text(
-        json.dumps({"type": "USER_INPUT", "content": "first question", "created_at": "2026-07-31T10:00:00Z"})
+        json.dumps(
+            {
+                "type": "USER_INPUT",
+                "content": "first question",
+                "created_at": "2026-07-31T10:00:00Z",
+            }
+        )
         + "\n"
-        + json.dumps({"type": "PLANNER_RESPONSE", "content": "first answer", "created_at": "2026-07-31T10:00:05Z", "tool_calls": [{"name": "grep_search", "args": {"Query": "test"}}]})
+        + json.dumps(
+            {
+                "type": "PLANNER_RESPONSE",
+                "content": "first answer",
+                "created_at": "2026-07-31T10:00:05Z",
+                "tool_calls": [{"name": "grep_search", "args": {"Query": "test"}}],
+            }
+        )
         + "\n"
     )
     seg2 = tmp_path / "seg2.jsonl"
     seg2.write_text(
-        json.dumps({"type": "USER_INPUT", "content": "second question", "created_at": "2026-07-31T10:05:00Z"})
+        json.dumps(
+            {
+                "type": "USER_INPUT",
+                "content": "second question",
+                "created_at": "2026-07-31T10:05:00Z",
+            }
+        )
         + "\n"
-        + json.dumps({"type": "PLANNER_RESPONSE", "content": "second answer", "created_at": "2026-07-31T10:05:05Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "pytest"}}]})
+        + json.dumps(
+            {
+                "type": "PLANNER_RESPONSE",
+                "content": "second answer",
+                "created_at": "2026-07-31T10:05:05Z",
+                "tool_calls": [{"name": "run_command", "args": {"CommandLine": "pytest"}}],
+            }
+        )
         + "\n"
     )
 
@@ -142,7 +180,6 @@ def test_agy_parser_merges_multiple_jsonl_paths(tmp_path: Path) -> None:
     assert usage["aggregates"]["tool_calls"] == 2
 
 
-
 def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path):
     """agy rotates its brain segment on a checkpoint (HATS-1397).
 
@@ -153,9 +190,17 @@ def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path)
     """
     fragment = tmp_path / "transcript.jsonl"
     fragment.write_text(
-        json.dumps({"type": "USER_INPUT", "content": "last question", "created_at": "2026-07-31T10:04:00"})
+        json.dumps(
+            {"type": "USER_INPUT", "content": "last question", "created_at": "2026-07-31T10:04:00"}
+        )
         + "\n"
-        + json.dumps({"type": "PLANNER_RESPONSE", "content": "the tail answer", "created_at": "2026-07-31T10:04:05"})
+        + json.dumps(
+            {
+                "type": "PLANNER_RESPONSE",
+                "content": "the tail answer",
+                "created_at": "2026-07-31T10:04:05",
+            }
+        )
         + "\n"
     )
     trace = tmp_path / "trace.log"
@@ -173,7 +218,7 @@ def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path)
 
     assert len(parsed.turns) == 3, "the tail fragment displaced the whole conversation"
     assert parsed.turns[0].user_input == "first question"
-    assert "token-telemetry-unavailable" in parsed.flags
+    assert "token-telemetry-estimated" in parsed.flags
     assert "no-structured-transcript" not in parsed.flags, (
         "a structured transcript did exist — marking the record unmeasured would "
         "drop its counters and make auto_retro skip the session"
@@ -188,9 +233,17 @@ def test_the_structured_transcript_wins_when_it_covers_the_session(tmp_path):
             json.dumps(r) + "\n"
             for r in (
                 {"type": "USER_INPUT", "content": "one", "created_at": "2026-07-31T10:00:00"},
-                {"type": "PLANNER_RESPONSE", "content": "first", "created_at": "2026-07-31T10:00:01"},
+                {
+                    "type": "PLANNER_RESPONSE",
+                    "content": "first",
+                    "created_at": "2026-07-31T10:00:01",
+                },
                 {"type": "USER_INPUT", "content": "two", "created_at": "2026-07-31T10:01:00"},
-                {"type": "PLANNER_RESPONSE", "content": "second", "created_at": "2026-07-31T10:01:01"},
+                {
+                    "type": "PLANNER_RESPONSE",
+                    "content": "second",
+                    "created_at": "2026-07-31T10:01:01",
+                },
             )
         )
     )
@@ -208,14 +261,16 @@ def test_agy_parser_extracts_tokens_from_metrics_json(tmp_path: Path) -> None:
 
     metrics_file = tmp_path / "metrics.json"
     metrics_file.write_text(
-        json.dumps({
-            "tokens": {
-                "input": 150,
-                "output": 50,
-                "cache_read": 1000,
-                "cache_creation": 200,
+        json.dumps(
+            {
+                "tokens": {
+                    "input": 150,
+                    "output": 50,
+                    "cache_read": 1000,
+                    "cache_creation": 200,
+                }
             }
-        })
+        )
     )
 
     parser = AgyParser()
@@ -242,15 +297,27 @@ def test_agy_parser_extracts_tokens_from_trace_log(tmp_path: Path) -> None:
     parsed = parser.parse(None, trace)
     assert parsed.agg_usage["output_tokens"] == 495
     assert parsed.agg_usage["input_tokens"] == 4200
-    assert "token-telemetry-unavailable" in parsed.flags
+    assert "token-telemetry-estimated" in parsed.flags
 
 
 def test_agy_parser_does_not_drop_same_second_tool_calls_with_empty_content(tmp_path: Path) -> None:
     jsonl_path = tmp_path / "transcript.jsonl"
     lines = [
         {"type": "USER_INPUT", "content": "do tasks", "created_at": "2026-07-31T10:00:00Z"},
-        {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "", "created_at": "2026-07-31T10:00:01Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd1"}}]},
-        {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "", "created_at": "2026-07-31T10:00:01Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd2"}}]},
+        {
+            "type": "PLANNER_RESPONSE",
+            "source": "MODEL",
+            "content": "",
+            "created_at": "2026-07-31T10:00:01Z",
+            "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd1"}}],
+        },
+        {
+            "type": "PLANNER_RESPONSE",
+            "source": "MODEL",
+            "content": "",
+            "created_at": "2026-07-31T10:00:01Z",
+            "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd2"}}],
+        },
     ]
     jsonl_path.write_text("\n".join(json.dumps(rec) for rec in lines) + "\n")
     trace = tmp_path / "trace.log"
@@ -265,7 +332,10 @@ def test_agy_parser_does_not_drop_same_second_tool_calls_with_empty_content(tmp_
 
 def test_agy_parser_preserves_trace_flag_when_trace_wins(tmp_path: Path) -> None:
     fragment = tmp_path / "transcript.jsonl"
-    fragment.write_text(json.dumps({"type": "USER_INPUT", "content": "q3", "created_at": "2026-07-31T10:04:00Z"}) + "\n")
+    fragment.write_text(
+        json.dumps({"type": "USER_INPUT", "content": "q3", "created_at": "2026-07-31T10:04:00Z"})
+        + "\n"
+    )
     trace = tmp_path / "trace.log"
     trace.write_text("10:00:00.000 [REQ] q1\n10:01:00.000 [REQ] q2\n10:04:00.000 [REQ] q3\n")
 
@@ -288,3 +358,122 @@ def test_agy_parser_filters_records_before_session_start(tmp_path: Path) -> None
     assert len(lines) == 1
     assert lines[0]["content"] == "new question"
 
+
+# ---------------------------------------------------------------------------
+# Token provenance: measured vs estimated (HATS-1433)
+# ---------------------------------------------------------------------------
+
+
+def _jsonl_one_turn(tmp_path: Path) -> Path:
+    jsonl_path = tmp_path / "transcript.jsonl"
+    jsonl_path.write_text(
+        "\n".join(
+            json.dumps(line)
+            for line in (
+                {
+                    "step_index": 0,
+                    "source": "USER_EXPLICIT",
+                    "type": "USER_INPUT",
+                    "created_at": "2026-08-01T12:00:00Z",
+                    "content": "<USER_REQUEST>\nsome question\n</USER_REQUEST>",
+                },
+                {
+                    "step_index": 1,
+                    "source": "MODEL",
+                    "type": "PLANNER_RESPONSE",
+                    "created_at": "2026-08-01T12:00:01Z",
+                    "content": "some answer",
+                },
+            )
+        )
+        + "\n"
+    )
+    return jsonl_path
+
+
+def test_tokens_from_metrics_are_not_flagged_as_estimated(tmp_path: Path) -> None:
+    # GIVEN a session whose metrics.json carries a real token count
+    jsonl_path = _jsonl_one_turn(tmp_path)
+    trace = tmp_path / "trace.log"
+    trace.write_text("12:00:00.000 [REQ] some question\n")
+    (tmp_path / "metrics.json").write_text(
+        json.dumps({"tokens": {"input": 150, "output": 50, "cache_read": 0, "cache_creation": 0}})
+    )
+
+    parsed = AgyParser().parse(jsonl_path, trace)
+
+    # THEN it is a measurement and carries no telemetry flag at all
+    assert parsed.agg_usage["input_tokens"] == 150
+    assert parsed.flags == []
+
+
+def test_tokens_scraped_from_the_trace_text_are_flagged_as_estimated(tmp_path: Path) -> None:
+    # GIVEN no metrics.json, but token counts rendered in the TUI trace
+    jsonl_path = _jsonl_one_turn(tmp_path)
+    trace = tmp_path / "trace.log"
+    trace.write_text(
+        "13:00:00.000 [RES] ▸ Thought for 2s, 495 tokens\n"
+        "13:00:05.000 [RES] (1m 10s · ↓ 4.2k tokens)\n"
+    )
+
+    parsed = AgyParser().parse(jsonl_path, trace)
+    usage = AgyParser().parse_usage(jsonl_path, trace)
+
+    # THEN the numbers are kept, but nobody may read them as measured
+    assert parsed.agg_usage["output_tokens"] > 0
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in parsed.flags
+    assert FLAG_NO_TOKEN_TELEMETRY not in parsed.flags
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in usage["flags"]
+
+
+def test_tokens_estimated_from_turn_text_are_flagged_as_estimated(tmp_path: Path) -> None:
+    # GIVEN neither metrics.json nor any token count in the trace — only turn text
+    jsonl_path = _jsonl_one_turn(tmp_path)
+    trace = tmp_path / "trace.log"
+    trace.write_text("14:00:00.000 [REQ] some question\n")
+
+    parsed = AgyParser().parse(jsonl_path, trace)
+
+    # THEN the count is a guess off string lengths and says so
+    assert parsed.agg_usage["output_tokens"] > 0
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in parsed.flags
+
+
+def test_no_source_at_all_still_reports_unavailable(tmp_path: Path) -> None:
+    # GIVEN a transcript with no text to measure or estimate from
+    jsonl_path = tmp_path / "transcript.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "step_index": 0,
+                "source": "USER_EXPLICIT",
+                "type": "USER_INPUT",
+                "created_at": "2026-08-01T12:00:00Z",
+                "content": "<USER_REQUEST>\n\n</USER_REQUEST>",
+            }
+        )
+        + "\n"
+    )
+    trace = tmp_path / "trace.log"
+    trace.write_text("")
+
+    parsed = AgyParser().parse(jsonl_path, trace)
+
+    # THEN the pre-HATS-1427 contract stands: zeros, and the flag that says why
+    assert parsed.agg_usage["output_tokens"] == 0
+    assert FLAG_NO_TOKEN_TELEMETRY in parsed.flags
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED not in parsed.flags
+
+
+def test_a_half_scraped_trace_does_not_invent_the_other_half(tmp_path: Path) -> None:
+    # GIVEN a trace that renders an output count and nothing about input, and no
+    # turn text to estimate the missing half from
+    trace = tmp_path / "trace.log"
+    trace.write_text("13:00:00.000 [RES] ▸ Thought for 2s, 495 tokens\n")
+
+    parsed = AgyParser().parse(None, trace)
+
+    # THEN the unknown half stays 0 instead of the invented constant it used to get
+    assert parsed.agg_usage["output_tokens"] == 495
+    assert parsed.agg_usage["input_tokens"] == 0
+    assert FLAG_TOKEN_TELEMETRY_ESTIMATED in parsed.flags
