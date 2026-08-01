@@ -131,8 +131,13 @@ class ClaudeProvider(Provider):
         return ClaudeParser()
 
     def resolve_transcript(
-        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
-    ) -> Path | None:
+        self,
+        project_dir: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+        end_ts: float | None = None,
+    ) -> list[Path]:
         from ai_hats.paths import claude_transcript_path, claude_transcripts_dir, resolve_transcript
 
         return resolve_transcript(
@@ -142,7 +147,9 @@ class ClaudeProvider(Provider):
             exact_path=claude_transcript_path(project_dir, provider_session_id)
             if provider_session_id
             else None,
+            end_ts=end_ts,
         )
+
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         """HATS-1170/1238: Claude uses per-session prompt cache; no root CLAUDE.md managed."""

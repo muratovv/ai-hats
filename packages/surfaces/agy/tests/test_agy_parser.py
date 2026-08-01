@@ -70,22 +70,77 @@ def test_agy_provider_resolve_transcript(tmp_path: Path, monkeypatch) -> None:
     provider = AgyProvider()
     session_id = "20260730-120000-1-12345"
 
-    # Absent directory -> None
-    assert provider.resolve_transcript(tmp_path, session_id) is None
+    # Absent directory -> empty list
+    assert provider.resolve_transcript(tmp_path, session_id) == []
 
-    # Create brain transcript
-    log_dir = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-123" / ".system_generated" / "logs"
-    log_dir.mkdir(parents=True)
-    transcript_file = log_dir / "transcript.jsonl"
-    transcript_file.write_text("{}")
+    # Create brain transcript 1
+    log_dir1 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-123" / ".system_generated" / "logs"
+    log_dir1.mkdir(parents=True)
+    transcript_file1 = log_dir1 / "transcript.jsonl"
+    transcript_file1.write_text("{}")
 
     # Resolved
     resolved = provider.resolve_transcript(tmp_path, session_id)
-    assert resolved == transcript_file
+    assert resolved == [transcript_file1]
 
     # Exact path via provider_session_id
     exact = provider.resolve_transcript(tmp_path, session_id, provider_session_id="conv-uuid-123")
-    assert exact == transcript_file
+    assert exact == [transcript_file1]
+
+
+def test_agy_provider_resolve_transcript_multiple_segments(tmp_path: Path, monkeypatch) -> None:
+    gemini_home = tmp_path / ".gemini"
+    monkeypatch.setenv("GEMINI_CONFIG_DIR", str(gemini_home))
+
+    provider = AgyProvider()
+    session_id = "20260730-120000-1-12345"
+
+    log_dir1 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-1" / ".system_generated" / "logs"
+    log_dir1.mkdir(parents=True)
+    t1 = log_dir1 / "transcript.jsonl"
+    t1.write_text('{"step_index":0}')
+
+    log_dir2 = gemini_home / "antigravity-cli" / "brain" / "conv-uuid-2" / ".system_generated" / "logs"
+    log_dir2.mkdir(parents=True)
+    t2 = log_dir2 / "transcript.jsonl"
+    t2.write_text('{"step_index":1}')
+
+    resolved = provider.resolve_transcript(tmp_path, session_id)
+    assert len(resolved) == 2
+    assert set(resolved) == {t1, t2}
+
+
+def test_agy_parser_merges_multiple_jsonl_paths(tmp_path: Path) -> None:
+    seg1 = tmp_path / "seg1.jsonl"
+    seg1.write_text(
+        json.dumps({"type": "USER_INPUT", "content": "first question", "created_at": "2026-07-31T10:00:00Z"})
+        + "\n"
+        + json.dumps({"type": "PLANNER_RESPONSE", "content": "first answer", "created_at": "2026-07-31T10:00:05Z", "tool_calls": [{"name": "grep_search", "args": {"Query": "test"}}]})
+        + "\n"
+    )
+    seg2 = tmp_path / "seg2.jsonl"
+    seg2.write_text(
+        json.dumps({"type": "USER_INPUT", "content": "second question", "created_at": "2026-07-31T10:05:00Z"})
+        + "\n"
+        + json.dumps({"type": "PLANNER_RESPONSE", "content": "second answer", "created_at": "2026-07-31T10:05:05Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "pytest"}}]})
+        + "\n"
+    )
+
+    trace = tmp_path / "trace.log"
+    trace.write_text("")
+
+    parser = AgyParser()
+    parsed = parser.parse([seg1, seg2], trace)
+
+    assert len(parsed.turns) == 2
+    assert parsed.turns[0].user_input == "first question"
+    assert parsed.turns[1].user_input == "second question"
+    assert "grep_search: test" in parsed.turns[0].tools[0]
+    assert "run_command: pytest" in parsed.turns[1].tools[0]
+
+    usage = parser.parse_usage([seg1, seg2], trace)
+    assert usage["aggregates"]["tool_calls"] == 2
+
 
 
 def test_the_richer_source_wins_when_the_transcript_is_a_tail_fragment(tmp_path):
@@ -188,4 +243,48 @@ def test_agy_parser_extracts_tokens_from_trace_log(tmp_path: Path) -> None:
     assert parsed.agg_usage["output_tokens"] == 495
     assert parsed.agg_usage["input_tokens"] == 4200
     assert "token-telemetry-unavailable" not in parsed.flags
+
+
+def test_agy_parser_does_not_drop_same_second_tool_calls_with_empty_content(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "transcript.jsonl"
+    lines = [
+        {"type": "USER_INPUT", "content": "do tasks", "created_at": "2026-07-31T10:00:00Z"},
+        {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "", "created_at": "2026-07-31T10:00:01Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd1"}}]},
+        {"type": "PLANNER_RESPONSE", "source": "MODEL", "content": "", "created_at": "2026-07-31T10:00:01Z", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "cmd2"}}]},
+    ]
+    jsonl_path.write_text("\n".join(json.dumps(rec) for rec in lines) + "\n")
+    trace = tmp_path / "trace.log"
+    trace.write_text("")
+
+    parser = AgyParser()
+    parsed = parser.parse(jsonl_path, trace)
+    assert len(parsed.turns[0].tools) == 2
+    assert "cmd1" in parsed.turns[0].tools[0]
+    assert "cmd2" in parsed.turns[0].tools[1]
+
+
+def test_agy_parser_preserves_trace_flag_when_trace_wins(tmp_path: Path) -> None:
+    fragment = tmp_path / "transcript.jsonl"
+    fragment.write_text(json.dumps({"type": "USER_INPUT", "content": "q3", "created_at": "2026-07-31T10:04:00Z"}) + "\n")
+    trace = tmp_path / "trace.log"
+    trace.write_text("10:00:00.000 [REQ] q1\n10:01:00.000 [REQ] q2\n10:04:00.000 [REQ] q3\n")
+
+    parser = AgyParser()
+    parsed = parser.parse(fragment, trace)
+    assert "trace-used" in parsed.flags
+
+
+def test_agy_parser_filters_records_before_session_start(tmp_path: Path) -> None:
+    jsonl_path = tmp_path / "transcript.jsonl"
+    records = [
+        {"type": "USER_INPUT", "content": "old question", "created_at": "2026-07-31T09:00:00Z"},
+        {"type": "USER_INPUT", "content": "new question", "created_at": "2026-07-31T10:00:00Z"},
+    ]
+    jsonl_path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+
+    parser = AgyParser()
+    lines = parser._load_lines(jsonl_path, session_start_iso="2026-07-31T09:30:00Z")
+    assert lines is not None
+    assert len(lines) == 1
+    assert lines[0]["content"] == "new question"
 

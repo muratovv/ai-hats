@@ -44,8 +44,13 @@ class ClineProvider(Provider):
         return ClineParser()
 
     def resolve_transcript(
-        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
-    ) -> Path | None:
+        self,
+        project_dir: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+        end_ts: float | None = None,
+    ) -> list[Path]:
         from ai_hats.paths import resolve_transcript, tool_home
 
         sessions_dir = tool_home("cline", "CLINE_DATA_DIR") / "data" / "sessions"
@@ -54,8 +59,9 @@ class ClineProvider(Provider):
             if provider_session_id else None
         )
         return resolve_transcript(
-            sessions_dir, "*/*.messages.json", session_id, exact_path=exact,
+            sessions_dir, "*/*.messages.json", session_id, exact_path=exact, end_ts=end_ts,
         )
+
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         # HATS-1238: Inline-only surface — no root file managed.

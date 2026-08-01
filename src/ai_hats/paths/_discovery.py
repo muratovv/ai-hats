@@ -37,22 +37,34 @@ def discover_recent_by_mtime(
     session_id: str,
 ) -> Path | None:
     """Freshest file matching ``glob_pattern`` with mtime >= session start (HATS-272)."""
+    all_found = discover_all_by_mtime(transcripts_dir, glob_pattern, session_id)
+    return all_found[-1] if all_found else None
+
+
+def discover_all_by_mtime(
+    transcripts_dir: Path,
+    glob_pattern: str,
+    session_id: str,
+    *,
+    end_ts: float | None = None,
+) -> list[Path]:
+    """All files matching ``glob_pattern`` with session_start <= mtime [<= end_ts], sorted by mtime (HATS-1400)."""
     if not transcripts_dir.is_dir():
-        return None
+        return []
     start_ts = session_start_ts(session_id)
     if start_ts is None:
-        return None
-    best: tuple[float, Path] | None = None
+        return []
+    matches: list[tuple[float, Path]] = []
     for f in transcripts_dir.glob(glob_pattern):
         try:
             mtime = f.stat().st_mtime
         except OSError:
             continue
-        if mtime < start_ts:
-            continue
-        if best is None or mtime > best[0]:
-            best = (mtime, f)
-    return best[1] if best else None
+        if mtime >= start_ts and (end_ts is None or mtime <= end_ts):
+            matches.append((mtime, f))
+    matches.sort(key=lambda x: (x[0], str(x[1])))
+
+    return [p for _, p in matches]
 
 
 def resolve_transcript(
@@ -61,22 +73,23 @@ def resolve_transcript(
     session_id: str,
     *,
     exact_path: Path | None = None,
-) -> Path | None:
-    """The transcript that is provably ours; the mtime guess only when we have no id.
+    end_ts: float | None = None,
+) -> list[Path]:
+    """The transcripts that are provably ours; mtime matches when we have no id (HATS-1400).
 
-    HATS-1397: ``exact_path`` used to be a hint, and a miss fell through to
-    ``discover_recent_by_mtime`` — the freshest file, which retroactively is a
-    stranger's. A caller holding the provider's session id has an exact answer
-    or none; guessing is honest only for a caller that has no id at all.
+    HATS-1400: Extended to return list[Path] to support provider surfaces that rotate
+    session logs (e.g. agy brain segments). Returns empty list when none found.
     """
     if exact_path is not None:
-        return exact_path if exact_path.exists() else None
-    return discover_recent_by_mtime(transcripts_dir, glob_pattern, session_id)
+        return [exact_path] if exact_path.exists() else []
+    return discover_all_by_mtime(transcripts_dir, glob_pattern, session_id, end_ts=end_ts)
 
 
 __all__ = [
     "tool_home",
     "session_start_ts",
     "discover_recent_by_mtime",
+    "discover_all_by_mtime",
     "resolve_transcript",
 ]
+

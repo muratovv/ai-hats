@@ -7,10 +7,12 @@ into observe's surface-agnostic ``ParsedTranscript`` + ``usage/v1``.
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
+
 
 from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY
 from ai_hats_observe.parsers.base import ParsedTranscript, Turn
@@ -18,6 +20,16 @@ from ai_hats_observe.parsers.trace import TraceParser
 from ai_hats_observe.usage import empty_usage_report
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_created_at(ts_raw: Any) -> float:
+    if not ts_raw:
+        return 0.0
+    try:
+        s = str(ts_raw).replace("Z", "+00:00")
+        return datetime.fromisoformat(s).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def _clean_user_text(text: str) -> str | None:
@@ -33,7 +45,7 @@ def _clean_user_text(text: str) -> str | None:
     return text.strip() if text.strip() else None
 
 
-def _summarize_tool_args(name: str, args: dict[str, Any]) -> str:
+def _summarize_tool_args(name: str, args: Any) -> str:
     if not isinstance(args, dict):
         return str(args)[:80]
     if name == "run_command":
@@ -173,7 +185,7 @@ class AgyParser:
     def __init__(self) -> None:
         self._trace = TraceParser()
 
-    def parse(self, jsonl_path: Path | None, trace_path: Path) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             if jsonl_path:
@@ -191,15 +203,10 @@ class AgyParser:
             return parsed
 
         turns = self._parse_lines(lines)
-        # HATS-1397: agy rotates its brain segment on a checkpoint and offers no
-        # link between the pieces, so the resolved transcript can be a tail
-        # fragment of the session. Whichever source carries more of it wins; the
-        # trace-only flag is deliberately NOT inherited, because a structured
-        # transcript did exist and the record must stay measured.
+        # HATS-1397 / HATS-1400: agy rotates its brain segment on a checkpoint.
+        # Now that we resolve all segments in the window, if trace still carries more
+        # turns (e.g. unpersisted trace turns), trace wins and trace.log MUST be kept.
         traced = self._trace.parse(None, trace_path).turns
-        if len(traced) > len(turns):
-            logger.debug("agy transcript.jsonl covers %d turns, trace %d — using the trace",
-                         len(turns), len(traced))
             turns = traced
 
         agg_tokens = _resolve_agy_tokens(trace_path, turns)
@@ -222,7 +229,7 @@ class AgyParser:
             flags=flags,
         )
 
-    def parse_usage(self, jsonl_path: Path | None, trace_path: Path) -> dict[str, Any]:
+    def parse_usage(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> dict[str, Any]:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             report = self._trace.parse_usage(None, trace_path)
@@ -236,12 +243,22 @@ class AgyParser:
                 report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
             return report
 
-        report = (
-            empty_usage_report(Path(jsonl_path).name)
-            if jsonl_path
-            else empty_usage_report("transcript.jsonl")
-        )
         turns = self._parse_lines(lines)
+        traced = self._trace.parse(None, trace_path).turns
+        if len(traced) > len(turns):
+            logger.debug("agy transcript.jsonl covers %d turns, trace %d — using trace for usage",
+                         len(turns), len(traced))
+            return self._trace.parse_usage(None, trace_path)
+
+        first_name = "transcript.jsonl"
+        if isinstance(jsonl_path, (Path, str)):
+            first_name = Path(jsonl_path).name
+        elif jsonl_path:
+            p_list = list(jsonl_path)
+            if p_list:
+                first_name = Path(p_list[0]).name
+
+        report = empty_usage_report(first_name)
         agg_tokens = _resolve_agy_tokens(trace_path, turns)
         if agg_tokens:
             agg = report["aggregates"]
@@ -253,7 +270,6 @@ class AgyParser:
         else:
             report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
-        turns = self._parse_lines(lines)
         agg = report["aggregates"]
         timeline = report["timeline"]
 
@@ -265,21 +281,53 @@ class AgyParser:
 
         return report
 
-    def _load_lines(self, jsonl_path: Path | None) -> list[dict[str, Any]] | None:
+    def _load_lines(
+        self,
+        jsonl_path: Path | Iterable[Path] | None,
+        session_start_iso: str | None = None,
+    ) -> list[dict[str, Any]] | None:
         if not jsonl_path:
             return None
-        p = Path(jsonl_path)
-        if not p.exists():
+        paths = [Path(jsonl_path)] if isinstance(jsonl_path, (Path, str)) else [Path(p) for p in jsonl_path]
+        all_records: list[dict[str, Any]] = []
+        seen_fps: set[tuple[Any, ...]] = set()
+
+        min_ts = _parse_created_at(session_start_iso) if session_start_iso else 0.0
+
+        for p in paths:
+            if not p.exists():
+                continue
+            try:
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    if isinstance(rec, dict):
+                        created_at_ts = _parse_created_at(rec.get("created_at"))
+                        if min_ts > 0.0 and created_at_ts > 0.0 and created_at_ts < min_ts:
+                            continue
+                        fp = (
+                            rec.get("created_at"),
+                            rec.get("type"),
+                            rec.get("source"),
+                            rec.get("step_index"),
+                            str(rec.get("content")),
+                            json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
+                        )
+                        if fp not in seen_fps:
+                            seen_fps.add(fp)
+                            all_records.append(rec)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+        if not all_records:
             return None
-        try:
-            records = []
-            for line in p.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line:
-                    records.append(json.loads(line))
-            return records
-        except (OSError, json.JSONDecodeError):
-            return None
+
+        all_records.sort(key=lambda r: (_parse_created_at(r.get("created_at")), r.get("step_index") or 0))
+        return all_records
+
+
 
     def _parse_lines(self, records: list[dict[str, Any]]) -> list[Turn]:
         turns: list[Turn] = []

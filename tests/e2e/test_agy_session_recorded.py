@@ -80,7 +80,8 @@ def test_agy_session_transcript_resolution_and_audit(
 
     provider = AgyProvider()
     resolved = provider.resolve_transcript(tmp_path, session_id)
-    assert resolved == transcript_file
+    assert resolved == [transcript_file]
+
 
     session_dir = tmp_path / "session_dir"
     session_dir.mkdir()

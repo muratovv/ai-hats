@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +30,21 @@ class ClaudeParser:
     def __init__(self) -> None:
         self._trace = TraceParser()
 
+    @staticmethod
+    def _normalize_paths(jsonl_path: Path | Iterable[Path] | None) -> list[Path]:
+        if jsonl_path is None:
+            return []
+        if isinstance(jsonl_path, (Path, str)):
+            p = Path(jsonl_path)
+            return [p] if p.exists() else []
+        return [Path(p) for p in jsonl_path if Path(p).exists()]
+
     def parse(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> ParsedTranscript:
-        if jsonl_path and jsonl_path.exists():
-            turns, model_stats, agg_usage = self._parse_jsonl(jsonl_path)
+        paths = self._normalize_paths(jsonl_path)
+        if paths:
+            turns, model_stats, agg_usage = self._parse_jsonl(paths)
             return ParsedTranscript(
                 turns=turns, model_stats=model_stats, agg_usage=agg_usage
             )
@@ -42,15 +53,18 @@ class ClaudeParser:
         return self._trace.parse(None, trace_path)
 
     def parse_usage(
-        self, jsonl_path: Path | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> dict[str, Any]:
         """JSONL present → the measured ``usage/v1`` report; else trace fallback."""
-        if jsonl_path and jsonl_path.exists():
-            return _usage.parse_session_usage(jsonl_path)
+        paths = self._normalize_paths(jsonl_path)
+        if paths:
+            # If multiple paths exist, parse the primary (first) transcript
+            return _usage.parse_session_usage(paths[0])
         return self._trace.parse_usage(None, trace_path)
 
-    def _parse_jsonl(self, jsonl_path: Path) -> tuple[list[Turn], dict[str, dict], dict]:
-        """Parse Claude Code JSONL → (turns, per-model stats, aggregated usage)."""
+
+    def _parse_jsonl(self, jsonl_paths: Path | Iterable[Path]) -> tuple[list[Turn], dict[str, dict], dict]:
+        """Parse Claude Code JSONL files → (turns, per-model stats, aggregated usage)."""
         turns: list[Turn] = []
         current: Turn | None = None
         model_stats: dict[str, dict] = {}
@@ -62,7 +76,15 @@ class ClaudeParser:
         }
         prev_model: str | None = None
 
-        for line in jsonl_path.read_text().splitlines():
+        paths = [Path(jsonl_paths)] if isinstance(jsonl_paths, (Path, str)) else [Path(p) for p in jsonl_paths]
+        lines: list[str] = []
+        for p in paths:
+            try:
+                lines.extend(p.read_text().splitlines())
+            except OSError:
+                continue
+
+        for line in lines:
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:

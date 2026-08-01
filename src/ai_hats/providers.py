@@ -222,17 +222,24 @@ class Provider(abc.ABC):
         return TraceParser()
 
     def resolve_transcript(
-        self, project_dir: Path, session_id: str, *, provider_session_id: str | None = None
-    ) -> Path | None:
-        """Resolve the path to this surface's structured session transcript.
+        self,
+        project_dir: Path,
+        session_id: str,
+        *,
+        provider_session_id: str | None = None,
+        end_ts: float | None = None,
+    ) -> list[Path]:
+        """Resolve the path(s) to this surface's structured session transcript(s).
 
-        HATS-1087: ``transcript_parser`` knows HOW to parse; this knows WHERE
-        to find the file. Default None — no structured transcript → the
+        HATS-1087 / HATS-1400: ``transcript_parser`` knows HOW to parse; this knows
+        WHERE to find the file(s). Default [] — no structured transcript → the
         trace-log fallback (TraceParser on ``session.trace_path``). A surface
-        with a structured session log (Claude JSONL, cline ``.messages.json``)
-        overrides to discover it.
+        with a structured session log (Claude JSONL, agy brain segments, cline ``.messages.json``)
+        overrides to discover them.
         """
-        return None
+        del project_dir, session_id, provider_session_id, end_ts
+        return []
+
 
     def leaked_user_global_project_hooks(self, home: Path) -> list[str]:
         """ai-hats project-hook commands this surface leaked into user-global config.
