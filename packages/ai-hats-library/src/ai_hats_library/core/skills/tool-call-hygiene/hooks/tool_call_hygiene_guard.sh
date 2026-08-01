@@ -64,6 +64,22 @@ cmd="$(extract_command)"
 # trim leading whitespace
 cmd="${cmd#"${cmd%%[![:space:]]*}"}"
 
+# --- check for return code masking in test/check runners (HATS-1436) -----------
+# Detect test runner commands piped or chained in ways that mask non-zero exit codes.
+runner_rx='(^|[[:space:]|;&])(pytest|ruff|make|ci-local\.sh|go[[:space:]]+test|cargo[[:space:]]+test|npm[[:space:]]+(run[[:space:]]+)?test|yarn[[:space:]]+test|pnpm[[:space:]]+test|python[3]?[[:space:]]+-m[[:space:]]+(pytest|unittest))($|[[:space:]|;&])'
+if [[ "$cmd" =~ $runner_rx ]]; then
+    if [[ "$cmd" != *"pipefail"* && "$cmd" != *"PIPESTATUS"* ]]; then
+        pipe_rx='\|[[:space:]]*(tail|head|grep|rg|tee)'
+        semi_rx=';[[:space:]]*(echo|true|exit[[:space:]]+0)'
+        or_rx='\|\|[[:space:]]*(echo|true|exit[[:space:]]+0)'
+        if [[ "$cmd" =~ $pipe_rx || "$cmd" =~ $semi_rx || "$cmd" =~ $or_rx ]]; then
+            msg="exit code masking detected in test runner command — dev_rule_exit_code_provenance: piped/chained runner commands mask non-zero exit codes. Use set -o pipefail, \${PIPESTATUS[0]}, or run without exit code masking."
+            printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
+            exit 0
+        fi
+    fi
+fi
+
 # --- allowlist: anything compound / piped / redirected is legitimately Bash --
 # Bias to allow: a pipe, &&/||, ;, command-substitution, backtick, here-doc, or
 # any redirection means the command is doing real shell work no single tool
