@@ -205,7 +205,7 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
     asm.project_config.default_role = "judge"
     asm.project_config.provider = "agy"
 
-    def _set_role(role, provider, *, warnings_sink=None):
+    def _set_role(role, provider, *, warnings_sink=None, result=None):
         if warnings_sink is not None:
             warnings_sink.append("core.hooksPath is already set to 'x' — not overwriting")
 
@@ -280,6 +280,16 @@ def test_session_start_composes_exactly_once(tmp_path: Path):
     needs; recomposing re-reads the whole library and doubles every load-time
     diagnostic, so one WARN reads as two."""
     project = _real_project(tmp_path, active_role="maintainer")
+    with _compose_spy() as calls:
+        build_composition_payload(project, interactive=True)
+    assert calls == ["maintainer"], f"expected ONE compose pass, got {len(calls)}: {calls}"
+
+
+def test_first_run_session_start_composes_exactly_once(tmp_path: Path):
+    """HATS-1435: with no ``active_role`` the seam also fires ``set_role``,
+    which composed a third time — so the first launch a user ever sees was the
+    noisiest one."""
+    project = _real_project(tmp_path, active_role=None)
     with _compose_spy() as calls:
         build_composition_payload(project, interactive=True)
     assert calls == ["maintainer"], f"expected ONE compose pass, got {len(calls)}: {calls}"

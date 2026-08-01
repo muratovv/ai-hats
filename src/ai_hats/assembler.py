@@ -714,6 +714,7 @@ class Assembler:
         provider_name: str | None = None,
         *,
         warnings_sink: list[str] | None = None,
+        result: CompositionResult | None = None,
     ) -> CompositionResult:
         """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
 
@@ -746,7 +747,8 @@ class Assembler:
         provider = get_provider(provider_name or self.project_config.provider)
         # HATS-456: single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
-        result = compose_for_role(self, role_name)
+        # HATS-1435: the caller's composition OF role_name, when it has one.
+        result = result if result is not None else compose_for_role(self, role_name)
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
