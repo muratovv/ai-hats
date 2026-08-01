@@ -194,7 +194,6 @@ class SkillMetadata(_YamlModel):
     git_hooks: dict[str, list[str]] = Field(default_factory=dict)
     runtime_hooks: dict[str, list[RuntimeHook]] = Field(default_factory=dict)
     worktree: dict[str, Any] = Field(default_factory=dict)
-    lifecycle_hooks: dict[str, list[str]] = Field(default_factory=dict)
     triggers: list[str] = Field(default_factory=list)
     skip: list[str] = Field(default_factory=list)
 
@@ -297,38 +296,6 @@ class SkillMetadata(_YamlModel):
         data["runtime_hooks"] = normalized
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_lifecycle_hooks(cls, data: Any) -> Any:
-        """Shape-check the ``lifecycle_hooks:`` block (HATS-1023).
-
-        Fail-loud like ``runtime_hooks`` — a silently dropped lifecycle hook is
-        a gate that never fires (HYP-078 class). Event NAMES are validated
-        against the rack topology at materialization time, not here.
-        """
-        if not isinstance(data, dict):
-            return data
-        raw = data.get("lifecycle_hooks")
-        if not raw:
-            data["lifecycle_hooks"] = {}
-            return data
-        skill_name = data.get("name", "<unknown>")
-        if not isinstance(raw, dict):
-            raise ValueError(
-                f"skill {skill_name!r}: lifecycle_hooks must be a mapping of "
-                f"event -> [script, ...], got {type(raw).__name__}"
-            )
-        normalized: dict[str, list[str]] = {}
-        for ev, scripts in raw.items():
-            if not isinstance(scripts, list) or not scripts:
-                raise ValueError(
-                    f"skill {skill_name!r}: lifecycle_hooks[{ev!r}] must be a "
-                    f"non-empty list of script paths, got {scripts!r}"
-                )
-            normalized[str(ev)] = [str(s) for s in scripts]
-        data["lifecycle_hooks"] = normalized
-        return data
-
     @classmethod
     def from_yaml(cls, path: Path) -> SkillMetadata:
         if not path.exists():
@@ -377,6 +344,16 @@ class SkillMetadata(_YamlModel):
                 f"plan-gate. Remove the declaration, or re-introduce the channel "
                 f"as an integrator-side live-collect."
             )
+        if ai_hats.get("lifecycle_hooks"):
+            # Tombstone (HATS-1147, ADR-0019 D8): consumer lifecycle_hooks channel
+            # deleted — fail LOUD, never no-op; a dropped edge gate is a gate that
+            # never installs (the HYP-078 hole this retirement exists to close).
+            raise ValueError(
+                f"skill {skill_dir.name!r}: the lifecycle_hooks: channel was removed "
+                f"(HATS-1147, ADR-0019 D8) and no longer gates rack FSM edges. "
+                f"Remove the declaration, or re-introduce the channel as an "
+                f"integrator-side live-collect."
+            )
         name = fm.get("name")
         return cls.model_validate(
             {
@@ -384,7 +361,6 @@ class SkillMetadata(_YamlModel):
                 "git_hooks": ai_hats.get("git_hooks") or {},
                 "runtime_hooks": ai_hats.get("runtime_hooks") or {},
                 "worktree": ai_hats.get("worktree") or {},
-                "lifecycle_hooks": ai_hats.get("lifecycle_hooks") or {},
             }
         )
 

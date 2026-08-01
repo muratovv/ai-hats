@@ -13,7 +13,6 @@ import subprocess
 
 import pytest
 
-from ai_hats.rack_consumers import HOOK_TIMEOUT, HookRunnerExtension
 from ai_hats.rack_wiring import WORKTREE_BUDGET, WorktreeExtension
 from ai_hats_rack import Kernel
 from ai_hats_rack.fsm import load_topology
@@ -102,9 +101,6 @@ def test_manager_threads_git_timeout_to_the_subprocess(tmp_path, monkeypatch):
     assert captured["timeout"] == 7.0  # an explicit per-call timeout still wins
 
 
-def test_hook_runner_default_timeout_is_unchanged(tmp_path):
-    assert HOOK_TIMEOUT == 30.0
-    ext = HookRunnerExtension(
-        tmp_path / "hooks", tmp_path / "tasks", project_dir=tmp_path, topology=load_topology()
-    )
-    assert ext.timeout == 30.0
+# HATS-1147: test_hook_runner_default_timeout_is_unchanged retired with the
+# lifecycle_hooks channel. Its subject (a hook timeout below its caller's lock
+# budget) returns as a per-caller assert under HATS-1151, not one global constant.

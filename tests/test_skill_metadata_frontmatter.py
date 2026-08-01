@@ -143,3 +143,26 @@ def test_plan_sections_declaration_is_a_loud_tombstone(tmp_path: Path) -> None:
     msg = str(exc.value)
     assert "demo" in msg
     assert "HATS-1149" in msg
+
+
+def test_lifecycle_hooks_declaration_is_a_loud_tombstone(tmp_path: Path) -> None:
+    # HATS-1147: consumer lifecycle_hooks channel deleted — a later declaration
+    # must fail LOUDLY (skill + card named). The zero-declaration survey covers
+    # only observable layers; a third-party one must not ship a gate that never installs.
+    d = _skill(
+        tmp_path,
+        "---\n"
+        "name: demo\n"
+        "description: x\n"
+        "ai_hats:\n"
+        "  lifecycle_hooks:\n"
+        "    plan--execute:\n"
+        "      - gate.sh\n"
+        "---\n"
+        "# Demo\n",
+    )
+    with pytest.raises(ValueError) as exc:
+        SkillMetadata.from_skill_dir(d)
+    msg = str(exc.value)
+    assert "demo" in msg
+    assert "HATS-1147" in msg
