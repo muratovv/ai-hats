@@ -19,7 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence, TypeVar
+from typing import Protocol, Sequence, TypeVar
+
 
 import yaml
 from filelock import FileLock
@@ -69,7 +70,11 @@ def ensure_backlog(project_dir: Path, definition_name: str) -> None:
 # ----- read views -------------------------------------------------------------
 
 
-V = TypeVar("V")
+class HasCreated(Protocol):
+    created: str
+
+
+V = TypeVar("V", bound=HasCreated)
 
 
 @dataclass(frozen=True)
@@ -152,15 +157,14 @@ def _prop_view(card) -> PropView:
 
 
 def created_at_or_before(views: Sequence[V], cut: datetime) -> list[V]:
-    """Вьюхи, заведённые не позже ``cut``.
+    """Return views created at or before ``cut``.
 
-    Штамп без времени (90 из 99 живых карточек) считается КОНЦОМ того дня, поэтому
-    карточка, заведённая в день сессии, остаётся. Отсутствующий или неразбираемый
-    штамп — fail-open: потерять живого кандидата хуже, чем пронести лишнего.
+    A date-only stamp (YYYY-MM-DD) is treated as start-of-day 00:00:00 UTC, so a card
+    created on the session day remains included. An absent or unparseable stamp is kept (fail-open).
     """
     kept: list[V] = []
     for view in views:
-        raw = getattr(view, "created", "") or ""
+        raw = view.created or ""
         dt = _created_dt(raw)
         if dt is None or dt <= cut:
             kept.append(view)

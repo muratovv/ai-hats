@@ -194,11 +194,8 @@ class SessionReviewRunner:
         sections.append(f"\n{REVIEW_DELIM_START}\n... your YAML here ...\n{REVIEW_DELIM_END}\n")
         return "\n\n".join(sections)
 
-    def _render_active_hypotheses(self, session_id: str = "") -> str:
-        if session_id:
-            active, hidden = self._hyps(session_id)
-        else:
-            active, hidden = active_hypotheses(self._ws), 0
+    def _render_active_hypotheses(self, session_id: str) -> str:
+        active, hidden = self._hyps(session_id)
         note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='hypotheses')}" if hidden > 0 else ""
         if not active:
             return f"## Active hypotheses\n\n(none — emit empty hypothesis_verdicts list){note}"
@@ -254,11 +251,8 @@ class SessionReviewRunner:
         ]
         return "\n".join(lines)
 
-    def _render_open_proposals(self, session_id: str = "") -> str:
-        if session_id:
-            open_props, hidden = self._props(session_id)
-        else:
-            open_props, hidden = open_proposals(self._ws), 0
+    def _render_open_proposals(self, session_id: str) -> str:
+        open_props, hidden = self._props(session_id)
         note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='open proposals')}" if hidden > 0 else ""
         if not open_props:
             return (

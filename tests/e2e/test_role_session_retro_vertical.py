@@ -215,8 +215,9 @@ class SetupContext:
     env: dict[str, str]
     hyp_id: str
     prop_id: str
-    future_hyp_id: str = ""
+    future_hyp_id: str
     magic_token: str  # per-run random; see _new_magic_token()
+
     global_trait: str = GLOBAL_TRAIT
     project_trait: str = PROJECT_TRAIT
     review_model: str = REVIEW_MODEL
@@ -785,6 +786,12 @@ def phase_assert_retro_artefacts(
     verdict_hyp_ids = {v.get("hyp_id") for v in verdicts if isinstance(v, dict)}
     assert ctx.hyp_id in verdict_hyp_ids, (
         f"reviewer did not emit a verdict for seeded hyp {ctx.hyp_id!r}; verdicts: {verdicts}"
+    )
+    assert ctx.future_hyp_id not in reviewer.meta_prompt, (
+        f"future hyp {ctx.future_hyp_id!r} was incorrectly injected into reviewer task prompt"
+    )
+    assert ctx.future_hyp_id not in verdict_hyp_ids, (
+        f"reviewer emitted a verdict for future hyp {ctx.future_hyp_id!r}"
     )
 
     # Claim #4 — PROP wiring (deterministic). Acting on an open proposal

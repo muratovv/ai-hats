@@ -58,14 +58,16 @@ def _make_review_file(
     return out
 
 
-def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
+def _add_active_hyp(
+    project_dir: Path, hyp_id: str = "HYP-001", created: str = "2026-05-01"
+) -> None:
     hyps_dir = hypotheses_dir(project_dir)
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
         "title: t\n"
         "status: active\n"
-        "created: '2026-05-01'\n"
+        f"created: '{created}'\n"
         "source_task: TASK-001\n"
         "hypothesis: a\n"
         "validation_log: []\n"
@@ -105,6 +107,14 @@ def test_harness_flags_missing_active_hyp_verdict(tmp_path: Path) -> None:
     _make_review_file(tmp_path, summary="ok", verdicts=[])
     issues = _check(tmp_path, SID)
     assert any("HYP-007" in i for i in issues)
+
+
+def test_harness_ignores_future_active_hyp(tmp_path: Path) -> None:
+    """Protocol item 6: _harness_check ignores active HYPs created after session_cut."""
+    _add_active_hyp(tmp_path, "HYP-008", created="2099-01-01")
+    _make_review_file(tmp_path, summary="ok", verdicts=[])
+    issues = _check(tmp_path, SID)
+    assert issues == []
 
 
 def test_harness_passes_when_no_active_hyps_and_empty_verdicts(tmp_path: Path) -> None:

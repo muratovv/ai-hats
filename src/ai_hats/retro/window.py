@@ -94,17 +94,16 @@ def parse_task_timestamp(value: str) -> datetime | None:
 
 
 def session_cut(project_dir: Path, session_id: str) -> datetime:
-    """Верхняя граница «что уже существовало» для сессии: старт + duration_s,
-    либо конец дня старта, когда метрики длительности не несут.
+    """Upper bound of what existed for a session: start + duration_s, or end of start day when duration_s is absent.
 
-    НЕ ``compute_session_end``: его fallback — ``now()``, а это (а) не отсекает
-    ничего на историческом корпусе и (б) даёт раннеру и inbox-валидатору разные
-    наборы (HATS-1445).
+    Distinct from ``compute_session_end``: its fallback is ``now()``, which (a) fails to truncate on historic runs
+    and (b) gives runner and inbox-validator different candidate sets (HATS-1445).
     """
     from ..paths import runs_dir
 
-    start = parse_session_start(session_id)
-    metrics_path = runs_dir(project_dir) / session_dirname(session_id) / METRICS_JSON
+    sid = strip_session_prefix(session_id)
+    start = parse_session_start(sid)
+    metrics_path = runs_dir(project_dir) / session_dirname(sid) / METRICS_JSON
     if metrics_path.exists():
         try:
             data = json.loads(metrics_path.read_text())
