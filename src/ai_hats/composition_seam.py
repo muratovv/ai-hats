@@ -129,9 +129,7 @@ def _maybe_sync_active_role(
     ``result`` is the seam's composition of ``effective_role`` (HATS-1435)."""
     first_run_hitl = interactive and effective_role and not role_override
     if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
-        asm.set_role(
-            effective_role, eff_provider, warnings_sink=warnings_sink, result=result
-        )
+        asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink, result=result)
         return asm.project_config
     return cfg
 
