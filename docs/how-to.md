@@ -348,7 +348,7 @@ For deeper dives — first-time setup walkthrough [2], the reflect-session / ref
 
 **[4]** — [`docs/how-to-hatrack.md`](how-to-hatrack.md) — day-to-day `rack` / `rack hyp` / `rack proposal` recipes.
 
-**[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture.
+**[5]** — [`docs/reflect.md`](reflect.md) — retrospective pipeline architecture, by component: `session-reviewer` (per-session LLM auditor), `judge-auditor`/`judge` (HYP + PROP triage), `judge-for-role` (role audit), `hypothesis-intake` (observation intake).
 
 **[6]** — [`docs/glossary.md`](glossary.md) — **Managed venv / managed-venv invariant**, **self-location guard**, **stray shadow**, **out-of-band recovery**, **Install layers (DATA / MANAGED / RUNTIME)**.
 
