@@ -41,6 +41,34 @@ supervisor, ack'd CLI mutations from a whitelist (see §CLI whitelist),
 no source-file edits without L2 activation, single report artifact at
 exit.
 
+## Step 0 — Inventory the PROP inbox (unconditional)
+
+Before Step 1, in every shape, whatever the kickoff scoped you to:
+
+```bash
+rack ls --backlog proposal --state open --all
+```
+
+`--all` is load-bearing — the default caps at 30 id-sorted rows.
+
+**Why unconditional.** The inbox is the other half of the reflex loop, and no
+launch shape guarantees you see it: Shapes A/B hand you a Phase 1 draft whose
+`## Proposals` section may be thin, and Shape C hands you nothing at all. In
+HATS-1323 the kickoff scoped the session to the HYP contour, no one listed the
+inbox, and 136 open proposals went unread — among them PROP-107 and PROP-118,
+findings the same epic then rediscovered from scratch at full cost. A scope
+that omits the inbox is a scope you widen, not an instruction to skip this.
+
+Carry three numbers into Step 3 and into the report: total open, how many are
+auto-filed noise (**review-proposal** Step 3b), and the leaders by votes **and**
+by age. Both axes matter: vote counts on cards older than the HATS-1397 fix are
+systematically depressed — `session-reviewer` was emitting `n/a` for months —
+so ranking on votes alone buries precisely the pre-fix cards.
+
+Under `reflect hypothesis` the Phase 2 preamble already carries this digest.
+Run the command anyway: it costs one call, and it is the only thing that would
+catch a digest disagreeing with the catalog.
+
 ## Step 1 — Read the first user message
 
 The first user message is one of three shapes. Detect which and adapt:
@@ -105,9 +133,10 @@ dialogue.
 
 ## Step 3 — Walk proposals with supervisor
 
-For each PROP in the draft's `## Proposals` section, surface the
-proposed decision (`accept | reject | defer | duplicate`) to the
-supervisor. On ack for the full batch, run **one** bulk commit:
+Walk the inbox from Step 0 — not only the draft's `## Proposals`
+section, which is a Phase 1 selection and may be thin. For each PROP
+surface the proposed decision (`accept | reject | defer | duplicate`)
+to the supervisor. On ack for the full batch, run **one** bulk commit:
 
 ```bash
 ah reflect commit \
@@ -122,11 +151,20 @@ draft's `## Proposed mutations` section:
 
 ```bash
 rack create "<title>" --description "<from PROP body>"
+rack transition PROP-NNN --link related_tasks:HATS-NNN
 ```
+
+Record that second command for every PROP whose outcome is a task —
+spawned by an `accept`, or already covered by an existing card on a
+`reject`. The edge is the machine-readable half of the triage; a
+mapping that lives only in this report or a work-log line cannot be
+resolved by anything downstream.
 
 Follow **review-proposal** for decision rules + the cost-citation
 heuristic (cost-cited PROPs get patience; uncited pain claims default
-to `defer` or `reject` after ≥1 sweep cycle).
+to `defer` or `reject` after ≥1 sweep cycle), and its Step 3b for the
+auto-filed harness/reviewer cards — those are a single batch decision
+under a shared criterion, never N individual judgements.
 
 ## Step 3.5 — Counter-claims pass (devil's advocate)
 
@@ -192,7 +230,9 @@ Phase 2 (HITL) — from draft <UTC ts of Phase 1 draft>
 
 ## Proposals
 
-- PROP-NNN — <decision>: <one-line rationale>
+inbox: <N> open · <M> triaged this pass · <K> swept as auto-noise
+
+- PROP-NNN — <decision>: <one-line rationale> (→ HATS-NNN)
 
 ## New tasks
 
@@ -219,6 +259,7 @@ Allowed:
 
 - `rack hyp append-verdict ...`
 - `rack transition <HYP-ID> confirm|refute|stall|revive ...` (HYP status is an FSM edge)
+- `rack transition <PROP-ID> --link related_tasks:<TASK-ID>` (Step 3 triage outcome)
 - `ai-hats reflect commit ...`
 - `rack create ...`
 - `rack ls ...` / `rack context ...` / `ai-hats list ...` (inspection)
@@ -249,6 +290,13 @@ Forbidden without L2 activation:
 - **Counter-claims `(none)` in your report but `## Notes` negative** —
   anti-pattern; Step 3.5 was skipped on the new observations from
   dialogue. Return to it before Write.
+- **`## Proposals` with no `inbox:` line** — anti-pattern; Step 0 was
+  skipped, so the section reports what the draft happened to mention
+  rather than what the inbox holds. Run Step 0 and rewrite the section
+  before Write. `0 open` is a fine value; a missing line is not.
+- **Kickoff scopes you away from the inbox** — Step 0 still runs. A
+  narrow kickoff is what produced the HATS-1323 miss; report the count
+  even when the pass itself stays inside the scoped contour.
 
 ## Scope
 
