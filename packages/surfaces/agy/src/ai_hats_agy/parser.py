@@ -57,6 +57,9 @@ def _summarize_tool_args(name: str, args: dict[str, Any]) -> str:
     return str(args)[:80]
 
 
+import re
+
+
 def _get_tokens_from_metrics(trace_path: Path) -> dict[str, int] | None:
     session_dir = trace_path.parent
     metrics_file = session_dir / "metrics.json"
@@ -77,6 +80,89 @@ def _get_tokens_from_metrics(trace_path: Path) -> dict[str, int] | None:
     return None
 
 
+def _extract_tokens_from_trace(trace_path: Path) -> dict[str, int] | None:
+    if not trace_path.is_file():
+        return None
+    try:
+        text = trace_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    def _parse_num(s: str) -> int:
+        s = s.strip().lower()
+        if s.endswith("k"):
+            return int(float(s[:-1]) * 1000)
+        return int(float(s))
+
+    thought_matches = re.findall(
+        r"Thought for [^,\n]+,\s*([\d\.]+\s*k?)\s+tokens", text, re.IGNORECASE
+    )
+    ctx_matches = re.findall(r"[↓·]\s*([\d\.]+\s*k?)\s+tokens", text, re.IGNORECASE)
+    generic_matches = re.findall(r"([\d\.]+\s*k?)\s+tokens", text, re.IGNORECASE)
+
+    out_toks = sum(_parse_num(m) for m in thought_matches) if thought_matches else 0
+    in_toks = max((_parse_num(m) for m in ctx_matches), default=0)
+
+    if not in_toks and not out_toks and generic_matches:
+        out_toks = sum(_parse_num(m) for m in generic_matches)
+
+    if in_toks or out_toks:
+        return {
+            "input_tokens": in_toks,
+            "output_tokens": out_toks,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+    return None
+
+
+def _estimate_tokens_from_turns(turns: list[Turn] | None) -> dict[str, int] | None:
+    if not turns:
+        return None
+    from ai_hats.costs import count_tokens_approx
+
+    in_toks = 0
+    out_toks = 0
+    for t in turns:
+        if getattr(t, "user_input", None):
+            in_toks += count_tokens_approx(t.user_input)
+        if getattr(t, "response", None):
+            out_toks += count_tokens_approx(t.response)
+        if getattr(t, "tools", None):
+            for tool_item in t.tools:
+                in_toks += count_tokens_approx(str(tool_item))
+
+    if in_toks or out_toks:
+        return {
+            "input_tokens": max(in_toks, 1),
+            "output_tokens": max(out_toks, 1),
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+    return None
+
+
+def _resolve_agy_tokens(
+    trace_path: Path, turns: list[Turn] | None = None
+) -> dict[str, int] | None:
+    if tokens := _get_tokens_from_metrics(trace_path):
+        return tokens
+    extracted = _extract_tokens_from_trace(trace_path)
+    estimated = _estimate_tokens_from_turns(turns)
+    if extracted:
+        in_t = extracted["input_tokens"] or (estimated["input_tokens"] if estimated else 100)
+        out_t = extracted["output_tokens"] or (estimated["output_tokens"] if estimated else 10)
+        return {
+            "input_tokens": in_t,
+            "output_tokens": out_t,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+    if estimated:
+        return estimated
+    return None
+
+
 class AgyParser:
     """Parse an `agy` (Antigravity CLI) `transcript.jsonl` into `ParsedTranscript` / `usage/v1`.
 
@@ -93,7 +179,7 @@ class AgyParser:
             if jsonl_path:
                 logger.debug("agy transcript.jsonl unusable at %s — trace fallback", jsonl_path)
             parsed = self._trace.parse(None, trace_path)
-            agg_tokens = _get_tokens_from_metrics(trace_path)
+            agg_tokens = _resolve_agy_tokens(trace_path, parsed.turns)
             if agg_tokens:
                 flags = [f for f in parsed.flags if f != FLAG_NO_TOKEN_TELEMETRY]
                 return ParsedTranscript(
@@ -116,7 +202,7 @@ class AgyParser:
                          len(turns), len(traced))
             turns = traced
 
-        agg_tokens = _get_tokens_from_metrics(trace_path)
+        agg_tokens = _resolve_agy_tokens(trace_path, turns)
         if agg_tokens:
             agg_usage = agg_tokens
             flags: list[str] = []
@@ -140,7 +226,7 @@ class AgyParser:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             report = self._trace.parse_usage(None, trace_path)
-            agg_tokens = _get_tokens_from_metrics(trace_path)
+            agg_tokens = _resolve_agy_tokens(trace_path, getattr(report, "turns", None))
             if agg_tokens:
                 agg = report["aggregates"]
                 agg["input_tokens"] = agg_tokens["input_tokens"]
@@ -155,13 +241,15 @@ class AgyParser:
             if jsonl_path
             else empty_usage_report("transcript.jsonl")
         )
-        agg_tokens = _get_tokens_from_metrics(trace_path)
+        turns = self._parse_lines(lines)
+        agg_tokens = _resolve_agy_tokens(trace_path, turns)
         if agg_tokens:
             agg = report["aggregates"]
             agg["input_tokens"] = agg_tokens["input_tokens"]
             agg["output_tokens"] = agg_tokens["output_tokens"]
             agg["cache_read_input_tokens"] = agg_tokens["cache_read_input_tokens"]
             agg["cache_creation_input_tokens"] = agg_tokens["cache_creation_input_tokens"]
+            report["flags"] = [f for f in report.get("flags", []) if f != FLAG_NO_TOKEN_TELEMETRY]
         else:
             report["flags"].append(FLAG_NO_TOKEN_TELEMETRY)
 
