@@ -13,6 +13,6 @@ Applies to all three backlog item types — **tasks** (`HATS-NNN`), **hypotheses
 
 §1 applies to every role that touches the backlog (filing, lifecycle, or read).
 
-§§2–4 and §6 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `rack create` (e.g. L1 analyst roles like `judge-for-role`) follow §1 only; they never enter the lifecycle-owner obligations because they never own a lifecycle.
+§§2–4 and §6 apply only to roles that **own a backlog item's lifecycle** — the fix author / lead / primary agent. Roles whose protocol skill whitelists only `rack create` (e.g. L1 analyst roles like `role-judge`) follow §1 only; they never enter the lifecycle-owner obligations because they never own a lifecycle.
 
 For CLI commands, lifecycle details, and plan-flow procedures → skill **hatrack**.

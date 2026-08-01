@@ -153,6 +153,74 @@ def test_main_harness_timeout_routes_to_harness_incident(
     assert "harness incident" in p["title"].lower()
 
 
+def test_main_harness_timeout_harvests_existing_verdicts(
+    project_dir: Path,
+    mock_runners,
+    monkeypatch,
+):
+    """HATS-1422: HarnessTimeoutError when a valid review doc already exists on disk
+    must still harvest its verdicts into validation_log, file meta-PROP target=harness-incident,
+    and return exit code 2."""
+    from ai_hats.paths import hypotheses_dir, retros_dir
+    from ai_hats.rack_workspace import rack_workspace
+    from ai_hats_rack.migration import migrate_catalog
+
+    hyps_dir = hypotheses_dir(project_dir)
+    hyps_dir.mkdir(parents=True, exist_ok=True)
+    (hyps_dir / "HYP-001.yaml").write_text(
+        "id: HYP-001\n"
+        "title: test hyp\n"
+        "status: active\n"
+        "created: '2026-05-01'\n"
+        "source_task: TASK-001\n"
+        "hypothesis: test\n"
+        "validation_log: []\n"
+    )
+    migrate_catalog(hyps_dir, "hypotheses")
+
+    doc_path = retros_dir(project_dir) / "sessions" / "x-1.md"
+    doc_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_path.write_text(
+        "---\n"
+        "summary: retro summary\n"
+        "hypothesis_verdicts:\n"
+        "  - hyp_id: HYP-001\n"
+        "    verdict: confirmed\n"
+        "    evidence: evidence string\n"
+        "    recommendation: close_confirmed\n"
+        "---\n"
+        "# Review\n"
+    )
+
+    class _TimingOutRunner:
+        def __init__(self, _pd):
+            pass
+
+        def run(self, sid, max_retries=1, harness_policy=None):
+            raise HarnessTimeoutError("sub-1", "exit_code=124; timed_out=True")
+
+    monkeypatch.setattr(
+        "ai_hats.retro.session_review_runner.SessionReviewRunner",
+        _TimingOutRunner,
+    )
+    monkeypatch.setattr("sys.argv", ["reflect_session_main", "x-1"])
+
+    rc = rsm.main()
+
+    assert rc == 2
+    proposals = _read_proposals(project_dir)
+    assert len(proposals) == 1
+    assert proposals[0]["target"] == "harness-incident"
+
+    ws = rack_workspace(project_dir)
+    card = ws.kernel_for("HYP-001").get("HYP-001")
+    assert card is not None
+    vlog = card.extras.get("validation_log") or []
+    assert len(vlog) == 1
+    assert vlog[0]["verdict"] == "confirmed"
+    assert vlog[0]["session_id"] == "x-1"
+
+
 def test_main_zero_output_routes_to_harness_incident(
     project_dir: Path,
     mock_runners,

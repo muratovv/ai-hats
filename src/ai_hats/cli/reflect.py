@@ -14,7 +14,7 @@ Subcommands:
     Audit a target role against the user's project context. Pre-flight composes
     the target and materializes its layered breakdown under a per-session
     namespace (each run owns its `<session_id>/` subdir, so parallel runs don't
-    race — HATS-308); the `reflect-role` pipeline launches `judge-for-role`, which reads
+    race — HATS-308); the `reflect-role` pipeline launches `role-judge`, which reads
     those files and writes the report to
     `.agent/retrospectives/role-coherence/<UTC-ts>-<target>.md`. Protocols:
     `role-coherence-protocol` + `judge-role-protocol` skills.
@@ -408,7 +408,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
         )
     preamble_template = preamble_path.read_text()
 
-    console.print(f"[cyan]→ Launching judge-for-role to audit: {target_role}[/]")
+    console.print(f"[cyan]→ Launching role-judge to audit: {target_role}[/]")
     with PipelineHarness(PIPELINE_REFLECT_ROLE, project_dir) as h:
         composed_dir = _materialize_target_composition(
             h.namespace / "composed",
@@ -422,7 +422,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
         )
         final = h.run(
             {
-                KEY_ROLE: "judge-for-role",
+                KEY_ROLE: "role-judge",
                 "target_role": target_role,
                 KEY_INTERACTIVE: True,
                 KEY_PROJECT_DIR: project_dir,
@@ -430,7 +430,7 @@ def _run_role_audit(project_dir: Path, target_role: str) -> dict:
                 KEY_EXTRA_ARGS: [],
                 KEY_COMPOSITION: build_composition_payload(
                     project_dir,
-                    role_override="judge-for-role",
+                    role_override="role-judge",
                     interactive=True,
                 ),
                 KEY_SESSION_MGR: make_session_manager(project_dir),

@@ -6,7 +6,7 @@ Add your own roles, traits, rules, skills, and pipelines to ai-hats — without 
 
 When you install ai-hats, two layers ship as built-in content:
 
-- **`library/core/`** — engine fundament. System roles (`initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `judge-for-role`, `auditor-for-role`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
+- **`library/core/`** — engine fundament. System roles (`initial-wizard`, `session-reviewer`, `judge-auditor`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent`), base traits (`trait-base`, `trait-agent`, `trait-analyst-base`, `base-judge`, `base-auditor`, `trait-reflect-mode`), global rules, foundational skills (`hatrack`, `git-mastery`, `context-*`, `review-*`, etc.), and all reflect-pipeline YAML. Without these, `ai-hats init` / `ai-hats self init` / reflect pipelines do not work.
 - **`library/usage/`** — curated content catalog. Opinionated roles (`assistant`, `dev-python`, `dev-web`, `maintainer`, `architect`, `sre`, `go-dev`, `go-dev-full`), domain traits (`trait-se-mindset`, `dev::python`, `dev::web`, `dev::shell`, `dev::go-*`, `env::proxmox`, …), and ~55 optional skills (golang, terraform, ansible, observability, system-design, …).
 
 The split is informational — both layers are loaded at runtime. You can override either from your own library path.
@@ -588,7 +588,7 @@ You need a [custom pipeline](#custom-pipelines-advanced) and step plugins
 
 ## Replacing a system role (e.g. your own auditor)
 
-The built-in `session-reviewer` and `auditor-for-role` are reachable by name from engine code. Their **content** is overrideable — drop a file with the same name in any later-precedence path:
+Some built-in roles are reached by name: `session-reviewer` from engine code, `role-judge` from `ai-hats reflect role`, and `role-auditor` by agents that delegate an audit to a sub-agent. Their **content** is overrideable — drop a file with the same name in any later-precedence path:
 
 ```bash
 # 1. Inspect the default (read-only — don't edit the installed file)
@@ -610,7 +610,7 @@ The next time a reflect pipeline invokes `session-reviewer` (by name), the resol
 
 ### Limitations
 
-- **You cannot rename a system role.** The engine looks up `session-reviewer`, `judge-for-role`, `hypothesis-intake`, etc. by literal string. Override the content, not the name.
+- **You cannot rename a system role.** The engine looks up `session-reviewer`, `role-judge`, `hypothesis-intake`, etc. by literal string. Override the content, not the name.
 - **You cannot run a parallel auditor.** If you want a second auditor alongside the default, file a feature request — the engine currently invokes one role per pipeline step.
 - **Verify after editing.** Some pipelines pass structured marker contracts (e.g. `BEGIN_REFLECT` / `END_REFLECT`). If your override breaks the contract, the parser downstream will fail. Keep the marker block and the role's `priorities` consistent with the default unless you know what you're doing.
 

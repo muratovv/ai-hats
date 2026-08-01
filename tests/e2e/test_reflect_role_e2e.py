@@ -13,7 +13,7 @@ Pre-flight (Python) composes the target role and materializes its
 layered breakdown to a per-session namespace under
 ``<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/maintainer/``
 (``manifest.yaml`` + ``traits/``, ``rules/``, ``skills/`` subdirs +
-``role-injection.md`` if non-empty). Then the ``judge-for-role``
+``role-injection.md`` if non-empty). Then the ``role-judge``
 role launches interactively; I chat with it about the role's
 coherence and it writes the audit report under
 ``.agent/retrospectives/role-coherence/<UTC-ts>-maintainer.md`` via
@@ -27,7 +27,7 @@ What this test pins (pre-flight + launch sanity)
    produced the composed-role dir with at least ``manifest.yaml`` —
    proves the role was resolved + composed + serialized to disk.
 3. The PTY session-start banner appears in stdout — proves the
-   ``judge-for-role`` runner spawned.
+   ``role-judge`` runner spawned.
 4. The PTY session exits cleanly (``{0, 130}``).
 5. No Python ``Traceback`` leaks to user-facing output.
 
@@ -102,8 +102,8 @@ def test_reflect_role_materializes_target_composition(
     # Same rationale as test_reflect_all_e2e.py — the session-start
     # banner is the strong proof of WrapRunner spawn.
     plain = strip_ansi(result.stdout)
-    assert "Launching judge-for-role" in plain, (
-        "reflect role did not advance to judge-for-role launch — "
+    assert "Launching role-judge" in plain, (
+        "reflect role did not advance to role-judge launch — "
         f"regression in _run_role_audit?\nstdout (tail 800):\n{plain[-800:]}"
     )
     assert "Session:" in plain, (

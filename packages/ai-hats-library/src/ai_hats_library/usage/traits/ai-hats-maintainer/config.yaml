@@ -125,7 +125,7 @@ injection: |
     verdicts in that doc are what land in each HYP's `validation_log`.
   - `judge-auditor` -> `judge` — two-phase bulk triage of HYP + PROP
     (`ai-hats reflect hypothesis`, ADR-0007).
-  - `judge-for-role` — role-coherence audit (`ai-hats reflect role`).
+  - `role-judge` — role-coherence audit (`ai-hats reflect role`).
   - `hypothesis-intake` — observation intake (`ai-hats reflect issue`).
 
   Anything you touch under session artifacts, retro storage, metrics, or a

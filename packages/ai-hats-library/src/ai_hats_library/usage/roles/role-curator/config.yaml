@@ -29,7 +29,7 @@ injection: |
   2. Pick or open the child task under the active library-curation epic.
   3. NEW components → `skill-engineer` review checklist +
      `rule_core_vs_usage_split` for placement.
-  4. Audits → delegate to `auditor-for-role` as sub-agent.
+  4. Audits → delegate to `role-auditor` as sub-agent.
   5. Validate by composing the affected role and reading rendered
      injection (see `library-curator` § "Verifying compositions in-process").
 

@@ -1,4 +1,4 @@
-name: judge-for-role
+name: role-judge
 priorities:
   - Specificity-of-findings
   - Constructive-recommendations

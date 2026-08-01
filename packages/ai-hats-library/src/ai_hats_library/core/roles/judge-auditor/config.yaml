@@ -5,7 +5,7 @@ priorities:
   - Counter-claim-rigor
   - Brevity
 composition:
-  # Tier-symmetric with judge-for-role: trait-analyst-base bundles global
+  # Tier-symmetric with role-judge: trait-analyst-base bundles global
   # hygiene + analyst baseline injection (English reports, no source edits
   # by default); base-auditor adds the L0 contract (no CLI, no dialogue,
   # single artifact). HATS-513 / ADR-0007 §П1.

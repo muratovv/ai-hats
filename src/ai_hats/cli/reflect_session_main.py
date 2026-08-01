@@ -91,6 +91,15 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
             file=sys.stderr,
         )
 
+    # HATS-1369 / HATS-1422: parse the doc ONCE — shared by the harvest below and
+    # _harness_check, instead of each re-reading/re-parsing it independently.
+    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
+
+    # Harvest whatever verdicts the doc carries into validation_log,
+    # independent of _harness_check's full-active-coverage gate below or
+    # harness-reliability failures above (HATS-1422).
+    persisted = _maybe_harvest_verdicts(project_dir, session_id, raw)
+
     if harness_error is not None:
         _file_meta_proposal(
             project_dir,
@@ -98,15 +107,9 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
             issues=[f"harness: {harness_error}"],
             target=TARGET_HARNESS_INCIDENT,
         )
+        if persisted:
+            print(f"harvested {len(persisted)} verdict(s): {persisted}")
         return 2
-
-    # HATS-1369: parse the doc ONCE — shared by the harvest below and
-    # _harness_check, instead of each re-reading/re-parsing it independently.
-    raw, parse_issues = _load_review_doc(_review_doc_path(project_dir, session_id))
-
-    # Harvest whatever verdicts the doc carries into validation_log,
-    # independent of _harness_check's full-active-coverage gate below.
-    persisted = _maybe_harvest_verdicts(project_dir, session_id, raw)
 
     issues = _harness_check(project_dir, session_id, runner_error, raw, parse_issues)
     if issues:
@@ -116,6 +119,8 @@ def run_session_review(session_id: str, max_retries: int, project_dir: Path) -> 
             issues,
             target=TARGET_SESSION_REVIEWER,
         )
+        if persisted:
+            print(f"harvested {len(persisted)} verdict(s): {persisted}")
         return 2
     if saved_path is not None:
         print(f"session-reviewer saved to {saved_path}")
