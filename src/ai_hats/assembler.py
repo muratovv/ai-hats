@@ -139,7 +139,6 @@ class Assembler:
                 self.project_config,
                 compose=lambda role: compose_for_role(self, role),
                 resolve_provider=get_provider,  # HATS-865: DI so the brick never imports providers
-                library_paths=self.library_paths,  # HATS-1023: consumer lifecycle union scope
             )
         )
 

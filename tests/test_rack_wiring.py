@@ -169,6 +169,33 @@ def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
     assert "worktree" not in names and "ownership" not in names
 
 
+def test_stock_plan_catalog_wiring_without_consumer_config(project):
+    """HATS-1160: the consumer plan_sections channel is gone. A kernel built
+    with sections=None (the default) scaffolds AND gates on the stock
+    DEFAULT_PLAN_SECTIONS catalog — the fallback lives in stock_factories, not
+    a consumer read. Re-homed here from test_rack_consumers.py by HATS-1147:
+    the guard is about the rack's stock wiring, and only ever touched the
+    lifecycle channel incidentally."""
+    kernel = _kernel(project)  # sections=None
+    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
+    kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
+
+    scaffold = (kernel.tasks_dir / "T-1" / "plan.md").read_text()
+    assert "## Requirements" in scaffold
+    assert "## Verification Protocol" in scaffold
+
+    # the gate enforces the stock catalog: a plan missing required sections aborts
+    (kernel.tasks_dir / "T-1" / "plan.md").write_text("# Plan\n\n## Requirements\nonly this\n")
+    with pytest.raises(OperationAborted) as exc_info:
+        kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
+    assert exc_info.value.subscriber == "plan-gate"
+
+    # a complete stock plan passes
+    (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+    kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
+    assert kernel.get("T-1").state == "execute"
+
+
 def test_full_stack_lifecycle_with_views(project, monkeypatch):
     """One walk through the whole wired stack on real git: scaffold → gate →
     worktree → merge → epicless done, with STATE.md tracking along."""

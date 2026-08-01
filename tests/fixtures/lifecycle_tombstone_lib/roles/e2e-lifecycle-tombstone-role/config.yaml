@@ -1,0 +1,15 @@
+name: e2e-lifecycle-tombstone-role
+priorities:
+  - Correctness
+composition:
+  traits: []
+  rules: []
+  skills:
+    - e2e-lifecycle-tombstone
+injection: |
+  # ROLE: E2E-LIFECYCLE-TOMBSTONE-ROLE
+
+  E2E fixture role (HATS-1147). Bundles the `e2e-lifecycle-tombstone` skill so a
+  real `ai-hats self init -r e2e-lifecycle-tombstone-role` composes a skill that
+  declares the retired `lifecycle_hooks:` channel. Used only by the retirement
+  e2e; not shipped.
