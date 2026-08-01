@@ -572,6 +572,25 @@ class Assembler:
         """
         return self.user_config.overlay_for(role_name)
 
+    def _effective_traits(self, role_name: str) -> list[str]:
+        """Role's base traits with global-then-project overlay edits applied.
+
+        One home for a walk `config status` and the audit snapshot both need —
+        two copies would have to agree forever (HATS-1435).
+        """
+        base_cfg = self.resolver.resolve_role_config(role_name)
+        traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (self._get_global_overlay(role_name), self._get_overlay(role_name)):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in traits:
+                    traits.remove(name)
+            for name in layer.add_traits:
+                if name not in traits:
+                    traits.append(name)
+        return traits
+
     def _get_overlays(self, role_name: str) -> list[OverlayConfig]:
         """Return the ordered list of overlay layers for a role (HATS-421).
 
@@ -601,7 +620,9 @@ class Assembler:
             project_config_paths=self.project_config.library_paths,
         )
 
-    def _get_overlay_provenance(self, role_name: str) -> dict[str, dict[str, str]]:
+    def _get_overlay_provenance(
+        self, role_name: str, *, result: CompositionResult | None = None
+    ) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
         ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
@@ -611,12 +632,14 @@ class Assembler:
         Walked in the same global-then-project order used by ``_get_overlays``
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
+
+        ``result`` must be the composition OF ``role_name`` — HATS-1435.
         """
         provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
 
         # Seed path-based provenance for all components in the composed role.
         try:
-            comp_res = compose_for_role(self, role_name)
+            comp_res = result if result is not None else compose_for_role(self, role_name)
             for r in comp_res.rules:
                 p = self.resolver.resolve_rule_dir(r.name)
                 provenance["rules"][r.name] = self._classify_component_layer(p).value
@@ -628,21 +651,7 @@ class Assembler:
             # which `config status` renders as "role has no rules" (HATS-1373).
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
-        # Seed traits from base config + active overlays
-        base_cfg = self.resolver.resolve_role_config(role_name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            self._get_global_overlay(role_name),
-            self._get_overlay(role_name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
+        effective_traits = self._effective_traits(role_name)
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
@@ -710,6 +719,7 @@ class Assembler:
         provider_name: str | None = None,
         *,
         warnings_sink: list[str] | None = None,
+        result: CompositionResult | None = None,
     ) -> CompositionResult:
         """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
 
@@ -742,7 +752,8 @@ class Assembler:
         provider = get_provider(provider_name or self.project_config.provider)
         # HATS-456: single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
-        result = compose_for_role(self, role_name)
+        # HATS-1435: the caller's composition OF role_name, when it has one.
+        result = result if result is not None else compose_for_role(self, role_name)
 
         # Non-fatal compose errors (e.g. missing optional rule) are surfaced
         # via result.errors; do not abort.
@@ -1064,25 +1075,10 @@ class Assembler:
         list is also surfaced here (it doesn't otherwise appear in the
         tree — composer flattens traits into rules/skills/injections).
         """
-        provenance = self._get_overlay_provenance(result.name)
-        # Effective trait order: base composition + overlay-added (overlay
-        # removes are already applied by the composer for the composition
-        # lists, but trait-level visibility is what `config status` cares
-        # about). Walk layers in same order as provenance: base → global → project.
-        base_cfg = self.resolver.resolve_role_config(result.name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            self._get_global_overlay(result.name),
-            self._get_overlay(result.name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
+        provenance = self._get_overlay_provenance(result.name, result=result)
+        # Trait-level visibility is what `config status` cares about; the
+        # composer already flattened overlay edits out of the composition lists.
+        effective_traits = self._effective_traits(result.name)
         return {
             "name": result.name,
             "priorities": result.priorities,

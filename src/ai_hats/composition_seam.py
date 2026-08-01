@@ -111,16 +111,25 @@ def _compose_validated(asm, effective_role, *, explicit_role: str | None, label:
 
 
 def _maybe_sync_active_role(
-    asm, cfg, effective_role, eff_provider, *, interactive, role_override, warnings_sink=None
+    asm,
+    cfg,
+    effective_role,
+    eff_provider,
+    *,
+    interactive,
+    role_override,
+    warnings_sink=None,
+    result=None,
 ):
     """HITL first-run / provider-switch: persist ``active_role`` before the
     session starts (hoisted from ``WrapRunner.run``, semantics intact).
 
     ``warnings_sink`` collects the set_role materialize warnings so the caller can
-    route them through the read-hold instead of a bare pre-launch print (HATS-970)."""
+    route them through the read-hold instead of a bare pre-launch print (HATS-970).
+    ``result`` is the seam's composition of ``effective_role`` (HATS-1435)."""
     first_run_hitl = interactive and effective_role and not role_override
     if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
-        asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink)
+        asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink, result=result)
         return asm.project_config
     return cfg
 
@@ -167,6 +176,7 @@ def build_composition_payload(
         interactive=interactive,
         role_override=role_override,
         warnings_sink=startup_warnings,
+        result=result,
     )
 
     return CompositionPayload(
@@ -254,21 +264,8 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
     travels down in the payload — bricks never drive assembler machinery.
     """
     try:
-        base_cfg = assembler.resolver.resolve_role_config(role_name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            assembler._get_global_overlay(role_name),
-            assembler._get_overlay(role_name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
-        provenance = assembler._get_overlay_provenance(role_name)
+        effective_traits = assembler._effective_traits(role_name)
+        provenance = assembler._get_overlay_provenance(role_name, result=result)
     except Exception as exc:
         # Defensive: a broken overlay shouldn't kill session start.
         logger.warning(
