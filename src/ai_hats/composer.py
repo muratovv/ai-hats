@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
+from .check_points import resolve_checks
 from .resolver import LibraryResolver
 from .models import (
+    CheckBinding,
     ComponentConfig,
     OverlayConfig,
 )
@@ -83,9 +85,13 @@ class Composer:
                 config, layer, errors, requested_skill_removes, role_level_skill_removes
             )
 
-        # Recursively resolve traits first (depth-first, pre-order)
+        # Traits are single-level (sub-traits are rejected in _resolve_traits),
+        # so bindings accumulate in declaration order: traits, then the role.
+        declared_checks: list[tuple[str, CheckBinding]] = []
+
         self._resolve_traits(
             config.composition.traits,
+            declared_checks=declared_checks,
             seen_injections=seen_injections,
             seen_rules=seen_rules,
             seen_skills=seen_skills,
@@ -112,6 +118,8 @@ class Composer:
             skills=skills,
             errors=errors,
         )
+
+        declared_checks.extend((config.name, row) for row in config.composition.checks)
 
         # HATS-1046: resolve deferred removals against the composed set so an
         # overlay can drop a TRAIT-brought skill. A skill re-added to the role's
@@ -164,6 +172,7 @@ class Composer:
             trait_injections=trait_injections,
             role_injection=role_injection_text,
             overlay_injection=overlay_injection_text,
+            checks=resolve_checks(declared_checks, skills, removed_skills=requested_skill_removes),
         )
 
     @staticmethod
@@ -212,6 +221,7 @@ class Composer:
         trait_injections: dict[str, str],
         errors: list[str],
         visited: set[str],
+        declared_checks: list[tuple[str, CheckBinding]],
     ) -> None:
         for trait_name in trait_names:
             if trait_name in visited:
@@ -246,6 +256,8 @@ class Composer:
                 skills=skills,
                 errors=errors,
             )
+
+            declared_checks.extend((trait_name, row) for row in config.composition.checks)
 
             # Add trait injection (deduped by text).
             # trait_injections mirrors the dedup: a trait whose text is empty

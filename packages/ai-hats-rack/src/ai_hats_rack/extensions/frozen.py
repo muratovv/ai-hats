@@ -14,18 +14,7 @@ from typing import Sequence
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from ..docstore import _card_pins, compute_digest
-from ..fsm import Topology, load_topology
-
-
-def _all_edge_keys(topology: Topology) -> list[str]:
-    """The full ``edge:<from>--<to>`` product (+ the execute reclaim self-loop):
-    forced transitions fire real non-topology edge keys, so safety-relevant
-    subscriptions enumerate the product, not just legal edges (rack_wiring
-    precedent)."""
-    states = topology.states
-    return [
-        f"edge:{src}--{dst}" for src in states for dst in states if src != dst or src == "execute"
-    ]
+from ..fsm import Topology, all_edge_keys as _all_edge_keys, load_topology
 
 
 class FrozenIntegrityExtension:

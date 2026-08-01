@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
 
 
 def _make_minimal_result(
@@ -50,6 +50,23 @@ def test_resolved_component_is_frozen():
     )
     with pytest.raises(FrozenInstanceError):
         c.injection = "tampered"  # type: ignore[misc]
+
+
+def test_resolved_check_is_frozen_and_defaults_empty(tmp_path):
+    """HATS-1140: a resolved binding is a composer output, so П1 covers it too —
+    and a role that declares nothing carries an empty tuple, not None."""
+    assert _make_minimal_result().checks == ()
+
+    check = ResolvedCheck(
+        skill="hunk-review-comments",
+        script="hooks/check.sh",
+        point="edge:review--done",
+        on_error="warn",
+        script_path=tmp_path / "check.sh",
+        declared_by="hunk-review-trait",
+    )
+    with pytest.raises(FrozenInstanceError):
+        check.on_error = "refuse"  # type: ignore[misc]
 
 
 def test_with_injection_override_returns_new_instance():

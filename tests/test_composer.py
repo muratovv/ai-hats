@@ -4,7 +4,7 @@ import pytest
 
 from ai_hats.composer import Composer
 from ai_hats.resolver import LibraryResolver
-from ai_hats.models import OverlayConfig
+from ai_hats.models import CheckBindingError, OverlayConfig
 
 
 @pytest.fixture
@@ -71,6 +71,100 @@ injection: |
 def composer(library):
     resolver = LibraryResolver([library])
     return Composer(resolver)
+
+
+@pytest.fixture
+def checks_library(library):
+    """HATS-1140: ``library`` plus an executable script in test_skill and a
+    trait + role that bind it, so a composition carries real check rows."""
+    script = library / "skills" / "test_skill" / "hooks" / "gate.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/usr/bin/env bash\nexit 0\n")
+    script.chmod(0o755)
+
+    (library / "traits" / "trait-checks").mkdir(parents=True)
+    (library / "traits" / "trait-checks" / "config.yaml").write_text(
+        "name: trait-checks\n"
+        "composition:\n"
+        "  skills: [test_skill]\n"
+        "  checks:\n"
+        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:plan--execute']}\n"
+    )
+    (library / "roles" / "checks-role").mkdir(parents=True)
+    (library / "roles" / "checks-role" / "config.yaml").write_text(
+        "name: checks-role\n"
+        "composition:\n"
+        "  traits: [trait-checks]\n"
+        "  checks:\n"
+        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:execute--review'],"
+        " on_error: warn}\n"
+    )
+    return library
+
+
+@pytest.fixture
+def checks_composer(checks_library):
+    return Composer(LibraryResolver([checks_library]))
+
+
+def test_compose_collects_checks_traits_before_role(checks_composer, checks_library):
+    """HATS-1140 R5/R6: collection is per-role over the composition, in
+    composition order — traits (a flat list, not a recursive walk) then the
+    role's own — and each row is fanned out to one binding per point."""
+    result = checks_composer.compose("checks-role")
+
+    assert result.errors == []
+    assert [(c.declared_by, c.point, c.on_error) for c in result.checks] == [
+        ("trait-checks", "edge:plan--execute", "refuse"),
+        ("checks-role", "edge:execute--review", "warn"),
+    ]
+    script_path = checks_library / "skills" / "test_skill" / "hooks" / "gate.sh"
+    assert all(c.script_path == script_path.resolve() for c in result.checks)
+
+
+def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
+    """The card's load-bearing distinction. ``CompositionResult.errors`` is NOT a
+    loud channel: ``composition_seam`` raises on it only when the role was named
+    explicitly, and tolerates it silently on the implicit-role path. A gate that
+    failed to install must therefore leave by a route no caller can ignore.
+
+    Same library, same composer, two defects — the rule reports, the binding
+    raises.
+    """
+    (checks_library / "roles" / "checks-role" / "config.yaml").write_text(
+        "name: checks-role\ncomposition:\n  rules: [ghost_rule]\n  skills: [test_skill]\n"
+    )
+    composer = Composer(LibraryResolver([checks_library]))
+
+    result = composer.compose("checks-role")
+    assert result.errors == ["Rule 'ghost_rule' not found"]
+
+    (checks_library / "roles" / "checks-role" / "config.yaml").write_text(
+        "name: checks-role\ncomposition:\n  skills: [test_skill]\n  checks:\n"
+        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:bogus--state']}\n"
+    )
+    composer = Composer(LibraryResolver([checks_library]))
+
+    with pytest.raises(CheckBindingError):
+        composer.compose("checks-role")
+
+
+def test_overlay_removed_bound_skill_warns_and_composition_survives(checks_composer, capsys):
+    """ADR-0019 D6 rev 7 / D-e end-to-end: an overlay may legally drop a
+    trait-brought skill (HATS-1046). The binding goes, the composition stands."""
+    overlay = OverlayConfig.from_dict({"remove": {"skills": ["test_skill"]}})
+
+    result = checks_composer.compose("checks-role", overlay=overlay)
+
+    assert result.checks == ()
+    assert result.errors == []
+    assert "an overlay removed that skill" in capsys.readouterr().err
+
+
+def test_compose_without_checks_yields_empty_tuple(composer):
+    """No library role declares ``checks:`` today — the field must stay empty
+    rather than becoming a shape change for every existing role."""
+    assert composer.compose("test-role").checks == ()
 
 
 def test_compose_role(composer):

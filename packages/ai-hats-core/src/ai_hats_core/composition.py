@@ -39,6 +39,24 @@ class ResolvedComponent:
 
 
 @dataclass(frozen=True)
+class ResolvedCheck:
+    """One lifecycle binding, resolved to an absolute script (HATS-1140).
+
+    Already fanned out: a row's ``on: [a, b]`` becomes two of these, so no
+    consumer re-splits. ``script_path`` is absolute and comes from the declaring
+    skill's ``source_path``, never from a provider's tree — that is what makes a
+    binding fire identically under every surface (ADR-0019 D9).
+    """
+
+    skill: str
+    script: str
+    point: str
+    on_error: str
+    script_path: Path
+    declared_by: str
+
+
+@dataclass(frozen=True)
 class CompositionResult:
     """The flattened result of composing a role.
 
@@ -61,6 +79,7 @@ class CompositionResult:
     # Project-authored rule FILES, not library components — the composer is
     # project-agnostic, so these are attached downstream (HATS-1203).
     user_rules: tuple[Path, ...] = ()
+    checks: tuple[ResolvedCheck, ...] = ()
 
     @property
     def merged_injection(self) -> str:
