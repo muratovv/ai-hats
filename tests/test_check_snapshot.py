@@ -15,11 +15,11 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 
 from ai_hats.libraries.models import CheckBindingError
 
-from ai_hats.check_snapshot import snapshot_checks
+from ai_hats.check_snapshot import legacy_launch_notices, snapshot_checks
 from ai_hats.materialization import ApplyMaterializer, PlanMaterializer
 from ai_hats.paths import session_checks_dir
 from ai_hats.providers import Provider
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 SID = "20260801-000000-1-42"
 
@@ -140,6 +140,29 @@ def test_two_bindings_on_one_skill_copy_it_once(tmp_path: Path):
     assert port.plan.duplicates() == []
 
 
+def test_a_surface_that_cannot_snapshot_says_so(tmp_path: Path):
+    """A pre-ADR-0018 surface never reaches the builder — so it never snapshots.
+
+    ``WrapRunner`` degrades such a provider to ``build_session_prompt``
+    (``wrap_runner.py:476-489``), which is below the wiring. A declared gate
+    would then be missing with nothing said — the exact silence epic R3 exists
+    to remove.
+    """
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    notices = legacy_launch_notices("legacy", result, SessionPolicy())
+
+    assert len(notices) == 1
+    assert "gate-skill" in notices[0]
+    assert "NOT snapshotted" in notices[0]
+
+
+def test_a_legacy_surface_with_no_bindings_is_quiet(tmp_path: Path):
+    """Nothing bound, nothing lost — a warning here would be noise."""
+    assert legacy_launch_notices("legacy", _result(), SessionPolicy()) == []
+
+
 class _StubSurface(Provider):
     """A category-aware surface, reduced to what the builder needs."""
 
@@ -162,6 +185,48 @@ class _StubSurface(Provider):
 
     def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
         artifacts.full_content = self.build_system_prompt(result)
+
+
+def test_each_session_snapshots_under_its_own_sid(tmp_path: Path):
+    """A sub-agent mints its own session, so it snapshots into its own root.
+
+    Both runners create a session before building artifacts
+    (``wrap_runner.py:457``, ``subagent_runner.py:170``) and hand that sid to
+    the builder — no special case, but the parent's frozen bytes must not be
+    what the child gets, nor the other way round.
+    """
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+    child_sid = "20260801-000000-2-43"
+
+    snapshot_checks(tmp_path, result, SID, port=ApplyMaterializer())
+    (skill.source_path / "check.sh").write_text("#!/usr/bin/env bash\nexit 2\n")
+    snapshot_checks(tmp_path, result, child_sid, port=ApplyMaterializer())
+
+    parent = session_checks_dir(tmp_path, SID) / "gate-skill" / "check.sh"
+    child = session_checks_dir(tmp_path, child_sid) / "gate-skill" / "check.sh"
+    assert parent.read_text() == "#!/usr/bin/env bash\nexit 0\n"
+    assert child.read_text() == "#!/usr/bin/env bash\nexit 2\n"
+
+
+def test_dry_run_reports_the_snapshot_without_writing_it(tmp_path: Path):
+    """``--dry-run`` shows the checks a role brings; the port is why it is free.
+
+    The report and the launch record are both rendered from
+    ``artifacts.port.plan``, so routing the copy through the port is what makes
+    the snapshot visible in ``--dry-run --json`` and in
+    ``role_materialization.json`` without a second code path.
+    """
+    skill = _skill(tmp_path)
+    port = PlanMaterializer()
+
+    snapshot_checks(tmp_path, _result(skills=[skill], checks=[_check(skill)]), SID, port=port)
+
+    dest = session_checks_dir(tmp_path, SID) / "gate-skill"
+    entry = port.plan.entries[0]
+    assert (entry.kind.value, entry.target, entry.source) == ("copy_tree", dest, skill.source_path)
+    assert entry.file_count == 3, "the whole dir is reported, not just the script"
+    assert not session_checks_dir(tmp_path, SID).exists(), "a dry-run must write nothing"
 
 
 def test_build_session_artifacts_takes_the_snapshot(tmp_path: Path):
