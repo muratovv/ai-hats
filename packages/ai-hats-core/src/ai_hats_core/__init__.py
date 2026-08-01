@@ -6,7 +6,12 @@ No domain schemas (ADR-0014 core contract).
 """
 
 from ai_hats_core.atomic_io import atomic_write_bytes, atomic_write_text
-from ai_hats_core.composition import ComponentKind, CompositionResult, ResolvedComponent
+from ai_hats_core.composition import (
+    ComponentKind,
+    CompositionResult,
+    ResolvedCheck,
+    ResolvedComponent,
+)
 from ai_hats_core.git_env import scrubbed_git_env
 from ai_hats_core.locks import LockTimeoutError, file_lock
 from ai_hats_core.migrations import Migration, latest_step, run_pending
@@ -18,6 +23,7 @@ __all__ = [
     "CompositionResult",
     "LockTimeoutError",
     "Migration",
+    "ResolvedCheck",
     "ResolvedComponent",
     "YamlModel",
     "atomic_write_bytes",

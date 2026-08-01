@@ -76,6 +76,20 @@ class Topology:
             raise InvalidTransitionError(task_id, from_state, to_state, self.targets(from_state))
 
 
+def all_edge_keys(topology: Topology) -> list[str]:
+    """Every ``edge:<from>--<to>`` key a transition can fire.
+
+    The full state product, not just legal edges: a forced transition fires a
+    real non-topology key. Includes the ``execute`` reclaim self-loop
+    (HATS-955). Promoted to the package surface by HATS-1140 so a consumer
+    enumerating points does not add yet another private copy.
+    """
+    states = topology.states
+    return [
+        f"edge:{src}--{dst}" for src in states for dst in states if src != dst or src == "execute"
+    ]
+
+
 def _validate(raw: object, source: str) -> Topology:
     if not isinstance(raw, dict):
         raise TopologyError(f"{source}: expected a mapping at top level")

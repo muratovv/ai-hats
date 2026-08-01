@@ -3,6 +3,8 @@ from pydantic import ValidationError
 
 from ai_hats.models import (
     KNOWN_SCHEMA_VERSION,
+    CheckBinding,
+    CheckBindingError,
     ComponentConfig,
     Composition,
     FeedbackConfig,
@@ -274,7 +276,7 @@ def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert "did you mean" not in err
-    assert "known: rules, skills, traits" in err
+    assert "known: checks, rules, skills, traits" in err
 
 
 def test_composition_rejects_unknown_key_when_loader_bypassed():
@@ -283,6 +285,126 @@ def test_composition_rejects_unknown_key_when_loader_bypassed():
     defense-in-depth for paths that never see the pre-strip."""
     with pytest.raises(ValidationError):
         Composition.model_validate({"traits": [], "bogus": 1})
+
+
+# -- HATS-1140: composition.checks binding rows --
+
+
+def test_checks_row_parses_with_bare_on_key(tmp_path, capsys):
+    """HATS-1140 S1: the row shape is ``{skill, script, on, on_error}`` (ADR-0019
+    D2). ``on`` is unquoted in every example the ADR and the docs show, and
+    PyYAML resolves a bare ``on`` key to ``True`` under YAML 1.1 — so without a
+    restore the field arrives missing and the binding is a gate that never
+    installs. Precedent for the restore: ``ai_hats_wt/carry.py``.
+    """
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\n"
+        "composition:\n"
+        "  skills: [hunk-review-comments]\n"
+        "  checks:\n"
+        "    - skill: hunk-review-comments\n"
+        "      script: hooks/check.sh\n"
+        "      on: [edge:review--done, wt:pre-merge]\n"
+        "      on_error: warn\n"
+    )
+
+    config = ComponentConfig.from_yaml(config_file)
+
+    (row,) = config.composition.checks
+    assert row.skill == "hunk-review-comments"
+    assert row.script == "hooks/check.sh"
+    assert row.on == ("edge:review--done", "wt:pre-merge")
+    assert row.on_error == "warn"
+    assert capsys.readouterr().err == ""
+
+
+def test_checks_row_defaults_on_error_to_refuse(tmp_path):
+    """ADR-0019 D4: default ``refuse`` preserves today's fail-closed posture; a
+    consumer opts into ``warn`` explicitly."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  checks:\n"
+        "    - {skill: s, script: h.sh, on: ['edge:plan--execute']}\n"
+    )
+
+    (row,) = ComponentConfig.from_yaml(config_file).composition.checks
+
+    assert row.on_error == "refuse"
+
+
+def test_checks_typo_of_checks_key_now_suggests_it(tmp_path, capsys):
+    """The motivating typo of HATS-1152, which could not be demonstrated until
+    ``checks`` existed as a field: ``cheks:`` is a gate that never installs, and
+    difflib now names the intended key."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  cheks: []\n")
+
+    ComponentConfig.from_yaml(config_file)
+
+    assert "did you mean 'checks'?" in capsys.readouterr().err
+
+
+def test_checks_unknown_row_key_warns_and_is_ignored(tmp_path, capsys):
+    """R4b / ADR-0019 D6: an unknown OPTIONAL field must not hard-fail an older
+    engine reading a newer trait — warn, ignore, continue."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  checks:\n"
+        "    - skill: s\n      script: h.sh\n      on: [edge:plan--execute]\n"
+        "      timeout: 30\n"
+    )
+
+    (row,) = ComponentConfig.from_yaml(config_file).composition.checks
+
+    assert row.skill == "s"
+    err = capsys.readouterr().err
+    assert "ignoring unknown row key(s) 'timeout'" in err
+
+
+def test_checks_row_missing_script_is_loud(tmp_path):
+    """R3 / ADR-0019 D6: a malformed row is a gate that silently never installs;
+    the error names the file and the row index, which a bare pydantic
+    ValidationError does not."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  checks:\n    - {skill: s, on: ['edge:plan--execute']}\n"
+    )
+
+    with pytest.raises(CheckBindingError) as exc:
+        ComponentConfig.from_yaml(config_file)
+
+    assert "composition.checks[0]" in str(exc.value)
+    assert "script" in str(exc.value)
+
+
+def test_checks_row_without_any_point_is_loud(tmp_path):
+    """A binding to no point fires nowhere — the same silent absence R3 removes,
+    so an empty ``on`` is malformed rather than a degenerate-but-valid row."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  checks:\n    - {skill: s, script: h.sh, on: []}\n"
+    )
+
+    with pytest.raises(CheckBindingError, match="at least one point"):
+        ComponentConfig.from_yaml(config_file)
+
+
+def test_checks_block_that_is_not_a_list_is_loud(tmp_path):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  checks: {skill: s}\n")
+
+    with pytest.raises(CheckBindingError, match="must be a list"):
+        ComponentConfig.from_yaml(config_file)
+
+
+def test_checks_row_rejects_unknown_key_when_loader_bypassed():
+    """The HATS-1152 shape: ``from_yaml`` warns and strips, but a caller building
+    the row directly gets extra="forbid"."""
+    with pytest.raises(ValidationError):
+        CheckBinding.model_validate(
+            {"skill": "s", "script": "h.sh", "on": ("edge:plan--execute",), "bogus": 1}
+        )
 
 
 # -- OverlayConfig tests --

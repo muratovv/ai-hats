@@ -9,10 +9,10 @@ import difflib
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from ai_hats_core import YamlModel as _YamlModel
 
@@ -34,6 +34,35 @@ class ComponentType(str, Enum):
 # ----- Composition + components -----
 
 
+class CheckBindingError(ValueError):
+    """A declared check binding cannot install (HATS-1140, ADR-0019 D6)."""
+
+
+class CheckBinding(_YamlModel):
+    """One ``composition.checks`` row: a skill's script bound to lifecycle points.
+
+    Frozen + ``extra="forbid"`` follows :class:`RuntimeHook`; the forward-compat
+    WARN for an unknown row key lives in :func:`_parse_check_row`, so this stays
+    the guard for construction paths that never see it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    skill: str
+    script: str
+    on: tuple[str, ...]
+    on_error: Literal["refuse", "warn"] = "refuse"
+
+    @field_validator("on")
+    @classmethod
+    def _reject_empty_on(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            # A binding to no point is a gate that never fires — the silence
+            # HATS-1140 exists to remove, not a degenerate-but-valid row.
+            raise ValueError("must name at least one point")
+        return value
+
+
 class Composition(_YamlModel):
     # HATS-1152: guards construction paths that bypass ``from_yaml``; the
     # user-facing channel for a yaml typo is the pre-strip WARN below.
@@ -42,6 +71,7 @@ class Composition(_YamlModel):
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    checks: list[CheckBinding] = Field(default_factory=list)
 
 
 class ComponentConfig(_YamlModel):
@@ -57,6 +87,7 @@ class ComponentConfig(_YamlModel):
     def from_yaml(cls, path: Path) -> ComponentConfig:
         data = yaml.safe_load(path.read_text()) or {}
         cls._strip_unknown_composition_keys(data, path)
+        cls._normalize_check_rows(data, path)
         return cls.model_validate(
             {**data, "source_path": path, "name": data.get("name") or path.parent.name}
         )
@@ -86,6 +117,65 @@ class ComponentConfig(_YamlModel):
                 f"{suggestion} (known: {', '.join(known)})",
                 file=sys.stderr,
             )
+
+    @staticmethod
+    def _normalize_check_rows(data: dict[str, Any], path: Path) -> None:
+        """Turn raw ``composition.checks`` rows into validated bindings.
+
+        Runs before ``model_validate`` so a defect is reported against the file
+        and the row index rather than as a bare pydantic error (HATS-1140).
+        """
+        composition = data.get("composition")
+        if not isinstance(composition, dict):
+            return
+        rows = composition.get("checks")
+        if rows is None:
+            return
+        if not isinstance(rows, list):
+            raise CheckBindingError(
+                f"{path}: 'composition.checks' must be a list of "
+                f"{{skill, script, on}} rows, got {type(rows).__name__}"
+            )
+        composition["checks"] = [
+            _parse_check_row(row, index=i, path=path) for i, row in enumerate(rows)
+        ]
+
+
+def _parse_check_row(row: Any, *, index: int, path: Path) -> CheckBinding:
+    """Parse one ``checks:`` row; loud on structure, forgiving on vocabulary."""
+    label = f"{path}: composition.checks[{index}]"
+    if not isinstance(row, dict):
+        raise CheckBindingError(
+            f"{label}: must be a mapping of {{skill, script, on}}, got {type(row).__name__}"
+        )
+    if True in row and "on" not in row:
+        # YAML 1.1 resolves a bare ``on`` key to True (ai_hats_wt/carry.py).
+        row = {("on" if key is True else key): value for key, value in row.items()}
+    known = sorted(CheckBinding.model_fields)
+    unknown = [key for key in row if key not in known]
+    if unknown:
+        # Forward-compat (ADR-0019 D6 / ADR-0012 Revisions #3): a newer trait's
+        # optional field must not hard-fail composition on an older engine.
+        row = {key: value for key, value in row.items() if key in known}
+        print(
+            f"WARN: {label}: ignoring unknown row key(s) "
+            f"{', '.join(repr(key) for key in unknown)} (known: {', '.join(known)})",
+            file=sys.stderr,
+        )
+    try:
+        return CheckBinding.model_validate(row)
+    except ValidationError as exc:
+        raise CheckBindingError(f"{label}: {_describe_row_defect(exc)}") from exc
+
+
+def _describe_row_defect(exc: ValidationError) -> str:
+    defects = "; ".join(
+        f"{'.'.join(str(part) for part in err['loc']) or '<row>'}: {err['msg']}"
+        for err in exc.errors()
+    )
+    return (
+        f"{defects} — a row must be {{skill, script, on: [<ns>:<point>], on_error?: refuse|warn}}"
+    )
 
 
 class RuleMetadata(_YamlModel):
