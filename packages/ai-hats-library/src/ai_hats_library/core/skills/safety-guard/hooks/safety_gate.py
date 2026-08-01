@@ -30,9 +30,11 @@ except ImportError:  # helper absent -> say so; never skip quietly
 #: Mirrors AI_HATS_PLAN_ACK / AI_HATS_MERGE_ACK.
 DESTRUCTIVE_ACK = "AI_HATS_DESTRUCTIVE_ACK"
 
+# A fast path for "not restorable from the repo + toolchain", not its definition
+# (HATS-1430: `runs` added after gitignored experiment transcripts matched none).
 PROTECTED_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".sql", ".dump")
 PROTECTED_NAMES = ("terraform.tfstate",)
-PROTECTED_DIRS = ("volumes", "data", "storage")
+PROTECTED_DIRS = ("volumes", "data", "storage", "runs")
 
 SQL_CLIENTS = ("psql", "mysql", "mariadb", "sqlite3", "sqlcmd", "mongo", "clickhouse-client")
 
