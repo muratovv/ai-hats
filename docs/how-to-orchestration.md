@@ -111,3 +111,44 @@ If you need the exit code of a single session, you don't need to parse stdout �
 ai-hats agent diagnoser --task "..." --json > result.json
 echo "exit=$?"   # matches .exit_code in result.json
 ```
+
+## Waiting for an event
+
+`ai-hats wait` blocks until something happens, then returns — one call, same
+session, no model tokens burned while it waits. Wait on a backlog card's state,
+or on any shell predicate:
+
+```bash
+# a card reaches a state
+ai-hats wait --task HATS-123 --until review
+
+# ...or any of several states — repeat the flag, they OR together
+ai-hats wait --task HATS-123 --until execute --until done
+
+# an arbitrary predicate: exit 0 = happened, 1 = not yet, >1 = broken
+ai-hats wait --until-cmd 'test -f /tmp/build.done' --poll 10 --timeout 900
+```
+
+Read the exit code — the three outcomes are the reason to prefer this over a
+hand-rolled `until` loop:
+
+| Exit code | Meaning                                                              |
+| --------- | -------------------------------------------------------------------- |
+| 0         | the event happened; a summary line with the timestamp goes to stdout |
+| 124       | `--timeout` elapsed first — GNU coreutils convention, as above       |
+| 2         | the predicate itself is broken (bad shell, unknown card, no project) |
+
+That last row is the point. A shell `until` loop treats every non-zero probe as
+"not yet", so a typo'd predicate waits forever and the silence is
+indistinguishable from a successful wait. `wait` refuses to keep waiting on a
+predicate that cannot answer.
+
+`--timeout 0` (the default) waits indefinitely. On Claude Code, run the command
+in the **background** rather than the foreground: the harness wakes you with a
+single notification when it exits, so the wait costs one message instead of
+growing your context for its whole duration — and the foreground Bash tool caps
+out at 600 s anyway.
+
+When two agents hand work back and forth through one card, name **every** state
+that should wake you. A worker parked on `--until execute` (expecting rework)
+never wakes when the leader accepts the card straight to `done`.
