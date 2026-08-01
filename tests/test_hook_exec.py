@@ -81,7 +81,7 @@ def test_truncated_reason_points_at_the_full_log(tmp_path):
     log = tmp_path / "logs" / "edge.log"
     script = _script(
         tmp_path / "loud.sh",
-        "for i in $(seq 1 400); do echo \"line $i padding padding padding\"; done\n"
+        'for i in $(seq 1 400); do echo "line $i padding padding padding"; done\n'
         'echo "FAILED tests/test_kernel.py::test_persist_once"\n'
         "exit 2\n",
     )
@@ -92,6 +92,26 @@ def test_truncated_reason_points_at_the_full_log(tmp_path):
     assert "FAILED tests/test_kernel.py::test_persist_once" in run.reason
     assert str(log) in run.reason
     assert "line 1 padding" in log.read_text()  # the full stream survives on disk
+
+
+def test_log_keeps_both_streams_while_the_reason_keeps_only_stdout(tmp_path):
+    """The verdict must not be diluted by diagnostics, but the log is what an
+    operator opens when a hook fails — ``uv pip install`` reports progress on
+    stderr, so dropping it there would blind the provisioning postmortem.
+    """
+    script = _script(
+        tmp_path / "both.sh",
+        'echo "noisy diagnostic" >&2\necho "the verdict"\nexit 2\n',
+    )
+    log = tmp_path / "logs" / "both.log"
+
+    run = run_hook(script, timeout=10, project_dir=tmp_path, log_path=log)
+
+    assert run.reason == "the verdict"
+    assert "noisy diagnostic" in run.stderr
+    body = log.read_text()
+    assert "the verdict" in body
+    assert "noisy diagnostic" in body
 
 
 def test_pass(tmp_path):

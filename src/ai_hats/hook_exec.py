@@ -96,7 +96,13 @@ def run_hook(
     finally:
         sink.close()
 
+    # Tail first, then fold stderr in: the reason must stay stdout-only, while
+    # the log stays the whole picture an operator opens after a failure.
     said, truncated, size = _tail(sink_path, tail_bytes)
+    _append_stderr(log_path, expired.stderr if expired is not None else proc.stderr)
+    if log_path is None:
+        sink_path.unlink(missing_ok=True)  # safe-delete: ok own scratch sink, already read
+
     if expired is not None:
         stderr, _ = _decode_tail(expired.stderr or b"", _STDERR_TAIL_BYTES)
         return HookRun(
@@ -119,9 +125,7 @@ def run_hook(
     return HookRun(
         verdict=verdict,
         exit_code=proc.returncode,
-        reason=_note_truncation(
-            _reason(verdict, proc.returncode, said), truncated, size, log_path
-        ),
+        reason=_note_truncation(_reason(verdict, proc.returncode, said), truncated, size, log_path),
         stderr=stderr,
         log_path=log_path,
         truncated=truncated,
@@ -166,11 +170,19 @@ def _diagnosis(code: int) -> str:
     return f"hook broke: exited {code}"
 
 
+def _append_stderr(log_path: Path | None, raw: bytes | None) -> None:
+    """Fold the child's stderr into the log under a header, so the file keeps
+    both streams the way the pre-HATS-1151 runner did (``stderr=STDOUT``)."""
+    if log_path is None or not raw:
+        return
+    with log_path.open("ab") as fh:
+        fh.write(b"\n--- stderr ---\n")
+        fh.write(raw)
+
+
 def _corrupt(reason: str, log_path: Path | None) -> HookRun:
     """Infrastructure corruption — never downgradable (ADR-0019 D4)."""
-    return HookRun(
-        verdict=HookVerdict.CORRUPT, exit_code=None, reason=reason, log_path=log_path
-    )
+    return HookRun(verdict=HookVerdict.CORRUPT, exit_code=None, reason=reason, log_path=log_path)
 
 
 def _open_stdout_sink(log_path: Path | None):

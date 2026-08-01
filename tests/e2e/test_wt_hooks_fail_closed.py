@@ -133,6 +133,31 @@ def test_failing_wt_out_aborts_discard(installed_launcher, tmp_path):
 
 
 @pytest.mark.integration
+def test_refusing_wt_out_reports_the_scripts_own_words(installed_launcher, tmp_path):
+    """HATS-1151: the operator gets the hook's instruction, not ``hook exited 2``.
+
+    fail-under-revert: restore the synthetic reason in ``worktree_hooks.py`` and
+    the instruction never reaches the CLI, so both text assertions go red.
+    """
+    launcher, env, _ = installed_launcher
+    project = tmp_path / "proj"
+    _init(launcher, env, project)
+
+    def ai(*args, expect_exit=0):
+        return _run([str(launcher), *args], cwd=project, env=env, expect_exit=expect_exit)
+
+    ai("wt", "create", "task/probe-reason")
+    (project / ".drain-refuse").touch()
+
+    res = ai("wt", "discard", "task/probe-reason", expect_exit=1)
+
+    out = res.stdout + res.stderr
+    assert "3 unresolved review notes in .hunk/notes.json" in out, out
+    assert "hunk-notes.sh consume" in out, out
+    assert _wt_path(project, "task/probe-reason") is not None  # refusal blocked teardown
+
+
+@pytest.mark.integration
 def test_skip_hooks_forces_discard(installed_launcher, tmp_path):
     launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
