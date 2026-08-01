@@ -3,6 +3,14 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-08-02
+
+### Added
+
+- `ResolvedCheck` and `ResolvedComponent` — check binding value-types for loud
+  composition-time validation (HATS-1140). Version bumped so a remote-channel /
+  e2e skew install resolves the local/published wheel carrying these symbols.
+
 ## [0.5.0] - 2026-07-07
 
 ### Added

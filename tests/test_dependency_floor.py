@@ -54,7 +54,7 @@ def test_a_pin_with_no_lower_bound_has_no_floor():
 
 # --- violations ------------------------------------------------------------
 
-VERSIONS = {"ai-hats-core": Version("0.6.0"), "ai-hats-observe": Version("0.5.0")}
+VERSIONS = {"ai-hats-core": Version("0.6.1"), "ai-hats-observe": Version("0.5.0")}
 
 
 def _consumer(*specs, optional=None):
@@ -70,8 +70,8 @@ def test_a_floor_below_the_package_version_is_a_violation():
     assert len(found) == 1
     assert found[0].package == "ai-hats-core"
     assert found[0].floor == Version("0.2.0")
-    assert found[0].version == Version("0.6.0")
-    assert ">=0.6.0" in str(found[0])
+    assert found[0].version == Version("0.6.1")
+    assert ">=0.6.1" in str(found[0])
 
 
 def test_the_exact_hats_1397_shape_is_a_violation():
@@ -82,7 +82,7 @@ def test_the_exact_hats_1397_shape_is_a_violation():
 
 
 def test_a_floor_at_the_package_version_passes():
-    assert mod.violations(_consumer("ai-hats-core>=0.6.0"), VERSIONS) == []
+    assert mod.violations(_consumer("ai-hats-core>=0.6.1"), VERSIONS) == []
 
 
 def test_a_floor_above_the_package_version_passes():
