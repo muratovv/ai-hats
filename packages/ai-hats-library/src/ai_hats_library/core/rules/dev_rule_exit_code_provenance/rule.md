@@ -10,10 +10,12 @@ not the boundary.
 ## The shape to write
 
 ```bash
-# ✅ redirect, then judge — $? is the runner's:
+# ✅ intra-command: capture status in the SAME call, then read gate.rc & log:
+pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc
+# read /tmp/gate.rc and /tmp/gate.log with separate calls
+
+# ✅ single command without trailing commands — harness reports runner's exit code:
 pytest tests/ > /tmp/gate.log 2>&1
-echo $?                      # a SEPARATE call, after the fact
-# read /tmp/gate.log with another separate call
 
 # ✅ if a pipeline is genuinely needed, make the status the runner's:
 set -o pipefail; pytest tests/ | tail -20
@@ -36,6 +38,10 @@ pytest tests/ > /tmp/gate.log 2>&1; echo "EXIT=$?"   # echo always succeeds
 pytest tests/ ; ruff check .                         # only ruff's status survives
 pytest tests/ || echo "some failed"                  # echo succeeds → green
 
+# ❌ separate tool call for $? — subshell state resets to 0:
+#    call 1: pytest tests/ > /tmp/gate.log 2>&1
+#    call 2: echo $?   # fresh subshell -> prints 0 even if pytest failed!
+
 # ❌ backgrounded / wrapped — you are shown the WRAPPER's status:
 #    "Background command completed (exit code 0)" on a run where pytest returned 1
 ```
@@ -50,16 +56,21 @@ Measured, not remembered (`false` as the runner): `| tail` → 0, `| tee` → 0,
 2. Is anything chained after the runner (`|`, `;`, `||`, a background or
    `timeout`-style wrapper)? → the status you get is not the runner's. `&&` is
    the exception: it passes a failure through.
-3. Need the output too? → redirect to a file; read it in a **separate** call.
+3. Is this across tool calls? Shell state (`$?`) is NOT preserved across separate
+   Bash tool calls (each tool call is a fresh subshell process, so `$?` in a new call
+   is always `0`). Capture status in the same call (`...; echo $? > /tmp/gate.rc`) or
+   rely on the harness status report (`The command exited with code X`).
+4. Need the output too? → redirect to a file; read it in a **separate** call.
    Never filter on the same line you judge by.
-4. It came back green — did I see the runner's own status, or a report about it?
+5. It came back green — did I see the runner's own status, or a report about it?
 
 ## Source
 
-HATS-1430. The guardrail this replaces enumerated pipeline forms
+HATS-1430, HATS-1453. The guardrail this replaces enumerated pipeline forms
 (`tail`/`head`/`grep`/`tee`) and was therefore silent on
 `pytest … > /tmp/gate.log 2>&1; echo "EXIT=$?"` — the harness reported
 "exit code 0" on a run where pytest returned 1, and a red gate read green
 exactly as in the `tail` incident the guardrail was written for. Naming the
-invariant instead of the flavors is the fix; a mechanical check in the
-`PreToolUse` Bash hook is tracked separately.
+invariant instead of the flavors is the fix; HATS-1453 further clarified
+tool-call boundary state isolation ($? resetting across separate subshell calls).
+
