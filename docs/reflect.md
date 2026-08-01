@@ -67,9 +67,11 @@ Meta-proposals are deduped per `(failed_session_id, target)` pair, not per sessi
 Two-phase bulk triage of accumulated HYP and PROP backlog:
 
 1. **Phase 1 (`judge-auditor`, headless, read-only):** Pipeline `reflect-hypothesis-phase1` generates draft report with proposed verdicts and CLI mutations at `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`.
-2. **Phase 2 (`judge`, HITL):** Pipeline `reflect-hypothesis-phase2` inlines draft body, supervisor discusses + ack's mutations, `judge` executes CLI ops and writes report to `<ai_hats_dir>/sessions/retros/judge/<ts>-report.md`.
+2. **Phase 2 (`judge`, HITL):** Pipeline `reflect-hypothesis-phase2` inlines the draft body and an open-PROP digest, supervisor discusses + ack's mutations, `judge` executes CLI ops and writes report to `<ai_hats_dir>/sessions/retros/judge/<ts>-report.md`.
 
 With `--headless`: runs Phase 1 only (CI/cron-safe).
+
+The Phase 2 preamble carries two substitutions: `{draft_body}` and `{inbox_digest}` (`_build_inbox_digest`). The digest is a compact open-PROP inventory — counts, plus leaders by votes and by age — because Phase 2 otherwise sees only what Phase 1 chose to mention, which is how a judge session missed a 136-card inbox (HATS-1385). An overridden injection that drops `{inbox_digest}` gets the digest appended and a warning, never silence.
 
 Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md` (`_build_handoff`, `src/ai_hats/cli/reflect.py:900`) and share the `judge/<ts>-report.md` namespace.
 
