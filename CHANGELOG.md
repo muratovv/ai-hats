@@ -24,6 +24,22 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **A stray Ctrl-C at session end no longer costs a finalize step** (HATS-1426).
+  Once the provider exits, the terminal is back in cooked mode, so a press that
+  used to reach the child as a byte now arrives at the parent as a real SIGINT —
+  landing inside whichever finalize step is running. One press was enough: an
+  observed 74-minute session died inside the retro decision and left no
+  `retro.log` at all, so it never reached the reflexive loop, while the banner
+  still printed green. SIGINT is now held for the whole finalize window (both
+  the HITL and sub-agent arms); each press prints one line, and three inside the
+  1.5 s window still abort with exit 130 — the same gesture as the wedged-child
+  escape hatch, now sharing its counter. The abort travels as `FinalizeAborted`,
+  which is neither `Exception` nor `KeyboardInterrupt` precisely because the
+  per-phase HATS-086 catches would otherwise swallow it. Two guards that came
+  with the same incident: the retro breadcrumb is written *before* the decision
+  rather than after, and `make_decision`'s "never raises" promise now covers
+  `KeyboardInterrupt` and the path resolution it actually died on.
+
 - **An editable install whose METADATA went stale now heals itself on the next
   run** (HATS-1368, HATS-1367, epic HATS-1364). METADATA is written once, at
   install time, and then drifts from the code the `.pth` points at — in both

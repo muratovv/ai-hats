@@ -16,6 +16,8 @@ from __future__ import annotations
 import calendar
 import json
 import os
+import signal
+import time
 from pathlib import Path
 
 import pytest
@@ -364,7 +366,11 @@ def wrap_runner_factory(tmp_path, monkeypatch):
 
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
-    def make(pty_exit_code: int = 0, finalize_hitl_exc: BaseException | None = None):
+    def make(
+        pty_exit_code: int = 0,
+        finalize_hitl_exc: BaseException | None = None,
+        finalize_hitl_hook=None,
+    ):
         from ai_hats.composition_seam import build_composition_payload
         from ai_hats_observe import SessionManager, SidecarTracer
 
@@ -394,14 +400,20 @@ def wrap_runner_factory(tmp_path, monkeypatch):
             lambda self, session=None, result=None: [],
         )
 
-        if finalize_hitl_exc is not None:
+        if finalize_hitl_exc is not None or finalize_hitl_hook is not None:
 
-            def _exploding_finalize_hitl(*args, **kwargs):
-                raise finalize_hitl_exc
+            def _stub_finalize_hitl(*args, **kwargs):
+                if finalize_hitl_hook is not None:
+                    finalize_hitl_hook()
+                if finalize_hitl_exc is not None:
+                    raise finalize_hitl_exc
 
+            # HATS-1426: patch the name WrapRunner.run actually calls. Patching
+            # the ai_hats.runtime re-export left the runner on the real
+            # function, so the two HATS-086 guards below injected nothing.
             monkeypatch.setattr(
-                "ai_hats.runtime._run_finalize_hitl",
-                _exploding_finalize_hitl,
+                "ai_hats.wrap_runner._run_finalize_hitl",
+                _stub_finalize_hitl,
             )
 
         return runner, project
@@ -446,6 +458,60 @@ def test_wrap_runner_finally_prints_summary_when_finalize_hitl_raises(
         f"HATS-086 regression: finalize-hitl crash suppressed the "
         f"session-end summary. stdout tail:\n{out[-800:]}"
     )
+
+
+def _press_ctrl_c(times: int):
+    """Deliver `times` real SIGINTs to this process, one at a time.
+
+    Spaced so the interpreter runs the handler between them — POSIX does not
+    queue a second pending signal of the same number.
+    """
+
+    def press():
+        for _ in range(times):
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.02)
+
+    return press
+
+
+def test_wrap_runner_survives_one_ctrl_c_during_finalize(
+    wrap_runner_factory,
+    capsys,
+):
+    """HATS-1426: the incident. One stray press mid-finalize used to kill the
+    running step outright — the session lost its retro decision and spawn."""
+    runner, project = wrap_runner_factory(
+        pty_exit_code=0,
+        finalize_hitl_hook=_press_ctrl_c(1),
+    )
+
+    exit_code, session = runner.run()
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert f"✨ Session {session.session_id} complete!" in captured.out
+    assert "press Ctrl-C 3" in captured.err
+
+
+def test_wrap_runner_aborts_finalize_on_the_third_ctrl_c(
+    wrap_runner_factory,
+    capsys,
+):
+    """The escape hatch still reaches the operator: three presses inside the
+    window abandon the remaining finalize work with the canonical 130 — but
+    the session id still reaches stdout (HATS-086)."""
+    runner, project = wrap_runner_factory(
+        pty_exit_code=0,
+        finalize_hitl_hook=_press_ctrl_c(3),
+    )
+
+    exit_code, session = runner.run()
+
+    captured = capsys.readouterr()
+    assert exit_code == 130
+    assert "finalize aborted by operator" in captured.err
+    assert f"✨ Session {session.session_id} complete!" in captured.out
 
 
 def test_wrap_runner_finally_prints_summary_when_finalize_hitl_keyboard_interrupt(

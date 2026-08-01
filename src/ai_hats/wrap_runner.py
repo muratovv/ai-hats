@@ -44,6 +44,8 @@ from .runtime_common import (
     _finalize_session_basic,
     _flag_sensor_error,
     _run_finalize_hitl,
+    FinalizeAborted,
+    sigint_shield,
 )
 from .startup_notices import (
     StartupNotice,
@@ -647,44 +649,53 @@ class WrapRunner:
             duration_s = time.monotonic() - t0
             trace_stats: dict = {}
             try:
-                trace_stats = _finalize_session_basic(
-                    session,
-                    exit_code=exit_code,
-                    active_role=active_role,
-                    provider_name=provider_name,
-                    tracer=tracer,
-                    tags=tags,
-                    claude_session_id=claude_session_id,
-                    duration_s=duration_s,
-                )
-                try:
-                    _run_finalize_hitl(
-                        session,
-                        claude_session_id=claude_session_id,
-                        project_dir=self.project_dir,
-                        exit_code=exit_code,
-                        static_cost_analyzer=payload.static_cost_analyzer,
-                        session_factory=payload.session_factory,
-                        audit_writer_factory=payload.audit_writer_factory,
-                        transcript_resolver=payload.transcript_resolver,
-                    )
-                except (Exception, KeyboardInterrupt):
-                    # HATS-1374: parity with the sub-agent path — a dead sensor
-                    # is recorded in the artifact, not only whispered to a log.
-                    logger.error("finalize-hitl pipeline failed", exc_info=True)
-                    _flag_sensor_error(session)
-            finally:
-                # The summary print is the only thing that surfaces the
-                # session id to the user. It MUST run, even on second
-                # SIGINT, even if every step above failed.
-                try:
-                    _print_session_end(session, trace_stats=trace_stats)
-                except (Exception, KeyboardInterrupt):
-                    logger.warning("session-end print failed", exc_info=True)
+                # HATS-1426: the terminal is back in cooked mode here, so a
+                # stray Ctrl-C would land inside whichever step is running.
+                with sigint_shield():
                     try:
-                        print(f"\n✨ Session {session.session_id} complete!")
-                    except (BrokenPipeError, OSError):
-                        pass
+                        trace_stats = _finalize_session_basic(
+                            session,
+                            exit_code=exit_code,
+                            active_role=active_role,
+                            provider_name=provider_name,
+                            tracer=tracer,
+                            tags=tags,
+                            claude_session_id=claude_session_id,
+                            duration_s=duration_s,
+                        )
+                        try:
+                            _run_finalize_hitl(
+                                session,
+                                claude_session_id=claude_session_id,
+                                project_dir=self.project_dir,
+                                exit_code=exit_code,
+                                static_cost_analyzer=payload.static_cost_analyzer,
+                                session_factory=payload.session_factory,
+                                audit_writer_factory=payload.audit_writer_factory,
+                                transcript_resolver=payload.transcript_resolver,
+                            )
+                        except (Exception, KeyboardInterrupt):
+                            # HATS-1374: parity with the sub-agent path — a dead sensor
+                            # is recorded in the artifact, not only whispered to a log.
+                            logger.error("finalize-hitl pipeline failed", exc_info=True)
+                            _flag_sensor_error(session)
+                    except FinalizeAborted:
+                        exit_code = 130
+                    finally:
+                        # The summary print is the only thing that surfaces the
+                        # session id to the user. It MUST run, even on second
+                        # SIGINT, even if every step above failed — an abort
+                        # drops the remaining work, never the session id.
+                        try:
+                            _print_session_end(session, trace_stats=trace_stats)
+                        except (Exception, KeyboardInterrupt):
+                            logger.warning("session-end print failed", exc_info=True)
+                            try:
+                                print(f"\n✨ Session {session.session_id} complete!")
+                            except (BrokenPipeError, OSError):
+                                pass
+            except FinalizeAborted:
+                exit_code = 130
 
             # HATS-294: drop the per-session cache dir (prompt + plugin/).
             # SIGKILL-orphans are accepted — TTL sweep mops them up on the
