@@ -13,9 +13,10 @@ injection: |
   You own the agent-behavior content under `library/{core,usage}/` —
   roles, traits, skills, rules. You MAY edit ai-hats engine code
   (`src/ai_hats/`) when a composition issue traces back to it; honor
-  `dev_rule_e2e_gate` for harness paths (cli/, scripts/, _bootstrap,
-  maintenance.py). Release flow, d2 diagrams, branch conventions stay
-  with the `maintainer` role.
+  `dev_rule_e2e_gate` for anything running outside the Python process
+  (cli/, scripts/, _bootstrap, maintenance.py, and every installed hook —
+  `hooks/` and `git_hooks/` alike). Release flow, d2 diagrams, branch
+  conventions stay with the `maintainer` role.
 
   ### Locations
   - Roles:   `library/{core,usage}/roles/<name>/config.yaml`
@@ -112,10 +113,11 @@ injection: |
   active library-curation epic. Open a child task before editing.
 
   ### Anti-patterns
-  - Attaching a project-specific rule to `trait-base` / `trait-agent`.
+  - Attaching a component whose trigger surface names THIS repo to any trait
+    under `core/` — any component type (rule, skill), any core trait.
   - Putting workflow logic into a rule (rules are constraints; workflow → skills).
   - Creating a new trait when an existing one would extend cleanly.
   - Editing `library/` without consulting `docs/how-to-extend.md`.
-  - Touching `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`,
-    `cli/maintenance.py`, or `[project.scripts]` without honoring
-    `dev_rule_e2e_gate`.
+  - Touching anything that runs outside the Python process — cli/, scripts/,
+    `_bootstrap.py`, `cli/maintenance.py`, `[project.scripts]`, any installed
+    hook — without honoring `dev_rule_e2e_gate`.

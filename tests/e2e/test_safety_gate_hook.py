@@ -75,6 +75,9 @@ def test_catastrophic_paths_are_denied(command):
         "rm terraform.tfstate",
         "rm -rf volumes/",
         "rm .env",
+        # HATS-1430: recorded experiment runs are gitignored and irreproducible,
+        # so the repo cannot restore them — the thing the list is a proxy for.
+        "rm -rf experiments/hatrack-hardening/control/runs",
     ],
 )
 def test_protected_data_is_denied(command):

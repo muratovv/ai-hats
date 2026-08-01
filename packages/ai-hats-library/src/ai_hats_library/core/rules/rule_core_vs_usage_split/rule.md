@@ -41,7 +41,7 @@ New rule / skill / trait
 
 ## Anti-patterns
 
-- **Attaching project-specific rules to `trait-agent` / `trait-base`** — pollutes universal traits with narrow concerns. Other ai-hats consumers inherit irrelevant rules.
+- **Attaching a project-specific component to a `core/` trait** — pollutes universal traits with narrow concerns; other ai-hats consumers inherit them. This holds for **any component type** (a skill whose triggers hard-code this repo's paths pollutes exactly as a rule does) and for **any trait under `core/`**, not only `trait-agent` / `trait-base`.
 - **Putting universal patterns in `usage/`** — buries reusable concepts under project-specific folders; consumers won't discover them.
 - **Skipping the dedicated usage/ trait** for project-specific rules — putting the project-specific rule directly into a usage role bypasses the trait layer that makes the bundling reusable.
 

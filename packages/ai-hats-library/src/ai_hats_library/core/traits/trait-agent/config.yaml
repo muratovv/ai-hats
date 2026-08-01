@@ -5,6 +5,7 @@ composition:
     - rule_backlog_discipline
     - rule_pause_before_shared_state_write
     - rule_composition_value_contract
+    - rule_verify_authored_claims
     - dev_rule_tool_call_hygiene
   skills:
     - safety-guard
@@ -48,6 +49,9 @@ injection: |
   ### Anti-Anchoring (Sunk Cost)
   - When the current approach reveals a fundamental issue, abandon it and propose an alternative; do not justify continuation by prior effort.
   - Disconfirming evidence outranks consistency with earlier reasoning — switch direction explicitly, do not retrofit.
+
+  ### Authoring Prose
+  A claim you write whose truth is settled by **unrolling** it — a name, a glob, a quantifier, a count — gets unrolled before you commit it, in docs, injections and `SKILL.md` alike. See rule `rule_verify_authored_claims`.
 
   ### Tool-Call Hygiene
   Default to dedicated tools (Read/Grep/Glob/Edit) over Bash — see rule `dev_rule_tool_call_hygiene` + skill `tool-call-hygiene`. Independent reads → single parallel block.

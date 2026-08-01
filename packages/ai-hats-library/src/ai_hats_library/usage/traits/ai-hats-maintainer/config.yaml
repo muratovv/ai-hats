@@ -13,12 +13,17 @@ injection: |
   generic agent baseline:
 
   ### E2E gate (see rule `dev_rule_e2e_gate`)
-  If your change touches `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`,
-  `cli/maintenance.py`, or `[project.scripts]` — the plan MUST name the e2e
-  test(s) you will add under `tests/e2e/` (real bash + real pip + real
-  `ai-hats` binary, `@pytest.mark.integration`). Pipeline-integration tests
-  and in-process `CliRunner` tests do NOT satisfy this gate. Reviewer rejects
-  `done` if the named test is missing or doesn't fail-under-revert.
+  If your change touches code that runs **outside the Python process**, the
+  plan MUST name the e2e test(s) you will add under `tests/e2e/` (real bash +
+  real pip + real `ai-hats` binary, `@pytest.mark.integration`). That surface
+  is `src/ai_hats/cli/`, `scripts/*.sh`, `_bootstrap.py`, `cli/maintenance.py`,
+  `[project.scripts]`, and **every installed hook** — `hooks/` and
+  `git_hooks/` alike, the highest blast radius in the repo, whose test must
+  drive the composed chain via `tests/e2e/_helpers/hook_chain.py`. A path not
+  in that list crossing the same boundary triggers the gate too.
+  Pipeline-integration tests and in-process `CliRunner` tests do NOT satisfy
+  this gate. Reviewer rejects `done` if the named test is missing or doesn't
+  fail-under-revert.
 
   ### Branches and commits
   - Branch names: `task/hats-NNN` for tracked work, `fix/<slug>` and
@@ -114,8 +119,10 @@ injection: |
   - New component → universal vs project-specific question FIRST.
   - Universal → `library/core/`. Project-specific → `core/` rule (if reusable
     concept) + dedicated `usage/` trait + role wiring.
-  - Never attach a project-specific rule to a base trait (`trait-agent`,
-    `trait-base`) — pollutes universal traits with narrow concerns.
+  - Never attach a component whose trigger surface names this repo to a trait
+    under `core/` — any component type, any core trait, not just a rule on
+    `trait-agent`/`trait-base`. It pollutes universal traits with narrow
+    concerns that other ai-hats consumers then inherit.
 
   ### Reflexive loop (map: `docs/reflect.md`)
   The framework audits its own sessions. These components EXIST — name them,

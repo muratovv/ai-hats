@@ -17,11 +17,11 @@ because `global_rule_destructive_actions` protects paths.
 
 ## The three outcomes
 
-| Target                                                                                                          | Outcome                                      |
-| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Scratch space, build artefacts, `/tmp` — the cleanup `global_rule_resource_hygiene` mandates                    | allowed                                      |
-| Protected data: `*.db` `*.sqlite*` `*.sql` `*.dump`, `volumes/` `data/` `storage/`, `terraform.tfstate`, `.env` | denied; `AI_HATS_DESTRUCTIVE_ACK=1` opens it |
-| Filesystem root, `$HOME`, disk-formatting (`mkfs.*`), `dd of=/dev/…`                                            | denied; no flag opens it                     |
+| Target                                                                                                                                                                                            | Outcome                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Scratch space, build artefacts, `/tmp` — the cleanup `global_rule_resource_hygiene` mandates                                                                                                      | allowed                                      |
+| Protected data — anything not regenerable from repo + toolchain; matched by the fast path `*.db` `*.sqlite*` `*.sql` `*.dump`, `volumes/` `data/` `storage/` `runs/`, `terraform.tfstate`, `.env` | denied; `AI_HATS_DESTRUCTIVE_ACK=1` opens it |
+| Filesystem root, `$HOME`, disk-formatting (`mkfs.*`), `dd of=/dev/…`                                                                                                                              | denied; no flag opens it                     |
 
 Every denial names the flag that unblocks it, or says plainly that none does.
 A guard that can only say "no" pushes the agent toward blunt instruments.

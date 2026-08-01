@@ -157,6 +157,9 @@ def test_cleanup_is_allowed(hooked_project, command):
         pytest.param("rm .env", id="dotenv"),
         pytest.param("rm -rf volumes/", id="volumes-dir"),
         pytest.param("rm -f terraform.tfstate", id="tfstate"),
+        # HATS-1430 — gitignored, irreproducible experiment transcripts: the
+        # repo cannot restore them, which is what the name list stands for.
+        pytest.param("rm -rf experiments/hatrack-hardening/control/runs", id="recorded-runs"),
     ],
 )
 @pytest.mark.integration
