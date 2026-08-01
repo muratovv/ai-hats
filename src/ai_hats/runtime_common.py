@@ -192,7 +192,9 @@ def sigint_shield(
     """
     presses: deque[float] = deque()
     stream = notice if notice is not None else sys.stderr
-    hold_text = f"[ai-hats] finalizing session — press Ctrl-C {count}× within {window_s:g}s to abort."
+    hold_text = (
+        f"[ai-hats] finalizing session — press Ctrl-C {count}× within {window_s:g}s to abort."
+    )
 
     def _on_sigint(_sig, _frame):
         if _press_trips(presses, time.monotonic(), count=count, window_s=window_s):
