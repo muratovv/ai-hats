@@ -229,18 +229,40 @@ def test_dry_run_reports_the_snapshot_without_writing_it(tmp_path: Path):
     assert not session_checks_dir(tmp_path, SID).exists(), "a dry-run must write nothing"
 
 
-def test_build_session_artifacts_takes_the_snapshot(tmp_path: Path):
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_build_session_artifacts_takes_the_snapshot(tmp_path: Path, run_mode: RunMode):
     """The one wiring that makes every launch path inherit it (ADR-0019 D-a/R6).
 
     The call sits in the base builder ABOVE the category loop: not a per-surface
     handler a surface could override, and not policy-gated — either would let a
-    declared gate go silently missing on some surface or some policy.
+    declared gate go silently missing on some surface or some policy. A sub-agent
+    (AUTOMATE) reaches it through the same call, so both modes are asserted here.
     """
     skill = _skill(tmp_path)
     result = _result(skills=[skill], checks=[_check(skill)])
 
     _StubSurface().build_session_artifacts(
-        tmp_path, result, SID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        tmp_path, result, SID, run_mode=run_mode, artifacts=BuiltArtifacts()
     )
 
     assert (session_checks_dir(tmp_path, SID) / "gate-skill" / "check.sh").is_file()
+
+
+def test_session_teardown_takes_the_snapshot_with_it(tmp_path: Path):
+    """No cleanup of its own: the snapshot lives inside the dir teardown drops.
+
+    ``_cleanup_session_cache`` removes ``<sid>/`` wholesale, and the TTL sweep
+    mops up what a SIGKILL orphaned — which is only true while the checks root
+    stays UNDER the session dir. Move it out and this fails, which is the point.
+    """
+    from ai_hats.runtime_common import _cleanup_session_cache
+
+    skill = _skill(tmp_path)
+    snapshot_checks(
+        tmp_path, _result(skills=[skill], checks=[_check(skill)]), SID, port=ApplyMaterializer()
+    )
+    assert session_checks_dir(tmp_path, SID).is_dir()
+
+    _cleanup_session_cache(tmp_path, SID)
+
+    assert not session_checks_dir(tmp_path, SID).exists()

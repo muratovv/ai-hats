@@ -29,6 +29,7 @@ def _fake_result(skills: list[Path] | None = None) -> SimpleNamespace:
         merged_injection="## ROLE\nbody",
         rules=[],
         skills=skill_objs,
+        checks=(),  # HATS-1241: the builder snapshots bindings before any category
     )
 
 
