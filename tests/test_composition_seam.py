@@ -34,8 +34,13 @@ def _fake_assembler(available: list[str], project_dir: Path) -> MagicMock:
 
 
 def test_seam_routes_through_facade(tmp_path: Path):
-    """HATS-501/456 invariant, relocated: the ONE composition goes through
-    ``compose_for_role`` (single derivation point)."""
+    """HATS-501/456 invariant, relocated: the composition goes through
+    ``compose_for_role`` (single derivation point).
+
+    Routing only — NOT a pass count. The mocked assembler never reaches the real
+    ``_get_overlay_provenance``, so this read green through all of HATS-1435,
+    when a session start composed twice. Pass count lives in
+    ``test_session_start_composes_exactly_once`` (real project)."""
     fake_result = MagicMock(errors=[], merged_injection="ROLE PROMPT")
     asm = _fake_assembler(["judge"], tmp_path)
     with (
@@ -293,3 +298,38 @@ def test_first_run_session_start_composes_exactly_once(tmp_path: Path):
     with _compose_spy() as calls:
         build_composition_payload(project, interactive=True)
     assert calls == ["maintainer"], f"expected ONE compose pass, got {len(calls)}: {calls}"
+
+
+def test_snapshot_and_provenance_agree_on_effective_traits(tmp_path: Path):
+    """HATS-1435: `_composition_snapshot` and `_get_overlay_provenance` each
+    walked base+overlays to the same effective-trait list. Two copies that must
+    agree and nothing pinned that they did — so drift would land silently."""
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import OverlayConfig, ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    ProjectConfig(
+        provider="claude",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="maintainer",
+        default_role="maintainer",
+        customizations={
+            "maintainer": OverlayConfig(
+                add_traits=["trait-researcher-mindset"],  # already present → no-op add
+                remove_traits=["dev::shell"],
+            )
+        },
+    ).save(project / PROJECT_CONFIG)
+    Assembler(project, library_paths=[LIBRARY_DIR]).init()
+
+    snapshot = build_composition_payload(project, interactive=False).snapshot
+
+    assert "dev::shell" not in snapshot["traits"], "overlay remove not applied"
+    assert set(snapshot["traits"]) == set(snapshot["provenance"]["traits"]), (
+        "the two effective-trait walks disagree: "
+        f"snapshot={sorted(snapshot['traits'])} "
+        f"provenance={sorted(snapshot['provenance']['traits'])}"
+    )

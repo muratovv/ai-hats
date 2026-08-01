@@ -572,6 +572,25 @@ class Assembler:
         """
         return self.user_config.overlay_for(role_name)
 
+    def _effective_traits(self, role_name: str) -> list[str]:
+        """Role's base traits with global-then-project overlay edits applied.
+
+        One home for a walk `config status` and the audit snapshot both need —
+        two copies would have to agree forever (HATS-1435).
+        """
+        base_cfg = self.resolver.resolve_role_config(role_name)
+        traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
+        for layer in (self._get_global_overlay(role_name), self._get_overlay(role_name)):
+            if layer is None:
+                continue
+            for name in layer.remove_traits:
+                if name in traits:
+                    traits.remove(name)
+            for name in layer.add_traits:
+                if name not in traits:
+                    traits.append(name)
+        return traits
+
     def _get_overlays(self, role_name: str) -> list[OverlayConfig]:
         """Return the ordered list of overlay layers for a role (HATS-421).
 
@@ -632,21 +651,7 @@ class Assembler:
             # which `config status` renders as "role has no rules" (HATS-1373).
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
-        # Seed traits from base config + active overlays
-        base_cfg = self.resolver.resolve_role_config(role_name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            self._get_global_overlay(role_name),
-            self._get_overlay(role_name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
+        effective_traits = self._effective_traits(role_name)
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
@@ -1071,24 +1076,9 @@ class Assembler:
         tree — composer flattens traits into rules/skills/injections).
         """
         provenance = self._get_overlay_provenance(result.name, result=result)
-        # Effective trait order: base composition + overlay-added (overlay
-        # removes are already applied by the composer for the composition
-        # lists, but trait-level visibility is what `config status` cares
-        # about). Walk layers in same order as provenance: base → global → project.
-        base_cfg = self.resolver.resolve_role_config(result.name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            self._get_global_overlay(result.name),
-            self._get_overlay(result.name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
+        # Trait-level visibility is what `config status` cares about; the
+        # composer already flattened overlay edits out of the composition lists.
+        effective_traits = self._effective_traits(result.name)
         return {
             "name": result.name,
             "priorities": result.priorities,

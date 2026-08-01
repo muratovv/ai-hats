@@ -266,20 +266,7 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
     travels down in the payload — bricks never drive assembler machinery.
     """
     try:
-        base_cfg = assembler.resolver.resolve_role_config(role_name)
-        effective_traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (
-            assembler._get_global_overlay(role_name),
-            assembler._get_overlay(role_name),
-        ):
-            if layer is None:
-                continue
-            for name in layer.remove_traits:
-                if name in effective_traits:
-                    effective_traits.remove(name)
-            for name in layer.add_traits:
-                if name not in effective_traits:
-                    effective_traits.append(name)
+        effective_traits = assembler._effective_traits(role_name)
         provenance = assembler._get_overlay_provenance(role_name, result=result)
     except Exception as exc:
         # Defensive: a broken overlay shouldn't kill session start.
