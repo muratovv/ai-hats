@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Protocol, Sequence, TypeVar
+
 
 import yaml
 from filelock import FileLock
@@ -68,6 +70,13 @@ def ensure_backlog(project_dir: Path, definition_name: str) -> None:
 # ----- read views -------------------------------------------------------------
 
 
+class HasCreated(Protocol):
+    created: str
+
+
+V = TypeVar("V", bound=HasCreated)
+
+
 @dataclass(frozen=True)
 class HypView:
     """The HYP fields the reflect/judge/session-review consumers render.
@@ -81,6 +90,7 @@ class HypView:
     observation_window: str | None
     verification_protocol: str | None
     validation_log: tuple[dict, ...]
+    created: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +107,7 @@ class PropView:
     votes: tuple[dict, ...]
     related_hypotheses: tuple[str, ...]
     failed_session_id: str | None
+    created: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,6 +135,7 @@ def _hyp_view(card) -> HypView:
         observation_window=e.get("observation_window") or None,
         verification_protocol=e.get("verification_protocol") or None,
         validation_log=tuple(e.get("validation_log") or ()),
+        created=str(card.created or ""),
     )
 
 
@@ -140,7 +152,41 @@ def _prop_view(card) -> PropView:
         votes=tuple(e.get("votes") or ()),
         related_hypotheses=tuple(card.links.get("related_hypotheses") or ()),
         failed_session_id=(e.get("failed_session_id") or None),
+        created=str(card.created or ""),
     )
+
+
+def created_at_or_before(views: Sequence[V], cut: datetime) -> list[V]:
+    """Return views created at or before ``cut``.
+
+    A date-only stamp (YYYY-MM-DD) is treated as start-of-day 00:00:00 UTC, so a card
+    created on the session day remains included. An absent or unparseable stamp is kept (fail-open).
+    """
+    kept: list[V] = []
+    for view in views:
+        raw = view.created or ""
+        dt = _created_dt(raw)
+        if dt is None or dt <= cut:
+            kept.append(view)
+    return kept
+
+
+def _created_dt(raw: str) -> datetime | None:
+    if not raw:
+        return None
+    raw = raw.strip()
+    if len(raw) == 10:
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
 
 
 def _catalog(ws: Workspace, prefix_probe: str) -> Path | None:
@@ -176,10 +222,6 @@ def _id_key(name: str) -> tuple[str, int]:
 def active_hypotheses(ws: Workspace) -> list[HypView]:
     """Every ``active`` HYP as a view; empty when the HYP backlog is unmounted."""
     return [_hyp_view(c) for c in _load_cards(_catalog(ws, "HYP-0")) if c.state == "active"]
-
-
-def active_hypothesis_ids(ws: Workspace) -> set[str]:
-    return {h.id for h in active_hypotheses(ws)}
 
 
 def proposals(
@@ -392,12 +434,12 @@ __all__ = [
     "REFLECT_ACTOR",
     "SESSION_REVIEWER_ACTOR",
     "active_hypotheses",
-    "active_hypothesis_ids",
     "append_verdict",
     "autoclose_hypotheses",
     "closed_tasks",
     "create_hypothesis",
     "create_proposal",
+    "created_at_or_before",
     "hyp_backlog_mounted",
     "open_proposals",
     "proposals",

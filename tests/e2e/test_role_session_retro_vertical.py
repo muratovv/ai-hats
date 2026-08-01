@@ -215,7 +215,9 @@ class SetupContext:
     env: dict[str, str]
     hyp_id: str
     prop_id: str
+    future_hyp_id: str
     magic_token: str  # per-run random; see _new_magic_token()
+
     global_trait: str = GLOBAL_TRAIT
     project_trait: str = PROJECT_TRAIT
     review_model: str = REVIEW_MODEL
@@ -335,6 +337,8 @@ def phase_setup(project: Project) -> SetupContext:
 
     # ----- mount the HYP/PROP backlogs — rack only grows the `hyp` / `proposal`
     # groups once the sibling catalogs carry a backlog.yaml (HATS-1036) -----
+    from ai_hats.paths import hypotheses_dir
+
     for backlog in ("hypotheses", "proposals"):
         ensure_backlog(project.path, backlog)
 
@@ -351,6 +355,21 @@ def phase_setup(project: Project) -> SetupContext:
             "project-layer overlay reaches the materialized prompt."
         ),
     )
+
+    # ----- pre-seed 1 future HYP — verifies created <= session_end filtering -----
+    future_hyp_id = _rack_created(
+        project,
+        env,
+        "hyp",
+        "create",
+        "test fixture: future hyp cutoff probe",
+        "--hypothesis",
+        "HYP created in the future should not reach the session-reviewer.",
+    )
+    future_card_path = hypotheses_dir(project.path) / future_hyp_id / "task.yaml"
+    card_data = yaml.safe_load(future_card_path.read_text())
+    card_data["created"] = "2099-01-01"
+    future_card_path.write_text(yaml.safe_dump(card_data, sort_keys=False))
 
     # ----- pre-seed 1 open PROP — forces reviewer to emit a proposal_action -----
     prop_id = _rack_created(
@@ -391,6 +410,7 @@ def phase_setup(project: Project) -> SetupContext:
         env=env,
         hyp_id=hyp_id,
         prop_id=prop_id,
+        future_hyp_id=future_hyp_id,
         magic_token=magic_token,
     )
 
@@ -766,6 +786,12 @@ def phase_assert_retro_artefacts(
     verdict_hyp_ids = {v.get("hyp_id") for v in verdicts if isinstance(v, dict)}
     assert ctx.hyp_id in verdict_hyp_ids, (
         f"reviewer did not emit a verdict for seeded hyp {ctx.hyp_id!r}; verdicts: {verdicts}"
+    )
+    assert ctx.future_hyp_id not in reviewer.meta_prompt, (
+        f"future hyp {ctx.future_hyp_id!r} was incorrectly injected into reviewer task prompt"
+    )
+    assert ctx.future_hyp_id not in verdict_hyp_ids, (
+        f"reviewer emitted a verdict for future hyp {ctx.future_hyp_id!r}"
     )
 
     # Claim #4 — PROP wiring (deterministic). Acting on an open proposal

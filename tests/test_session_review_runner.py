@@ -50,12 +50,14 @@ def _facts(sid: str = SID) -> SessionFacts:
     )
 
 
-def _add_active_hyp(project_dir: Path, hyp_id: str = "HYP-001") -> None:
+def _add_active_hyp(
+    project_dir: Path, hyp_id: str = "HYP-001", created: str = "2026-05-01"
+) -> None:
     hyps_dir = hypotheses_dir(project_dir)
     hyps_dir.mkdir(parents=True, exist_ok=True)
     (hyps_dir / f"{hyp_id}.yaml").write_text(
         "id: " + hyp_id + "\n"
-        "title: t\nstatus: active\ncreated: '2026-05-01'\n"
+        "title: t\nstatus: active\ncreated: '" + created + "'\n"
         "source_task: TASK-001\nhypothesis: a\nvalidation_log: []\n"
     )
     migrate_catalog(hyps_dir, "hypotheses")  # flat → dir-per-card for the workspace
@@ -627,7 +629,7 @@ def _write_hyp_with_extras(project_dir: Path, hyp_id: str, **extras) -> None:
         "id": hyp_id,
         "title": f"t-{hyp_id}",
         "status": "active",
-        "created": "2026-05-26",
+        "created": "2026-05-01",
         "source_task": "HATS-001",
         "hypothesis": "test hypothesis",
         "success_criterion": "criterion text",
@@ -653,7 +655,7 @@ def test_render_active_hypotheses_surfaces_verification_protocol(tmp_path: Path)
     _write_hyp_with_extras(tmp_path, "HYP-501", verification_protocol=protocol)
 
     runner = SessionReviewRunner(tmp_path)
-    out = runner._render_active_hypotheses()
+    out = runner._render_active_hypotheses(SID)
 
     assert "verification_protocol: |" in out, (
         "expected literal-block-scalar header for verification_protocol"
@@ -675,7 +677,104 @@ def test_render_active_hypotheses_omits_verification_protocol_when_absent(
     _write_hyp_with_extras(tmp_path, "HYP-502")  # no verification_protocol
 
     runner = SessionReviewRunner(tmp_path)
-    out = runner._render_active_hypotheses()
+    out = runner._render_active_hypotheses(SID)
 
     assert "HYP-502" in out
     assert "verification_protocol" not in out
+
+
+def test_render_active_hypotheses_filters_future_and_adds_note(tmp_path: Path):
+    """Protocol item 3: active HYPs created after session_cut are excluded from render and note is added."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _write_hyp_with_extras(tmp_path, "HYP-101", created="2026-05-01")
+    _write_hyp_with_extras(tmp_path, "HYP-102", created="2099-01-01")
+
+    runner = SessionReviewRunner(tmp_path)
+    out = runner._render_active_hypotheses(SID)
+
+    assert "HYP-101" in out
+    assert "HYP-102" not in out
+    assert "1 more hypothesis hidden — created after this session ended" in out
+
+
+def test_render_active_hypotheses_all_filtered_shows_none_and_note(tmp_path: Path):
+    """Protocol item 3: when all active HYPs are future, render shows (none ...) and hidden note."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _write_hyp_with_extras(tmp_path, "HYP-102", created="2099-01-01")
+
+    runner = SessionReviewRunner(tmp_path)
+    out = runner._render_active_hypotheses(SID)
+
+    assert "(none — emit empty hypothesis_verdicts list)" in out
+    assert "1 more hypothesis hidden — created after this session ended" in out
+
+
+def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
+    """Protocol item 4: open PROPs created after session_cut are excluded from render and note is added."""
+    from ai_hats.paths import proposals_dir
+    from ai_hats.rack_workspace import create_proposal, ensure_backlog, rack_workspace
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    (tmp_path / "ai-hats.yaml").touch()
+    ensure_backlog(tmp_path, "proposals")
+    ws = rack_workspace(tmp_path)
+
+    p1 = create_proposal(
+        ws,
+        title="prop 1",
+        category="process",
+        target="maintainer",
+        description="desc 1",
+        rationale="rat 1",
+    )
+    p2 = create_proposal(
+        ws,
+        title="prop 2",
+        category="process",
+        target="maintainer",
+        description="desc 2",
+        rationale="rat 2",
+    )
+
+    p1_path = proposals_dir(tmp_path) / p1 / "task.yaml"
+    data1 = yaml.safe_load(p1_path.read_text())
+    data1["created"] = "2026-05-01"
+    p1_path.write_text(yaml.safe_dump(data1))
+
+    p2_path = proposals_dir(tmp_path) / p2 / "task.yaml"
+    data2 = yaml.safe_load(p2_path.read_text())
+    data2["created"] = "2099-01-01"
+    p2_path.write_text(yaml.safe_dump(data2))
+
+    runner = SessionReviewRunner(tmp_path)
+    out = runner._render_open_proposals(SID)
+
+    assert p1 in out
+    assert p2 not in out
+    assert "1 more open proposal hidden — created after this session ended" in out
+
+
+def test_validation_alignment_ignores_future_active_hypotheses(tmp_path: Path):
+    """Protocol item 5: _validate_analysis_shape and _validate_integrity do not require verdicts for future HYPs."""
+    from ai_hats.retro.session_review_runner import SessionReviewRunner
+
+    _add_active_hyp(tmp_path, "HYP-101", created="2026-05-01")
+    _add_active_hyp(tmp_path, "HYP-102", created="2099-01-01")
+
+    runner = SessionReviewRunner(tmp_path)
+    raw = {
+        "summary": "all good",
+        "hypothesis_verdicts": [
+            {
+                "hyp_id": "HYP-101",
+                "verdict": "confirmed",
+                "evidence": "evidence cite",
+                "recommendation": "keep",
+            }
+        ],
+    }
+    runner._validate_analysis_shape(raw, SID)
+    review = runner._merge(_facts(SID), raw)
+    runner._validate_integrity(review, SID)

@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ai_hats_observe.artifacts import METRICS_JSON, strip_session_prefix
+from ai_hats_observe.artifacts import METRICS_JSON, session_dirname, strip_session_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +93,38 @@ def parse_task_timestamp(value: str) -> datetime | None:
         return None
 
 
+def session_cut(project_dir: Path, session_id: str) -> datetime:
+    """Upper bound of what existed for a session: start + duration_s, or end of start day when duration_s is absent.
+
+    Distinct from ``compute_session_end``: its fallback is ``now()``, which (a) fails to truncate on historic runs
+    and (b) gives runner and inbox-validator different candidate sets (HATS-1445).
+    Unparseable session IDs return datetime.max (fail-open: retain all cards).
+    """
+    from ..paths import runs_dir
+
+    sid = strip_session_prefix(session_id)
+    try:
+        start = parse_session_start(sid)
+    except ValueError as e:
+        logger.info("session_cut: unparseable session start for %s (%s)", session_id, e)
+        return datetime.max.replace(tzinfo=timezone.utc)
+
+    metrics_path = runs_dir(project_dir) / session_dirname(sid) / METRICS_JSON
+    if metrics_path.exists():
+        try:
+            data = json.loads(metrics_path.read_text())
+            duration_s = data.get("duration_s")
+            if duration_s is not None and float(duration_s) > 0:
+                return start + timedelta(seconds=float(duration_s))
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.info("session_cut: metrics.json unreadable/invalid for %s (%s)", session_id, e)
+    return start.replace(hour=23, minute=59, second=59, microsecond=0)
+
+
 __all__ = [
     "compute_session_end",
     "parse_session_start",
     "parse_task_timestamp",
+    "session_cut",
     "tasks_closed_in_window",
 ]
