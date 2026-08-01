@@ -63,7 +63,7 @@ class ClaudeParser:
         return self._trace.parse_usage(None, trace_path)
 
 
-    def _parse_jsonl(self, jsonl_paths: list[Path]) -> tuple[list[Turn], dict[str, dict], dict]:
+    def _parse_jsonl(self, jsonl_paths: Path | Iterable[Path]) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse Claude Code JSONL files → (turns, per-model stats, aggregated usage)."""
         turns: list[Turn] = []
         current: Turn | None = None
@@ -76,8 +76,9 @@ class ClaudeParser:
         }
         prev_model: str | None = None
 
+        paths = [Path(jsonl_paths)] if isinstance(jsonl_paths, (Path, str)) else [Path(p) for p in jsonl_paths]
         lines: list[str] = []
-        for p in jsonl_paths:
+        for p in paths:
             try:
                 lines.extend(p.read_text().splitlines())
             except OSError:
