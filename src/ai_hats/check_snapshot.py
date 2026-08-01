@@ -41,4 +41,12 @@ def snapshot_checks(
                 f"checks: bound skill {name!r} is not in the composition — "
                 f"it cannot be snapshotted, so its gate would be silently absent"
             )
-        port.copy_tree(skill.source_path, root / name)
+        dest = (root / name).resolve()
+        if not dest.is_relative_to(root.resolve()):
+            raise CheckBindingError(
+                f"checks: snapshot of skill {name!r} would land at {dest}, outside "
+                f"this session's checks root {root} — refusing to write there"
+            )
+        if dest.exists():
+            continue  # first writer wins: the session's bytes never change under it
+        port.copy_tree(skill.source_path, dest)

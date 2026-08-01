@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+
+from ai_hats.libraries.models import CheckBindingError
 
 from ai_hats.check_snapshot import snapshot_checks
 from ai_hats.materialization import ApplyMaterializer, PlanMaterializer
@@ -82,6 +85,59 @@ def test_binding_copies_whole_skill_dir_executable(tmp_path: Path):
     assert (dest / "data.json").read_text() == '{"threshold": 3}\n'
     assert (dest / "check.sh").stat().st_mode & 0o111, "exec bit lost in the snapshot"
     assert [(e.kind.value, e.target) for e in port.plan.entries] == [("copy_tree", dest)]
+
+
+def test_second_build_for_one_session_keeps_the_first_bytes(tmp_path: Path):
+    """Within a session a check runs the SAME bytes start to finish (epic R7).
+
+    A rebuild for a live sid is reachable — the claude engine builds artifacts
+    itself when it was handed none. ``copytree`` refuses an existing dest, so
+    without this the second build raises; and re-copying would swap the bytes
+    under a session that may already have fired the gate.
+    """
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+    snapshot_checks(tmp_path, result, SID, port=ApplyMaterializer())
+
+    (skill.source_path / "check.sh").write_text("#!/usr/bin/env bash\nexit 2\n")
+    port = ApplyMaterializer()
+    snapshot_checks(tmp_path, result, SID, port=port)
+
+    snapshot = session_checks_dir(tmp_path, SID) / "gate-skill" / "check.sh"
+    assert snapshot.read_text() == "#!/usr/bin/env bash\nexit 0\n"
+    assert port.plan.entries == []
+
+
+def test_dest_outside_the_checks_root_is_refused(tmp_path: Path):
+    """The dest is derived from a name, so prove the derivation stays contained.
+
+    Same defect class the sibling resolver already carries a guard for
+    (``check_points._resolve_script``): a joined path that is never re-checked
+    after ``resolve()`` writes wherever the name points.
+    """
+    skill = _skill(tmp_path)
+    escaping = ResolvedComponent(
+        name="../../escape", component_type=ComponentKind.SKILL, source_path=skill.source_path
+    )
+    result = _result(skills=[escaping], checks=[_check(escaping)])
+
+    with pytest.raises(CheckBindingError, match="outside"):
+        snapshot_checks(tmp_path, result, SID, port=ApplyMaterializer())
+
+
+def test_two_bindings_on_one_skill_copy_it_once(tmp_path: Path):
+    """Bindings fan out per point; the snapshot is per skill."""
+    skill = _skill(tmp_path)
+    result = _result(
+        skills=[skill],
+        checks=[_check(skill, point="wt:pre-merge"), _check(skill, point="wt:create")],
+    )
+    port = ApplyMaterializer()
+
+    snapshot_checks(tmp_path, result, SID, port=port)
+
+    assert len(port.plan.entries) == 1
+    assert port.plan.duplicates() == []
 
 
 class _StubSurface(Provider):
