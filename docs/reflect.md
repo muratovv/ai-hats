@@ -11,6 +11,8 @@ Subcommands of `ai-hats reflect` cover the retrospective and backlog triage life
 
 > Full CLI reference (signatures + flags) — `ai-hats --tree` (subtree: `ai-hats --tree reflect`).
 
+**`reflect session` is not the only producer of `retros/sessions/<id>.md`.** `ai-hats session retro [SESSION_ID] [--last]` (`src/ai_hats/cli/session.py:29`) instantiates `SessionReviewRunner` directly and writes the same `hats-session-review/v1` artifact — bypassing the `reflect-session` pipeline, and with it the harness policy, the verdict harvest and the harness check described below. Reach for it only when you want the document alone.
+
 ## Pipeline overview
 
 ### `ai-hats reflect session`
@@ -18,31 +20,47 @@ Subcommands of `ai-hats reflect` cover the retrospective and backlog triage life
 Post-session retrospective flow (single LLM call under `session-reviewer`). Factual fields (metrics, files_changed, commits, tasks_closed, links) are computed by pure-Python before the LLM call.
 
 ```
-session_end (hook → auto_retro)
-  └─ if decision=run:
-       _spawn_session_reviewer_background (Popen, env: HATS_SKIP_RETRO=1)
-         python -m ai_hats.cli.reflect_session_main <sid>
-           ├─ SessionReviewRunner.run(sid)
-           │    1. compute_facts(project_dir, sid)         # pure-Python
-           │    2. SubAgentRunner → role=session-reviewer  # one LLM call
-           │    3. merge facts + analysis → SessionReviewV1
-           │    4. write <ai_hats_dir>/sessions/retros/sessions/<id>.md
-           │       (schema: hats-session-review/v1)
-           ├─ harvest_verdicts (pure-Python)
-           │    non-`n/a` hypothesis_verdicts → append_verdict into each
-           │    HYP's validation_log (actor=rack:session-reviewer)
-           └─ harness_check (pure-Python)
-                missing/empty/incomplete → file ONE meta-proposal
-                  (category=process, target=session-reviewer,
-                   failed_session_id=<sid>; deduped per session)
+session end
+  └─ pipeline step `maybe_spawn_session_reviewer`     # NOT a shell hook
+       (MaybeSpawnSessionReviewer, wired in finalize-hitl.yaml
+        and finalize-subagent.yaml; imports make_decision +
+        _spawn_session_reviewer_background from retro/auto_retro.py)
+       └─ if decision=run:
+            ├─ background=false → run_session_review(...) in-process
+            │                     (HATS-1402; HATS_SKIP_RETRO set/popped
+            │                      around the call via try/finally)
+            └─ otherwise → _spawn_session_reviewer_background
+                 (Popen, detached, env: HATS_SKIP_RETRO=1)
+                   python -m ai_hats.cli.reflect_session_main <sid>
+
+  reflect_session_main.run_session_review(sid, max_retries, project_dir)
+    ├─ PipelineHarness(reflect-session).run(...)      # the harness layer
+    │    step `run_session_review` → SessionReviewRunner.run(sid)
+    │      1. compute_facts(project_dir, sid)         # pure-Python
+    │      2. SubAgentRunner → role=session-reviewer  # one LLM call
+    │      3. merge facts + analysis → SessionReviewV1
+    │      4. write <ai_hats_dir>/sessions/retros/sessions/<id>.md
+    │         (schema: hats-session-review/v1)
+    ├─ on HarnessReliabilityError → file ONE meta-proposal
+    │    (target=harness-incident) and `return 2` — the harvest and
+    │    harness check below are SKIPPED entirely
+    ├─ _maybe_harvest_verdicts → _harvest_verdicts   # pure-Python
+    │    non-`n/a` hypothesis_verdicts → append_verdict into each
+    │    HYP's validation_log (actor=rack:session-reviewer)
+    └─ _harness_check (pure-Python)
+         missing/empty/incomplete → file ONE meta-proposal
+           (category=process, target=session-reviewer,
+            failed_session_id=<sid>)
 ```
 
 Triggers:
 
-- **Auto** on session-end (when `feedback.session_retro.policy=run` or `smart` threshold met); detached background process.
+- **Auto** on session end (when `feedback.session_retro.policy=always`, or `policy=smart` with the `smart_threshold` met — `off` and `hint` never spawn a run). Detached background process, unless `background: false` selects the in-process branch.
 - **Manual** via `ai-hats reflect session --session <id>` (foreground; harness check skipped).
 
-`harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It runs whenever the doc parses, even when the pipeline run itself errored (a stale/partial doc still has verdicts worth harvesting). `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
+`_maybe_harvest_verdicts` (HATS-1369) auto-persists every non-`n/a` verdict from the saved doc's `hypothesis_verdicts` into the matching HYP's `validation_log` (`session_id` = the reviewed session, `evidence`/`recommendation` copied verbatim), independent of whether `_harness_check` also reports missing coverage for other active HYPs. This is what makes an unattended HITL/subagent session — no manual reflect step — actually land a `validation_log` entry, so the existing `quorum_autoclose` sweep can act on it. It survives a `SessionReviewError` (a stale/partial doc still has verdicts worth harvesting), but **not** a `HarnessReliabilityError`: that branch returns before the doc is ever loaded, so a subprocess timeout or a zero-output guard drops the harvest even when a doc with verdicts is on disk. `ai-hats reflect hypothesis` (below) remains the judge-driven, HITL-reviewed path to the same field — the two are independent writers, distinguished by actor (`rack:session-reviewer` vs `rack:reflect`).
+
+Meta-proposals are deduped per `(failed_session_id, target)` pair, not per session — the `harness-incident` and `session-reviewer` facets coexist, so one session id can carry two.
 
 ### `ai-hats reflect hypothesis` (HATS-513 / ADR-0007)
 
@@ -53,9 +71,13 @@ Two-phase bulk triage of accumulated HYP and PROP backlog:
 
 With `--headless`: runs Phase 1 only (CI/cron-safe).
 
+Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats_dir>/sessions/retros/reflect-all/<ts>-handoff.md` (`_build_handoff`, `src/ai_hats/cli/reflect.py:900`) and share the `judge/<ts>-report.md` namespace.
+
 ### `ai-hats reflect role <target>` / `reflect roles`
 
-Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`. Report is saved to `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md`.
+Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`.
+
+The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/judge-for-role/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
 
 ### `ai-hats reflect issue <text>`
 
@@ -77,16 +99,17 @@ Legacy single-phase triage. Replaced by `reflect hypothesis`. Kept for backward 
     retros/
       sessions/<id>.md                 # SessionReviewV1
       judge/<ts>-draft.md              # JudgeDraft (Phase 1)
-      judge/<ts>-report.md             # JudgeReport (Phase 2)
-      role-coherence/<ts>-<target>.md  # RoleCoherenceReport
-      reflect-all/<ts>-handoff.md      # legacy pre-flight handoff
+      judge/<ts>-report.md             # JudgeReport (Phase 2 AND reflect all)
+      role-coherence/<ts>-<target>.md  # RoleCoherenceReport (written by the role, not by a step)
+      reflect-all/<ts>-handoff.md      # pre-flight handoff (reflect all AND reflect hypothesis)
 ```
 
 ## Schema dispatch
 
-`src/ai_hats/retro/loader.py` routes by `schema:` family:
+`src/ai_hats/retro/loader.py` routes by the family of the `schema:` field — the
+`/vN` suffix is stripped before lookup, so the registry keys carry no version:
 
-| Family                    | Model              | Producer                              |
-| ------------------------- | ------------------ | ------------------------------------- |
-| `hats-session-review/v1`  | `SessionReviewV1`  | session-reviewer (current)            |
-| `hats-reflect-session/v1` | `ReflectSessionV1` | historical (pre-HATS-252) — read-only |
+| Family                 | Model              | Producer                              |
+| ---------------------- | ------------------ | ------------------------------------- |
+| `hats-session-review`  | `SessionReviewV1`  | session-reviewer (current)            |
+| `hats-reflect-session` | `ReflectSessionV1` | historical (pre-HATS-252) — read-only |

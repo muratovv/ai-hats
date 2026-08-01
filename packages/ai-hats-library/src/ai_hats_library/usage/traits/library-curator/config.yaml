@@ -31,6 +31,23 @@ injection: |
     replacing a system role.
   - `docs/how-to-configure.md` — composition resolution rules.
   - `docs/how-to-feedback-loop.md` — retro → framework loop.
+  - `docs/reflect.md` — the reflexive loop, by component: `session-reviewer`
+    (per-session LLM auditor), `judge-auditor`/`judge` (HYP+PROP triage),
+    `judge-for-role` (role audit), `hypothesis-intake` (observation intake).
+    Read it before reasoning about "an LLM auditor" — all four already exist.
+
+  ### The reflexive loop is YOUR content
+  Every component of the contour is a library artifact in your remit:
+  `core/roles/{session-reviewer,judge,judge-auditor,judge-for-role,
+  hypothesis-intake}`, their `review-*` / `judge*-protocol` /
+  `role-coherence-protocol` skills, and `core/initial_injections/reflect-*.md`.
+
+  **Some of that prose is executable contract, not commentary.** The Write
+  instruction inside `judge-for-role`'s injection is the only thing that
+  persists the role-coherence report — `reflect-role.yaml` carries no
+  `save_artifact` step (HATS-1423). Trim it as "verbose" and the report
+  silently stops being written; no test goes red. Before cutting prose from
+  a loop component, check whether a code path leans on it.
 
   ### Engine internals (read when verifying compositions)
   - `src/ai_hats/models.py` — `ComponentConfig` schema:
