@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from ai_hats.paths import (
@@ -88,6 +90,22 @@ def test_ai_hats_dir_foreign_pair_ignored(tmp_path, monkeypatch):
     with pytest.warns(UserWarning, match=ENV_AI_HATS_DIR):
         base = ai_hats_dir(project)
     assert base == project / ".agent" / "ai-hats"
+
+
+def test_ai_hats_dir_foreign_pair_warning_deduplicated(tmp_path, monkeypatch, recwarn):
+    """HATS-1417: foreign AI_HATS_DIR leak warning is emitted at most once per process."""
+    foreign_root = tmp_path / "other-repo"
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(foreign_root / ".agent" / "ai-hats"))
+    monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(foreign_root))
+    project = tmp_path / "project"
+    project.mkdir()
+    warnings.simplefilter("default")
+    base1 = ai_hats_dir(project)
+    base2 = ai_hats_dir(project)
+    assert base1 == project / ".agent" / "ai-hats"
+    assert base2 == project / ".agent" / "ai-hats"
+    matching = [w for w in recwarn.list if ENV_AI_HATS_DIR in str(w.message)]
+    assert len(matching) == 1
 
 
 def test_ai_hats_dir_matching_pair_honored(tmp_path, monkeypatch):

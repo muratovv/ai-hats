@@ -157,7 +157,7 @@ def _env_ai_hats_dir(project_dir: Path) -> Path | None:
         warnings.warn(
             f"AI_HATS_DIR={raw!r} is pinned to project {pin!r} — foreign to "
             f"{project_dir}; ignoring the leaked session pin (HATS-897).",
-            stacklevel=4,
+            stacklevel=1,
         )
         return None
     return Path(raw).expanduser()
