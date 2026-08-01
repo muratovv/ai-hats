@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats_rack.definition import packaged_definition_source
 from ai_hats_rack.kernel import UnknownTaskError
 from ai_hats_rack.ops import parse_ops
 from ai_hats_rack.resolver import RackRoot
@@ -91,6 +92,31 @@ def test_unknown_prefix_target_is_not_found(workspace):
     # source_task targets `tasks`; a foreign id there is simply absent.
     with pytest.raises(UnknownTaskError):
         _link(hyp, "HYP-1", "source_task:NOPE-1", root.project_dir)
+
+
+def test_packaged_proposals_link_to_a_task(tmp_path):
+    """HATS-1385: PROP→HATS on the SHIPPED definition, not a synthetic one.
+
+    The judge used to record the triage outcome as a log line because no edge
+    accepted a HATS id; this is the edge, checked against the real catalog.
+    """
+    project = tmp_path / "proj"
+    tasks = project / ".agent" / "ai-hats" / _TAIL
+    tasks.mkdir(parents=True)
+    props = project / ".agent" / "ai-hats" / "tracker" / "proposals"
+    props.mkdir(parents=True)
+    (props / "backlog.yaml").write_text(packaged_definition_source("proposals"), encoding="utf-8")
+    _seed(tasks, "HATS-1", state="brainstorm")
+    _seed(props, "PROP-1", state="open")
+    root = RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")
+    kernel = Workspace.discover([root]).kernel_for("PROP-1")
+
+    res = _link(kernel, "PROP-1", "related_tasks:HATS-1", project)
+
+    assert res.ops[0]["changed"] is True
+    assert kernel.get("PROP-1").links["related_tasks"] == ["HATS-1"]
+    with pytest.raises(UnknownTaskError):
+        _link(kernel, "PROP-1", "related_tasks:HATS-404", project)
 
 
 def test_targets_parses_onto_the_kind(workspace):

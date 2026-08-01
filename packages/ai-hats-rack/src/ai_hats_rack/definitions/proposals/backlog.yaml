@@ -29,6 +29,10 @@ fields:
 links:
   kinds:
     - { name: related_hypotheses, arity: many, targets: hypotheses }
+    # HATS-1385: the triage outcome, machine-readable — accepted PROP spawned
+    # this task, or rejected PROP was already covered by it. Many: PROP-089
+    # cited two. No inverse view, per the hypotheses `source_task` precedent.
+    - { name: related_tasks, arity: many, targets: tasks }
 
 extensions:
   - prop-votes

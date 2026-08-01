@@ -40,8 +40,12 @@ Boundaries & disambiguation (the description states the trigger):
 ### Step 1 — Read the inbox first
 
 ```bash
-rack ls --backlog proposal --state open
+rack ls --backlog proposal --state open --all
 ```
+
+Keep `--all`: the default caps at 30 id-sorted rows, so without it you read
+the *oldest* thirtieth of the inbox and conclude you read the inbox. On the
+day HATS-1385 measured it, that was 30 of 147.
 
 A proposal is "similar" if it covers the same change (same `category` +
 `target`). **Vote rather than create whenever in doubt** — duplicates
@@ -99,6 +103,49 @@ The point: critical-category PROPs deserve long observation windows
 **when there's something to observe**. Without a cited cost, the judge
 can't tell signal from noise — so the inbox shouldn't keep them
 indefinitely.
+
+### Step 3b — Batch-triage the auto-filed cards (judge / triage roles only)
+
+The runtime safety net files a PROP on every zero-output / timeout run
+(`harness incident: <sid>`) and every incomplete session review
+(`session-reviewer incomplete: <sid>`). They accumulate faster than anyone
+reads them — 76 of 147 open when HATS-1385 measured it — and they bury the
+hand-authored half. Sweep them as one batch under a shared criterion, the
+move the HATS-1323 HYP pass made with 61 hypotheses.
+
+A card is auto-noise only when **all four** hold:
+
+1. `target` is `harness-incident` or `session-reviewer` (the filer's constants).
+2. Title starts with `harness incident:` or `session-reviewer incomplete:`
+   (the filer's template).
+3. `votes == []` — a vote means someone independently seconded it.
+4. It predates the current sweep window — a freshly filed incident gets one
+   sweep of attention before it is swept.
+
+> **Never sweep on a single field.** Every one-field shortcut has a victim,
+> measured on the live inbox:
+>
+> | Shortcut                  | Sweeps | Victim                                                                                                                                                  |
+> | ------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | `target` alone            | 76     | **PROP-107** (5 votes, the reflex-loop persistence break) and **PROP-080** (4 votes) — a hand-written card *about* the harness wears the harness target |
+> | `failed_session_id` alone | 74     | **PROP-119** — Step 2b tells human reviewers to pass `--failed-session-id "$SID"` on ordinary creates, so the field marks authorship, not origin        |
+> | all four together         | 70     | none — and it spares PROP-021/093/098/163, auto-shaped cards a reviewer seconded                                                                        |
+
+Print the id set and read it against the Victim column **before** flipping
+anything. An id carrying a vote or a hand-written title means the criterion
+was mis-applied — not that the card is stale.
+
+```bash
+ai-hats reflect commit --reject PROP-029 --reject PROP-031  # … one flag per id
+```
+
+Reject (not `duplicate`): they are real, distinct events whose signal is the
+*rate*, not the individual card. Give the batch one shared evidence line
+naming the criterion and the count, so the sweep is auditable as one decision
+rather than N silent ones.
+
+If the same class keeps refilling the inbox after a sweep, the channel is the
+defect, not the cards — that is a proposal about the filer, not another sweep.
 
 ### Step 4 — Meta-proposal (when YOU are the problem)
 

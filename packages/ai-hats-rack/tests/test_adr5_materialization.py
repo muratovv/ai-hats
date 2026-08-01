@@ -97,6 +97,14 @@ def test_prop_related_hypotheses_targets_hypotheses():
     assert reg.get("related_hypotheses").targets == "hypotheses"
 
 
+def test_prop_related_tasks_targets_tasks():
+    """HATS-1385: the judge's PROP→task triage outcome is a stored edge, not a log line."""
+    kind = load_packaged_definition("proposals").links_registry.get("related_tasks")
+    assert kind is not None
+    assert kind.targets == "tasks"
+    assert kind.arity == "many"
+
+
 # ----- HYP: required field, stamp-lifecycle {field: closed}, emit, validator -
 
 
