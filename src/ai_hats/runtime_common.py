@@ -7,8 +7,11 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import signal
 import sys
+import time
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -90,6 +93,7 @@ _ESCAPE_CTRL_C = 0x03  # the Ctrl-C byte (VINTR) forwarded in raw mode
 _ESCAPE_COUNT = 3  # consecutive Ctrl-C presses that trip the hatch
 _ESCAPE_WINDOW_S = 1.5  # they must fall within this sliding window
 _ESCAPE_NOTICE = b"\r\n[ai-hats] provider not responding to Ctrl-C; forcing exit (code 130).\r\n"
+_SHIELD_ABORT_NOTICE = "[ai-hats] finalize aborted by operator (code 130)."
 
 
 def _scan_escape(
@@ -122,15 +126,94 @@ def _scan_escape(
     """
     for i, byte in enumerate(chunk):
         if byte == _ESCAPE_CTRL_C:
-            presses.append(now)
-            while presses and now - presses[0] > window_s:
-                presses.popleft()
-            if len(presses) >= count:
-                presses.clear()
+            if _press_trips(presses, now, count=count, window_s=window_s):
                 return chunk[:i], True
         else:
             presses.clear()
     return chunk, False
+
+
+def _press_trips(
+    presses: deque[float],
+    now: float,
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+) -> bool:
+    """Bank one Ctrl-C press; ``True`` once ``count`` of them fall within ``window_s``.
+
+    Both escape hatches count through this one accumulator (HATS-1426): the PTY
+    byte-scanner above and the finalize-window SIGINT shield below. ``presses``
+    is mutated in place — stale timestamps drop off the left, and a trip clears
+    the deque so the next streak starts fresh.
+    """
+    presses.append(now)
+    while presses and now - presses[0] > window_s:
+        presses.popleft()
+    if len(presses) >= count:
+        presses.clear()
+        return True
+    return False
+
+
+class FinalizeAborted(BaseException):
+    """The operator tripped the escape hatch during session finalize (HATS-1426).
+
+    Deliberately neither an ``Exception`` nor a ``KeyboardInterrupt``: every
+    finalize phase catches ``(Exception, KeyboardInterrupt)`` per the HATS-086
+    invariant, so either spelling would be swallowed by the very next phase and
+    finalize would grind on against the operator's intent.
+    """
+
+
+def _shield_notice(stream, text: str) -> None:
+    try:
+        stream.write(f"\n{text}\n")
+        stream.flush()
+    except (OSError, ValueError):  # silent-ok: a closed TTY must not break finalize
+        pass
+
+
+@contextmanager
+def sigint_shield(
+    *,
+    count: int = _ESCAPE_COUNT,
+    window_s: float = _ESCAPE_WINDOW_S,
+    notice=None,
+):
+    """Hold SIGINT off the finalize window; ``count`` presses in ``window_s`` still abort.
+
+    Once the provider exits the terminal is back in cooked mode, so a stray
+    Ctrl-C lands as ``KeyboardInterrupt`` inside whichever finalize step is
+    running — one press used to cost that whole step, silently (HATS-1426).
+    Sub-threshold presses print a line and are dropped; the trip raises
+    :class:`FinalizeAborted`. Counting matches the PTY hatch (HATS-679).
+    Fail-open off the main thread — unshielded finalize beats no finalize.
+    """
+    presses: deque[float] = deque()
+    stream = notice if notice is not None else sys.stderr
+    hold_text = f"[ai-hats] finalizing session — press Ctrl-C {count}× within {window_s:g}s to abort."
+
+    def _on_sigint(_sig, _frame):
+        if _press_trips(presses, time.monotonic(), count=count, window_s=window_s):
+            _shield_notice(stream, _SHIELD_ABORT_NOTICE)
+            raise FinalizeAborted(_SHIELD_ABORT_NOTICE)
+        _shield_notice(stream, hold_text)
+
+    try:
+        previous = signal.signal(signal.SIGINT, _on_sigint)
+    except (ValueError, OSError) as exc:
+        logger.warning("SIGINT shield not installed — finalize runs unshielded: %r", exc)
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous)
+        except (ValueError, OSError) as exc:
+            logger.warning("SIGINT shield not restored: %r", exc)
 
 
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
