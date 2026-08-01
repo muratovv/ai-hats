@@ -132,12 +132,15 @@ def wait_cmd(
 ) -> None:
     """Block until an event happens, then continue in the same session.
 
-    Exit 0 = happened, 124 = timed out, 2 = the predicate itself is broken.
+    Exit 0 = happened, 124 = timed out, 2 = the predicate itself is broken or
+    a flag value is bad (--poll <= 0, negative --timeout).
     """
     if not math.isfinite(poll) or poll <= 0:
-        raise click.UsageError(f"--poll must be positive, got {poll!r}.")
+        raise click.UsageError(f"--poll must be finite and positive, got {poll!r}.")
     if not math.isfinite(timeout) or timeout < 0:
-        raise click.UsageError(f"--timeout must be 0 (wait forever) or positive, got {timeout!r}.")
+        raise click.UsageError(
+            f"--timeout must be finite and 0 (wait forever) or positive, got {timeout!r}."
+        )
 
     try:
         probe = _build_predicate(until_cmd, task, until)

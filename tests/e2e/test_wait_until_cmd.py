@@ -121,8 +121,10 @@ def test_broken_predicate_exits_2_not_124(tmp_project, predicate: str, label: st
         (("--poll", "0", "--timeout", "3"), "--poll"),
         (("--poll", "-5", "--timeout", "3"), "--poll"),
         (("--poll", "nan", "--timeout", "3"), "--poll"),
+        (("--poll", "inf", "--timeout", "3"), "--poll"),
         (("--poll", "0.2", "--timeout", "-1"), "--timeout"),
         (("--poll", "0.2", "--timeout", "nan"), "--timeout"),
+        (("--poll", "0.2", "--timeout", "inf"), "--timeout"),
     ],
 )
 def test_non_positive_poll_or_bad_timeout_rejected_at_input(
