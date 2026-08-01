@@ -113,3 +113,56 @@ def test_broken_predicate_exits_2_not_124(tmp_project, predicate: str, label: st
         f"{label}: expected exit 2, got {result.exit_code} "
         f"(124 would mean the break was swallowed as a timeout)"
     )
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "bad_flag"),
+    [
+        (("--poll", "0", "--timeout", "3"), "--poll"),
+        (("--poll", "-5", "--timeout", "3"), "--poll"),
+        (("--poll", "nan", "--timeout", "3"), "--poll"),
+        (("--poll", "0.2", "--timeout", "-1"), "--timeout"),
+        (("--poll", "0.2", "--timeout", "nan"), "--timeout"),
+    ],
+)
+def test_non_positive_poll_or_bad_timeout_rejected_at_input(
+    tmp_project, extra_args: tuple[str, ...], bad_flag: str
+) -> None:
+    """``--poll <= 0`` (or non-finite) and a negative/non-finite ``--timeout``
+    must be refused before polling starts (HATS-1452) — else they collapse
+    into a busy-loop (``time.sleep(max(nap, 0.0))`` naps for 0s on any of
+    these). The predicate is already-true ``true`` in every case: without the
+    guard this exits 0 immediately, so a green run here means the guard is
+    missing, not that the wait "happened to be fast".
+    """
+    result = tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "true",
+        *extra_args,
+        timeout=30.0,
+        extra_env=_env(),
+    )
+
+    assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stderr[-300:]}"
+    assert result.duration_s < 5.0, (
+        f"took {result.duration_s:.1f}s — rejection must happen before polling starts, "
+        f"not after a busy-loop"
+    )
+    assert bad_flag in result.stderr, f"stderr should name {bad_flag}: {result.stderr[-300:]}"
+
+
+def test_zero_timeout_still_legal(tmp_project) -> None:
+    """``--timeout 0`` stays legal ('wait forever') — must not be caught by
+    the negative-timeout guard (HATS-1452 regression)."""
+    tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "true",
+        "--poll",
+        "0.2",
+        "--timeout",
+        "0",
+        timeout=30.0,
+        extra_env=_env(),
+    ).expect_ok()
