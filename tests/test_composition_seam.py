@@ -9,6 +9,7 @@ pinned in ``tests/pipeline/test_compose_overlay_propagation.py``.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -219,3 +220,66 @@ def test_seam_carries_first_run_hooks_warning(tmp_path: Path):
 
     assert any("core.hooksPath is already set" in w for w in payload.startup_warnings)
     assert "warnings_sink" in asm.set_role.call_args.kwargs
+
+
+# --------------------------------------------------------------------- #
+# HATS-1435 — one session start composes ONCE, measured on a REAL project
+#
+# The mocked tests above cannot see this: with a MagicMock assembler,
+# `_composition_snapshot` never reaches the real `_get_overlay_provenance`,
+# so its second compose is invisible. These use a real Assembler.
+# --------------------------------------------------------------------- #
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+
+
+def _real_project(tmp_path: Path, *, active_role: str | None) -> Path:
+    """Project on this repo's real library. ``active_role=None`` leaves the
+    first-run branch armed, so ``_maybe_sync_active_role`` fires ``set_role``."""
+    from ai_hats.assembler import Assembler
+    from ai_hats.models import ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    ProjectConfig(
+        provider="claude",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role=active_role or "",
+        default_role="maintainer",
+    ).save(project / PROJECT_CONFIG)
+    Assembler(project, library_paths=[LIBRARY_DIR]).init()
+    return project
+
+
+@contextmanager
+def _compose_spy():
+    """Count REAL composes. Patches both bindings: ``assembler.py`` imports
+    ``compose_for_role`` at module level, ``composition_seam.py`` lazily inside
+    functions — patching one alone silently misses the other's call sites."""
+    import ai_hats.materialize as materialize
+
+    real = materialize.compose_for_role
+    calls: list[str] = []
+
+    def spy(assembler, role_name, *a, **kw):
+        calls.append(role_name)
+        return real(assembler, role_name, *a, **kw)
+
+    with (
+        patch("ai_hats.materialize.compose_for_role", spy),
+        patch("ai_hats.assembler.compose_for_role", spy),
+    ):
+        yield calls
+
+
+def test_session_start_composes_exactly_once(tmp_path: Path):
+    """HATS-1435: the seam already holds the result `_composition_snapshot`
+    needs; recomposing re-reads the whole library and doubles every load-time
+    diagnostic, so one WARN reads as two."""
+    project = _real_project(tmp_path, active_role="maintainer")
+    with _compose_spy() as calls:
+        build_composition_payload(project, interactive=True)
+    assert calls == ["maintainer"], f"expected ONE compose pass, got {len(calls)}: {calls}"

@@ -601,7 +601,9 @@ class Assembler:
             project_config_paths=self.project_config.library_paths,
         )
 
-    def _get_overlay_provenance(self, role_name: str) -> dict[str, dict[str, str]]:
+    def _get_overlay_provenance(
+        self, role_name: str, *, result: CompositionResult | None = None
+    ) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
         ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
@@ -611,12 +613,14 @@ class Assembler:
         Walked in the same global-then-project order used by ``_get_overlays``
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
+
+        ``result`` must be the composition OF ``role_name`` — HATS-1435.
         """
         provenance: dict[str, dict[str, str]] = {"traits": {}, "rules": {}, "skills": {}}
 
         # Seed path-based provenance for all components in the composed role.
         try:
-            comp_res = compose_for_role(self, role_name)
+            comp_res = result if result is not None else compose_for_role(self, role_name)
             for r in comp_res.rules:
                 p = self.resolver.resolve_rule_dir(r.name)
                 provenance["rules"][r.name] = self._classify_component_layer(p).value
@@ -1064,7 +1068,7 @@ class Assembler:
         list is also surfaced here (it doesn't otherwise appear in the
         tree — composer flattens traits into rules/skills/injections).
         """
-        provenance = self._get_overlay_provenance(result.name)
+        provenance = self._get_overlay_provenance(result.name, result=result)
         # Effective trait order: base composition + overlay-added (overlay
         # removes are already applied by the composer for the composition
         # lists, but trait-level visibility is what `config status` cares

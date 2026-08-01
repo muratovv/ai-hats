@@ -268,7 +268,7 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
             for name in layer.add_traits:
                 if name not in effective_traits:
                     effective_traits.append(name)
-        provenance = assembler._get_overlay_provenance(role_name)
+        provenance = assembler._get_overlay_provenance(role_name, result=result)
     except Exception as exc:
         # Defensive: a broken overlay shouldn't kill session start.
         logger.warning(
