@@ -319,78 +319,84 @@ def _finalize_sub_agent(
     keep producing the meta-only ``audit.md`` they always did — opt-in
     enrichment, no behaviour change for the unfixed callsites.
     """
-    if stdout:
-        (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
-    if stderr:
-        (session.session_dir / REASONING_LOG).write_text(stderr)
+    # HATS-1426: same shield as the HITL arm — a stray Ctrl-C here costs
+    # audit.md and metrics for the whole sub-agent run.
+    try:
+        with sigint_shield():
+            if stdout:
+                (session.session_dir / TRANSCRIPT_TXT).write_text(stdout)
+            if stderr:
+                (session.session_dir / REASONING_LOG).write_text(stderr)
 
-    metrics: dict = {
-        "exit_code": exit_code,
-        "role": role,
-        # HATS-561: provider was previously omitted from the SubAgent
-        # finalize path's base metrics dict (only the HITL counterpart
-        # `_finalize_session_basic` wrote it). The downstream
-        # `AuditWriter._render_audit` then read `metrics.get("provider",
-        # "unknown")` → audit.md said `Provider: unknown` for every
-        # SubAgent / `execute --batch` session. Provider is known by
-        # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
-        # and is threaded through here.
-        "provider": provider,
-        "model": model,
-        "isolation_mode": isolation_mode,
-    }
-    if timed_out:
-        metrics["timed_out"] = True
-    if error is not None:
-        metrics["error"] = error
-    if tags:
-        metrics["tags"] = tags
-    if duration_s is not None:
-        metrics["duration_s"] = round(duration_s, 3)
-    if extra_metrics:
-        for k, v in extra_metrics.items():
-            if v is not None:
-                metrics[k] = v
+            metrics: dict = {
+                "exit_code": exit_code,
+                "role": role,
+                # HATS-561: provider was previously omitted from the SubAgent
+                # finalize path's base metrics dict (only the HITL counterpart
+                # `_finalize_session_basic` wrote it). The downstream
+                # `AuditWriter._render_audit` then read `metrics.get("provider",
+                # "unknown")` → audit.md said `Provider: unknown` for every
+                # SubAgent / `execute --batch` session. Provider is known by
+                # `SubAgentRunner` (its `CompositionPayload.provider`, HATS-865)
+                # and is threaded through here.
+                "provider": provider,
+                "model": model,
+                "isolation_mode": isolation_mode,
+            }
+            if timed_out:
+                metrics["timed_out"] = True
+            if error is not None:
+                metrics["error"] = error
+            if tags:
+                metrics["tags"] = tags
+            if duration_s is not None:
+                metrics["duration_s"] = round(duration_s, 3)
+            if extra_metrics:
+                for k, v in extra_metrics.items():
+                    if v is not None:
+                        metrics[k] = v
 
-    session.finalize_audit(metrics)
+            session.finalize_audit(metrics)
 
-    # HATS-1221: Persist completion metrics to diagnostics.json for subagents
-    save_session_diagnostics(
-        session.session_dir,
-        "completion",
-        {
-            "session_id": session.session_id,
-            "exit_code": exit_code,
-            "role": role,
-            "duration_s": round(duration_s, 3) if duration_s is not None else None,
-            "timed_out": timed_out,
-            "error": error,
-        },
-    )
-
-    # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
-    # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
-    claude_session_id = None
-    if extra_metrics:
-        claude_session_id = extra_metrics.get("claude_session_id")
-    if work_dir is not None and (claude_session_id or transcript_resolver):
-        try:
-            _run_finalize_subagent(
-                session,
-                claude_session_id=claude_session_id or "",
-                project_dir=work_dir,
-                exit_code=exit_code,
-                static_cost_analyzer=static_cost_analyzer,
-                session_factory=session_factory,
-                audit_writer_factory=audit_writer_factory,
-                transcript_resolver=transcript_resolver,
+            # HATS-1221: Persist completion metrics to diagnostics.json for subagents
+            save_session_diagnostics(
+                session.session_dir,
+                "completion",
+                {
+                    "session_id": session.session_id,
+                    "exit_code": exit_code,
+                    "role": role,
+                    "duration_s": round(duration_s, 3) if duration_s is not None else None,
+                    "timed_out": timed_out,
+                    "error": error,
+                },
             )
-        except (Exception, KeyboardInterrupt):
-            # HATS-1374: escalated from warning, and recorded in the artifact —
-            # a broken sensor that only whispers into a log is how RC-C stayed
-            # invisible across 74 sessions.
-            logger.error("finalize-subagent pipeline failed", exc_info=True)
-            _flag_sensor_error(session)
+
+            # HATS-535: structured audit.md via finalize-subagent. HATS-1087: a
+            # transcript_resolver lets non-Claude surfaces run it without a claude_session_id.
+            claude_session_id = None
+            if extra_metrics:
+                claude_session_id = extra_metrics.get("claude_session_id")
+            if work_dir is not None and (claude_session_id or transcript_resolver):
+                try:
+                    _run_finalize_subagent(
+                        session,
+                        claude_session_id=claude_session_id or "",
+                        project_dir=work_dir,
+                        exit_code=exit_code,
+                        static_cost_analyzer=static_cost_analyzer,
+                        session_factory=session_factory,
+                        audit_writer_factory=audit_writer_factory,
+                        transcript_resolver=transcript_resolver,
+                    )
+                except (Exception, KeyboardInterrupt):
+                    # HATS-1374: escalated from warning, and recorded in the artifact —
+                    # a broken sensor that only whispers into a log is how RC-C stayed
+                    # invisible across 74 sessions.
+                    logger.error("finalize-subagent pipeline failed", exc_info=True)
+                    _flag_sensor_error(session)
+    except FinalizeAborted:
+        logger.warning("sub-agent finalize aborted by operator")
 
 
 def _highlight_hash(version: str) -> str:

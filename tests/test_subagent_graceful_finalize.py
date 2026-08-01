@@ -11,10 +11,15 @@ output.
 from __future__ import annotations
 
 import json
+import logging
+import os
+import signal
+import time
 
 import pytest
 
 from ai_hats_observe import Session
+from ai_hats import runtime_common
 from ai_hats.runtime import (
     SUBAGENT_EXIT_ERROR,
     SUBAGENT_EXIT_TIMEOUT,
@@ -233,3 +238,69 @@ def test_success_finalize_is_provider_agnostic(tmp_path, provider):
         "model": "sonnet",
         "isolation_mode": "discard",
     }
+
+
+# ---------------------------------------------------------------------------
+# SIGINT shield parity with the HITL arm (HATS-1426)
+# ---------------------------------------------------------------------------
+
+
+def _sigint_sender(times: int):
+    def send(*args, **kwargs):
+        for _ in range(times):
+            os.kill(os.getpid(), signal.SIGINT)
+            time.sleep(0.02)
+
+    return send
+
+
+def _finalize_with_interrupt(session, tmp_path, monkeypatch, presses: int):
+    """Run the sub-agent finalize with `presses` real SIGINTs mid-body.
+
+    The signal is delivered from ``save_session_diagnostics`` — mid-body, so
+    whether the trailing pipeline step still runs is the whole question.
+    """
+    reached: list[str] = []
+    monkeypatch.setattr(runtime_common, "save_session_diagnostics", _sigint_sender(presses))
+    monkeypatch.setattr(
+        runtime_common,
+        "_run_finalize_subagent",
+        lambda *a, **k: reached.append("pipeline"),
+    )
+
+    _finalize_sub_agent(
+        session,
+        role="primary",
+        provider="claude",
+        model="sonnet",
+        isolation_mode="discard",
+        exit_code=0,
+        stdout="ok\n",
+        stderr="",
+        work_dir=tmp_path,
+        extra_metrics={"claude_session_id": "sid"},
+    )
+    return reached
+
+
+def test_stray_ctrl_c_does_not_cut_the_subagent_finalize(tmp_path, monkeypatch):
+    # GIVEN a sub-agent finalize interrupted by one stray press
+    session = _make_session(tmp_path)
+
+    reached = _finalize_with_interrupt(session, tmp_path, monkeypatch, presses=1)
+
+    # THEN the steps after the interrupt still ran
+    assert reached == ["pipeline"]
+    assert _read_metrics(session)["exit_code"] == 0
+
+
+def test_third_ctrl_c_aborts_the_subagent_finalize(tmp_path, monkeypatch, caplog):
+    # GIVEN the operator insisting three times inside the window
+    session = _make_session(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        reached = _finalize_with_interrupt(session, tmp_path, monkeypatch, presses=3)
+
+    # THEN the remaining work is abandoned, on the record, without escaping
+    assert reached == []
+    assert "sub-agent finalize aborted by operator" in caplog.text
