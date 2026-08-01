@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 from ai_hats_observe.artifacts import FLAG_NO_TOKEN_TELEMETRY
@@ -22,15 +22,14 @@ from ai_hats_observe.usage import empty_usage_report
 logger = logging.getLogger(__name__)
 
 
-def _parse_created_at(ts_str: Any) -> float:
-    if not ts_str or not isinstance(ts_str, str):
+def _parse_created_at(ts_raw: Any) -> float:
+    if not ts_raw:
         return 0.0
     try:
-        s = ts_str.replace("Z", "+00:00")
+        s = str(ts_raw).replace("Z", "+00:00")
         return datetime.fromisoformat(s).timestamp()
     except (ValueError, TypeError):
         return 0.0
-
 
 
 def _clean_user_text(text: str) -> str | None:
@@ -46,7 +45,7 @@ def _clean_user_text(text: str) -> str | None:
     return text.strip() if text.strip() else None
 
 
-def _summarize_tool_args(name: str, args: dict[str, Any]) -> str:
+def _summarize_tool_args(name: str, args: Any) -> str:
     if not isinstance(args, dict):
         return str(args)[:80]
     if name == "run_command":
@@ -186,7 +185,7 @@ class AgyParser:
     def __init__(self) -> None:
         self._trace = TraceParser()
 
-    def parse(self, jsonl_path: Path | list[Path] | None, trace_path: Path) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         lines = self._load_lines(jsonl_path)
         if lines is None:
             if jsonl_path:
@@ -284,12 +283,12 @@ class AgyParser:
 
     def _load_lines(
         self,
-        jsonl_path: Path | list[Path] | None,
+        jsonl_path: Path | Iterable[Path] | None,
         session_start_iso: str | None = None,
     ) -> list[dict[str, Any]] | None:
         if not jsonl_path:
             return None
-        paths = [Path(p) for p in jsonl_path] if isinstance(jsonl_path, (list, tuple)) else [Path(jsonl_path)]
+        paths = [Path(jsonl_path)] if isinstance(jsonl_path, (Path, str)) else [Path(p) for p in jsonl_path]
         all_records: list[dict[str, Any]] = []
         seen_fps: set[tuple[Any, ...]] = set()
 

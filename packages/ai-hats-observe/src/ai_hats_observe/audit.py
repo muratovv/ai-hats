@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -183,7 +184,7 @@ class AuditWriter:
     def build(
         self,
         session: Session,
-        jsonl_path: Path | list[Path] | None = None,
+        jsonl_path: Path | Iterable[Path] | None = None,
         transcript_verified: bool = False,
         keep_raw: bool = False,
     ) -> None:
@@ -206,66 +207,92 @@ class AuditWriter:
             session.trace_path.unlink()  # safe-delete: ok raw-trace (source copied in)
 
     @staticmethod
-    def _preserve_transcript(session: Session, jsonl_path: Path | list[Path] | None) -> bool:
-        """Copy or merge the provider's transcript(s) into the session dir; True once there (HATS-1400)."""
+    def _normalize_paths(jsonl_path: Path | Iterable[Path] | None) -> list[Path]:
         if jsonl_path is None:
-            return False
-        paths = [Path(p) for p in jsonl_path] if isinstance(jsonl_path, (list, tuple)) else [Path(jsonl_path)]
+            return []
+        if isinstance(jsonl_path, (Path, str)):
+            return [Path(jsonl_path)]
+        return [Path(p) for p in jsonl_path]
+
+    @staticmethod
+    def _read_and_merge_records(existing: list[Path], min_ts: float) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        seen_fps: set[tuple[Any, ...]] = set()
+
+        for p in existing:
+            try:
+                lines = p.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if not isinstance(rec, dict):
+                    continue
+
+                ts_raw = rec.get("created_at") or ""
+                try:
+                    t = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")).timestamp()
+                except (ValueError, TypeError):
+                    t = 0.0
+
+                if min_ts > 0.0 and t > 0.0 and t < min_ts:
+                    continue
+
+                fp = (
+                    rec.get("created_at"),
+                    rec.get("type"),
+                    rec.get("source"),
+                    rec.get("step_index"),
+                    str(rec.get("content")),
+                    json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
+                )
+                if fp not in seen_fps:
+                    seen_fps.add(fp)
+                    records.append(rec)
+
+        def _ts_key(r: dict[str, Any]) -> tuple[float, int]:
+            ts = r.get("created_at") or ""
+            try:
+                t = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+            except (ValueError, TypeError):
+                t = 0.0
+            return (t, r.get("step_index") or 0)
+
+        records.sort(key=_ts_key)
+        return records
+
+    @classmethod
+    def _preserve_transcript(
+        cls, session: Session, jsonl_path: Path | Iterable[Path] | None
+    ) -> bool:
+        """Copy or merge the provider's transcript(s) into the session dir; True once there (HATS-1400)."""
+        paths = cls._normalize_paths(jsonl_path)
         existing = [p for p in paths if p.exists()]
         if not existing:
             return False
+
         dest = session.session_dir / TRANSCRIPT_JSONL
         try:
             if len(existing) == 1:
                 shutil.copyfile(existing[0], dest)
             else:
-                from ai_hats_observe.artifacts import session_start_dt
+                from .artifacts import session_start_dt
                 s_dt = session_start_dt(session.session_id)
                 min_ts = s_dt.timestamp() if s_dt else 0.0
 
-                records: list[dict[str, Any]] = []
-                seen_fps: set[tuple[Any, ...]] = set()
-                for p in existing:
-                    for line in p.read_text(encoding="utf-8").splitlines():
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            rec = json.loads(line)
-                            if isinstance(rec, dict):
-                                ts_raw = rec.get("created_at") or ""
-                                try:
-                                    t = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")).timestamp()
-                                except (ValueError, TypeError):
-                                    t = 0.0
-                                if min_ts > 0.0 and t > 0.0 and t < min_ts:
-                                    continue
-                                fp = (
-                                    rec.get("created_at"),
-                                    rec.get("type"),
-                                    rec.get("source"),
-                                    rec.get("step_index"),
-                                    str(rec.get("content")),
-                                    json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
-                                )
-                                if fp not in seen_fps:
-                                    seen_fps.add(fp)
-                                    records.append(rec)
-                        except json.JSONDecodeError:
-                            continue
-                def _ts_key(r: dict[str, Any]) -> tuple[float, int]:
-                    ts = r.get("created_at") or ""
-                    try:
-                        t = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
-                    except (ValueError, TypeError):
-                        t = 0.0
-                    return (t, r.get("step_index") or 0)
-                records.sort(key=_ts_key)
+                records = cls._read_and_merge_records(existing, min_ts)
                 dest.write_text(
                     "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
                     encoding="utf-8",
                 )
-
         except OSError:
             logger.warning("could not copy/merge transcripts into %s", dest, exc_info=True)
             return False

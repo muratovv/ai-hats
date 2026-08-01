@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ai_hats_observe.parsers.base import ParsedTranscript, Turn
 from ai_hats_observe.parsers.trace import TraceParser
@@ -50,7 +50,7 @@ class ClineParser:
 
     # -- parse -> ParsedTranscript ------------------------------------------
 
-    def parse(self, jsonl_path: Path | list[Path] | None, trace_path: Path) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         doc = self._load(jsonl_path)
         if doc is None:
             if jsonl_path:
@@ -59,14 +59,14 @@ class ClineParser:
         turns, model_stats, agg_usage = self._parse_messages(doc.get("messages", []))
         return ParsedTranscript(turns=turns, model_stats=model_stats, agg_usage=agg_usage)
 
-    def parse_usage(self, jsonl_path: Path | list[Path] | None, trace_path: Path) -> dict[str, Any]:
+    def parse_usage(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> dict[str, Any]:
         """cline ``.messages.json`` present → the measured ``usage/v1`` report;
         else the trace fallback (no token telemetry)."""
         doc = self._load(jsonl_path)
         if doc is None:
             return self._trace.parse_usage(None, trace_path)
 
-        p = Path(jsonl_path[0]) if isinstance(jsonl_path, (list, tuple)) and jsonl_path else (Path(jsonl_path) if jsonl_path else Path("messages.json"))
+        p = self._normalize_path(jsonl_path) or Path("messages.json")
         report = empty_usage_report(p.name)  # type: ignore[arg-type]
         report["session_id"] = doc.get("sessionId")
         types_seen = report["entry_types_seen"]
@@ -99,13 +99,24 @@ class ClineParser:
 
     # -- internals ----------------------------------------------------------
 
-    def _load(self, path: Path | None) -> dict[str, Any] | None:
+    @staticmethod
+    def _normalize_path(path: Path | Iterable[Path] | None) -> Path | None:
+        if path is None:
+            return None
+        if isinstance(path, (Path, str)):
+            p = Path(path)
+            return p if p.exists() else None
+        for p in path:
+            p_obj = Path(p)
+            if p_obj.exists():
+                return p_obj
+        return None
+
+    def _load(self, path: Path | Iterable[Path] | None) -> dict[str, Any] | None:
         """Read the single-object ``.messages.json`` → dict, or None (absent /
         unreadable / malformed / not an object) so the caller falls back to trace."""
-        if not path:
-            return None
-        p = Path(path)
-        if not p.exists():
+        p = self._normalize_path(path)
+        if not p:
             return None
         try:
             obj = json.loads(p.read_text(encoding="utf-8"))

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, runtime_checkable
 
 
 @dataclass
@@ -56,11 +56,11 @@ class TranscriptParser(Protocol):
     """
 
     def parse(
-        self, jsonl_path: Path | list[Path] | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> ParsedTranscript: ...
 
     def parse_usage(
-        self, jsonl_path: Path | list[Path] | None, trace_path: Path
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
     ) -> dict[str, Any]:
 
         """Build this surface's ``usage/v1`` report (context-cost + timeline).
