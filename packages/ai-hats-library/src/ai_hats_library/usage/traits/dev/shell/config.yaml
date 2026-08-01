@@ -9,4 +9,4 @@ injection: |
 
   - Bash scripts: `#!/usr/bin/env bash`, `set -euo pipefail`, idempotent by default.
   - Makefiles: self-documenting `help` target, `.PHONY` all targets.
-  - Prefer modern CLI tools: `rg`, `fd`, `jq`, `yq`, `bat`, `eza`.
+  - **Inside a script you are writing**, prefer modern CLI tools: `rg`, `fd`, `jq`, `yq`, `bat`, `eza`. This is about the code you author — it does NOT license calling them from Bash for your own searching or reading, which stays under `dev_rule_tool_call_hygiene`.

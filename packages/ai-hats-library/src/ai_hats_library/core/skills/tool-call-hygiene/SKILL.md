@@ -15,7 +15,7 @@ Decide between Bash and dedicated Claude Code tools. Batch and parallelize.
 
 ## When to Use
 
-- About to call Bash for `grep`/`rg`/`find`/`ls -R`/`cat`/`head`/`tail`/`sed`/`awk`
+- About to call Bash for anything a dedicated tool expresses — `grep`/`rg`/`find`/`ls -R`/`cat`/`head`/`tail`/`sed`/`awk` and equally `bat`/`fd`/`eza`/`git grep`
 - Restoring context at session start (multiple Reads/Greps/Globs)
 - Initial codebase exploration (>3 tool calls planned)
 - Noticing 5+ similar sequential calls
@@ -24,6 +24,11 @@ Decide between Bash and dedicated Claude Code tools. Batch and parallelize.
 ## Conventions
 
 ### Forbidden Bash anti-patterns
+
+The test is **whether a dedicated tool expresses the operation**, not whether
+the binary appears below. A newer or fancier spelling of a listed row (`bat`
+for `cat`, `fd` for `find`, `eza -R` for `ls -R`, `git grep` for `grep`,
+`sed -n '10,40p'` for `head`) is the same violation.
 
 | ❌ Bash                            | ✅ Use instead                 | Why                                                   |
 | ---------------------------------- | ------------------------------ | ----------------------------------------------------- |
