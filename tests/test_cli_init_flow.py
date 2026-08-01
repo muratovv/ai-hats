@@ -35,10 +35,16 @@ def _uv_on_path(monkeypatch):
 
 
 def _all_roles() -> list[str]:
-    """Discover all roles from the built-in library (core + usage)."""
+    """Discover all roles from the built-in library (core + usage) of THIS checkout.
+
+    HATS-1429: the root is passed explicitly, not left to ambient resolution — this
+    matrix defines what "every built-in role" means, so it must not ride on cwd.
+    """
+    from pathlib import Path
     from ai_hats.assembler import _builtin_library_layers
 
-    resolver = LibraryResolver(_builtin_library_layers())
+    checkout_root = Path(__file__).resolve().parents[1]
+    resolver = LibraryResolver(_builtin_library_layers(checkout_root))
     return sorted(resolver.list_components(ComponentType.ROLE))
 
 

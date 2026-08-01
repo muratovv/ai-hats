@@ -1,12 +1,12 @@
-"""Shared guard: verify python environment imports the checkout under test (HATS-1242).
+"""Shared guard: verify the test session measures the checkout under test.
 
-In a git worktree, a python environment (e.g. root .venv) may hold an editable install
-pointing at the MAIN checkout. Importing `ai_hats` inside a worktree silently resolves
-to source files from MAIN instead of the worktree.
+Two independent axes — a run can be wrong on either one alone:
 
-This module provides the core detection and remedy formatting for both:
-- Root pytest autouse fixture (`tests/conftest.py`)
-- E2E interpreter pre-flight guard (`tests/e2e/_helpers/interpreter.py`)
+- **Package** (HATS-1242): an editable install pointing at MAIN makes
+  `import ai_hats` inside a worktree resolve to MAIN's source.
+- **Library layers** (HATS-1429): the package resolves right while the composed
+  `library/` layers still come from MAIN, because `AI_HATS_PROJECT_DIR` outranks
+  cwd auto-detection in `builtin_library_root()`.
 """
 
 from __future__ import annotations
@@ -84,3 +84,72 @@ def check_checkout_integrity(resolved_init: Path | None, repo_root: Path) -> Non
     foreign = foreign_source_checkout(resolved_init, repo_root)
     if foreign is not None:
         raise RuntimeError(remedy_message(repo_root, foreign))
+
+
+def _library_source_checkout(layer: Path) -> Path | None:
+    """The source checkout serving ``layer``, or None if it is not a source layout.
+
+    Mirrors ``_SOURCE_LIBRARY_SUBPATHS`` in ``ai_hats.paths.library``: the layers live
+    under ``<checkout>/packages/ai-hats-library/src/ai_hats_library`` (monorepo or
+    worktree) or ``<checkout>/src/ai_hats_library`` (standalone git-split checkout).
+    """
+    for pkg in layer.parents:
+        if pkg.name != "ai_hats_library":
+            continue
+        parents = pkg.parents
+        if len(parents) >= 4 and parents[0].name == "src" and parents[1].name == "ai-hats-library":
+            return parents[3]
+        if len(parents) >= 2 and parents[0].name == "src":
+            return parents[1]
+        return None
+    return None
+
+
+def foreign_library_layers(layers: list[Path], repo_root: Path) -> Path | None:
+    """Return the foreign checkout serving ``layers``, else None.
+
+    An installed wheel (site-packages) is a legitimate downstream resolution, not a
+    wrong checkout; empty layers mean a broken install, which is the package guard's
+    problem rather than this one's.
+    """
+    repo_root = repo_root.resolve()
+
+    for layer in layers:
+        resolved = layer.resolve()
+        if resolved.is_relative_to(repo_root):
+            continue
+        checkout = _library_source_checkout(resolved)
+        if checkout is not None and checkout != repo_root:
+            return checkout
+    return None
+
+
+def library_remedy_message(repo_root: Path, foreign: Path) -> str:
+    """Operator-facing message for a library-layer split (HATS-1429)."""
+    return (
+        f"Test suite would compose the WRONG library (HATS-1429).\n\n"
+        f"  tests live in                 : {repo_root}\n"
+        f"  but library layers resolve in : {foreign}\n\n"
+        f"The 'ai_hats' package may well be correct here — this is the other axis:\n"
+        f"the composed library/ comes from a checkout you are not testing, so every\n"
+        f"role, trait and skill under test is someone else's.\n\n"
+        f"conftest already drops the AI_HATS_PROJECT_DIR / AI_HATS_DIR pin at import,\n"
+        f"so one of these is in play:\n\n"
+        f"  * AI_HATS_LIBRARY_ROOT points elsewhere — unset it, or set it to\n"
+        f"      {repo_root}/packages/ai-hats-library/src/ai_hats_library\n"
+        f"  * pytest was launched from another checkout's cwd — cd into\n"
+        f"      {repo_root}\n"
+        f"    first, since cwd is what resolution falls back to.\n\n"
+        f"To force execution against the foreign library (not recommended):\n"
+        f"  export {ENV_IGNORE_FOREIGN_CHECKOUT}=1"
+    )
+
+
+def check_library_integrity(layers: list[Path], repo_root: Path) -> None:
+    """Assert the composed library layers come from repo_root, unless ignored."""
+    if os.environ.get(ENV_IGNORE_FOREIGN_CHECKOUT) == "1":
+        return
+
+    foreign = foreign_library_layers(layers, repo_root)
+    if foreign is not None:
+        raise RuntimeError(library_remedy_message(repo_root, foreign))
