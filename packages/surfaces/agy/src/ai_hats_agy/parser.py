@@ -11,6 +11,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 
@@ -67,9 +68,6 @@ def _summarize_tool_args(name: str, args: Any) -> str:
         if isinstance(v, str) and v:
             return v[:80]
     return str(args)[:80]
-
-
-import re
 
 
 def _get_tokens_from_metrics(trace_path: Path) -> dict[str, int] | None:
@@ -207,12 +205,15 @@ class AgyParser:
         # Now that we resolve all segments in the window, if trace still carries more
         # turns (e.g. unpersisted trace turns), trace wins and trace.log MUST be kept.
         traced = self._trace.parse(None, trace_path).turns
+        used_trace = False
+        if len(traced) > len(turns):
             turns = traced
+            used_trace = True
 
         agg_tokens = _resolve_agy_tokens(trace_path, turns)
         if agg_tokens:
             agg_usage = agg_tokens
-            flags: list[str] = []
+            flags: list[str] = ["trace-used"] if used_trace else []
         else:
             agg_usage = {
                 "input_tokens": 0,
@@ -220,7 +221,7 @@ class AgyParser:
                 "cache_read_input_tokens": 0,
                 "cache_creation_input_tokens": 0,
             }
-            flags = [FLAG_NO_TOKEN_TELEMETRY]
+            flags = [FLAG_NO_TOKEN_TELEMETRY, "trace-used"] if used_trace else [FLAG_NO_TOKEN_TELEMETRY]
 
         return ParsedTranscript(
             turns=turns,
