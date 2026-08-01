@@ -695,7 +695,7 @@ def test_render_active_hypotheses_filters_future_and_adds_note(tmp_path: Path):
 
     assert "HYP-101" in out
     assert "HYP-102" not in out
-    assert "1 more hypotheses hidden — created after this session ended" in out
+    assert "1 more hypothesis hidden — created after this session ended" in out
 
 
 def test_render_active_hypotheses_all_filtered_shows_none_and_note(tmp_path: Path):
@@ -708,7 +708,7 @@ def test_render_active_hypotheses_all_filtered_shows_none_and_note(tmp_path: Pat
     out = runner._render_active_hypotheses(SID)
 
     assert "(none — emit empty hypothesis_verdicts list)" in out
-    assert "1 more hypotheses hidden — created after this session ended" in out
+    assert "1 more hypothesis hidden — created after this session ended" in out
 
 
 def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
@@ -753,7 +753,7 @@ def test_render_open_proposals_filters_future_and_adds_note(tmp_path: Path):
 
     assert p1 in out
     assert p2 not in out
-    assert "1 more open proposals hidden — created after this session ended" in out
+    assert "1 more open proposal hidden — created after this session ended" in out
 
 
 def test_validation_alignment_ignores_future_active_hypotheses(tmp_path: Path):

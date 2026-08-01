@@ -59,10 +59,16 @@ _ALLOWED_LLM_KEYS = {
     "self_problems",
 }
 
-_HIDDEN_NOTE = (
-    "({n} more {kind} hidden — created after this session ended, so this session "
-    "cannot be evidence for them. The list above is not the whole backlog.)"
-)
+
+def _format_hidden_note(n: int, kind: str) -> str:
+    if kind == "hypotheses":
+        label = "hypothesis" if n == 1 else "hypotheses"
+    else:
+        label = "open proposal" if n == 1 else "open proposals"
+    return (
+        f"({n} more {label} hidden — created after this session ended, "
+        "so this session cannot be evidence for them. The list above is not the whole backlog.)"
+    )
 
 
 class SessionReviewError(Exception):
@@ -196,7 +202,7 @@ class SessionReviewRunner:
 
     def _render_active_hypotheses(self, session_id: str) -> str:
         active, hidden = self._hyps(session_id)
-        note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='hypotheses')}" if hidden > 0 else ""
+        note = f"\n\n{_format_hidden_note(hidden, 'hypotheses')}" if hidden > 0 else ""
         if not active:
             return f"## Active hypotheses\n\n(none — emit empty hypothesis_verdicts list){note}"
         lines = ["## Active hypotheses (vote per each below — do not skip)"]
@@ -213,7 +219,7 @@ class SessionReviewRunner:
                 indented = "\n".join(f"    {line}" for line in str(vp).splitlines())
                 lines.append(f"  verification_protocol: |\n{indented}")
         if note:
-            lines.append(note.lstrip())
+            lines.append(f"\n{note.lstrip()}")
         return "\n".join(lines)
 
     @staticmethod
@@ -253,7 +259,7 @@ class SessionReviewRunner:
 
     def _render_open_proposals(self, session_id: str) -> str:
         open_props, hidden = self._props(session_id)
-        note = f"\n\n{_HIDDEN_NOTE.format(n=hidden, kind='open proposals')}" if hidden > 0 else ""
+        note = f"\n\n{_format_hidden_note(hidden, 'open proposals')}" if hidden > 0 else ""
         if not open_props:
             return (
                 "## Open proposals\n\n(inbox empty — create new ones with "
@@ -265,7 +271,7 @@ class SessionReviewRunner:
                 f"- **{p.id}** [{p.category}/{p.target}] {p.title}\n  description: {p.description}"
             )
         if note:
-            lines.append(note.lstrip())
+            lines.append(f"\n{note.lstrip()}")
         return "\n".join(lines)
 
     def _render_session_evidence(self, session_id: str) -> str:
@@ -589,8 +595,8 @@ class SessionReviewRunner:
                 f"expected {expected_session_id!r}"
             )
         active_ids = {h.id for h in self._hyps(expected_session_id)[0]}
-
         verdict_ids = {v.hyp_id for v in review.hypothesis_verdicts}
+
         missing = active_ids - verdict_ids
         if missing:
             raise ValueError(

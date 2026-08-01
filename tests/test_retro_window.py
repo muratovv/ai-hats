@@ -158,3 +158,11 @@ def test_session_cut_handles_prefixed_session_id(tmp_path: Path) -> None:
     cut_bare = session_cut(project, sid)
     assert cut_prefixed == cut_bare
     assert cut_prefixed == datetime(2026, 6, 13, 19, 16, 40, tzinfo=timezone.utc)
+
+
+def test_session_cut_unparseable_session_id_returns_max(tmp_path: Path) -> None:
+    from ai_hats.retro.window import session_cut
+
+    project = _project(tmp_path)
+    cut = session_cut(project, "x-1")
+    assert cut == datetime.max.replace(tzinfo=timezone.utc)

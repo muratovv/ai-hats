@@ -98,11 +98,17 @@ def session_cut(project_dir: Path, session_id: str) -> datetime:
 
     Distinct from ``compute_session_end``: its fallback is ``now()``, which (a) fails to truncate on historic runs
     and (b) gives runner and inbox-validator different candidate sets (HATS-1445).
+    Unparseable session IDs return datetime.max (fail-open: retain all cards).
     """
     from ..paths import runs_dir
 
     sid = strip_session_prefix(session_id)
-    start = parse_session_start(sid)
+    try:
+        start = parse_session_start(sid)
+    except ValueError as e:
+        logger.info("session_cut: unparseable session start for %s (%s)", session_id, e)
+        return datetime.max.replace(tzinfo=timezone.utc)
+
     metrics_path = runs_dir(project_dir) / session_dirname(sid) / METRICS_JSON
     if metrics_path.exists():
         try:
