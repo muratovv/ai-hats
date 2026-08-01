@@ -349,3 +349,29 @@ def test_does_not_raise_when_make_decision_fails(tmp_path, monkeypatch):
     # downstream optional consumer ``run_session_end`` handles this
     # by silently skipping the retro banner.
     assert delta == {}
+
+
+# ---------------------------------------------------------------------------
+# Evidence survives an interrupted decision (HATS-1426)
+# ---------------------------------------------------------------------------
+
+
+def test_breadcrumb_lands_before_the_decision(tmp_path, monkeypatch):
+    """The incident left NO retro.log at all: the runtime line was written only
+    after ``make_decision``, so an abort inside it erased the whole trace."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    def _interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("ai_hats.retro.auto_retro.make_decision", _interrupted)
+
+    step = MaybeSpawnSessionReviewer()
+    delta = step.run(session_id=session.session_id, project_dir=tmp_path)
+
+    log = runs_dir(tmp_path) / "session_test" / RETRO_LOG
+    assert log.exists(), "an interrupted decision must still leave a trace"
+    assert "runtime\tstart" in log.read_text()
+    assert delta == {}

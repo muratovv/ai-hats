@@ -62,6 +62,9 @@ class MaybeSpawnSessionReviewer(Step):
 
         retro_decision: dict | None = None
         try:
+            # HATS-1426: the breadcrumb lands BEFORE the decision — the incident
+            # died inside make_decision and left no retro.log at all.
+            write_retro_log(project_dir, session_id, "runtime", "start", "deciding")
             retro_decision = make_decision(project_dir, session_id)
             write_retro_log(
                 project_dir,

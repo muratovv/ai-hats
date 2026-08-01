@@ -249,6 +249,34 @@ class TestMakeDecision:
         assert "boom" in d["reason"]
         assert d["wrap_up"] is None
 
+    def test_keyboard_interrupt_returns_skip(self, tmp_path, monkeypatch):
+        """HATS-1426: 'never raises' excluded KeyboardInterrupt — the one thing
+        that actually reached it in production."""
+        from ai_hats.retro import auto_retro
+
+        def interrupted(*a, **kw):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(auto_retro, "should_run", interrupted)
+        d = auto_retro.make_decision(tmp_path, "SID")
+        assert d["action"] == "skip"
+        assert "internal error" in d["reason"]
+
+    def test_unresolvable_paths_return_skip(self, tmp_path, monkeypatch):
+        """The incident died resolving runs_dir (unreadable ai-hats.yaml), which
+        sat outside the guard — and the skip dict resolves that path again."""
+        from ai_hats import paths
+        from ai_hats.retro import auto_retro
+
+        def broken(*a, **kw):
+            raise ValueError("ai-hats.yaml unparseable")
+
+        monkeypatch.setattr(paths, "runs_dir", broken)
+        d = auto_retro.make_decision(tmp_path, "SID")
+        assert d["action"] == "skip"
+        assert "internal error" in d["reason"]
+        assert d["log_path"] is None
+
 
 class TestDescribeDecision:
     def test_run_bg(self):
