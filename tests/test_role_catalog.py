@@ -165,7 +165,7 @@ def test_wizard_session_prompt_lists_live_roles(tmp_path):
     assert "- **dev-python**" in content  # guarantee moved from test_role_split
     # engine-internal (core) roles excluded
     assert "- **judge**" not in content
-    assert "- **auditor-for-role**" not in content
+    assert "- **role-auditor**" not in content
     assert "- **initial-wizard**" not in content
 
 

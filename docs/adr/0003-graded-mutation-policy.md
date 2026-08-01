@@ -4,9 +4,15 @@
 
 Proposed (HATS-303, 2026-05-12).
 
+> **Naming note (HATS-1425, 2026-08-01).** The roles this ADR decides about were
+> renamed `auditor-for-role` → `role-auditor` and `judge-for-role` → `role-judge`.
+> Role names below use the current names. Timestamped report filenames and the
+> `library/…` paths in "Artifacts" keep their original spelling — they name
+> historical artifacts, not roles.
+
 ## Context
 
-HATS-292 / HATS-302 диалог и две Pass A baseline-сессии (`ai-hats reflect role auditor-for-role`, `… judge-for-role`) выявили структурную неоднозначность в политике мутаций ролей семейства role-audit.
+HATS-292 / HATS-302 диалог и две Pass A baseline-сессии (`ai-hats reflect role role-auditor`, `… role-judge`) выявили структурную неоднозначность в политике мутаций ролей семейства role-audit.
 
 **Текущая (binary) модель:**
 
@@ -27,15 +33,15 @@ HATS-292 / HATS-302 диалог и две Pass A baseline-сессии (`ai-hat
 
 ### Сопутствующие findings из baselines
 
-| Finding                                                          | Baseline file                                      | Это ADR purviews?      |
-|------------------------------------------------------------------|----------------------------------------------------|------------------------|
-| `rule_backlog_discipline` мандатит CLI на роли, которой CLI запрещён | auditor #1                                         | Yes (§1, §5)           |
-| Report-Write carve-out асимметричен                              | judge #5                                           | Yes (§3)               |
-| `trait-base` несёт coder-семантику в analyst-роли                | auditor #4, judge #3, judge #4                     | Yes (§4)               |
-| `backlog-manager` загружается целиком ради двух verbs            | judge #2                                           | Yes (§5)               |
-| Marker delivery decision tree не ведёт §Step 3                   | judge #6                                           | Yes (§6)               |
-| Off-purpose components в compositions                            | auditor #2, #3; judge #1                           | Yes (§5)               |
-| Tool-call wording drift (≤5 vs ≤3–5)                             | auditor #6                                         | No (cosmetic — Phase 6 плана)    |
+| Finding                                                              | Baseline file                  | Это ADR purviews?             |
+| -------------------------------------------------------------------- | ------------------------------ | ----------------------------- |
+| `rule_backlog_discipline` мандатит CLI на роли, которой CLI запрещён | auditor #1                     | Yes (§1, §5)                  |
+| Report-Write carve-out асимметричен                                  | judge #5                       | Yes (§3)                      |
+| `trait-base` несёт coder-семантику в analyst-роли                    | auditor #4, judge #3, judge #4 | Yes (§4)                      |
+| `backlog-manager` загружается целиком ради двух verbs                | judge #2                       | Yes (§5)                      |
+| Marker delivery decision tree не ведёт §Step 3                       | judge #6                       | Yes (§6)                      |
+| Off-purpose components в compositions                                | auditor #2, #3; judge #1       | Yes (§5)                      |
+| Tool-call wording drift (≤5 vs ≤3–5)                                 | auditor #6                     | No (cosmetic — Phase 6 плана) |
 
 **Подробный execution-blueprint:** `<ai_hats_dir>/tracker/backlog/tasks/HATS-303/plan.md`.
 
@@ -45,11 +51,11 @@ HATS-292 / HATS-302 диалог и две Pass A baseline-сессии (`ai-hat
 
 ### §1 Levels
 
-| Level | Allowed writes                                          | Allowed CLI                                                      | Default for     | Activation                                |
-|-------|---------------------------------------------------------|------------------------------------------------------------------|-----------------|--------------------------------------------|
-| L0    | report Write to one declared path                       | none                                                             | `base-auditor`  | implicit                                   |
-| L1    | L0 + ack'd backlog mutations (per role's protocol whitelist) | `ai-hats task create`, `ai-hats list …`, role-defined verb prefixes | `base-judge`    | implicit                                   |
-| L2    | L1 + edit role/skill/rule/trait source files            | L1 + git ops через supervisor's standard flow                    | none (override) | explicit supervisor ack + cold-reread      |
+| Level | Allowed writes                                               | Allowed CLI                                                         | Default for     | Activation                            |
+| ----- | ------------------------------------------------------------ | ------------------------------------------------------------------- | --------------- | ------------------------------------- |
+| L0    | report Write to one declared path                            | none                                                                | `base-auditor`  | implicit                              |
+| L1    | L0 + ack'd backlog mutations (per role's protocol whitelist) | `ai-hats task create`, `ai-hats list …`, role-defined verb prefixes | `base-judge`    | implicit                              |
+| L2    | L1 + edit role/skill/rule/trait source files                 | L1 + git ops через supervisor's standard flow                       | none (override) | explicit supervisor ack + cold-reread |
 
 **L2 — не отдельная роль**, а session-mode, в который judge может войти, когда supervisor явно авторизует («take it»). Anti-anchoring обрабатывается отдельно: mandatory cold-reread шаг перед L2 edits, не session-bounce alone.
 
@@ -80,8 +86,9 @@ Carve-out `<ai_hats_dir>/sessions/retros/role-coherence/**` (и аналогич
 **Решение:** Создать `trait-analyst-base` с только теми bullets, что релевантны analyst-ролям (Safety priority, Research→Findings→Report, Brevity, Be concise, Lead with finding, Least Astonishment, + два global rules: `resource_hygiene` + `destructive_actions`; **без** `session_end_auto-retro.sh` hook — report IS the retro). Подробная таблица — `plan.md` §C.
 
 Composition меняется в analyst-ролях:
-- `auditor-for-role.composition.traits`: `[trait-analyst-base, base-auditor]`
-- `judge-for-role.composition.traits`: `[trait-analyst-base, base-judge]`
+
+- `role-auditor.composition.traits`: `[trait-analyst-base, base-auditor]`
+- `role-judge.composition.traits`: `[trait-analyst-base, base-judge]`
 
 `trait-base` не трогается — он остаётся для coder-ролей (primary agent).
 
@@ -89,12 +96,12 @@ Composition меняется в analyst-ролях:
 
 Снять с analyst-ролей компоненты, чья поверхность не активируется:
 
-| Role               | Drop                                                                                                |
-|--------------------|------------------------------------------------------------------------------------------------------|
-| `auditor-for-role` | `rule_backlog_discipline` (presumes CLI ops; auditor has none), `tool-evaluation-protocol` (no adoption decisions), `trait-researcher-mindset` (implicit via §4 composition change) |
-| `judge-for-role`   | `tool-evaluation-protocol`, `trait-researcher-mindset` (implicit via §4)                            |
+| Role           | Drop                                                                                                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `role-auditor` | `rule_backlog_discipline` (presumes CLI ops; auditor has none), `tool-evaluation-protocol` (no adoption decisions), `trait-researcher-mindset` (implicit via §4 composition change) |
+| `role-judge`   | `tool-evaluation-protocol`, `trait-researcher-mindset` (implicit via §4)                                                                                                            |
 
-`backlog-manager` остаётся as-is для `judge` и primary agent (его полное lifecycle-содержимое корректно). Для `judge-for-role`, который использует только `ai-hats task create`, создаётся новый узкий skill `backlog-create` (~30 строк): invocation + venv hint + xref на `backlog-manager`. Composition: `judge-for-role.composition.skills` — `backlog-manager` → `backlog-create`.
+`backlog-manager` остаётся as-is для `judge` и primary agent (его полное lifecycle-содержимое корректно). Для `role-judge`, который использует только `ai-hats task create`, создаётся новый узкий skill `backlog-create` (~30 строк): invocation + venv hint + xref на `backlog-manager`. Composition: `role-judge.composition.skills` — `backlog-manager` → `backlog-create`.
 
 **Follow-up:** отдельная задача (filed в Phase 9 плана) на сплит `backlog-manager` в `backlog-tasks` / `backlog-hyp` / `backlog-proposal`. После landing'а сплита `backlog-create` deprecate в пользу `backlog-tasks`. Out of scope этого ADR.
 
@@ -146,18 +153,19 @@ Composed with `base-judge`?   → Write tool to declared report path. No markers
 
 Полный execution-blueprint: `<ai_hats_dir>/tracker/backlog/tasks/HATS-303/plan.md`. Краткое отображение фаз → секции ADR:
 
-| Phase   | ADR sections covered             |
-|---------|----------------------------------|
-| 2 ADR   | this document                    |
+| Phase            | ADR sections covered                             |
+| ---------------- | ------------------------------------------------ |
+| 2 ADR            | this document                                    |
 | 3 New components | §4 (`trait-analyst-base`), §5 (`backlog-create`) |
-| 4 Trait edits    | §1, §2 (anti-anchoring), §3 (carve-out) |
-| 5 Skill edits    | §1 (deferral), §6 (decision tree) |
-| 6 Rule edit      | cosmetic (not in this ADR)       |
-| 7 Role edits     | §4 (composition swap), §5 (drops + skill swap) |
-| 8 Pass B         | acceptance gate                  |
-| 9 Close-out      | follow-up task, HATS-301 close   |
+| 4 Trait edits    | §1, §2 (anti-anchoring), §3 (carve-out)          |
+| 5 Skill edits    | §1 (deferral), §6 (decision tree)                |
+| 6 Rule edit      | cosmetic (not in this ADR)                       |
+| 7 Role edits     | §4 (composition swap), §5 (drops + skill swap)   |
+| 8 Pass B         | acceptance gate                                  |
+| 9 Close-out      | follow-up task, HATS-301 close                   |
 
 **Acceptance gate (Phase 8):** Pass B reports show zero findings of classes
+
 - «mutation policy inconsistency» (§1, §3)
 - «trait-base / role mismatch» (§4)
 - «off-purpose component» (§5)

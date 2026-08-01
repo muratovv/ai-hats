@@ -1,18 +1,18 @@
 ---
 name: judge-role-protocol
-description: HITL dialogue + CLI ops contract for judge-for-role — file-fix tasks instead of editing role/skill/rule sources
+description: HITL dialogue + CLI ops contract for role-judge — file-fix tasks instead of editing role/skill/rule sources
 license: MIT
 ---
 
 # Judge Role Protocol
 
-HITL contract for **judge-for-role**. Use **role-coherence-protocol**
+HITL contract for **role-judge**. Use **role-coherence-protocol**
 for the audit method itself; this skill covers the dialogue and CLI
 layer on top, and names the L1 verb whitelist consumed by `base-judge`.
 
 ## When to Use
 
-You were launched as **judge-for-role** with a target role composition
+You were launched as **role-judge** with a target role composition
 in the first user message. The supervisor may interact with you
 mid-session — follow this protocol for what is in / out of scope.
 
@@ -61,7 +61,7 @@ Source-file edits (role / skill / rule / trait `.yaml` and `.md`) are
 ### L2 activation (source-file edits within the same session)
 
 L2 is governed by `base-judge` §L2. This skill names the
-`judge-for-role`-specific scope of L2:
+`role-judge`-specific scope of L2:
 
 - **Trigger.** Supervisor signals authorization with a phrase naming
   the scope (e.g. "take it", "apply the fix", "L2 on the carve-out
@@ -80,7 +80,7 @@ L2 is governed by `base-judge` §L2. This skill names the
 
 When the supervisor signals "wrap up" / session exit, use the **Write**
 tool to save the findings report to the path declared in
-**judge-for-role** injection
+**role-judge** injection
 (`<ai_hats_dir>/sessions/retros/role-coherence/<UTC-ISO-ts>-<target>.md`).
 `<target_role>` is the audited composition (e.g. `developer`,
 `judge-for-hyp-prop`), not the auditing role. Filename example:
@@ -91,7 +91,7 @@ documented in **role-coherence-protocol** Step 3 (free-form `## Findings`
 
 The report is the single durable artifact of the session; the dialogue
 itself is not persisted. Do NOT emit `BEGIN_REFLECT` / `END_REFLECT`
-markers — the pipeline for `judge-for-role` does not extract them
+markers — the pipeline for `role-judge` does not extract them
 (Branch B per **role-coherence-protocol** §Step 3 decision tree).
 
 If the supervisor explicitly says "no report needed, we're just
@@ -101,6 +101,6 @@ response so the absence is intentional, not forgotten.
 ## Scope
 
 This skill defines the L1 verb whitelist and L2 activation handshake
-for `judge-for-role`. Default behavior at L1 — no source-file edits;
+for `role-judge`. Default behavior at L1 — no source-file edits;
 file a task instead. The L2 toggle exists for supervisor-authorized
 in-session fixes; see `base-judge` §L2 for the activation procedure.

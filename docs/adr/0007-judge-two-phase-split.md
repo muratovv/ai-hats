@@ -8,7 +8,7 @@ Accepted (HATS-513, 2026-05-26).
 
 The `judge` role (HYP closure + PROP triage, invoked via `ai-hats reflect all`) carried a runtime mode-switch inside its protocol skill (`judge-protocol` Step 0 — autopilot vs interactive, selected from `AI_HATS_HITL` env or first user-message content). Two architectural smells fell out of that shape:
 
-1. **Asymmetric baseline.** `judge` composed `trait-base + trait-agent + judge-protocol` — bypassing the L0/L1/L2 analyst-tier taxonomy (`base-auditor` / `base-judge`) that every other judge variant uses. `judge-for-role`, for instance, composes `base-judge` and inherits its L1 contract (HITL + ack'd CLI mutations) consistently. The `judge` role had to re-state mode boundaries inline in its injection because no baseline trait carried them.
+1. **Asymmetric baseline.** `judge` composed `trait-base + trait-agent + judge-protocol` — bypassing the L0/L1/L2 analyst-tier taxonomy (`base-auditor` / `base-judge`) that every other judge variant uses. `role-judge`, for instance, composes `base-judge` and inherits its L1 contract (HITL + ack'd CLI mutations) consistently. The `judge` role had to re-state mode boundaries inline in its injection because no baseline trait carried them.
 2. **Mode-switch as inline branch, not composition.** `judge-protocol` Step 0 read the runtime context and chose between two end-to-end flows in the same role. This collapses two roles' worth of behaviour into one prompt, makes the L0 (read-only) contract impossible to enforce structurally (the L1 baseline is what's loaded — read-only is a self-imposed rule the agent can break), and leaks the headless vs HITL distinction into protocol prose instead of pipeline composition.
 
 The pragmatic forcing function was a real workflow shift requested by HATS-499: split context-gathering from supervisor dialogue, so a headless auditor pass produces a draft, and a HITL session discusses + ack's mutations against that draft. The clean shape of that workflow does not survive a runtime mode-switch — every Step in the protocol has to be parameterized on mode, and the L0/L1 contract collapses into convention.
@@ -24,7 +24,7 @@ Replace the runtime mode-switch with structural pipeline composition. Two roles,
 | `judge-auditor` | `base-auditor`    | L0   | single declared report path     | none                                       |
 | `judge`         | `base-judge`      | L1   | L0 baseline + ack'd CLI verbs   | `task hyp ...`, `reflect commit`, `task create` |
 
-`judge-auditor` is forbidden by its L0 baseline from invoking `ai-hats` CLI verbs or editing source files — the read-only contract is enforced by composition, not by inline protocol prose. `judge` inherits L1 from `base-judge` symmetrically with `judge-for-role`.
+`judge-auditor` is forbidden by its L0 baseline from invoking `ai-hats` CLI verbs or editing source files — the read-only contract is enforced by composition, not by inline protocol prose. `judge` inherits L1 from `base-judge` symmetrically with `role-judge`.
 
 ### П2 — Mode-switch becomes pipeline composition
 

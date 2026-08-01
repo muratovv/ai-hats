@@ -4,7 +4,7 @@ Subcommands of `ai-hats reflect` cover the retrospective and backlog triage life
 
 - `reflect session` — per-session `session-reviewer` run.
 - `reflect hypothesis` — two-phase bulk triage of active HYP + open PROP (`judge-auditor` Phase 1 -> `judge` Phase 2).
-- `reflect role <target>` / `reflect roles` — role coherence audit (`judge-for-role`).
+- `reflect role <target>` / `reflect roles` — role coherence audit (`role-judge`).
 - `reflect issue <observation>` — Haiku-assisted observation intake (`hypothesis-intake`).
 - `reflect commit` — bulk update proposal statuses.
 - `reflect all` — deprecated single-phase triage (superseded by `reflect hypothesis`).
@@ -75,9 +75,9 @@ Both this command and `reflect all` also write a pre-flight handoff to `<ai_hats
 
 ### `ai-hats reflect role <target>` / `reflect roles`
 
-Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `judge-for-role`.
+Audits target role composition for contradictions against project context (`./CLAUDE.md`, `.agent/ai-hats/user-rules/*.md`). Pipeline `reflect-role` materializes layered composition breakdown to `<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/<target>/` and runs `role-judge`.
 
-The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/judge-for-role/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
+The report lands at `<ai_hats_dir>/sessions/retros/role-coherence/<ts>-<target>.md` **only because the role is instructed to write it** (`core/roles/role-judge/config.yaml`, `core/initial_injections/reflect-role.md`). Unlike the phase1 / phase2 / reflect-all pipelines, `reflect-role.yaml` carries no `save_artifact` step — its three steps are `compose_role`, `resolve_prompt`, `launch_provider` — so nothing persists the report if the model does not call Write.
 
 ### `ai-hats reflect issue <text>`
 

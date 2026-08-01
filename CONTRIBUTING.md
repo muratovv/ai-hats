@@ -206,7 +206,7 @@ root in `library/`, split into two layers shipped together inside the
 `ai_hats.library` Python sub-package:
 
 - **`library/core/`** — engine fundament. System roles (`session-reviewer`,
-  `auditor-for-role`, …), base traits (`trait-base`, `trait-agent`,
+  `role-auditor`, …), base traits (`trait-base`, `trait-agent`,
   `trait-analyst-base`, `base-judge`, `base-auditor`,
   `trait-reflect-mode`), global rules, foundational skills
   (`hatrack`, `git-mastery`, `review-*`, `judge-*`, …), all

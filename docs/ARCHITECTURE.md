@@ -233,7 +233,7 @@ The shipped library is split into two layers, both shipped as the installed `ai_
 ```
 ai_hats_library/
   core/                              # engine fundament — required at runtime
-    roles/          initial-wizard, session-reviewer, judge-auditor, judge, judge-for-role, auditor-for-role, hypothesis-intake, test-agent
+    roles/          initial-wizard, session-reviewer, judge-auditor, judge, role-judge, role-auditor, hypothesis-intake, test-agent
     traits/         trait-base, trait-agent, trait-analyst-base, base-judge, base-auditor, trait-reflect-mode
     rules/          global_rule_*, rule_backlog_discipline, dev_rule_comment_discipline, dev_rule_tool_call_hygiene
     skills/         hatrack, backlog-create, context-*, review-*, judge-*, role-coherence-protocol, request-supervisor, ...

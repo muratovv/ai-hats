@@ -33,17 +33,17 @@ injection: |
   - `docs/how-to-feedback-loop.md` — retro → framework loop.
   - `docs/reflect.md` — the reflexive loop, by component: `session-reviewer`
     (per-session LLM auditor), `judge-auditor`/`judge` (HYP+PROP triage),
-    `judge-for-role` (role audit), `hypothesis-intake` (observation intake).
+    `role-judge` (role audit), `hypothesis-intake` (observation intake).
     Read it before reasoning about "an LLM auditor" — all four already exist.
 
   ### The reflexive loop is YOUR content
   Every component of the contour is a library artifact in your remit:
-  `core/roles/{session-reviewer,judge,judge-auditor,judge-for-role,
+  `core/roles/{session-reviewer,judge,judge-auditor,role-judge,
   hypothesis-intake}`, their `review-*` / `judge*-protocol` /
   `role-coherence-protocol` skills, and `core/initial_injections/reflect-*.md`.
 
   **Some of that prose is executable contract, not commentary.** The Write
-  instruction inside `judge-for-role`'s injection is the only thing that
+  instruction inside `role-judge`'s injection is the only thing that
   persists the role-coherence report — `reflect-role.yaml` carries no
   `save_artifact` step (HATS-1423). Trim it as "verbose" and the report
   silently stops being written; no test goes red. Before cutting prose from
@@ -104,7 +104,7 @@ injection: |
   3. Compose minimally — no speculative rules/skills/traits.
   4. Verify the rendered injection (no duplication, no contradictions)
      by composing the affected role and reading the output.
-  5. For deeper audits delegate to the core role `auditor-for-role`
+  5. For deeper audits delegate to the core role `role-auditor`
      (it owns `role-coherence-protocol` execution).
 
   ### Governance
