@@ -7,6 +7,8 @@
   "escapes": [],
   "launch": [
     "agy",
+    "--output-format",
+    "json",
     "-p",
     "## PRIORITIES\n1. Quality\n\nRole body.\n\n# TASK\ndemo"
   ],

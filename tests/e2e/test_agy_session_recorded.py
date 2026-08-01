@@ -160,9 +160,21 @@ def test_agy_session_records_audit_and_usage(
         f"(resolve_transcript may be missing). audit:\n{audit}"
     )
 
-    # 4. usage.json exists with agy flag
+    # 4. metrics.json records duration_s > 0 and positive token usage
+    metrics_path = session_dir / "metrics.json"
+    assert metrics_path.exists(), f"metrics.json missing at {metrics_path}"
+    metrics = json.loads(metrics_path.read_text())
+    assert "duration_s" in metrics and metrics["duration_s"] > 0, (
+        f"metrics missing positive duration_s: {metrics}"
+    )
+    assert "tokens" in metrics, f"metrics missing tokens: {metrics}"
+    assert metrics["tokens"]["input"] > 0 or metrics["tokens"]["output"] > 0, (
+        f"tokens zero: {metrics}"
+    )
+
+    # 5. usage.json exists without token-telemetry-unavailable flag
     usage_path = session_dir / USAGE_JSON
     if usage_path.exists():
         usage = json.loads(usage_path.read_text())
         flags = usage.get("flags", [])
-        assert any("token-telemetry-unavailable" in f for f in flags)
+        assert not any("token-telemetry-unavailable" in f for f in flags)
