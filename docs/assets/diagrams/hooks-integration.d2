@@ -1,0 +1,33 @@
+vars: @./_palette
+
+direction: down
+
+skill: Скилл: hooks/*.sh|*.py\n(декларация в SKILL.md)
+comp: Композиция роли
+
+claude_wire: settings.json сессии\n(--settings)
+lib: library/hooks/\nплоская копия + manifest {shape: cylinder}
+claude: claude: spawn\nна вызов инструмента
+
+mirror: Зеркало скиллов сессии\n(plugin/ | rules/) {shape: cylinder}
+agy_wire: hooks.json сессии
+agy_disp: Диспетчер в \$HOME\n(AI_HATS_SESSION_CACHE_DIR)
+agy: agy: spawn\nна вызов инструмента
+
+gates: .githooks/<event>.d/\nкопии гейтов + manifest {shape: cylinder}
+git_disp: .githooks/<event>\nдиспетчер
+git: git commit/push:\nspawn без ai-hats
+
+skill -> comp
+comp -> claude_wire: сборка сессии
+comp -> lib: init / update / set_role /\nsync_hooks на старте сессии
+comp -> mirror: сборка сессии
+comp -> agy_wire: сборка сессии
+comp -> gates: init / update / set_role
+claude -> claude_wire: читает {style.stroke-dash: 4}
+claude_wire -> lib: команда указывает\n(as-is; to-be: в зеркало) {style.stroke-dash: 4}
+agy -> agy_disp: вызывает
+agy_disp -> agy_wire: читает {style.stroke-dash: 4}
+agy_wire -> mirror: команда указывает {style.stroke-dash: 4}
+git -> git_disp: core.hooksPath
+git_disp -> gates: исполняет\n(to-be: live-резолв, fail-open)
