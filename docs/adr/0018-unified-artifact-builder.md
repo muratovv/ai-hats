@@ -66,6 +66,11 @@ an **absent method**, which is visible, rather than an `else` that falls through
 in silence — `agy` has no `_build_hooks_automate` manifest write, and that gap is
 now legible in the class body (HATS-1223).
 
+> **Пример устарел (2026-08-02, HATS-1465, замерено).** Дыра agy выше с тех
+> пор закрыта: `AgyProvider` доставляет хуки и в AUTOMATE
+> (`packages/surfaces/agy/src/ai_hats_agy/provider.py:213-217`). Сам принцип
+> absent-method в силе; пример дерево больше не описывает.
+
 ```python
 class Provider(abc.ABC):
     # implemented per surface, e.g.:
@@ -207,6 +212,15 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 1. **Global Hook Registration**: `ai-hats self init` registers a single, static dispatcher script (`ai-hats-hook-dispatcher`) in global `~/.gemini/antigravity-cli/settings.json`.
 2. **Session-Scoped Routing**: `ai-hats-hook-dispatcher` inspects `AI_HATS_SESSION_ID`. If absent (standalone `agy` run by user), it immediately exits 0 (no-op). If present (`ai-hats` runner), it loads session hooks from `<cache>/sessions/<sid>/hooks.json`.
 3. **Context Delivery**: Rules and prompt context are delivered cleanly via `--add-dir <cache>/rules` without polluting the project root.
+
+> **Поправка (2026-08-02, HATS-1465, замерено).** «at `self init`» пункта 1
+> не описывает код: регистрация выполняется на **каждой сборке сессии** —
+> `_deliver_hooks` вызывает `ensure_global_dispatcher_hook`
+> (`packages/surfaces/agy/src/ai_hats_agy/provider.py:206`), незалоченный
+> read-modify-write файла настроек в `$HOME` (`global_hook.py:19-75`, только
+> идемпотентный short-circuit). Call-site из `self init` не существует.
+> Защита этой записи от гонок — HATS-1338; per-build каденция зафиксирована
+> в таблице ярусов ADR-0020 D5.
 
 ## Consequences
 
