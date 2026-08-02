@@ -43,8 +43,8 @@ When executing `rack` commands or running `ai-hats wait`, the project root and t
 | Precedence | Level | Resolution Rule |
 | ---------- | ----- | --------------- |
 | 1 | Explicit CLI / Env Override | `--tasks-dir <path>` flag or `RACK_TASKS_DIR=<path>` environment variable. |
-| 2 | `AI_HATS_DIR` Override | Points to `<ai_hats_dir>`. Cards resolve under `<ai_hats_dir>/tracker/backlog/tasks`. If `AI_HATS_PROJECT_DIR` is set and does not match the project directory containing `<ai_hats_dir>`, `rack` refuses execution with exit code 1 (`foreign_project_pin`). |
-| 3 | Walk-up Resolution | Searches current directory and parent directories for `.agent/ai-hats.yaml` or `.agent/ai-hats/`. |
+| 2 | `AI_HATS_DIR` Override | Points to `<ai_hats_dir>`. Cards resolve under `<ai_hats_dir>/tracker/backlog/tasks`. If `AI_HATS_PROJECT_DIR` is set and does not match the project directory resolved for the current invocation (walk-up from cwd), `rack` refuses execution with exit code 1 (`foreign_project_pin`). |
+| 3 | Walk-up Resolution | Searches current directory and parent directories for `.agent/` (directory) or `ai-hats.yaml` (file in project root). From inside a linked task worktree (where neither marker is present), resolution hops via gitlink to the main checkout. |
 
 > **Note**: Explicit root resolutions (e.g. `--root <dir>` or cross-project roots registry) target the specified root directly and skip Step 2.  
 > **Warning on Residual Leak**: `ai-hats.yaml` is always read from the project root (`project_dir`). Therefore, `AI_HATS_DIR` alone does not provide full project config isolation — complete isolation requires a sandbox project root.
@@ -59,7 +59,7 @@ When validating automation in a sandbox copy of a workspace, follow this executa
    cp -r .agent/ai-hats/tracker /tmp/sandbox/.agent/ai-hats/
    ```
 
-2. **Seed a probe card using `--tasks-dir`**:
+2. **Seed a probe card using `RACK_TASKS_DIR`**:
    ```bash
    RACK_TASKS_DIR=/tmp/sandbox/.agent/ai-hats/tracker/backlog/tasks \
      rack create "Sandbox Isolation Probe" --id HATS-9999
