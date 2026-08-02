@@ -26,8 +26,7 @@ A plan is always a task, authored into `<ai_hats_dir>/tracker/backlog/tasks/<ID>
 
 ## Procedure
 
-Run all `rack` / `ai-hats wt` CLI from the **main repo** — the tracker lives under the
-gitignored `.agent/`, so a linked worktree has no real tracker.
+`rack` CLI commands (reads, transitions, logs) can be run from either the main repo or any linked worktree — root resolution automatically finds the main repo's `.agent/` tracker. (Teardown commands like `ai-hats wt merge` / `discard` or closing `transition done` should be run from the main repo so your shell cwd isn't removed underfoot — see skill **worktree-isolation** / HATS-788).
 
 ### Preferred — plan directly in the tracker (no plan mode)
 
@@ -69,5 +68,5 @@ That's expected — don't fight it, and don't apologise for the draft.
 - Fighting plan mode by trying `rack` CLI / tracker writes while still in it — they
   are blocked; draft, exit, then persist.
 - Drafting a plan without a task — if it's a plan, you made a task.
-- Running `rack` from inside a worktree — the gitignored tracker
-  isn't there; ids and state desync. Use the main repo.
+- Running worktree teardown commands (`ai-hats wt merge` / `wt discard` or terminal `transition done`) from inside the worktree being deleted — this orphans your shell (HATS-788). Return to the main repo first.
+
