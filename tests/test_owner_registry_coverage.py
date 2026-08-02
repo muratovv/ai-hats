@@ -25,10 +25,8 @@ MATERIALIZERS: dict[str, str] = {
         ".githooks/ dispatchers + <event>.d/ scripts — git can only exec "
         "hooks from the repo working tree (hooks_manager.install_git_hooks)"
     ),
-    "runtime-hooks": (
-        ".claude/settings.json managed hook entries — the harness reads its "
-        "own settings file, not <ai_hats_dir> (providers.ClaudeProvider)"
-    ),
+    # HATS-1336: "runtime-hooks" is deliberately ABSENT — HATS-1170 moved the
+    # entries into the session cache, so nothing materializes into the root.
 }
 
 
@@ -66,7 +64,7 @@ def test_fresh_interpreter_liveness_before_sweep():
     a generic sweep in a fresh interpreter has to see every living owner
     registered BEFORE any is_living() check, or it wrong-sweeps a live surface.
     """
-    missing = {"git-hooks", "runtime-hooks"} - _fresh_living_owners()
+    missing = {"git-hooks"} - _fresh_living_owners()
     assert not missing, f"unregistered living owners: {missing}"
 
 

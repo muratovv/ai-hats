@@ -28,10 +28,17 @@ from ai_hats_core.safe_delete import discard, replace
 
 from . import owners
 from .fs_digest import dir_digest
-from .paths import AI_HATS_MANAGED_MARKER, claude_dir, claude_settings_json, claude_skills_dir
+from .paths import (
+    AI_HATS_MANAGED_MARKER,
+    claude_dir,
+    claude_settings_json,
+    claude_skills_dir,
+    gemini_settings_path,
+)
 from .plugin_dir import _is_safe_relative
 
 _SETTINGS_RELPATH = str(claude_settings_json(Path(".")))
+_GEMINI_SETTINGS_RELPATH = str(gemini_settings_path(Path(".")))
 
 OWNER_HEADER_PREFIX = "# ai-hats-owner:"
 _DIGEST_LEN = 12
@@ -50,13 +57,14 @@ class LineManifestSurface:
 
 @dataclass(frozen=True)
 class SettingsTagsSurface:
-    """Managed-tag entries inside ``.claude/settings.json``. The
-    ``_ai_hats_managed`` tag is the embedded ownership proof (same semantics
-    as the live sweep, HATS-833)."""
+    """Managed-tag entries inside a provider's settings.json. The tag is the
+    embedded ownership proof (same semantics as the live sweep, HATS-833)."""
 
     owner_key: str
     settings_relpath: str = _SETTINGS_RELPATH
     tag_prefix: str = "ai-hats:"
+    # agy's pre-HATS-1166 remnant spells the same ai-hats: tag under "tag".
+    tag_key: str = "_ai_hats_managed"
 
 
 @dataclass(frozen=True)
@@ -95,7 +103,6 @@ def default_surfaces() -> tuple[Surface, ...]:
     Imports every registering module itself: liveness must never depend on
     what the caller happened to import earlier (wrong-sweep of a live surface).
     """
-    from . import providers  # noqa: F401 — registers runtime-hooks
     from .hooks_manager import (
         GITHOOKS_DIR,
         GITHOOKS_DISPATCHER_MARKER,
@@ -116,6 +123,13 @@ def default_surfaces() -> tuple[Surface, ...]:
             embedded_marker=GITHOOKS_DISPATCHER_MARKER,
         ),
         SettingsTagsSurface(owner_key="runtime-hooks"),
+        # HATS-1336: agy stopped writing the project root in HATS-1166 and left
+        # no owner behind, so this location sweeps on sight.
+        SettingsTagsSurface(
+            owner_key="agy-root-runtime-hooks",
+            settings_relpath=_GEMINI_SETTINGS_RELPATH,
+            tag_key="tag",
+        ),
         ProcSurface(
             owner_key="skills-export",
             marker_relpath=str(skills_marker),
@@ -209,7 +223,7 @@ def _sweep_settings_tags(
     hooks_root = data.get("hooks")
     if not isinstance(hooks_root, dict):
         return None
-    if not _has_tagged_entries(hooks_root, surface.tag_prefix):
+    if not _has_tagged_entries(hooks_root, surface.tag_prefix, surface.tag_key):
         return None
     if owners.is_living(surface.owner_key):
         return None
@@ -218,7 +232,9 @@ def _sweep_settings_tags(
     # every ai-hats-tagged entry; user-authored entries survive.
     from .surfaces.claude.provider import ClaudeProvider
 
-    removed = ClaudeProvider._sweep_stale_managed_tags(hooks_root, set())
+    removed = ClaudeProvider._sweep_stale_managed_tags(
+        hooks_root, set(), tag_key=surface.tag_key, tag_prefix=surface.tag_prefix
+    )
     if dry_run:
         return SurfaceSweep(
             owner_key=surface.owner_key,
@@ -240,14 +256,12 @@ def _sweep_settings_tags(
     )
 
 
-def _has_tagged_entries(hooks_root: dict, tag_prefix: str) -> bool:
+def _has_tagged_entries(hooks_root: dict, tag_prefix: str, tag_key: str) -> bool:
     for event_list in hooks_root.values():
         if not isinstance(event_list, list):
             continue
         for entry in event_list:
-            if isinstance(entry, dict) and str(entry.get("_ai_hats_managed", "")).startswith(
-                tag_prefix
-            ):
+            if isinstance(entry, dict) and str(entry.get(tag_key, "")).startswith(tag_prefix):
                 return True
     return False
 
