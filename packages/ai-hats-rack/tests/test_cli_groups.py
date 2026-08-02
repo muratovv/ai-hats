@@ -356,8 +356,14 @@ def test_groups_mounted_from_ai_hats_dir(monkeypatch, runner, tmp_path):
 
 def test_rack_hyp_with_foreign_pin_exits_1_foreign_project_pin(monkeypatch, runner, tmp_path):
     main_proj = tmp_path / "main"
-    (main_proj / ".agent").mkdir(parents=True)
-    (main_proj / ".agent" / "ai-hats.yaml").write_text("")
+    main_agent = main_proj / ".agent" / "ai-hats"
+    main_tasks = main_agent / "tracker" / "backlog" / "tasks"
+    main_tasks.mkdir(parents=True)
+    main_hyp = main_agent / "tracker" / "hypotheses"
+    main_hyp.mkdir(parents=True)
+    (main_hyp / "backlog.yaml").write_text(
+        packaged_definition_source("hypotheses"), encoding="utf-8"
+    )
 
     foreign_proj = tmp_path / "foreign"
     (foreign_proj / ".agent").mkdir(parents=True)
@@ -366,11 +372,6 @@ def test_rack_hyp_with_foreign_pin_exits_1_foreign_project_pin(monkeypatch, runn
     sbx_agent = tmp_path / "sbx" / ".agent" / "ai-hats"
     sbx_tasks = sbx_agent / "tracker" / "backlog" / "tasks"
     sbx_tasks.mkdir(parents=True)
-    sbx_hyp = sbx_agent / "tracker" / "hypotheses"
-    sbx_hyp.mkdir(parents=True)
-    (sbx_hyp / "backlog.yaml").write_text(
-        packaged_definition_source("hypotheses"), encoding="utf-8"
-    )
 
     monkeypatch.chdir(main_proj)
     env = {
@@ -378,8 +379,9 @@ def test_rack_hyp_with_foreign_pin_exits_1_foreign_project_pin(monkeypatch, runn
         "AI_HATS_PROJECT_DIR": str(foreign_proj),
     }
     res = runner.invoke(main, ["hyp", "create", "test hyp", "--json"], env=env)
-    assert res.exit_code == 1, f"Unexpected code {res.exit_code}: {res.output}"
+    assert res.exit_code == 1
     payload = json.loads(res.output)
     assert payload["error"]["code"] == "foreign_project_pin"
     assert payload["error"]["pin"] == str(foreign_proj)
     assert payload["error"]["project_dir"] == str(main_proj)
+    assert payload["error"]["ai_hats_dir"] == str(sbx_agent)
