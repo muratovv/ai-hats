@@ -11,6 +11,7 @@ import math
 import subprocess
 import sys
 import time
+import os
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,11 +56,11 @@ def _task_predicate(task_id: str, states: tuple[str, ...]) -> Callable[[], bool]
     The integrator may import the rack, never the reverse — deferred here to keep
     ``--until-cmd`` usable with no backlog resolvable at all.
     """
-    from ai_hats_rack import NoProjectRootError, TaskCard, resolve_root
+    from ai_hats_rack import ForeignProjectPinError, NoProjectRootError, TaskCard, resolve_root
 
     try:
-        root = resolve_root(Path.cwd())
-    except NoProjectRootError as exc:
+        root = resolve_root(Path.cwd(), environ=os.environ)
+    except (NoProjectRootError, ForeignProjectPinError) as exc:
         raise _Broken(f"no ai-hats project resolvable from {Path.cwd()}: {exc}") from exc
 
     card_path = root.tasks_dir / task_id / "task.yaml"

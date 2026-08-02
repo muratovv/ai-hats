@@ -31,7 +31,7 @@ from ..composition import compose_subscribers, stock_factories
 from ..definition import BacklogDefinition
 from ..errors import ForeignProjectPinError
 from ..ops import parse_ops
-from ..resolver import ENV_AI_HATS_PROJECT_DIR, NoProjectRootError, resolve_root
+from ..resolver import NoProjectRootError, resolve_root
 from ..workspace import BacklogInstance, Workspace, WorkspaceError
 from .create import CreateRoute, _LIFECYCLE_OWNED, build_create_command
 
@@ -170,22 +170,15 @@ def _ambient_workspace() -> Workspace | None:
     never brick the base CLI."""
     override = os.environ.get(ENV_TASKS_DIR)
     try:
-        root = resolve_root(
-            Path.cwd(), Path(override) if override else None, environ=os.environ
-        )
+        root = resolve_root(Path.cwd(), Path(override) if override else None, environ=os.environ)
         return Workspace.discover([root])
     except NoProjectRootError:
         return None
     except ForeignProjectPinError:
-        # Fallback to root resolution with AI_HATS_DIR but without pin check so the group mounts
-        # and the target verb execution resolves error with parsed CLI options (HATS-1471).
+        # Fallback to walk-up root resolution without environ so ambient groups mount from main project
+        # and verb execution resolves ForeignProjectPinError with parsed CLI options (HATS-1471).
         try:
-            unpinned_env = {
-                k: v for k, v in os.environ.items() if k != ENV_AI_HATS_PROJECT_DIR
-            }
-            root = resolve_root(
-                Path.cwd(), Path(override) if override else None, environ=unpinned_env
-            )
+            root = resolve_root(Path.cwd(), Path(override) if override else None, environ=None)
             return Workspace.discover([root])
         except NoProjectRootError:
             return None

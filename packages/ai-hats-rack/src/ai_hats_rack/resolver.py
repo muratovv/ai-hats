@@ -140,12 +140,15 @@ def env_ai_hats_dir(environ: Mapping[str, str], project_dir: Path) -> Path | Non
     raw = environ.get(ENV_AI_HATS_DIR)
     if not raw:
         return None
+    ai_hats_dir = Path(raw).expanduser()
     pin_raw = environ.get(ENV_AI_HATS_PROJECT_DIR)
     if pin_raw:
         pin_path = Path(pin_raw).expanduser().resolve()
         if pin_path != project_dir.resolve():
-            raise ForeignProjectPinError(pin=Path(pin_raw).expanduser(), project_dir=project_dir)
-    return Path(raw).expanduser()
+            raise ForeignProjectPinError(
+                pin=Path(pin_raw).expanduser(), project_dir=project_dir, ai_hats_dir=ai_hats_dir
+            )
+    return ai_hats_dir
 
 
 def resolve_root(

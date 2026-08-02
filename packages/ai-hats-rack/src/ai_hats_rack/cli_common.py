@@ -144,7 +144,11 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     NoProjectRootError: lambda e: ("no_project_root", {}),
     ForeignProjectPinError: lambda e: (
         "foreign_project_pin",
-        {"pin": str(e.pin), "project_dir": str(e.project_dir)},
+        {
+            "pin": str(e.pin),
+            "project_dir": str(e.project_dir),
+            "ai_hats_dir": str(e.ai_hats_dir) if e.ai_hats_dir else None,
+        },
     ),
     ForceRequiresReasonError: lambda e: ("invalid_request", {}),
     LockTimeoutError: lambda e: ("lock_timeout", {}),

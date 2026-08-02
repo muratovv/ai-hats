@@ -26,10 +26,13 @@ class RackConfigError(RackError):
 class ForeignProjectPinError(RackError):
     """AI_HATS_PROJECT_DIR pin points to a different project directory."""
 
-    def __init__(self, pin: Path, project_dir: Path) -> None:
+    def __init__(self, pin: Path, project_dir: Path, ai_hats_dir: Path | None = None) -> None:
         self.pin = pin
         self.project_dir = project_dir
+        self.ai_hats_dir = ai_hats_dir
+        sbx_msg = f" while AI_HATS_DIR points to '{ai_hats_dir}'" if ai_hats_dir else ""
         super().__init__(
-            f"AI_HATS_PROJECT_DIR pin points to foreign project '{pin}' (current project: '{project_dir}'). "
-            "Pass --tasks-dir explicitly or update/unset AI_HATS_PROJECT_DIR."
+            f"AI_HATS_PROJECT_DIR pin points to foreign project '{pin}' (current project: '{project_dir}')"
+            f"{sbx_msg}: resolver refuses to guess target backlog. "
+            "Pass --tasks-dir explicitly or update/unset AI_HATS_PROJECT_DIR and AI_HATS_DIR."
         )

@@ -69,6 +69,7 @@ from .definition import (
     packaged_definition_source,
     resolve_definition,
 )
+from .errors import ForeignProjectPinError
 from .events import (
     EdgeEvent,
     EpicifyEvent,
@@ -177,6 +178,7 @@ __all__ = [
     "FieldOp",
     "FieldSpec",
     "FieldValidationError",
+    "ForeignProjectPinError",
     "HandlerRef",
     "ForceRequiresReasonError",
     "FrozenDocumentError",
