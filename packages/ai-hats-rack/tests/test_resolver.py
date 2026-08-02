@@ -8,6 +8,7 @@ import pytest
 
 from ai_hats_rack.resolver import (
     DEFAULT_PREFIX,
+    ForeignProjectPinError,
     NoProjectRootError,
     find_project_root,
     load_root,
@@ -157,3 +158,99 @@ def test_resolver_and_docstore_never_read_cwd():
             if isinstance(node, ast.Attribute) and node.attr in ("cwd", "getcwd")
         ]
         assert not offenders, f"{module} reads the process cwd: {offenders}"
+
+
+def test_env_moves_tasks_dir(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    sbx = tmp_path / "sbx"
+    env = {"AI_HATS_DIR": str(sbx)}
+    root = resolve_root(tmp_path, environ=env)
+    assert root.tasks_dir == sbx / "tracker" / "backlog" / "tasks"
+    assert root.project_dir == tmp_path
+
+
+def test_explicit_override_beats_env(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    sbx = tmp_path / "sbx"
+    override = tmp_path / "custom" / "tasks"
+    env = {"AI_HATS_DIR": str(sbx)}
+    root = resolve_root(tmp_path, tasks_dir_override=override, environ=env)
+    assert root.tasks_dir == override
+
+
+def test_env_not_consulted_when_environ_omitted(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    root = resolve_root(tmp_path)
+    assert root.tasks_dir == tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+
+
+def test_matching_pin_honored(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    sbx = tmp_path / "sbx"
+    env = {
+        "AI_HATS_DIR": str(sbx),
+        "AI_HATS_PROJECT_DIR": str(tmp_path),
+    }
+    root = resolve_root(tmp_path, environ=env)
+    assert root.tasks_dir == sbx / "tracker" / "backlog" / "tasks"
+
+
+def test_foreign_pin_raises_and_creates_nothing(tmp_path):
+    main = tmp_path / "main"
+    main.mkdir()
+    (main / ".agent").mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+    sbx = tmp_path / "sbx"
+    env = {
+        "AI_HATS_DIR": str(sbx),
+        "AI_HATS_PROJECT_DIR": str(other),
+    }
+    before = _snapshot(tmp_path)
+    with pytest.raises(ForeignProjectPinError) as exc_info:
+        resolve_root(main, environ=env)
+    assert _snapshot(tmp_path) == before
+    err_str = str(exc_info.value)
+    assert str(other) in err_str
+    assert str(main) in err_str
+    assert "--tasks-dir" in err_str
+
+
+def test_empty_env_value_is_unset(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    env = {"AI_HATS_DIR": ""}
+    root = resolve_root(tmp_path, environ=env)
+    assert root.tasks_dir == tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+
+
+def test_env_consulted_when_cwd_has_no_project_marker(tmp_path):
+    bare_cwd = tmp_path / "bare"
+    bare_cwd.mkdir()
+    sbx = tmp_path / "sbx"
+    env = {"AI_HATS_DIR": str(sbx)}
+    root = resolve_root(bare_cwd, environ=env)
+    assert root.project_dir == bare_cwd
+    assert root.tasks_dir == sbx / "tracker" / "backlog" / "tasks"
+
+
+def test_pin_alone_is_noop(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    env = {"AI_HATS_PROJECT_DIR": "/some/foreign/path"}
+    root = resolve_root(tmp_path, environ=env)
+    assert root.tasks_dir == tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+
+
+def test_env_expands_user(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    env = {"AI_HATS_DIR": "~/sbx"}
+    root = resolve_root(tmp_path, environ=env)
+    assert root.tasks_dir == Path("~/sbx").expanduser() / "tracker" / "backlog" / "tasks"
+
+
+def test_env_resolution_creates_nothing(tmp_path):
+    (tmp_path / ".agent").mkdir()
+    sbx = tmp_path / "sbx"
+    env = {"AI_HATS_DIR": str(sbx)}
+    before = _snapshot(tmp_path)
+    resolve_root(tmp_path, environ=env)
+    assert _snapshot(tmp_path) == before

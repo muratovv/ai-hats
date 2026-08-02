@@ -29,6 +29,7 @@ from ..cli_common import (
 from ..cli_kernel import _echo_deltas, _result_payload
 from ..composition import compose_subscribers, stock_factories
 from ..definition import BacklogDefinition
+from ..errors import ForeignProjectPinError
 from ..ops import parse_ops
 from ..resolver import NoProjectRootError, resolve_root
 from ..workspace import BacklogInstance, Workspace, WorkspaceError
@@ -169,10 +170,20 @@ def _ambient_workspace() -> Workspace | None:
     never brick the base CLI."""
     override = os.environ.get(ENV_TASKS_DIR)
     try:
-        root = resolve_root(Path.cwd(), Path(override) if override else None)
+        root = resolve_root(Path.cwd(), Path(override) if override else None, environ=os.environ)
         return Workspace.discover([root])
     except NoProjectRootError:
         return None
+    except ForeignProjectPinError:
+        # Fallback to walk-up root resolution without environ so ambient groups mount from main project
+        # and verb execution resolves ForeignProjectPinError with parsed CLI options (HATS-1471).
+        try:
+            root = resolve_root(Path.cwd(), Path(override) if override else None, environ=None)
+            return Workspace.discover([root])
+        except NoProjectRootError:
+            return None
+        except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
+            return None
     except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
         return None
 

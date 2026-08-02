@@ -130,3 +130,30 @@ def test_incoherent_predicate_options_are_refused(tmp_project, args: tuple[str, 
     result = tmp_project.run("wait", *args, timeout=30.0, extra_env=_env())
 
     assert result.exit_code == 2, f"expected usage refusal, got {result.exit_code}"
+
+
+def test_wait_task_honors_ai_hats_dir_sandbox(tmp_project) -> None:
+    """Card exists ONLY in sandbox directory, AI_HATS_DIR points to sandbox.
+    ai-hats wait from a project directory finds card in sandbox (HATS-1471).
+    """
+    sbx_agent = tmp_project.path / "sandbox" / ".agent" / "ai-hats"
+    sbx_card = sbx_agent / "tracker" / "backlog" / "tasks" / "HATS-777" / "task.yaml"
+    sbx_card.parent.mkdir(parents=True)
+    sbx_card.write_text("id: HATS-777\ntitle: sandbox card\nstate: done\n")
+
+    env = dict(_env())
+    env["AI_HATS_DIR"] = str(sbx_agent)
+
+    tmp_project.run(
+        "wait",
+        "--task",
+        "HATS-777",
+        "--until",
+        "done",
+        "--poll",
+        "0.2",
+        "--timeout",
+        "5",
+        timeout=10.0,
+        extra_env=env,
+    ).expect_ok()

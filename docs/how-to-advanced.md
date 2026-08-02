@@ -44,10 +44,10 @@ class EchoStep(Step):
     @property
     def io(self) -> StepIO:
         return StepIO(
-            name="echo",                                # YAML id
-            requires=frozenset({"text"}),               # inputs (must be in state)
-            optional=frozenset(),                       # nice-to-have inputs
-            produces=frozenset({"echoed"}),             # outputs (declared exactly)
+            name="echo",  # YAML id
+            requires=frozenset({"text"}),  # inputs (must be in state)
+            optional=frozenset(),  # nice-to-have inputs
+            produces=frozenset({"echoed"}),  # outputs (declared exactly)
         )
 
     def run(self, *, text, **_) -> dict:
@@ -141,6 +141,7 @@ To see all registered step ids:
 
 ```python
 from ai_hats.pipeline.registry import names
+
 print(names())
 ```
 
@@ -150,10 +151,11 @@ By default the loader looks at `<ai_hats_dir>/pipeline_steps/`. To point ai-hats
 
 ```bash
 export AI_HATS_DIR=/team/shared-ai-hats
-# loader now reads /team/shared-ai-hats/pipeline_steps/
+# loader reads /team/shared-ai-hats/pipeline_steps/
 ```
 
-The override applies to **every** ai-hats artefact (traces, future pipelines), so use it when you want to isolate a whole environment, not just step code.
+The override applies to every ai-hats artefact (traces, future pipelines). For backlog target resolution and sandbox isolation details, see [`docs/how-to-hatrack.md`](how-to-hatrack.md#which-backlog-am-i-writing-to).
+
 
 ### 1.7a `AI_HATS_USER_HOME` override — isolated global customizations
 

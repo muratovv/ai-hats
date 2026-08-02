@@ -23,7 +23,7 @@ from .docstore import (
     FrozenPinDriftError,
     UnknownDocumentError,
 )
-from .errors import RackConfigError
+from .errors import ForeignProjectPinError, RackConfigError
 from .fsm import InvalidTransitionError, UnknownStateError
 from .kernel import (
     ForceRequiresReasonError,
@@ -142,6 +142,14 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     ),
     DerivedLinkKindError: lambda e: ("derived_link_kind", {"kind": e.kind, "inverse": e.inverse}),
     NoProjectRootError: lambda e: ("no_project_root", {}),
+    ForeignProjectPinError: lambda e: (
+        "foreign_project_pin",
+        {
+            "pin": str(e.pin),
+            "project_dir": str(e.project_dir),
+            "ai_hats_dir": str(e.ai_hats_dir) if e.ai_hats_dir else None,
+        },
+    ),
     ForceRequiresReasonError: lambda e: ("invalid_request", {}),
     LockTimeoutError: lambda e: ("lock_timeout", {}),
     # Write-strict card-field refusal (required/choices/type/validator); the
@@ -155,7 +163,10 @@ _ERROR_HANDLERS: dict[type, _ErrorHandler] = {
     CardLoadError: lambda e: ("card_load_failed", {"task_id": e.task_id, "path": str(e.path)}),
     # --backlog names no mounted backlog — a specific match ahead of the
     # RackConfigError catch-all below (nearest-MRO wins).
-    UnknownBacklogError: lambda e: ("unknown_backlog", {"backlog": e.name, "mounted": list(e.mounted)}),
+    UnknownBacklogError: lambda e: (
+        "unknown_backlog",
+        {"backlog": e.name, "mounted": list(e.mounted)},
+    ),
     # Structural "a loaded config file is malformed" invariants — one internal
     # marker for the whole RackConfigError subtree (matched via MRO).
     RackConfigError: lambda e: ("internal", {}),
@@ -204,7 +215,7 @@ def resolved_root(tasks_dir: Path | None, caller_cwd: Path) -> RackRoot:
     ``caller_cwd`` is captured ONCE at the command entry and threaded through —
     nothing below the CLI layer reads ``Path.cwd()`` (HATS-840 discipline).
     """
-    return resolve_root(caller_cwd, tasks_dir)
+    return resolve_root(caller_cwd, tasks_dir, environ=os.environ)
 
 
 def resolve_roots(

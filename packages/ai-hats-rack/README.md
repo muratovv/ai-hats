@@ -183,14 +183,12 @@ Command-level flags: `--force` (+ mandatory `--reason`) relaxes the FSM arrow on
 `--resolution` / `--final-state` stamp terminal metadata; `--ack-frozen` is the tiered
 frozen hatch shared by `--rm` and `--freeze`.
 
-The backlog root is resolved by a walk-up from CWD to the nearest ancestor
-holding `.agent/` or `ai-hats.yaml` (K2, HATS-197 heir); from inside a linked
-task worktree (neither marker present) a pure-filesystem gitlink hop resolves
-the main checkout instead (HATS-1038 C2). `ai-hats.yaml` supplies `ai_hats_dir`
-and `task_prefix`. Resolution never mkdirs, and outside any project it answers
-with a typed `no_project_root` error instead of bootstrapping a phantom tracker
-(HATS-839 heir). `--tasks-dir` / `RACK_TASKS_DIR` stay as the explicit override
-(still anchoring `project_dir` at the real root, C2 gap #3).
+The backlog root is resolved by `resolve_root` (in `resolver.py`):
+1. Explicit `--tasks-dir` / `RACK_TASKS_DIR` override.
+2. `AI_HATS_DIR` environment override (points to `<ai_hats_dir>`, cards under `<ai_hats_dir>/tracker/backlog/tasks`). If `AI_HATS_PROJECT_DIR` is set and does not match the project directory resolved for the current invocation (walk-up from cwd), `resolve_root` raises `ForeignProjectPinError` (exit code 1, `foreign_project_pin`) detailing both paths and `ai_hats_dir`.
+3. Walk-up from CWD to the nearest ancestor holding `.agent/` (directory) or `ai-hats.yaml` (file in project root) (K2, HATS-197 heir); from inside a linked task worktree (neither marker present) a pure-filesystem gitlink hop resolves the main checkout instead (HATS-1038 C2).
+
+`resolve_root` accepts `environ` as an explicit parameter (no internal `os.environ` reads inside `resolver.py`). Resolution never mkdirs, and outside any project it answers with a typed `no_project_root` error instead of bootstrapping a phantom tracker (HATS-839 heir).
 
 ```
 $ rack transition HATS-001 done --tasks-dir tasks
