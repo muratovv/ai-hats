@@ -29,7 +29,6 @@ ENV_AI_HATS_DIR = "AI_HATS_DIR"
 ENV_AI_HATS_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
 
 
-
 class NoProjectRootError(RackError):
     """No ancestor of the starting directory is an ai-hats project root."""
 
@@ -145,9 +144,7 @@ def env_ai_hats_dir(environ: Mapping[str, str], project_dir: Path) -> Path | Non
     if pin_raw:
         pin_path = Path(pin_raw).expanduser().resolve()
         if pin_path != project_dir.resolve():
-            raise ForeignProjectPinError(
-                pin=Path(pin_raw).expanduser(), project_dir=project_dir
-            )
+            raise ForeignProjectPinError(pin=Path(pin_raw).expanduser(), project_dir=project_dir)
     return Path(raw).expanduser()
 
 
@@ -195,4 +192,3 @@ def resolve_root(
         raise NoProjectRootError(caller_cwd)
 
     return load_root(project_dir)
-

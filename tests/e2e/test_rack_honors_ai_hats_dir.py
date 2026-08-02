@@ -54,7 +54,7 @@ def _rack(
     )
 
 
-def test_rack_create_honors_ai_hats_dir_sandbox_write(tmp_path):
+def test_rack_hyp_create_honors_ai_hats_dir_sandbox_write(tmp_path):
     """Reproduce incident verbatim (HATS-1471): env -u AI_HATS_PROJECT_DIR AI_HATS_DIR=<sandbox> rack hyp create ...
     from a project directory.
     """
@@ -70,7 +70,9 @@ def test_rack_create_honors_ai_hats_dir_sandbox_write(tmp_path):
     sbx_tasks.mkdir(parents=True)
     sbx_hyp = sbx_agent / "tracker" / "hypotheses"
     sbx_hyp.mkdir(parents=True)
-    (sbx_hyp / "backlog.yaml").write_text(packaged_definition_source("hypotheses"), encoding="utf-8")
+    (sbx_hyp / "backlog.yaml").write_text(
+        packaged_definition_source("hypotheses"), encoding="utf-8"
+    )
 
     main_before = _snapshot(main_proj)
 
@@ -125,7 +127,15 @@ def test_rack_foreign_pin_refuses_write_and_creates_nothing(tmp_path):
         "AI_HATS_PROJECT_DIR": str(foreign_proj),
     }
 
-    res = _rack("create", "foreign task", "--id", "HATS-200", "--json", cwd=main_proj, extra_env=env)
+    res = _rack(
+        "create",
+        "foreign task",
+        "--id",
+        "HATS-200",
+        "--json",
+        cwd=main_proj,
+        extra_env=env,
+    )
     assert res.returncode == 1, res.stdout + res.stderr
     assert "foreign_project_pin" in res.stdout or "foreign_project_pin" in res.stderr
 

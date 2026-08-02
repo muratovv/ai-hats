@@ -233,7 +233,6 @@ def test_env_consulted_when_cwd_has_no_project_marker(tmp_path):
     assert root.tasks_dir == sbx / "tracker" / "backlog" / "tasks"
 
 
-
 def test_pin_alone_is_noop(tmp_path):
     (tmp_path / ".agent").mkdir()
     env = {"AI_HATS_PROJECT_DIR": "/some/foreign/path"}

@@ -12,9 +12,7 @@ backlog-agnostic: a backlog's short CLI name is part of ITS definition.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
-
 
 import click
 
@@ -33,7 +31,7 @@ from ..composition import compose_subscribers, stock_factories
 from ..definition import BacklogDefinition
 from ..errors import ForeignProjectPinError
 from ..ops import parse_ops
-from ..resolver import NoProjectRootError, resolve_root
+from ..resolver import ENV_AI_HATS_PROJECT_DIR, NoProjectRootError, resolve_root
 from ..workspace import BacklogInstance, Workspace, WorkspaceError
 from .create import CreateRoute, _LIFECYCLE_OWNED, build_create_command
 
@@ -165,8 +163,7 @@ def build_backlog_group(instance: BacklogInstance) -> click.Group:
 # ----- dynamic top-level surface ---------------------------------------------
 
 
-def _ambient_workspace(ctx: click.Context | None = None) -> Workspace | None:
-
+def _ambient_workspace() -> Workspace | None:
     """The workspace at the ambient root (``RACK_TASKS_DIR`` / cwd), or ``None``
     when there is no project or discovery fails — groups then simply do not
     appear, the base surface stands alone (R2). Fail-soft: group discovery must
@@ -179,11 +176,21 @@ def _ambient_workspace(ctx: click.Context | None = None) -> Workspace | None:
         return Workspace.discover([root])
     except NoProjectRootError:
         return None
-    except ForeignProjectPinError as e:
-        handle_rack_error(e, "--json" in sys.argv)
-        return None
-
-
+    except ForeignProjectPinError:
+        # Fallback to root resolution with AI_HATS_DIR but without pin check so the group mounts
+        # and the target verb execution resolves error with parsed CLI options (HATS-1471).
+        try:
+            unpinned_env = {
+                k: v for k, v in os.environ.items() if k != ENV_AI_HATS_PROJECT_DIR
+            }
+            root = resolve_root(
+                Path.cwd(), Path(override) if override else None, environ=unpinned_env
+            )
+            return Workspace.discover([root])
+        except NoProjectRootError:
+            return None
+        except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
+            return None
     except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
         return None
 
@@ -208,11 +215,10 @@ class RackGroup(click.Group):
     the surface stays exactly those base verbs until sibling catalogs mount (R2)."""
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
-
         cmd = super().get_command(ctx, name)
         if cmd is not None:
             return cmd
-        workspace = _ambient_workspace(ctx)
+        workspace = _ambient_workspace()
         if workspace is None:
             return None
         inst = _mounted_groups(workspace).get(name)
@@ -220,12 +226,10 @@ class RackGroup(click.Group):
 
     def list_commands(self, ctx: click.Context) -> list[str]:
         names = set(super().list_commands(ctx))
-        workspace = _ambient_workspace(ctx)
+        workspace = _ambient_workspace()
         if workspace is not None:
             names |= set(_mounted_groups(workspace))
         return sorted(names)
-
-
 
 
 __all__ = [

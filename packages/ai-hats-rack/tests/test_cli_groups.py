@@ -11,7 +11,6 @@ the same workspace.
 from __future__ import annotations
 
 import json
-import sys
 
 import click
 import pytest
@@ -352,33 +351,35 @@ def test_groups_mounted_from_ai_hats_dir(monkeypatch, runner, tmp_path):
     env = {"AI_HATS_DIR": str(sbx_agent)}
     res = runner.invoke(main, ["--help"], env=env)
     assert res.exit_code == 0
-    assert "hyp" in res.output
-
+    assert "\nhyp " in res.output or "  hyp  " in res.output
 
 
 def test_rack_hyp_with_foreign_pin_exits_1_foreign_project_pin(monkeypatch, runner, tmp_path):
     main_proj = tmp_path / "main"
-    main_proj.mkdir()
-    (main_proj / ".agent").mkdir()
+    (main_proj / ".agent").mkdir(parents=True)
+    (main_proj / ".agent" / "ai-hats.yaml").write_text("")
 
     foreign_proj = tmp_path / "foreign"
-    foreign_proj.mkdir()
-    (foreign_proj / ".agent").mkdir()
+    (foreign_proj / ".agent").mkdir(parents=True)
+    (foreign_proj / ".agent" / "ai-hats.yaml").write_text("")
 
     sbx_agent = tmp_path / "sbx" / ".agent" / "ai-hats"
-    sbx_agent.mkdir(parents=True)
+    sbx_tasks = sbx_agent / "tracker" / "backlog" / "tasks"
+    sbx_tasks.mkdir(parents=True)
+    sbx_hyp = sbx_agent / "tracker" / "hypotheses"
+    sbx_hyp.mkdir(parents=True)
+    (sbx_hyp / "backlog.yaml").write_text(
+        packaged_definition_source("hypotheses"), encoding="utf-8"
+    )
 
     monkeypatch.chdir(main_proj)
-    args = ["hyp", "create", "test hyp", "--json"]
-    monkeypatch.setattr(sys, "argv", ["rack", *args])
     env = {
         "AI_HATS_DIR": str(sbx_agent),
         "AI_HATS_PROJECT_DIR": str(foreign_proj),
     }
-    res = runner.invoke(main, args, env=env)
-    assert res.exit_code == 1
+    res = runner.invoke(main, ["hyp", "create", "test hyp", "--json"], env=env)
+    assert res.exit_code == 1, f"Unexpected code {res.exit_code}: {res.output}"
     payload = json.loads(res.output)
     assert payload["error"]["code"] == "foreign_project_pin"
     assert payload["error"]["pin"] == str(foreign_proj)
     assert payload["error"]["project_dir"] == str(main_proj)
-
