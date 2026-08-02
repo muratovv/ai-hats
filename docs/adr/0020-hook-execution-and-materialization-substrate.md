@@ -1,233 +1,253 @@
-# ADR-0020: Hook substrate — one materialization posture, one execution contract
+# ADR-0020: Подложка хуков — единая позиция материализации, единый контракт исполнения
 
-## Status
+## Статус
 
-Proposed (HATS-1240, 2026-07-29). Design of record for epic **HATS-1266**.
+Предложен (HATS-1240, 2026-07-29). Design of record для эпика **HATS-1266**.
 
-**Born by splitting ADR-0019 [1].** Rev 7 of that ADR accumulated two stories:
-the declarative extension model (`checks:` — epic HATS-1138) and the substrate
-underneath it — where existing hook scripts live and how they are executed
-(epic HATS-1266). The supervisor split them during the HATS-1240 review,
-before rev 7 ever merged: the channel taxonomy (was D10), the execution
-mechanics (was the mechanics half of D4/D5) and the git_hooks orchestrator
-contract moved here. ADR-0019 keeps the extension model and binds to this
-document for everything below.
+**Рождён расщеплением ADR-0019 [1].** Rev 7 того ADR накопил две истории:
+декларативную модель расширения (`checks:` — эпик HATS-1138) и подложку под
+ней — где живут существующие hook-скрипты и как они исполняются (эпик
+HATS-1266). Супервизор разделил их на ревью HATS-1240, до того как rev 7
+вообще смержился: сюда переехали таксономия каналов (бывший D10), механика
+исполнения (механическая половина D4/D5) и контракт git_hooks-оркестратора.
+За ADR-0019 остаётся модель расширения; во всём, что ниже, он привязывается к
+этому документу.
 
-Becomes `Accepted` when the epic's exit criteria hold: every channel on the
-assigned posture (D4), the primitive live under the worktree channel, and the
-orchestrator installed by `init` on a clean project.
+Становится `Accepted`, когда держатся критерии выхода эпика: каждый канал на
+назначенной позиции (D4), примитив живёт под worktree-каналом, оркестратор
+ставится `init`-ом на чистом проекте.
 
-## Context
+**Прогресс (2026-08-02, HATS-1465).** На master: HATS-1147 (`lifecycle_hooks`
+удалён, тумбстоун живой), HATS-1336 (свип корневого residue + тест-сторож «в
+корне проекта нет ai-hats-проводки хуков»), HATS-1398 (класс машинного кэша
+вынесен из воркспейса в `<cache_home>/<project-key>/`). HATS-1151 (примитив
+D2) реализован в своей ветке, ждёт мержа review→done. Не начаты: HATS-1268
+(claude runtime in place), HATS-1269 (wt in place), HATS-1337 (оркестратор
+D3), HATS-1338 (agy root + мерж `$HOME`), HATS-1339 (GC). Полная карта
+материализации поверхностей (ярусы, чокпойнты, параллельные сессии, кэш,
+очистка) и требования Mx, собранные HATS-1465, живут в **ADR-0021 [5]** —
+этот документ остаётся подложкой хуков.
 
-Four hook channels accreted, and each solved "where does the script live"
-independently: `lifecycle_hooks` copied a union of every library skill into
-`tracker/lifecycle-hooks/<event>.d/`, `runtime_hooks` (claude) flatten-copies
-into `library/hooks/<skill>-<basename>`, the worktree channel copies into
-`library/wt-hooks/`, and `git_hooks` copies into `.githooks/<event>.d/` behind
-a generated dispatcher. Every copy grew police: three manifests, a sweep,
-`_assert_manifest_intact`, drift arms, a leak detector, and the "recorded
-carry ⇒ backing script exists" invariant. The copies drift, the police wedge,
-and flatten-copying drops the data files shipped beside a script.
+## Контекст
 
-Execution is equally split: two runners with different timeouts, different env
-vocabularies, one that leaves stdin open (a hook can hang a rack transition
-while holding the task lock) and one that swallows the child's refusal reason
-into a log file.
+Четыре hook-канала наросли аккрецией, и каждый решал «где живёт скрипт»
+независимо: `lifecycle_hooks` копировал юнион всех библиотечных скиллов в
+`tracker/lifecycle-hooks/<event>.d/`, `runtime_hooks` (claude)
+флэттен-копирует в `library/hooks/<skill>-<basename>`, worktree-канал
+копирует в `library/wt-hooks/`, а `git_hooks` копирует в
+`.githooks/<event>.d/` за сгенерированным диспетчером. Каждая копия обросла
+полицией: три манифеста, свип, `_assert_manifest_intact`, drift-армы,
+детектор утечек и инвариант «записанный carry ⇒ скрипт-бэкинг существует».
+Копии дрейфуют, полиция клинит, а флэттен-копирование теряет файлы данных,
+лежащие рядом со скриптом.
 
-This ADR owns the substrate: **one taxonomy for where scripts live (D1), one
-contract for how they execute (D2), one durable global artifact (D3), and the
-migration of the existing channels (D4).** What binds to it from above —
-declarative `checks:`, the point catalog, binding policy — is ADR-0019 [1].
-What providers materialize per session is ADR-0018 [2].
+Исполнение расщеплено так же: два раннера с разными таймаутами и разными
+env-словарями; один оставляет stdin открытым (хук может повесить
+rack-транзишен, держа лок задачи), другой глотает причину отказа ребёнка в
+лог-файл.
 
-## Decision
+Этот ADR владеет подложкой: **одна таксономия того, где живут скрипты (D1),
+один контракт того, как они исполняются (D2), один долговечный глобальный
+артефакт (D3) и миграция существующих каналов (D4).** То, что привязывается
+сверху, — декларативные `checks:`, каталог точек, политика биндинга — это
+ADR-0019 [1]. Что провайдеры материализуют по-сессионно — ADR-0018 [2];
+полная карта материализации поверхностей и требования к ней — ADR-0021 [5].
 
-### D1 — Channel taxonomy: `in_process` vs `detached`
+## Решение
 
-The axis is **not** "snapshot versus live". Nothing in the system snapshots
-*bytes*: even the worktree carry persists only the hook **set**
-(`{skill, script, on}`) into worktree state and re-resolves the content at
-teardown. The axis is **who is guaranteed to be running when the script is
-spawned**:
+### D1 — Таксономия каналов: `in_process` vs `detached`
 
-| mode         | who spawns it                                | what it requires                                                                                                                                                                      |
-| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `in_process` | ai-hats itself                               | an absolute path resolved fresh at spawn; no copy, no manifest, sibling files intact                                                                                                  |
-| `detached`   | a third party, with no ai-hats process alive | one static dispatcher per event, installed at init — no role logic, no venv paths; the gate set resolved at spawn time from ai-hats-owned state; **fail-open** when ai-hats is absent |
+Ось — **не** «снапшот против live». Ничто в системе не снапшотит *байты*:
+даже worktree-carry персистит в состояние worktree только **набор** хуков
+(`{skill, script, on}`) и ре-резолвит содержимое на teardown. Ось — **кто
+гарантированно запущен в момент порождения скрипта**:
 
-Naming the axis is what prevents the next channel from picking a shape by
-imitation — each existing copy was imitated from the previous channel's, and
-only one of the four ever *needed* one.
+| режим        | кто порождает                               | что для этого нужно                                                                                                                                                                                                |
+| ------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `in_process` | сам ai-hats                                 | абсолютный путь, резолвящийся свежим на spawn; ни копии, ни манифеста, соседние файлы на месте                                                                                                                     |
+| `detached`   | третья сторона, без живого процесса ai-hats | один статический диспетчер на событие, ставится на init — без ролевой логики и путей в venv; набор гейтов резолвится в момент spawn из состояния, принадлежащего ai-hats; **fail-open**, когда ai-hats отсутствует |
 
-Two further attributes, previously implicit and silently violated:
+Именование оси — то, что не даёт следующему каналу выбрать форму
+подражанием: каждая существующая копия была сымитирована с предыдущей, а
+*нуждался* в копии только один канал из четырёх.
 
-- **`selection: composed | union`.** Only `lifecycle_hooks` collected over
-  every library skill; every other channel is per-composed-role. ADR-0019 D7
-  retires the union special case with the channel itself.
-- **`bundle: script | dir`.** Whether a hook needs the sibling files shipped
-  beside it. Flatten-copying a single script silently drops them, and two live
-  scripts already read siblings via `__file__` or a repo-relative path. Under
-  `in_process`, `bundle: dir` is free — the resolved path's siblings are
-  simply there; ADR-0019 D9 gets the same property by snapshotting the
-  declaring skill's directory whole.
+Два дополнительных атрибута, прежде неявных и молча нарушавшихся:
 
-### D2 — The execution primitive
+- **`selection: composed | union`.** Только `lifecycle_hooks` собирал по
+  всем библиотечным скиллам; каждый другой канал — по составленной роли.
+  ADR-0019 D7 ретайрит юнион-спецслучай вместе с самим каналом.
+- **`bundle: script | dir`.** Нужны ли хуку файлы, поставляемые рядом с ним.
+  Флэттен-копия одиночного скрипта молча их теряет, а два живых скрипта уже
+  читают соседей через `__file__` или repo-relative путь. Под `in_process`
+  `bundle: dir` бесплатен — соседи резолвнутого пути просто на месте;
+  ADR-0019 D9 получает то же свойство, снапшотя директорию декларирующего
+  скилла целиком.
 
-One function spawns every ai-hats-run hook and returns a governed outcome
-(implementation: HATS-1151; ANSI sanitisation of the reason channel:
-HATS-1161). **The primitive owns mechanics; callers own policy** — what
-`refuse` means at a rack edge, at a worktree teardown, or at a future
-`checks:` binding (`on_error`, ADR-0019 D4) is the caller's contract.
+### D2 — Примитив исполнения
 
-| exit          | meaning                         | effect                                  |
-| ------------- | ------------------------------- | --------------------------------------- |
-| `0`           | pass                            | operation proceeds                      |
-| `2`           | **refuse** — the hook's verdict | refused; stdout tail becomes the reason |
-| `1` and other | the hook itself broke           | governed by the caller's error policy   |
+Одна функция порождает каждый исполняемый ai-hats'ом хук и возвращает
+управляемый исход (реализация: HATS-1151; ANSI-санитизация канала причины:
+HATS-1161). **Примитив владеет механикой; вызывающие — политикой**: что
+значит `refuse` на rack-ребре, на worktree-teardown или в будущем биндинге
+`checks:` (`on_error`, ADR-0019 D4) — контракт вызывающего.
 
-**Refuse is exit 2, deliberately not 1.** Under `set -e`, a false `[[ ... ]]`,
-a `grep` with no match and a failing `jq` all abort a bash script with
-**exit 1** — exit 1 is the status a shell check produces *by accident*, so it
-routes to the caller's error policy, never reads as a considered verdict. The
-inverse is live in-repo: `drain-review.sh` does `exit "$rc"` propagating
-`hunk-notes.sh`'s status (2, 127, …) to fail **closed** — under a naive
-"other = broke" plus a warn policy that data-protection script would fail
-**open**, silently reproducing HATS-1130. Precedent for not signalling a
-verdict by exit status: the runtime-hook channel returns 0 and emits
-`permissionDecision: deny` on stdout (`safety_gate.py`).
+| exit         | значение                  | эффект                                  |
+| ------------ | ------------------------- | --------------------------------------- |
+| `0`          | pass                      | операция продолжается                   |
+| `2`          | **refuse** — вердикт хука | отказ; хвост stdout становится причиной |
+| `1` и прочие | хук сам сломался          | управляется error-политикой вызывающего |
 
-Mechanics, uniform across callers:
+**Refuse — это exit 2, намеренно не 1.** Под `set -e` ложный `[[ ... ]]`,
+`grep` без совпадений и упавший `jq` прерывают bash-скрипт с **exit 1** —
+единица это статус, который shell-проверка выдаёт *случайно*, поэтому она
+уходит в error-политику вызывающего и никогда не читается как осознанный
+вердикт. Обратный случай живёт в репо: `drain-review.sh` делает
+`exit "$rc"`, пропагируя статус `hunk-notes.sh` (2, 127, …), чтобы фейлиться
+**закрыто**, — под наивным «прочее = сломалось» плюс warn-политикой этот
+скрипт защиты данных фейлился бы **открыто**, молча воспроизводя HATS-1130.
+Прецедент не-сигналинга вердикта через exit-статус: runtime-hook-канал
+возвращает 0 и печатает `permissionDecision: deny` на stdout
+(`safety_gate.py`).
 
-- `126`/`127` (not found / not executable) and anything `>128` (signal death:
-  130 SIGINT, 143 SIGTERM) are **broke**, named as such in the message.
-  SIGINT aborts the whole operation regardless of error policy — never
-  swallowed.
-- A **timeout is broke, not refuse**: a hung hook formed no verdict.
-- **The timeout is a caller parameter, not a shared constant.** The channels
-  sit behind different locks (rack kernel 30 s, wt lifecycle 60 s); the
-  invariant is `hook_timeout < that caller's lock timeout`, asserted at import
-  per caller. One global constant would make the assert a coincidence.
-- `stdin = DEVNULL`, always — a hook that reads interactively terminates
-  instead of hanging a transition while holding the task lock.
-- Text decoding with `errors="replace"` — invalid bytes become a governed
-  error message, never a `UnicodeDecodeError` stack trace inside a consumer.
-- The **reason** is the tail of the child's **stdout**; stderr is captured
-  separately so a verbose diagnostic stream cannot truncate the verdict away.
-- **One shared env base:** `AI_HATS_PROJECT_DIR`, the fully-qualified
-  point/event identifier, `AI_HATS_FORCE`. Point-specific additions stay with
-  their caller (the `checks:` vocabulary is ADR-0019 D5; wt teardown keeps
-  its own).
+Механика, единая для всех вызывающих:
 
-### D3 — The git_hooks orchestrator
+- `126`/`127` (не найден / не исполним) и всё `>128` (смерть от сигнала:
+  130 SIGINT, 143 SIGTERM) — **broke**, и в сообщении это названо. SIGINT
+  прерывает всю операцию независимо от error-политики — никогда не
+  глотается.
+- **Таймаут — broke, не refuse**: зависший хук вердикта не сформировал.
+- **Таймаут — параметр вызывающего, не общая константа.** Каналы сидят за
+  разными локами (rack kernel 30 с, wt lifecycle 60 с); инвариант —
+  `hook_timeout < таймаут лока этого вызывающего`, ассертится на импорте у
+  каждого вызывающего. Одна глобальная константа сделала бы ассерт
+  совпадением.
+- `stdin = DEVNULL`, всегда — хук, читающий интерактивно, завершается, а не
+  висит на транзишене, держа лок задачи.
+- Декодирование текста с `errors="replace"` — невалидные байты становятся
+  управляемым сообщением об ошибке, а не `UnicodeDecodeError`-трейсом внутри
+  потребителя.
+- **Причина** — хвост **stdout** ребёнка; stderr захватывается отдельно,
+  чтобы многословный диагностический поток не мог вытеснить вердикт.
+- **Одна общая env-база:** `AI_HATS_PROJECT_DIR`, полностью
+  квалифицированный идентификатор точки/события, `AI_HATS_FORCE`.
+  Точко-специфичные добавки остаются у вызывающего (словарь `checks:` —
+  ADR-0019 D5; wt-teardown держит свой).
 
-`git_hooks` is the only `detached` channel, on two independent constraints. A
-human `git commit` runs the hook with no process able to evaluate
-`builtin_library_root()` — and that resolver is not a stable path source in
-any case: it is worktree-aware, cwd-sensitive, and in the zipimport tier
-resolves to a temp directory alive only for the calling process. Separately,
-git requires a real executable named exactly `<event>` under
-`core.hooksPath`, and the dispatcher is generated rather than shipped by a
-skill. Note what is *not* a reason: `.githooks/` is git-ignored, so "it is
-committed with the repository" does not apply.
+### D3 — Оркестратор git_hooks
 
-**The detached contract** (supervisor decision 2026-07-29, HATS-1266
-re-scope; implementation HATS-1337):
+`git_hooks` — единственный `detached`-канал, по двум независимым
+ограничениям. Человеческий `git commit` запускает хук без процесса,
+способного вычислить `builtin_library_root()`, — а этот резолвер и не
+стабильный источник пути: он worktree-aware, чувствителен к cwd, а в
+zipimport-ярусе резолвится во временную директорию, живущую только для
+вызывающего процесса. Отдельно: git требует настоящий исполняемый файл с
+именем ровно `<event>` под `core.hooksPath`, и диспетчер генерируется, а не
+поставляется скиллом. Что *не* является причиной: `.githooks/` в
+git-ignore, так что «коммитится вместе с репозиторием» не применяется.
 
-- The durable artifact is only the **orchestrator**: the per-event dispatcher
-  plus `core.hooksPath`, installed at `ai-hats init`. It carries no role
-  logic and no paths into a versioned venv, so it survives `self update`
-  unchanged and is independent of which roles are composed.
-- Gate *content* stays in the declaring skills. The dispatcher resolves the
-  gate set at **spawn time** from ai-hats-owned state — no per-gate copies
-  under `<event>.d/`, no `.ai-hats-manifest`, no GIT drift arm. The
-  resolution mechanism (the `versions/current` interpreter vs a composition
-  snapshot refreshed at compose points) is settled at HATS-1337's plan.
-- Resolved paths are containment-checked. The retired flattening's
-  `Path(...).name` was doing security work against tampered persisted state;
-  that property survives the flattening's removal, here and in the worktree
-  channel alike.
-- Degradation is **fail-open with a one-line warning**: a wedged human commit
-  is never an acceptable failure mode, and the previous fail-closed
-  backstop's named remedy — `ai-hats self init` — needs exactly the binary
-  that is gone. A gate that cannot be resolved is a gate that does not run,
-  said out loud; it is never a commit that cannot happen.
-- The orchestrator must gate **every worktree of the repository**, not only
-  the main checkout — worktrees share `.git/config`, and a relative
-  `core.hooksPath` resolves against the worktree top where no `.githooks/`
-  exists. (Mechanism at HATS-1337's plan.)
+**Detached-контракт** (решение супервизора 2026-07-29, ре-скоуп HATS-1266;
+реализация HATS-1337):
 
-Symlinking gates into the library — the halfway house ADR-0019 rev 7
-considered — stays rejected, on staleness grounds: a link into a versioned
-install dies at every `self update`, which is the one lifecycle event the
-orchestrator must survive.
+- Долговечный артефакт — только **оркестратор**: по-событийный диспетчер
+  плюс `core.hooksPath`, ставится на `ai-hats init`. Не несёт ролевой логики
+  и путей в версионированный venv, поэтому переживает `self update` без
+  изменений и не зависит от того, какие роли составлены.
+- *Содержимое* гейтов остаётся в декларирующих скиллах. Диспетчер резолвит
+  набор гейтов **в момент spawn** из состояния, принадлежащего ai-hats, —
+  без по-гейтовых копий под `<event>.d/`, без `.ai-hats-manifest`, без GIT
+  drift-арма. Механизм резолва (интерпретатор `versions/current` против
+  снапшота композиции, обновляемого на точках композиции) решается на плане
+  HATS-1337.
+- Резолвнутые пути проходят containment-проверку. `Path(...).name`
+  ретайрнутого флэттена делал security-работу против подделанного
+  персистентного состояния; это свойство переживает удаление флэттена —
+  здесь и в worktree-канале одинаково.
+- Деградация — **fail-open с одной строкой предупреждения**: заклиненный
+  человеческий коммит — никогда не приемлемый режим отказа, а именованное
+  лекарство прежнего fail-closed бэкстопа — `ai-hats self init` — требует
+  ровно того бинаря, которого больше нет. Гейт, который не резолвится, — это
+  гейт, который не запускается, сказанный вслух; это никогда не коммит,
+  который не может случиться.
+- Оркестратор обязан гейтить **каждый worktree репозитория**, не только
+  основной чекаут — worktree делят `.git/config`, и относительный
+  `core.hooksPath` резолвится против верха worktree, где никакого
+  `.githooks/` нет. (Механизм — на плане HATS-1337.)
 
-### D4 — Assignment and migration of the existing channels
+Симлинки гейтов в библиотеку — полумера, которую рассматривал rev 7
+ADR-0019, — остаются отвергнутыми по основанию протухания: линк в
+версионированную установку умирает на каждом `self update`, а это ровно то
+событие жизненного цикла, которое оркестратор обязан пережить.
 
-| channel                | posture      | card                                                               |
+### D4 — Назначение и миграция существующих каналов
+
+| канал                  | позиция      | карточка                                                           |
 | ---------------------- | ------------ | ------------------------------------------------------------------ |
-| `lifecycle_hooks`      | **deleted**  | HATS-1147 (tombstone; ordering: ADR-0019 D8)                       |
-| `runtime_hooks` claude | `in_process` | HATS-1268 — resolve into the session skill tree                    |
-| `runtime_hooks` agy    | `in_process` | already there (the proven target shape)                            |
-| worktree `wt_in/out`   | `in_process` | HATS-1269 — scripts only; declaration fold is ADR-0019's HATS-1146 |
-| `git_hooks`            | `detached`   | HATS-1337 — the D3 orchestrator                                    |
-| `checks:` (future)     | `in_process` | ADR-0019 D9 — own snapshot root, never a provider's                |
+| `lifecycle_hooks`      | **удалён**   | HATS-1147 (тумбстоун; порядок: ADR-0019 D8)                        |
+| `runtime_hooks` claude | `in_process` | HATS-1268 — резолв в сессионное дерево скиллов                     |
+| `runtime_hooks` agy    | `in_process` | уже там (доказанная целевая форма)                                 |
+| worktree `wt_in/out`   | `in_process` | HATS-1269 — только скрипты; фолд декларации — HATS-1146 у ADR-0019 |
+| `git_hooks`            | `detached`   | HATS-1337 — оркестратор D3                                         |
+| `checks:` (будущее)    | `in_process` | ADR-0019 D9 — собственный снапшот-корень, никогда не провайдерский |
 
-`in_process` for `runtime_hooks` means the **provider's per-session tree**,
-not the installed package: a session must execute the same bytes from start
-to finish, and the installed-package path goes stale under a mid-session
-`self update` (venv-per-version) while a session's settings live for the
-whole session. Two `in_process` roots — the provider session tree for
-runtime hooks, ai-hats's own `checks/` snapshot (ADR-0019 D9) — are correct,
-not a smell: runtime hooks are surface-specific by nature; checks fire on
-rack with no provider involved.
+`in_process` для `runtime_hooks` значит **per-session дерево провайдера**,
+не установленный пакет: сессия обязана исполнять одни и те же байты от
+старта до конца, а путь в установленный пакет протухает при mid-session
+`self update` (venv-на-версию), тогда как настройки сессии живут всю сессию.
+Два `in_process`-корня — провайдерское сессионное дерево для runtime-хуков и
+собственный ai-hats-снапшот `checks/` (ADR-0019 D9) — корректны, а не запах:
+runtime-хуки поверхностно-специфичны по природе; checks срабатывают на rack
+без провайдера вообще.
 
-One known obstacle for the `runtime_hooks` half: today the materializer
-copies each script and rewrites the mode to `0o755`, which is masking at
-least one `100644` hook in the shipped library (ADR-0019 D6). `in_process`
-resolves the path fresh instead of copying, so that mask disappears and the
-mode has to be correct at rest before the retrofit lands.
+Одно известное препятствие для половины `runtime_hooks`: сегодня
+материализатор копирует каждый скрипт и переписывает mode в `0o755`, что
+маскирует минимум один `100644`-хук в поставляемой библиотеке (ADR-0019 D6).
+`in_process` резолвит путь свежим вместо копирования, так что маска
+исчезает — и mode обязан быть корректным в покое до посадки ретрофита.
 
-The police retire with the copies: three managed directories, three
-manifests, the sweep, `_assert_manifest_intact`, the runtime drift arm, the
-leak detector, and the carry backstop the worktree sweep forced (HATS-833's
-`_drop_unbacked_carry_rows`). A card that removes a copy and leaves its
-watchdog behind has done half the job.
+Полиция ретайрится вместе с копиями: три managed-директории, три манифеста,
+свип, `_assert_manifest_intact`, runtime drift-арм, детектор утечек и
+carry-бэкстоп, который вынудил worktree-свип (`_drop_unbacked_carry_rows` из
+HATS-833). Карточка, убравшая копию и оставившая её сторожа, сделала
+полработы.
 
-## Consequences
+## Последствия
 
-**Gained.** One taxonomy instead of four imitated copies; sibling data files
-survive by construction (`bundle: dir` is free); the whole
-copy-drift-police-heal bug class dissolves rather than gaining another
-watchdog; a refusing hook can say why; a hook cannot hang a transition
-holding the task lock; `self update` stops being a re-materialization event
-for anything but nothing — the orchestrator survives it by content.
+**Приобретено.** Одна таксономия вместо четырёх сымитированных копий;
+соседние файлы данных выживают по конструкции (`bundle: dir` бесплатен);
+весь класс багов «копия-дрейф-полиция-heal» растворяется, вместо того чтобы
+получить ещё одного сторожа; отказывающий хук может сказать почему; хук не
+может повесить транзишен, держа лок задачи; `self update` перестаёт быть
+событием перематериализации — оркестратор переживает его по содержимому.
 
-**Cost, named.** Fail-open means: ai-hats removed or broken ⇒ git gates
-silently off (one warning line). That is the supervisor-chosen posture — the
-alternative demonstrably wedges human commits with an unusable remedy. Live
-resolution also means the gate set at commit time can differ from the set at
-compose time; the copies "fixed" that at the price of the entire drift class
-above.
+**Цена, названная.** Fail-open значит: ai-hats удалён или сломан ⇒ git-гейты
+молча выключены (одна строка предупреждения). Это выбранная супервизором
+позиция — альтернатива доказуемо клинит человеческие коммиты, предлагая
+неработающее лекарство. Live-резолв также значит, что набор гейтов в момент
+коммита может отличаться от набора в момент композиции; копии это «чинили»
+ценой всего описанного выше класса дрейфа.
 
-**Risk.** This unifies channels that today are independent — exactly the
-condition where per-channel tests stay green while composite behaviour
-changes (HATS-1113: five days of every agent role disabled behind a green
-suite). Verification is chain-level or it is nothing: the composed-chain
-harness (`tests/e2e/_helpers/hook_chain.py`) and real-commit e2e, per
-channel AND in composition.
+**Риск.** Это унифицирует каналы, сегодня независимые, — ровно то условие,
+при котором по-канальные тесты остаются зелёными, пока композитное поведение
+меняется (HATS-1113: пять дней все агентские роли выключены за зелёным
+набором). Верификация — уровня цепочки или никакая: composed-chain-харнесс
+(`tests/e2e/_helpers/hook_chain.py`) и e2e с настоящим коммитом, по-канально
+И в композиции.
 
-## References
+## Ссылки
 
-- [1] `docs/adr/0019-declarative-lifecycle-extension-model.md` — the
-  declarative extension model this substrate carries: point catalog, binding
-  policy (`on_error`), check-point env vocabulary (D5), the `checks/`
-  snapshot root (D9), and the migration ordering (D8).
-- [2] `docs/adr/0018-unified-artifact-builder.md` — provider-side
-  materialization: the artifact builder, the clean-root invariant, and the
-  per-session trees `in_process` runtime hooks resolve into.
-- [3] `docs/adr/0013-wt-core-extraction-boundary.md` D5 — the `wt_hooks`
-  carry persisted into worktree state JSON, the shape HATS-1269's compat
-  shim must keep replaying.
-- [4] `src/ai_hats/templates/githooks/dispatcher.sh` — the current
-  dispatcher template D3 rebuilds (stdin fan-out and previous-hooks chaining
-  are behaviours to keep; the manifest backstop is not).
+- [1] `docs/adr/0019-declarative-lifecycle-extension-model.md` —
+  декларативная модель расширения, которую несёт эта подложка: каталог
+  точек, политика биндинга (`on_error`), env-словарь check-точек (D5),
+  снапшот-корень `checks/` (D9), порядок миграции (D8).
+- [2] `docs/adr/0018-unified-artifact-builder.md` — материализация на
+  стороне провайдера: artifact builder, инвариант чистого корня и
+  per-session деревья, в которые резолвятся `in_process` runtime-хуки.
+- [3] `docs/adr/0013-wt-core-extraction-boundary.md` D5 — carry `wt_hooks`,
+  персистящийся в JSON состояния worktree; форма, которую обязан продолжать
+  проигрывать compat-шим HATS-1269.
+- [4] `src/ai_hats/templates/githooks/dispatcher.sh` — текущий шаблон
+  диспетчера, который пересобирает D3 (fan-out stdin и чейнинг предыдущих
+  хуков — поведение, которое сохраняется; манифестный бэкстоп — нет).
+- [5] `docs/adr/0021-surface-materialization.md` — консолидирующая карта
+  материализации поверхностей: подготовка роли, интеграция хуков,
+  install-time установка, параллельные сессии, кэш, очистка, требования Mx.
