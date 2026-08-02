@@ -145,20 +145,16 @@ from ai_hats.pipeline.registry import names
 print(names())
 ```
 
-### 1.7 `AI_HATS_DIR` override — shared step library & tracker sandbox
+### 1.7 `AI_HATS_DIR` override — shared step library
 
-By default the loader and `rack` CLI look at `<ai_hats_dir>/pipeline_steps/` and `<ai_hats_dir>/tracker/backlog/tasks/`. To point ai-hats at a shared library or sandbox elsewhere:
+By default the loader looks at `<ai_hats_dir>/pipeline_steps/`. To point ai-hats at a shared library elsewhere:
 
 ```bash
 export AI_HATS_DIR=/team/shared-ai-hats
-# loader reads /team/shared-ai-hats/pipeline_steps/ and rack targets /team/shared-ai-hats/tracker/
+# loader reads /team/shared-ai-hats/pipeline_steps/
 ```
 
-The override applies to **every** ai-hats artefact (traces, future pipelines, and `rack` CLI backlog commands). `AI_HATS_DIR` works in tandem with `AI_HATS_PROJECT_DIR`: if `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` refuses to run (exit code 1) to prevent accidental writes to live backlogs.
-
-> **Note on Sandbox Isolation & Verification:**
-> 1. `ai-hats.yaml` is still read from the current project root. For complete isolation of project settings, set up the sandbox as an isolated project root.
-> 2. **Verification by reading is insufficient** — read operations can pass even when isolation is broken. Always verify sandbox isolation using a fail-safe **write probe** (writing a test card to the sandbox and confirming live tracker remains untouched).
+The override applies to every ai-hats artefact (traces, future pipelines). For backlog target resolution and sandbox isolation details, see [`docs/how-to-hatrack.md`](how-to-hatrack.md#which-backlog-am-i-writing-to).
 
 
 ### 1.7a `AI_HATS_USER_HOME` override — isolated global customizations

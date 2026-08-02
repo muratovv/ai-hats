@@ -36,6 +36,45 @@ riding the one mutating call.
 
 ---
 
+## Which backlog am I writing to?
+
+When executing `rack` commands or running `ai-hats wait`, the project root and target backlog are resolved via a strict precedence ladder:
+
+| Precedence | Level | Resolution Rule |
+| ---------- | ----- | --------------- |
+| 1 | Explicit CLI / Env Override | `--tasks-dir <path>` flag or `RACK_TASKS_DIR=<path>` environment variable. |
+| 2 | `AI_HATS_DIR` Override | Points to `<ai_hats_dir>`. Cards resolve under `<ai_hats_dir>/tracker/backlog/tasks`. If `AI_HATS_PROJECT_DIR` is set and does not match the project directory containing `<ai_hats_dir>`, `rack` refuses execution with exit code 1 (`foreign_project_pin`). |
+| 3 | Walk-up Resolution | Searches current directory and parent directories for `.agent/ai-hats.yaml` or `.agent/ai-hats/`. |
+
+> **Note**: Explicit root resolutions (e.g. `--root <dir>` or cross-project roots registry) target the specified root directly and skip Step 2.  
+> **Warning on Residual Leak**: `ai-hats.yaml` is always read from the project root (`project_dir`). Therefore, `AI_HATS_DIR` alone does not provide full project config isolation — complete isolation requires a sandbox project root.
+
+### Executable Sandbox Recipe & Fail-Safe Write Probe
+
+When validating automation in a sandbox copy of a workspace, follow this executable recipe to ensure mutations do not leak into the live backlog.
+
+1. **Copy the tracker into a sandbox directory**:
+   ```bash
+   mkdir -p /tmp/sandbox/.agent/ai-hats
+   cp -r .agent/ai-hats/tracker /tmp/sandbox/.agent/ai-hats/
+   ```
+
+2. **Seed a probe card using `--tasks-dir`**:
+   ```bash
+   RACK_TASKS_DIR=/tmp/sandbox/.agent/ai-hats/tracker/backlog/tasks \
+     rack create "Sandbox Isolation Probe" --id HATS-9999
+   ```
+
+3. **Verify isolation with a fail-safe write probe**:
+   Run the command targeting `HATS-9999` (which exists ONLY in the sandbox backlog). **Crucial**: Unset `AI_HATS_SESSION_ID` (`env -u AI_HATS_SESSION_ID`) so single-slot task ownership (HATS-955) does not mask isolation failures.
+   ```bash
+   env -u AI_HATS_SESSION_ID AI_HATS_DIR=/tmp/sandbox/.agent/ai-hats \
+     rack transition HATS-9999 execute --log "isolation test"
+   ```
+   If isolation holds, `HATS-9999` in the sandbox transitions to `execute`. If isolation leaks to the live project root, the command fails with `unknown_task: HATS-9999` (because `HATS-9999` does not exist in live), safely protecting live data from corruption.
+
+---
+
 ## The three card types
 
 | Type       | ID prefix  | On disk                                                           | Purpose                                                            |
