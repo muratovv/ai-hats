@@ -12,7 +12,9 @@ backlog-agnostic: a backlog's short CLI name is part of ITS definition.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
 
 import click
 
@@ -29,6 +31,7 @@ from ..cli_common import (
 from ..cli_kernel import _echo_deltas, _result_payload
 from ..composition import compose_subscribers, stock_factories
 from ..definition import BacklogDefinition
+from ..errors import ForeignProjectPinError
 from ..ops import parse_ops
 from ..resolver import NoProjectRootError, resolve_root
 from ..workspace import BacklogInstance, Workspace, WorkspaceError
@@ -162,17 +165,25 @@ def build_backlog_group(instance: BacklogInstance) -> click.Group:
 # ----- dynamic top-level surface ---------------------------------------------
 
 
-def _ambient_workspace() -> Workspace | None:
+def _ambient_workspace(ctx: click.Context | None = None) -> Workspace | None:
+
     """The workspace at the ambient root (``RACK_TASKS_DIR`` / cwd), or ``None``
     when there is no project or discovery fails — groups then simply do not
     appear, the base surface stands alone (R2). Fail-soft: group discovery must
     never brick the base CLI."""
     override = os.environ.get(ENV_TASKS_DIR)
     try:
-        root = resolve_root(Path.cwd(), Path(override) if override else None)
+        root = resolve_root(
+            Path.cwd(), Path(override) if override else None, environ=os.environ
+        )
         return Workspace.discover([root])
     except NoProjectRootError:
         return None
+    except ForeignProjectPinError as e:
+        handle_rack_error(e, "--json" in sys.argv)
+        return None
+
+
     except Exception:  # silent-ok: fail-soft: group discovery must never brick the base CLI
         return None
 
@@ -197,10 +208,11 @@ class RackGroup(click.Group):
     the surface stays exactly those base verbs until sibling catalogs mount (R2)."""
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
+
         cmd = super().get_command(ctx, name)
         if cmd is not None:
             return cmd
-        workspace = _ambient_workspace()
+        workspace = _ambient_workspace(ctx)
         if workspace is None:
             return None
         inst = _mounted_groups(workspace).get(name)
@@ -208,10 +220,12 @@ class RackGroup(click.Group):
 
     def list_commands(self, ctx: click.Context) -> list[str]:
         names = set(super().list_commands(ctx))
-        workspace = _ambient_workspace()
+        workspace = _ambient_workspace(ctx)
         if workspace is not None:
             names |= set(_mounted_groups(workspace))
         return sorted(names)
+
+
 
 
 __all__ = [

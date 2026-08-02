@@ -68,7 +68,13 @@ def test_cli_surface_is_exactly_create_ls_context_transition(runner, tmp_path):
     # `transition --log`. Composite verbs joined: plan-extract (1054), root (1081),
     # doctor (1335).
     assert set(main.commands) == {
-        "create", "ls", "context", "transition", "plan-extract", "root", "doctor",
+        "create",
+        "ls",
+        "context",
+        "transition",
+        "plan-extract",
+        "root",
+        "doctor",
     }
     for verb in ("show", "log"):
         result = runner.invoke(main, [verb, "HATS-001", *_tasks_args(tmp_path)])
@@ -175,3 +181,23 @@ def test_create_with_parent_reports_epicify_journal(runner, tmp_path):
     payload = json.loads(result.output)
     assert payload["task"]["parent_task"] == "HATS-001"
     assert [r["event"] for r in payload["journal"]] == ["epicify"]
+
+
+def test_foreign_project_pin_cli_refusal(monkeypatch, runner, tmp_path):
+    main_dir = tmp_path / "main"
+    main_dir.mkdir()
+    (main_dir / ".agent").mkdir()
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    sbx_dir = tmp_path / "sbx"
+    monkeypatch.chdir(main_dir)
+    env = {
+        "AI_HATS_DIR": str(sbx_dir),
+        "AI_HATS_PROJECT_DIR": str(other_dir),
+    }
+    result = runner.invoke(main, ["ls", "--json"], env=env)
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["error"]["code"] == "foreign_project_pin"
+    assert payload["error"]["pin"] == str(other_dir)
+    assert payload["error"]["project_dir"] == str(main_dir)

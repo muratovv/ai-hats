@@ -11,6 +11,7 @@ the same workspace.
 from __future__ import annotations
 
 import json
+import sys
 
 import click
 import pytest
@@ -238,9 +239,21 @@ def test_proposal_create_vote_accept(runner, tmp_path):
     tasks = _tasks_catalog(tmp_path, with_siblings=True)
     created = _json(
         _run(
-            runner, tasks, "proposal", "create", "a proposal",
-            "--category", "rule", "--target", "t", "--description", "d", "--rationale", "why",
-            "--failed-session-id", "20260504-120000-1",
+            runner,
+            tasks,
+            "proposal",
+            "create",
+            "a proposal",
+            "--category",
+            "rule",
+            "--target",
+            "t",
+            "--description",
+            "d",
+            "--rationale",
+            "why",
+            "--failed-session-id",
+            "20260504-120000-1",
             "--json",
         )
     )
@@ -317,3 +330,55 @@ def test_proposal_vote_missing_session_is_typed_refusal(runner, tmp_path):
     out = _run(runner, tasks, "proposal", "vote", pid, "--reasoning", "sound", "--json")
     assert out.exit_code == 1
     assert json.loads(out.output)["error"]["field"] == "votes"
+
+
+def test_groups_mounted_from_ai_hats_dir(monkeypatch, runner, tmp_path):
+    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
+    main_proj = tmp_path / "main"
+    main_proj.mkdir()
+    (main_proj / ".agent").mkdir()
+
+    sbx_proj = tmp_path / "sbx"
+    sbx_agent = sbx_proj / ".agent" / "ai-hats"
+    sbx_tasks = sbx_agent / "tracker" / "backlog" / "tasks"
+    sbx_tasks.mkdir(parents=True)
+    sbx_hyp = sbx_agent / "tracker" / "hypotheses"
+    sbx_hyp.mkdir(parents=True)
+    (sbx_hyp / "backlog.yaml").write_text(
+        packaged_definition_source("hypotheses"), encoding="utf-8"
+    )
+
+    monkeypatch.chdir(main_proj)
+    env = {"AI_HATS_DIR": str(sbx_agent)}
+    res = runner.invoke(main, ["--help"], env=env)
+    assert res.exit_code == 0
+    assert "hyp" in res.output
+
+
+
+def test_rack_hyp_with_foreign_pin_exits_1_foreign_project_pin(monkeypatch, runner, tmp_path):
+    main_proj = tmp_path / "main"
+    main_proj.mkdir()
+    (main_proj / ".agent").mkdir()
+
+    foreign_proj = tmp_path / "foreign"
+    foreign_proj.mkdir()
+    (foreign_proj / ".agent").mkdir()
+
+    sbx_agent = tmp_path / "sbx" / ".agent" / "ai-hats"
+    sbx_agent.mkdir(parents=True)
+
+    monkeypatch.chdir(main_proj)
+    args = ["hyp", "create", "test hyp", "--json"]
+    monkeypatch.setattr(sys, "argv", ["rack", *args])
+    env = {
+        "AI_HATS_DIR": str(sbx_agent),
+        "AI_HATS_PROJECT_DIR": str(foreign_proj),
+    }
+    res = runner.invoke(main, args, env=env)
+    assert res.exit_code == 1
+    payload = json.loads(res.output)
+    assert payload["error"]["code"] == "foreign_project_pin"
+    assert payload["error"]["pin"] == str(foreign_proj)
+    assert payload["error"]["project_dir"] == str(main_proj)
+

@@ -44,10 +44,10 @@ class EchoStep(Step):
     @property
     def io(self) -> StepIO:
         return StepIO(
-            name="echo",                                # YAML id
-            requires=frozenset({"text"}),               # inputs (must be in state)
-            optional=frozenset(),                       # nice-to-have inputs
-            produces=frozenset({"echoed"}),             # outputs (declared exactly)
+            name="echo",  # YAML id
+            requires=frozenset({"text"}),  # inputs (must be in state)
+            optional=frozenset(),  # nice-to-have inputs
+            produces=frozenset({"echoed"}),  # outputs (declared exactly)
         )
 
     def run(self, *, text, **_) -> dict:
@@ -141,19 +141,25 @@ To see all registered step ids:
 
 ```python
 from ai_hats.pipeline.registry import names
+
 print(names())
 ```
 
-### 1.7 `AI_HATS_DIR` override — shared step library
+### 1.7 `AI_HATS_DIR` override — shared step library & tracker sandbox
 
-By default the loader looks at `<ai_hats_dir>/pipeline_steps/`. To point ai-hats at a shared library elsewhere:
+By default the loader and `rack` CLI look at `<ai_hats_dir>/pipeline_steps/` and `<ai_hats_dir>/tracker/backlog/tasks/`. To point ai-hats at a shared library or sandbox elsewhere:
 
 ```bash
 export AI_HATS_DIR=/team/shared-ai-hats
-# loader now reads /team/shared-ai-hats/pipeline_steps/
+# loader reads /team/shared-ai-hats/pipeline_steps/ and rack targets /team/shared-ai-hats/tracker/
 ```
 
-The override applies to **every** ai-hats artefact (traces, future pipelines), so use it when you want to isolate a whole environment, not just step code.
+The override applies to **every** ai-hats artefact (traces, future pipelines, and `rack` CLI backlog commands). `AI_HATS_DIR` works in tandem with `AI_HATS_PROJECT_DIR`: if `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` refuses to run (exit code 1) to prevent accidental writes to live backlogs.
+
+> **Note on Sandbox Isolation & Verification:**
+> 1. `ai-hats.yaml` is still read from the current project root. For complete isolation of project settings, set up the sandbox as an isolated project root.
+> 2. **Verification by reading is insufficient** — read operations can pass even when isolation is broken. Always verify sandbox isolation using a fail-safe **write probe** (writing a test card to the sandbox and confirming live tracker remains untouched).
+
 
 ### 1.7a `AI_HATS_USER_HOME` override — isolated global customizations
 

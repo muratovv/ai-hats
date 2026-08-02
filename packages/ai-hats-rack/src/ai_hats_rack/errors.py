@@ -8,6 +8,8 @@ handler fails CI (never a silent bare traceback).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class RackError(Exception):
     """Base for every rack domain error surfaced through the CLI error table."""
@@ -19,3 +21,15 @@ class RackConfigError(RackError):
     Structural invariant, not a user refusal: the CLI error table routes the
     whole subtree to a single ``internal`` marker.
     """
+
+
+class ForeignProjectPinError(RackError):
+    """AI_HATS_PROJECT_DIR pin points to a different project directory."""
+
+    def __init__(self, pin: Path, project_dir: Path) -> None:
+        self.pin = pin
+        self.project_dir = project_dir
+        super().__init__(
+            f"AI_HATS_PROJECT_DIR pin points to foreign project '{pin}' (current project: '{project_dir}'). "
+            "Pass --tasks-dir explicitly or update/unset AI_HATS_PROJECT_DIR."
+        )

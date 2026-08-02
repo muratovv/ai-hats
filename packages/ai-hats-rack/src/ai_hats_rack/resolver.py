@@ -8,13 +8,14 @@ Callers pass ``caller_cwd`` explicitly — no function here reads ``Path.cwd()``
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from . import fastyaml
-from .errors import RackError
+from .errors import ForeignProjectPinError, RackError
 
 CONFIG_NAME = "ai-hats.yaml"
 #: schema defaults mirrored from the live project config (ai-hats.yaml).
@@ -23,6 +24,10 @@ DEFAULT_PREFIX = "HATS"
 #: backlog layout under <ai_hats_dir> — same tree the production tracker uses,
 #: so K6 compares both CLIs on one sandbox copy without relocation.
 TASKS_SUBPATH = Path("tracker") / "backlog" / "tasks"
+
+ENV_AI_HATS_DIR = "AI_HATS_DIR"
+ENV_AI_HATS_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
+
 
 
 class NoProjectRootError(RackError):
@@ -126,15 +131,43 @@ def load_root(project_dir: Path) -> RackRoot:
     )
 
 
-def resolve_root(caller_cwd: Path, tasks_dir_override: Path | None = None) -> RackRoot:
-    """The single validating resolver every rack command goes through.
+def env_ai_hats_dir(environ: Mapping[str, str], project_dir: Path) -> Path | None:
+    """Read ``AI_HATS_DIR`` from *environ*, respecting ``AI_HATS_PROJECT_DIR`` pin (# HATS-1471).
 
-    An explicit override (``--tasks-dir`` / ``RACK_TASKS_DIR``) fixes the
-    tasks_dir, but ``project_dir`` still anchors at the real project root (the
-    worktree engine + hook cwd read it), not ``caller_cwd`` (gap #3, HATS-1038
-    C2). Without an override the root is walked up from ``caller_cwd``; a
-    marker-less start raises the typed :class:`NoProjectRootError` with zero
-    side effects (dirs are only created later, by write ops — HATS-839).
+    Returns ``None`` if ``AI_HATS_DIR`` is unset or empty string.
+    Raises :class:`ForeignProjectPinError` if ``AI_HATS_PROJECT_DIR`` is set and does
+    not match *project_dir*.
+    """
+    raw = environ.get(ENV_AI_HATS_DIR)
+    if not raw:
+        return None
+    pin_raw = environ.get(ENV_AI_HATS_PROJECT_DIR)
+    if pin_raw:
+        pin_path = Path(pin_raw).expanduser().resolve()
+        if pin_path != project_dir.resolve():
+            raise ForeignProjectPinError(
+                pin=Path(pin_raw).expanduser(), project_dir=project_dir
+            )
+    return Path(raw).expanduser()
+
+
+def resolve_root(
+    caller_cwd: Path,
+    tasks_dir_override: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> RackRoot:
+    """The single validating resolver every rack command goes through (# HATS-1471).
+
+    Precedence order (top to bottom):
+    1. ``tasks_dir_override`` (``--tasks-dir`` / ``RACK_TASKS_DIR``)
+    2. ``AI_HATS_DIR`` env override (pair-guarded by ``AI_HATS_PROJECT_DIR``)
+    3. ``ai-hats.yaml: ai_hats_dir`` (walk-up from ``caller_cwd``)
+    4. ``DEFAULT_AI_HATS_DIR`` (``.agent/ai-hats``)
+
+    Without an explicit override, ``AI_HATS_DIR`` env is consulted before walk-up;
+    a start without project markers or env override raises :class:`NoProjectRootError`.
+    Raises :class:`ForeignProjectPinError` if ``AI_HATS_PROJECT_DIR`` pin does not
+    match the resolved project root.
     """
     if tasks_dir_override is not None:
         project_dir = find_project_root(caller_cwd)
@@ -144,7 +177,22 @@ def resolve_root(caller_cwd: Path, tasks_dir_override: Path | None = None) -> Ra
         return RackRoot(
             project_dir=base.project_dir, tasks_dir=tasks_dir_override, prefix=base.prefix
         )
+
     project_dir = find_project_root(caller_cwd)
+
+    if environ is not None:
+        env_dir = env_ai_hats_dir(environ, project_dir or caller_cwd)
+        if env_dir is not None:
+            anchor = project_dir or caller_cwd
+            base = load_root(anchor)
+            return RackRoot(
+                project_dir=base.project_dir,
+                tasks_dir=env_dir / TASKS_SUBPATH,
+                prefix=base.prefix,
+            )
+
     if project_dir is None:
         raise NoProjectRootError(caller_cwd)
+
     return load_root(project_dir)
+
