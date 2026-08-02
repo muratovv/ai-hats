@@ -58,9 +58,7 @@ def _tasks_route() -> CreateRoute:
 
 def _exposed_create_fields(defn: BacklogDefinition) -> list[FieldSpec]:
     return [
-        f
-        for f in defn.fields
-        if f.name not in _LIFECYCLE_OWNED and f.name not in _CREATE_UNEXPOSED
+        f for f in defn.fields if f.name not in _LIFECYCLE_OWNED and f.name not in _CREATE_UNEXPOSED
     ]
 
 
@@ -126,7 +124,9 @@ def build_create_command(
         click.argument("title"),
         click.option("--id", "task_id", default=None, help="Explicit id (default: allocate next)."),
         *[_field_option(f) for f in exposed],
-        click.option("--parent", "parent_task", default="", help="Parent task id (epicifies the parent)."),
+        click.option(
+            "--parent", "parent_task", default="", help="Parent task id (epicifies the parent)."
+        ),
         click.option("--depends", "depends_on", multiple=True),
         TASKS_DIR_OPT,
         JSON_OPT,

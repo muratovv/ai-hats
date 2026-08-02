@@ -143,9 +143,7 @@ def test_build_system_prompt_suppresses_skills_index(tmp_path) -> None:
 
 def test_build_session_prompt_is_inline_interactive(tmp_path) -> None:
     provider = ClineProvider()
-    args, env, meta_prompt = provider.build_session_prompt(
-        tmp_path, _fake_result(), "sid-1"
-    )
+    args, env, meta_prompt = provider.build_session_prompt(tmp_path, _fake_result(), "sid-1")
     # HITL: role inline via -s. HATS-1207 moved -i out of the CONTEXT handler —
     # it is launch mode, not context, so suppressing CONTEXT must not drop the TUI.
     assert args[0] == "-s"
@@ -191,8 +189,11 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
     # Only-seam filtering (supervisor): policy.context=False → no -s role delivery.
     provider = ClineProvider()
     artifacts = provider.build_session_artifacts(
-        tmp_path, _fake_result(), "sid-1",
-        run_mode=RunMode.HITL, policy=SessionPolicy(context=False),
+        tmp_path,
+        _fake_result(),
+        "sid-1",
+        run_mode=RunMode.HITL,
+        policy=SessionPolicy(context=False),
         artifacts=BuiltArtifacts(),
     )
     assert "-s" not in artifacts.cli_args
@@ -203,7 +204,10 @@ def test_build_session_prompt_honors_context_policy(tmp_path) -> None:
 def test_hooks_and_settings_categories_are_noop(tmp_path) -> None:
     # HATS-1171: plugin dropped → HOOKS/SETTINGS write nothing, add no args.
     artifacts = ClineProvider().build_session_artifacts(
-        tmp_path, _fake_result(), "sid-1", run_mode=RunMode.HITL,
+        tmp_path,
+        _fake_result(),
+        "sid-1",
+        run_mode=RunMode.HITL,
         artifacts=BuiltArtifacts(),
     )
     assert "--settings" not in artifacts.cli_args
@@ -262,9 +266,7 @@ def test_materialize_expands_the_fsm_edges_token(tmp_path) -> None:
     authoritative. Delivery is what this pins — the renderer is tested upstream.
     """
     skill = _make_skill(tmp_path, "fsm-skill", body="edges:\n\n{{backlog_fsm_edges}}\n")
-    ClineProvider().materialize_runtime_skills(
-        tmp_path, _fake_result(skills=[skill]), "sid-1"
-    )
+    ClineProvider().materialize_runtime_skills(tmp_path, _fake_result(skills=[skill]), "sid-1")
 
     delivered = (
         session_cache_dir(tmp_path, "sid-1") / "skills" / "fsm-skill" / "SKILL.md"
@@ -287,7 +289,11 @@ def test_guard_script_blocks_irreversible() -> None:
         return  # running outside monorepo
     stdin = json.dumps({"tool_input": {"command": "git push --force origin main"}})
     res = subprocess.run(
-        ["bash", str(guard)], input=stdin, capture_output=True, text=True, timeout=10,
+        ["bash", str(guard)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert res.returncode == 2
     assert "BLOCKED" in res.stderr
@@ -304,7 +310,11 @@ def test_guard_script_allows_safe() -> None:
         return
     stdin = json.dumps({"tool_input": {"command": "echo hello"}})
     res = subprocess.run(
-        ["bash", str(guard)], input=stdin, capture_output=True, text=True, timeout=10,
+        ["bash", str(guard)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert res.returncode == 0
 
@@ -358,4 +368,3 @@ def test_resolve_transcript_skips_older_messages_json(tmp_path, monkeypatch) -> 
     provider = ClineProvider()
     found = provider.resolve_transcript(tmp_path, "20260720-120000-1")
     assert found == []
-

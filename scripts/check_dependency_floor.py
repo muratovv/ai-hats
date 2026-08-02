@@ -47,9 +47,7 @@ def declared_floor(spec: str) -> Version | None:
     """The lower bound a requirement string pins, or None when it pins none."""
     req = Requirement(spec)
     bounds = [
-        Version(s.version.rstrip(".*"))
-        for s in req.specifier
-        if s.operator in (">=", "==", "~=")
+        Version(s.version.rstrip(".*")) for s in req.specifier if s.operator in (">=", "==", "~=")
     ]
     return max(bounds) if bounds else None
 
@@ -91,9 +89,7 @@ def violations(consumers: dict[str, dict], versions: dict[str, Version]) -> list
 
 def collect_consumers(root: Path) -> dict[str, dict]:
     paths = [root / "pyproject.toml", *sorted((root / "packages").rglob("pyproject.toml"))]
-    return {
-        str(p.relative_to(root)): tomllib.loads(p.read_text()) for p in paths if p.is_file()
-    }
+    return {str(p.relative_to(root)): tomllib.loads(p.read_text()) for p in paths if p.is_file()}
 
 
 def main(argv: list[str] | None = None) -> int:

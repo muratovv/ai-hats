@@ -26,6 +26,7 @@ exit 0 silently. Kill switch: ``AI_HATS_SECURITY_LINT_OFF=1`` -> immediate no-op
 Suppress an intentional finding inline with ``# noqa: S…`` (ruff honours it even
 under ``--isolated``). Provider asymmetry: Claude consumes this; Gemini is a no-op.
 """
+
 from __future__ import annotations
 
 import json
@@ -75,8 +76,15 @@ def main() -> int:
     try:
         proc = subprocess.run(
             [
-                ruff, "check", "--isolated", "--select", "S",
-                "--output-format", "concise", "--quiet", file_path,
+                ruff,
+                "check",
+                "--isolated",
+                "--select",
+                "S",
+                "--output-format",
+                "concise",
+                "--quiet",
+                file_path,
             ],
             capture_output=True,
             text=True,

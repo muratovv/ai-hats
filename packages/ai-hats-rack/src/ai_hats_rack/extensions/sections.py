@@ -51,16 +51,16 @@ def load_sections(path: Path) -> tuple[Section, ...]:
 
 
 def _load_default_sections() -> tuple[Section, ...]:
-    text = resources.files("ai_hats_rack").joinpath("plan-sections.yaml").read_text(encoding="utf-8")
+    text = (
+        resources.files("ai_hats_rack").joinpath("plan-sections.yaml").read_text(encoding="utf-8")
+    )
     return _parse_sections(fastyaml.load(text), "ai_hats_rack/plan-sections.yaml")
 
 
 DEFAULT_PLAN_SECTIONS: tuple[Section, ...] = _load_default_sections()
 
 
-def merge_sections(
-    base: tuple[Section, ...], extras: tuple[Section, ...]
-) -> tuple[Section, ...]:
+def merge_sections(base: tuple[Section, ...], extras: tuple[Section, ...]) -> tuple[Section, ...]:
     """Extend a section catalog with consumer-declared sections (HATS-1023).
 
     Deduped by name, base-wins: a consumer cannot weaken (or retype) a stock

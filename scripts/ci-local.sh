@@ -28,6 +28,8 @@
 # explicitly against the project venv (`PYTHON=.venv/bin/python`) to reproduce CI.
 set -euo pipefail
 
+export PYTHONDONTWRITEBYTECODE=1
+
 PY="${PYTHON:-python}"
 
 repo_root="$(git rev-parse --show-toplevel)"

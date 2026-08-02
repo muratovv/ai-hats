@@ -4,6 +4,7 @@ HATS-470: every test resets module state in autouse fixture, sets an
 isolated trash base under ``tmp_path``, and asserts on either the
 trash artefacts or the session summary.
 """
+
 from __future__ import annotations
 
 import errno
@@ -95,9 +96,7 @@ def test_discard_dir_moves_recursively(project, trash_base):
     assert (result / "sub" / "deep.md").read_text() == "deep"
 
 
-def test_discard_symlink_unlinks_link_preserves_target(
-    project, trash_base, tmp_path
-):
+def test_discard_symlink_unlinks_link_preserves_target(project, trash_base, tmp_path):
     target = tmp_path / "external_target.txt"
     target.write_text("external data")
     link = project / "alias"
@@ -114,9 +113,7 @@ def test_discard_symlink_unlinks_link_preserves_target(
     assert sidecar.read_text() == str(target)
 
 
-def test_discard_external_path_goes_under_external_subtree(
-    project, trash_base, tmp_path
-):
+def test_discard_external_path_goes_under_external_subtree(project, trash_base, tmp_path):
     external = tmp_path / "outside-project.txt"
     external.write_text("external")
 
@@ -142,9 +139,7 @@ def test_discard_no_project_dir_goes_external(project, trash_base):
 # ---------------------- discard: tmp-artefact shortcut ----------------------
 
 
-def test_discard_well_known_tmp_artefact_does_direct_cleanup(
-    project, trash_base, monkeypatch
-):
+def test_discard_well_known_tmp_artefact_does_direct_cleanup(project, trash_base, monkeypatch):
     """ai-hats-backup-* / ai-hats-trash-* under $TMPDIR are nuked directly.
 
     Note: ``tempfile.gettempdir()`` caches on first call, so we patch
@@ -168,9 +163,7 @@ def test_discard_well_known_tmp_artefact_does_direct_cleanup(
     assert "clean-tmp" in text
 
 
-def test_discard_under_current_trash_session_is_noop_not_recursion(
-    project, trash_base
-):
+def test_discard_under_current_trash_session_is_noop_not_recursion(project, trash_base):
     """Path under the current trash root must NOT be re-trashed."""
     # First, prime a session via a real discard.
     f = project / "first.txt"
@@ -192,9 +185,7 @@ def test_discard_under_current_trash_session_is_noop_not_recursion(
     assert "clean-tmp" in text
 
 
-def test_discard_arbitrary_tmp_file_still_moves_to_trash(
-    project, trash_base, tmp_path
-):
+def test_discard_arbitrary_tmp_file_still_moves_to_trash(project, trash_base, tmp_path):
     """A random tmp-located file is NOT auto-direct-deleted — only
     paths matching the well-known ai-hats prefixes are."""
     victim = tmp_path / "random_tmp_garbage.txt"
@@ -297,8 +288,11 @@ def test_replace_mode_applied_on_fresh_file(project, trash_base):
     """
     f = project / "hook.sh"
     result = replace(
-        f, b"#!/bin/sh\necho ok\n",
-        reason="materialize", project_dir=project, mode=0o755,
+        f,
+        b"#!/bin/sh\necho ok\n",
+        reason="materialize",
+        project_dir=project,
+        mode=0o755,
     )
 
     assert result is False  # fresh write, no snapshot
@@ -313,8 +307,11 @@ def test_replace_mode_applied_on_existing_file_with_diff(project, trash_base):
     f.chmod(0o644)
 
     result = replace(
-        f, b"new\n",
-        reason="refresh", project_dir=project, mode=0o755,
+        f,
+        b"new\n",
+        reason="refresh",
+        project_dir=project,
+        mode=0o755,
     )
 
     assert result is True
@@ -342,8 +339,11 @@ def test_replace_mode_not_applied_on_bytes_identical_noop(project, trash_base):
     f.chmod(0o600)
 
     result = replace(
-        f, b"unchanged\n",
-        reason="noop", project_dir=project, mode=0o755,
+        f,
+        b"unchanged\n",
+        reason="noop",
+        project_dir=project,
+        mode=0o755,
     )
 
     assert result is False
@@ -353,9 +353,7 @@ def test_replace_mode_not_applied_on_bytes_identical_noop(project, trash_base):
 # ---------------------- env: hard-delete sentinel ----------------------
 
 
-def test_hard_delete_mode_discard_unlinks_without_trash(
-    project, monkeypatch, capfd
-):
+def test_hard_delete_mode_discard_unlinks_without_trash(project, monkeypatch, capfd):
     monkeypatch.setenv(ENV_TRASH_DIR, HARD_DELETE_SENTINEL)
     f = project / "doomed.txt"
     f.write_text("content")
@@ -371,9 +369,7 @@ def test_hard_delete_mode_discard_unlinks_without_trash(
     assert "ci-run" in err
 
 
-def test_hard_delete_mode_replace_writes_without_snapshot(
-    project, monkeypatch, capfd
-):
+def test_hard_delete_mode_replace_writes_without_snapshot(project, monkeypatch, capfd):
     monkeypatch.setenv(ENV_TRASH_DIR, HARD_DELETE_SENTINEL)
     f = project / "doomed.txt"
     f.write_text("old")
@@ -464,10 +460,9 @@ def test_reset_session_clears_state(project, trash_base):
 # ---------------------- ENOSPC / TrashFullError ----------------------
 
 
-def test_trash_full_on_session_create_raises_trash_full(
-    project, tmp_path, monkeypatch
-):
+def test_trash_full_on_session_create_raises_trash_full(project, tmp_path, monkeypatch):
     """ENOSPC on mkdir → TrashFullError with actionable hint."""
+
     def fake_mkdir(self, *args, **kwargs):
         raise OSError(errno.ENOSPC, "no space")
 
@@ -501,10 +496,9 @@ def test_trash_full_on_move_raises_trash_full(project, trash_base, monkeypatch):
         discard(f, project_dir=project)
 
 
-def test_read_only_fs_on_session_create_raises_trash_full(
-    project, monkeypatch
-):
+def test_read_only_fs_on_session_create_raises_trash_full(project, monkeypatch):
     """EROFS on session create → TrashFullError with explicit message."""
+
     def fake_mkdir(self, *args, **kwargs):
         raise OSError(errno.EROFS, "read-only file system")
 
@@ -558,17 +552,14 @@ def test_replace_twice_on_same_path_preserves_both_snapshots(project, trash_base
     # Both v1 and v2 live somewhere under the session root with matching
     # basename / .N suffix.
     snaps = sorted(
-        p for p in session_root().rglob("config.yaml*")
-        if p.is_file() and p.name != "MANIFEST.md"
+        p for p in session_root().rglob("config.yaml*") if p.is_file() and p.name != "MANIFEST.md"
     )
     contents = {p.read_bytes() for p in snaps}
     assert b"v1" in contents, f"v1 lost: {[(p.name, p.read_bytes()) for p in snaps]}"
     assert b"v2" in contents, f"v2 lost: {[(p.name, p.read_bytes()) for p in snaps]}"
 
 
-def test_discard_then_recreate_then_discard_preserves_first_snapshot(
-    project, trash_base
-):
+def test_discard_then_recreate_then_discard_preserves_first_snapshot(project, trash_base):
     """Discard p, recreate p with new content, discard again — both snapshots survive."""
     f = project / "victim.txt"
     f.write_bytes(b"original")
@@ -579,17 +570,14 @@ def test_discard_then_recreate_then_discard_preserves_first_snapshot(
     discard(f, project_dir=project)
 
     snaps = sorted(
-        p for p in session_root().rglob("victim.txt*")
-        if p.is_file() and p.name != "MANIFEST.md"
+        p for p in session_root().rglob("victim.txt*") if p.is_file() and p.name != "MANIFEST.md"
     )
     contents = {p.read_bytes() for p in snaps}
     assert b"original" in contents
     assert b"recreated" in contents
 
 
-def test_discard_symlink_then_discard_same_path_preserves_sidecar(
-    project, trash_base, tmp_path
-):
+def test_discard_symlink_then_discard_same_path_preserves_sidecar(project, trash_base, tmp_path):
     """Two symlink-discards on the same path keep both sidecars."""
     target1 = tmp_path / "target1.txt"
     target1.write_text("one")
@@ -604,9 +592,7 @@ def test_discard_symlink_then_discard_same_path_preserves_sidecar(
     discard(link, project_dir=project)
 
     sidecars = sorted(session_root().rglob("alias*.symlink"))
-    assert len(sidecars) == 2, (
-        f"expected 2 sidecars, got {[s.name for s in sidecars]}"
-    )
+    assert len(sidecars) == 2, f"expected 2 sidecars, got {[s.name for s in sidecars]}"
     sidecar_targets = {s.read_text() for s in sidecars}
     assert sidecar_targets == {str(target1), str(target2)}
 

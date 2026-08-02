@@ -236,9 +236,7 @@ def migrate_catalog(
             continue
         if not dry_run:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(
-                dest, yaml.safe_dump(mapped, sort_keys=False, allow_unicode=True)
-            )
+            atomic_write_text(dest, yaml.safe_dump(mapped, sort_keys=False, allow_unicode=True))
             if purge_source:
                 source.unlink()  # safe-delete: ok migrated-flat-source (gated, clean round-trip)
         report.cards.append(CardMigration(card_id, source, dest, "migrated"))
@@ -264,7 +262,11 @@ def migrate_tracker(
     for name, src_subpath, tgt_subpath, _pattern in _CATALOGS:
         target = tracker / tgt_subpath
         if name == "hypotheses" and hypotheses_target is not None:
-            target = hypotheses_target if hypotheses_target.is_absolute() else ai_hats_dir / hypotheses_target
+            target = (
+                hypotheses_target
+                if hypotheses_target.is_absolute()
+                else ai_hats_dir / hypotheses_target
+            )
         report.catalogs.append(
             migrate_catalog(
                 tracker / src_subpath,

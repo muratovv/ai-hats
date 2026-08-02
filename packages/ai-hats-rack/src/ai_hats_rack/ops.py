@@ -193,7 +193,7 @@ def _coerce_set_value(field_name: str, value: str, field_types: Mapping[str, str
         if not isinstance(payload, list):
             raise OpParseError(
                 f"--set {field_name}={value!r}: {field_name!r} is a list field — pass a JSON "
-                f"array (--set '{field_name}=[\"a\",\"b\"]'), or --append to add one entry"
+                f'array (--set \'{field_name}=["a","b"]\'), or --append to add one entry'
             )
         return payload
     return value
@@ -235,7 +235,9 @@ def parse_ops(tokens: Sequence[str], *, field_types: Mapping[str, str] | None = 
             elif tok == "--set":
                 field_name, raw = _split_assignment(value, "--set")
                 _check_settable(field_name, "--set")
-                ops.append(FieldsOp({field_name: Set(_coerce_set_value(field_name, raw, field_types))}))
+                ops.append(
+                    FieldsOp({field_name: Set(_coerce_set_value(field_name, raw, field_types))})
+                )
             elif tok == "--append":
                 field_name, raw = _split_assignment(value, "--append")
                 _check_settable(field_name, "--append")
@@ -327,9 +329,7 @@ def _apply_freeze(txn: OpTxn, op: FreezeOp) -> None:
         txn.card, txn.card_dir, op.name, actor=txn.actor, refreeze=txn.ack_frozen
     )
     txn.dispatched.append(DocOpEvent(op="freeze", name=op.name))
-    txn.results.append(
-        {"op": "freeze", "name": op.name, "digest": info.digest, "changed": changed}
-    )
+    txn.results.append({"op": "freeze", "name": op.name, "digest": info.digest, "changed": changed})
 
 
 def _apply_rm(txn: OpTxn, op: RmOp) -> None:

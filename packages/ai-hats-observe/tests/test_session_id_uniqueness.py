@@ -38,9 +38,7 @@ def _pin_clock(monkeypatch) -> None:
     monkeypatch.setattr(session_mod, "datetime", _FixedClock)
 
 
-def test_two_managers_in_one_process_mint_distinct_ids(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_two_managers_in_one_process_mint_distinct_ids(tmp_path: Path, monkeypatch) -> None:
     """RED-under-revert: a per-instance counter restarts at 1 in each manager.
 
     One process really does build several managers — ``ai-hats reflect
@@ -102,7 +100,10 @@ def _child_env() -> dict[str, str]:
 def _mint_in_subprocess(runs: Path) -> str:
     out = subprocess.run(
         [sys.executable, "-c", _MINT_IN_CHILD, str(runs)],
-        capture_output=True, text=True, check=True, env=_child_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_child_env(),
     )
     return out.stdout.strip()
 
@@ -132,9 +133,7 @@ def test_concurrent_processes_mint_distinct_ids(tmp_path: Path) -> None:
     assert len(dirs) == n_procs, f"expected {n_procs} session dirs, got {dirs}"
 
 
-def test_minted_id_keeps_the_prefix_every_reader_parses(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_minted_id_keeps_the_prefix_every_reader_parses(tmp_path: Path, monkeypatch) -> None:
     """The suffix must stay inert to the fixed-offset slices readers use.
 
     Guards the compatibility premise of HATS-1248: nothing splits or regexes a
@@ -165,9 +164,7 @@ def test_minted_id_survives_a_filename_round_trip(tmp_path: Path, monkeypatch) -
     assert Path(f"{sid}.md").stem == sid
 
 
-def test_nested_id_preserves_the_parent_timestamp_prefix(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_nested_id_preserves_the_parent_timestamp_prefix(tmp_path: Path, monkeypatch) -> None:
     """A child id still leads with the parent's timestamp — readers rely on it.
 
     Pre-existing quirk kept deliberately: ``[:15]`` on a child yields the

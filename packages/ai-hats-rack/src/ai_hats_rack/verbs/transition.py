@@ -91,7 +91,9 @@ def _echo_ops(result: KernelResult) -> None:
 @click.command("transition", context_settings={"ignore_unknown_options": True})
 @click.argument("task_id")
 @click.argument("op_tokens", nargs=-1, type=click.UNPROCESSED)
-@click.option("--force", is_flag=True, help="Relax the FSM arrow only (state ops); requires --reason.")
+@click.option(
+    "--force", is_flag=True, help="Relax the FSM arrow only (state ops); requires --reason."
+)
 @click.option("--reason", default="", help="Why (required with --force; journaled).")
 @click.option("--resolution", default=None)
 @click.option("--final-state", "final_state", default=None)

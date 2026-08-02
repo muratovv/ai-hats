@@ -111,9 +111,7 @@ def _try_steps_block(lines: list[str]) -> list[Candidate]:
             if cm:
                 title = _truncate(_strip_inline_markdown(cm.group(1)))
                 if title:
-                    candidates.append(
-                        Candidate(line_no=j, title=title, raw_line=row, kind="steps")
-                    )
+                    candidates.append(Candidate(line_no=j, title=title, raw_line=row, kind="steps"))
         return candidates
     return candidates
 
@@ -132,9 +130,7 @@ def _try_numbered_headings(lines: list[str]) -> list[Candidate]:
             if cm:
                 title = _truncate(_strip_inline_markdown(cm.groups()[-1]))
                 if title:
-                    candidates.append(
-                        Candidate(line_no=j, title=title, raw_line=row, kind="phase")
-                    )
+                    candidates.append(Candidate(line_no=j, title=title, raw_line=row, kind="phase"))
                 break
     return candidates
 

@@ -41,7 +41,6 @@ class PlanConsentExtension:
         return None
 
 
-
 class PlanScaffoldExtension:
     """Writes the plan.md scaffold on entering ``plan`` (in-lock).
 

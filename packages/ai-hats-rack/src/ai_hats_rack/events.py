@@ -232,4 +232,3 @@ def event_detail(event: Event) -> dict[str, str]:
     if isinstance(event, LogEvent):
         return {"message": event.message}
     return {"operation": event.operation}
-

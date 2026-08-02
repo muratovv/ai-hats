@@ -52,7 +52,9 @@ def _bare_kernel(root: RackRoot) -> Kernel:
     # Standalone mutation surface = kernel + scaffold + plan-gate (epic §2.3):
     # the composite transition still enforces the gate; no ownership/worktree.
     # One backlog definition builds the kernel AND its subscribers (HATS-1042).
-    defn = resolve_definition(root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir)
+    defn = resolve_definition(
+        root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+    )
     subscribers = standalone_extensions(root.tasks_dir, definition=defn)
     validate_requires_states(subscribers, defn.topology, source=str(root.tasks_dir))
     kernel = Kernel(
@@ -90,7 +92,9 @@ def _workspace(
     def _builder(instance: Any) -> Kernel | None:
         if not instance.is_tasks:
             return None  # portable default (workspace-injected cross-backlog checker)
-        return provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
+        return (
+            provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
+        )
 
     return Workspace.discover([root], kernel_builder=_builder), root
 

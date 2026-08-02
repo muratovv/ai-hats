@@ -42,11 +42,7 @@ def test_ensure_global_dispatcher_hook_preserves_existing_user_settings(tmp_path
     initial_data = {
         "model": "Gemini 3.6 Flash",
         "permissions": {"allow": ["command(*)"]},
-        "hooks": {
-            "PreToolUse": [
-                {"matcher": "Edit", "command": "/path/to/custom_user_hook.sh"}
-            ]
-        },
+        "hooks": {"PreToolUse": [{"matcher": "Edit", "command": "/path/to/custom_user_hook.sh"}]},
     }
     settings_file.write_text(json.dumps(initial_data, indent=2))
 

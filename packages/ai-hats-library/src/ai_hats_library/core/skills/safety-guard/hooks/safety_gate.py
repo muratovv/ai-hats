@@ -6,6 +6,7 @@ match cannot tell `rm -rf /tmp/scratch` from `rm -rf /`, and denying both
 contradicts `global_rule_resource_hygiene` (HATS-1253). Not handled here:
 `git push` (pre_bash_shared_state_guard.sh), worktrees (wt_gate.py).
 """
+
 import json
 import os
 import shlex

@@ -47,14 +47,30 @@ def test_standalone_session_browse_wt_free(tmp_path: Path, monkeypatch) -> None:
     ``.agent/sessions/runs`` layout the wt-free ``_RUNS_DIR`` injects."""
     assert not (tmp_path / "ai-hats.yaml").exists()
     runs = tmp_path / ".agent" / "sessions" / "runs"
-    _make_session(runs, "20260401T100000Z_a1", metrics={
-        "role": "primary", "provider": "claude", "turns": 5,
-        "tool_calls": 9, "tokens": {"output": 1234}, "tags": {"env": "prod"},
-    })
-    _make_session(runs, "20260402T100000Z_b2", metrics={
-        "role": "reviewer", "provider": "claude", "turns": 2,
-        "tool_calls": 3, "tokens": {"output": 42}, "tags": {"env": "dev"},
-    })
+    _make_session(
+        runs,
+        "20260401T100000Z_a1",
+        metrics={
+            "role": "primary",
+            "provider": "claude",
+            "turns": 5,
+            "tool_calls": 9,
+            "tokens": {"output": 1234},
+            "tags": {"env": "prod"},
+        },
+    )
+    _make_session(
+        runs,
+        "20260402T100000Z_b2",
+        metrics={
+            "role": "reviewer",
+            "provider": "claude",
+            "turns": 2,
+            "tool_calls": 3,
+            "tokens": {"output": 42},
+            "tags": {"env": "dev"},
+        },
+    )
     monkeypatch.chdir(tmp_path)
     _pin_wt_free_seam(monkeypatch)
     runner = CliRunner()

@@ -180,9 +180,7 @@ def test_missing_required_and_state_gated_fields_reported(tasks_dir, tmp_path):
     make_card(tasks_dir, "T-1")  # no severity at all
     make_card(tasks_dir, "T-2", state="document", severity="low")  # empty resolution
     make_card(tasks_dir, "T-3", state="brainstorm", severity="low")  # gate not entered
-    findings = diagnose_catalog(
-        tasks_dir, defn.links_registry, schema=build_card_schema(defn)
-    )
+    findings = diagnose_catalog(tasks_dir, defn.links_registry, schema=build_card_schema(defn))
     rows = by_check(findings, "missing-field")
     assert {(f.task_id, f.kind) for f in rows} == {("T-1", "severity"), ("T-2", "resolution")}
 

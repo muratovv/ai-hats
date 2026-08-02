@@ -130,7 +130,9 @@ class CardSchema:
         if f is None:
             return
         py = _PY_TYPES.get(f.type)
-        if py is not None and (not isinstance(value, py) or (py is int and isinstance(value, bool))):
+        if py is not None and (
+            not isinstance(value, py) or (py is int and isinstance(value, bool))
+        ):
             raise FieldValidationError(name, f"expects {f.type}, got {type(value).__name__}")
         if f.choices is not None and value not in f.choices:
             raise FieldValidationError(

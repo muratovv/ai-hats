@@ -72,26 +72,39 @@ def session_audit(session_id: str | None):
 @click.option("--min-turns", default=0, type=int, help="Only sessions with >= N turns")
 @click.option("--productive", is_flag=True, help="Only productive sessions (turns>0, tools>0)")
 @click.option(
-    "--tag", "tag_filters_raw", multiple=True,
+    "--tag",
+    "tag_filters_raw",
+    multiple=True,
     help="Filter by tag k=v (repeatable, AND-combined).",
 )
 @click.option(
-    "--role", "role_filter", default=None,
+    "--role",
+    "role_filter",
+    default=None,
     help="Filter by role (exact match against metrics.role).",
 )
 @click.option(
-    "--since", "since_date", default=None,
+    "--since",
+    "since_date",
+    default=None,
     help="Filter by date YYYY-MM-DD — session on or after the given day.",
 )
 @click.option(
-    "--json", "as_json", is_flag=True,
+    "--json",
+    "as_json",
+    is_flag=True,
     help="Machine-readable JSON list of session dicts on stdout. "
-         "Pipe to jq/parallel; filter values come from metrics.json.",
+    "Pipe to jq/parallel; filter values come from metrics.json.",
 )
 def session_list(
-    last_n: int, show_all: bool, min_turns: int, productive: bool,
-    tag_filters_raw: tuple[str, ...], role_filter: str | None,
-    since_date: str | None, as_json: bool,
+    last_n: int,
+    show_all: bool,
+    min_turns: int,
+    productive: bool,
+    tag_filters_raw: tuple[str, ...],
+    role_filter: str | None,
+    since_date: str | None,
+    as_json: bool,
 ):
     """List sessions with key metrics."""
     import json
@@ -177,6 +190,7 @@ def session_list(
             if s.audit_path.exists():
                 header = s.audit_path.read_text()[:500]
                 import re
+
                 dur_m = re.search(r"Duration: (\d+m \d+s)", header)
                 if dur_m:
                     dur_str = dur_m.group(1)
@@ -187,8 +201,14 @@ def session_list(
         tok_out_str = f"{tok_out:,}" if isinstance(tok_out, int) else str(tok_out)
 
         table.add_row(
-            date_str, s.session_id, str(role), str(provider),
-            str(turns), str(tools), str(duration), tok_out_str,
+            date_str,
+            s.session_id,
+            str(role),
+            str(provider),
+            str(turns),
+            str(tools),
+            str(duration),
+            tok_out_str,
         )
 
     _seam._CONSOLE.print(table)
@@ -383,16 +403,22 @@ def _render_diagnostics(session) -> None:
         if isinstance(retro, dict):
             rem = retro.get("reminder")
             if isinstance(rem, dict):
-                _seam._CONSOLE.print(f"  📝 [cyan]Retro Reminder[/]: Reflect through {rem.get('count')} sessions (`{rem.get('command')}`)")
+                _seam._CONSOLE.print(
+                    f"  📝 [cyan]Retro Reminder[/]: Reflect through {rem.get('count')} sessions (`{rem.get('command')}`)"
+                )
             wrap = retro.get("wrap_up")
             if isinstance(wrap, dict):
-                _seam._CONSOLE.print(f"  🧹 [cyan]Wrap Up[/]: {wrap.get('tasks_closed')} tasks closed in {wrap.get('duration_min')}m")
+                _seam._CONSOLE.print(
+                    f"  🧹 [cyan]Wrap Up[/]: {wrap.get('tasks_closed')} tasks closed in {wrap.get('duration_min')}m"
+                )
 
         if isinstance(update, dict):
             inst = update.get("installed_label") or update.get("installed_sha", "?")
             latest = update.get("latest_label") or update.get("latest_sha", "?")
             behind = update.get("behind", 0)
-            _seam._CONSOLE.print(f"  🚀 [yellow]Update Available[/]: {inst} → {latest} (+{behind} commits). Run: ai-hats self update")
+            _seam._CONSOLE.print(
+                f"  🚀 [yellow]Update Available[/]: {inst} → {latest} (+{behind} commits). Run: ai-hats self update"
+            )
 
 
 @session.command("show")
@@ -400,7 +426,6 @@ def _render_diagnostics(session) -> None:
 def session_show(session_id: str):
     """Show detailed metrics for a session."""
     import json
-
 
     from ..session import SessionManager
 
@@ -432,7 +457,16 @@ def session_show(session_id: str):
     _render_usage(s)
 
     artifacts = []
-    for name in ("diagnostics.json", AUDIT_MD, METRICS_JSON, USAGE_JSON, TRACE_LOG, TRANSCRIPT_TXT, REASONING_LOG, META_PROMPT_TXT):
+    for name in (
+        "diagnostics.json",
+        AUDIT_MD,
+        METRICS_JSON,
+        USAGE_JSON,
+        TRACE_LOG,
+        TRANSCRIPT_TXT,
+        REASONING_LOG,
+        META_PROMPT_TXT,
+    ):
         p = s.session_dir / name
         if p.exists() and p.stat().st_size > 0:
             artifacts.append(f"{name} ({p.stat().st_size:,}b)")
@@ -480,7 +514,6 @@ def _identity_from_trace(s) -> tuple[str | None, str | None]:
 def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
     """Re-derive one session's counters from its transcript. Returns a row dict."""
     from ..audit import AuditWriter
-
 
     metrics = _load_metrics_safe(s) or {}
     row = {
@@ -533,7 +566,6 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
         row["note"] = "no transcript"
         return row
 
-
     writer = AuditWriter(parser) if parser is not None else AuditWriter()
 
     suffix = " (id from trace)" if from_trace else ""
@@ -568,9 +600,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
 @click.argument("session_ids", nargs=-1)
 @click.option("--last", "last_n", default=0, type=int, help="Backfill the last N sessions.")
 @click.option("--all", "show_all", is_flag=True, help="Backfill every session.")
-@click.option(
-    "--dry-run", is_flag=True, help="Report what would change without writing anything."
-)
+@click.option("--dry-run", is_flag=True, help="Report what would change without writing anything.")
 @click.option(
     "--force",
     is_flag=True,
@@ -622,8 +652,13 @@ def session_backfill(
     table.add_column("note")
     for r in rows:
         table.add_row(
-            r["session_id"], r["provider"], r["before"], r["after"],
-            r["turns"], r["tool_calls"], r["note"],
+            r["session_id"],
+            r["provider"],
+            r["before"],
+            r["after"],
+            r["turns"],
+            r["tool_calls"],
+            r["note"],
         )
     _seam._CONSOLE.print(table)
 

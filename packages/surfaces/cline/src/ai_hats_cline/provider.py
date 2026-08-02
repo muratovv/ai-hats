@@ -29,6 +29,7 @@ class ClineProvider(Provider):
 
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
+
         return [
             ProviderHint(
                 name="--yolo",
@@ -56,12 +57,16 @@ class ClineProvider(Provider):
         sessions_dir = tool_home("cline", "CLINE_DATA_DIR") / "data" / "sessions"
         exact = (
             sessions_dir / provider_session_id / f"{provider_session_id}.messages.json"
-            if provider_session_id else None
+            if provider_session_id
+            else None
         )
         return resolve_transcript(
-            sessions_dir, "*/*.messages.json", session_id, exact_path=exact, end_ts=end_ts,
+            sessions_dir,
+            "*/*.messages.json",
+            session_id,
+            exact_path=exact,
+            end_ts=end_ts,
         )
-
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         # HATS-1238: Inline-only surface — no root file managed.
@@ -161,7 +166,10 @@ class ClineProvider(Provider):
         exact bytes WrapRunner persists to ``meta_prompt.txt`` (HATS-523).
         """
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL,
+            project_dir,
+            result,
+            session_id,
+            run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
@@ -179,7 +187,10 @@ class ClineProvider(Provider):
         so the headless path lands skills in the cache too (no project-root leak).
         """
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.AUTOMATE,
+            project_dir,
+            result,
+            session_id,
+            run_mode=RunMode.AUTOMATE,
             artifacts=BuiltArtifacts(),
         )
         return artifacts.cli_args

@@ -16,15 +16,19 @@ from ai_hats_observe import AuditWriter, SessionManager
 
 # The public surface a standalone consumer needs.
 _STANDALONE_SURFACE = {
-    "SessionManager", "Session", "SidecarTracer", "AuditWriter", "TraceEntry", "Turn",
+    "SessionManager",
+    "Session",
+    "SidecarTracer",
+    "AuditWriter",
+    "TraceEntry",
+    "Turn",
 }
 
 
 def test_public_surface_is_exported() -> None:
     """RED-under-revert: dropping any name from ``__all__`` fails this."""
     assert _STANDALONE_SURFACE <= set(observe.__all__), (
-        f"ai_hats_observe.__all__ missing "
-        f"{sorted(_STANDALONE_SURFACE - set(observe.__all__))}"
+        f"ai_hats_observe.__all__ missing {sorted(_STANDALONE_SURFACE - set(observe.__all__))}"
     )
 
 
@@ -50,8 +54,7 @@ def test_audit_build_on_bare_dir(tmp_path: Path) -> None:
     session = mgr.create_session()
     session.init_audit(role="assistant", provider="claude")
     session.trace_path.write_text(
-        "18:15:00.000 [REQ] find the bug\n"
-        "18:15:01.000 [RES] ⏺Found it in parser.py\n"
+        "18:15:00.000 [REQ] find the bug\n18:15:01.000 [RES] ⏺Found it in parser.py\n"
     )
 
     AuditWriter().build(session, jsonl_path=None)

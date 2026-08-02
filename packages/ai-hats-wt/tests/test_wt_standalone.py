@@ -99,9 +99,7 @@ def test_construct_with_no_ai_hats_config(bare_repo: Path) -> None:
     ``sessions/worktrees/`` convention dir.
     """
     assert not (bare_repo / "ai-hats.yaml").exists()
-    mgr = WorktreeManager(
-        bare_repo, branch_name="standalone/probe", lifecycle=NOOP_LIFECYCLE
-    )
+    mgr = WorktreeManager(bare_repo, branch_name="standalone/probe", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     assert wt_path.is_dir()
     state_path = mgr.save_state()
@@ -111,9 +109,7 @@ def test_construct_with_no_ai_hats_config(bare_repo: Path) -> None:
 
 def test_create_then_merge_standalone(bare_repo: Path) -> None:
     """S5: create → commit → merge lands the change on the base branch, no hooks."""
-    mgr = WorktreeManager(
-        bare_repo, branch_name="standalone/feature", lifecycle=NOOP_LIFECYCLE
-    )
+    mgr = WorktreeManager(bare_repo, branch_name="standalone/feature", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     assert wt_path.is_dir() and wt_path != bare_repo
     mgr.save_state()
@@ -124,9 +120,7 @@ def test_create_then_merge_standalone(bare_repo: Path) -> None:
     # Change landed on the base branch; worktree dir + branch are cleaned up.
     assert (bare_repo / "feature.txt").read_text() == "from standalone consumer"
     assert not wt_path.exists()
-    assert (
-        _git(bare_repo, "branch", "--list", "standalone/feature").stdout.strip() == ""
-    )
+    assert _git(bare_repo, "branch", "--list", "standalone/feature").stdout.strip() == ""
 
 
 def test_merge_requires_consent_standalone(
@@ -134,9 +128,7 @@ def test_merge_requires_consent_standalone(
 ) -> None:
     """HATS-1019: merge is default-deny without AI_HATS_MERGE_ACK=1."""
     monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
-    mgr = WorktreeManager(
-        bare_repo, branch_name="standalone/gated", lifecycle=NOOP_LIFECYCLE
-    )
+    mgr = WorktreeManager(bare_repo, branch_name="standalone/gated", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     mgr.save_state()
     _commit_in_worktree(wt_path, "gated.txt", "needs review")
@@ -151,9 +143,7 @@ def test_merge_requires_consent_standalone(
 
 def test_create_then_discard_standalone(bare_repo: Path) -> None:
     """S13: create → discard removes the worktree + branch and lands nothing."""
-    mgr = WorktreeManager(
-        bare_repo, branch_name="standalone/throwaway", lifecycle=NOOP_LIFECYCLE
-    )
+    mgr = WorktreeManager(bare_repo, branch_name="standalone/throwaway", lifecycle=NOOP_LIFECYCLE)
     wt_path = mgr.create()
     mgr.save_state()
     _commit_in_worktree(wt_path, "scratch.txt", "discard me")
@@ -162,9 +152,7 @@ def test_create_then_discard_standalone(bare_repo: Path) -> None:
 
     assert not wt_path.exists()
     assert not (bare_repo / "scratch.txt").exists()
-    assert (
-        _git(bare_repo, "branch", "--list", "standalone/throwaway").stdout.strip() == ""
-    )
+    assert _git(bare_repo, "branch", "--list", "standalone/throwaway").stdout.strip() == ""
 
 
 def test_git_env_isolation_regression(tmp_path: Path, monkeypatch) -> None:
@@ -310,4 +298,3 @@ def test_merge_refuses_unmerged_tip_teardown(
     assert "task/unmerged-test" in err_msg
     assert wt_path.exists()
     assert _git(bare_repo, "branch", "--list", "task/unmerged-test").stdout.strip() != ""
-

@@ -154,15 +154,17 @@ def main(argv: list[str] | None = None) -> int:
     verdicts = run(repo_root, resolved)
     failed = [v for v in verdicts if not v.ok]
     for v in verdicts:
-        print(f"[version-skew] {'FAIL' if not v.ok else 'ok'}: {v.package} — {v.reason}",
-              file=sys.stderr)
+        print(
+            f"[version-skew] {'FAIL' if not v.ok else 'ok'}: {v.package} — {v.reason}",
+            file=sys.stderr,
+        )
     if failed:
-        print(f"[version-skew] {len(failed)} package(s) skewed vs PyPI — see above.",
-              file=sys.stderr)
+        print(
+            f"[version-skew] {len(failed)} package(s) skewed vs PyPI — see above.", file=sys.stderr
+        )
         return 1
     print("[version-skew] all workspace packages ahead of / clean vs PyPI.", file=sys.stderr)
     return 0
-
 
 
 if __name__ == "__main__":

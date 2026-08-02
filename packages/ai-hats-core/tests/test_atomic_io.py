@@ -23,7 +23,11 @@ from ai_hats_core import atomic_io
 
 def _tmp_siblings(path: Path) -> list[Path]:
     """Return leftover atomic-write tmp files next to ``path``."""
-    return [p for p in path.parent.iterdir() if p.name.startswith(f".{path.name}.") and p.suffix == ".tmp"]
+    return [
+        p
+        for p in path.parent.iterdir()
+        if p.name.startswith(f".{path.name}.") and p.suffix == ".tmp"
+    ]
 
 
 def test_atomic_write_text_roundtrip(tmp_path: Path) -> None:

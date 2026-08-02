@@ -160,9 +160,17 @@ class AuditWriter:
             if counter in metrics:
                 lines.append(f"- **{counter}**: {metrics[counter]}")
         _header_keys = {
-            "role", "provider", "exit_code", "duration",
-            "composition", "models",
-            "measured", "flags", "turns", "tool_calls", "tokens",
+            "role",
+            "provider",
+            "exit_code",
+            "duration",
+            "composition",
+            "models",
+            "measured",
+            "flags",
+            "turns",
+            "tool_calls",
+            "tokens",
             "schema_version",  # machine-only tag (metrics.json), not human MD
         }
         for k, v in metrics.items():
@@ -252,7 +260,9 @@ class AuditWriter:
                     rec.get("source"),
                     rec.get("step_index"),
                     str(rec.get("content")),
-                    json.dumps(rec.get("tool_calls"), sort_keys=True) if rec.get("tool_calls") else "",
+                    json.dumps(rec.get("tool_calls"), sort_keys=True)
+                    if rec.get("tool_calls")
+                    else "",
                 )
                 if fp not in seen_fps:
                     seen_fps.add(fp)
@@ -285,6 +295,7 @@ class AuditWriter:
                 shutil.copyfile(existing[0], dest)
             else:
                 from .artifacts import session_start_dt
+
                 s_dt = session_start_dt(session.session_id)
                 min_ts = s_dt.timestamp() if s_dt else 0.0
 

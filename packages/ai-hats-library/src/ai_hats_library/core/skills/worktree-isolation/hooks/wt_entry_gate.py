@@ -8,6 +8,7 @@ either builds a rival outside all of it or raises an unsuppressible approval
 prompt. A bare permissions.deny would hide the tool with no explanation, so this
 denies WITH the recipe. Kill switch: AI_HATS_WT_ENTRY_OFF=1. Fails open.
 """
+
 from __future__ import annotations
 
 import json

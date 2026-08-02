@@ -39,15 +39,11 @@ class ClaudeParser:
             return [p] if p.exists() else []
         return [Path(p) for p in jsonl_path if Path(p).exists()]
 
-    def parse(
-        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
-    ) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         paths = self._normalize_paths(jsonl_path)
         if paths:
             turns, model_stats, agg_usage = self._parse_jsonl(paths)
-            return ParsedTranscript(
-                turns=turns, model_stats=model_stats, agg_usage=agg_usage
-            )
+            return ParsedTranscript(turns=turns, model_stats=model_stats, agg_usage=agg_usage)
         if jsonl_path:
             logger.debug("JSONL not found at %s — falling back to trace", jsonl_path)
         return self._trace.parse(None, trace_path)
@@ -62,8 +58,9 @@ class ClaudeParser:
             return _usage.parse_session_usage(paths[0])
         return self._trace.parse_usage(None, trace_path)
 
-
-    def _parse_jsonl(self, jsonl_paths: Path | Iterable[Path]) -> tuple[list[Turn], dict[str, dict], dict]:
+    def _parse_jsonl(
+        self, jsonl_paths: Path | Iterable[Path]
+    ) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse Claude Code JSONL files → (turns, per-model stats, aggregated usage)."""
         turns: list[Turn] = []
         current: Turn | None = None
@@ -76,7 +73,11 @@ class ClaudeParser:
         }
         prev_model: str | None = None
 
-        paths = [Path(jsonl_paths)] if isinstance(jsonl_paths, (Path, str)) else [Path(p) for p in jsonl_paths]
+        paths = (
+            [Path(jsonl_paths)]
+            if isinstance(jsonl_paths, (Path, str))
+            else [Path(p) for p in jsonl_paths]
+        )
         lines: list[str] = []
         for p in paths:
             try:
@@ -116,7 +117,9 @@ class ClaudeParser:
                 agg_usage["input_tokens"] += tok_in
                 agg_usage["output_tokens"] += tok_out
                 agg_usage["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
-                agg_usage["cache_creation_input_tokens"] += usage.get("cache_creation_input_tokens", 0)
+                agg_usage["cache_creation_input_tokens"] += usage.get(
+                    "cache_creation_input_tokens", 0
+                )
 
                 # Track model switches within turns
                 if prev_model and model != prev_model:
@@ -157,10 +160,7 @@ class ClaudeParser:
             )
             if has_tool_result:
                 return None
-            parts = [
-                c["text"] for c in content
-                if isinstance(c, dict) and c.get("type") == "text"
-            ]
+            parts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == "text"]
             text = " ".join(parts).strip()
         else:
             return None

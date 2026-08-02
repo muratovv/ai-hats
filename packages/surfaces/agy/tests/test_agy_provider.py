@@ -37,9 +37,7 @@ def agy_project(tmp_path, monkeypatch):
         "injection: Role body.\n"
     )
 
-    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(
-        project / PROJECT_CONFIG
-    )
+    ProjectConfig(provider="agy", library_paths=[str(lib)]).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     result = asm.composer.compose("test-role")
@@ -154,7 +152,11 @@ def test_get_cli_launch_args_translates_positional_prompt() -> None:
     provider = AgyProvider()
     base_cmd = ["agy", "hello world", "--add-dir", "/path/to/rules"]
     assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
-        "agy", "-i", "hello world", "--add-dir", "/path/to/rules"
+        "agy",
+        "-i",
+        "hello world",
+        "--add-dir",
+        "/path/to/rules",
     ]
 
 
@@ -168,7 +170,13 @@ def test_get_cli_launch_args_with_model_flag_and_positional_prompt() -> None:
     provider = AgyProvider()
     base_cmd = ["agy", "--model", "gemini-2.5-pro", "hello world", "--add-dir", "/path/to/rules"]
     assert provider.get_cli_launch_args(base_cmd, "sid-1", False) == [
-        "agy", "-i", "hello world", "--model", "gemini-2.5-pro", "--add-dir", "/path/to/rules"
+        "agy",
+        "-i",
+        "hello world",
+        "--model",
+        "gemini-2.5-pro",
+        "--add-dir",
+        "/path/to/rules",
     ]
 
 
@@ -176,8 +184,15 @@ def test_get_run_command_with_harness_flags() -> None:
     provider = AgyProvider()
     flags = provider.model_flags("gemini-2.5-pro")
     cmd = provider.get_run_command(["agy"] + flags, "task prompt")
-    assert cmd == ["agy", "--model", "gemini-2.5-pro", "--output-format", "json", "-p", "task prompt"]
-
+    assert cmd == [
+        "agy",
+        "--model",
+        "gemini-2.5-pro",
+        "--output-format",
+        "json",
+        "-p",
+        "task prompt",
+    ]
 
 
 def test_get_env(tmp_path: Path) -> None:
@@ -208,7 +223,9 @@ def test_materializes_worktree_isolation_wt_gate_hook(tmp_path: Path, monkeypatc
     assert (wt_skill_dir / "hooks" / "wt_gate.py").is_file()
 
 
-def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(tmp_path: Path, monkeypatch) -> None:
+def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_root(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
 
@@ -224,7 +241,9 @@ def test_build_session_prompt_materializes_hooks_manifest_in_cache_and_clean_roo
 
     # Clean-Root Invariant: project root .gemini/settings.json must NOT be written
     root_settings = project / ".gemini" / "settings.json"
-    assert not root_settings.exists(), "Clean-Root Invariant: .gemini/settings.json must not be created in project root"
+    assert not root_settings.exists(), (
+        "Clean-Root Invariant: .gemini/settings.json must not be created in project root"
+    )
 
     # Session hooks manifest must be in session cache
     cache_hooks = session_cache_dir(project, "sid-sp-settings") / "hooks.json"
@@ -297,7 +316,9 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
 
     # 1. Manifest written in AUTOMATE session cache
     cache_hooks = session_cache_dir(project, "sid-auto") / "hooks.json"
-    assert cache_hooks.is_file(), "hooks.json must be materialized in session cache under AUTOMATE mode"
+    assert cache_hooks.is_file(), (
+        "hooks.json must be materialized in session cache under AUTOMATE mode"
+    )
     data = json.loads(cache_hooks.read_text())
     pre_tool_hooks = data.get("PreToolUse", [])
     assert any(hook_script_name in str(h.get("command")) for h in pre_tool_hooks)
@@ -318,4 +339,3 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     assert res == 0
     assert marker.is_file()
     assert marker.read_text().strip() == "FIRED"
-

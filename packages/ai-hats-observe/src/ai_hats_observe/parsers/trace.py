@@ -97,7 +97,7 @@ class TraceParser:
         if "⏺" not in text:
             return None
         idx = text.index("⏺")
-        after = text[idx + 1:].strip()
+        after = text[idx + 1 :].strip()
         after = TraceParser._UI_TRIM.sub("", after).strip()
         after = TraceParser._OSC8_REMNANT.sub("", after).strip()
         after = TraceParser._RESPONSE_TAIL_NOISE.sub("", after).strip()
@@ -201,9 +201,7 @@ class TraceParser:
 
         return turns
 
-    def parse(
-        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
-    ) -> ParsedTranscript:
+    def parse(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> ParsedTranscript:
         entries = self._parse_trace(trace_path)
         # Flagged unconditionally: this surface has no token telemetry at all, so
         # its zeros must never be read as a measurement (HATS-1374).
@@ -219,4 +217,3 @@ class TraceParser:
         report = empty_usage_report(trace_path.name)
         report["flags"].append(FLAG_NO_STRUCTURED_TRANSCRIPT)
         return report
-

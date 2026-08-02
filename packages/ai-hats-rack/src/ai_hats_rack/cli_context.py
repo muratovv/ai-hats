@@ -299,9 +299,7 @@ def context_cmd(
                 path = registered_root_by_id(root_id)
                 if path is not None:
                     extra_roots.append(str(path))
-        workspace = Workspace.discover(
-            resolve_roots(tasks_dir, Path.cwd(), tuple(extra_roots))
-        )
+        workspace = Workspace.discover(resolve_roots(tasks_dir, Path.cwd(), tuple(extra_roots)))
         factories = stock_factories()
     except Exception as exc:  # noqa: BLE001 — routed to typed handling
         handle_rack_error(exc, as_json)

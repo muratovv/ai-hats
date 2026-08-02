@@ -28,7 +28,15 @@ from .dispatch import (
     SubscriberOutcome,
 )
 from .errors import RackError
-from .events import EdgeEvent, EpicifyEvent, Event, FieldsEvent, LinkEvent, PreDestroyEvent, event_detail
+from .events import (
+    EdgeEvent,
+    EpicifyEvent,
+    Event,
+    FieldsEvent,
+    LinkEvent,
+    PreDestroyEvent,
+    event_detail,
+)
 from .fsm import Topology, load_topology
 from .ids import prefix_of
 from .models import LINK_STORAGE_FIELDS, TaskCard, utc_now
@@ -759,7 +767,11 @@ class Kernel:
                         self._delta_applier(task, actor)(Delta(fields=op.fields))
                         for name, field_op in op.fields.items():
                             op_name = "set" if isinstance(field_op, Set) else "append"
-                            val = str(field_op.value) if isinstance(field_op, Set) else str(field_op.entry)
+                            val = (
+                                str(field_op.value)
+                                if isinstance(field_op, Set)
+                                else str(field_op.entry)
+                            )
                             dispatched.append(FieldsEvent(field=name, op=op_name, value=val))
                         txn.results.append({"op": "fields", "names": sorted(op.fields)})
                     else:
@@ -793,7 +805,9 @@ class Kernel:
                 )
             )
         if new_parent and new_parent != old_parent:
-            epicify_records = self._dispatch_epicify(new_parent, task_id, actor=actor, caller_cwd=caller_cwd)
+            epicify_records = self._dispatch_epicify(
+                new_parent, task_id, actor=actor, caller_cwd=caller_cwd
+            )
             records.extend(epicify_records)
         return KernelResult(
             task=task,

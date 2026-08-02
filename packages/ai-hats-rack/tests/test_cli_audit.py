@@ -151,18 +151,32 @@ def test_non_state_ops_journaled_and_parent_epicify(runner, tmp_path):
     runner.invoke(main, ["create", "child", *_tasks_args(tmp_path)])
 
     # 1. --set op produces op:set in audit.jsonl
-    res_set = runner.invoke(main, ["transition", "HATS-002", "--set", "priority=high", *_tasks_args(tmp_path)])
+    res_set = runner.invoke(
+        main, ["transition", "HATS-002", "--set", "priority=high", *_tasks_args(tmp_path)]
+    )
     assert res_set.exit_code == 0, res_set.output
     records_set, _ = read_journal(tmp_path / "tasks", "HATS-002")
-    assert any(r["event"] == "op:set" and r["detail"] == {"field": "priority", "op": "set", "value": "high"} for r in records_set)
+    assert any(
+        r["event"] == "op:set"
+        and r["detail"] == {"field": "priority", "op": "set", "value": "high"}
+        for r in records_set
+    )
 
     # 2. --link parent_task:HATS-001 produces link:parent_task on child AND epicify on parent
-    res_parent = runner.invoke(main, ["transition", "HATS-002", "--link", "parent_task:HATS-001", *_tasks_args(tmp_path)])
+    res_parent = runner.invoke(
+        main, ["transition", "HATS-002", "--link", "parent_task:HATS-001", *_tasks_args(tmp_path)]
+    )
     assert res_parent.exit_code == 0, res_parent.output
 
     child_records, _ = read_journal(tmp_path / "tasks", "HATS-002")
-    assert any(r["event"] == "link:parent_task" and r["detail"] == {"kind": "parent_task", "target": "HATS-001"} for r in child_records)
+    assert any(
+        r["event"] == "link:parent_task"
+        and r["detail"] == {"kind": "parent_task", "target": "HATS-001"}
+        for r in child_records
+    )
 
     parent_records, _ = read_journal(tmp_path / "tasks", "HATS-001")
-    assert any(r["event"] == "epicify" and r["detail"] == {"epic": "HATS-001", "child": "HATS-002"} for r in parent_records)
-
+    assert any(
+        r["event"] == "epicify" and r["detail"] == {"epic": "HATS-001", "child": "HATS-002"}
+        for r in parent_records
+    )

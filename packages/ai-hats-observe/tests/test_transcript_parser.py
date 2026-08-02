@@ -40,12 +40,25 @@ def test_claude_parser_reads_jsonl(tmp_path) -> None:
 
     jsonl = tmp_path / "c.jsonl"
     jsonl.write_text(
-        json.dumps({"type": "user", "timestamp": "2026-03-27T18:15:00Z",
-                    "message": {"content": [{"type": "text", "text": "hi"}]}})
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-03-27T18:15:00Z",
+                "message": {"content": [{"type": "text", "text": "hi"}]},
+            }
+        )
         + "\n"
-        + json.dumps({"type": "assistant", "timestamp": "2026-03-27T18:15:05Z",
-                      "message": {"model": "m", "content": [{"type": "text", "text": "hello"}],
-                                  "usage": {"input_tokens": 10, "output_tokens": 5}}})
+        + json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-03-27T18:15:05Z",
+                "message": {
+                    "model": "m",
+                    "content": [{"type": "text", "text": "hello"}],
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                },
+            }
+        )
         + "\n"
     )
     parsed = ClaudeParser().parse(jsonl, tmp_path / "absent.trace")
@@ -57,10 +70,7 @@ def test_claude_parser_reads_jsonl(tmp_path) -> None:
 
 def test_trace_parser_reads_trace_chrome(tmp_path) -> None:
     trace = tmp_path / "trace.log"
-    trace.write_text(
-        "18:15:00.000 [REQ] find the file\n"
-        "18:15:01.000 [RES] ⏺Found it in main.py\n"
-    )
+    trace.write_text("18:15:00.000 [REQ] find the file\n18:15:01.000 [RES] ⏺Found it in main.py\n")
     parsed = TraceParser().parse(None, trace)
     assert parsed.turns[0].user_input == "find the file"
     assert parsed.turns[0].response == "Found it in main.py"

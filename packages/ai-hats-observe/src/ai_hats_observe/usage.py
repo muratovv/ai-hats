@@ -36,7 +36,7 @@ SCHEMA_VERSION = "usage/v1"
 
 # A reference Read loads skill-body depth: either a file under a ``references/``
 # dir or a ``SKILL.md`` itself.
-_REF_MARKERS = ("/references/", )
+_REF_MARKERS = ("/references/",)
 
 
 def _is_reference_path(file_path: str) -> bool:
@@ -127,7 +127,14 @@ def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
 
         try:
             _process_entry(
-                obj, report, types_seen, totals, agg, timeline, pending, unknown_types,
+                obj,
+                report,
+                types_seen,
+                totals,
+                agg,
+                timeline,
+                pending,
+                unknown_types,
             )
         except Exception as exc:  # fail-soft: one bad entry never sinks the parse
             flags.append(f"entry-error line {lineno}: {type(exc).__name__}")
@@ -146,9 +153,18 @@ def parse_session_usage(jsonl_path: str | Path) -> dict[str, Any]:
 
 
 _KNOWN_TYPES = {
-    "assistant", "user", "system", "attachment", "ai-title", "permission-mode",
-    "last-prompt", "file-history-snapshot", "mode", "agent-name",
-    "queue-operation", "summary",
+    "assistant",
+    "user",
+    "system",
+    "attachment",
+    "ai-title",
+    "permission-mode",
+    "last-prompt",
+    "file-history-snapshot",
+    "mode",
+    "agent-name",
+    "queue-operation",
+    "summary",
 }
 
 
@@ -174,9 +190,9 @@ def _process_entry(
     if obj.get("isSidechain") is True:
         report["sidechain"]["is_sidechain"] = True
         if report["sidechain"]["parent_session_id"] is None:
-            report["sidechain"]["parent_session_id"] = (
-                obj.get("sourceToolAssistantUUID") or obj.get("sessionId")
-            )
+            report["sidechain"]["parent_session_id"] = obj.get(
+                "sourceToolAssistantUUID"
+            ) or obj.get("sessionId")
     if etype == "agent-name":
         report["sidechain"]["is_sidechain"] = True
         name = obj.get("name") or obj.get("agentName") or (obj.get("message") or {}).get("name")
@@ -249,8 +265,13 @@ def _process_assistant(
             if name == "Skill":
                 skill = inp.get("skill", "?")
                 agg["skill_loads"][skill] = agg["skill_loads"].get(skill, 0) + 1
-                ev = {"ts": ts, "kind": "skill_load", "name": skill,
-                      "tokens_delta": None, "args": inp.get("args")}
+                ev = {
+                    "ts": ts,
+                    "kind": "skill_load",
+                    "name": skill,
+                    "tokens_delta": None,
+                    "args": inp.get("args"),
+                }
                 timeline.append(ev)
                 pending.append(ev)
             elif name == "Read" and _is_reference_path(inp.get("file_path", "")):
@@ -289,12 +310,15 @@ def _process_system(
         dur = int(hook.get("durationMs", 0) or 0)
         agg["hook_firings"] += 1
         agg["hook_total_ms"] += dur
-        timeline.append({
-            "ts": ts, "kind": "stop_hook",
-            "name": Path(str(hook.get("command", "?"))).name,
-            "duration_ms": dur,
-            "errors": bool(obj.get("hookErrors")),
-        })
+        timeline.append(
+            {
+                "ts": ts,
+                "kind": "stop_hook",
+                "name": Path(str(hook.get("command", "?"))).name,
+                "duration_ms": dur,
+                "errors": bool(obj.get("hookErrors")),
+            }
+        )
 
 
 def _main(argv: list[str]) -> int:
@@ -305,6 +329,7 @@ def _main(argv: list[str]) -> int:
     """
     if len(argv) != 1:
         import sys
+
         print("usage: python -m ai_hats_observe.usage <transcript.jsonl>", file=sys.stderr)
         return 2
     report = parse_session_usage(argv[0])
