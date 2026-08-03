@@ -145,10 +145,13 @@ def _real_cache_home_tripwire():
         nodeid, source = _leaked_keys.get(key, ("<outside any test>", None))
         (owned if source else foreign).append(f"{key}  <- {nodeid}  ({source})")
     if foreign:
+        shown = foreign[:5]
+        rest = f"\n  ... and {len(foreign) - len(shown)} more" if len(foreign) > len(shown) else ""
         print(
-            f"\n[cache-home] {len(foreign)} key(s) appeared in {REAL_CACHE_HOME} with no "
-            "source dir in this run — most likely a concurrent ai-hats session:\n  "
-            + "\n  ".join(foreign)
+            f"\n[cache-home] {len(foreign)} key(s) appeared in {REAL_CACHE_HOME} with no source "
+            "dir in this run — another ai-hats session on this machine writes here too:\n  "
+            + "\n  ".join(shown)
+            + rest
         )
     if owned:
         pytest.fail(
