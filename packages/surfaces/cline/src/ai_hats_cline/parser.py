@@ -59,7 +59,9 @@ class ClineParser:
         turns, model_stats, agg_usage = self._parse_messages(doc.get("messages", []))
         return ParsedTranscript(turns=turns, model_stats=model_stats, agg_usage=agg_usage)
 
-    def parse_usage(self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path) -> dict[str, Any]:
+    def parse_usage(
+        self, jsonl_path: Path | Iterable[Path] | None, trace_path: Path
+    ) -> dict[str, Any]:
         """cline ``.messages.json`` present → the measured ``usage/v1`` report;
         else the trace fallback (no token telemetry)."""
         doc = self._load(jsonl_path)
@@ -124,9 +126,7 @@ class ClineParser:
             return None
         return obj if isinstance(obj, dict) else None
 
-    def _parse_messages(
-        self, messages: list
-    ) -> tuple[list[Turn], dict[str, dict], dict]:
+    def _parse_messages(self, messages: list) -> tuple[list[Turn], dict[str, dict], dict]:
         """Parse cline ``messages[]`` → (turns, per-model stats, aggregated usage)."""
         turns: list[Turn] = []
         current: Turn | None = None
@@ -250,8 +250,13 @@ class ClineParser:
             if name == "Skill":
                 skill = inp.get("skill", "?")
                 agg["skill_loads"][skill] = agg["skill_loads"].get(skill, 0) + 1
-                ev = {"ts": ts, "kind": "skill_load", "name": skill,
-                      "tokens_delta": None, "args": inp.get("args")}
+                ev = {
+                    "ts": ts,
+                    "kind": "skill_load",
+                    "name": skill,
+                    "tokens_delta": None,
+                    "args": inp.get("args"),
+                }
                 timeline.append(ev)
                 pending.append(ev)
             elif name == "Read" and _is_reference_path(inp.get("file_path", "")):
@@ -282,10 +287,7 @@ class ClineParser:
         elif isinstance(content, list):
             if any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content):
                 return None
-            parts = [
-                c["text"] for c in content
-                if isinstance(c, dict) and c.get("type") == "text"
-            ]
+            parts = [c["text"] for c in content if isinstance(c, dict) and c.get("type") == "text"]
             text = " ".join(parts).strip()
         else:
             return None

@@ -20,9 +20,7 @@ TRANSCRIPTS = Path(__file__).parent / "fixtures" / "transcripts"
 
 def test_claude_parser_builds_usage_v1(tmp_path: Path) -> None:
     """ClaudeParser.parse_usage(jsonl) yields the measured usage/v1 report."""
-    report = ClaudeParser().parse_usage(
-        TRANSCRIPTS / "normal.jsonl", tmp_path / "trace.log"
-    )
+    report = ClaudeParser().parse_usage(TRANSCRIPTS / "normal.jsonl", tmp_path / "trace.log")
     assert report["schema_version"] == SCHEMA_VERSION == "usage/v1"
     assert report["source"] == "normal.jsonl"
     assert report["usage_totals"]["input_tokens"] == 1310

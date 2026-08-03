@@ -36,6 +36,7 @@ asymmetry: Claude consumes this; Gemini is a no-op.
 
 This contract header is a deliberate long docstring — comment-length: allow.
 """
+
 from __future__ import annotations
 
 import ast
@@ -123,9 +124,7 @@ def _docstring_findings(src: str, max_lines: int, max_chars: int) -> list[str]:
         return []
     out: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(
-            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-        ):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         body = getattr(node, "body", None) or []
         if not body:
@@ -142,9 +141,7 @@ def _docstring_findings(src: str, max_lines: int, max_chars: int) -> list[str]:
         nchars = len(first.value.value)
         # ast.Module has no lineno; its window starts at the docstring itself.
         win_lo = getattr(node, "lineno", first.lineno)
-        if (nlines > max_lines or nchars > max_chars) and not _suppressed(
-            lines, win_lo, end
-        ):
+        if (nlines > max_lines or nchars > max_chars) and not _suppressed(lines, win_lo, end):
             where = getattr(node, "name", "<module>")
             out.append(
                 f"  L{first.lineno}: docstring on {where!r} is {nlines} lines / "

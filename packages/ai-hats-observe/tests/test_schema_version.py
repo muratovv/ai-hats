@@ -36,8 +36,7 @@ def test_write_metrics_stamps_schema_version(tmp_path) -> None:
     session = _session(tmp_path)
     session.init_audit(role="assistant", provider="claude")
     session.trace_path.write_text(
-        "18:15:00.000 [SYS] Session started\n"
-        "18:15:10.000 [REQ] test request\n"
+        "18:15:00.000 [SYS] Session started\n18:15:10.000 [REQ] test request\n"
     )
 
     AuditWriter().build(session, jsonl_path=None)

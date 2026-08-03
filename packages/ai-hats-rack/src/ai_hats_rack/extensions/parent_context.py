@@ -47,7 +47,9 @@ def walk_parent_chain(
     note = ""
     while True:
         if len(chain) >= max_depth:
-            note = f"parent chain exceeds {max_depth} levels — possible parent_task cycle; truncated"
+            note = (
+                f"parent chain exceeds {max_depth} levels — possible parent_task cycle; truncated"
+            )
             break
         parent_id = parent_id_of(current)
         if not parent_id:

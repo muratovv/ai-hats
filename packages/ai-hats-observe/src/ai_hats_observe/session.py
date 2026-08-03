@@ -121,14 +121,12 @@ class SessionManager:
             return sessions
 
         since_prefix = since_date.replace("-", "") if since_date else None
-        metric_filters_active = (
-            productive_only or role_eq is not None or tag_filters
-        )
+        metric_filters_active = productive_only or role_eq is not None or tag_filters
 
         for d in sorted(self.gitlog_dir.iterdir()):
             if not (d.is_dir() and d.name.startswith("session_")):
                 continue
-            sid = d.name[len("session_"):]
+            sid = d.name[len("session_") :]
 
             if since_prefix is not None and sid[:8] < since_prefix:
                 continue
@@ -310,20 +308,17 @@ class Session:
         traits = composition.get("traits", []) or []
         if traits:
             lines.append(
-                "- **Traits**: "
-                + ", ".join(_line(t, prov.get("traits", {})) for t in traits)
+                "- **Traits**: " + ", ".join(_line(t, prov.get("traits", {})) for t in traits)
             )
         rules = composition.get("rules", []) or []
         if rules:
             lines.append(
-                "- **Rules**: "
-                + ", ".join(_line(r, prov.get("rules", {})) for r in rules)
+                "- **Rules**: " + ", ".join(_line(r, prov.get("rules", {})) for r in rules)
             )
         skills = composition.get("skills", []) or []
         if skills:
             lines.append(
-                "- **Skills**: "
-                + ", ".join(_line(s, prov.get("skills", {})) for s in skills)
+                "- **Skills**: " + ", ".join(_line(s, prov.get("skills", {})) for s in skills)
             )
         return "\n".join(lines) + "\n"
 

@@ -92,9 +92,7 @@ def _emit_candidates(candidates, as_json: bool) -> None:
 
 def _emit_created(task_id: str, created: list[tuple[str, str]], as_json: bool) -> None:
     if as_json:
-        emit_json(
-            {"task_id": task_id, "created": [{"id": cid, "title": t} for cid, t in created]}
-        )
+        emit_json({"task_id": task_id, "created": [{"id": cid, "title": t} for cid, t in created]})
         return
     if not created:
         click.echo("No candidates found — nothing extracted.")

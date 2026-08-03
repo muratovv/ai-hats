@@ -168,7 +168,11 @@ class Workspace:
             )
             here = [
                 BacklogInstance(
-                    root_id, tasks_defn.name, tasks_defn.prefix, root.tasks_dir, tasks_defn,
+                    root_id,
+                    tasks_defn.name,
+                    tasks_defn.prefix,
+                    root.tasks_dir,
+                    tasks_defn,
                     is_tasks=True,
                 )
             ]
@@ -290,7 +294,13 @@ class Workspace:
         )
 
     def mirror_after(
-        self, origin_id: str, result: object, *, actor: str, caller_cwd: Path, root: RootId | None = None
+        self,
+        origin_id: str,
+        result: object,
+        *,
+        actor: str,
+        caller_cwd: Path,
+        root: RootId | None = None,
     ) -> None:
         """After the origin's link/unlink persists, dispatch the mirror for each
         CHANGED stored-inverse link op (ADR-0017 §2/R4). Symmetric and derived-

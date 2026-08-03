@@ -446,7 +446,9 @@ def _stored_inverse_of(registry: LinksRegistry, dk: LinkKind) -> str:
     return ""
 
 
-def _edges_of(kernel: Kernel, registry: LinksRegistry, card: TaskCard) -> list[tuple[LinkKind, str]]:
+def _edges_of(
+    kernel: Kernel, registry: LinksRegistry, card: TaskCard
+) -> list[tuple[LinkKind, str]]:
     """Every outgoing edge of a card as ``(kind, target_id)`` in registry order,
     derived children filled from the kernel reverse scan."""
     derived: dict[str, list[str]] = {}

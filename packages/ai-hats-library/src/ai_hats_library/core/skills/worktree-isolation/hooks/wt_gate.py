@@ -7,6 +7,7 @@ non-gitignored file in MAIN -> exit 0 + permissionDecision "deny" (binds headles
 unlike "ask"); else exit 0 silent. Recovery + discipline: SKILL.md. Kill switch:
 AI_HATS_WT_GATE_OFF=1. Stdlib-only (system python3 via shebang, inline git). Zero egress.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,9 +36,7 @@ _EXTS_ENV = "AI_HATS_WT_GATE_EXTS"
 _EXTS_FILENAME = "code_extensions.json"
 # Canonical skill-source location of the extensions file, relative to a git repo
 # root — lets the flattened ``library/hooks/`` copy still pick up project edits.
-_SKILL_EXTS_RELPATH = (
-    "library/core/skills/worktree-isolation/hooks/" + _EXTS_FILENAME
-)
+_SKILL_EXTS_RELPATH = "library/core/skills/worktree-isolation/hooks/" + _EXTS_FILENAME
 
 # Embedded mirror of ``code_extensions.json`` — the production fallback used once
 # the engine flattens this script away from its sibling. Keep in sync with the
@@ -132,8 +131,12 @@ def _git_info(directory: str) -> tuple[str, Path | None, Path | None]:
     try:
         result = subprocess.run(
             [  # noqa: S607
-                "git", "rev-parse", "--path-format=absolute",
-                "--show-toplevel", "--git-dir", "--git-common-dir",
+                "git",
+                "rev-parse",
+                "--path-format=absolute",
+                "--show-toplevel",
+                "--git-dir",
+                "--git-common-dir",
             ],
             cwd=directory,
             capture_output=True,
@@ -191,7 +194,7 @@ def main() -> int:
     if not tool_input:
         tool_call = payload.get("toolCall") or {}
         tool_input = tool_call.get("args") or {}
-    
+
     file_path = (
         tool_input.get("file_path")
         or tool_input.get("path")

@@ -31,6 +31,7 @@ def usage() -> dict:
 
 # -- protocol / wiring --------------------------------------------------------
 
+
 def test_satisfies_protocol() -> None:
     assert isinstance(ClineParser(), TranscriptParser)
 
@@ -40,6 +41,7 @@ def test_provider_wires_cline_parser() -> None:
 
 
 # -- parse() -> ParsedTranscript ---------------------------------------------
+
 
 def test_turns_are_user_text_only(parsed: ParsedTranscript) -> None:
     # tool_result-carrying user messages (m2/m4/m6) are filtered, not turns.
@@ -88,6 +90,7 @@ def test_agg_usage_maps_camelcase_metrics(parsed: ParsedTranscript) -> None:
 
 
 # -- parse_usage() -> usage/v1 -----------------------------------------------
+
 
 def test_usage_schema_and_session(usage: dict) -> None:
     assert usage["schema_version"] == SCHEMA_VERSION
@@ -150,6 +153,7 @@ def test_usage_tool_errors_not_derivable(usage: dict) -> None:
 
 
 # -- trace fallback -----------------------------------------------------------
+
 
 def test_parse_falls_back_to_trace_when_absent(tmp_path: Path) -> None:
     trace = tmp_path / "trace.log"

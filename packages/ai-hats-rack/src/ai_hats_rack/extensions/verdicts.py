@@ -73,7 +73,9 @@ class HypVerdictsExtension:
 
     # ----- append API (io.append_verdict / append_then_set_status parity) -----
 
-    def append_verdict(self, hyp_id: str, entry: Mapping[str, Any], *, actor: str, caller_cwd: Path):
+    def append_verdict(
+        self, hyp_id: str, entry: Mapping[str, Any], *, actor: str, caller_cwd: Path
+    ):
         """Append one validation_log entry atomically (no state change)."""
         return self._kernel.transition_ops(
             hyp_id,
@@ -236,20 +238,28 @@ def _append_verdict_command() -> click.Command:
     @click.argument("hyp_id")
     @click.option("--verdict", default=None, help="confirmed | refuted | inconclusive | n/a.")
     @click.option("--evidence", default=None, help="Non-empty evidence string (required).")
-    @click.option("--recommendation", default=None, help="close_confirmed|close_refuted|keep|extend_window.")
+    @click.option(
+        "--recommendation", default=None, help="close_confirmed|close_refuted|keep|extend_window."
+    )
     @click.option("--date", default=None, help="Entry date (default: today, UTC).")
     @click.option("--session-id", "session_id", default=None, help="Session id (default: ambient).")
-    @click.option("--entry", "entry_json", default=None, help="Full entry as JSON (named options win).")
+    @click.option(
+        "--entry", "entry_json", default=None, help="Full entry as JSON (named options win)."
+    )
     @TASKS_DIR_OPT
     @JSON_OPT
-    def _append_verdict(hyp_id, verdict, evidence, recommendation, date, session_id, entry_json, tasks_dir, as_json):
+    def _append_verdict(
+        hyp_id, verdict, evidence, recommendation, date, session_id, entry_json, tasks_dir, as_json
+    ):
         try:
             entry = _verdict_entry(verdict, evidence, recommendation, date, session_id, entry_json)
         except ValueError as exc:
             handle_rack_error(exc, as_json)
             return
         result, ok = _run_extension_verb(
-            "hyp-verdicts", tasks_dir, as_json,
+            "hyp-verdicts",
+            tasks_dir,
+            as_json,
             lambda ext, cwd: ext.append_verdict(hyp_id, entry, actor=actor(), caller_cwd=cwd),
         )
         if ok:
@@ -258,7 +268,9 @@ def _append_verdict_command() -> click.Command:
     return _append_verdict
 
 
-def _verdict_entry(verdict, evidence, recommendation, date, session_id, entry_json) -> dict[str, Any]:
+def _verdict_entry(
+    verdict, evidence, recommendation, date, session_id, entry_json
+) -> dict[str, Any]:
     entry: dict[str, Any] = {}
     if entry_json:
         loaded = json.loads(entry_json)
@@ -281,32 +293,44 @@ def _verdict_entry(verdict, evidence, recommendation, date, session_id, entry_js
 
 def _autoclose_command() -> click.Command:
     @click.command("autoclose", help="Close active HYPs that reached the refuted-verdict quorum.")
-    @click.option("--k", "k", default=DEFAULT_QUORUM_K, show_default=True, type=int,
-                  help="Independent refuted sessions required.")
+    @click.option(
+        "--k",
+        "k",
+        default=DEFAULT_QUORUM_K,
+        show_default=True,
+        type=int,
+        help="Independent refuted sessions required.",
+    )
     @click.option("--dry-run", "dry_run", is_flag=True, help="Report closures without writing.")
     @TASKS_DIR_OPT
     @JSON_OPT
     def _autoclose(k, dry_run, tasks_dir, as_json):
         closures, ok = _run_extension_verb(
-            "hyp-verdicts", tasks_dir, as_json,
+            "hyp-verdicts",
+            tasks_dir,
+            as_json,
             lambda ext, cwd: ext.autoclose(caller_cwd=cwd, k=k, dry_run=dry_run),
         )
         if not ok:
             return
         if as_json:
-            emit_json({
-                "dry_run": dry_run,
-                "closures": [
-                    {"hyp_id": c.hyp_id, "refute_sessions": list(c.refute_sessions), "k": c.k}
-                    for c in closures
-                ],
-            })
+            emit_json(
+                {
+                    "dry_run": dry_run,
+                    "closures": [
+                        {"hyp_id": c.hyp_id, "refute_sessions": list(c.refute_sessions), "k": c.k}
+                        for c in closures
+                    ],
+                }
+            )
         else:
             verb = "Would close" if dry_run else "Closed"
             if not closures:
                 click.echo("No hypotheses reached quorum.")
             for c in closures:
-                click.echo(f"{verb}: {c.hyp_id} (K={c.k}; sessions: {', '.join(c.refute_sessions)})")
+                click.echo(
+                    f"{verb}: {c.hyp_id} (K={c.k}; sessions: {', '.join(c.refute_sessions)})"
+                )
 
     return _autoclose
 
@@ -317,7 +341,9 @@ def _vote_command() -> click.Command:
     @click.option("--reasoning", default=None, help="Non-empty reasoning string (required).")
     @click.option("--session-id", "session_id", default=None, help="Session id (default: ambient).")
     @click.option("--timestamp", default=None, help="Vote timestamp (default: now, UTC).")
-    @click.option("--entry", "entry_json", default=None, help="Full vote as JSON (named options win).")
+    @click.option(
+        "--entry", "entry_json", default=None, help="Full vote as JSON (named options win)."
+    )
     @TASKS_DIR_OPT
     @JSON_OPT
     def _vote(prop_id, reasoning, session_id, timestamp, entry_json, tasks_dir, as_json):
@@ -327,7 +353,9 @@ def _vote_command() -> click.Command:
             handle_rack_error(exc, as_json)
             return
         result, ok = _run_extension_verb(
-            "prop-votes", tasks_dir, as_json,
+            "prop-votes",
+            tasks_dir,
+            as_json,
             lambda ext, cwd: ext.add_vote(prop_id, vote, actor=actor(), caller_cwd=cwd),
         )
         if ok:

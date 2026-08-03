@@ -17,11 +17,11 @@ from ai_hats_observe.session import Session
 
 # Markers that live ONLY in a concrete parser — never in a surface-agnostic writer.
 _PROVIDER_PARSE_MARKERS = (
-    "⏺",              # Claude-TUI response chrome (trace fallback)
+    "⏺",  # Claude-TUI response chrome (trace fallback)
     "_SPINNER_CHARS",  # trace-chrome noise table
-    "re.compile",      # any provider regex
-    "_parse_jsonl",    # Claude JSONL structured walk
-    "TraceEntry",      # trace-parse internal type
+    "re.compile",  # any provider regex
+    "_parse_jsonl",  # Claude JSONL structured walk
+    "TraceEntry",  # trace-parse internal type
     "_extract_turns",  # trace-parse turn reconstruction
 )
 

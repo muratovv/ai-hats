@@ -58,7 +58,9 @@ def hyp_exit_criteria(value: Any) -> None:
         raise ValueError("exit_criteria must be a mapping")
     unknown = sorted(set(value) - _EXIT_KEYS)
     if unknown:
-        raise ValueError(f"exit_criteria forbids unknown key(s) {unknown}; allowed: {sorted(_EXIT_KEYS)}")
+        raise ValueError(
+            f"exit_criteria forbids unknown key(s) {unknown}; allowed: {sorted(_EXIT_KEYS)}"
+        )
     for key in _EXIT_KEYS:
         if key in value and not _str_list(value[key]):
             raise ValueError(f"exit_criteria.{key} must be a list of strings")

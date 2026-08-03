@@ -235,4 +235,3 @@ def test_mirror_work_log_and_audit_journal_saved_on_target_card(project):
     # 4. Origin card AA-1 has audit.jsonl record for link:mirror_to
     origin_records, _ = read_journal(alpha, "AA-1")
     assert any(r["event"] == "link:mirror_to" for r in origin_records)
-

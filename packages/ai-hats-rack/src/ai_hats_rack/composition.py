@@ -56,9 +56,11 @@ class HandlerProtocolError(RackConfigError):
 
     def __init__(self, name: str, factory: Any, obj: Any, needs: str) -> None:
         self.handler = name
-        self.factory = getattr(factory, "__qualname__", None) or getattr(
-            factory, "__name__", None
-        ) or repr(factory)
+        self.factory = (
+            getattr(factory, "__qualname__", None)
+            or getattr(factory, "__name__", None)
+            or repr(factory)
+        )
         super().__init__(
             f"factory {self.factory} for '{name}' produced a {type(obj).__name__}, not {needs}"
         )
@@ -86,8 +88,12 @@ def _bound_handler(
     wraps into a :class:`Subscriber` (``name`` + ``on_event``; ``subscriptions``
     are computed by the loader, so the raw handler is NOT itself a Subscriber)."""
     obj = _instantiate(ref, defn, catalog, factories)
-    if not (isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_event", None))):
-        raise HandlerProtocolError(ref.name, factories.get(ref.name), obj, "a handler (name + on_event)")
+    if not (
+        isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_event", None))
+    ):
+        raise HandlerProtocolError(
+            ref.name, factories.get(ref.name), obj, "a handler (name + on_event)"
+        )
     return obj
 
 
@@ -102,7 +108,9 @@ def _bound_read_handler(
     ``on_event`` — so it is validated and wrapped apart from transition handlers
     (HATS-1064)."""
     obj = _instantiate(ref, defn, catalog, factories)
-    if not (isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_read", None))):
+    if not (
+        isinstance(getattr(obj, "name", None), str) and callable(getattr(obj, "on_read", None))
+    ):
         raise HandlerProtocolError(
             ref.name, factories.get(ref.name), obj, "a read handler (name + on_read)"
         )
@@ -180,7 +188,9 @@ def _self_loops(topology: Topology) -> set[str]:
     return {s for s in topology.states if s in topology.edges.get(s, ())}
 
 
-def _product_keys(kind: str, target: Any, topology: Topology, self_loops: set[str]) -> list[tuple[str, str]]:
+def _product_keys(
+    kind: str, target: Any, topology: Topology, self_loops: set[str]
+) -> list[tuple[str, str]]:
     if kind == "edge":
         return [target]
     state = target
@@ -396,7 +406,9 @@ def stock_factories(sections: Sequence[Section] | None = None) -> dict[str, Exte
         ),
         "plan-consent": lambda defn, catalog, cfg: PlanConsentExtension(),
         "plan-gate": lambda defn, catalog, cfg: PlanGateExtension(catalog, catalog_sections),
-        "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(catalog, catalog_sections),
+        "plan-scaffold": lambda defn, catalog, cfg: PlanScaffoldExtension(
+            catalog, catalog_sections
+        ),
         "stamp-lifecycle": lambda defn, catalog, cfg: StampLifecycleHandler(_field(cfg)),
         "clear-lifecycle": lambda defn, catalog, cfg: ClearLifecycleHandler(_field(cfg)),
         "parent-context": lambda defn, catalog, cfg: ParentContextExtension(defn.links_registry),

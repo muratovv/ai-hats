@@ -63,7 +63,6 @@ def _seed(project: Path, env: dict[str, str]) -> None:
     )
     (project / ".agent" / "ai-hats").mkdir(parents=True)
 
-
     claude_settings = project / ".claude" / "settings.json"
     claude_settings.parent.mkdir()
     claude_settings.write_text(
@@ -126,9 +125,7 @@ def _seed(project: Path, env: dict[str, str]) -> None:
                         {
                             "matcher": "Bash",
                             "tag": "ai-hats:tool-call-hygiene:PreToolUse:Bash",
-                            "command": (
-                                f"{project}/.agy/skills/tool-call-hygiene/hooks/guard.sh"
-                            ),
+                            "command": (f"{project}/.agy/skills/tool-call-hygiene/hooks/guard.sh"),
                         }
                     ],
                     HOOK_POST_TOOL_USE: [

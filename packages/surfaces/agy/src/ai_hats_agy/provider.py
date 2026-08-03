@@ -35,7 +35,9 @@ from ai_hats.session_artifacts import BuiltArtifacts, RunMode
 
 def agy_user_settings_json() -> Path:
     from ai_hats.paths._discovery import tool_home
+
     return tool_home("gemini", "GEMINI_CONFIG_DIR") / "antigravity-cli" / "settings.json"
+
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
@@ -59,6 +61,7 @@ class AgyProvider(Provider):
 
     def provider_hints(self) -> list["ProviderHint"]:
         from ai_hats.providers import ProviderHint
+
         return [
             ProviderHint(
                 name="--model",
@@ -74,6 +77,7 @@ class AgyProvider(Provider):
 
     def transcript_parser(self):
         from .parser import AgyParser
+
         return AgyParser()
 
     def resolve_transcript(
@@ -99,7 +103,6 @@ class AgyProvider(Provider):
             exact_path=exact_path,
             end_ts=end_ts,
         )
-
 
     def system_prompt_path(self, project_dir: Path) -> Path | None:
         return gemini_md(project_dir)
@@ -188,11 +191,13 @@ class AgyProvider(Provider):
                 if "Edit" in matcher or "Write" in matcher:
                     matcher = AGY_FILE_MUTATION_MATCHER
                 script = getattr(hook, "script", "")
-                event_list.append({
-                    "matcher": matcher,
-                    "command": str(skills_dir / skill_name / script),
-                    "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
-                })
+                event_list.append(
+                    {
+                        "matcher": matcher,
+                        "command": str(skills_dir / skill_name / script),
+                        "tag": f"ai-hats:{skill_name}:{event}:{matcher}",
+                    }
+                )
         return manifest
 
     def _deliver_hooks(self, project_dir, result, session_id, artifacts) -> None:
@@ -250,7 +255,10 @@ class AgyProvider(Provider):
     ) -> tuple[list[str], dict[str, str], str]:
         """Write composed prompt & session artifacts via build_session_artifacts (ADR-0018)."""
         artifacts = self.build_session_artifacts(
-            project_dir, result, session_id, run_mode=RunMode.HITL,
+            project_dir,
+            result,
+            session_id,
+            run_mode=RunMode.HITL,
             artifacts=BuiltArtifacts(),
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
@@ -261,7 +269,9 @@ class AgyProvider(Provider):
             cmd.extend(args)
         return cmd
 
-    def get_cli_launch_args(self, base_cmd: list[str], session_id: str, is_resume: bool) -> list[str]:
+    def get_cli_launch_args(
+        self, base_cmd: list[str], session_id: str, is_resume: bool
+    ) -> list[str]:
         """Convert positional prompt text in `base_cmd` into `-i <prompt>` for interactive agy sessions."""
         del session_id, is_resume
         if not base_cmd or len(base_cmd) <= 1:
@@ -272,8 +282,15 @@ class AgyProvider(Provider):
             return base_cmd
 
         flags_with_val = {
-            "--add-dir", "--agent", "--effort", "--log-file", "--mode",
-            "--model", "--print-timeout", "--project", "--conversation",
+            "--add-dir",
+            "--agent",
+            "--effort",
+            "--log-file",
+            "--mode",
+            "--model",
+            "--print-timeout",
+            "--project",
+            "--conversation",
         }
 
         executable = base_cmd[0]
@@ -301,7 +318,6 @@ class AgyProvider(Provider):
 
         prompt_str = " ".join(positional_prompt)
         return [executable, "-i", prompt_str, *other_tokens]
-
 
     def get_run_command(
         self,

@@ -22,7 +22,9 @@ if TYPE_CHECKING:
 class SidecarTracer:
     """PTY sidecar: intercepts master/stdin fds and logs [RES]/[REQ] to trace."""
 
-    ANSI_ESCAPE = re.compile(rb"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+    ANSI_ESCAPE = re.compile(
+        rb"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))"
+    )
     ZELLIJ_NOISE = re.compile(rb"(?:[>|]+Zellij\(\d+\))+[a-z]{0,2}")
 
     def __init__(self, session: Session) -> None:
@@ -72,6 +74,7 @@ class SidecarTracer:
         log; ``trace.log`` is the JSONL-missing fallback parsed by
         ``AuditWriter._extract_turns`` / ``_extract_pio_content``.
         """
+
         def master_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
             self._raw_dump(b"<<", data)
@@ -80,6 +83,7 @@ class SidecarTracer:
                 text = cleaned.decode("utf-8", errors="replace")
                 self.session.log_trace(TraceTag.RES, text)
             return data
+
         return master_read
 
     _CONTEXT_CLEAR_RE = re.compile(r"^/clear\b")
@@ -87,6 +91,7 @@ class SidecarTracer:
 
     def make_stdin_read(self) -> Callable[[int], bytes]:
         """Returns stdin_read callback for pty.spawn — logs user input as [REQ] on newline."""
+
         def stdin_read(fd: int) -> bytes:
             data = os.read(fd, 1024)
             self._raw_dump(b">>", data)
@@ -105,4 +110,5 @@ class SidecarTracer:
                         self.session.log_trace(TraceTag.SYS, "Context compacted by user")
                 self._req_buf.clear()
             return data
+
         return stdin_read

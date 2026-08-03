@@ -6,6 +6,7 @@ dataclass with a list standing in for disk persistence — never an ``ai_hats``
 symbol. Covers ordering, the already-migrated no-op, mid-registry resume, the
 transactional persist-failure rollback, banner emission, and ``latest_step``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

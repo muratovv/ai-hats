@@ -24,6 +24,7 @@ Failures:
 
 See ``tracker/backlog/tasks/HATS-470/plan.md`` for full design.
 """
+
 from __future__ import annotations
 
 import errno
@@ -110,9 +111,7 @@ def _ensure_session() -> _Session:
         if hard:
             # Sentinel path — never written to. Hard-delete branches in
             # discard/replace short-circuit before any IO uses this.
-            _current_session = _Session(
-                root=Path("/dev/null"), hard_delete=True
-            )
+            _current_session = _Session(root=Path("/dev/null"), hard_delete=True)
             return _current_session
         assert base is not None  # narrow the type for mypy
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -202,9 +201,7 @@ def _is_under_tmp(path: Path) -> bool:
     return any(first.startswith(p) for p in _TMP_ARTEFACT_PREFIXES)
 
 
-def _resolve_dest(
-    path: Path, project_dir: Path | None, session: _Session
-) -> Path:
+def _resolve_dest(path: Path, project_dir: Path | None, session: _Session) -> Path:
     """Compute trash destination preserving project-relative structure.
 
     For paths inside ``project_dir`` → ``<session>/<relpath>``.
@@ -244,15 +241,17 @@ def _disambiguate_dest(natural: Path) -> Path:
     trash session is per-process and ai-hats has no concurrent
     destructive callers within one process.
     """
-    if not natural.exists() and not natural.is_symlink() \
-            and not (natural.parent / f"{natural.name}.symlink").exists():
+    if (
+        not natural.exists()
+        and not natural.is_symlink()
+        and not (natural.parent / f"{natural.name}.symlink").exists()
+    ):
         return natural
     counter = 1
     while True:
         candidate = natural.with_name(f"{natural.name}.{counter}")
         sidecar = candidate.parent / f"{candidate.name}.symlink"
-        if not candidate.exists() and not candidate.is_symlink() \
-                and not sidecar.exists():
+        if not candidate.exists() and not candidate.is_symlink() and not sidecar.exists():
             return candidate
         counter += 1
 
@@ -301,9 +300,7 @@ def _move_to_trash(src: Path, dest: Path) -> bool:
         raise
     except OSError as e:
         if e.errno == errno.ENOSPC:
-            raise TrashFullError(
-                f"Cannot move {src} to trash {dest}: no space left."
-            ) from e
+            raise TrashFullError(f"Cannot move {src} to trash {dest}: no space left.") from e
         raise
 
 
@@ -417,8 +414,7 @@ def discard(
         _hard_delete(path)
         _record(session, "hard-rm", reason, path, None)
         print(
-            f"safe_delete: hard-deleted {path} "
-            f"({ENV_TRASH_DIR}=- set, reason={reason or '-'})",
+            f"safe_delete: hard-deleted {path} ({ENV_TRASH_DIR}=- set, reason={reason or '-'})",
             file=sys.stderr,
         )
         return None
@@ -490,8 +486,7 @@ def replace(
         _write_atomic(path, new_content, mode=mode)
         _record(session, "hard-replace", reason, path, None)
         print(
-            f"safe_delete: hard-replaced {path} "
-            f"({ENV_TRASH_DIR}=- set, reason={reason or '-'})",
+            f"safe_delete: hard-replaced {path} ({ENV_TRASH_DIR}=- set, reason={reason or '-'})",
             file=sys.stderr,
         )
         return False
@@ -507,9 +502,7 @@ def replace(
             dest.write_text("<unreadable on snapshot>\n")
     except OSError as e:
         if e.errno == errno.ENOSPC:
-            raise TrashFullError(
-                f"Cannot snapshot {path} to trash: no space left."
-            ) from e
+            raise TrashFullError(f"Cannot snapshot {path} to trash: no space left.") from e
         raise
 
     _write_atomic(path, new_content, mode=mode)
@@ -550,9 +543,7 @@ def session_summary() -> str | None:
             f"safe_delete: {n} hard-delete op(s) this run "
             f"({ENV_TRASH_DIR}=- set — not recoverable)."
         )
-    return (
-        f"safe_delete: {n} op(s) recoverable from {_current_session.root}"
-    )
+    return f"safe_delete: {n} op(s) recoverable from {_current_session.root}"
 
 
 def reset_session() -> None:
