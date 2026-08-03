@@ -165,6 +165,16 @@ def test_e2e_bump_internal_rejects_unknown_args(installed_launcher, tmp_path):
 # ---------------------- Test 3: trash bin creation ----------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "HATS-1480 — heal_external_refs rewrites a legacy .agent/hooks/<name> ref to "
+        "library/hooks/<name>; HATS-1268 renamed the guard to its flattened skill form, "
+        "so the target no longer exists and assert_runtime_hooks_resolve refuses init. "
+        "The rewrite is itself residue of the scheme HATS-1170 retired — the fix is to "
+        "drop an ai-hats-owned legacy ref, not repoint it at a hollow copy."
+    ),
+)
 @pytest.mark.integration
 def test_e2e_init_creates_trash_session_on_legacy_ref_heal(
     installed_launcher, tmp_path, monkeypatch

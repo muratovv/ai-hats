@@ -6,8 +6,10 @@ relative path (``.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh``),
 so a session / sub-agent starting in a subdirectory invoked a path that did
 not exist → ``/bin/sh`` exited 127 and the safety net was silently dead.
 
-HATS-615 prefixes the emitted command with ``$CLAUDE_PROJECT_DIR/`` (Claude
-Code expands the var at hook-execution time), so it resolves regardless of cwd.
+HATS-615 made the emitted command cwd-independent. Since HATS-1268 it is
+absolute into the session skill mirror, which satisfies that the same way the
+earlier ``$CLAUDE_PROJECT_DIR/`` prefix did — the invariant under test is that
+the command resolves from any cwd, not the spelling that achieves it.
 
 Contract under test — exactly how Claude Code invokes a hook:
 ``/bin/sh -c "<emitted command>"`` with ``cwd != project root`` and
@@ -35,7 +37,7 @@ from ai_hats.constants import HOOK_PRE_TOOL_USE
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SETTINGS = Path(".claude") / "settings.json"
-GUARD_TAG = "ai-hats:hats-437"
+GUARD_TAG = "ai-hats:safety-guard:PreToolUse:Bash"
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -111,20 +113,18 @@ def _managed_guard_command(project: Path) -> str:
 def test_e2e_guard_command_resolves_from_subdirectory(installed_launcher, tmp_path):
     """Emitted guard command resolves + fires from a subdirectory cwd.
 
-    The settings command carries the ``$CLAUDE_PROJECT_DIR/`` placeholder, and
-    invoking it the way Claude Code does — ``/bin/sh -c`` with cwd in a
-    subdirectory and ``CLAUDE_PROJECT_DIR`` exported — denies an irreversible
-    command with exit 2. Under the bare-relative revert the path is unresolved
-    from the subdir → exit 127.
+    Invoking it the way Claude Code does — ``/bin/sh -c`` with cwd in a
+    subdirectory — denies an irreversible command with exit 2. Under a
+    bare-relative revert the path is unresolved from the subdir → exit 127.
     """
     launcher, env, _venv = installed_launcher
     project = tmp_path / "proj_cwd_resolution"
     _init_minimal_project(launcher, env, project)
 
     command = _managed_guard_command(project)
-    # Settings-level contract: the placeholder is present.
-    assert command.startswith("$CLAUDE_PROJECT_DIR/"), (
-        f"managed guard command must be $CLAUDE_PROJECT_DIR-prefixed; got: {command!r}"
+    # Settings-level contract: absolute, so no cwd can change what it means.
+    assert Path(command.split()[0]).is_absolute(), (
+        f"managed guard command must be absolute (HATS-1268); got: {command!r}"
     )
 
     subdir = project / "nested" / "deep"

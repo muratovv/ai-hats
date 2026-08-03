@@ -31,7 +31,12 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INSTALL_LAUNCHER = REPO_ROOT / "scripts" / "install-launcher.sh"
-HOOK_BASENAMES = ("pre_bash_shared_state_guard.sh", "shared_state_classifier.sh")
+# HATS-1268: the guard is skill-declared now, so it reaches library/hooks/ as a
+# flattened skill copy. Its classifier sibling is NOT declared, so it is not
+# flattened alongside — that copy is write-only residue awaiting HATS-1480, and
+# the test that actually RUNS the guard uses the session mirror instead.
+GUARD_FLAT_NAME = "safety-guard-pre_bash_shared_state_guard.sh"
+HOOK_BASENAMES = (GUARD_FLAT_NAME,)
 
 # HATS-589: per-xdist-worker private build source (no-op on serial run).
 from _helpers.env import clean_env  # noqa: E402
@@ -165,13 +170,14 @@ def _materialized_hooks_dir(project: Path) -> Path:
 def _package_hook_source_bytes(name: str) -> bytes:
     """Read the source hook body straight from the ``ai_hats_library`` package.
 
-    The hooks ship as data under
-    ``packages/ai-hats-library/src/ai_hats_library/hooks/`` (HATS-876), which IS
-    the package data the materialize step copies from. Avoids depending on the
-    test venv's Python-side import machinery to read those bytes back.
+    Reads the library tree rather than the test venv's import machinery. Since
+    HATS-1268 the guard ships inside the skill that declares it, so the flat
+    materialized name maps back to ``<skill>/hooks/<basename>``.
     """
-    src = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "hooks" / name
-    return src.read_bytes()
+    lib = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+    if name == GUARD_FLAT_NAME:
+        return (lib / "core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh").read_bytes()
+    return (lib / "hooks" / name).read_bytes()
 
 
 # ---------------------- Test A: init materializes ----------------------
@@ -219,7 +225,7 @@ def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
     _init_minimal_project(launcher, env, project)
 
     hooks_dir = _materialized_hooks_dir(project)
-    guard = hooks_dir / "pre_bash_shared_state_guard.sh"
+    guard = hooks_dir / GUARD_FLAT_NAME
     first_mtime = guard.stat().st_mtime_ns
 
     # Re-run init.
@@ -258,7 +264,7 @@ def test_e2e_self_update_refreshes_hook_after_drift(private_launcher, tmp_path):
     _init_minimal_project(launcher, env, project)
 
     hooks_dir = _materialized_hooks_dir(project)
-    guard = hooks_dir / "pre_bash_shared_state_guard.sh"
+    guard = hooks_dir / GUARD_FLAT_NAME
     original_bytes = guard.read_bytes()
     drifted = b"#!/usr/bin/env bash\n# tampered\nexit 0\n"
     assert drifted != original_bytes
@@ -313,9 +319,28 @@ def test_e2e_materialized_hook_blocks_irreversible_no_tty(installed_launcher, tm
     project = tmp_path / "proj_safety_net_live"
     _init_minimal_project(launcher, env, project)
 
-    hooks_dir = _materialized_hooks_dir(project)
-    guard = hooks_dir / "pre_bash_shared_state_guard.sh"
-    assert guard.is_file(), "precondition: materialize must have run"
+    # HATS-1268: run the copy that has its siblings. The flattened copy under
+    # library/hooks/ no longer carries shared_state_classifier.sh, so executing
+    # THAT one would test a corpse — the session mirror is where the guard lives.
+    from ai_hats.assembler import Assembler
+    from ai_hats.paths import claude_plugin_skills_dir, session_cache_dir
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    sid = "sid-guard-live"
+    ClaudeProvider().build_session_artifacts(
+        project,
+        Assembler(project).composer.compose("assistant"),
+        sid,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+    skills = claude_plugin_skills_dir(session_cache_dir(project, sid) / "plugin")
+    guard = skills / "safety-guard" / "hooks" / "pre_bash_shared_state_guard.sh"
+    assert guard.is_file(), "precondition: the session mirror must have been built"
+    assert (guard.parent / "shared_state_classifier.sh").is_file(), (
+        "precondition: the classifier must be beside the guard"
+    )
 
     # Tool-input JSON the classifier recognises as irreversible.
     # The classifier sees the literal command and matches the
