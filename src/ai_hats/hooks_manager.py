@@ -385,8 +385,9 @@ class HooksManager:
         changes: list[HookChange] = []
         changes.extend(self._runtime_hooks_changes(result, provider))
         changes.extend(self._wt_hooks_changes(result))
-        if (self.project_dir / ".git").exists():
-            changes.extend(self._git_hooks_changes(result))
+        # No GIT arm (HATS-1337): the dispatcher is static and carries no gate
+        # set to drift from, and healing it here would write the project at
+        # session start — install-time is the only write point (M2).
         return changes
 
     def _heal_surfaces(
@@ -405,7 +406,6 @@ class HooksManager:
         healers = {
             HookSurface.RUNTIME: _heal_runtime,
             HookSurface.WT: lambda: self.materialize_worktree_hooks(result),
-            HookSurface.GIT: lambda: self.install_git_hooks(result, warnings_sink=warnings),
         }
         for surface in surfaces:
             healer = healers.get(surface)
@@ -498,28 +498,6 @@ class HooksManager:
                 out.append((name, HookChangeKind.MISSING))
         return out
 
-    def _git_hooks_changes(self, result: CompositionResult) -> list[HookChange]:
-        """Git-hook drift as :class:`HookChange` list, deduped to the git EVENT.
-
-        Two scripts in one ``pre-push.d`` collapse to one ``pre-push`` line per kind.
-        """
-        manifest = _read_manifest(self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST)
-        seen: set[tuple[str, str]] = set()
-        out: list[HookChange] = []
-        for rel, kind in git_hooks_changes(self.project_dir, result, manifest):
-            event = rel.split(".d/", 1)[0] if ".d/" in rel else rel
-            key = (event, kind)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(HookChange(surface=HookSurface.GIT, name=event, kind=kind))
-        return out
-
-    def _git_hooks_drift(self, result: CompositionResult) -> bool:
-        """True if managed git hooks on disk diverge from ``result``."""
-        manifest = _read_manifest(self.project_dir / GITHOOKS_DIR / GITHOOKS_MANIFEST)
-        return git_hooks_drift(self.project_dir, result, manifest)
-
     def binary_behind_source(self) -> bool:
         """True if the installed ai-hats binary is strictly behind upstream.
         Public since HATS-907: the skills-mirror heal shares this gate.
@@ -557,85 +535,39 @@ GITHOOKS_BYPASS_JOURNAL = "bypass_journal.sh"
 def install_git_hooks(
     project_dir: Path, result: CompositionResult, *, warnings_sink: list[str] | None = None
 ) -> None:
-    """Install git hooks declared by composed skills (``ai_hats.git_hooks:``
-    SKILL.md frontmatter, HATS-814).
+    """Install the git orchestrator: one dispatcher per declared event.
 
-    Scripts land in `.githooks/<event>.d/<skill>-<basename>` under a generated
-    dispatcher at `.githooks/<event>`; `core.hooksPath` is set to `.githooks`
-    (idempotently). ``warnings_sink`` collects warnings instead of printing
-    (HITL read-hold, HATS-969).
+    The dispatcher is the ONLY durable artifact (ADR-0020 D3) — no gate copies,
+    no manifest. Gate *content* stays in the declaring skills and is resolved at
+    commit time (``ai-hats githooks resolve``), which is what lets a
+    ``self update`` take effect with no re-materialization step (M12).
 
     Conflict policy:
     - `.githooks/<event>` exists WITHOUT our marker → leave alone, warn.
     - `core.hooksPath` pre-set elsewhere → take over, recording the displaced
       dir for dispatcher chaining, and announce loudly (HATS-999).
-    - Previously installed files are manifest-tracked and swept before
-      re-install; foreign `<event>.d/` entries are never touched.
     """
+    warnings: list[str] = []
+    _retire_pre_1337_layout(project_dir)
+
     declared = _collect_skill_git_hooks(result)
-    if not declared:
-        # No skill declares git hooks. Don't touch user's repo.
-        # Still clean up our previously-installed managed files (in case the
-        # user removed all skills with git_hooks) so stale entries don't linger.
-        _cleanup_managed_git_hooks(project_dir)
+    wanted = {event for event, entries in declared.items() if entries}
+    _drop_unwanted_dispatchers(project_dir, wanted)
+    if not wanted:
         return
 
     githooks_dir = project_dir / GITHOOKS_DIR
     githooks_dir.mkdir(exist_ok=True)
 
-    # Remove anything we previously owned, then re-install fresh.
-    _cleanup_managed_git_hooks(project_dir)
-
-    new_manifest: list[str] = []
-    warnings: list[str] = []
-
-    if _install_bypass_journal(project_dir, githooks_dir, warnings):
-        new_manifest.append(GITHOOKS_BYPASS_JOURNAL)
-
-    for event, entries in declared.items():
-        if not entries:
-            continue
-        event_d = githooks_dir / f"{event}.d"
-        event_d.mkdir(exist_ok=True)
-
-        for skill_name, script_path in entries:
-            src = _resolve_skill_script(skill_name, script_path, result)
-            if src is None:
-                warnings.append(
-                    f"git_hooks: skill '{skill_name}' declares script "
-                    f"'{script_path}' but file not found"
-                )
-                continue
-            dest_basename = f"{skill_name}-{src.name}"
-            dest = event_d / dest_basename
-            shutil.copy2(src, dest)
-            dest.chmod(0o755)
-            new_manifest.append(f"{event}.d/{dest_basename}")
-
-        # Generate dispatcher (or warn on conflict).
+    for event in sorted(wanted):
         dispatcher_path = githooks_dir / event
-        installed = _install_dispatcher(dispatcher_path)
-        if installed:
-            new_manifest.append(event)
-        else:
+        if not _install_dispatcher(dispatcher_path):
             warnings.append(
                 f"git_hooks: existing {dispatcher_path} is not managed by "
-                f"ai-hats — left in place. Hooks for '{event}' will not run "
-                f"unless you wire {event}.d/* into it manually."
+                f"ai-hats — left in place. Gates for '{event}' will not run "
+                f"unless you wire the ai-hats dispatcher into it manually."
             )
 
-    # Persist manifest of files we own (hashed owner_key convention, HATS-911).
-    from .sweeper import write_marker
-
-    write_marker(
-        githooks_dir / GITHOOKS_MANIFEST,
-        owner_key="git-hooks",
-        names=new_manifest,
-        project_dir=project_dir,
-        reason="githooks-manifest",
-    )
-
-    # Configure core.hooksPath (idempotent + safe).
     _configure_hooks_path(project_dir, warnings)
 
     if warnings_sink is not None:
@@ -643,6 +575,69 @@ def install_git_hooks(
     else:
         for w in warnings:
             print(f"[ai-hats] WARNING: {w}")
+
+
+def _managed_dispatchers(githooks_dir: Path) -> list[Path]:
+    """Every `.githooks/<event>` that proves, by content, it is ours.
+
+    Ownership is proven by the marker the dispatcher carries, never by a list of
+    names: the manifest that used to hold those names is gone (HATS-1337), and a
+    hand-written foreign hook of the same name must stay untouched.
+    """
+    if not githooks_dir.is_dir():
+        return []
+    found = []
+    for child in sorted(githooks_dir.iterdir()):
+        if not child.is_file():
+            continue
+        try:
+            if GITHOOKS_DISPATCHER_MARKER in child.read_text():
+                found.append(child)
+        except (OSError, UnicodeDecodeError):
+            continue
+    return found
+
+
+def _drop_unwanted_dispatchers(project_dir: Path, wanted: set[str]) -> None:
+    """Remove our dispatchers for events no skill declares any more."""
+    githooks_dir = project_dir / GITHOOKS_DIR
+    for dispatcher in _managed_dispatchers(githooks_dir):
+        if dispatcher.name not in wanted:
+            _safe_discard(dispatcher, reason="githook-dispatcher", project_dir=project_dir)
+
+
+def _retire_pre_1337_layout(project_dir: Path) -> None:
+    """One-time removal of the gate copies and the manifest that listed them.
+
+    Cleanup is driven BY the old manifest, which is exactly what distinguishes
+    an ai-hats copy from a script the user dropped into `<event>.d/` themselves —
+    that affordance survives (R8). Once the manifest is gone there is nothing
+    left to drive, so this is self-terminating rather than a standing sweep.
+    """
+    githooks_dir = project_dir / GITHOOKS_DIR
+    manifest_path = githooks_dir / GITHOOKS_MANIFEST
+    if not manifest_path.exists():
+        return
+    try:
+        entries = _read_manifest(manifest_path)
+    except OSError:
+        entries = []
+    for entry in sorted(entries):
+        # Only the copies. Dispatchers are bare names and stay — they are the
+        # artifact we keep; `_install_dispatcher` refreshes them in place.
+        if "/" not in entry:
+            continue
+        target = githooks_dir / entry
+        if target.is_file():
+            _safe_discard(target, reason="githook-retired-copy", project_dir=project_dir)
+    # The retired bypass-journal copy: a bare name, but not a dispatcher.
+    journal_copy = githooks_dir / GITHOOKS_BYPASS_JOURNAL
+    if journal_copy.is_file():
+        _safe_discard(journal_copy, reason="githook-retired-copy", project_dir=project_dir)
+    manifest_path.unlink(missing_ok=True)  # safe-delete: ok framework-manifest
+    for child in list(githooks_dir.iterdir()):
+        if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
+            child.rmdir()  # safe-delete: ok empty-dir
 
 
 def _collect_skill_git_hooks(
@@ -671,28 +666,6 @@ def _resolve_skill_script(
     return _resolve_runtime_script(result, skill_name, script_path)
 
 
-def _install_bypass_journal(project_dir: Path, githooks_dir: Path, warnings: list[str]) -> bool:
-    """Copy the bypass-journal helper into `.githooks/`. Returns True if installed."""
-    source_root = _builtin_library_hooks(project_dir)
-    src = None if source_root is None else source_root / GITHOOKS_BYPASS_JOURNAL
-    if src is None or not src.is_file():
-        # Every hatch branch sources this file; without it the gates still run
-        # but stop recording bypasses, which is the defect HATS-1407 removes.
-        warnings.append(
-            f"git_hooks: {GITHOOKS_BYPASS_JOURNAL} not found in package data — "
-            "gate bypasses will NOT be journaled"
-        )
-        return False
-    _safe_replace(
-        githooks_dir / GITHOOKS_BYPASS_JOURNAL,
-        src.read_bytes(),
-        reason="githook-bypass-journal",
-        project_dir=project_dir,
-        mode=0o755,
-    )
-    return True
-
-
 def _install_dispatcher(dispatcher_path: Path) -> bool:
     """Write the dispatcher script. Returns True if installed/updated, False on conflict."""
     if dispatcher_path.exists():
@@ -708,42 +681,6 @@ def _install_dispatcher(dispatcher_path: Path) -> bool:
     shutil.copy2(GITHOOKS_DISPATCHER_TEMPLATE, dispatcher_path)
     dispatcher_path.chmod(0o755)
     return True
-
-
-def _cleanup_managed_git_hooks(project_dir: Path) -> None:
-    """Remove files listed in our manifest. Idempotent."""
-    githooks_dir = project_dir / GITHOOKS_DIR
-    manifest_path = githooks_dir / GITHOOKS_MANIFEST
-    if not manifest_path.exists():
-        return
-    try:
-        entries = _read_manifest(manifest_path)
-    except OSError:
-        return
-    for entry in sorted(entries):
-        target = githooks_dir / entry
-        if target.is_file():
-            # Bare entries sit in `.githooks/` itself: event dispatchers, plus
-            # the sourced bypass-journal helper. Remove only if still ours —
-            # either marker proves it (HATS-1407 added the second).
-            if "/" not in entry:
-                try:
-                    text = target.read_text()
-                except OSError:
-                    continue
-                if GITHOOKS_DISPATCHER_MARKER not in text and _MANAGED_HEADER not in text:
-                    continue
-            _safe_discard(
-                target,
-                reason="githook-dispatcher",
-                project_dir=project_dir,
-            )
-    # Manifest itself is framework bookkeeping — whitelist.
-    manifest_path.unlink(missing_ok=True)  # safe-delete: ok framework-manifest
-    # Remove empty <event>.d/ subdirs.
-    for child in githooks_dir.iterdir():
-        if child.is_dir() and child.name.endswith(".d") and not any(child.iterdir()):
-            child.rmdir()  # safe-delete: ok empty-dir
 
 
 def _same_hooks_path(a: str, b: str, project_dir: Path) -> bool:
@@ -775,13 +712,32 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
         return
 
     existing = current.stdout.strip() if current.returncode == 0 else ""
-    target = GITHOOKS_DIR
+    # ABSOLUTE, not `.githooks` (HATS-1337). Git resolves a relative hooksPath
+    # against the working tree it is invoked in, and `.githooks/` is generated +
+    # gitignored, so it never exists in a linked worktree — every gate was
+    # silently off in every worktree. Worktrees share `.git/config`, so one
+    # absolute value gates all of them.
+    target = str((project_dir / GITHOOKS_DIR).resolve())
 
-    # git returns the value verbatim (absolute or relative) — normalize both
-    # against project_dir so an absolute value equal to the relative target
-    # is recognized as already-correct instead of taken over (HATS-969).
+    if existing == target:
+        return  # Already exact.
+
+    # Same directory, different spelling — the pre-1337 relative value. Rewrite
+    # it in place: NOT a takeover, so no previousHooksPath record (that would
+    # self-point) and no warning about hooks that never moved.
     if existing and _same_hooks_path(existing, target, project_dir):
-        return  # Already correct (stored relative or absolute).
+        try:
+            subprocess.run(
+                ["git", "config", "core.hooksPath", target],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=True,
+                env=scrubbed_git_env(),
+            )
+        except subprocess.CalledProcessError as e:
+            warnings.append(f"failed to set core.hooksPath: {e.stderr.strip() or e}")
+        return
 
     try:
         if existing:
@@ -813,87 +769,3 @@ def _configure_hooks_path(project_dir: Path, warnings: list[str]) -> None:
             f"'{existing}/<event>' after ai-hats hooks. "
             f"Revert: git config core.hooksPath {existing}"
         )
-
-
-def expected_git_hook_files(project_dir: Path, result: CompositionResult) -> dict[str, bytes]:
-    """Managed ``.githooks/`` relpath -> expected bytes for ``result``.
-
-    Mirrors :meth:`_install_git_hooks` WITHOUT writing, so drift can be
-    detected cheaply. Keys: ``<event>.d/<skill>-<basename>`` per declared
-    script, plus ``<event>`` per dispatcher.
-    """
-    declared = _collect_skill_git_hooks(result)
-    expected: dict[str, bytes] = {}
-    for event, entries in declared.items():
-        has_entry = False
-        for skill_name, script_path in entries:
-            src = _resolve_skill_script(skill_name, script_path, result)
-            if src is None:
-                continue
-            expected[f"{event}.d/{skill_name}-{src.name}"] = src.read_bytes()
-            has_entry = True
-        if has_entry and GITHOOKS_DISPATCHER_TEMPLATE.exists():
-            expected[event] = GITHOOKS_DISPATCHER_TEMPLATE.read_bytes()
-    if expected:
-        # Installed alongside the dispatchers, so it must be expected alongside
-        # them too — otherwise every session reports drift and re-heals forever.
-        src_root = _builtin_library_hooks(project_dir)
-        helper = None if src_root is None else src_root / GITHOOKS_BYPASS_JOURNAL
-        if helper is not None and helper.is_file():
-            expected[GITHOOKS_BYPASS_JOURNAL] = helper.read_bytes()
-    return expected
-
-
-def git_hooks_changes(
-    project_dir: Path, result: CompositionResult, manifest_set: set[str]
-) -> list[tuple[str, str]]:
-    """Managed git-hook drift as ``[(relpath, kind), ...]`` (HATS-833).
-
-    Same comparison as :func:`git_hooks_drift` (content + exec-bit + presence +
-    manifest), but reports WHICH files drifted and HOW so the session-start net
-    can name them. ``kind`` is ``"missing"`` (absent / exec-bit lost / unreadable),
-    ``"content"`` (bytes differ), or ``"stale"`` (managed in the manifest but no
-    longer expected). A foreign (non-marker) top-level dispatcher is never
-    counted as drift (left to the install policy).
-    """
-    githooks_dir = project_dir / GITHOOKS_DIR
-    expected = expected_git_hook_files(project_dir, result)
-    changes: list[tuple[str, str]] = []
-    # Stale: managed previously (manifest) but no longer expected.
-    for rel in sorted(manifest_set - set(expected)):
-        changes.append((rel, "stale"))
-    for rel, content in sorted(expected.items()):
-        target = githooks_dir / rel
-        # Top-level dispatcher with a foreign body on disk → install policy
-        # leaves it alone, so it is NEVER our drift — even when it's absent from
-        # our manifest (a user-owned dispatcher we never installed). Check this
-        # BEFORE the manifest/presence test, else a foreign dispatcher would be
-        # flagged "missing" every launch and never heal (perpetual false note).
-        if "/" not in rel and target.is_file():
-            try:
-                if GITHOOKS_DISPATCHER_MARKER not in target.read_text():
-                    continue
-            except OSError:
-                pass
-        if rel not in manifest_set or not target.is_file():
-            changes.append((rel, "missing"))
-            continue
-        try:
-            if target.read_bytes() != content:
-                changes.append((rel, "content"))
-                continue
-        except OSError:
-            changes.append((rel, "missing"))
-            continue
-        if not target.stat().st_mode & 0o100:  # owner-exec bit lost
-            changes.append((rel, "missing"))
-    return changes
-
-
-def git_hooks_drift(project_dir: Path, result: CompositionResult, manifest_set: set[str]) -> bool:
-    """True if managed git hooks on disk diverge from ``result``.
-
-    Thin wrapper over :func:`git_hooks_changes` (HATS-833) — preserves the
-    original boolean contract for callers that only need yes/no.
-    """
-    return bool(git_hooks_changes(project_dir, result, manifest_set))

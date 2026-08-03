@@ -200,11 +200,13 @@ class TestSyncHooksOrchestration:
         )
         return Assembler(project_dir=project)
 
-    def _wire(self, monkeypatch, asm, *, runtime, wt, git, behind=False):
+    def _wire(self, monkeypatch, asm, *, runtime, wt, behind=False):
+        """HATS-1337: no git arm. The dispatcher is static, carries no gate set
+        to drift from, and healing it here would write the project at session
+        start — install-time is the only write point (M2)."""
         calls: list[str] = []
         monkeypatch.setattr(asm.hooks, "_runtime_hooks_changes", lambda result, provider: runtime)
         monkeypatch.setattr(asm.hooks, "_wt_hooks_changes", lambda result: wt)
-        monkeypatch.setattr(asm.hooks, "_git_hooks_changes", lambda result: git)
         monkeypatch.setattr(asm.hooks, "binary_behind_source", lambda: behind)
         monkeypatch.setattr(
             asm.hooks, "materialize_runtime_hooks", lambda result: calls.append("rt_bytes")
@@ -222,7 +224,7 @@ class TestSyncHooksOrchestration:
 
     def test_in_sync_is_silent_noop(self, tmp_path, monkeypatch):
         asm = self._role_project(tmp_path)
-        calls = self._wire(monkeypatch, asm, runtime=[], wt=[], git=[])
+        calls = self._wire(monkeypatch, asm, runtime=[], wt=[])
         res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "in-sync"
         assert res.changes == ()
@@ -239,7 +241,6 @@ class TestSyncHooksOrchestration:
             asm,
             runtime=[HookChange("runtime", "x", "content")],
             wt=[],
-            git=[],
         )
         res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "synced"
@@ -253,7 +254,6 @@ class TestSyncHooksOrchestration:
             asm,
             runtime=[HookChange("runtime", "x", "content")],
             wt=[],
-            git=[],
             behind=True,
         )
         res = asm.hooks.sync_hooks(result=_result([]))

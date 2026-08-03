@@ -17,11 +17,18 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-hook="$repo_root/.githooks/pre-push.d/maintainer-quality-gate-pre-push-e2e-master.sh"
 
-if [[ ! -x "$hook" ]]; then
-    echo "[run-e2e-gate] gate hook not installed at:" >&2
-    echo "  $hook" >&2
+# HATS-1337: gates are no longer copied to `.githooks/pre-push.d/` — ask the
+# composition where this one lives, the same way the dispatcher does.
+hook=""
+while IFS=$'\t' read -r kind path; do
+    if [[ "$kind" == "gate" && "$path" == *"pre-push-e2e-master.sh" ]]; then
+        hook="$path"
+    fi
+done < <(ai-hats githooks resolve pre-push --project-dir "$repo_root" 2>/dev/null || true)
+
+if [[ -z "$hook" || ! -f "$hook" ]]; then
+    echo "[run-e2e-gate] the e2e-master gate is not in this project's composition." >&2
     echo "[run-e2e-gate] compose the maintainer role first: ai-hats self init" >&2
     exit 1
 fi
