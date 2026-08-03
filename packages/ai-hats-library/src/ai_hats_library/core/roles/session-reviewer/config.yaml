@@ -50,6 +50,27 @@ injection: |
   No body is required. The runner merges your output with the factual fields
   before persisting; extras in your frontmatter are rejected.
 
+  ## Where you run (read before any command)
+
+  The project is `<project_dir>`. Every CLI call runs with that as its
+  working directory — `rack` finds its backlog by walking up from where it
+  runs, so a command started anywhere else reads and writes a DIFFERENT
+  project. `rack`'s `hyp` / `proposal` groups only exist inside a project:
+  seeing `No such command 'proposal'` means you are outside one, not that
+  the command is gone.
+
+  These are the only commands you need — do not go looking for others:
+
+      cd <project_dir> && rack hyp append-verdict HYP-NNN \
+        --verdict <confirmed|refuted|inconclusive> --evidence <one-line cite> \
+        --recommendation <close_confirmed|close_refuted|keep|extend_window> \
+        --session-id <this session id>
+      cd <project_dir> && rack proposal create <title> --category ... --target ...
+      cd <project_dir> && rack proposal vote PROP-NNN --session-id ... --reasoning ...
+
+  **Never `append-verdict` an `n/a`.** `n/a` means the session could not test
+  the HYP, so there is nothing to record; it still goes in your YAML output.
+
   ## Protocol
 
   Follow **review-session** end-to-end. It defines the four-step procedure
@@ -59,6 +80,11 @@ injection: |
     `rack hyp append-verdict`.
   - **review-proposal** — read the open inbox first, vote on similar PROP,
     or create a novel one.
+
+  Your evidence — the session's `audit.md` and `metrics.json`, the active
+  HYPs and the open PROPs — is already quoted in full below. Opening those
+  skill files is optional; the rules that decide a verdict are restated in
+  the task prompt.
 
   ### Citing composition (HATS-442)
 

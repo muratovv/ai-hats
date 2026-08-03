@@ -566,6 +566,17 @@ class SubAgentRunner:
         if role_context:
             sections.append(role_context)
 
+        # HATS-1479: a surface whose tool picks its own cwd otherwise resolves
+        # the project to whatever absolute path the prompt happens to name.
+        sections.append(
+            "# WORKING_DIRECTORY\n"
+            f"{self.project_dir.resolve().as_posix()}\n\n"
+            "This is the project every path and CLI call below refers to. Run "
+            "each command with this directory as its working directory — `rack` "
+            "resolves its backlog by walking up from where it runs, so a command "
+            "started elsewhere reads and writes a different project."
+        )
+
         # TICKET_CONTEXT
         if ticket_id:
             ticket_context = self._load_ticket(ticket_id)
