@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING
 
 from .hook_collection import (
     collect_runtime_hooks as _collect_runtime_hooks,
-    collect_worktree_hooks as _collect_worktree_hooks,
     resolve_skill_script as _resolve_runtime_script,
 )
 from ai_hats_core import CompositionResult, scrubbed_git_env
@@ -33,8 +32,6 @@ from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
     hooks_dir as _lib_hooks_dir,
     managed_runtime_hook_filename as _managed_runtime_hook_filename,
-    managed_wt_hook_filename as _managed_wt_hook_filename,
-    wt_hooks_dir as _wt_hooks_dir,
 )
 from . import owners
 from ai_hats_core.safe_delete import discard as _safe_discard
@@ -73,7 +70,6 @@ class HookSurface(StrEnum):
     """
 
     RUNTIME = "runtime"
-    WT = "wt"
 
 
 class HookChangeKind(StrEnum):
@@ -189,7 +185,6 @@ class HooksManager:
         # session then fails — settings.json is not re-read mid-session.
         self.materialize_runtime_hooks(result)
         provider.ensure_runtime_hooks(self.project_dir, result)
-        self.materialize_worktree_hooks(result)
         if result is not None and (self.project_dir / ".git").exists():
             self.install_git_hooks(result, warnings_sink=warnings_sink)
 
@@ -263,58 +258,6 @@ class HooksManager:
                 )
         return names
 
-    # HATS-865: ``result`` is required — the runtime callers always have one.
-    def materialize_worktree_hooks(self, result: "CompositionResult | None") -> None:
-        """Materialize skill ``wt_in`` / ``wt_out`` scripts to ``library/wt-hooks/`` (HATS-823).
-
-        Mirrors :meth:`materialize_runtime_hooks` (managed dir + manifest + sweep),
-        minus the package guards. No dir/manifest when nothing is or was declared,
-        so projects without worktree hooks stay clean.
-        """
-        target_dir = _wt_hooks_dir(self.project_dir)
-        manifest_path = target_dir / ".manifest"
-
-        previous = _read_manifest(manifest_path)
-        pending = self._collect_worktree_pending(result)
-        new_names = {dest for dest, _src in pending}
-
-        if not new_names and not previous:
-            return  # nothing now or before → no dir/manifest
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-        for dest_name, src in pending:
-            _safe_replace(
-                target_dir / dest_name,
-                src.read_bytes(),
-                reason="materialize-worktree-hook",
-                project_dir=self.project_dir,
-                mode=0o755,
-            )
-        self._sweep_stale(
-            target_dir, previous - new_names, reason="materialize-worktree-hook-sweep"
-        )
-        _write_manifest(
-            manifest_path,
-            new_names,
-            reason="materialize-worktree-hook-manifest",
-            project_dir=self.project_dir,
-        )
-
-    def _collect_worktree_pending(
-        self, result: "CompositionResult | None"
-    ) -> list[tuple[str, Path]]:
-        """Resolve composed wt-hook scripts to ``(dest_name, src_path)`` pairs."""
-        if result is None:
-            return []
-        pending: list[tuple[str, Path]] = []
-        for entries in self._collect_skill_worktree_hooks(result).values():
-            for skill_name, hook in entries:
-                src = _resolve_skill_script(skill_name, hook.script, result)
-                if src is None:
-                    continue
-                pending.append((_managed_wt_hook_filename(skill_name, hook.script), src))
-        return pending
-
     def install_git_hooks(
         self, result: CompositionResult, *, warnings_sink: list[str] | None = None
     ) -> None:
@@ -334,10 +277,6 @@ class HooksManager:
     ) -> dict[str, list[tuple[str, RuntimeHook]]]:
         """Composed skills' declared runtime hooks (HATS-597). Delegates to composer."""
         return _collect_runtime_hooks(result)
-
-    def _collect_skill_worktree_hooks(self, result: CompositionResult):
-        """Composed skills' worktree hooks by kind (HATS-823). Delegates to composer."""
-        return _collect_worktree_hooks(result)
 
     # ----- HATS-593/833: drift-detecting re-materialization -----
 
@@ -387,10 +326,10 @@ class HooksManager:
         """All drifted managed-hook changes across the managed surfaces."""
         changes: list[HookChange] = []
         changes.extend(self._runtime_hooks_changes(result, provider))
-        changes.extend(self._wt_hooks_changes(result))
         # No GIT arm (HATS-1337): the dispatcher is static and carries no gate
         # set to drift from, and healing it here would write the project at
-        # session start — install-time is the only write point (M2).
+        # session start — install-time is the only write point (M2). No WT arm
+        # (HATS-1269): the scripts spawn in place, so there is no copy to drift.
         return changes
 
     def _heal_surfaces(
@@ -408,7 +347,6 @@ class HooksManager:
 
         healers = {
             HookSurface.RUNTIME: _heal_runtime,
-            HookSurface.WT: lambda: self.materialize_worktree_hooks(result),
         }
         for surface in surfaces:
             healer = healers.get(surface)
@@ -461,21 +399,6 @@ class HooksManager:
                         src.read_bytes()
                     )
         return self._bytes_surface_changes(_lib_hooks_dir(self.project_dir), expected)
-
-    def _wt_hooks_changes(self, result: "CompositionResult | None") -> list[HookChange]:
-        """Drift of materialized ``library/wt-hooks/`` bytes vs composed source."""
-        expected: dict[str, bytes] = {}
-        if result is not None:
-            for entries in self._collect_skill_worktree_hooks(result).values():
-                for skill_name, hook in entries:
-                    src = _resolve_skill_script(skill_name, hook.script, result)
-                    if src is None:
-                        continue
-                    expected[_managed_wt_hook_filename(skill_name, hook.script)] = src.read_bytes()
-        return [
-            HookChange(surface=HookSurface.WT, name=name, kind=kind)
-            for name, kind in self._bytes_surface_changes(_wt_hooks_dir(self.project_dir), expected)
-        ]
 
     @staticmethod
     def _bytes_surface_changes(
