@@ -1,36 +1,21 @@
 """Worktree lifecycle hook execution (HATS-823, ADR-0012 D7).
 
-Runs a single component-declared ``wt_in`` / ``wt_out`` script under a bounded,
-fail-safe execution contract. This module owns the *mechanism*; the worktree
-manager owns the *policy* (``wt_out`` fail-closed vs ``wt_in`` warn-continue).
-
-Contract (D7):
-
-- **Bounded timeout.** Default kept *below* the lifecycle-lock budget so a hung
-  hook times out and releases the lock before a peer ``wt`` op on the same branch
-  hits ``WorktreeLockError`` and mis-blames a concurrent op (HATS-711 class).
-  Overridable via ``AI_HATS_WT_HOOK_TIMEOUT_S``.
-- **stdin closed** (``DEVNULL``): an interactive ``read`` fails fast, never hangs.
-- **cwd = project_dir**: scripts use the ``AI_HATS_*`` env paths, not ambient cwd.
-- **Memory-safe output**: child stdout/stderr stream straight to a managed log
-  file (never buffered into the parent's memory); runtime is bounded by the
-  timeout.
-- **Missing / non-executable / non-zero / timeout** all yield a failed
-  :class:`HookOutcome` — the caller decides fail-closed (``wt_out``) vs
-  warn-continue (``wt_in``).
-- **SIGINT is not swallowed**: ``KeyboardInterrupt`` propagates so the operator
-  can abort a teardown (worktree preserved upstream).
+Runs a single component-declared ``wt_in`` / ``wt_out`` script. Execution
+mechanics moved to :mod:`ai_hats.hook_exec` (ADR-0020 D2, HATS-1151); what stays
+here is this channel's own vocabulary: the timeout budget kept below the
+lifecycle lock (HATS-711 class), the ``AI_HATS_*`` env it hands a hook, and the
+stale-``library/wt-hooks/`` remedy in a missing-script reason. Policy — ``wt_out``
+fail-closed vs ``wt_in`` warn-continue — remains the worktree manager's.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
-from .paths import AI_HATS_PROJECT_DIR_ENV
+from .hook_exec import HookRun, HookVerdict, run_hook
 
 # Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
 # the timeout — not the lock — is what bounds a hung hook (see module docstring).
@@ -81,60 +66,38 @@ def run_worktree_hook(
     timeout: float | None = None,
     log_path: Path | None = None,
 ) -> HookOutcome:
-    """Run one worktree hook ``script`` under the D7 contract.
+    """Run one worktree hook ``script``; never raises on hook *failure*.
 
-    Returns a :class:`HookOutcome`; never raises on hook *failure*.
-    ``KeyboardInterrupt`` (SIGINT) is intentionally allowed to propagate.
+    ``KeyboardInterrupt`` (SIGINT) is intentionally allowed to propagate so an
+    operator can abort a teardown. Every non-pass outcome — refuse, broke and
+    corrupt alike — comes back as ``ok=False``, so a ``wt_out`` gate cannot fail
+    open on a hook that merely failed to start.
     """
-    if timeout is None:
-        timeout = resolve_hook_timeout()
-    if not script.is_file():
-        # HATS-833: actionable hint — a missing managed script means the parent's
-        # library/wt-hooks/ is stale; re-materialize it. (Create-time backstop
-        # should prevent recording such a carry, but teardown stays fail-closed
-        # as the last net for a genuinely vanished script.)
-        return HookOutcome(
-            False,
-            None,
-            f"hook script missing: {script} — run 'ai-hats self init' to re-materialize",
-        )
-    if not os.access(script, os.X_OK):
-        return HookOutcome(False, None, f"hook script not executable: {script}")
+    run = run_hook(
+        script,
+        point=_wt_point(event),
+        timeout=resolve_hook_timeout() if timeout is None else timeout,
+        project_dir=project_dir,
+        worktree_path=worktree_path,
+        # This channel's own vocabulary, kept verbatim: `AI_HATS_EVENT` has live
+        # readers outside this repo, and renaming it is HATS-1142's migration.
+        extra_env={"AI_HATS_BRANCH_NAME": branch_name, "AI_HATS_EVENT": event},
+        log_path=log_path,
+    )
+    if run.ok:
+        return HookOutcome(True, run.exit_code, "ok")
+    return HookOutcome(False, run.exit_code, _wt_reason(run, script))
 
-    env = {
-        **os.environ,
-        "AI_HATS_WORKTREE_PATH": str(worktree_path),
-        AI_HATS_PROJECT_DIR_ENV: str(project_dir),
-        "AI_HATS_BRANCH_NAME": branch_name,
-        "AI_HATS_EVENT": event,
-    }
 
-    log_fh = None
-    try:
-        if log_path is not None:
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_fh = open(log_path, "wb")
-            log_fh.write(f"# wt-hook event={event} script={script} timeout={timeout}s\n".encode())
-            log_fh.flush()
-        out_target = log_fh if log_fh is not None else subprocess.DEVNULL
-        try:
-            proc = subprocess.run(
-                [str(script)],
-                cwd=str(project_dir),
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=out_target,
-                stderr=subprocess.STDOUT,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            return HookOutcome(False, None, f"hook timed out after {timeout}s: {script}")
-        except (FileNotFoundError, OSError) as e:
-            return HookOutcome(False, None, f"hook could not run ({type(e).__name__}): {e}")
-    finally:
-        if log_fh is not None:
-            log_fh.close()
+def _wt_point(event: str) -> str:
+    """This channel's event → the catalog's fully-qualified point name
+    (``check_points._static_points``), which is what the shared env carries."""
+    return "wt:create" if event == "wt_in" else f"wt:teardown[{event}]"
 
-    if proc.returncode != 0:
-        return HookOutcome(False, proc.returncode, f"hook exited {proc.returncode}: {script}")
-    return HookOutcome(True, 0, "ok")
+
+def _wt_reason(run: HookRun, script: Path) -> str:
+    """HATS-833: a vanished managed script means the parent's ``library/wt-hooks/``
+    is stale, so name the remedy rather than only the symptom."""
+    if run.verdict is HookVerdict.CORRUPT and not script.is_file():
+        return f"{run.reason} — run 'ai-hats self init' to re-materialize"
+    return run.reason

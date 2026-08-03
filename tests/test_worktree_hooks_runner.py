@@ -44,6 +44,30 @@ def test_nonzero_exit(tmp_path):
     assert not out.ok and out.exit_code == 3
 
 
+def test_refusal_carries_the_scripts_own_words(tmp_path):
+    """HATS-1151: the reason used to be ``hook exited 2: <script>`` while the
+    script's explanation went to a log file nobody opens."""
+    s = _script(
+        tmp_path / "refuse.sh",
+        'echo "3 unresolved notes — run: bash hunk-notes.sh consume"\nexit 2\n',
+    )
+    out = _run(s, tmp_path)
+    assert not out.ok
+    assert "3 unresolved notes" in out.reason
+    assert "hunk-notes.sh consume" in out.reason
+
+
+def test_exit_127_still_fails_closed(tmp_path):
+    """The ``drain-review.sh`` shape: it does ``exit "$rc"``, propagating
+    hunk-notes.sh's status (2, 127, …). Under a naive "other = broke" plus a warn
+    policy that data-protection script would fail OPEN — HATS-1130 again. Every
+    non-pass class must reach the caller as ``ok=False``.
+    """
+    out = _run(_script(tmp_path / "nf.sh", "exit 127\n"), tmp_path)
+    assert not out.ok
+    assert out.exit_code == 127
+
+
 def test_missing_script(tmp_path):
     out = _run(tmp_path / "nope.sh", tmp_path)
     assert not out.ok and "missing" in out.reason

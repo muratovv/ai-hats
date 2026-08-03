@@ -16,6 +16,7 @@ Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -130,6 +131,72 @@ def test_failing_wt_out_aborts_discard(installed_launcher, tmp_path):
     ai("wt", "discard", "task/probe")
     assert _wt_path(project, "task/probe") is None
     assert "discard" in (project / ".drained").read_text()
+
+
+@pytest.mark.integration
+def test_refusing_wt_out_reports_the_scripts_own_words(installed_launcher, tmp_path):
+    """HATS-1151: the operator gets the hook's instruction, not ``hook exited 2``.
+
+    fail-under-revert: restore the synthetic reason in ``worktree_hooks.py`` and
+    the instruction never reaches the CLI, so both text assertions go red.
+    """
+    launcher, env, _ = installed_launcher
+    project = tmp_path / "proj"
+    _init(launcher, env, project)
+
+    def ai(*args, expect_exit=0):
+        return _run([str(launcher), *args], cwd=project, env=env, expect_exit=expect_exit)
+
+    ai("wt", "create", "task/probe-reason")
+    (project / ".drain-refuse").touch()
+
+    res = ai("wt", "discard", "task/probe-reason", expect_exit=1)
+
+    out = res.stdout + res.stderr
+    assert "3 unresolved review notes in .hunk/notes.json" in out, out
+    assert "hunk-notes.sh consume" in out, out
+    assert _wt_path(project, "task/probe-reason") is not None  # refusal blocked teardown
+
+
+@pytest.mark.integration
+def test_a_refusal_reaches_the_operator_without_escape_codes(installed_launcher, tmp_path):
+    """HATS-1161 through the real binary, with both vectors at once: the
+    launcher runs under the ``FORCE_COLOR=3`` an agent session carries, and the
+    hook also colours its own refusal.
+
+    fail-under-revert, two independent probes: drop the env scrub in
+    ``_hook_env`` and the FORCE_COLOR assertion reddens; drop the strip in
+    ``_decode_tail`` and the escape-byte assertion reddens.
+    """
+    launcher, env, _ = installed_launcher
+    env = {**env, "FORCE_COLOR": "3", "CLICOLOR_FORCE": "1"}
+    project = tmp_path / "proj"
+    _init(launcher, env, project)
+
+    def ai(*args, expect_exit=0):
+        return _run([str(launcher), *args], cwd=project, env=env, expect_exit=expect_exit)
+
+    ai("wt", "create", "task/probe-ansi")
+    (project / ".drain-ansi").touch()
+
+    res = ai("wt", "discard", "task/probe-ansi", expect_exit=1)
+
+    raw = res.stdout + res.stderr
+    # ai-hats' OWN Rich output honours the FORCE_COLOR we set on the launcher and
+    # highlights words mid-string, so content is asserted on the normalised text.
+    # That normalisation is this card's spun-off half (suite-wide); here it keeps
+    # the assertion about the hook, not about our terminal preferences.
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+
+    assert "drain: refusing" in clean, raw
+    assert "FORCE_COLOR=unset" in clean, raw  # the hook never saw the forcing var
+    assert "NO_COLOR=1" in clean, raw
+    # A leaked code does not reach the CLI as a working escape: Rich mangles the
+    # bare ESC and renders the rest as text, so the operator reads literal
+    # "[31mdrain". Probing for a byte sequence Rich never emits would be inert —
+    # the residue in the NORMALISED text is what an operator actually sees.
+    assert "31m" not in clean, repr(raw)
+    assert _wt_path(project, "task/probe-ansi") is not None
 
 
 @pytest.mark.integration
