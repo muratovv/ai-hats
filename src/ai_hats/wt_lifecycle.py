@@ -24,9 +24,9 @@ Policy (ADR-0012 D3/D7, relocated here from the engine):
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import NoReturn
 
-from .paths import managed_wt_hook_filename, wt_hooks_dir
 from .worktree_hooks import run_worktree_hook
 from ai_hats_wt import WT_TEARDOWN_EVENTS, LifecycleContext, WorktreeTeardownAborted
 from ai_hats_wt.locks import _state_key
@@ -52,9 +52,72 @@ def _wt_hook_log_dir(state_dir, branch_name: str):
     return state_dir / f"{_state_key(branch_name)}.logs"
 
 
-def _materialized_hook(project_dir, row: dict):
-    """On-disk path of a hook script the assembler materialized."""
-    return wt_hooks_dir(project_dir) / managed_wt_hook_filename(row["skill"], row["script"])
+def _skill_search_roots(project_dir: Path) -> list[Path]:
+    """Library roots to look a carry row's declaring skill up in (HATS-1269)."""
+    from .library_paths import build_library_paths
+    from .models import ProjectConfig
+    from .paths import PROJECT_CONFIG
+
+    try:
+        configured = list(ProjectConfig.from_yaml(project_dir / PROJECT_CONFIG).library_paths)
+    except Exception as exc:  # noqa: BLE001 — a bad config must not decide hook policy
+        logger.warning(
+            "worktree hooks: could not read %s (%s) — resolving hook scripts "
+            "without its library_paths",
+            PROJECT_CONFIG,
+            exc,
+        )
+        configured = []
+    return build_library_paths(project_dir, config_paths=configured)
+
+
+def resolve_hook_script(project_dir: Path, row: dict) -> tuple[Path | None, str]:
+    """A carry row's script, resolved fresh inside its declaring skill dir.
+
+    Returns ``(path, "")`` or ``(None, reason)``. ADR-0020 D1: the path is
+    recomputed at every spawn, never persisted — downstream the library lives in
+    a versioned venv that ``self update`` replaces. Both halves of the row are
+    persisted state a tamperer can reach, so the resolved path is contained
+    against its skill root and that root against the search roots (M11).
+    """
+    from .resolver import LibraryResolver
+
+    skill = str(row.get("skill", ""))
+    script = str(row.get("script", ""))
+    if not skill or not script:
+        return None, f"carry row is incomplete (skill={skill!r}, script={script!r})"
+    if not _is_plain_name(skill):
+        return None, f"skill {skill!r} is not a plain component name"
+
+    roots = _skill_search_roots(project_dir)
+    skill_dir = LibraryResolver(roots).resolve_skill_dir(skill)
+    if skill_dir is None:
+        return None, f"skill {skill!r} declaring this hook is not in the library"
+    skill_dir = skill_dir.resolve()
+    if not any(_contains(root, skill_dir) for root in roots):
+        return None, f"skill {skill!r} resolves outside every library root"
+
+    candidate = (skill_dir / script).resolve()
+    if not _contains(skill_dir, candidate):
+        return None, f"script {script!r} escapes the root of skill {skill!r}"
+    return candidate, ""
+
+
+def _is_plain_name(skill: str) -> bool:
+    """A component name, never a path. ``dev::python`` is legal (namespaces map
+    to a subdir); ``..`` and an absolute root are not — a traversal that lands
+    back inside a library root would still name a directory nobody declared."""
+    from .models import resolve_namespace
+
+    as_path = Path(resolve_namespace(skill))
+    return bool(as_path.parts) and ".." not in as_path.parts and not as_path.is_absolute()
+
+
+def _contains(root: Path, candidate: Path) -> bool:
+    try:
+        return candidate.is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 class HookRunningLifecycle:
@@ -73,7 +136,10 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script = _materialized_hook(ctx.project_dir, row)
+            script, why = resolve_hook_script(ctx.project_dir, row)
+            if script is None:
+                _warn_wt_in_failed(row, why)
+                continue
             outcome = run_worktree_hook(
                 script,
                 event="wt_in",
@@ -83,12 +149,7 @@ class HookRunningLifecycle:
                 log_path=log_dir / f"wt_in-{script.name}.log",
             )
             if not outcome.ok:
-                logger.warning(
-                    "wt_in hook from skill '%s' failed — continuing "
-                    "(create-time friction, not data loss): %s",
-                    row.get("skill", "?"),
-                    outcome.reason,
-                )
+                _warn_wt_in_failed(row, outcome.reason)
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Run ``wt_out`` hooks bound to ``event`` before the core removes the dir.
@@ -126,7 +187,9 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script = _materialized_hook(ctx.project_dir, row)
+            script, why = resolve_hook_script(ctx.project_dir, row)
+            if script is None:
+                _raise_teardown_aborted(event, ctx.branch_name, row, why)
             outcome = run_worktree_hook(
                 script,
                 event=event,
@@ -137,6 +200,15 @@ class HookRunningLifecycle:
             )
             if not outcome.ok:
                 _raise_teardown_aborted(event, ctx.branch_name, row, outcome.reason)
+
+
+def _warn_wt_in_failed(row: dict, reason: str) -> None:
+    logger.warning(
+        "wt_in hook from skill '%s' failed — continuing "
+        "(create-time friction, not data loss): %s",
+        row.get("skill", "?"),
+        reason,
+    )
 
 
 def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str) -> NoReturn:
