@@ -78,8 +78,11 @@ if ! command -v "${_cmd[0]}" >/dev/null 2>&1; then
     ai_hats_journal_bypass fail_open "${_cmd[0]} not found"
     exit 0
 fi
-# Fail-open if ai_hats is not importable (the default python invocation).
-if [[ "${_cmd[0]}" == python* ]] && ! "${_cmd[0]}" -c "import ai_hats" >/dev/null 2>&1; then
+# Fail-open if ai_hats is not importable (any python invocation).
+# HATS-1337: match on the BASENAME — the venv branch above resolves an absolute
+# `/…/.venv/bin/python3`, which `python*` never matched, so the probe was skipped
+# and a venv without ai_hats BLOCKED the commit instead of skipping it.
+if [[ "$(basename "${_cmd[0]}")" == python* ]] && ! "${_cmd[0]}" -c "import ai_hats" >/dev/null 2>&1; then
     echo "[rule-delivery] ai_hats not importable — rule-delivery check SKIPPED (fail-open)" >&2
     ai_hats_journal_bypass fail_open "ai_hats not importable"
     exit 0
