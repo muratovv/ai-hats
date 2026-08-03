@@ -348,6 +348,78 @@ def test_stdin_is_closed_so_a_reading_hook_cannot_hang(tmp_path):
     assert run.verdict is HookVerdict.PASS
 
 
+def test_a_colour_forcing_session_env_does_not_reach_the_hook(tmp_path, monkeypatch):
+    """HATS-1161. The agent session carries `FORCE_COLOR=3`, and Rich honours it
+    even when stdout is not a tty — so every subprocess spawned from a session
+    emitted escapes into captured output.
+
+    The measured cost: two e2e assertions failed on markers with escapes injected
+    mid-string, it read as "master has 2 red tests", and it drove a decision to
+    fix them before landing unrelated work. Under `env -u FORCE_COLOR` the same
+    suite was 39 passed / 0 failed — the repo was never red.
+    """
+    for var in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
+        monkeypatch.setenv(var, "3")
+    script = _script(
+        tmp_path / "c.sh",
+        'echo "[${FORCE_COLOR-unset}|${CLICOLOR_FORCE-unset}|${CLICOLOR-unset}|${NO_COLOR-unset}]"\n'
+        "exit 2\n",
+    )
+
+    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+
+    assert run.reason == "[unset|unset|unset|1]"
+
+
+def test_a_check_that_wants_colour_can_opt_back_in(tmp_path, monkeypatch):
+    """The default is machine-readable; it is not the ceiling. The caller's own
+    vocabulary is applied after the base, so re-adding the variable wins."""
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    script = _script(tmp_path / "c.sh", 'echo "${FORCE_COLOR-unset}"\nexit 2\n')
+
+    run = run_hook(
+        script,
+        point="wt:create",
+        timeout=10,
+        project_dir=tmp_path,
+        extra_env={"FORCE_COLOR": "3"},
+    )
+
+    assert run.reason == "3"
+
+
+def test_escapes_the_hook_wrote_itself_never_reach_the_operator(tmp_path):
+    """Neutralising the env stops env-driven colour; it does nothing about a
+    script that writes escapes deliberately.
+
+    ADR-0019's acceptance for HATS-1141 is "the reason, ANSI-free" — not
+    "ANSI-free when the child cooperates". A gate whose refusal text the refusing
+    script can corrupt is a gate whose message channel that script controls.
+    """
+    script = _script(
+        tmp_path / "ansi.sh",
+        "printf '\\033[31mrefusing:\\033[0m 3 unresolved \\033[1;36mnotes\\033[0m\\n'\n"
+        "printf 'diagnostic \\033[33mnoise\\033[0m\\n' >&2\n"
+        "exit 2\n",
+    )
+
+    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+
+    assert run.reason == "refusing: 3 unresolved notes"
+    assert "\x1b" not in run.stderr
+
+
+def test_the_log_keeps_the_raw_bytes_the_hook_wrote(tmp_path):
+    """The log is the postmortem record, not the message channel — stripping
+    there would lose fidelity for a human reading a colourised build log."""
+    log = tmp_path / "raw.log"
+    script = _script(tmp_path / "ansi.sh", "printf '\\033[31mred\\033[0m\\n'\nexit 2\n")
+
+    run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path, log_path=log)
+
+    assert "\x1b[31m" in log.read_text()
+
+
 def test_the_shared_env_base_comes_from_the_primitive(tmp_path):
     """ADR-0020 D2: the base is the primitive's contract, not each channel's.
 

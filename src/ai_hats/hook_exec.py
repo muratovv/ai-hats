@@ -9,6 +9,7 @@ so a verbose diagnostic stream cannot push the verdict out of the tail.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,9 @@ from .paths import AI_HATS_PROJECT_DIR_ENV
 
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
+
+# CSI sequences, OSC strings (BEL- or ST-terminated) and the single-char Fe set.
+_ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
 _STDERR_TAIL_BYTES = 4096
 
 
@@ -175,6 +179,11 @@ def _hook_env(
     (ADR-0019 D5/D7).
     """
     env = dict(os.environ)
+    # HATS-1161: an agent session carries FORCE_COLOR=3, and Rich honours it even
+    # when stdout is no tty — every hook would then answer in escape sequences.
+    for forcing in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
+        env.pop(forcing, None)
+    env["NO_COLOR"] = "1"
     env["AI_HATS_HOOK_POINT"] = point
     env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
     # A check must not re-enter the per-task lock from a subprocess (D5).
@@ -339,6 +348,13 @@ def _human(size: int) -> str:
 
 
 def _decode_tail(raw: bytes, tail_bytes: int) -> tuple[str, bool]:
-    """Decode the last ``tail_bytes`` of ``raw``; invalid bytes never raise."""
+    """Decode the last ``tail_bytes`` of ``raw``; invalid bytes never raise.
+
+    Escapes are stripped here rather than only neutralised in the env, because
+    the env stops env-DRIVEN colour and nothing else: a hook that writes escapes
+    deliberately would still corrupt the channel it is refusing through. The log
+    file is untouched — it is the postmortem record, not the message.
+    """
     cut = len(raw) > tail_bytes
-    return raw[-tail_bytes:].decode("utf-8", errors="replace").strip(), cut
+    text = raw[-tail_bytes:].decode("utf-8", errors="replace")
+    return _ANSI.sub("", text).strip(), cut

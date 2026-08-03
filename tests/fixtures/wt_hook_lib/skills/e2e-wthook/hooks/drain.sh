@@ -14,4 +14,11 @@ if [ -f "$AI_HATS_PROJECT_DIR/.drain-refuse" ]; then
   echo "drain: run 'bash hunk-notes.sh consume', then retry"
   exit 2
 fi
+# HATS-1161: a refusal that colours itself, plus a report of what the hook saw
+# in the colour-forcing vars — both vectors of the ANSI leak in one branch.
+if [ -f "$AI_HATS_PROJECT_DIR/.drain-ansi" ]; then
+  printf '\033[31mdrain: refusing\033[0m — FORCE_COLOR=%s NO_COLOR=%s\n' \
+    "${FORCE_COLOR-unset}" "${NO_COLOR-unset}"
+  exit 2
+fi
 echo "$AI_HATS_EVENT" >> "$AI_HATS_PROJECT_DIR/.drained"
