@@ -11,10 +11,13 @@ import pytest
 from ai_hats.environment_recovery import (
     EnvironmentRecovery,
     NoOpRecovery,
+    _sweep_orphan_project_keys,
     _sweep_orphan_session_caches,
 )
 from ai_hats_observe import SessionManager
 from ai_hats.paths import (
+    cache_home,
+    cache_root,
     complete_sentinel,
     current_pointer,
     runs_dir,
@@ -256,3 +259,54 @@ def test_session_manager_default_recovery_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(pinned))
     SessionManager(tmp_path, runs_dir=runs_dir(tmp_path)).create_session()
     assert not (versions_root(tmp_path) / ".refs" / f"{os.getpid()}.json").exists()
+
+
+# ----- Cross-project key sweep (HATS-1473) -----
+
+
+def _age(path, days):
+    old = time.time() - days * 86400
+    os.utime(path, (old, old))
+
+
+def test_key_older_than_ttl_is_reclaimed(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    stale = cache_home() / "gone-deadbeef"
+    (stale / "sessions").mkdir(parents=True)
+    _age(stale / "sessions", 30)
+    _age(stale, 30)
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert not stale.exists()
+
+
+def test_fresh_key_and_own_key_survive(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    fresh = cache_home() / "fresh-deadbeef"
+    (fresh / "sessions").mkdir(parents=True)
+    own = cache_root(tmp_path)
+    (own / "sessions").mkdir(parents=True)
+    _age(own / "sessions", 30)
+    _age(own, 30)
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert fresh.exists()
+    assert own.exists(), "the current project's own key must never be swept"
+
+
+def test_deep_write_keeps_key_alive(tmp_path, monkeypatch):
+    """A key whose own mtime is ancient but whose sessions/ is fresh is LIVE.
+
+    A directory's mtime only moves when a direct child changes, so ageing the key
+    dir alone is exactly the shape a long-lived project has.
+    """
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    live = cache_home() / "live-deadbeef"
+    (live / "sessions" / "sid-1").mkdir(parents=True)
+    _age(live, 30)
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert live.exists(), "a fresh direct child must protect the key"
