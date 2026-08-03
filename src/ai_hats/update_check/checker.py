@@ -279,10 +279,8 @@ def _ensure_probe_mirror(project_dir: Path) -> Path | None:
 def _fetch_into_mirror(mirror: Path, remote_url: str, ref: str) -> bool:
     """``git fetch <remote_url> <ref>`` into the probe-mirror (HATS-458).
 
-    Full fetch (no shallow). The ai-hats default branch is small
-    (hundreds of commits, a few hundred KB), so fetching it fully is
-    cheap and guarantees ``rev-list installed...<latest>`` resolves
-    correctly — the typical non-editable user's installed_sha is some
+    Full fetch (no shallow). It buys a correct ``rev-list
+    installed...<latest>``: the typical non-editable user's installed_sha is some
     ancestor of the probed ref and thus already in the local object graph
     after the fetch. No separate ``fetch <installed_sha>`` call
     is needed; that avoids the short-SHA / protocol limitations of
