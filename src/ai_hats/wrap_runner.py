@@ -69,7 +69,10 @@ logger = logging.getLogger(__name__)
 
 # ----- HATS-833 session-start heal-note formatting -----
 
-_SURFACE_LABEL = {"runtime": "runtime-hook", "wt": "wt-hook", "git": "git-hook"}
+# No "git" entry since HATS-1337: git hooks are not a healed surface —
+# the dispatcher carries no gate set, and the project is written at
+# install time only.
+_SURFACE_LABEL = {"runtime": "runtime-hook", "wt": "wt-hook"}
 _KIND_PHRASE = {
     "missing": "materialized (was missing)",
     "content": "updated (content drift)",

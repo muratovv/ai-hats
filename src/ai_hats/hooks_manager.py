@@ -66,11 +66,14 @@ class HookError(Exception):
 
 
 class HookSurface(StrEnum):
-    """The managed-hook surfaces a :class:`HookChange` can belong to."""
+    """The managed-hook surfaces a :class:`HookChange` can belong to.
+
+    No ``GIT`` member since HATS-1337: the dispatcher carries no gate set, so
+    there is nothing for the session-start net to detect or heal.
+    """
 
     RUNTIME = "runtime"
     WT = "wt"
-    GIT = "git"
 
 
 class HookChangeKind(StrEnum):

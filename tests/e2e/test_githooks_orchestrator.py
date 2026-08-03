@@ -105,7 +105,9 @@ def _self_init(project: Path) -> None:
     assert (project / ".githooks" / "pre-commit").is_file(), "dispatcher not installed"
 
 
-def _commit(project: Path, name: str, *, env: dict[str, str] | None = None, cwd: Path | None = None):
+def _commit(
+    project: Path, name: str, *, env: dict[str, str] | None = None, cwd: Path | None = None
+):
     where = cwd or project
     (where / name).write_text("x\n")
     _git_ok("add", name, cwd=where, env=env)
