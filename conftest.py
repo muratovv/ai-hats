@@ -104,15 +104,18 @@ def pytest_runtest_protocol(item, nextitem):
 
 @pytest.fixture(scope="session", autouse=True)
 def _cache_home_sandbox(tmp_path_factory):
-    """Pin ``AI_HATS_CACHE_HOME`` into a session-owned sandbox (HATS-1473).
+    """Pin ``AI_HATS_CACHE_HOME`` into a sandbox private to THIS run (HATS-1473).
 
-    Session scope on purpose: ``_shared_launcher_venv`` builds a real launcher
-    during the FIRST test's setup and captures ``os.environ`` there, so a
-    function-scoped pin lands too late for it — that is how ``bootstrap-*`` keys
-    (5.1 GB of bare repo mirrors) reached the developer's cache. Pinning here
-    also covers ``packages/*/tests``, which no ``tests/conftest.py`` fixture ever
-    reached. Same shape as :func:`_wt_sandbox` above, for the same reason.
-    """
+    ``mktemp`` makes the dir unique per session, so concurrent runs never share a
+    cache root; ``tests/conftest.py`` narrows it again per test. Stale sandboxes
+    are the product's job — it sweeps orphaned keys by TTL.
+
+    Session scope on purpose: ``_shared_launcher_venv`` captures ``os.environ``
+    during the FIRST test's setup, so a function-scoped pin lands too late for it
+    — that is how ``bootstrap-*`` keys (5.1 GB of bare repo mirrors) reached the
+    developer's cache. Pinning here also covers ``packages/*/tests``, which no
+    ``tests/conftest.py`` fixture ever reached.
+    """  # comment-length: allow — names both the scope trap and the coverage gap
     sandbox = tmp_path_factory.mktemp("cache-home")
     mp = pytest.MonkeyPatch()
     mp.setenv("AI_HATS_CACHE_HOME", str(sandbox))
@@ -127,32 +130,21 @@ def _cache_home_sandbox(tmp_path_factory):
 def _real_cache_home_tripwire():
     """Fail the session if any test wrote a project key into the real cache home.
 
-    HATS-1473: a full e2e run left 123 fixture keys in the developer's cache
-    (16.9 GB accumulated). HATS-1398 fixed the sites it knew about; nothing went
-    red when the next fixture reopened the hole. This is what goes red.
+    The pin above is the guarantee; this is what makes it falsifiable. HATS-1398
+    fixed the leaking sites it knew about, nothing went red when the next fixture
+    reopened the hole, and 16.9 GB accumulated.
 
-    Fails only on keys traced to a source dir inside this run: a dev box runs
-    several ai-hats sessions against this shared cache, so failing on every new
-    key would be flaky. Unowned keys are reported — the limit of the measurement.
+    Fails only on keys traced to a source dir inside this run — other ai-hats
+    sessions write to this same cache, and their keys are neither preventable nor
+    actionable from here, so they are skipped silently rather than reported.
     """
     before = _cache_keys()
     yield
-    new = _cache_keys() - before
-    if not new:
-        return
-    owned, foreign = [], []
-    for key in sorted(new):
+    owned = []
+    for key in sorted(_cache_keys() - before):
         nodeid, source = _leaked_keys.get(key, ("<outside any test>", None))
-        (owned if source else foreign).append(f"{key}  <- {nodeid}  ({source})")
-    if foreign:
-        shown = foreign[:5]
-        rest = f"\n  ... and {len(foreign) - len(shown)} more" if len(foreign) > len(shown) else ""
-        print(
-            f"\n[cache-home] {len(foreign)} key(s) appeared in {REAL_CACHE_HOME} with no source "
-            "dir in this run — another ai-hats session on this machine writes here too:\n  "
-            + "\n  ".join(shown)
-            + rest
-        )
+        if source:
+            owned.append(f"{key}  <- {nodeid}  ({source})")
     if owned:
         pytest.fail(
             f"[cache-home] {len(owned)} project key(s) leaked into the real "
