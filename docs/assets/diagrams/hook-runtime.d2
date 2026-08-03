@@ -1,0 +1,23 @@
+vars: @./_palette
+
+direction: right
+
+tool: Вызов инструмента\nв сессии
+claude: "claude:\nсам spawn'ит команды\nиз settings.json сессии"
+agy: "agy:\nзовёт диспетчер из \$HOME"
+disp: "Диспетчер:\nAI_HATS_SESSION_CACHE_DIR\n→ hooks.json → spawn"
+commit: git commit / push\n(ai-hats может не быть)
+gd: ".githooks/<event>:\nрезолв набора гейтов → spawn\nfail-open без ai-hats"
+wtev: wt-событие\n(create / teardown)
+prim: "ai-hats: примитив D2\nspawn скрипта из carry"
+script: Скрипт хука\nв дереве сессии / скилла {shape: cylinder}
+
+tool -> claude
+tool -> agy
+agy -> disp
+claude -> script
+disp -> script
+commit -> gd
+gd -> script
+wtev -> prim
+prim -> script
