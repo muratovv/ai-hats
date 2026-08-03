@@ -52,11 +52,18 @@ def _wt_hook_log_dir(state_dir, branch_name: str):
     return state_dir / f"{_state_key(branch_name)}.logs"
 
 
-def _skill_search_roots(project_dir: Path) -> list[Path]:
-    """Library roots to look a carry row's declaring skill up in (HATS-1269)."""
+def _skill_search_roots(project_dir: Path, worktree_path: Path | None) -> list[Path]:
+    """Library roots to look a carry row's declaring skill up in (HATS-1269).
+
+    The worktree's own ``libraries/`` ranks highest: composition *inside* a
+    worktree re-points the project-local layer to it (HATS-831), so that copy is
+    what create saw — while teardown runs from the main checkout, where it would
+    otherwise be invisible.
+    """
     from .library_paths import build_library_paths
     from .models import ProjectConfig
     from .paths import PROJECT_CONFIG
+    from .paths.constants import LIBRARIES_DIRNAME
 
     try:
         configured = list(ProjectConfig.from_yaml(project_dir / PROJECT_CONFIG).library_paths)
@@ -68,10 +75,15 @@ def _skill_search_roots(project_dir: Path) -> list[Path]:
             exc,
         )
         configured = []
-    return build_library_paths(project_dir, config_paths=configured)
+    extra: list[Path] = []
+    if worktree_path is not None and (worktree_path / LIBRARIES_DIRNAME).is_dir():
+        extra.append(worktree_path / LIBRARIES_DIRNAME)
+    return build_library_paths(project_dir, config_paths=configured, extra=extra)
 
 
-def resolve_hook_script(project_dir: Path, row: dict) -> tuple[Path | None, str]:
+def resolve_hook_script(
+    project_dir: Path, row: dict, *, worktree_path: Path | None = None
+) -> tuple[Path | None, str]:
     """A carry row's script, resolved fresh inside its declaring skill dir.
 
     Returns ``(path, "")`` or ``(None, reason)``. ADR-0020 D1: the path is
@@ -89,7 +101,7 @@ def resolve_hook_script(project_dir: Path, row: dict) -> tuple[Path | None, str]
     if not _is_plain_name(skill):
         return None, f"skill {skill!r} is not a plain component name"
 
-    roots = _skill_search_roots(project_dir)
+    roots = _skill_search_roots(project_dir, worktree_path)
     skill_dir = LibraryResolver(roots).resolve_skill_dir(skill)
     if skill_dir is None:
         return None, f"skill {skill!r} declaring this hook is not in the library"
@@ -136,7 +148,9 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script, why = resolve_hook_script(ctx.project_dir, row)
+            script, why = resolve_hook_script(
+                ctx.project_dir, row, worktree_path=ctx.worktree_path
+            )
             if script is None:
                 _warn_wt_in_failed(row, why)
                 continue
@@ -187,7 +201,9 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script, why = resolve_hook_script(ctx.project_dir, row)
+            script, why = resolve_hook_script(
+                ctx.project_dir, row, worktree_path=ctx.worktree_path
+            )
             if script is None:
                 _raise_teardown_aborted(event, ctx.branch_name, row, why)
             outcome = run_worktree_hook(

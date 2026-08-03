@@ -65,6 +65,26 @@ def test_row_missing_a_half_is_refused(tmp_path):
     assert resolve_hook_script(tmp_path, {"script": "hooks/drain.sh"})[0] is None
 
 
+def test_skill_living_only_in_the_worktree_resolves(tmp_path):
+    """HATS-831 asymmetry: composition inside a worktree re-points the
+    project-local layer to THAT worktree, so a skill the agent added there is
+    what create saw. Teardown runs from the main checkout, so the worktree's own
+    ``libraries/`` has to stay reachable or the hook fails closed on a merge."""
+    project = tmp_path / "main"
+    project.mkdir()
+    ProjectConfig(provider="agy").save(project / PROJECT_CONFIG)
+    worktree = tmp_path / "linked"
+    expected = _project_with_skill(worktree)
+
+    resolved, why = resolve_hook_script(
+        project,
+        {"skill": "drainer", "script": "hooks/drain.sh"},
+        worktree_path=worktree,
+    )
+
+    assert resolved == expected.resolve(), why
+
+
 def test_unknown_skill_names_itself_in_the_reason(tmp_path):
     _project_with_skill(tmp_path)
 
