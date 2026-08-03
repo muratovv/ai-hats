@@ -559,7 +559,7 @@ HATS-1341.* Механика честности: отсутствующая па
   `wt_lifecycle.py` (`wt_in` warn-continue, `wt_out` fail-closed).
 - **git — уже целевая форма (HATS-1337):** статический по-событийный
   диспетчер, поставленный `init`-ом; набор гейтов резолвится на spawn через
-  `python -m ai_hats.cli.githooks_main` (интерпретатор берётся по цепочке
+  `python -m ai_hats.cli.githooks_hook` (интерпретатор берётся по цепочке
   лаунчера: `AI_HATS_VENV` → `venv_path` → `versions/current` → `.venv`);
   скрипты исполняются in place из директорий скиллов с containment-чеком (M11)
   и в прежнем порядке `<skill>-<basename>`; `core.hooksPath` абсолютный, так

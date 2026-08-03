@@ -309,7 +309,6 @@ from . import (  # noqa: E402
     assembly,
     config as config_mod,
     execute as execute_mod,
-    githooks as githooks_mod,
     list_cmd,
     maintenance,
     reflect as reflect_mod,
@@ -363,9 +362,6 @@ main.add_command(agent_mod.run_subagent)
 
 # Worktree
 main.add_command(worktree.wt)
-
-# Githooks — the detached dispatcher's resolve entry point (HATS-1337, ADR-0020 D3).
-main.add_command(githooks_mod.githooks_group)
 
 # Session (observability + retro generation)
 main.add_command(session.session)

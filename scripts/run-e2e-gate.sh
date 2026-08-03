@@ -18,18 +18,17 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 
-# HATS-1337: gates are no longer copied to `.githooks/pre-push.d/` — ask the
-# composition where this one lives, the same way the dispatcher does.
-hook=""
-while IFS=$'\t' read -r kind path; do
-    if [[ "$kind" == "gate" && "$path" == *"pre-push-e2e-master.sh" ]]; then
-        hook="$path"
-    fi
-done < <(ai-hats githooks resolve pre-push --project-dir "$repo_root" 2>/dev/null || true)
+# HATS-1337: gates are no longer copied into `.githooks/pre-push.d/` — they run
+# in place from the library, so resolve the library and read the gate from there.
+# Deliberately NOT through the hook entry point: that one runs the whole chain.
+py="${PYTHON:-python3}"
+[[ -x "$repo_root/.venv/bin/python3" ]] && py="$repo_root/.venv/bin/python3"
+libroot="$("$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"
+hook="${libroot}/usage/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
 
-if [[ -z "$hook" || ! -f "$hook" ]]; then
-    echo "[run-e2e-gate] the e2e-master gate is not in this project's composition." >&2
-    echo "[run-e2e-gate] compose the maintainer role first: ai-hats self init" >&2
+if [[ -z "$libroot" || ! -f "$hook" ]]; then
+    echo "[run-e2e-gate] cannot resolve the e2e-master gate in the ai-hats library." >&2
+    echo "[run-e2e-gate] install ai-hats into this checkout first: ai-hats self init" >&2
     exit 1
 fi
 

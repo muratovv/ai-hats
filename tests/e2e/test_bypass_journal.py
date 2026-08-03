@@ -232,6 +232,24 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
 # --- the post-commit stamp closes the join to a real commit ------------------
 
 
+def _ai_hats_pin() -> dict[str, str]:
+    """Env making the installed stub delegate to THIS checkout's ai-hats.
+
+    HATS-1337: the stub is a bootstrap — without a resolvable install it fails
+    open and runs nothing, so a fixture that hand-builds `.githooks/` must supply
+    one or every assertion below passes vacuously.
+    """
+    import sys
+
+    from _helpers.env import checkout_pythonpath
+    from ai_hats.paths import ENV_AI_HATS_VENV
+
+    return {
+        "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
+        ENV_AI_HATS_VENV: str(Path(sys.executable).parent.parent),
+    }
+
+
 def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
     """A dispatcher plus gates on the `<event>.d/` drop-in path.
 
@@ -272,6 +290,7 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_PRIVACY_ACK"] = "1"
     env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
+    env.update(_ai_hats_pin())
     subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
 
     head = subprocess.run(
@@ -384,7 +403,7 @@ def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
         input=payload,
         capture_output=True,
         text=True,
-        env=dict(os.environ) | {"AI_HATS_SHARED_STATE_ACK": "1"},
+        env=dict(os.environ) | {"AI_HATS_SHARED_STATE_ACK": "1"} | _ai_hats_pin(),
     )
     assert res.returncode == 0
     lines = _journal_lines(repo)

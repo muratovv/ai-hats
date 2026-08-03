@@ -153,26 +153,29 @@ def test_other_events_are_not_returned(tmp_path: Path) -> None:
     ]
 
 
-# ----- the CLI contract the dispatcher parses -----
+# ----- the entry point the installed stub delegates to -----
 
 
 @pytest.mark.integration
-def test_cli_emits_one_tab_separated_absolute_path_per_record(tmp_path: Path) -> None:
-    """`<kind>\\t<path>` on stdout is the dispatcher's whole parsing contract.
+def test_the_hook_entry_point_composes_and_runs_the_declared_gate(tmp_path: Path) -> None:
+    """The seam the frozen stub reaches: role → gates → the gate actually runs.
 
-    Asserted on the bytes a `while IFS=$'\\t' read -r kind path` loop sees, not on
-    an internal object: the dispatcher is bash and never imports any of this.
+    Asserted end to end because everything between the stub and the gate is now
+    revisable package code — only the outcome is contractual.
     """
-    from click.testing import CliRunner
-
-    from ai_hats.cli import main
+    from ai_hats.cli.githooks_hook import main
     from ai_hats.models import ProjectConfig
     from ai_hats.paths import PROJECT_CONFIG
 
     project = tmp_path / "project"
-    project.mkdir()
+    (project / ".githooks").mkdir(parents=True)
     lib = tmp_path / "lib"
     _skill(lib, "hook_skill", event="pre-commit", scripts=["git_hooks/check.sh"])
+    marker = project / "ran.txt"
+    (lib / "skills" / "hook_skill" / "git_hooks" / "check.sh").write_text(
+        f'#!/usr/bin/env bash\necho "$AI_HATS_HOOK_EVENT" > "{marker}"\nexit 0\n'
+    )
+    (lib / "skills" / "hook_skill" / "git_hooks" / "check.sh").chmod(0o755)
 
     (lib / "traits" / "trait-base").mkdir(parents=True)
     (lib / "traits" / "trait-base" / "config.yaml").write_text(
@@ -187,14 +190,33 @@ def test_cli_emits_one_tab_separated_absolute_path_per_record(tmp_path: Path) ->
         project / PROJECT_CONFIG
     )
 
-    result = CliRunner().invoke(
-        main, ["githooks", "resolve", "pre-commit", "--project-dir", str(project)]
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
     )
 
-    assert result.exit_code == 0, result.output
-    records = [line.split("\t") for line in result.stdout.splitlines() if line]
-    kinds = [kind for kind, _ in records]
-    assert kinds.count("gate") == 1, result.stdout
-    assert all(Path(path).is_absolute() for _, path in records), result.stdout
-    gate = next(path for kind, path in records if kind == "gate")
-    assert gate.endswith("hook_skill/git_hooks/check.sh"), gate
+    assert rc == 0
+    assert marker.read_text().strip() == "pre-commit"
+
+
+@pytest.mark.integration
+def test_a_project_with_no_role_runs_no_gates_and_passes(tmp_path: Path) -> None:
+    from ai_hats.cli.githooks_hook import main
+    from ai_hats.models import ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+
+    project = tmp_path / "project"
+    (project / ".githooks").mkdir(parents=True)
+    ProjectConfig(provider="agy").save(project / PROJECT_CONFIG)
+
+    assert (
+        main(
+            [
+                "pre-commit",
+                "--project-dir",
+                str(project),
+                "--githooks-dir",
+                str(project / ".githooks"),
+            ]
+        )
+        == 0
+    )
