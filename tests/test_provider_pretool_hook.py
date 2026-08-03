@@ -1,22 +1,17 @@
-"""HATS-437 — ClaudeProvider.ensure_runtime_hooks PreToolUse autowire.
+"""ClaudeProvider runtime-hook wiring in the per-session settings.json.
 
-Covers:
-    - fresh write into .claude/settings.json
-    - idempotency on double-apply
-    - preservation of pre-existing user-authored PreToolUse entries
-    - skip when user already wired the same hook manually
-    - update-in-place when the managed entry changes (e.g. hook path moved)
-    - Agy provider is a no-op (does not touch settings.json)
-    - malformed / non-object JSON: leave alone (no clobber)
+Since HATS-1268 every entry is skill-declared and its command is absolute into
+the session's own skill mirror; the project root is never written (HATS-1170),
+and the user-global leak detector still keys on the pre-1268 spelling because
+that is the shape the residue it hunts was written with.
 """
 
 import json
 from pathlib import Path
 
-import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-from ai_hats.paths import claude_dir, hooks_dir, managed_runtime_hook_filename
+from ai_hats.paths import claude_dir, session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_agy.provider import AgyProvider
@@ -25,13 +20,7 @@ from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 SETTINGS = Path(".claude") / "settings.json"
-# HATS-615: managed hook commands are emitted with a literal
-# $CLAUDE_PROJECT_DIR/ prefix (Claude Code expands it at hook-execution time)
-# so they resolve regardless of the agent cwd. Hard-coded literal here — NOT
-# imported from paths.CLAUDE_PROJECT_DIR_VAR — so this test fails if the
-# emitted contract drifts from the documented placeholder.
-PREFIX = "$CLAUDE_PROJECT_DIR/"
-EXPECTED_REL = PREFIX + ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
+SESSION_ID = "test-session-id"
 
 
 def _settings(project: Path, result: CompositionResult | None = None) -> dict:
@@ -83,41 +72,55 @@ def _result(skills: list[ResolvedComponent]) -> CompositionResult:
 
 
 def _managed_command(project: Path, skill: str, script: str) -> str:
-    return PREFIX + str(
-        (hooks_dir(project) / managed_runtime_hook_filename(skill, script)).relative_to(project)
+    """HATS-1268: absolute, into the session's own skill mirror.
+
+    Spelled out here rather than imported, so the test fails if the emitted
+    contract drifts — the same reason the old $CLAUDE_PROJECT_DIR literal was.
+    """
+    return str(session_cache_dir(project, SESSION_ID) / "plugin" / "skills" / skill / script)
+
+
+def test_a_composition_without_skills_wires_nothing(tmp_path: Path) -> None:
+    """HATS-1268: every entry is skill-declared, the shared-state guard included.
+
+    Before, an unconditional guard entry meant settings.json was never empty.
+    """
+    assert _settings(tmp_path)["hooks"] == {}
+
+
+def test_command_is_absolute_into_the_session_skill_mirror(tmp_path: Path) -> None:
+    """HATS-615 asked for cwd-independence; an absolute path delivers it.
+
+    The mirror is out of tree, so $CLAUDE_PROJECT_DIR cannot address it.
+    """
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
     )
+    cmd = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
+    assert Path(cmd).is_absolute()
+    assert "$CLAUDE_PROJECT_DIR" not in cmd
+    assert cmd == _managed_command(proj, "skill-x", "hooks/pre.sh")
 
 
-def test_claude_writes_fresh_settings(tmp_path: Path) -> None:
-    data = _settings(tmp_path)
-    entries = data["hooks"][HOOK_PRE_TOOL_USE]
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry["matcher"] == "Bash"
-    assert entry["_ai_hats_managed"] == "ai-hats:hats-437"
-    assert entry["hooks"] == [{"type": "command", "command": EXPECTED_REL}]
+def test_a_leaked_ai_hats_dir_cannot_redirect_the_command(tmp_path: Path, monkeypatch) -> None:
+    """What retired the out-of-tree warning (HATS-1268).
 
-
-def test_guard_command_uses_claude_project_dir_prefix(tmp_path: Path) -> None:
-    cmd = _settings(tmp_path)["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
-    assert cmd.startswith("$CLAUDE_PROJECT_DIR/")
-    assert cmd.endswith("/pre_bash_shared_state_guard.sh")
-
-
-def test_out_of_project_hook_paths_warn_loudly(tmp_path: Path, monkeypatch) -> None:
-    base = tmp_path / "elsewhere" / "ai-hats"
-    monkeypatch.setenv(ENV_AI_HATS_DIR, str(base))
-    project = tmp_path / "project"
-    project.mkdir()
-    with pytest.warns(UserWarning, match="outside the project"):
-        data = _settings(project)
-    cmd = data["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
-    assert cmd == str(base / "library" / "hooks" / "pre_bash_shared_state_guard.sh")
-
-
-def test_in_project_hook_paths_do_not_warn(tmp_path: Path, recwarn) -> None:
-    _settings(tmp_path)
-    assert not [w for w in recwarn if "outside the project" in str(w.message)]
+    Commands used to be built from AI_HATS_DIR, so a leaked env var moved them
+    and only a warning stood between that and a foreign project's scripts. They
+    are built from the session cache root now, which is keyed on the project
+    itself (HATS-897), so the redirect is not expressible.
+    """
+    monkeypatch.setenv(ENV_AI_HATS_DIR, str(tmp_path / "elsewhere" / "ai-hats"))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    cmd = _settings(proj, _result([skill]))["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
+    assert "elsewhere" not in cmd
+    assert cmd.startswith(str(session_cache_dir(proj, SESSION_ID)))
 
 
 def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monkeypatch) -> None:
@@ -126,10 +129,13 @@ def test_foreign_session_pair_does_not_cross_write_settings(tmp_path: Path, monk
     monkeypatch.setenv(AI_HATS_PROJECT_DIR_ENV, str(dev_repo))
     victim = tmp_path / "victim"
     (victim / ".agent").mkdir(parents=True)
-    with pytest.warns(UserWarning, match=ENV_AI_HATS_DIR):
-        data = _settings(victim)
+    skill = _skill_with_runtime_hooks(
+        tmp_path / "skills", "skill-x", {HOOK_PRE_TOOL_USE: [("Bash", "hooks/pre.sh")]}
+    )
+    data = _settings(victim, _result([skill]))
     cmd = data["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"][0]["command"]
-    assert cmd == EXPECTED_REL
+    assert cmd == _managed_command(victim, "skill-x", "hooks/pre.sh")
+    assert str(dev_repo) not in cmd
 
 
 def test_claude_ensure_runtime_hooks_leaves_root_clean(tmp_path: Path) -> None:
@@ -147,9 +153,7 @@ def test_agy_provider_does_not_touch_settings(tmp_path: Path) -> None:
 
 
 def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> None:
-    """A skill declaring PreToolUse + PostToolUse hooks gets one managed entry
-    per (event, skill, matcher), tagged distinctly, alongside the hats-437
-    guard."""
+    """One managed entry per (event, skill, matcher), tagged distinctly."""
     proj = tmp_path / "proj"
     proj.mkdir()
     skill = _skill_with_runtime_hooks(
@@ -163,12 +167,8 @@ def test_claude_wires_skill_runtime_hooks_under_each_event(tmp_path: Path) -> No
     ClaudeProvider().ensure_runtime_hooks(proj, _result([skill]))
     data = _settings(proj, _result([skill]))
 
-    # hats-437 guard still present under PreToolUse.
-    pre = data["hooks"][HOOK_PRE_TOOL_USE]
-    guard = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:hats-437"]
-    assert len(guard) == 1
-
     # Skill PreToolUse entry.
+    pre = data["hooks"][HOOK_PRE_TOOL_USE]
     sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:skill-x:PreToolUse:Bash"]
     assert len(sp) == 1
     assert sp[0]["matcher"] == "Bash"
@@ -198,7 +198,7 @@ def test_claude_skill_hooks_idempotent(tmp_path: Path) -> None:
     assert _settings(proj, _result([skill])) == first
 
 
-def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
+def test_claude_removing_skill_sweeps_entries_and_keeps_user(
     tmp_path: Path,
 ) -> None:
     proj = tmp_path / "proj"
@@ -234,8 +234,7 @@ def test_claude_removing_skill_sweeps_entries_keeps_guard_and_user(
         if isinstance(entries, list)
         for e in entries
     ]
-    # All skill-x managed entries swept; guard survives.
-    assert "ai-hats:hats-437" in tags
+    # All skill-x managed entries swept.
     assert not any(t and t.startswith("ai-hats:skill-x") for t in tags)
 
 
@@ -264,8 +263,10 @@ def test_claude_two_matchers_same_event_no_tag_collision(tmp_path: Path) -> None
 
 # ----- HATS-961: leaked user-global project-hook detector -----
 
-# A tagged guard leak ($CLAUDE_PROJECT_DIR-prefixed) as the incident had it.
-LEAKED_GUARD = PREFIX + ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
+# The leak as the incident had it — the pre-HATS-1268 spelling on purpose:
+# what this detector finds is old wiring left in a user's global settings, and
+# that residue keeps the shape it was written with.
+LEAKED_GUARD = "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
 
 
 def _seed_global_leak(home: Path, extra: list[dict] | None = None) -> Path:

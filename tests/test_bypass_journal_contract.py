@@ -59,13 +59,14 @@ def _skill_hook_scripts() -> list[Path]:
 def _required_helper(script: Path) -> Path | None:
     """The journal twin a script needs beside it, or None if it journals nothing.
 
-    Matches the sibling spelling only. A git gate reaches one directory up
-    (`$(dirname "$0")/../bypass_journal.sh`) and is deliberately not a match.
+    Any sibling spelling counts — `$(dirname "$0")/` and `${HOOK_DIR}/` are both
+    in use. A git gate reaches one directory up (`../bypass_journal.sh`) and is
+    deliberately not a match.
     """
     body = script.read_text(errors="replace")
     if script.suffix == ".py" and "from bypass_journal import" in body:
         return script.parent / "bypass_journal.py"
-    if script.suffix == ".sh" and '$(dirname "$0")/bypass_journal.sh' in body:
+    if script.suffix == ".sh" and "bypass_journal.sh" in body.replace("../bypass_journal.sh", ""):
         return script.parent / "bypass_journal.sh"
     return None
 

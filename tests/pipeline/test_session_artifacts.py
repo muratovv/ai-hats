@@ -58,8 +58,10 @@ def test_claude_build_session_artifacts_hitl(tmp_path: Path):
     settings_path = Path(artifacts.cli_args[settings_idx])
     assert settings_path.exists()
     settings_data = json.loads(settings_path.read_text())
-    assert "hooks" in settings_data
-    assert "PreToolUse" in settings_data["hooks"]
+    # Empty for a skill-less composition since HATS-1268 — every entry is
+    # skill-declared. The wiring contract lives in
+    # tests/test_provider_pretool_hook.py; this test owns the ADR-0018 seam.
+    assert settings_data == {"hooks": {}}
 
     # Check clean-root invariant
     assert not (project_dir / "CLAUDE.md").exists()
