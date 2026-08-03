@@ -28,9 +28,7 @@ def _project_with_skill(root: Path, *, skill: str = "drainer") -> Path:
 def test_row_resolves_into_the_declaring_skill_dir(tmp_path):
     expected = _project_with_skill(tmp_path)
 
-    resolved, why = resolve_hook_script(
-        tmp_path, {"skill": "drainer", "script": "hooks/drain.sh"}
-    )
+    resolved, why = resolve_hook_script(tmp_path, {"skill": "drainer", "script": "hooks/drain.sh"})
 
     assert resolved == expected.resolve(), why
 

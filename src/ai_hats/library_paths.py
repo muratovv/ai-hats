@@ -58,3 +58,20 @@ def build_library_paths(
 
     paths.extend(extra)
     return paths
+
+
+def find_component_dir(roots: Sequence[Path], subdir: str, name: str) -> Path | None:
+    """Last-wins search for ``<root>/<subdir>/<name>`` across ordered ``roots``.
+
+    The path half of component resolution, kept out of ``resolver`` so a brick
+    can reach it without importing the composition layer (ADR-0014 / HATS-865);
+    ``LibraryResolver.resolve`` delegates here, so there is one search, not two.
+    Namespace notation (``dev::python``) is already mapped to a subpath by the
+    caller.
+    """
+    found: Path | None = None
+    for root in roots:
+        candidate = root / subdir / name
+        if candidate.is_dir():
+            found = candidate
+    return found

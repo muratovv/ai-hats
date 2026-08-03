@@ -1,9 +1,11 @@
 """Managed-hook materialization + drift-sync (HATS-837 extract from Assembler).
 
 Owns the managed-hook cluster: runtime-hook scripts (``library/hooks/``) and
-their ``.claude/settings.json`` wiring, worktree-hook scripts
-(``library/wt-hooks/``), and skill-declared git hooks (``.githooks/``), plus the
-HATS-833 drift detectors and the session-start :meth:`HooksManager.sync_hooks`.
+their ``.claude/settings.json`` wiring, and skill-declared git hooks
+(``.githooks/``), plus the HATS-833 drift detectors and the session-start
+:meth:`HooksManager.sync_hooks`. Worktree hooks left this cluster with
+HATS-1269 — they spawn in place from the declaring skill and are materialized
+nowhere.
 
 Narrow DI: ``project_dir`` + a live ``project_config`` reference + a ``compose``
 callable (carve-out #2, HATS-865: result-less resync edges only) + a

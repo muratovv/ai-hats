@@ -416,6 +416,7 @@ def migrate_layout_v4_sessions(a: "Assembler") -> None:
 # Ordered by ``step`` ascending. Append new entries at the bottom; never
 # reorder or renumber existing ones (the counter on disk is bound to them).
 
+
 def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
     """Discard the retired ``library/wt-hooks/`` tree (HATS-1269).
 
@@ -434,7 +435,7 @@ def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
         _safe_discard(retired / name, reason="retire-wt-hooks", project_dir=a.project_dir)
     _safe_discard(manifest, reason="retire-wt-hooks-manifest", project_dir=a.project_dir)
     try:
-        retired.rmdir()
+        retired.rmdir()  # safe-delete: ok empty-dir
     except OSError:
         logger.warning(
             "wt-hooks retirement: %s still holds files ai-hats never managed — left in place",

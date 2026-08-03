@@ -92,7 +92,8 @@ def resolve_hook_script(
     persisted state a tamperer can reach, so the resolved path is contained
     against its skill root and that root against the search roots (M11).
     """
-    from .resolver import LibraryResolver
+    from .library_paths import find_component_dir
+    from .models import resolve_namespace
 
     skill = str(row.get("skill", ""))
     script = str(row.get("script", ""))
@@ -102,7 +103,7 @@ def resolve_hook_script(
         return None, f"skill {skill!r} is not a plain component name"
 
     roots = _skill_search_roots(project_dir, worktree_path)
-    skill_dir = LibraryResolver(roots).resolve_skill_dir(skill)
+    skill_dir = find_component_dir(roots, "skills", resolve_namespace(skill))
     if skill_dir is None:
         return None, f"skill {skill!r} declaring this hook is not in the library"
     skill_dir = skill_dir.resolve()
@@ -148,9 +149,7 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script, why = resolve_hook_script(
-                ctx.project_dir, row, worktree_path=ctx.worktree_path
-            )
+            script, why = resolve_hook_script(ctx.project_dir, row, worktree_path=ctx.worktree_path)
             if script is None:
                 _warn_wt_in_failed(row, why)
                 continue
@@ -201,9 +200,7 @@ class HookRunningLifecycle:
             return
         log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
         for row in rows:
-            script, why = resolve_hook_script(
-                ctx.project_dir, row, worktree_path=ctx.worktree_path
-            )
+            script, why = resolve_hook_script(ctx.project_dir, row, worktree_path=ctx.worktree_path)
             if script is None:
                 _raise_teardown_aborted(event, ctx.branch_name, row, why)
             outcome = run_worktree_hook(
@@ -220,8 +217,7 @@ class HookRunningLifecycle:
 
 def _warn_wt_in_failed(row: dict, reason: str) -> None:
     logger.warning(
-        "wt_in hook from skill '%s' failed — continuing "
-        "(create-time friction, not data loss): %s",
+        "wt_in hook from skill '%s' failed — continuing (create-time friction, not data loss): %s",
         row.get("skill", "?"),
         reason,
     )
