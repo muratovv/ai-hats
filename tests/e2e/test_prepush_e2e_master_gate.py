@@ -772,19 +772,19 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
     change the wrapper to not pass ``--run`` → recorder sees no ``--run`` → red.
     """
     repo = _git_repo(tmp_path)
-    # HATS-1337: the wrapper asks the composition where the gate lives instead
-    # of reaching into a retired `.githooks/pre-push.d/` copy. Stub the resolver
-    # so this pins the delegation contract, not a whole role composition.
-    recorder = repo / "lib" / "pre-push-e2e-master.sh"
+    # HATS-1337: the wrapper resolves the gate out of the ai-hats library rather
+    # than a retired `.githooks/pre-push.d/` copy. Stub the interpreter it asks,
+    # so this pins the delegation contract without touching the real library —
+    # and without any chance of launching the real 30-minute suite.
+    libroot = tmp_path / "lib"
+    recorder = libroot / "usage/skills/maintainer-quality-gate/git_hooks/pre-push-e2e-master.sh"
     recorder.parent.mkdir(parents=True)
     recorder.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/hook_argv"\nexit 0\n')
     recorder.chmod(0o755)
 
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    stub = bindir / "ai-hats"
-    stub.write_text(f'#!/usr/bin/env bash\nprintf "gate\\t{recorder}\\n"\n')
-    stub.chmod(0o755)
+    fake_python = tmp_path / "python3"
+    fake_python.write_text(f'#!/usr/bin/env bash\necho "{libroot}"\n')
+    fake_python.chmod(0o755)
 
     res = subprocess.run(
         ["bash", str(WRAPPER)],
@@ -792,7 +792,7 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
         capture_output=True,
         text=True,
         timeout=20,
-        env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"},
+        env={**os.environ, "PYTHON": str(fake_python)},
     )
 
     assert res.returncode == 0, res.stderr
@@ -801,8 +801,16 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
 
 @pytest.mark.integration
 def test_run_wrapper_errors_when_hook_absent(tmp_path: Path):
-    """The wrapper fails loudly (not silently) when the gate hook isn't installed."""
-    repo = _git_repo(tmp_path)  # no .githooks/ installed
+    """The wrapper fails loudly (not silently) when ai-hats is not installed here.
+
+    The interpreter is pinned to one that cannot import the library. Left to
+    PATH's python3 the test would resolve the REAL gate and run it for real —
+    which is what it did before this pin.
+    """
+    repo = _git_repo(tmp_path)
+    blind_python = tmp_path / "python3"
+    blind_python.write_text("#!/usr/bin/env bash\nexit 1\n")
+    blind_python.chmod(0o755)
 
     res = subprocess.run(
         ["bash", str(WRAPPER)],
@@ -810,7 +818,8 @@ def test_run_wrapper_errors_when_hook_absent(tmp_path: Path):
         capture_output=True,
         text=True,
         timeout=20,
+        env={**os.environ, "PYTHON": str(blind_python)},
     )
 
     assert res.returncode == 1
-    assert "not in this project's composition" in res.stderr
+    assert "cannot resolve the e2e-master gate" in res.stderr
