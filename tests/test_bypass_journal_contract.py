@@ -43,6 +43,63 @@ def _shell_fields() -> tuple[str, ...]:
     return tuple(res.stdout.split())
 
 
+LIBRARY = HOOKS.parent
+
+
+def _skill_hook_scripts() -> list[Path]:
+    """Every script under a skill's `hooks/` dir, both library layers."""
+    return sorted(
+        p
+        for layer in ("core", "usage")
+        for p in (LIBRARY / layer / "skills").glob("*/hooks/*")
+        if p.suffix in (".py", ".sh") and not p.name.startswith("bypass_journal")
+    )
+
+
+def _required_helper(script: Path) -> Path | None:
+    """The journal twin a script needs beside it, or None if it journals nothing.
+
+    Matches the sibling spelling only. A git gate reaches one directory up
+    (`$(dirname "$0")/../bypass_journal.sh`) and is deliberately not a match.
+    """
+    body = script.read_text(errors="replace")
+    if script.suffix == ".py" and "from bypass_journal import" in body:
+        return script.parent / "bypass_journal.py"
+    if script.suffix == ".sh" and '$(dirname "$0")/bypass_journal.sh' in body:
+        return script.parent / "bypass_journal.sh"
+    return None
+
+
+def test_every_journalling_skill_hook_has_the_helper_beside_it():
+    """HATS-1268 — the helper is a sibling, so it must ship as one.
+
+    The flat `library/hooks/` copy used to manufacture that sibling; hooks now
+    execute from the session skill mirror, which copies skill dirs verbatim.
+    A consumer added without its copy degrades to the NOT RECORDED stub, which
+    returns cleanly — invisible to every other test. Scoped to `hooks/`:
+    `git_hooks/` scripts reach the helper via the `.githooks/` layout until
+    HATS-1337 moves them in place.
+    """
+    missing = [
+        str(script.relative_to(REPO_ROOT))
+        for script in _skill_hook_scripts()
+        if (helper := _required_helper(script)) is not None and not helper.is_file()
+    ]
+    assert not missing, f"hook scripts journalling without a sibling helper: {missing}"
+
+
+def test_every_shipped_helper_copy_is_byte_identical_to_the_canon():
+    """Package data stays the canon; git is what keeps the copies in sync."""
+    canon = {"bypass_journal.py": PY.read_bytes(), "bypass_journal.sh": SH.read_bytes()}
+    drifted = [
+        str(copy.relative_to(REPO_ROOT))
+        for layer in ("core", "usage")
+        for copy in (REPO_ROOT / HOOKS.parent / layer / "skills").glob("*/hooks/bypass_journal.*")
+        if copy.read_bytes() != canon[copy.name]
+    ]
+    assert not drifted, f"copies drifted from package data: {drifted}"
+
+
 def test_the_two_writers_declare_the_same_fields():
     assert _shell_fields() == _python_fields()
 
