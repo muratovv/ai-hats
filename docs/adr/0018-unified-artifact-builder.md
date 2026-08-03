@@ -6,6 +6,12 @@ Accepted (ratified via HATS-1170 execution 2026-07-24).
 
 Linchpin decision record for Epic HATS-1165 (*Provider Context & Harness Filtering*).
 
+> **Указатель (2026-08-03, HATS-1465).** Консолидированная карта материализации
+> поверхностей — корни хранения, точки записи, интеграция хуков, кэш, очистка —
+> живёт в `docs/adr/0021-surface-materialization.md`; этот ADR остаётся
+> контрактом artifact-builder'а. При расхождении описаний builder-слоя истина
+> здесь; при расхождении карты — там.
+
 ## Context
 
 Provider runtime artifacts (system prompt overrides, plugin skills, event hooks, and provider settings) were historically materialized through fragmented, per-provider ad-hoc code paths:
