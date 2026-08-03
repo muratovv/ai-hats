@@ -45,7 +45,6 @@ def test_claude_clean_root_sentinel(
 ) -> None:
     """ADR-0021 M4 | GREEN-pin | Fail-under-revert: .claude/settings.json in root."""
     project = tmp_venv_project.path
-    before_init = _root_entries(project)
 
     tmp_venv_project.run(
         "self", "init", "-r", "assistant", "-p", "claude", "--no-update", timeout=120
