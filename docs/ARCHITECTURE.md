@@ -114,7 +114,7 @@ changes take effect. There is no permanent skill mirror at
 `<ai_hats_dir>/library/skills/` — that directory is the landing spot for
 components **you** author locally, not an export of the installed library.
 
-Design record: [ADR-0018](adr/0018-unified-artifact-builder.md).
+Design record: [ADR-0018](adr/0018-unified-artifact-builder.md). The consolidated surface-materialization map — storage roots, write points, hooks integration, cache, cleanup — lives in [ADR-0021](adr/0021-surface-materialization.md).
 
 Switching providers: `ai-hats config set -p claude`.
 

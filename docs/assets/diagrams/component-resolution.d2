@@ -1,0 +1,24 @@
+vars: @./_palette
+
+direction: down
+
+name: Имя роли:\noverride → active → default
+core: builtin core/\n(фундамент)
+usage: builtin usage/\n(каталог)
+ep: пакеты entry-point\nai_hats.skills
+user: ~/.ai-hats/\n(пользовательский)
+lp: ai-hats.yaml:\nlibrary_paths
+proj: <project>/libraries/\n(проектный)
+resolve: LibraryResolver.resolve:\nпоследнее совпадение выигрывает
+composer: Composer.compose\n(см. composition-flow)
+result: CompositionResult\n(frozen) {shape: page}
+
+core -> usage: переопределяется ниже
+usage -> ep: переопределяется ниже
+ep -> user: переопределяется ниже
+user -> lp: переопределяется ниже
+lp -> proj: переопределяется ниже
+proj -> resolve
+name -> composer
+resolve -> composer: rules / skills /\ntraits / roles
+composer -> result

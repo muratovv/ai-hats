@@ -1,0 +1,20 @@
+vars: @./_palette
+
+direction: down
+
+skill: "Скилл: hooks/*.sh|*.py\n+ декларация в SKILL.md"
+comp: Композиция роли
+mirror: Зеркало скиллов сессии\n(копия директории скилла) {shape: cylinder}
+cw: "claude: settings.json сессии"
+aw: "agy: hooks.json сессии\n+ ensure диспетчера в \$HOME"
+gw: "git: .githooks/<event>\nдиспетчер + core.hooksPath"
+wc: "wt: carry (skill, script)\nв состоянии worktree" {shape: page}
+
+skill -> comp: роль/трейт композирует скилл
+comp -> mirror: сборка сессии
+comp -> cw: сборка сессии
+comp -> aw: сборка сессии
+comp -> gw: self init / update
+comp -> wc: создание worktree
+cw -> mirror: команда указывает сюда\n(HATS-1268) {style.stroke-dash: 4}
+aw -> mirror: команда указывает сюда {style.stroke-dash: 4}

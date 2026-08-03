@@ -1,0 +1,30 @@
+vars: @./_palette
+
+direction: down
+
+launch: ai-hats / ai-hats agent
+compose: Составление роли\n(composition)
+create: create_session\n+ recovery-свипы
+runs: sessions/runs/\nдолговечная запись {shape: cylinder}
+tree: Дерево сессии\n<cache_root>/sessions/<sid> {shape: cylinder}
+prompt: prompt.md\n(context)
+skills: Зеркало скиллов\nplugin/ | rules/ | skills/
+wiring: Проводка хуков\nsettings.json | hooks.json
+cli: Provider CLI\nclaude | agy | cline
+exit: Выход сессии {shape: diamond}
+cleanup: cleanup: rmtree дерева
+orphan: TTL-свип сирот 24ч\nна следующем старте
+
+launch -> compose
+compose -> create
+create -> runs: audit, meta_prompt
+create -> tree
+tree -> prompt
+tree -> skills
+tree -> wiring
+prompt -> cli: --system-prompt-file / -s
+skills -> cli: --plugin-dir / --add-dir / --config
+wiring -> cli: --settings / диспетчер {style.stroke-dash: 4}
+cli -> exit
+exit -> cleanup: штатный
+exit -> orphan: crash {style.stroke-dash: 4}
