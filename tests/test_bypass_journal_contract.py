@@ -90,7 +90,14 @@ def test_every_journalling_skill_hook_has_the_helper_beside_it():
 
 
 def test_every_shipped_helper_copy_is_byte_identical_to_the_canon():
-    """Package data stays the canon; git is what keeps the copies in sync."""
+    """Package data stays the canon.
+
+    In the source tree the siblings are relative symlinks to it, so divergence
+    is impossible rather than merely tested — this guards the day someone
+    replaces a link with a real file. Both the wheel build (measured: hatchling
+    dereferences) and the session mirror (``shutil.copytree`` with the default
+    ``symlinks=False``) turn them into real files downstream.
+    """
     canon = {"bypass_journal.py": PY.read_bytes(), "bypass_journal.sh": SH.read_bytes()}
     drifted = [
         str(copy.relative_to(REPO_ROOT))
