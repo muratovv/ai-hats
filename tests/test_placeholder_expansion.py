@@ -66,3 +66,14 @@ def test_multiple_occurrences(tmp_path: Path) -> None:
     out = expand_path_placeholders(text, tmp_path)
     assert out.count(".agent/ai-hats") == 2
     assert "<ai_hats_dir>" not in out
+
+
+# HATS-1479: `<ai_hats_dir>` is project-RELATIVE, so a sub-agent whose tool
+# calls run outside the project cannot resolve it. `<project_dir>` is the
+# absolute anchor such a role needs.
+
+
+def test_project_dir_substitutes_to_absolute_path(tmp_path: Path) -> None:
+    out = expand_path_placeholders("cd <project_dir> && rack ls", tmp_path)
+    assert "<project_dir>" not in out
+    assert f"cd {tmp_path.resolve().as_posix()} && rack ls" == out
