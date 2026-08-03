@@ -284,11 +284,14 @@ ai_hats:
       - git_hooks/check.sh   # path relative to the skill directory
 ```
 
-The builder copies scripts to `.githooks/<event>.d/<skill>-<basename>`,
-generates a dispatcher at `.githooks/<event>`, and sets
-`core.hooksPath = .githooks` idempotently. If the user has already
-configured a `core.hooksPath` or has their own dispatcher without our
-marker — those are not touched; a warning with instructions is printed.
+`ai-hats init` generates a dispatcher at `.githooks/<event>` and sets
+`core.hooksPath` to that directory's **absolute** path, idempotently — a
+relative value would be resolved against whichever working tree git runs in,
+leaving every linked worktree ungated. Nothing is copied: the dispatcher asks
+the composition for the event's gates at commit time and runs them in place
+(ADR-0020 D3), so a `self update` needs no re-materialization step. If the user
+has already configured a `core.hooksPath` or has their own dispatcher without
+our marker — those are not touched; a warning with instructions is printed.
 
 ### Skill ↔ tool dependencies (`requires`, ADR-0016)
 

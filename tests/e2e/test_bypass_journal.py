@@ -69,17 +69,8 @@ def gated_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
 
-    githooks = tmp_path / ".githooks"
-    event_d = githooks / "pre-commit.d"
-    event_d.mkdir(parents=True)
-
-    helper = githooks / "bypass_journal.sh"
-    helper.write_bytes(JOURNAL_HELPER.read_bytes())
-    helper.chmod(0o755)
-
-    hook = event_d / "git-mastery-pre-commit-privacy.sh"
-    hook.write_bytes(PRIVACY_HOOK.read_bytes())
-    hook.chmod(0o755)
+    # HATS-1337: nothing is copied any more — a gate runs in place from the
+    # library, with the journal handed to it by the dispatcher as env.
     return tmp_path
 
 
@@ -92,10 +83,11 @@ def _run_hook(repo: Path, **env_overrides: str) -> subprocess.CompletedProcess:
     env.pop("AI_HATS_PRIVACY_ACK", None)
     env.pop("AI_HATS_SESSION_ID", None)
     env["AI_HATS_HOOK_EVENT"] = "pre-commit"  # the dispatcher exports this
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)  # ...and this (HATS-1337)
     env.update(env_overrides)
 
     return subprocess.run(
-        ["bash", str(repo / ".githooks/pre-commit.d/git-mastery-pre-commit-privacy.sh")],
+        ["bash", str(PRIVACY_HOOK)],
         cwd=str(repo),
         capture_output=True,
         text=True,
@@ -131,7 +123,9 @@ def test_tripped_hatch_is_recorded(gated_repo: Path):
     assert entry["kind"] == "hatch"
     assert entry["reason"] == "AI_HATS_PRIVACY_ACK"
     assert entry["event"] == "pre-commit"
-    assert entry["hook"] == "git-mastery-pre-commit-privacy.sh"
+    # HATS-1337: gates run in place, so the journal names the real script
+    # rather than the retired flattened copy `<skill>-<basename>`.
+    assert entry["hook"] == "pre-commit-privacy.sh"
 
 
 @pytest.mark.integration
@@ -178,9 +172,13 @@ def test_a_clean_run_records_nothing(gated_repo: Path):
 @pytest.mark.integration
 def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     """The journal's own failure mode must not be the defect it exists to remove."""
-    (gated_repo / ".githooks/bypass_journal.sh").unlink()
-
-    res = _run_hook(gated_repo, AI_HATS_PRIVACY_ACK="1")
+    # HATS-1337: no copy to delete — an unreachable journal is now a resolved
+    # path that does not exist (and a relative fallback that misses too).
+    res = _run_hook(
+        gated_repo,
+        AI_HATS_PRIVACY_ACK="1",
+        AI_HATS_BYPASS_JOURNAL=str(gated_repo / "nope" / "bypass_journal.sh"),
+    )
     assert res.returncode == 0, "a broken journal must not block the commit"
     assert "NOT RECORDED" in res.stderr, res.stderr
     assert _journal_lines(gated_repo) == []
@@ -202,19 +200,15 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
 
-    githooks = repo / ".githooks"
-    event_d = githooks / f"{event}.d"
-    event_d.mkdir(parents=True)
-    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
-    hook = event_d / f"skill-{Path(hook_rel).name}"
-    hook.write_bytes((LIB / hook_rel).read_bytes())
-    hook.chmod(0o755)
+    # HATS-1337: gates run in place from the library, journal handed over as env.
+    hook = LIB / hook_rel
 
     env = os.environ.copy()
     for key in list(env):
         if key.startswith("AI_HATS_"):
             env.pop(key)
     env["AI_HATS_HOOK_EVENT"] = event
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
     env[hatch] = "1"
 
     res = subprocess.run(
@@ -239,11 +233,16 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
 
 
 def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
-    """Install a minimal `.githooks/` the way the real installer does."""
+    """A dispatcher plus gates on the `<event>.d/` drop-in path.
+
+    HATS-1337: the installer no longer copies gates, and this project has no
+    ai-hats install for the dispatcher to resolve against — so the gates ride
+    the drop-in path the dispatcher still reads, and the caller exports
+    AI_HATS_BYPASS_JOURNAL the way a resolved run would.
+    """
     githooks = repo / ".githooks"
     event_d = githooks / f"{event}.d"
     event_d.mkdir(parents=True, exist_ok=True)
-    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
     for src in hooks:
         dest = event_d / f"git-mastery-{src.name}"
         dest.write_bytes(src.read_bytes())
@@ -272,6 +271,7 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     # GIT_* must not leak into a nested git (HATS-886); the hook re-derives its own.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_PRIVACY_ACK"] = "1"
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
     subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
 
     head = subprocess.run(

@@ -772,11 +772,19 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
     change the wrapper to not pass ``--run`` → recorder sees no ``--run`` → red.
     """
     repo = _git_repo(tmp_path)
-    hookdir = repo / ".githooks" / "pre-push.d"
-    hookdir.mkdir(parents=True)
-    recorder = hookdir / "maintainer-quality-gate-pre-push-e2e-master.sh"
+    # HATS-1337: the wrapper asks the composition where the gate lives instead
+    # of reaching into a retired `.githooks/pre-push.d/` copy. Stub the resolver
+    # so this pins the delegation contract, not a whole role composition.
+    recorder = repo / "lib" / "pre-push-e2e-master.sh"
+    recorder.parent.mkdir(parents=True)
     recorder.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{repo}/hook_argv"\nexit 0\n')
     recorder.chmod(0o755)
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    stub = bindir / "ai-hats"
+    stub.write_text(f'#!/usr/bin/env bash\nprintf "gate\\t{recorder}\\n"\n')
+    stub.chmod(0o755)
 
     res = subprocess.run(
         ["bash", str(WRAPPER)],
@@ -784,6 +792,7 @@ def test_run_wrapper_delegates_to_hook_run_mode(tmp_path: Path):
         capture_output=True,
         text=True,
         timeout=20,
+        env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"},
     )
 
     assert res.returncode == 0, res.stderr
@@ -804,4 +813,4 @@ def test_run_wrapper_errors_when_hook_absent(tmp_path: Path):
     )
 
     assert res.returncode == 1
-    assert "not installed" in res.stderr
+    assert "not in this project's composition" in res.stderr
