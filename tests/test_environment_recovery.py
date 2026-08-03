@@ -310,3 +310,22 @@ def test_deep_write_keeps_key_alive(tmp_path, monkeypatch):
     _sweep_orphan_project_keys(tmp_path)
 
     assert live.exists(), "a fresh direct child must protect the key"
+
+
+def test_missing_cache_home_is_a_quiet_no_op(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "never-created"))
+
+    _sweep_orphan_project_keys(tmp_path)  # must not raise
+
+
+def test_unreadable_cache_home_is_reported(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    cache_home().mkdir(parents=True)
+    cache_home().chmod(0o000)
+    try:
+        with caplog.at_level("WARNING"):
+            _sweep_orphan_project_keys(tmp_path)
+    finally:
+        cache_home().chmod(0o755)
+
+    assert "cache home unreadable" in caplog.text

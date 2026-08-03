@@ -133,7 +133,10 @@ def _sweep_orphan_project_keys(project_dir: Path, ttl_days: int = PROJECT_KEY_TT
     cutoff = time.time() - ttl_days * 86400
     try:
         entries = list(cache_home().iterdir())
-    except OSError:
+    except FileNotFoundError:
+        return  # silent-ok: no cache home yet — a first run has nothing to sweep
+    except OSError as exc:
+        logger.warning("project-key sweep skipped, cache home unreadable: %s", exc)
         return
     for entry in entries:
         if entry.name == own_key or not entry.is_dir():
