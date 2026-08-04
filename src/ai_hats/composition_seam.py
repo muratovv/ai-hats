@@ -235,8 +235,8 @@ def build_preview_payload(
 
 
 def compose_for_carry(project_dir: Path, role: str | None = None):
-    """Fail-open compose for worktree-carry collection; ``(result, hooks)`` or
-    ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
+    """Fail-open compose for worktree-carry collection; a ``CompositionResult``
+    or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
     tracker→wt via the ``needs_worktree`` effect. Any failure degrades to
     ``None`` with a WARN: carry trouble must never block worktree creation.
     """
@@ -246,7 +246,7 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
             return None
         from .materialize import compose_for_role
 
-        return compose_for_role(asm, effective), asm.hooks
+        return compose_for_role(asm, effective)
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection
         logger.warning(
             "worktree carry: could not compose role %r: %s — dropping carry",

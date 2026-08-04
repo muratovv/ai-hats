@@ -21,4 +21,9 @@ if [ -f "$AI_HATS_PROJECT_DIR/.drain-ansi" ]; then
     "${FORCE_COLOR-unset}" "${NO_COLOR-unset}"
   exit 2
 fi
+# HATS-1269: bundle: dir — a file shipped beside this script is on disk at
+# spawn, because the hook runs in place inside its declaring skill.
+if [ -f "${BASH_SOURCE[0]%/*}/neighbour.txt" ]; then
+  cat "${BASH_SOURCE[0]%/*}/neighbour.txt" >> "$AI_HATS_PROJECT_DIR/.neighbour"
+fi
 echo "$AI_HATS_EVENT" >> "$AI_HATS_PROJECT_DIR/.drained"

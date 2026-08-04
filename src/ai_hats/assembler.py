@@ -40,7 +40,6 @@ from .paths import (
     hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
-    user_home,
 )
 from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
@@ -161,46 +160,20 @@ class Assembler:
         content), resolved from the `ai_hats_library` package. Override points
         (user-global, project-config, project-local) layer on top via last-wins.
         """
+        from ai_hats.library_paths import build_library_paths
         from ai_hats.library_schema import check_library_schema
         from ai_hats.paths import builtin_library_root
 
-        paths: list[Path] = []
-
-        # Built-in: core + usage. Fail loud FIRST if the pinned library declares a
-        # format-schema newer than this ai-hats understands (T18; built-in only).
+        # Fail loud FIRST if the pinned library declares a format-schema newer
+        # than this ai-hats understands (T18; built-in only).
         check_library_schema(builtin_library_root(self.project_dir))
-        for layer in _builtin_library_layers(self.project_dir):
-            paths.append(layer)
-
-        # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via
-        # the ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks
-        # above the builtins, below the user/config/project overrides that follow.
-        from ai_hats.skill_sources import skill_source_roots
-
-        paths.extend(skill_source_roots())
-
-        # Global user libraries — ``user_home()`` honours
-        # ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
-        global_lib = user_home() / ".ai-hats"
-        if global_lib.is_dir():
-            paths.append(global_lib)
-
-        # Config-specified paths
-        for p in self.project_config.library_paths:
-            expanded = Path(p).expanduser()
-            if expanded.is_dir():
-                paths.append(expanded)
-
-        # Project-local libraries — re-pointed to the worktree when composing
-        # inside one (HATS-831); see :meth:`_worktree_local_libraries`.
-        local_lib = self._worktree_local_libraries() or self.project_dir / LIBRARIES_DIRNAME
-        if local_lib.is_dir():
-            paths.append(local_lib)
-
-        # Explicit extra paths (highest priority)
-        paths.extend(extra)
-
-        return paths
+        return build_library_paths(
+            self.project_dir,
+            config_paths=self.project_config.library_paths,
+            # Re-pointed to the worktree when composing inside one (HATS-831).
+            local_libraries=self._worktree_local_libraries(),
+            extra=extra,
+        )
 
     def _worktree_local_libraries(self) -> Path | None:
         """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.

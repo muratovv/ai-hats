@@ -46,6 +46,7 @@ from .constants import (
 from .paths import (
     hooks_dir as _lib_hooks_dir,
     legacy_paths_by_class,
+    library_dir as _lib_dir,
     user_hooks_dir as _user_hooks_dir,
 )
 from ai_hats_core.migrations import (
@@ -415,6 +416,33 @@ def migrate_layout_v4_sessions(a: "Assembler") -> None:
 # Ordered by ``step`` ascending. Append new entries at the bottom; never
 # reorder or renumber existing ones (the counter on disk is bound to them).
 
+
+def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
+    """Discard the retired ``library/wt-hooks/`` tree (HATS-1269).
+
+    Worktree hooks spawn in place from the declaring skill, so nothing writes or
+    sweeps this dir any more and an upgraded project would keep a managed tree
+    with no owner. Only what the manifest claimed is removed — an unmanaged file
+    beside it is somebody's, and the dir goes only once it is empty.
+    """
+    from .sweeper import read_marker_names
+
+    retired = _lib_dir(a.project_dir) / "wt-hooks"
+    manifest = retired / ".manifest"
+    if not retired.is_dir():
+        return
+    for name in sorted(read_marker_names(manifest)):
+        _safe_discard(retired / name, reason="retire-wt-hooks", project_dir=a.project_dir)
+    _safe_discard(manifest, reason="retire-wt-hooks-manifest", project_dir=a.project_dir)
+    try:
+        retired.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        logger.warning(
+            "wt-hooks retirement: %s still holds files ai-hats never managed — left in place",
+            retired,
+        )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         step=1,
@@ -455,6 +483,11 @@ MIGRATIONS: list[Migration] = [
         step=8,
         run=_m_retire_agy_token_zeros,
         label="retire fabricated agy token zeros HATS-1397",
+    ),
+    Migration(
+        step=9,
+        run=_m_drop_retired_wt_hooks,
+        label="drop retired library/wt-hooks HATS-1269",
     ),
 ]
 

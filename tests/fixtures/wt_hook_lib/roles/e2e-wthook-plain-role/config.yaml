@@ -1,0 +1,13 @@
+name: e2e-wthook-plain-role
+priorities:
+  - Correctness
+composition:
+  traits: []
+  rules: []
+  skills: []
+injection: |
+  # ROLE: E2E-WTHOOK-PLAIN-ROLE
+
+  E2E fixture role (HATS-1269). Composes no skill, so re-initing a project to
+  it drops `e2e-wthook` from the composition while a worktree that recorded its
+  hook is still live. Not shipped.
