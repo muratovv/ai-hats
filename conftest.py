@@ -7,9 +7,11 @@ reached ``packages/*/tests``, whose worktree-creating tests leaked
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +21,136 @@ sys.dont_write_bytecode = True
 # Enables `pytester` for test_tmp_hygiene.py; pytest refuses this in a
 # non-top-level conftest, so it can only live here (HATS-570).
 pytest_plugins = ["pytester"]
+
+
+def _ambient_cache_home() -> Path:
+    """The cache root the DEVELOPER's machine resolves, read once at import.
+
+    Mirrors ``ai_hats.paths.cache_home`` deliberately instead of calling it: the
+    live resolver reads the env, and by the time any test runs that env points at
+    the sandbox pinned below — a tripwire asking it could never fire (HATS-1372).
+    """
+    raw = os.environ.get("AI_HATS_CACHE_HOME")
+    if raw:
+        return Path(raw).expanduser()
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg).expanduser() / "ai-hats"
+    return Path.home() / ".cache" / "ai-hats"
+
+
+REAL_CACHE_HOME = _ambient_cache_home()
+_leaked_keys: dict[str, tuple[str, Path | None]] = {}
+_SKIP_DIRS = frozenset({".git", ".venv", "site-packages", "node_modules", "__pycache__"})
+
+
+def _cache_keys() -> set[str]:
+    try:
+        return {entry.name for entry in REAL_CACHE_HOME.iterdir()}
+    except OSError:
+        return set()
+
+
+def _project_key(project_dir: Path) -> str:
+    """Copy of ``ai_hats.paths.project_key`` — see :func:`_ambient_cache_home`."""
+    import hashlib
+
+    resolved = project_dir.expanduser().resolve()
+    digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:8]
+    slug = "".join(c if (c.isalnum() or c in "._-") else "-" for c in resolved.name)
+    return f"{slug.strip('-.') or 'project'}-{digest}"
+
+
+def _source_dir(key: str, root: Path, max_depth: int = 5) -> Path | None:
+    """Find the directory under ``root`` whose project key is ``key``.
+
+    This is what separates OUR leak from a concurrent ai-hats session writing to
+    the same shared cache: the key is a one-way hash, so the only sound proof of
+    authorship is a source directory inside this run's own tmp tree.
+    """
+    stack = [(root, 0)]
+    while stack:
+        current, depth = stack.pop()
+        try:
+            children = [entry for entry in current.iterdir() if entry.is_dir()]
+        except OSError:
+            continue
+        for child in children:
+            if child.name in _SKIP_DIRS:
+                continue
+            if _project_key(child) == key:
+                return child
+            if depth < max_depth:
+                stack.append((child, depth + 1))
+    return None
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Attribute each new real-cache key to the test that produced it (HATS-1473).
+
+    Attribution happens here, not at session end, because the source directory a
+    key is matched against is usually deleted by the time the session finishes.
+    """
+    before = _cache_keys()
+    yield
+    new = _cache_keys() - before
+    if not new:
+        return
+    basetemp = item.config._tmp_path_factory.getbasetemp()
+    for key in new:
+        _leaked_keys.setdefault(key, (item.nodeid, _source_dir(key, basetemp)))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cache_home_sandbox(tmp_path_factory):
+    """Pin ``AI_HATS_CACHE_HOME`` into a sandbox private to THIS run (HATS-1473).
+
+    ``mktemp`` makes the dir unique per session, so concurrent runs never share a
+    cache root; ``tests/conftest.py`` narrows it again per test. Stale sandboxes
+    are the product's job — it sweeps orphaned keys by TTL.
+
+    Session scope on purpose: ``_shared_launcher_venv`` captures ``os.environ``
+    during the FIRST test's setup, so a function-scoped pin lands too late for it
+    — that is how ``bootstrap-*`` keys (5.1 GB of bare repo mirrors) reached the
+    developer's cache. Pinning here also covers ``packages/*/tests``, which no
+    ``tests/conftest.py`` fixture ever reached.
+    """  # comment-length: allow — names both the scope trap and the coverage gap
+    sandbox = tmp_path_factory.mktemp("cache-home")
+    mp = pytest.MonkeyPatch()
+    mp.setenv("AI_HATS_CACHE_HOME", str(sandbox))
+    mp.delenv("XDG_CACHE_HOME", raising=False)
+    try:
+        yield sandbox
+    finally:
+        mp.undo()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_cache_home_tripwire():
+    """Fail the session if any test wrote a project key into the real cache home.
+
+    The pin above is the guarantee; this is what makes it falsifiable. HATS-1398
+    fixed the leaking sites it knew about, nothing went red when the next fixture
+    reopened the hole, and 16.9 GB accumulated.
+
+    Fails only on keys traced to a source dir inside this run — other ai-hats
+    sessions write to this same cache, and their keys are neither preventable nor
+    actionable from here, so they are skipped silently rather than reported.
+    """
+    before = _cache_keys()
+    yield
+    owned = []
+    for key in sorted(_cache_keys() - before):
+        nodeid, source = _leaked_keys.get(key, ("<outside any test>", None))
+        if source:
+            owned.append(f"{key}  <- {nodeid}  ({source})")
+    if owned:
+        pytest.fail(
+            f"[cache-home] {len(owned)} project key(s) leaked into the real "
+            f"{REAL_CACHE_HOME} (HATS-1473):\n  " + "\n  ".join(owned),
+            pytrace=False,
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)
