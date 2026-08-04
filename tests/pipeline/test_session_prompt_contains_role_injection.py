@@ -17,7 +17,7 @@ path) end-to-end with the real maintainer role from this repo's
 cleanup. Composition, file write, and the funnel/override flow all run
 for real.
 
-Fail-under-revert (per ``dev_rule_e2e_gate`` §4). Reverting any of:
+Fail-under-revert. Reverting any of:
 - ``pipeline/steps/compose.py`` (empty-string-as-absent)
 - ``pipeline/pipeline.py`` (None-normalization at funnel merge)
 - ``runtime.py`` (drop of ``system_prompt_override`` from ``WrapRunner``)
@@ -45,10 +45,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
 
-# smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
-
-
 # --------------------------------------------------------------------- #
 # Fixture: tmp project with maintainer as the active role
 # --------------------------------------------------------------------- #
@@ -74,6 +70,9 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
+    # HATS-1493: check_update_async is step 1 of the real human pipeline and
+    # would fire a detached network probe from a test that spawns nothing else.
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     return project
 
 

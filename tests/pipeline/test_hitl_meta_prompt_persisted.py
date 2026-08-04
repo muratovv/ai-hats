@@ -1,4 +1,4 @@
-"""E2E regression: HATS-523 — HITL session must persist the materialized
+"""Regression: HATS-523 — HITL session must persist the materialized
 system prompt to ``<session_dir>/meta_prompt.txt``.
 
 Triggering gap. Before HATS-523, the HITL path (``WrapRunner.run``) wrote
@@ -19,7 +19,7 @@ as the 3rd tuple element), ``session.save_meta_prompt`` — runs for real.
 We then assert ``<session_dir>/meta_prompt.txt`` exists with the expected
 role/trait markers.
 
-Fail-under-revert (per ``dev_rule_e2e_gate`` §4). Reverting any of:
+Fail-under-revert. Reverting any of:
 
 - ``providers.py`` (drop ``meta_prompt`` from ``build_session_prompt``
   3-tuple) → unpack error in ``WrapRunner.run``, test fails on session
@@ -29,10 +29,12 @@ Fail-under-revert (per ``dev_rule_e2e_gate`` §4). Reverting any of:
 
 Companion to ``test_session_prompt_contains_role_injection.py`` — that test
 inspects the in-cache ``prompt.md`` mid-session; THIS test inspects the
-persistent ``meta_prompt.txt`` post-session, which is the artefact e2e
-tools / audit / retro consumers actually have access to.
+persistent ``meta_prompt.txt`` post-session, which is the artefact audit /
+retro consumers actually have access to.
 
-Deliberate long e2e regression scenario contract — noqa: comment-length.
+Moved out of ``tests/e2e/`` by HATS-1493 — in-process, PTY captured.
+
+Deliberate long regression scenario contract — noqa: comment-length.
 """
 
 from __future__ import annotations
@@ -52,9 +54,6 @@ from ai_hats.paths import PROJECT_CONFIG
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
-
-
-pytestmark = pytest.mark.integration
 
 
 # Unique substrings produced by composing the maintainer role with its
@@ -84,6 +83,9 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
+    # HATS-1493: check_update_async is step 1 of the real human pipeline and
+    # would fire a detached network probe from a test that spawns nothing else.
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     return project
 
 

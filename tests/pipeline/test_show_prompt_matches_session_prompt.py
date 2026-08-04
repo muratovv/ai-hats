@@ -1,4 +1,4 @@
-"""E2E contract: ``ai-hats config show-prompt`` agrees with the real session
+"""Contract: ``ai-hats config show-prompt`` agrees with the real session
 prompt — they MUST be derived from the same composition (HATS-456 Phase 0).
 
 Background. HATS-452 Phase 1 introduced ``MaterializeSystemPrompt`` +
@@ -47,10 +47,6 @@ INJECTION_START = "<!-- AI-HATS:START -->"
 INJECTION_END = "<!-- AI-HATS:END -->"
 
 
-# smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
-
-
 # --------------------------------------------------------------------- #
 # Fixture (mirrors test_session_prompt_contains_role_injection.py)
 # --------------------------------------------------------------------- #
@@ -72,6 +68,9 @@ def project_with_maintainer(tmp_path: Path, monkeypatch) -> Path:
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
+    # HATS-1493: check_update_async is step 1 of the real human pipeline and
+    # would fire a detached network probe from a test that spawns nothing else.
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     # bootstrap_or_die does a self-update probe — stub for offline / CI.
     import ai_hats._bootstrap as boot
 
