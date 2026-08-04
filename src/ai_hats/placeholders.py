@@ -31,14 +31,19 @@ logger = logging.getLogger(__name__)
 
 PLACEHOLDER = "<ai_hats_dir>"
 
+# HATS-1479: absolute anchor for a sub-agent whose tool cwd is not the project.
+PROJECT_DIR_PLACEHOLDER = "<project_dir>"
+
 
 def expand_path_placeholders(text: str, project_dir: Path) -> str:
-    """Replace ``<ai_hats_dir>`` with the project-relative ai-hats dir.
+    """Replace ``<ai_hats_dir>`` (relative) and ``<project_dir>`` (absolute).
 
-    Falls back to the absolute POSIX path when the resolved dir is not
-    inside ``project_dir`` (e.g. ``AI_HATS_DIR`` env set to an absolute
-    out-of-tree location).
+    ``<ai_hats_dir>`` falls back to the absolute POSIX path when the resolved
+    dir is not inside ``project_dir`` (e.g. ``AI_HATS_DIR`` env set to an
+    absolute out-of-tree location).
     """
+    if PROJECT_DIR_PLACEHOLDER in text:
+        text = text.replace(PROJECT_DIR_PLACEHOLDER, project_dir.resolve().as_posix())
     if PLACEHOLDER not in text:
         return text
     base = ai_hats_dir(project_dir)
