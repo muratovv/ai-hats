@@ -21,16 +21,12 @@ def collect_carry_for_project(
     """Collect the effective role's worktree carry (fail-open, HATS-865).
 
     Compose lives in ``composition_seam.compose_for_carry``; the chokepoint
-    receives the ready result + hooks manager.
+    receives the ready result.
     """
     from .composition_seam import compose_for_carry
     from .wt_carry import collect_carry_for_role
 
-    composed = compose_for_carry(project_dir, role)
-    if composed is None:
-        return {}
-    result, hooks = composed
-    return collect_carry_for_role(project_dir, result, hooks)
+    return collect_carry_for_role(compose_for_carry(project_dir, role))
 
 
 class WtWorktreeEffects:

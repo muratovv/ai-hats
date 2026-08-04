@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import managed_wt_hook_filename, worktrees_dir, wt_hooks_dir
+from ai_hats.paths import worktrees_dir
 from ai_hats_wt import WorktreeManager, WorktreeTeardownAborted
 from ai_hats.wt_lifecycle import HOOK_LIFECYCLE, WorktreeHookError
 
@@ -53,7 +53,8 @@ def git_project(tmp_path: Path) -> Path:
 
 
 def _place_hook(project: Path, skill: str, basename: str, body: str) -> None:
-    dest = wt_hooks_dir(project) / managed_wt_hook_filename(skill, basename)
+    """Ship the script inside its declaring skill — HATS-1269 spawns it in place."""
+    dest = project / "libraries" / "skills" / skill / basename
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("#!/usr/bin/env bash\nset -e\n" + body)
     dest.chmod(0o755)

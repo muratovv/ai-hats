@@ -6,102 +6,68 @@ into a JSON-safe carry record, to be threaded into
 ``WorktreeManager.create(wt_hooks=...)`` and persisted to state for teardown.
 HATS-865: composition happens at the integrator callers
 (``wt_effects.collect_carry_for_project`` / ``wt create`` CLI) — this brick
-receives the READY result + the project's HooksManager and never imports the
-composition layer. The hook *execution* policy lives in
-:mod:`ai_hats.wt_lifecycle`; the bounded hook *run* primitive stays in
-:mod:`ai_hats.worktree_hooks`.
+receives the READY result and never imports the composition layer. The hook
+*execution* policy lives in :mod:`ai_hats.wt_lifecycle`; the bounded hook *run*
+primitive stays in :mod:`ai_hats.worktree_hooks`.
 """
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
-    from .hooks_manager import HooksManager
-
 logger = logging.getLogger(__name__)
 
 
 def collect_carry_for_role(
-    project_dir: Path,
     result: "CompositionResult | None",
-    hooks: "HooksManager | None",
 ) -> dict[str, list[dict[str, object]]]:
-    """Serialize the composed role's worktree carry (+ materialize backstop).
+    """Serialize the composed role's worktree carry, dropping unresolvable rows.
 
-    ``result``/``hooks`` come from the create-time caller
-    (``wt_effects.collect_carry_for_project`` / ``wt create`` CLI — HATS-865);
-    ``None`` degrades to an empty carry. Serialize/materialize failures also
-    degrade to empty with a WARN — collection trouble must not block worktree
-    creation.
+    ``None`` degrades to an empty carry, as does a serialize failure (with a
+    WARN) — collection trouble must not block worktree creation.
 
-    HATS-833 req-2 — create-time backstop: ``wt create`` runs via bare CLI /
-    ``rack transition <id> execute`` / CI, where no session-start drift net fires,
-    so the parent's ``library/wt-hooks/`` may be stale. We materialize the
-    wt-hook scripts HERE (the carry-record chokepoint) and only keep a carry
-    row whose backing script is present on disk afterwards — so the invariant
-    **"recorded carry ⇒ backing script exists"** holds by construction, even
-    for sessionless consumers. A declared hook whose source can't be resolved
-    is dropped (with a WARN) rather than recorded-then-fail-closed at
-    teardown. The fail-closed teardown (D7) stays as the last net for a
-    genuinely vanished script.
+    HATS-1269 retired the HATS-833 materialize backstop: scripts spawn in place
+    from the declaring skill, so what a recorded row now promises is **"its
+    script resolved at create time"**. A typo in ``SKILL.md`` is dropped here
+    with a WARN instead of surfacing days later as a blocked merge.
     """
-    if result is None or hooks is None:
+    if result is None:
         return {}
-    from .hook_collection import collect_worktree_hooks
+    from .hook_collection import collect_worktree_hooks, resolve_skill_script
 
     try:
-        carry = serialize_collected_hooks(collect_worktree_hooks(result))
-        if carry:
-            # Materialize MUST complete before we keep the carry. If it raises,
-            # the outer except drops the whole carry ({}); a partial/unresolvable
-            # script is then filtered out below. Never return a carry row that
-            # lacks a backing script (review pt-4: degrade-to-empty is safe,
-            # degrade-to-partial re-opens the fail-closed it prevents).
-            hooks.materialize_worktree_hooks(result)
-            carry = _drop_unbacked_carry_rows(carry, project_dir)
-        return carry
+        return serialize_collected_hooks(
+            {
+                kind: [
+                    (skill, hook)
+                    for skill, hook in entries
+                    if _keep_row(result, skill, hook, resolve_skill_script)
+                ]
+                for kind, entries in collect_worktree_hooks(result).items()
+            }
+        )
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection
         logger.warning(
-            "worktree hooks: could not serialize/materialize carry for role "
-            "%r: %s — dropping carry",
+            "worktree hooks: could not serialize carry for role %r: %s — dropping carry",
             result.name,
             exc,
         )
         return {}
 
 
-def _drop_unbacked_carry_rows(
-    carry: dict[str, list[dict[str, object]]], project_dir: Path
-) -> dict[str, list[dict[str, object]]]:
-    """Keep only carry rows whose materialized script exists on disk (HATS-833).
-    A row with no backing script (unresolvable source) is dropped with a WARN —
-    enforcing "recorded carry ⇒ backing script exists" by construction."""
-    from .paths import managed_wt_hook_filename, wt_hooks_dir
-
-    wt_dir = wt_hooks_dir(project_dir)
-    out: dict[str, list[dict[str, object]]] = {}
-    for kind, rows in carry.items():
-        kept: list[dict[str, object]] = []
-        for row in rows:
-            dest = wt_dir / managed_wt_hook_filename(str(row["skill"]), str(row["script"]))
-            if dest.is_file():
-                kept.append(row)
-            else:
-                logger.warning(
-                    "worktree hooks: dropping carry row %s/%s — no backing script "
-                    "on disk after materialize (%s)",
-                    row["skill"],
-                    row["script"],
-                    dest,
-                )
-        if kept:
-            out[kind] = kept
-    return out
+def _keep_row(result, skill_name: str, hook, resolve) -> bool:
+    if resolve(result, skill_name, hook.script) is not None:
+        return True
+    logger.warning(
+        "worktree hooks: dropping carry row %s/%s — the declaring skill ships no such script",
+        skill_name,
+        hook.script,
+    )
+    return False
 
 
 def serialize_collected_hooks(

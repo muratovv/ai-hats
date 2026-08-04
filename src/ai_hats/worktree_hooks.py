@@ -3,8 +3,8 @@
 Runs a single component-declared ``wt_in`` / ``wt_out`` script. Execution
 mechanics moved to :mod:`ai_hats.hook_exec` (ADR-0020 D2, HATS-1151); what stays
 here is this channel's own vocabulary: the timeout budget kept below the
-lifecycle lock (HATS-711 class), the ``AI_HATS_*`` env it hands a hook, and the
-stale-``library/wt-hooks/`` remedy in a missing-script reason. Policy — ``wt_out``
+lifecycle lock (HATS-711 class), the ``AI_HATS_*`` env it hands a hook, and what
+a missing script means now that hooks spawn in place. Policy — ``wt_out``
 fail-closed vs ``wt_in`` warn-continue — remains the worktree manager's.
 """
 
@@ -96,8 +96,9 @@ def _wt_point(event: str) -> str:
 
 
 def _wt_reason(run: HookRun, script: Path) -> str:
-    """HATS-833: a vanished managed script means the parent's ``library/wt-hooks/``
-    is stale, so name the remedy rather than only the symptom."""
+    """HATS-1269: scripts spawn in place, so a missing one means the declaring
+    skill stopped shipping it — say that, not a re-materialize step that no
+    longer exists."""
     if run.verdict is HookVerdict.CORRUPT and not script.is_file():
-        return f"{run.reason} — run 'ai-hats self init' to re-materialize"
+        return f"{run.reason} — the declaring skill no longer ships this script"
     return run.reason

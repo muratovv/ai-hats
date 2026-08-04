@@ -33,14 +33,11 @@ class LibraryResolver:
         Searches library paths in order (later paths have higher priority).
         Returns the last match found (highest priority).
         """
-        fs_name = resolve_namespace(name)
-        subdir = self._type_subdir(component_type)
-        result = None
-        for lib_path in self.library_paths:
-            candidate = lib_path / subdir / fs_name
-            if candidate.is_dir():
-                result = candidate
-        return result
+        from .library_paths import find_component_dir
+
+        return find_component_dir(
+            self.library_paths, self._type_subdir(component_type), resolve_namespace(name)
+        )
 
     def resolve_config(self, name: str, component_type: ComponentType) -> ComponentConfig | None:
         """Resolve and load a component's config.yaml."""
