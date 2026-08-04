@@ -184,6 +184,29 @@ def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     assert _journal_lines(gated_repo) == []
 
 
+@pytest.mark.integration
+def test_a_lone_shell_helper_without_its_writer_fails_loud_not_silent(gated_repo: Path):
+    """HATS-1486: the shell side only wraps — the writer is a sibling .py.
+
+    Resolving to a `bypass_journal.sh` with no `bypass_journal.py` beside it is a
+    reachable state (a copy taken out of its directory), and it must fail the way
+    every other unreachable-journal path does: loudly, without blocking.
+    """
+    orphan_dir = gated_repo / "orphan"
+    orphan_dir.mkdir()
+    orphan = orphan_dir / "bypass_journal.sh"
+    orphan.write_bytes(JOURNAL_HELPER.read_bytes())
+
+    res = _run_hook(
+        gated_repo,
+        AI_HATS_PRIVACY_ACK="1",
+        AI_HATS_BYPASS_JOURNAL=str(orphan),
+    )
+    assert res.returncode == 0, "a broken journal must not block the commit"
+    assert "NOT RECORDED" in res.stderr, res.stderr
+    assert _journal_lines(gated_repo) == []
+
+
 # --- every git-hook hatch, in the real install layout ------------------------
 
 
@@ -300,6 +323,42 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     entries = _journal_lines(repo)
     assert len(entries) == 1, entries
     assert entries[0]["sha"] == head, "the bypass is not attributable to its commit"
+
+
+@pytest.mark.integration
+def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
+    """HATS-1486: awk passed junk through line-wise; the python stamper must too.
+
+    A journal can hold a line no parser accepts — that is exactly what the old
+    shell escaper produced. Rewriting the file must not drop it: the stamper is
+    not a validator, and losing a bypass record is the defect this file removes.
+    """
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+
+    _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
+    _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=str(repo), check=True)
+
+    journal_path = repo / JOURNAL_REL
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    broken_line = "THIS IS NOT VALID JSON {"
+    journal_path.write_text(broken_line + "\n")
+
+    (repo / "a.txt").write_text("first\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["AI_HATS_PRIVACY_ACK"] = "1"
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
+    env.update(_ai_hats_pin())
+    subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
+
+    raw_lines = journal_path.read_text().splitlines()
+    assert len(raw_lines) == 2, raw_lines
+    assert raw_lines[0] == broken_line, "the unparseable line was not preserved"
+    assert json.loads(raw_lines[1])["sha"] != "", "the valid row was not stamped"
 
 
 # --- the consumer: a journal nobody reads is a sensor nobody consumes --------
