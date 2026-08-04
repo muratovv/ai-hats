@@ -1,30 +1,30 @@
-"""Gate smoke: no installed provider entry point may be dangling (HATS-966).
+"""No installed provider entry point may be dangling (HATS-966).
 
-Prevents the whole HATS-965/966 class at the merge-to-master gate. A provider
-plugin whose editable ``.pth`` target was deleted (torn-down worktree, moved
-checkout) survives in dist metadata — discovery still lists it — but its module
-won't import, so it silently drops from the registry and ``-p <plugin>`` errors
-as "unknown". This asserts, in the freshly-built gate venv, that:
+Prevents the whole HATS-965/966 class. A provider plugin whose editable
+``.pth`` target was deleted (torn-down worktree, moved checkout) survives in
+dist metadata — discovery still lists it — but its module won't import, so it
+silently drops from the registry and ``-p <plugin>`` errors as "unknown". This
+asserts, in whatever environment runs it, that:
 
 1. every advertised provider entry-point module RESOLVES (``find_spec``), and
 2. discovery and the live registry AGREE — nothing discovered is silently
    dropped (``provider_names()`` covers every entry-point name).
 
 Fail-under-regress: reintroduce a dangling editable (or a provider plugin with a
-broken import) into the shipped venv → this turns red on the gate.
+broken import) into the installed venv → this turns red.
 
-Deliberate gate-smoke contract — noqa: comment-length.
+HATS-1493 moved it out of ``tests/e2e/``: it never spawned a process, it probes
+the test interpreter's own installed distributions. It consequently left the
+merge-smoke cohort and now runs in ``ci_unit`` across the py3.11/3.12/3.13
+matrix — three interpreters per push instead of one venv at merge.
+
+Deliberate contract docstring — noqa: comment-length.
 """
 
 from __future__ import annotations
 
-import pytest
-
 from ai_hats.providers import provider_names
 from ai_hats.self_heal import _provider_entry_points, find_broken_surface_providers
-
-# smoke: runs on the merge-to-master gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 def test_no_installed_provider_is_dangling() -> None:

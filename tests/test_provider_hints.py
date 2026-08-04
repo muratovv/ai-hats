@@ -1,9 +1,7 @@
-import pytest
 from click.testing import CliRunner
 from ai_hats.cli import main
 
 
-@pytest.mark.integration
 def test_provider_hints_in_main_help():
     """Verify that `ai-hats -p <provider> --help` appends the provider hints table."""
     runner = CliRunner()
@@ -23,7 +21,6 @@ def test_provider_hints_in_main_help():
     assert "--headless" in result.output
 
 
-@pytest.mark.integration
 def test_provider_hints_with_role_help():
     """Verify that `ai-hats -r <role> --help` uses the role's provider."""
     runner = CliRunner()

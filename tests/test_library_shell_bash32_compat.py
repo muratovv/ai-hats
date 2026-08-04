@@ -1,4 +1,4 @@
-"""E2E: shipped library shell scripts stay bash 3.2 compatible (HATS-1355).
+"""Shipped library shell scripts stay bash 3.2 compatible (HATS-1355).
 
 macOS ships `/bin/bash` 3.2.57, and two bash-4-only faults have already reached
 users: `${var^}` (HATS-1294) and an unguarded empty-array expansion under
@@ -14,9 +14,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.integration]
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 LIBRARY_SRC = REPO_ROOT / "packages" / "ai-hats-library" / "src"
 
 # Constructs bash 3.2 does not have. Each is unambiguous — no flow analysis, so
