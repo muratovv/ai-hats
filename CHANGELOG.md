@@ -10,6 +10,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Runtime role spec composition (`-r "maintainer + leader"` / `-r "maintainer - trait-base"`)** (HATS-1456). Support ad-hoc runtime expressions in `-r` / `--role` to add or remove traits, rules, or skills for a single session without editing `ai-hats.yaml`. Evaluates as an ephemeral third overlay layer (`[global, project, runtime]`).
+
 ### Changed — BREAKING
 
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
@@ -26,6 +30,8 @@ since the latest tag lives under **Unreleased** until the next release.
   dropped silently — the customization simply stops applying, with no error.**
 
 ### Fixed
+
+- **Deferred rule removals in overlays and customizations** (HATS-1456). Rule removals (`remove: rules: [name]`) in `customizations` and overlays now resolve against the full composed set (mirroring skill removals), allowing rules brought by traits to be removed cleanly.
 
 - **An estimated token count no longer reaches `metrics.json` looking measured**
   (HATS-1433). The agy recovery ladder (HATS-1427) falls back from the real

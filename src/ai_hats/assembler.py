@@ -557,15 +557,22 @@ class Assembler:
         """
         return self.user_config.overlay_for(role_name)
 
-    def _effective_traits(self, role_name: str) -> list[str]:
-        """Role's base traits with global-then-project overlay edits applied.
+    def _effective_traits(
+        self, role_name: str, runtime_overlay: OverlayConfig | None = None
+    ) -> list[str]:
+        """Role's base traits with global-then-project-then-runtime overlay edits applied.
 
         One home for a walk `config status` and the audit snapshot both need —
         two copies would have to agree forever (HATS-1435).
         """
         base_cfg = self.resolver.resolve_role_config(role_name)
         traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (self._get_global_overlay(role_name), self._get_overlay(role_name)):
+        layers = [
+            self._get_global_overlay(role_name),
+            self._get_overlay(role_name),
+            runtime_overlay,
+        ]
+        for layer in layers:
             if layer is None:
                 continue
             for name in layer.remove_traits:
@@ -606,15 +613,19 @@ class Assembler:
         )
 
     def _get_overlay_provenance(
-        self, role_name: str, *, result: CompositionResult | None = None
+        self,
+        role_name: str,
+        *,
+        result: CompositionResult | None = None,
+        runtime_overlay: OverlayConfig | None = None,
     ) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
         ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
-        ``{"built-in", "global", "project"}``. Used by ``config status`` to
+        ``{"built-in", "global", "project", "runtime"}``. Used by ``config status`` to
         annotate the dependency tree with a source-tag per node.
 
-        Walked in the same global-then-project order used by ``_get_overlays``
+        Walked in the same global-then-project-then-runtime order used by ``_get_overlays``
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
 
@@ -636,18 +647,23 @@ class Assembler:
             # which `config status` renders as "role has no rules" (HATS-1373).
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
-        effective_traits = self._effective_traits(role_name)
+        effective_traits = self._effective_traits(role_name, runtime_overlay=runtime_overlay)
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
-            provenance["traits"][trait_name] = self._classify_component_layer(p).value
+            if p is not None:  # silent-ok: synthetic/missing trait has no filesystem path
+                provenance["traits"][trait_name] = self._classify_component_layer(p).value
 
         # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
         # drops the entry so a later layer's add can re-claim it.
-        for layer, label in (
+        layers_with_labels: list[tuple[OverlayConfig | None, str]] = [
             (self._get_global_overlay(role_name), ComponentLayer.GLOBAL.value),
             (self._get_overlay(role_name), ComponentLayer.PROJECT.value),
-        ):
+        ]
+        if runtime_overlay is not None:
+            layers_with_labels.append((runtime_overlay, ComponentLayer.RUNTIME.value))
+
+        for layer, label in layers_with_labels:
             if layer is None:
                 continue
             for name in layer.remove_traits:

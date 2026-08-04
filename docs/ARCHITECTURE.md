@@ -68,7 +68,7 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
-The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
+The overlays apply in order `[global, project, runtime]`: global customizations (`~/.ai-hats/customizations.yaml`) first, project customizations (`ai-hats.yaml`) second, and ephemeral runtime role specs (`-r "maintainer + leader"`, HATS-1456) last. Overlay `add` / `remove` patches component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored (first-wins).
 
 <a id="materialization"></a>
 

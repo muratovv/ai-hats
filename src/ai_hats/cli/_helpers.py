@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ..composition_seam import MissingProviderError, RoleNotFoundError
     from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
+    from ..role_spec import RoleSpecError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -105,6 +106,11 @@ def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_role_spec_error(exc: "RoleSpecError") -> NoReturn:
+    click.echo(f"Error: {exc}", err=True)
+    sys.exit(2)
+
+
 def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., NoReturn]], ...]":
     """The typed errors the CLI renders instead of a traceback, most-specific first.
 
@@ -114,8 +120,10 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..composition_seam import MissingProviderError, RoleNotFoundError
         from ..paths import NotAnAiHatsProjectError
         from ..providers import UnknownProviderError
+        from ..role_spec import RoleSpecError
 
     return (
+        (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
         (UnknownProviderError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),

@@ -80,3 +80,20 @@ def test_config_feedback_roundtrip(cli_project):
     result = runner.invoke(main, ["config", "feedback", "show"])
     assert "hint" in result.output
     assert "turns=10" in result.output
+
+
+def test_config_set_runtime_composition_refused(cli_project):
+    """HATS-1456 R5: config set -r refuses expressions with operators."""
+    project, runner = cli_project
+    result = runner.invoke(main, ["config", "set", "-r", "assistant + leader"])
+    assert result.exit_code != 0
+    assert "runtime composition ('+' / '-') cannot be persisted" in result.output
+
+
+def test_config_customize_runtime_composition_refused(cli_project):
+    """HATS-1456 R5: config customize refuses role names with operators."""
+    project, runner = cli_project
+    result = runner.invoke(main, ["config", "customize", "assistant + leader", "--add-trait", "foo"])
+    assert result.exit_code != 0
+    assert "runtime composition ('+' / '-') cannot be persisted" in result.output
+
