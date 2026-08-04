@@ -37,7 +37,6 @@ from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
     builtin_library_layers as _builtin_library_layers,
     claude_skills_dir,
-    hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
 )
@@ -102,13 +101,6 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
             }
     except OSError:
         pass
-    if project_dir is not None:
-        from .sweeper import read_marker_names
-
-        try:
-            names |= read_marker_names(_lib_hooks_dir(project_dir) / ".manifest")
-        except OSError:
-            pass
     return frozenset(names)
 
 
@@ -386,7 +378,7 @@ class Assembler:
 
         runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
         tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
-        for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir):
+        for subdir_fn in (_lib_rules_dir, _lib_skills_dir):
             subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # HATS-469 R2: capture greenfield state BEFORE the ai-hats.yaml

@@ -114,11 +114,11 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
         f"greenfield init failed to seed migration_step: {raw}"
     )
 
-    # Sanity: materialize_runtime_hooks fired. Greenfield init composes no
-    # role, so since HATS-1268 there are no skill-declared hooks to land — the
-    # package-data helper is what proves the step ran at all.
-    helper = project / ".agent" / "ai-hats" / "library" / "hooks" / "bypass_journal.sh"
-    assert helper.exists(), "static hooks not installed"
+    # Sanity: _refresh ran. Greenfield init composes no role, so no hook script
+    # lands anywhere — the registry stamp above is what proves the step ran, and
+    # what must NOT exist is the retired copy (HATS-1480).
+    retired = project / ".agent" / "ai-hats" / "library" / "hooks"
+    assert not retired.exists(), f"retired library/hooks/ re-created by init: {retired}"
 
 
 # ----- Test 2: re-init replays registry once + surfaces diagnostics -----
@@ -269,21 +269,6 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
     # Diagnostics MUST stay silent (R3).
     assert ORPHAN_WARN_FRAGMENT not in res.stderr, (
         f"set_role surfaced orphan diagnostic (HATS-469 R3 broken):\n{res.stderr}"
-    )
-
-    # Static hooks (D1: always-fire) ARE installed.
-    guard_script = (
-        project
-        / ".agent"
-        / "ai-hats"
-        / "library"
-        / "hooks"
-        / "safety-guard-pre_bash_shared_state_guard.sh"
-    )
-    assert guard_script.exists(), (
-        f"set_role failed to install static hooks (D1 broken — "
-        f"materialize_runtime_hooks must always fire in _refresh):\n"
-        f"stderr={res.stderr}"
     )
 
 

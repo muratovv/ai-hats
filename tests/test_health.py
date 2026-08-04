@@ -173,51 +173,6 @@ def _write_update_cache(project: Path, *, behind: int, ahead: int) -> None:
     )
 
 
-# ----- managed-dir completeness vs its own .manifest (HATS-1163) -----
-
-
-def _seed_hook(project: Path, subdir: str, name: str, *, write_script: bool = True) -> Path:
-    """Materialize a managed hook dir the way HooksManager does: manifest + script."""
-    d = project / ".agent" / "ai-hats" / "library" / subdir
-    d.mkdir(parents=True, exist_ok=True)
-    (d / ".manifest").write_text(f"# ai-hats managed — do not edit\n{name}\n", encoding="utf-8")
-    script = d / name
-    if write_script:
-        script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-    return script
-
-
-def test_runtime_hooks_broken_when_manifest_entry_has_no_file(project: Path) -> None:
-    """The HATS-595 incident: manifest claims a script, the file is gone."""
-    _seed_hook(project, "hooks", "safety-guard-safety_gate.py", write_script=False)
-
-    row = _row(triage(project), "library/hooks")
-
-    assert row.layer is Layer.MANAGED
-    assert row.status is Status.BROKEN
-    assert "safety-guard-safety_gate.py" in row.detail
-    assert "self init" in row.remediation
-
-
-def test_hook_dirs_ok_without_a_manifest(project: Path) -> None:
-    """An unmanifested dir declares nothing — presence alone stays the verdict."""
-    assert _row(triage(project), "library/hooks").status is Status.OK
-
-
-def test_manifest_check_tolerates_the_hashed_marker_format(project: Path) -> None:
-    """HATS-911 hashed manifests are read by the shared reader, not parsed here."""
-    d = project / ".agent" / "ai-hats" / "library" / "hooks"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / ".manifest").write_text(
-        "# ai-hats-owner: hooks\nkept-hook.sh  deadbeef\n", encoding="utf-8"
-    )
-
-    row = _row(triage(project), "library/hooks")
-
-    assert row.status is Status.BROKEN
-    assert "kept-hook.sh" in row.detail
-
-
 def test_triage_warns_at_most_once_about_a_leaked_dir_pin(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -16,7 +16,7 @@ from typing import Iterator
 from .constants import USER_RULES_SUBDIR
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
-from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir
+from .paths import ai_hats_dir, library_dir, tracker_dir
 from .sweeper import read_marker_names
 
 
@@ -134,7 +134,6 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
 def _managed_reports(project_dir: Path) -> list[LayerReport]:
     return [
         _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
-        _manifest_report("library/hooks", hooks_dir(project_dir), project_dir),
         _hook_refs_report(project_dir),
     ]
 

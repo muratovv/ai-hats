@@ -26,11 +26,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
 
-from ai_hats.assembler import Assembler
-from ai_hats.cli import main
-from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
 from ai_hats.paths import ENV_AI_HATS_VENV, PROJECT_CONFIG
 
 
@@ -74,96 +70,6 @@ def test_self_sync_hooks_command_removed(tmp_path: Path):
     combined = (cp.stdout + cp.stderr).lower()
     assert "no such command" in combined or "usage" in combined, (
         f"expected a click 'no such command' error, got:\n{cp.stdout}\n{cp.stderr}"
-    )
-
-
-# ----- Guarantee 2: session-start heal of a drifted runtime hook ------------
-
-
-def _make_runtime_hook_project(tmp_path: Path) -> tuple[Path, Path]:
-    """Real git project + synthetic library whose role ships a PreToolUse
-    runtime hook (claude provider → it is both materialized to ``library/hooks/``
-    AND wired into ``.claude/settings.json``)."""
-    project = tmp_path / "rtproj"
-    project.mkdir()
-    _git("init", "--quiet", cwd=project)
-    _git("config", "user.email", "t@e.com", cwd=project)
-    _git("config", "user.name", "t", cwd=project)
-
-    lib = tmp_path / "rtlib"
-    skill = lib / "skills" / "rt_skill"
-    (skill / "hooks").mkdir(parents=True)
-    (skill / "SKILL.md").write_text(
-        "---\n"
-        "name: rt_skill\n"
-        "description: ships a PreToolUse runtime hook\n"
-        "ai_hats:\n"
-        "  runtime_hooks:\n"
-        "    PreToolUse:\n"
-        "      - matcher: Bash\n"
-        "        script: hooks/rt.sh\n"
-        "---\n# rt\n"
-    )
-    rt_script = skill / "hooks" / "rt.sh"
-    rt_script.write_text("#!/usr/bin/env bash\nexit 0\n")
-    rt_script.chmod(0o755)
-
-    trait = lib / "traits" / "trait-base"
-    trait.mkdir(parents=True)
-    (trait / "config.yaml").write_text(
-        "name: trait-base\ncomposition:\n  skills:\n    - rt_skill\ninjection: B.\n"
-    )
-    role = lib / "roles" / "rt-role"
-    role.mkdir(parents=True)
-    (role / "config.yaml").write_text(
-        "name: rt-role\npriorities: [Quality]\n"
-        "composition:\n  traits:\n    - trait-base\ninjection: R.\n"
-    )
-    (project / PROJECT_CONFIG).write_text(
-        "provider: claude\n"
-        "ai_hats_dir: .agent/ai-hats\n"
-        "active_role: rt-role\n"
-        "default_role: rt-role\n"
-        "library_paths:\n  - " + str(lib) + "\n"
-    )
-    return project, lib
-
-
-def test_session_start_heals_drifted_runtime_hook(tmp_path: Path, monkeypatch):
-    project, lib = _make_runtime_hook_project(tmp_path)
-    asm = Assembler(project, library_paths=[lib])
-    asm.init()
-    asm.set_role("rt-role", provider_name="claude")
-
-    script = hooks_dir(project) / managed_runtime_hook_filename("rt_skill", "hooks/rt.sh")
-    assert script.is_file(), "baseline: runtime hook should be materialized"
-
-    # Plant drift: delete the materialized script —
-    # exactly the silent stale state HATS-833 targets (composed but not on disk).
-    script.unlink()
-    assert not script.is_file()
-
-    # Launch a real wrapped HITL session (composition + materializers run for
-    # real; only the PTY spawn is stubbed). Force a brief hold so the heal note
-    # is emitted to stdout even in the non-tty CliRunner.
-    from ai_hats import runtime as rt
-
-    monkeypatch.setattr(
-        rt.WrapRunner, "_pty_spawn", lambda self, cmd, env, tracer, pty_tap_factory=None: 0
-    )
-    monkeypatch.setenv("AI_HATS_STARTUP_HOLD", "0.05")
-    monkeypatch.chdir(project)
-
-    result = CliRunner().invoke(main, [])
-    assert result.exit_code == 0, (
-        f"launch exited {result.exit_code}\n{result.output}\nexc={result.exception!r}"
-    )
-
-    # Healed end-to-end: script re-materialized
-    assert script.is_file(), "session start did not re-materialize the runtime hook"
-    # ... and observable (req-5): the startup note names the healed surface.
-    assert "managed hooks healed at start" in result.output, (
-        f"expected heal note in output:\n{result.output}"
     )
 
 
