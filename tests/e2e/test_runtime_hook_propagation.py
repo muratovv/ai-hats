@@ -6,7 +6,7 @@ after a real ``ai-hats self init``:
 A. wired into ``.claude/settings.json`` — one managed entry per
    ``(event, skill, matcher)``, tagged ``ai-hats:<skill>:<event>:<matcher>``,
    under the correct event, pointing at the materialized script;
-B. materialized to ``<ai_hats_dir>/library/hooks/<skill>-<basename>.sh``,
+B. materialized to ``<sid>/plugin/skills/<skill>/hooks/<basename>.sh``,
    executable;
 C. functional — piping the exact ``tool_input`` JSON shape Claude Code feeds a
    hook into the materialized script yields the contracted exit code (2 on the
@@ -34,20 +34,28 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.paths import CLAUDE_PROJECT_DIR_VAR
 from ai_hats.constants import HOOK_POST_TOOL_USE, HOOK_PRE_TOOL_USE
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "runtime_hook_lib"
-MATERIALIZED_BASENAME = "e2e-rthook-probe.sh"
-# On-disk location of the materialized script, project-root-relative.
-REL_PATH = f".agent/ai-hats/library/hooks/{MATERIALIZED_BASENAME}"
-# The command written into settings.json carries the ``$CLAUDE_PROJECT_DIR/``
-# prefix (HATS-615) so the hook resolves regardless of the agent's cwd. Derive it
-# from the SAME constant the impl uses (providers.py via paths.py) so this test
-# can never silently drift from the impl again — the drift that caused HATS-645.
-REL_COMMAND = CLAUDE_PROJECT_DIR_VAR + REL_PATH
+SESSION_ID = "sid-rthook-prop"
+SKILL = "e2e-rthook"
+# The source relpath — the mirror keeps it; only the retired flatten renamed
+# it to <skill>-<basename>.
+SCRIPT_RELPATH = "hooks/probe.sh"
+
+
+def _expected_command(project: Path) -> str:
+    """Where the session mirror puts the declared script (HATS-1268).
+
+    Derived from the same helpers the impl uses, so this test cannot silently
+    drift from it — the drift that caused HATS-645.
+    """
+    from ai_hats.paths import claude_plugin_skills_dir, session_cache_dir
+
+    skills = claude_plugin_skills_dir(session_cache_dir(project, SESSION_ID) / "plugin")
+    return str(skills / SKILL / SCRIPT_RELPATH)
 
 
 def _run(cmd, *, cwd, env, timeout, expect_exit=0):
@@ -125,9 +133,9 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     asm = Assembler(project)
     result = asm.composer.compose("e2e-rthook-role")
     provider.build_session_artifacts(
-        project, result, "sid-rthook-prop", run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+        project, result, SESSION_ID, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
     )
-    cache_settings = session_cache_dir(project, "sid-rthook-prop") / "settings.json"
+    cache_settings = session_cache_dir(project, SESSION_ID) / "settings.json"
     settings = json.loads(cache_settings.read_text())
     by_event = _managed_entries(settings)
 
@@ -136,9 +144,13 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     sp = [e for e in pre if e.get("_ai_hats_managed") == "ai-hats:e2e-rthook:PreToolUse:Bash"]
     assert len(sp) == 1, f"missing PreToolUse skill entry in {pre}"
     assert sp[0]["matcher"] == "Bash"
-    assert sp[0]["hooks"] == [{"type": "command", "command": REL_COMMAND}]
-    # HATS-437 guard coexists.
-    assert any(e.get("_ai_hats_managed") == "ai-hats:hats-437" for e in pre)
+    assert sp[0]["hooks"] == [{"type": "command", "command": _expected_command(project)}]
+    # No guard entry here, and that is the contract: this fixture role composes
+    # `e2e-rthook` alone, and since HATS-1268 every entry is skill-declared —
+    # nothing is wired unconditionally any more.
+    assert not [
+        e for e in pre if str(e.get("_ai_hats_managed", "")).startswith("ai-hats:safety-guard")
+    ]
 
     # A. PostToolUse managed entry under its own event.
     post = by_event.get(HOOK_POST_TOOL_USE, [])
@@ -147,12 +159,11 @@ def test_e2e_skill_runtime_hook_wired_and_materialized(installed_launcher, tmp_p
     ]
     assert len(pe) == 1, f"missing PostToolUse skill entry in {post}"
     assert pe[0]["matcher"] == "Edit|Write"
-    assert pe[0]["hooks"] == [{"type": "command", "command": REL_COMMAND}]
+    assert pe[0]["hooks"] == [{"type": "command", "command": _expected_command(project)}]
 
-    # B. The script settings.json points at exists and is executable. The
-    # command carries the $CLAUDE_PROJECT_DIR/ prefix; the on-disk path is
-    # REL_PATH (the prefix is a Claude-Code runtime placeholder, not a real dir).
-    materialized = project / REL_PATH
+    # B. The script settings.json points at exists and is executable — the
+    # command is the on-disk path now, absolute into the session mirror.
+    materialized = Path(_expected_command(project))
     assert materialized.is_file(), f"materialized script missing: {materialized}"
     assert stat.S_IMODE(materialized.stat().st_mode) == 0o755
 
@@ -168,8 +179,19 @@ def test_e2e_materialized_runtime_hook_is_live(installed_launcher, tmp_path):
     project = tmp_path / "proj_rthook_live"
     _init_with_fixture_role(launcher, env, project)
 
-    script = project / REL_PATH
-    assert script.is_file(), "precondition: materialize must have run"
+    from ai_hats.assembler import Assembler
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.provider import ClaudeProvider
+
+    ClaudeProvider().build_session_artifacts(
+        project,
+        Assembler(project).composer.compose("e2e-rthook-role"),
+        SESSION_ID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+    script = Path(_expected_command(project))
+    assert script.is_file(), "precondition: the session mirror must have been built"
 
     deny = subprocess.run(
         ["bash", str(script)],

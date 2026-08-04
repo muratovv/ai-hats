@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,19 +24,16 @@ from ai_hats.skills_dir import inject_skill_paths_to_env
 from ai_hats.paths import (
     AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR,
-    CLAUDE_PROJECT_DIR_VAR,
     ai_hats_dir,
+    claude_plugin_skills_dir,
     claude_settings_json,
     claude_settings_local_json,
     claude_user_settings_json,
-    hooks_dir as _lib_hooks_dir,
-    managed_runtime_hook_filename,
     session_cache_dir,
 )
 from ai_hats.placeholders import expand_path_placeholders
 from ai_hats.role_catalog import expand_role_catalog
 from ai_hats.constants import (
-    HOOK_PRE_TOOL_USE,
     INJECTION_START,
     INJECTION_END,
     PROVIDER_CLAUDE,
@@ -237,11 +233,15 @@ class ClaudeProvider(Provider):
     # -- hooks -----------------------------------------------------------------
 
     def _write_cache_settings(self, project_dir: Path, session_id: str, result, artifacts) -> Path:
-        cache_settings = self._cache_dir(project_dir, session_id, artifacts) / "settings.json"
+        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
+        cache_settings = cache_dir / "settings.json"
+        # SKILLS precedes HOOKS in ArtifactCategory, so the mirror this points
+        # into is already written (scripts before wiring, HATS-1123).
+        skills_dir = claude_plugin_skills_dir(cache_dir / "plugin")
         artifacts.port.write_text(
             cache_settings,
             json.dumps(
-                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(project_dir, result)},
+                {self._SETTINGS_HOOKS_KEY: self._desired_runtime_entries(result, skills_dir)},
                 indent=2,
             ),
         )
@@ -348,12 +348,7 @@ class ClaudeProvider(Provider):
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
         }
 
-    # ----- HATS-437: PreToolUse hook auto-wire -----
-
-    # Marker tag on managed PreToolUse entries. Lets ``ensure_runtime_hooks``
-    # locate prior installs and update them in place rather than appending
-    # a duplicate. User-authored entries (without the tag) are never touched.
-    _MANAGED_HOOK_TAG = "ai-hats:hats-437"
+    # ----- PreToolUse hook wiring -----
 
     # settings.json root key holding the hooks map (also the per-entry command list).
     _SETTINGS_HOOKS_KEY = "hooks"
@@ -389,49 +384,17 @@ class ClaudeProvider(Provider):
         return parts[1] if len(parts) > 1 else tag
 
     def _desired_runtime_entries(
-        self, project_dir: Path, result: CompositionResult | None
+        self, result: CompositionResult | None, skills_dir: Path
     ) -> dict[str, list[dict]]:
         """``{event: [managed entry, ...]}`` the composition should produce.
 
-        The guard is unconditional; skill hooks are added only when ``result``
-        is present and the declared script resolves (a hook whose script
-        cannot be found is skipped — the materialize step skips it too, so
-        settings.json never points at a file that will not exist).
+        Commands point into the session's own skill mirror, so each hook runs
+        beside the files its skill ships (HATS-1268). Every entry is
+        skill-declared, the shared-state guard included, so a composition-less
+        build wires nothing. Paths are absolute — the mirror is out of tree, and
+        HATS-615 asked for cwd-independence, not project-relativity.
         """
-
-        def rel(path: Path) -> str:
-            # Claude Code resolves a relative PreToolUse ``command`` against the
-            # agent's cwd, NOT the project root — a bare relative path fails
-            # (exit 127) when a session / sub-agent starts in a subdirectory.
-            # Prefix with $CLAUDE_PROJECT_DIR (expanded at hook-execution time)
-            # so the command resolves regardless of cwd. Absolute fallback for
-            # hooks that live outside the project tree.
-            try:
-                return CLAUDE_PROJECT_DIR_VAR + str(path.relative_to(project_dir))
-            except ValueError:
-                return str(path)
-
-        lib = _lib_hooks_dir(project_dir)
-        if not lib.resolve().is_relative_to(project_dir.resolve()):
-            # HATS-897: warn, don't skip — bare out-of-tree AI_HATS_DIR is legit (HATS-380)
-            warnings.warn(
-                f"runtime hook commands will be written to settings.json as "
-                f"absolute paths outside the project: {lib} (AI_HATS_DIR "
-                f"override in effect). If this env leaked from another "
-                f"project's session, unset it and re-run (HATS-897).",
-                stacklevel=2,
-            )
         desired: dict[str, list[dict]] = {}
-
-        guard = lib / "pre_bash_shared_state_guard.sh"
-        desired.setdefault(HOOK_PRE_TOOL_USE, []).append(
-            {
-                "matcher": "Bash",
-                "_ai_hats_managed": self._MANAGED_HOOK_TAG,
-                self._SETTINGS_HOOKS_KEY: [{"type": "command", "command": rel(guard)}],
-            }
-        )
-
         if result is None:
             return desired
 
@@ -439,7 +402,7 @@ class ClaudeProvider(Provider):
             for skill_name, hook in entries:
                 if resolve_skill_script(result, skill_name, hook.script) is None:
                     continue
-                command = rel(lib / managed_runtime_hook_filename(skill_name, hook.script))
+                command = str(skills_dir / skill_name / hook.script)
                 desired.setdefault(event, []).append(
                     {
                         "matcher": hook.matcher,

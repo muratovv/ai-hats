@@ -91,6 +91,18 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
             names |= {entry.name for entry in hooks.iterdir() if entry.is_file()}
     except OSError:
         pass
+    # HATS-1268: guards moved from package data into the skills that declare
+    # them. A pre-v4 project still has the old basenames on disk, so the
+    # whitelist has to keep recognising them wherever the library now ships them.
+    try:
+        for layer in _builtin_library_layers(project_dir):
+            names |= {
+                script.name
+                for script in layer.glob("skills/*/hooks/*")
+                if script.is_file() and script.suffix in (".sh", ".py")
+            }
+    except OSError:
+        pass
     if project_dir is not None:
         from .sweeper import read_marker_names
 
