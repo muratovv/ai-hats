@@ -191,8 +191,11 @@ Beyond prose, a skill can declare three kinds of hook in its `SKILL.md`
 frontmatter under a top-level `ai_hats:` key, all materialized during
 `ai-hats self init`:
 
-- **`git_hooks`** — scripts installed into the project's `.githooks/<event>.d/`
-  (e.g. `pre-commit`, `post-merge`). The value is a bare list of script paths.
+- **`git_hooks`** — gate scripts run on a git event (e.g. `pre-commit`,
+  `post-merge`). The value is a bare list of script paths. They are never
+  copied: `init` installs only a `.githooks/<event>` dispatcher, which resolves
+  the composed role's gates at commit time and runs them from the skill
+  directory — so files shipped beside a gate are simply there.
 - **`worktree`** — worktree **lifecycle** hooks (`wt_in` / `wt_out`) run when an
   `ai-hats wt` worktree is created or torn down — the carry-in / carry-out
   mechanism (ADR-0012). Full contract in [Worktree lifecycle hooks](#worktree-lifecycle-hooks) below.
@@ -326,8 +329,10 @@ Chaining is live — no snapshot — so a manager regenerating its hooks (e.g.
 simple-git-hooks on `npm install`) keeps working without re-running ai-hats.
 ai-hats hooks run first; a non-zero chained hook blocks the event like any
 native hook, and stdin-protocol events (`pre-push`, …) replay the protocol
-to the chained hook. User-added scripts in `.githooks/<event>.d/` are never
-swept — only manifest-tracked ai-hats entries are managed.
+to the chained hook. A script you drop into `.githooks/<event>.d/` runs after
+the resolved gates and is never swept — ai-hats writes nothing there at all
+(create the directory yourself), so there is nothing for it to mistake for its
+own.
 
 ### Worktree lifecycle hooks
 

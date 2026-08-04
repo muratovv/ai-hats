@@ -1,133 +1,82 @@
 #!/usr/bin/env bash
-# AI-HATS-DISPATCHER-MARKER v1
+# AI-HATS-DISPATCHER-MARKER
 # Managed by ai-hats. Do not edit manually.
-# Add hooks by declaring `git_hooks:` in a skill's metadata.yaml — they
-# will be installed into .githooks/<event>.d/ on the next composition.
+#
+# A STUB, deliberately: it finds an ai-hats interpreter and hands the whole event
+# over. Which gates run, in what order, how stdin is replayed, what happens to a
+# script you dropped in yourself — none of that is here, because all of it will
+# change and this file must not. It is installed once and is never re-installed,
+# so every line it carries is a contract with projects composed years apart.
+#
+# Two things it must do alone, because nothing else can:
+#   1. bootstrap an interpreter (the thing being delegated to cannot find itself);
+#   2. fail OPEN when there is none — a human `git commit` is never wedged by a
+#      missing, half-updated or broken ai-hats.
 set -uo pipefail
 
-GITHOOKS_DIR="$(dirname "$0")"
 EVENT="$(basename "$0")"
-EVENT_D="${GITHOOKS_DIR}/${EVENT}.d"
-MANIFEST="${GITHOOKS_DIR}/.ai-hats-manifest"
+GITHOOKS_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+# `core.hooksPath` is absolute, so this is the MAIN checkout even when the commit
+# happens inside a linked worktree — which is what gates every worktree.
+PROJECT_DIR="$(dirname "$GITHOOKS_DIR")"
 
-# --- Gate-integrity backstop (fail-closed, HATS-593) ------------------------
-# The manifest lists every ai-hats-MANAGED entry (`<event>.d/<skill>-<name>`
-# and the bare `<event>` dispatcher). For THIS event, any managed `.d/` entry
-# that the manifest expects but that is now absent or non-executable means the
-# gate is corrupt: self-heal failed AND a hook is gone. Skipping it silently
-# is the one failure we cannot tolerate (a degraded/bypassed push gate), so we
-# fail LOUD and CLOSED. Cheap: read manifest + stat, no composition.
-#
-# Scoped to MANAGED entries only — an event with no managed entries in the
-# manifest (a legitimately empty `.d/`) is NOT blocked.
-if [[ -f "$MANIFEST" ]]; then
-    while IFS= read -r entry; do
-        entry="${entry%$'\r'}"   # tolerate CRLF manifests
-        [[ -z "$entry" || "$entry" == \#* ]] && continue
-        # hashed owner_key convention (HATS-911): "<sha256-12>  <relpath>"
-        if [[ "$entry" =~ ^[0-9a-f]{12}\ \ (.+)$ ]]; then
-            entry="${BASH_REMATCH[1]}"
-        fi
-        # Only managed `.d/` entries for THIS event.
-        [[ "$entry" == "${EVENT}.d/"* ]] || continue
-        expected="${GITHOOKS_DIR}/${entry}"
-        if [[ ! -f "$expected" || ! -x "$expected" ]]; then
-            echo "ai-hats: git hooks corrupt — expected managed hook '${entry}' is" >&2
-            echo "         missing or non-executable. Refusing to run a degraded" >&2
-            echo "         '${EVENT}' gate. Run 'ai-hats self init' to repair." >&2
-            exit 1
-        fi
-    done < "$MANIFEST"
-fi
+# Mirrors the launcher's venv precedence, read-only. NOT a call into the launcher:
+# that one heals and reinstalls, which is minutes of work inside somebody's commit.
+resolve_python() {
+    local ah_dir versions sha val venv=""
 
-if [[ ! -d "$EVENT_D" ]]; then
-    exit 0
-fi
-
-# Run scripts in lexicographic order. First non-zero exit aborts the chain
-# (matches git's expectation that a failed pre-commit blocks the commit).
-# Export the resolved event name: a managed `.d/` script's own $0 is its
-# renamed path (e.g. <skill>-<basename>), so it cannot recover the git event
-# from $0 — AI_HATS_HOOK_EVENT carries it (HATS-593).
-export AI_HATS_HOOK_EVENT="$EVENT"
-
-# --- STDIN fan-out (HATS-654) ----------------------------------------------
-# Some git events deliver a protocol on STDIN that EVERY .d/ script must see:
-#   pre-push / pre-receive / post-receive : <local_ref> <local_sha> <remote_ref> <remote_sha>
-#   post-rewrite                          : <old_sha> <new_sha> [extra]
-#   proc-receive / reference-transaction  : their own line protocols
-# The loop below runs each script sharing ONE stdin, so the first
-# stdin-consuming hook drains the protocol and every later hook reads EOF. For
-# pre-push that silently no-ops the e2e-master gate (empty stdin → fast-path
-# exit 0 → master push never gated). Capture the protocol ONCE and replay a
-# fresh copy into each script via `< "$STDIN_FILE"`.
-#
-# Scoped to events with a documented STDIN protocol by NAME (not a runtime
-# `[[ -t 0 ]]` probe): stdin-less events (pre-commit, post-checkout,
-# post-merge) must never `cat`, or a tty/open-pipe on fd 0 (e.g. inside an
-# agent harness) would block the hook forever. A tmpfile + `< file` preserves
-# bytes exactly and hands each script a fresh fd at offset 0.
-#
-# The list is the full git ref-protocol family on purpose, not just the one
-# event with a .d/ chain today (pre-push). It costs nothing: capture runs only
-# AFTER the `[[ ! -d "$EVENT_D" ]]` early-out above, so an event with no
-# installed `<event>.d/` hooks (every entry here except pre-push, currently)
-# never reaches the `cat`/`mktemp`. Listing the family keeps the dispatcher
-# correct-by-default the day a skill declares, say, a post-rewrite.d/ chain.
-STDIN_FILE=""
-case "$EVENT" in
-    pre-push|pre-receive|post-receive|post-rewrite|proc-receive|reference-transaction)
-        if STDIN_FILE="$(mktemp "${TMPDIR:-/tmp}/ai-hats-${EVENT}-stdin.XXXXXX")"; then
-            trap 'rm -f "$STDIN_FILE"' EXIT
-            cat > "$STDIN_FILE"
-        else
-            # mktemp failed — fall back to shared stdin (degraded but no crash).
-            STDIN_FILE=""
-        fi
-        ;;
-esac
-
-shopt -s nullglob
-for script in "$EVENT_D"/*; do
-    [[ -f "$script" && -x "$script" ]] || continue
-    if [[ -n "$STDIN_FILE" ]]; then
-        "$script" "$@" < "$STDIN_FILE"
-    else
-        "$script" "$@"
+    if [[ -n "${AI_HATS_VENV:-}" && -x "${AI_HATS_VENV}/bin/python" ]]; then
+        echo "${AI_HATS_VENV}/bin/python"; return 0
     fi
-    rc=$?
-    if [[ $rc -ne 0 ]]; then
-        echo "ai-hats: hook '$(basename "$script")' failed (exit $rc)" >&2
-        exit "$rc"
-    fi
-done
 
-# --- Previous-hooks chaining (HATS-999) --------------------------------------
-# ai-hats owns core.hooksPath, but the repo's own hook manager
-# (simple-git-hooks / husky / ...) still materializes hooks at the PREVIOUS
-# location — recorded at takeover in ai-hats.previousHooksPath, git's default
-# .git/hooks otherwise. Chain to it LIVE (no snapshot: managers regenerate
-# their hooks) so neither stack silently shadows the other. Guards above run
-# first; a non-zero chained hook blocks the event like any native hook.
-PREV_DIR="$(git config --get ai-hats.previousHooksPath 2>/dev/null || true)"
-PREV_DIR="${PREV_DIR:-.git/hooks}"
-CHAIN="${PREV_DIR}/${EVENT}"
-if [[ -f "$CHAIN" && -x "$CHAIN" ]]; then
-    # Recursion guard: never chain back into our own hooks dir.
-    chain_dir="$(cd "$(dirname "$CHAIN")" 2>/dev/null && pwd -P || true)"
-    self_dir="$(cd "$GITHOOKS_DIR" 2>/dev/null && pwd -P || true)"
-    if [[ -n "$chain_dir" && "$chain_dir" != "$self_dir" ]]; then
-        if [[ -n "$STDIN_FILE" ]]; then
-            "$CHAIN" "$@" < "$STDIN_FILE"
-        else
-            "$CHAIN" "$@"
-        fi
-        rc=$?
-        if [[ $rc -ne 0 ]]; then
-            echo "ai-hats: chained project hook '${CHAIN}' failed (exit $rc)" >&2
-            exit "$rc"
+    # Honoured only when it belongs to THIS project: a session elsewhere exports
+    # it, and a leaked pin would hunt under a foreign checkout (HATS-897).
+    ah_dir="$PROJECT_DIR/.agent/ai-hats"
+    if [[ -n "${AI_HATS_DIR:-}" && "${AI_HATS_DIR}" == "$PROJECT_DIR"/* ]]; then
+        ah_dir="$AI_HATS_DIR"
+    fi
+    versions="$ah_dir/versions"
+
+    if [[ -f "$PROJECT_DIR/ai-hats.yaml" ]]; then
+        val=$(grep -E '^venv_path:[[:space:]]' "$PROJECT_DIR/ai-hats.yaml" 2>/dev/null \
+            | head -1 \
+            | sed -E 's/^venv_path:[[:space:]]+//; s/[[:space:]]+#.*//; s/^"//; s/"$//; s/^'\''//; s/'\''$//' \
+            || true)
+        if [[ -n "$val" ]]; then
+            val="${val/#\~/$HOME}"
+            if [[ "${val:0:1}" == "/" ]]; then venv="$val"; else venv="$PROJECT_DIR/$val"; fi
         fi
     fi
+
+    if [[ -z "$venv" && -f "$versions/current" ]]; then
+        sha="$(head -1 "$versions/current" 2>/dev/null | tr -d '[:space:]' || true)"
+        if [[ -n "$sha" && "$sha" != *"/"* && "$sha" != "." && "$sha" != ".." \
+              && -x "$versions/$sha/bin/python" ]]; then
+            venv="$versions/$sha"
+        fi
+    fi
+
+    [[ -z "$venv" ]] && venv="$ah_dir/.venv"
+    [[ -x "$venv/bin/python" ]] || return 1
+    echo "$venv/bin/python"
+}
+
+if PY="$(resolve_python)"; then
+    # Imported here rather than run with `-m`: `-m` on an ai-hats too old to
+    # carry the module exits 1, and under `exec` that 1 becomes the hook's
+    # verdict — version skew would BLOCK the commit, the exact failure mode this
+    # stub exists to prevent. Catching the import keeps it fail-open.
+    # `--` so a hook argument starting with `-` is never read as our own flag.
+    exec "$PY" -c '
+import sys
+try:
+    from ai_hats.cli.githooks_hook import main
+except Exception as exc:
+    sys.stderr.write("ai-hats: hook entry unavailable (%s) — hooks SKIPPED (fail-open)\n" % exc)
+    sys.exit(0)
+sys.exit(main(sys.argv[1:]))
+' "$EVENT" --project-dir "$PROJECT_DIR" --githooks-dir "$GITHOOKS_DIR" -- "$@"
 fi
 
+echo "ai-hats: no usable install — '$EVENT' hooks are SKIPPED (fail-open)" >&2
 exit 0

@@ -112,6 +112,43 @@ def test_every_hatch_in_every_hook_is_journaled():
     )
 
 
+#: The one sanctioned way a gate reaches the journal (HATS-1337). Env first —
+#: the dispatcher resolves it and it is the only form correct for a gate shipped
+#: outside the builtin library; the relative path is the standalone fallback.
+JOURNAL_SOURCE = (
+    '. "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journal.sh}"'
+)
+JOURNAL_RELATIVE = "../../../../hooks/bypass_journal.sh"
+
+
+def test_every_gate_sources_the_journal_the_one_sanctioned_way():
+    """Gates run in place now, so `$0` is the library path, not a flat copy.
+
+    The pre-1337 `$(dirname "$0")/../bypass_journal.sh` was correct only for the
+    retired `.githooks/<event>.d/` copy. Getting this wrong degrades into the
+    "NOT RECORDED" stub — silently, and only at the moment somebody uses a
+    hatch, which is exactly when the trail is needed.
+    """
+    sourcing = [
+        p for p in hook_files() if "bypass_journal.sh" in p.read_text() and p.parent.name != "hooks"
+    ]
+    assert len(sourcing) >= 8, (
+        f"discovery went stale — only {len(sourcing)} gates source the journal"
+    )
+
+    wrong_form = [str(p.relative_to(LIB)) for p in sourcing if JOURNAL_SOURCE not in p.read_text()]
+    assert not wrong_form, f"must source the journal as `{JOURNAL_SOURCE}`: {wrong_form}"
+
+    unresolvable = [
+        str(p.relative_to(LIB))
+        for p in sourcing
+        if not (p.parent / JOURNAL_RELATIVE).resolve().is_file()
+    ]
+    assert not unresolvable, (
+        f"the standalone fallback does not resolve from these gates: {unresolvable}"
+    )
+
+
 def test_the_documented_gaps_are_still_gaps():
     """A wired entry must leave the list, so the ratchet cannot go stale."""
     corpus = "\n".join(p.read_text() for p in hook_files())

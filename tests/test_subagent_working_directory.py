@@ -22,9 +22,7 @@ def _null_payload():
     from ai_hats_core import CompositionResult
 
     return CompositionPayload(
-        result=CompositionResult(
-            name="t", priorities=[], rules=[], skills=[], injections=[]
-        ),
+        result=CompositionResult(name="t", priorities=[], rules=[], skills=[], injections=[]),
         provider=None,
         effective_role="t",
     )

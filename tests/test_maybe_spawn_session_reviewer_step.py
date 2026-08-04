@@ -474,5 +474,3 @@ def test_no_outcome_line_for_a_skip_decision(tmp_path):
     step.run(session_id=session.session_id, project_dir=tmp_path)
 
     assert "outcome" not in _retro_log(tmp_path)
-
-

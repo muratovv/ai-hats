@@ -133,6 +133,37 @@ def test_rule_delivery_in_a_worktree_prefers_the_worktrees_own_venv(tmp_path: Pa
     )
 
 
+def test_repo_local_venv_without_ai_hats_skips_instead_of_blocking(tmp_path: Path) -> None:
+    """HATS-1337 (Z4): the fail-open probe must cover the ABSOLUTE venv python.
+
+    The importability guard was gated on ``[[ "${_cmd[0]}" == python* ]]``, which
+    a repo-local ``/…/.venv/bin/python3`` never matches — so the probe was
+    skipped, the checker ran anyway, its ``ModuleNotFoundError`` surfaced as a
+    non-zero exit, and the gate BLOCKED the commit with "undelivered `see rule
+    X` pointer" — a message about a defect that is not there. A missing dev tool
+    must never wedge a commit.
+    """
+    project, marker = _make_project(tmp_path)
+    path_dir = tmp_path / "pathbin"
+    _install_stub(path_dir / "python3", "PATH", marker)
+
+    # A venv whose interpreter cannot import ai_hats: the `-c` probe fails, and
+    # so would the real checker invocation.
+    broken = project / ".venv" / "bin" / "python3"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_text("#!/usr/bin/env bash\nexit 1\n")
+    broken.chmod(0o755)
+
+    result = _run_hook(project, path_dir)
+
+    assert result.returncode == 0, (
+        "a venv without ai_hats must SKIP the gate (fail-open), not block the "
+        f"commit; stderr={result.stderr!r}"
+    )
+    assert "not importable" in result.stderr, result.stderr
+    assert "BLOCKED" not in result.stderr, result.stderr
+
+
 def test_explicit_cmd_override_still_wins(tmp_path: Path) -> None:
     """AI_HATS_RULE_DELIVERY_CMD pins the interpreter — the venv must not override it."""
     project, marker = _make_project(tmp_path)

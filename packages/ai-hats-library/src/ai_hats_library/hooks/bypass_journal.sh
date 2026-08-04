@@ -9,8 +9,10 @@
 # — the COMMON dir, so a bypass from a worktree lands in the journal the
 # reviewer reads on the main checkout.
 #
-# Usage, from inside a hook, before the `exit 0` that skips the gate:
-#   . "$(dirname "$0")/../bypass_journal.sh"    # .githooks/<event>.d/ -> .githooks/
+# Usage, from inside a hook, before the `exit 0` that skips the gate. The
+# dispatcher exports the resolved path; the relative fallback is for a gate run
+# standalone, and is correct only inside the builtin library (HATS-1337):
+#   . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journal.sh}"
 #   ai_hats_journal_bypass hatch AI_HATS_PRIVACY_ACK
 #
 # `sha` is empty for pre-commit (the commit does not exist yet) and stamped by
