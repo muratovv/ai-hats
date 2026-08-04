@@ -662,7 +662,7 @@ def test_agent_role_composes_hatrack_not_backlog_manager(role):
 
 
 def test_no_library_role_composes_backlog_manager():
-    """Acceptance criterion (HATS-1054 R1): `backlog-manager` is composed by ZERO
+    """Acceptance criterion (HATS-1456 R1): `backlog-manager` is composed by ZERO
     roles — the single trait-agent swap is the only attachment site."""
     comp = _real_composer()
     offenders = [
@@ -671,3 +671,20 @@ def test_no_library_role_composes_backlog_manager():
         if "backlog-manager" in {s.name for s in comp.compose(r).skills}
     ]
     assert offenders == [], f"roles still composing backlog-manager: {offenders}"
+
+
+def test_remove_rule_brought_by_trait(composer):
+    """HATS-1456 (S2b): removing a rule brought by a trait works without error."""
+    overlay = OverlayConfig(remove_rules=["test_rule"])
+    result = composer.compose("test-role", overlay=overlay)
+    rule_names = [r.name for r in result.rules]
+    assert "test_rule" not in rule_names
+    assert result.errors == []
+
+
+def test_remove_nonexistent_rule_errors(composer):
+    """HATS-1456 (S2b): removing a rule not in role or any trait returns an overlay error."""
+    overlay = OverlayConfig(remove_rules=["non_existent_rule"])
+    result = composer.compose("test-role", overlay=overlay)
+    assert any("Overlay: cannot remove rule 'non_existent_rule'" in err for err in result.errors)
+

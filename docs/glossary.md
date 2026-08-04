@@ -38,6 +38,10 @@ Key system roles you will meet in cross-doc prose:
 - `session-reviewer` — per-session retrospective; votes on active HYPs and files a PROP on self-problem. Triggered by `ai-hats reflect session` (auto on `session_end` per policy, or manual). See [5].
 - `judge-auditor` / `judge` / `role-judge` / `role-auditor` — the reflection-loop roles. Backlog triage runs two-phase: `judge-auditor` (Phase 1, headless, read-only audit) → `judge` (Phase 2, HITL, ack'd mutations) via `ai-hats reflect hypothesis`. Role-coherence audits run via `role-judge` (`ai-hats reflect role`); `role-auditor` exists as a standalone L0 audit role for subagent delegation. See [5].
 
+## Role spec
+
+An expression evaluated at session launch time in `-r` / `--role` (e.g. `-r "maintainer + leader"` or `-r "maintainer - trait-base + trait-base-star"`). It starts with a base role name followed by ordered `+` (add) and `-` (remove) operations for traits, rules, or skills (HATS-1456). Runtime specs apply as an ephemeral third overlay layer and are never persisted to `ai-hats.yaml`. Quotes are required when spaces are present.
+
 ## Trait
 
 An ai-hats-native composition primitive: a reusable bundle (rules + skills + injection text) included by one or more roles. Traits are the unit of cross-role reuse — a fix in one trait reaches every role that pulls it in on the next session. Flat model: a trait cannot include another trait. Format: `library/{core,usage}/traits/<name>/config.yaml`. Catalog — `ai-hats list traits`. Composition rules — see [3]; library layout — see [9].

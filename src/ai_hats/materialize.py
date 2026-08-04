@@ -33,6 +33,7 @@ from .paths import user_rules_dir
 
 if TYPE_CHECKING:
     from .assembler import Assembler
+    from .models import OverlayConfig
 
 
 def discover_user_rules(project_dir: Path) -> tuple[Path, ...]:
@@ -47,7 +48,12 @@ def discover_user_rules(project_dir: Path) -> tuple[Path, ...]:
     return tuple(sorted(rules_dir.glob("*.md")))
 
 
-def compose_for_role(assembler: "Assembler", role: str) -> CompositionResult:
+def compose_for_role(
+    assembler: "Assembler",
+    role: str,
+    *,
+    runtime_overlay: "OverlayConfig" | None = None,
+) -> CompositionResult:
     """Compose ``role`` using the assembler's standard overlay layering.
 
     Single source of truth for the question "what is the
@@ -64,9 +70,12 @@ def compose_for_role(assembler: "Assembler", role: str) -> CompositionResult:
     preserved. Callers that require strict semantics should inspect
     ``result.errors`` and decide locally.
     """
+    layers = assembler._get_overlays(role)
+    if runtime_overlay is not None:
+        layers = [*layers, runtime_overlay]
     result = assembler.composer.compose(
         role,
-        overlays=assembler._get_overlays(role),
+        overlays=layers,
     )
     # HATS-1203: the composer sees library_paths only, so user-rules attach
     # here — the one funnel — and reach every consumer. Discovery is delegated

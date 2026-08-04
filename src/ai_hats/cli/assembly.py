@@ -276,6 +276,14 @@ def init(
     or non-TTY stdin) preserves the original non-interactive behavior
     for CI and scripted invocations.
     """
+    from ..role_spec import has_operators
+
+    if role and has_operators(role):
+        raise click.BadParameter(
+            "runtime composition ('+' / '-') cannot be persisted.\n"
+            "Use: ai-hats config customize <role> --add-trait <name>"
+        )
+
     project_dir = _project_dir()
 
     # HATS-938: mirror the `config --channel` guard — a path only means the
@@ -397,6 +405,13 @@ def set_role(
 ):
     """Configure project: provider, role, prefix, venv, gitignore, framework dir, channel."""
     from ..models import ProjectConfig
+    from ..role_spec import has_operators
+
+    if role and has_operators(role):
+        raise click.BadParameter(
+            "runtime composition ('+' / '-') cannot be persisted.\n"
+            "Use: ai-hats config customize <role> --add-trait <name>"
+        )
 
     if venv_path is not None and no_venv:
         console.print("[red]Conflict[/]: pass either --venv PATH or --no-venv, not both.")
@@ -690,6 +705,13 @@ def customize(
     user-wide defaults for the current project.
     """
     from ..models import OverlayConfig, ProjectConfig, UserConfig
+    from ..role_spec import has_operators
+
+    if role and has_operators(role):
+        raise click.BadParameter(
+            "runtime composition ('+' / '-') cannot be persisted.\n"
+            "Use: ai-hats config customize <role> --add-trait <name>"
+        )
 
     if is_global and is_project:
         raise click.UsageError("--global and --project are mutually exclusive")
