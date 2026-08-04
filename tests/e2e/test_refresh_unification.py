@@ -128,11 +128,11 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
         f"greenfield init failed to seed migration_step: {raw}"
     )
 
-    # Sanity: static hooks materialized.
-    guard_script = (
-        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
-    )
-    assert guard_script.exists(), "static hooks not installed"
+    # Sanity: materialize_runtime_hooks fired. Greenfield init composes no
+    # role, so since HATS-1268 there are no skill-declared hooks to land — the
+    # package-data helper is what proves the step ran at all.
+    helper = project / ".agent" / "ai-hats" / "library" / "hooks" / "bypass_journal.sh"
+    assert helper.exists(), "static hooks not installed"
 
 
 # ----- Test 2: re-init replays registry once + surfaces diagnostics -----
@@ -287,7 +287,12 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
 
     # Static hooks (D1: always-fire) ARE installed.
     guard_script = (
-        project / ".agent" / "ai-hats" / "library" / "hooks" / "pre_bash_shared_state_guard.sh"
+        project
+        / ".agent"
+        / "ai-hats"
+        / "library"
+        / "hooks"
+        / "safety-guard-pre_bash_shared_state_guard.sh"
     )
     assert guard_script.exists(), (
         f"set_role failed to install static hooks (D1 broken — "

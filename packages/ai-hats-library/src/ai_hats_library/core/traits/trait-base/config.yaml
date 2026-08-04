@@ -5,7 +5,11 @@ composition:
     - global_rule_resource_hygiene
     - global_rule_destructive_actions
     - rule_harness_reminder_hygiene
-  skills: []
+  skills:
+    # HATS-1268: carries the destructive-action and shared-state PreToolUse
+    # hooks. Their wiring became composition-gated when they stopped being
+    # package-copied, so universal coverage needs a universal trait.
+    - safety-guard
 injection: |
   ## BASE BEHAVIOR
 

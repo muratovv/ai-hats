@@ -106,8 +106,9 @@ class TestMaterializeRuntimeHooks:
     :func:`hooks_dir` at the collision-free
     :func:`managed_runtime_hook_filename` path — the SAME path the provider
     writes into settings.json — ``0o755``, tracked in ``.manifest``, swept
-    when the skill leaves the composition. The hard-coded HATS-437 guard
-    scripts (package data) stay materialized throughout.
+    when the skill leaves the composition. The package-data helpers stay
+    materialized throughout — since HATS-1268 that is bypass_journal alone,
+    the guards having moved into the skills that declare them.
     """
 
     def test_materializes_skill_script_alongside_package_guards(self, assembler, tmp_path):
@@ -127,8 +128,9 @@ class TestMaterializeRuntimeHooks:
         assert dest.stat().st_mode & 0o777 == 0o755
         manifest = (target / ".manifest").read_text()
         assert dest.name in manifest
-        # HATS-437 guard (package data) materialized as before.
-        assert (target / "pre_bash_shared_state_guard.sh").is_file()
+        # Package-data helper materialized as before (HATS-1268: the guards
+        # are skill-declared now, so only bypass_journal ships this way).
+        assert (target / "bypass_journal.sh").is_file()
 
     def test_removing_skill_sweeps_its_runtime_hook(self, assembler, tmp_path):
         from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
@@ -144,14 +146,14 @@ class TestMaterializeRuntimeHooks:
         assembler.hooks.materialize_runtime_hooks(_result([s]))
         assert dest.is_file()
 
-        # Skill leaves the composition → its script is swept; guard survives.
+        # Skill leaves the composition → its script is swept; helper survives.
         assembler.hooks.materialize_runtime_hooks(_result([]))
         assert not dest.exists()
-        assert (target / "pre_bash_shared_state_guard.sh").is_file()
+        assert (target / "bypass_journal.sh").is_file()
 
     def test_none_result_materializes_only_package_guards(self, assembler):
         from ai_hats.paths import hooks_dir
 
-        # Legacy bare-bump path (no active role) — guards only, no crash.
+        # Legacy bare-bump path (no active role) — helpers only, no crash.
         assembler.hooks.materialize_runtime_hooks(None)
-        assert (hooks_dir(assembler.project_dir) / "pre_bash_shared_state_guard.sh").is_file()
+        assert (hooks_dir(assembler.project_dir) / "bypass_journal.sh").is_file()

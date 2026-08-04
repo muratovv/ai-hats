@@ -1,9 +1,10 @@
 """E2E sentinel: materialization under a second role must not narrow project hook surface (ADR-0021 M5).
 
-RED under current behavior (HATS-1268):
-Materializing a narrow role (e.g. hypothesis-intake) after a wide role (e.g. maintainer)
-sweeps previous skill runtime hooks from library/hooks/. HATS-1268 will remove xfail
-when hook-surface narrowing is fixed.
+RED under current behavior (HATS-1480):
+Materializing a narrow role after a wide one sweeps the wide role's skill runtime
+hooks from library/hooks/. HATS-1480 **rewrites** this test rather than un-xfailing
+it — deleting the directory makes the precondition below unsatisfiable, so the test
+would fail on it instead of turning green.
 """
 
 from __future__ import annotations
@@ -15,10 +16,10 @@ pytestmark = pytest.mark.integration
 
 @pytest.mark.xfail(
     strict=True,
-    reason="HATS-1268 — library/hooks/ переписывается из композиции текущей роли; узкая роль сносит хуки широкой (M5, M8)",
+    reason="HATS-1480 — library/hooks/ переписывается из композиции текущей роли; узкая роль сносит хуки широкой (M5, M8)",
 )
 def test_role_switch_does_not_narrow_hooks(tmp_venv_project) -> None:
-    """ADR-0021 M5 | RED-xfail | HATS-1268 will remove xfail when fixed."""
+    """ADR-0021 M5 | RED-xfail | HATS-1480 rewrites this test when the copy goes."""
     project = tmp_venv_project.path
 
     # Step 1: Init with wide role (maintainer)

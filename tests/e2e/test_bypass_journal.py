@@ -388,7 +388,7 @@ def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
 
-    guard = LIB / "hooks/pre_bash_shared_state_guard.sh"
+    guard = LIB / "core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh"
     payload = json.dumps(
         {
             "hook_event_name": "PreToolUse",

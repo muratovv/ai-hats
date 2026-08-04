@@ -1,11 +1,13 @@
 ---
 name: safety-guard
-description: PreToolUse hook for enforcing global_rule_destructive_actions. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries.
+description: PreToolUse hooks enforcing global_rule_destructive_actions and rule_pause_before_shared_state_write. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, and holds the pause before an irreversible shared-state write.
 ai_hats:
   runtime_hooks:
     PreToolUse:
       - matcher: Bash|run_command|execute
         script: hooks/safety_gate.py
+      - matcher: Bash
+        script: hooks/pre_bash_shared_state_guard.sh
 license: MIT
 ---
 

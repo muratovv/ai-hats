@@ -1,9 +1,14 @@
-"""E2E sentinel / HATS-1439 repro: live session wiring survives later materialization (ADR-0021 M2, M6).
+"""E2E sentinel: live session wiring survives later materialization (ADR-0021 M2, M6).
 
-RED under current behavior (HATS-1439):
-Materializing a different role (e.g. hypothesis-intake) sweeps script files from disk
-that were referenced in the settings.json of an already-built session. HATS-1439 will
-remove xfail when session script wiring is isolated or preserved.
+GREEN since HATS-1268. It was the HATS-1439 repro while claude's wiring pointed
+into the shared ``library/hooks/``: materializing a narrower role swept scripts
+an already-built session still pointed at, and the session ran with those gates
+silently off. The wiring resolves into the session's own tree now, which no
+later materialization reaches — so the runtime-hook half of 1439 is dissolved
+rather than patched.
+
+Fail-under-revert: point ``_desired_runtime_entries`` back at ``_lib_hooks_dir``
+and the second init sweeps the first role's scripts out from under this session.
 """
 
 from __future__ import annotations
@@ -31,12 +36,8 @@ def _resolve_script_path(cmd: str, project_path: Path) -> Path:
     return Path(tokens[0])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="HATS-1439 — материализация под другой ролью сносит скрипты, на которые указывает settings.json уже собранной сессии (M2, M6)",
-)
 def test_session_wiring_survives_later_materialization(tmp_venv_project) -> None:
-    """ADR-0021 M2, M6 | RED-xfail | HATS-1439 will remove xfail when fixed."""
+    """ADR-0021 M2, M6 | GREEN-pin since HATS-1268."""
     project = tmp_venv_project.path
 
     # Step 1: Init with maintainer role

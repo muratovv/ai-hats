@@ -24,7 +24,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PRETOOL_HOOK = (
-    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/hooks/pre_bash_shared_state_guard.sh"
+    REPO_ROOT
+    / "packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh"
 )
 PREPUSH_HOOK = (
     REPO_ROOT
