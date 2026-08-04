@@ -589,8 +589,7 @@ def install_git_hooks(
     new_manifest: list[str] = []
     warnings: list[str] = []
 
-    if _install_bypass_journal(project_dir, githooks_dir, warnings):
-        new_manifest.extend(GITHOOKS_BYPASS_JOURNAL)
+    new_manifest.extend(_install_bypass_journal(project_dir, githooks_dir, warnings))
 
     for event, entries in declared.items():
         if not entries:
@@ -671,10 +670,12 @@ def _resolve_skill_script(
     return _resolve_runtime_script(result, skill_name, script_path)
 
 
-def _install_bypass_journal(project_dir: Path, githooks_dir: Path, warnings: list[str]) -> bool:
-    """Copy the bypass-journal helpers into `.githooks/`. Returns True if at least one installed."""
+def _install_bypass_journal(
+    project_dir: Path, githooks_dir: Path, warnings: list[str]
+) -> list[str]:
+    """Copy the bypass-journal helpers into `.githooks/`. Returns list of installed file names."""
     source_root = _builtin_library_hooks(project_dir)
-    installed_any = False
+    installed: list[str] = []
     for name in GITHOOKS_BYPASS_JOURNAL:
         src = None if source_root is None else source_root / name
         if src is None or not src.is_file():
@@ -689,8 +690,8 @@ def _install_bypass_journal(project_dir: Path, githooks_dir: Path, warnings: lis
             project_dir=project_dir,
             mode=0o755,
         )
-        installed_any = True
-    return installed_any
+        installed.append(name)
+    return installed
 
 
 def _install_dispatcher(dispatcher_path: Path) -> bool:

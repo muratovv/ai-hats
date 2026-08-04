@@ -95,6 +95,23 @@ def test_every_shipped_helper_copy_is_byte_identical_to_the_canon():
     assert not drifted, f"copies drifted from package data: {drifted}"
 
 
+def test_every_dir_with_bypass_journal_sh_has_bypass_journal_py():
+    """HATS-1486 — shell wrapper delegates to python twin, so every directory
+    housing `bypass_journal.sh` must also contain `bypass_journal.py`.
+    """
+    missing_py = [
+        str(sh_path.parent.relative_to(REPO_ROOT))
+        for layer in ("core", "usage")
+        for sh_path in (REPO_ROOT / HOOKS.parent / layer / "skills").glob(
+            "*/hooks/bypass_journal.sh"
+        )
+        if not (sh_path.parent / "bypass_journal.py").exists()
+    ]
+    assert not missing_py, (
+        f"directories with bypass_journal.sh but missing bypass_journal.py: {missing_py}"
+    )
+
+
 @pytest.mark.integration
 def test_both_writers_produce_the_same_keys_on_a_real_repo(tmp_path: Path):
     """End-to-end: one repo, one line from each writer, identical key sets."""
