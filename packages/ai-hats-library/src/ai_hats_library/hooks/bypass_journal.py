@@ -60,7 +60,8 @@ def journal_bypass(
     not go quiet either — an unrecorded bypass is the defect this file removes.
     """
     hook_name = hook or Path(sys.argv[0]).name or "unknown"
-    # Use --git-common-dir so a bypass from a worktree lands in the common journal that the reviewer reads on main checkout.
+    # The COMMON dir, so a bypass from a worktree lands in the journal the
+    # reviewer reads on the main checkout.
     git_dir = _git("rev-parse", "--git-common-dir")
     if not git_dir:
         print(f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — no git dir", file=sys.stderr)
@@ -136,7 +137,8 @@ def stamp_sha() -> bool:
         if isinstance(data, dict) and data.get("sha") == "":
             hb = data.get("head_before", "")
             br = data.get("branch", "")
-            # br == "" means initial commit: pre-commit ran with no HEAD and could not name a branch.
+            # br == "" is the first commit: pre-commit ran with no HEAD, so it
+            # could not name a branch. head_before still pins it.
             if hb == parent and (br == branch or br == ""):
                 data["sha"] = head
                 new_line = (

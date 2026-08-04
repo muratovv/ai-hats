@@ -613,7 +613,6 @@ managed-поверхности; замер на этом репозитории:
 3. `.githooks/`: диспетчер + `<event>.d/` с копиями гейтов +
    `bypass_journal.{sh,py}` + `.ai-hats-manifest` + `core.hooksPath`
    (`install_git_hooks` `hooks_manager.py:557-645`); здесь —
-
    `pre-commit.d/` ×6, `pre-push.d/` ×4, `commit-msg.d/` ×1,
    `post-commit.d/` ×1.
 
