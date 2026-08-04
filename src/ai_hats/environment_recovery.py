@@ -38,7 +38,7 @@ from pathlib import Path
 # consumers (observe, tests) import unchanged. EnvironmentRecovery stays integrator.
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
-from .paths import ai_hats_dir, session_cache_root, versions_root
+from .paths import ai_hats_dir, cache_home, cache_root, session_cache_root, versions_root
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
 from .version_recovery import (
     reclaim_legacy_venv,
@@ -50,6 +50,7 @@ from .version_refs import write_current_run_ref
 logger = logging.getLogger(__name__)
 
 SESSION_CACHE_TTL_HOURS = 24
+PROJECT_KEY_TTL_DAYS = 9
 
 
 def _sweep_orphan_session_caches(
@@ -105,6 +106,49 @@ def _drain_workspace_cache(legacy: Path, cutoff: float) -> None:
     _rmdir_quiet(legacy)
 
 
+def _key_last_touched(key_dir: Path) -> float:
+    """Newest mtime across ``key_dir`` and its immediate children.
+
+    A directory's own mtime moves only when a DIRECT child is added or removed,
+    so a live project whose writes land deeper (``sessions/<sid>/...``) reads as
+    untouched. Both a session start and a probe fetch do touch a direct child.
+    """
+    newest = key_dir.stat().st_mtime
+    for child in key_dir.iterdir():
+        newest = max(newest, child.stat().st_mtime)
+    return newest
+
+
+def _sweep_orphan_project_keys(project_dir: Path, ttl_days: int = PROJECT_KEY_TTL_DAYS) -> None:
+    """Remove sibling project-key dirs untouched for ``ttl_days`` (HATS-1473).
+
+    ``_sweep_orphan_session_caches`` only ever walks into the CURRENT project's
+    key, so a key left by a renamed, deleted or one-off project was unreachable
+    for every mechanism and accumulated forever — 3939 keys / 16.9 GB measured.
+    The key is a one-way hash of the project path, so liveness cannot be resolved
+    back to a directory; age is the only available signal, and the cache is
+    regenerable, so a wrong guess costs a rebuild.
+    """
+    own_key = cache_root(project_dir).name
+    cutoff = time.time() - ttl_days * 86400
+    try:
+        entries = list(cache_home().iterdir())
+    except FileNotFoundError:
+        return  # silent-ok: no cache home yet — a first run has nothing to sweep
+    except OSError as exc:
+        logger.warning("project-key sweep skipped, cache home unreadable: %s", exc)
+        return
+    for entry in entries:
+        if entry.name == own_key or not entry.is_dir():
+            continue
+        try:
+            if _key_last_touched(entry) < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
+                logger.info("reclaimed orphaned project cache key: %s", entry.name)
+        except OSError as exc:
+            logger.warning("project-key sweep skipped %s: %s", entry.name, exc)
+
+
 def _rmdir_quiet(path: Path) -> None:
     """Drop ``path`` only when empty — ``rmdir`` refuses a non-empty dir by contract."""
     try:
@@ -129,6 +173,7 @@ class EnvironmentRecovery:
         # different tree (sessions/, not versions/).
         write_current_run_ref(self.project_dir)
         _sweep_orphan_session_caches(self.project_dir)
+        _sweep_orphan_project_keys(self.project_dir)
 
         # The version GC mutates versions/ — serialize it against a concurrent
         # `self update` (acquire) or a peer GC pass under the crash-safe lock

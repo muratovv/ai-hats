@@ -54,12 +54,12 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         # uninstalls from the developer's venv. Inherited by an e2e subprocess it
         # would silently disable the very prune under test.
         ENV_SKIP_PRUNE,
-        # HATS-1398: either of these outranks the pinned user home when the cache
-        # root resolves, so an ambient one sends e2e writes to the real cache.
-        "AI_HATS_CACHE_HOME",
         "XDG_CACHE_HOME",
     }
 )
+# HATS-1473: AI_HATS_CACHE_HOME is deliberately NOT denied — stripping it is what
+# sent writes to the real cache. The repo-root conftest pins it session-wide, so
+# inheriting it IS the isolation.
 
 
 def checkout_pythonpath(repo_root: Path, existing: str = "") -> str:
