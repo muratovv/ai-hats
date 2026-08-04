@@ -12,11 +12,17 @@ def library(tmp_path):
     """Create a minimal library for testing."""
     lib = tmp_path / "lib"
 
-    # Rule
+    # Rule 1 (in trait and role)
     rule_dir = lib / "rules" / "test_rule"
     rule_dir.mkdir(parents=True)
     (rule_dir / "rule.md").write_text("# Test Rule\nDo good things.")
     (rule_dir / "metadata.yaml").write_text("name: test_rule\n")
+
+    # Rule 2 (role-only rule)
+    rule_own_dir = lib / "rules" / "own_rule"
+    rule_own_dir.mkdir(parents=True)
+    (rule_own_dir / "rule.md").write_text("# Own Rule\nRole-only rule.")
+    (rule_own_dir / "metadata.yaml").write_text("name: own_rule\n")
 
     # Skill
     skill_dir = lib / "skills" / "test_skill"
@@ -58,6 +64,7 @@ composition:
     - trait-composite
   rules:
     - test_rule
+    - own_rule
   skills:
     - test_skill
 injection: |
@@ -690,19 +697,21 @@ def test_remove_nonexistent_rule_errors(composer):
 
 
 def test_remove_rule_from_role_own_list(composer):
-    """HATS-1456 (S2b): removing a rule declared directly on the role works without error."""
-    overlay = OverlayConfig(remove_rules=["test_rule"])
+    """HATS-1456 (S2b): removing a rule declared directly on the role (not in any trait) works without error."""
+    overlay = OverlayConfig(remove_rules=["own_rule"])
     result = composer.compose("test-role", overlay=overlay)
-    assert "test_rule" not in [r.name for r in result.rules]
+    rule_names = [r.name for r in result.rules]
+    assert "own_rule" not in rule_names
+    assert "test_rule" in rule_names
     assert result.errors == []
 
 
 def test_remove_and_add_same_rule_reorders_to_tail(composer):
     """HATS-1456 (S2b): remove+add of the same rule in one layer reorders it to the tail."""
-    overlay = OverlayConfig(remove_rules=["test_rule"], add_rules=["test_rule"])
+    overlay = OverlayConfig(remove_rules=["own_rule"], add_rules=["own_rule"])
     result = composer.compose("test-role", overlay=overlay)
     rule_names = [r.name for r in result.rules]
-    assert rule_names[-1] == "test_rule"
+    assert rule_names[-1] == "own_rule"
     assert result.errors == []
 
 

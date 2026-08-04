@@ -59,20 +59,22 @@ class RoleNotFoundError(Exception):
 
 
 def _runtime_overlay(resolver, spec: RoleSpec) -> OverlayConfig | None:
-    """Build runtime OverlayConfig from a RoleSpec by resolving component names (HATS-1456)."""
+    """Build an ephemeral OverlayConfig from a RoleSpec, mapping names to component kinds."""
+    import difflib
+
     if not spec.adds and not spec.removes:
         return None
 
     from .models import ComponentType, OverlayConfig
     from .role_spec import RoleSpecError
 
-    adds_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
-    removes_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
-
     traits = set(resolver.list_components(ComponentType.TRAIT))
     skills = set(resolver.list_components(ComponentType.SKILL))
     rules = set(resolver.list_components(ComponentType.RULE))
     roles = set(resolver.list_components(ComponentType.ROLE))
+
+    adds_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
+    removes_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
 
     all_kinds = [
         ("trait", traits),
@@ -93,7 +95,6 @@ def _runtime_overlay(resolver, spec: RoleSpec) -> OverlayConfig | None:
                     raise RoleSpecError(
                         f"{name!r} is a role — only traits, rules and skills can be mixed in at runtime"
                     )
-                import difflib
 
                 all_known = sorted(traits | skills | rules)
                 suggestions = difflib.get_close_matches(name, all_known, n=3)
@@ -127,7 +128,7 @@ def _project_context(project_dir: Path, role_override: str | None):
     cfg = asm.project_config
     spec = parse_role_spec(role_override) if role_override else None
     effective_role = (spec.role if spec else None) or cfg.active_role or cfg.default_role
-    runtime_overlay = _runtime_overlay(asm.resolver, spec) if spec and effective_role else None
+    runtime_overlay = _runtime_overlay(asm.resolver, spec) if spec else None
     return asm, cfg, effective_role, runtime_overlay, spec
 
 
@@ -164,6 +165,7 @@ def _compose_validated(
     *,
     runtime_overlay: OverlayConfig | None = None,
     explicit_role: str | None,
+    spec: RoleSpec | None = None,
     label: str,
 ):
     """Compose via the facade; an explicitly requested role validates existence
@@ -173,10 +175,8 @@ def _compose_validated(
 
     if explicit_role:
         from .models import ComponentType
-        from .role_spec import parse_role_spec
 
-        spec = parse_role_spec(explicit_role)
-        base_role = spec.role
+        base_role = spec.role if spec else explicit_role
         available = asm.resolver.list_components(ComponentType.ROLE)
         if base_role not in available:
             raise RoleNotFoundError(base_role, available)
@@ -242,6 +242,7 @@ def build_composition_payload(
         effective_role,
         runtime_overlay=runtime_overlay,
         explicit_role=role_override if strict else None,
+        spec=spec,
         label="compose_role",
     )
 

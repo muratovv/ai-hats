@@ -78,15 +78,37 @@ def test_e2e_runtime_composition_unquoted_plus_refused(tmp_project):
 
 
 def test_e2e_runtime_composition_agent_subcommand(tmp_project):
-    """Scenario 9 (M1): 'ai-hats agent' subcommand accepts role spec expressions."""
-    result = tmp_project.run("agent", "assistant + ai-hats-framework", "--task", "hello", "--dry-run", timeout=10.0)
-    assert result.exit_code == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    """Scenario 9 (N3): 'ai-hats agent' subcommand accepts role spec and alters prompt size."""
+    res_base = tmp_project.run("agent", "assistant", "--task", "hello", "--dry-run", "--json", timeout=10.0)
+    res_spec = tmp_project.run("agent", "assistant + ai-hats-framework", "--task", "hello", "--dry-run", "--json", timeout=10.0)
+    assert res_base.exit_code == 0, f"base failed: {res_base.stderr}"
+    assert res_spec.exit_code == 0, f"spec failed: {res_spec.stderr}"
+    import json
+    data_base = json.loads(res_base.stdout)
+    data_spec = json.loads(res_spec.stdout)
+    s_base = next(m["size"] for m in data_base["materialized"] if m["target"] == data_base["prompt"])
+    s_spec = next(m["size"] for m in data_spec["materialized"] if m["target"] == data_spec["prompt"])
+    assert s_spec > s_base, f"spec size {s_spec} should be > base size {s_base}"
 
 
 def test_e2e_runtime_composition_dry_run_json(tmp_project):
-    """Scenario 10 (M1): --dry-run-json includes composition snapshot with runtime overlay info."""
-    result = tmp_project.run("--dry-run-json", "-r", "assistant + ai-hats-framework", timeout=10.0)
-    assert result.exit_code == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    assert '"role"' in result.stdout
+    """Scenario 10 (M1): --dry-run-json with runtime spec succeeds and alters delivered prompt size.
+
+    Note: audit snapshot (which carries provenance=="runtime") is generated at session
+    creation in build_composition_payload (covered in-process by test_composition_seam.py),
+    while --dry-run-json goes through build_preview_payload.
+    """
+    res_base = tmp_project.run("--dry-run-json", "-r", "assistant", timeout=10.0)
+    res_spec = tmp_project.run("--dry-run-json", "-r", "assistant + ai-hats-framework", timeout=10.0)
+    assert res_base.exit_code == 0, f"base failed: {res_base.stderr}"
+    assert res_spec.exit_code == 0, f"spec failed: {res_spec.stderr}"
+    import json
+    data_base = json.loads(res_base.stdout)
+    data_spec = json.loads(res_spec.stdout)
+    s_base = next(m["size"] for m in data_base["materialized"] if m["target"] == data_base["prompt"])
+    s_spec = next(m["size"] for m in data_spec["materialized"] if m["target"] == data_spec["prompt"])
+    assert s_spec > s_base, f"spec size {s_spec} should be > base size {s_base}"
+
+
 
 
