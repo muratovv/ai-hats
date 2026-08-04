@@ -6,6 +6,7 @@ task card in tight millisecond windows lose no entries and produce no YAML corru
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import subprocess
 import sys
@@ -126,3 +127,92 @@ def test_rack_parallel_log_writes_single_card(tmp_project) -> None:
     assert (
         doc_proc.returncode == 0
     ), f"rack doctor failed after stress test:\n{doc_proc.stdout}\n{doc_proc.stderr}"
+
+
+def test_rack_parallel_workers_multiple_messages_each(tmp_project) -> None:
+    """Simulates 5 parallel worker processes each making 10 log entries (50 total)."""
+    from _helpers.env import checkout_pythonpath
+
+    env = {**os.environ, **tmp_project.env}
+    env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
+
+    create_proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ai_hats_rack",
+            "create",
+            "multi-worker-task",
+            "--description",
+            "target card for multi-worker race test",
+        ],
+        cwd=str(tmp_project.path),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert create_proc.returncode == 0, f"create failed: {create_proc.stderr}"
+
+    card_id = None
+    for line in create_proc.stdout.splitlines():
+        if line.strip().startswith("Created:"):
+            card_id = line.split()[1]
+            break
+    assert card_id is not None
+
+    num_workers = 5
+    msgs_per_worker = 10
+
+    def _worker_job(worker_id: int) -> list[int]:
+        codes = []
+        for m in range(msgs_per_worker):
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ai_hats_rack",
+                    "transition",
+                    card_id,
+                    "--log",
+                    f"worker-{worker_id} msg-{m:02d}",
+                ],
+                cwd=str(tmp_project.path),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            codes.append(res.returncode)
+        return codes
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(_worker_job, w) for w in range(num_workers)]
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    for worker_codes in results:
+        for code in worker_codes:
+            assert code == 0
+
+    card_file = (
+        tmp_project.path
+        / ".agent"
+        / "ai-hats"
+        / "tracker"
+        / "backlog"
+        / "tasks"
+        / card_id
+        / "task.yaml"
+    )
+    content = card_file.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(content)
+    assert parsed is not None
+
+    work_log = parsed.get("work_log", [])
+    log_messages = [
+        item.get("message", "") if isinstance(item, dict) else str(item) for item in work_log
+    ]
+    matching = [msg for msg in log_messages if "worker-" in msg]
+    assert len(matching) == num_workers * msgs_per_worker, (
+        f"Expected {num_workers * msgs_per_worker} entries, got {len(matching)}"
+    )
