@@ -761,7 +761,9 @@ def _disable_user_hooks_in_settings(
     shape and REMOVES every hook entry whose ``command`` points at
     ``.agent/hooks/<basename>`` where ``<basename>`` is NOT in the
     ai-hats-owned whitelist. Cascade-drops empty ``hooks[]`` arrays,
-    empty matcher blocks, and empty hook-event keys.
+    empty matcher blocks, and empty hook-event keys. A matcher carrying
+    ``_ai_hats_managed`` is ours by its own tag and is skipped whole
+    (HATS-1463: the whitelist alone misclassifies it once the manifest is gone).
 
     Returns a list of :class:`LegacyRef` (with ``reason="user-hook-disabled"``)
     for the Stage B inventory — that's where the user gets the
@@ -795,6 +797,11 @@ def _disable_user_hooks_in_settings(
         new_matchers: list = []
         for matcher in matchers:
             if not isinstance(matcher, dict):
+                new_matchers.append(matcher)
+                continue
+            if matcher.get("_ai_hats_managed"):
+                # R3 (HATS-1463 / HATS-1480): Matchers tagged with _ai_hats_managed are
+                # ai-hats owned and must NEVER be disabled as user hooks.
                 new_matchers.append(matcher)
                 continue
             entries = matcher.get("hooks")

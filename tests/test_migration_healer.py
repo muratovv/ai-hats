@@ -19,6 +19,7 @@ from ai_hats.paths import claude_settings_json
 from ai_hats.migration_healer import (
     LegacyRef,
     _LEGACY_RE,
+    _disable_user_hooks_in_settings,
     heal_external_refs,
     heal_json_file,
     heal_text_file,
@@ -822,19 +823,24 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
                 "hooks": {
                     HOOK_PRE_TOOL_USE: [
                         {
-                            "matcher": "Bash",
-                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "matcher": "Write",
                             "hooks": [
                                 {
                                     "type": "command",
                                     "command": "$CLAUDE_PROJECT_DIR/.agent/hooks/foreign.py",
                                 },
+                            ],
+                        },
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "hooks": [
                                 {
                                     "type": "command",
                                     "command": ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh",
                                 },
                             ],
-                        }
+                        },
                     ]
                 },
             },
@@ -851,12 +857,11 @@ def test_phase4_preserves_managed_marker_on_remaining_matcher(tmp_path: Path) ->
     heal_external_refs(p, verbose=False)
 
     payload = json.loads(settings.read_text())
-    matcher = payload["hooks"][HOOK_PRE_TOOL_USE][0]
+    matchers = payload["hooks"][HOOK_PRE_TOOL_USE]
+    assert len(matchers) == 1
+    matcher = matchers[0]
     assert matcher["_ai_hats_managed"] == "ai-hats:hats-437"
     assert matcher["matcher"] == "Bash"
-    assert len(matcher["hooks"]) == 1
-    # The remaining entry is the ai-hats-owned one (which the normal
-    # heal pass may have rewritten — either form is acceptable).
     surviving = matcher["hooks"][0]["command"]
     assert "shared_state_guard" in surviving
 
@@ -936,3 +941,83 @@ def test_phase4_idempotent_no_op_when_no_user_hooks(tmp_path: Path) -> None:
     # No-op: settings unchanged, no inventoried disables.
     assert before == after
     assert all(r.reason != "user-hook-disabled" for r in report.inventoried)
+
+
+def test_disable_user_hooks_preserves_tagged_managed_matchers(tmp_path: Path) -> None:
+    """R3 (HATS-1480): Matchers carrying _ai_hats_managed are ai-hats owned
+    and must NEVER be disabled as user hooks, even when library/hooks/.manifest
+    is absent/deleted."""
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = claude_settings_json(p)
+    settings.parent.mkdir(parents=True)
+
+    manifest_path = p / ".agent" / "ai-hats" / "library" / "hooks" / ".manifest"
+    if manifest_path.exists():
+        manifest_path.unlink()
+
+    payload = {
+        "hooks": {
+            HOOK_PRE_TOOL_USE: [
+                {
+                    "matcher": "Bash",
+                    "_ai_hats_managed": "ai-hats:safety-guard:PreToolUse:Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".agent/hooks/pre_bash_shared_state_guard.sh",
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    settings.write_text(json.dumps(payload, indent=2))
+    _commit_all(p)
+
+    removed = _disable_user_hooks_in_settings(settings, p, owned_basenames=frozenset())
+
+    after_data = json.loads(settings.read_text())
+    matchers = after_data.get("hooks", {}).get(HOOK_PRE_TOOL_USE, [])
+    assert len(matchers) == 1
+    assert matchers[0].get("_ai_hats_managed") == "ai-hats:safety-guard:PreToolUse:Bash"
+    assert removed == []
+
+
+def test_a_foreign_command_inside_a_tagged_matcher_survives(tmp_path: Path) -> None:
+    """Documented consequence of R3, pinned so it cannot change unnoticed.
+
+    The tag lives on the matcher, not the entry, so a hand-added command inside
+    an ai-hats matcher cannot be told apart from ours and is left alone. Before
+    HATS-1480 it was dropped to ``user-hooks/``. Erring towards never touching a
+    user's command; revisit under HATS-1500 if the inventory needs it back.
+    """
+    p = _init_project(tmp_path)
+    _init_git_repo(p)
+    settings = claude_settings_json(p)
+    settings.parent.mkdir(parents=True)
+    payload = {
+        "hooks": {
+            HOOK_PRE_TOOL_USE: [
+                {
+                    "matcher": "Bash",
+                    "_ai_hats_managed": "ai-hats:hats-437",
+                    "hooks": [
+                        {"type": "command", "command": ".agent/hooks/foreign.py"},
+                        {"type": "command", "command": ".agent/hooks/ours.sh"},
+                    ],
+                }
+            ]
+        }
+    }
+    settings.write_text(json.dumps(payload, indent=2))
+    _commit_all(p)
+
+    removed = _disable_user_hooks_in_settings(settings, p, owned_basenames=frozenset())
+
+    entries = json.loads(settings.read_text())["hooks"][HOOK_PRE_TOOL_USE][0]["hooks"]
+    assert [e["command"] for e in entries] == [
+        ".agent/hooks/foreign.py",
+        ".agent/hooks/ours.sh",
+    ]
+    assert removed == []
