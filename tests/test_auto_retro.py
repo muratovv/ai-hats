@@ -36,9 +36,12 @@ def _write_config(path, *, policy="smart", min_turns=5, min_tool_calls=10):
         yaml.dump(data, f)
 
 
-def _write_metrics(path, *, turns=6, tool_calls=15):
+def _write_metrics(path, *, turns=6, tool_calls=15, role=None):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"turns": turns, "tool_calls": tool_calls, "exit_code": 0}))
+    payload = {"turns": turns, "tool_calls": tool_calls, "exit_code": 0}
+    if role is not None:
+        payload["role"] = role
+    path.write_text(json.dumps(payload))
 
 
 class TestPolicyOff:
@@ -61,6 +64,71 @@ class TestPolicyAlways:
 
         action, _ = should_run(config, metrics)
         assert action == "run"
+
+
+class TestReviewerOwnSession:
+    """HATS-1483: the auditor's own sessions are never AUTO-reviewed.
+
+    The env guard (HATS-252/1402/1481) protects a process, so it leaked at
+    every new entry point. This invariant is a property of the session.
+    """
+
+    def test_skip_reviewer_session_under_policy_always(self, tmp_path):
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
+        _write_config(config, policy="always")
+        _write_metrics(metrics, role="session-reviewer")
+
+        action, reason = should_run(config, metrics)
+        assert action == "skip"
+        assert "session-reviewer" in reason
+
+    def test_skip_reviewer_session_under_policy_smart(self, tmp_path):
+        """Not policy-specific: the hook path (smart) skips the same session."""
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
+        _write_config(config, min_turns=5, min_tool_calls=10)
+        _write_metrics(metrics, turns=99, tool_calls=99, role="session-reviewer")
+
+        action, _ = should_run(config, metrics)
+        assert action == "skip"
+
+    def test_other_role_still_runs(self, tmp_path):
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
+        _write_config(config, policy="always")
+        _write_metrics(metrics, role="ai-hats-maintainer")
+
+        action, _ = should_run(config, metrics)
+        assert action == "run"
+
+    def test_missing_metrics_fails_open(self, tmp_path):
+        """No metrics.json → no new skip; policy decides as before."""
+        config = tmp_path / PROJECT_CONFIG
+        _write_config(config, policy="always")
+
+        action, reason = should_run(config, tmp_path / "nonexistent.json")
+        assert (action, reason) == ("run", "policy=always")
+
+    def test_unreadable_metrics_fails_open(self, tmp_path):
+        config = tmp_path / PROJECT_CONFIG
+        metrics = tmp_path / METRICS_JSON
+        _write_config(config, policy="always")
+        metrics.write_text("not json{{{")
+
+        action, reason = should_run(config, metrics)
+        assert (action, reason) == ("run", "policy=always")
+
+    def test_make_decision_skips_reviewer_session(self, tmp_path):
+        """The runtime step reads the same field — no env involved."""
+        from ai_hats.retro.auto_retro import make_decision
+
+        metrics = _setup_project(tmp_path, policy="always")
+        metrics.write_text(json.dumps({"role": "session-reviewer", "turns": 3}))
+
+        d = make_decision(tmp_path, "SID")
+        assert d["action"] == "skip"
+        assert "session-reviewer" in d["reason"]
 
 
 class TestPolicySmart:

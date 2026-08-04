@@ -31,6 +31,22 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 logger = logging.getLogger(__name__)
 
 
+#: Sessions of this role ARE the auditor's output; auto-reviewing one makes the
+#: reviewer its own subject (HATS-1483).
+REVIEWER_ROLE = "session-reviewer"
+
+
+def _read_metrics(metrics_path: Path) -> tuple[dict | None, str]:
+    """Load metrics.json; ``(None, why)`` when absent or unreadable."""
+    if not metrics_path.exists():
+        return None, "metrics.json not found"
+    try:
+        with open(metrics_path) as f:
+            return json.load(f), ""
+    except (json.JSONDecodeError, OSError):
+        return None, "metrics.json unreadable"
+
+
 def should_run(
     config_path: Path,
     metrics_path: Path,
@@ -46,18 +62,19 @@ def should_run(
     if policy == FeedbackPolicy.OFF:
         return "skip", "policy=off"
 
+    metrics, metrics_issue = _read_metrics(metrics_path)
+
+    # HATS-1483: recursion guard as a property of the SESSION — the env guard
+    # (HATS-252/1402/1481) protects a process and leaked at every new entry point.
+    if metrics is not None and metrics.get("role") == REVIEWER_ROLE:
+        return "skip", f"role={REVIEWER_ROLE} (the auditor's own session)"
+
     if policy == FeedbackPolicy.ALWAYS:
         return "run", "policy=always"
 
     # smart / hint: check threshold
-    if not metrics_path.exists():
-        return "skip", "metrics.json not found"
-
-    try:
-        with open(metrics_path) as f:
-            metrics = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return "skip", "metrics.json unreadable"
+    if metrics is None:
+        return "skip", metrics_issue
 
     # HATS-1374: the fabricated zeros used to read as a measured miss, so
     # retro.log claimed "turns=0<5" about a session nobody measured.
