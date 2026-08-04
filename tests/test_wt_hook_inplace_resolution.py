@@ -92,3 +92,30 @@ def test_unknown_skill_names_itself_in_the_reason(tmp_path):
 
     assert resolved is None
     assert "uncomposed" in why and "library" in why
+
+
+def test_symlinked_skill_layer_resolves(tmp_path):
+    """HATS-1494: a skill living under a symlinked library layer (e.g.
+    libraries/skills -> external/skills) resolves to its target script path
+    without being refused by search root containment checks."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    ProjectConfig(provider="agy").save(project / PROJECT_CONFIG)
+
+    external_skills = tmp_path / "external_skills"
+    hooks = external_skills / "symlinked_skill" / "hooks"
+    hooks.mkdir(parents=True)
+    script_file = hooks / "drain.sh"
+    script_file.write_text("#!/usr/bin/env bash\nexit 0\n")
+    (external_skills / "symlinked_skill" / "SKILL.md").write_text("# symlinked\n")
+
+    skills_link = project / "libraries" / "skills"
+    skills_link.parent.mkdir(parents=True)
+    skills_link.symlink_to(external_skills, target_is_directory=True)
+
+    resolved, why = resolve_hook_script(
+        project, {"skill": "symlinked_skill", "script": "hooks/drain.sh"}
+    )
+
+    assert resolved == script_file.resolve(), why
+

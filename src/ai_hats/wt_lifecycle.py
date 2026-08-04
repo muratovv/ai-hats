@@ -90,7 +90,7 @@ def resolve_hook_script(
     recomputed at every spawn, never persisted — downstream the library lives in
     a versioned venv that ``self update`` replaces. Both halves of the row are
     persisted state a tamperer can reach, so the resolved path is contained
-    against its skill root and that root against the search roots (M11).
+    against its skill root (M11).
     """
     from .library_paths import find_component_dir
     from .models import resolve_namespace
@@ -107,8 +107,6 @@ def resolve_hook_script(
     if skill_dir is None:
         return None, f"skill {skill!r} declaring this hook is not in the library"
     skill_dir = skill_dir.resolve()
-    if not any(_contains(root, skill_dir) for root in roots):
-        return None, f"skill {skill!r} resolves outside every library root"
 
     candidate = (skill_dir / script).resolve()
     if not _contains(skill_dir, candidate):
