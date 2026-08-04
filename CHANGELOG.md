@@ -14,6 +14,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **Runtime role spec composition (`-r "maintainer + leader"` / `-r "maintainer - trait-base"`)** (HATS-1456). Support ad-hoc runtime expressions in `-r` / `--role` to add or remove traits, rules, or skills for a single session without editing `ai-hats.yaml`. Evaluates as an ephemeral third overlay layer (`[global, project, runtime]`).
 
+- **`leader` and `worker` traits for paired sessions** (HATS-1491). Two `usage/` traits that split one card between two live sessions: the leader owns the plan and a two-contour review (completeness first, then discipline) and writes no code; the worker owns every mechanical step, sleeps on `ai-hats wait --until execute --until done`, and hands work back with the artifacts that settle each claim. Mix onto any base role — `ai-hats -r "maintainer + leader"`, `ai-hats -p agy -r "maintainer + worker"`. Until now the `leader` / `worker` examples in the docs named components that did not exist, so a command copied from them exited 2.
+
 ### Changed — BREAKING
 
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
