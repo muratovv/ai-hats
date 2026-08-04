@@ -18,7 +18,7 @@ from .composition_payload import CompositionPayload
 
 if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
-    from .overlay import OverlayConfig
+    from .models import OverlayConfig
     from .role_spec import RoleSpec
 
 logger = logging.getLogger(__name__)

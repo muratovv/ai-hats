@@ -678,7 +678,7 @@ class Assembler:
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
-            if p is not None:
+            if p is not None:  # silent-ok: synthetic/missing trait has no filesystem path
                 provenance["traits"][trait_name] = self._classify_component_layer(p).value
 
         # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
@@ -688,7 +688,7 @@ class Assembler:
             (self._get_overlay(role_name), ComponentLayer.PROJECT.value),
         ]
         if runtime_overlay is not None:
-            layers_with_labels.append((runtime_overlay, "runtime"))
+            layers_with_labels.append((runtime_overlay, ComponentLayer.RUNTIME.value))
 
         for layer, label in layers_with_labels:
             if layer is None:

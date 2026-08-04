@@ -76,3 +76,17 @@ def test_e2e_runtime_composition_unquoted_plus_refused(tmp_project):
     assert result.exit_code == 2, f"stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "bare '+' in provider arguments" in result.stderr
 
+
+def test_e2e_runtime_composition_agent_subcommand(tmp_project):
+    """Scenario 9 (M1): 'ai-hats agent' subcommand accepts role spec expressions."""
+    result = tmp_project.run("agent", "assistant + ai-hats-framework", "--task", "hello", "--dry-run", timeout=10.0)
+    assert result.exit_code == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
+
+
+def test_e2e_runtime_composition_dry_run_json(tmp_project):
+    """Scenario 10 (M1): --dry-run-json includes composition snapshot with runtime overlay info."""
+    result = tmp_project.run("--dry-run-json", "-r", "assistant + ai-hats-framework", timeout=10.0)
+    assert result.exit_code == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert '"role"' in result.stdout
+
+

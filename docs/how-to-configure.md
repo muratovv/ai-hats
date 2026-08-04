@@ -202,7 +202,9 @@ ai-hats -r "maintainer - trait-base + trait-base-star"
 
 - **Ephemeral layer:** The runtime expression becomes a third overlay layer (`[global, project, runtime]`) for that session only and is never persisted to `ai-hats.yaml`.
 - **Syntax:** Base role first, followed by `+` and `-` operations. Quotes are required when spaces are used (`-r "maintainer + leader"` or compact `-r maintainer+leader`). Hyphenated names like `trait-base` stay identifiers; `-` is an operator only when surrounded by spaces.
-- **Injections & Rules:** Injection blocks are deduplicated first-wins. Removing a rule brought by a trait (`- rule-name`) requires removing the trait itself.
+- **Injections & Rules:** Injection blocks are deduplicated first-wins. Removing a rule brought by a trait (`- rule-name`) resolves against the composed set (both in runtime specs and in persistent `customizations` with `remove: rules: [name]`).
+
+> **Note on deferred rule removals:** Previously, removing a rule in an overlay or customization required the rule to be explicitly listed in the base role's `composition.rules`. As of HATS-1456, rule removals are deferred and resolve against the full composed set (matching skill removal behavior).
 
 Inspect each layer:
 

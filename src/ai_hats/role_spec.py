@@ -1,3 +1,7 @@
+"""Parser and dataclass for runtime role spec expressions (HATS-1456)."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 

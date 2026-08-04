@@ -49,10 +49,10 @@ def discover_user_rules(project_dir: Path) -> tuple[Path, ...]:
 
 
 def compose_for_role(
-    assembler: "Assembler",
+    assembler: Assembler,
     role: str,
     *,
-    runtime_overlay: "OverlayConfig" | None = None,
+    runtime_overlay: OverlayConfig | None = None,
 ) -> CompositionResult:
     """Compose ``role`` using the assembler's standard overlay layering.
 
