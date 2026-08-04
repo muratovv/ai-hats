@@ -32,6 +32,13 @@ from ..step import Step, StepIO
 logger = logging.getLogger(__name__)
 
 
+def _write_outcome(project_dir: Path, session_id: str, detail: str) -> None:
+    """HATS-1487: the decision line records intent; this records what happened."""
+    from ...retro.auto_retro import write_retro_log
+
+    write_retro_log(project_dir, session_id, "runtime", "outcome", detail)
+
+
 class MaybeSpawnSessionReviewer(Step):
     failure_policy = "continue"
 
@@ -76,25 +83,29 @@ class MaybeSpawnSessionReviewer(Step):
         except (Exception, KeyboardInterrupt):
             logger.warning("retro decision/log failed", exc_info=True)
 
-        if (
-            retro_decision is not None
-            and retro_decision.get("action") == "run"
-            and os.environ.get(ENV_SKIP_RETRO) != "1"
-        ):
-            if retro_decision.get("background") is False:
+        if retro_decision is not None and retro_decision.get("action") == "run":
+            guard = os.environ.get(ENV_SKIP_RETRO)
+            observed = f"{ENV_SKIP_RETRO}={guard!r}"
+            if guard == "1":
+                _write_outcome(project_dir, session_id, f"suppressed-by-guard ({observed})")
+            elif retro_decision.get("background") is False:
                 # HATS-1402: sync in-process run; recursion guard scoped via
                 # try/finally since there's no child process to scope it to.
+                _write_outcome(project_dir, session_id, f"sync-start ({observed})")
                 try:
                     os.environ[ENV_SKIP_RETRO] = "1"
-                    reflect_session_main.run_session_review(session_id, 1, project_dir)
-                except (Exception, KeyboardInterrupt):
+                    rc = reflect_session_main.run_session_review(session_id, 1, project_dir)
+                    _write_outcome(project_dir, session_id, f"sync-done (rc={rc})")
+                except (Exception, KeyboardInterrupt) as exc:
                     logger.warning(
                         "session-reviewer sync run failed",
                         exc_info=True,
                     )
+                    _write_outcome(project_dir, session_id, f"sync-failed ({exc!r})")
                 finally:
                     os.environ.pop(ENV_SKIP_RETRO, None)
             else:
+                _write_outcome(project_dir, session_id, f"spawn-bg ({observed})")
                 try:
                     _spawn_session_reviewer_background(project_dir, session_id)
                 except (Exception, KeyboardInterrupt):

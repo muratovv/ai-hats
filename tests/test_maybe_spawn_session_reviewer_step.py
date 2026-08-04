@@ -375,3 +375,102 @@ def test_breadcrumb_lands_before_the_decision(tmp_path, monkeypatch):
     assert log.exists(), "an interrupted decision must still leave a trace"
     assert "runtime\tstart" in log.read_text()
     assert delta == {}
+
+
+# ---------------------------------------------------------------------------
+# Outcome journal (HATS-1487): the decision line records intent, not outcome
+# ---------------------------------------------------------------------------
+
+
+def _retro_log(tmp_path: Path) -> str:
+    return (runs_dir(tmp_path) / "session_test" / RETRO_LOG).read_text()
+
+
+def test_outcome_suppressed_by_guard_is_journalled(tmp_path, monkeypatch):
+    """`decision run` + guard set: the journal must say the spawn did NOT happen."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    monkeypatch.setattr(
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
+        lambda pd, sid: None,
+    )
+    monkeypatch.setenv(ENV_SKIP_RETRO, "1")
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(session_id=session.session_id, project_dir=tmp_path)
+
+    content = _retro_log(tmp_path)
+    assert "runtime\toutcome\tsuppressed-by-guard" in content
+    assert "HATS_SKIP_RETRO='1'" in content
+    assert content.index("decision") < content.index("outcome"), "outcome follows the decision"
+
+
+def test_outcome_spawn_bg_is_journalled(tmp_path, monkeypatch):
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=True)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    monkeypatch.setattr(
+        "ai_hats.retro.auto_retro._spawn_session_reviewer_background",
+        lambda pd, sid: None,
+    )
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(session_id=session.session_id, project_dir=tmp_path)
+
+    assert "runtime\toutcome\tspawn-bg" in _retro_log(tmp_path)
+
+
+def test_outcome_sync_done_carries_the_return_code(tmp_path, monkeypatch):
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    monkeypatch.setattr(
+        "ai_hats.cli.reflect_session_main.run_session_review",
+        lambda sid, max_retries, pd: 0,
+    )
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(session_id=session.session_id, project_dir=tmp_path)
+
+    content = _retro_log(tmp_path)
+    assert "runtime\toutcome\tsync-start" in content
+    assert "runtime\toutcome\tsync-done (rc=0)" in content
+
+
+def test_outcome_sync_failed_is_journalled(tmp_path, monkeypatch):
+    """The failure already only whispered into a logger — journal it too."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path, min_turns=1, min_tool_calls=1, background=False)
+    metrics.write_text(json.dumps({"turns": 5, "tool_calls": 10}))
+
+    def _boom(sid, max_retries, pd):
+        raise RuntimeError("sync boom")
+
+    monkeypatch.setattr("ai_hats.cli.reflect_session_main.run_session_review", _boom)
+    monkeypatch.delenv(ENV_SKIP_RETRO, raising=False)
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(session_id=session.session_id, project_dir=tmp_path)  # must not raise
+
+    content = _retro_log(tmp_path)
+    assert "runtime\toutcome\tsync-failed" in content
+    assert "sync boom" in content
+    assert os.environ.get(ENV_SKIP_RETRO) is None, "guard must still be cleared"
+
+
+def test_no_outcome_line_for_a_skip_decision(tmp_path):
+    """R3: a skip decision IS its own outcome — no second line."""
+    session = _make_session(tmp_path)
+    metrics = _seed_project(tmp_path)
+    metrics.write_text(json.dumps({"turns": 0, "tool_calls": 0}))
+
+    step = MaybeSpawnSessionReviewer()
+    step.run(session_id=session.session_id, project_dir=tmp_path)
+
+    assert "outcome" not in _retro_log(tmp_path)

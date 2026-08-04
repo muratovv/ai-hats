@@ -16,7 +16,7 @@ from typing import Iterator
 from .constants import USER_RULES_SUBDIR
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
-from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir, wt_hooks_dir
+from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir
 from .sweeper import read_marker_names
 
 
@@ -99,26 +99,15 @@ def _data_reports(project_dir: Path) -> list[LayerReport]:
     return [r if r.status is Status.OK else replace(r, remediation=fix) for r in rows]
 
 
-def _manifest_report(
-    name: str,
-    directory: Path,
-    project_dir: Path,
-    *,
-    absent_ok: bool,
-) -> LayerReport:
+def _manifest_report(name: str, directory: Path, project_dir: Path) -> LayerReport:
     """A managed hook dir is complete iff every name its ``.manifest`` claims is on disk.
 
     Presence of the dir proves nothing: the HATS-595 incident was a manifest still
-    listing a wt_out script whose file had gone, which merges consume by name.
-
-    ``absent_ok`` splits the two dirs: ``materialize_worktree_hooks`` skips wt-hooks
-    entirely when no hook is composed, so its absence is healthy, while the runtime
-    dir always carries the built-in guards and its absence is a defect.
+    listing a wt_out script whose file had gone, which merges consume by name. The
+    runtime dir always carries the built-in guards, so its absence is a defect.
     """
     shown = _rel(directory, project_dir)
     if not directory.is_dir():
-        if absent_ok:
-            return LayerReport(Layer.MANAGED, name, Status.OK, "none declared")
         return LayerReport(Layer.MANAGED, name, Status.BROKEN, f"missing: {shown}", _INIT)
     declared = read_marker_names(directory / ".manifest")
     missing = sorted(n for n in declared if not (directory / n).is_file())
@@ -145,10 +134,7 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
 def _managed_reports(project_dir: Path) -> list[LayerReport]:
     return [
         _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
-        _manifest_report("library/hooks", hooks_dir(project_dir), project_dir, absent_ok=False),
-        _manifest_report(
-            "library/wt-hooks", wt_hooks_dir(project_dir), project_dir, absent_ok=True
-        ),
+        _manifest_report("library/hooks", hooks_dir(project_dir), project_dir),
         _hook_refs_report(project_dir),
     ]
 

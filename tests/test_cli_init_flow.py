@@ -41,10 +41,10 @@ def _all_roles() -> list[str]:
     matrix defines what "every built-in role" means, so it must not ride on cwd.
     """
     from pathlib import Path
-    from ai_hats.assembler import _builtin_library_layers
+    from ai_hats.paths import builtin_library_layers
 
     checkout_root = Path(__file__).resolve().parents[1]
-    resolver = LibraryResolver(_builtin_library_layers(checkout_root))
+    resolver = LibraryResolver(builtin_library_layers(checkout_root))
     return sorted(resolver.list_components(ComponentType.ROLE))
 
 

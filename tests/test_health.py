@@ -1,8 +1,8 @@
 """Layer triage (HATS-595, HATS-1163).
 
 Fail-under-revert: drop the DATA rows from ``triage`` and
-``test_data_layer_broken_when_tracker_missing`` goes red; drop the wt-hooks row
-and ``test_wt_hooks_broken_when_manifest_entry_has_no_file`` goes red.
+``test_data_layer_broken_when_tracker_missing`` goes red; drop the runtime-hooks
+row and ``test_runtime_hooks_broken_when_manifest_entry_has_no_file`` goes red.
 """
 
 from __future__ import annotations
@@ -187,43 +187,16 @@ def _seed_hook(project: Path, subdir: str, name: str, *, write_script: bool = Tr
     return script
 
 
-def test_wt_hooks_broken_when_manifest_entry_has_no_file(project: Path) -> None:
-    """The HATS-595 incident: manifest claims a script the merge needs, file is gone."""
-    _seed_hook(project, "wt-hooks", "hunk-review-comments-drain-review.sh", write_script=False)
-
-    row = _row(triage(project), "library/wt-hooks")
-
-    assert row.layer is Layer.MANAGED
-    assert row.status is Status.BROKEN
-    assert "hunk-review-comments-drain-review.sh" in row.detail
-    assert "self init" in row.remediation
-
-
-def test_wt_hooks_ok_when_manifest_is_satisfied(project: Path) -> None:
-    _seed_hook(project, "wt-hooks", "hunk-review-comments-drain-review.sh")
-
-    assert _row(triage(project), "library/wt-hooks").status is Status.OK
-
-
-def test_wt_hooks_ok_when_nothing_is_declared(project: Path) -> None:
-    """No manifest and no dir is the healthy 'no worktree hooks declared' state.
-
-    ``materialize_worktree_hooks`` returns early without creating either, so
-    treating an absent wt-hooks dir as broken would fire on every project that
-    composes no wt_out hook.
-    """
-    assert not (project / ".agent" / "ai-hats" / "library" / "wt-hooks").exists()
-
-    assert _row(triage(project), "library/wt-hooks").status is Status.OK
-
-
 def test_runtime_hooks_broken_when_manifest_entry_has_no_file(project: Path) -> None:
+    """The HATS-595 incident: manifest claims a script, the file is gone."""
     _seed_hook(project, "hooks", "safety-guard-safety_gate.py", write_script=False)
 
     row = _row(triage(project), "library/hooks")
 
+    assert row.layer is Layer.MANAGED
     assert row.status is Status.BROKEN
     assert "safety-guard-safety_gate.py" in row.detail
+    assert "self init" in row.remediation
 
 
 def test_hook_dirs_ok_without_a_manifest(project: Path) -> None:
@@ -233,13 +206,13 @@ def test_hook_dirs_ok_without_a_manifest(project: Path) -> None:
 
 def test_manifest_check_tolerates_the_hashed_marker_format(project: Path) -> None:
     """HATS-911 hashed manifests are read by the shared reader, not parsed here."""
-    d = project / ".agent" / "ai-hats" / "library" / "wt-hooks"
-    d.mkdir(parents=True)
+    d = project / ".agent" / "ai-hats" / "library" / "hooks"
+    d.mkdir(parents=True, exist_ok=True)
     (d / ".manifest").write_text(
         "# ai-hats-owner: hooks\nkept-hook.sh  deadbeef\n", encoding="utf-8"
     )
 
-    row = _row(triage(project), "library/wt-hooks")
+    row = _row(triage(project), "library/hooks")
 
     assert row.status is Status.BROKEN
     assert "kept-hook.sh" in row.detail

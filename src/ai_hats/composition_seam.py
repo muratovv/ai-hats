@@ -12,8 +12,14 @@ from __future__ import annotations
 import logging
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+
+if TYPE_CHECKING:
+    from ai_hats_core import CompositionResult
+    from .models import OverlayConfig
+    from .role_spec import RoleSpec
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +58,78 @@ class RoleNotFoundError(Exception):
         super().__init__(f"Role {role!r} not found")
 
 
+def _runtime_overlay(resolver, spec: RoleSpec) -> OverlayConfig | None:
+    """Build an ephemeral OverlayConfig from a RoleSpec, mapping names to component kinds."""
+    import difflib
+
+    if not spec.adds and not spec.removes:
+        return None
+
+    from .models import ComponentType, OverlayConfig
+    from .role_spec import RoleSpecError
+
+    traits = set(resolver.list_components(ComponentType.TRAIT))
+    skills = set(resolver.list_components(ComponentType.SKILL))
+    rules = set(resolver.list_components(ComponentType.RULE))
+    roles = set(resolver.list_components(ComponentType.ROLE))
+
+    adds_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
+    removes_by_kind: dict[str, list[str]] = {"trait": [], "skill": [], "rule": []}
+
+    all_kinds = [
+        ("trait", traits),
+        ("skill", skills),
+        ("rule", rules),
+    ]
+
+    for op_names, target_dict in [(spec.adds, adds_by_kind), (spec.removes, removes_by_kind)]:
+        for name in op_names:
+            matches = [kind for kind, comp_set in all_kinds if name in comp_set]
+            if len(matches) == 1:
+                target_dict[matches[0]].append(name)
+            elif len(matches) > 1:
+                kinds_str = " and a ".join(matches)
+                raise RoleSpecError(f"{name!r} is ambiguous — it is both a {kinds_str}")
+            else:
+                if name in roles:
+                    raise RoleSpecError(
+                        f"{name!r} is a role — only traits, rules and skills can be mixed in at runtime"
+                    )
+
+                all_known = sorted(traits | skills | rules)
+                suggestions = difflib.get_close_matches(name, all_known, n=3)
+                sugg_str = (
+                    f". Did you mean: {', '.join(repr(s) for s in suggestions)}?"
+                    if suggestions
+                    else ""
+                )
+                raise RoleSpecError(f"{name!r} is not a known trait, rule or skill{sugg_str}")
+
+    return OverlayConfig(
+        add_traits=adds_by_kind["trait"],
+        add_skills=adds_by_kind["skill"],
+        add_rules=adds_by_kind["rule"],
+        remove_traits=removes_by_kind["trait"],
+        remove_skills=removes_by_kind["skill"],
+        remove_rules=removes_by_kind["rule"],
+    )
+
+
 def _project_context(project_dir: Path, role_override: str | None):
-    """Assembler + cfg + THE role-fallback chain (override → active → default).
+    """Assembler + cfg + THE role-fallback chain (override → active → default) + runtime overlay.
 
     The single home for the chain — build / preview / carry all resolve
     through here instead of growing copies (review 2026-07-04).
     """
     from .assembler import Assembler
+    from .role_spec import parse_role_spec
 
     asm = Assembler(project_dir)
     cfg = asm.project_config
-    return asm, cfg, (role_override or cfg.active_role or cfg.default_role)
+    spec = parse_role_spec(role_override) if role_override else None
+    effective_role = (spec.role if spec else None) or cfg.active_role or cfg.default_role
+    runtime_overlay = _runtime_overlay(asm.resolver, spec) if spec else None
+    return asm, cfg, effective_role, runtime_overlay, spec
 
 
 class MissingProviderError(RuntimeError):
@@ -92,7 +159,15 @@ def _effective_provider(cfg, override: str | None) -> str:
     return eff
 
 
-def _compose_validated(asm, effective_role, *, explicit_role: str | None, label: str):
+def _compose_validated(
+    asm,
+    effective_role,
+    *,
+    runtime_overlay: OverlayConfig | None = None,
+    explicit_role: str | None,
+    spec: RoleSpec | None = None,
+    label: str,
+):
     """Compose via the facade; an explicitly requested role validates existence
     before (``RoleNotFoundError``) and errors after (``RuntimeError``) — the
     former ``compose_role`` step contract."""
@@ -101,10 +176,16 @@ def _compose_validated(asm, effective_role, *, explicit_role: str | None, label:
     if explicit_role:
         from .models import ComponentType
 
+        base_role = spec.role if spec else explicit_role
         available = asm.resolver.list_components(ComponentType.ROLE)
-        if explicit_role not in available:
-            raise RoleNotFoundError(explicit_role, available)
-    result = compose_for_role(asm, effective_role)
+        if base_role not in available:
+            raise RoleNotFoundError(base_role, available)
+
+    if runtime_overlay is not None:
+        result = compose_for_role(asm, effective_role, runtime_overlay=runtime_overlay)
+    else:
+        result = compose_for_role(asm, effective_role)
+
     if explicit_role and result.errors:
         raise RuntimeError(f"{label}: failed to resolve role {explicit_role!r}: {result.errors}")
     return result
@@ -155,11 +236,13 @@ def build_composition_payload(
     from ai_hats_observe import AuditWriter, Session
     from .providers import get_provider
 
-    asm, cfg, effective_role = _project_context(project_dir, role_override)
+    asm, cfg, effective_role, runtime_overlay, spec = _project_context(project_dir, role_override)
     result = _compose_validated(
         asm,
         effective_role,
+        runtime_overlay=runtime_overlay,
         explicit_role=role_override if strict else None,
+        spec=spec,
         label="compose_role",
     )
 
@@ -183,7 +266,7 @@ def build_composition_payload(
         result=result,
         provider=provider,
         effective_role=effective_role,
-        snapshot=_composition_snapshot(asm, effective_role, result),
+        snapshot=_composition_snapshot(asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec),
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
@@ -214,7 +297,7 @@ def build_preview_payload(
     from .materialize import compose_for_role
     from .providers import get_provider
 
-    asm, cfg, eff_role = _project_context(project_dir, role)
+    asm, cfg, eff_role, runtime_overlay, _spec = _project_context(project_dir, role)
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "
@@ -222,7 +305,10 @@ def build_preview_payload(
             "ai-hats.yaml). Set one or pass `role=...` to the step."
         )
     eff_provider = _effective_provider(cfg, provider)
-    result = compose_for_role(asm, eff_role)
+    if runtime_overlay is not None:
+        result = compose_for_role(asm, eff_role, runtime_overlay=runtime_overlay)
+    else:
+        result = compose_for_role(asm, eff_role)
     if result.errors:
         raise RuntimeError(
             f"materialize_system_prompt: compose errors for role {eff_role!r}: {result.errors}"
@@ -235,18 +321,18 @@ def build_preview_payload(
 
 
 def compose_for_carry(project_dir: Path, role: str | None = None):
-    """Fail-open compose for worktree-carry collection; ``(result, hooks)`` or
-    ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
+    """Fail-open compose for worktree-carry collection; a ``CompositionResult``
+    or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
     tracker→wt via the ``needs_worktree`` effect. Any failure degrades to
     ``None`` with a WARN: carry trouble must never block worktree creation.
     """
     try:
-        asm, _cfg, effective = _project_context(project_dir, role)
+        asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
         if not effective:
             return None
         from .materialize import compose_for_role
 
-        return compose_for_role(asm, effective), asm.hooks
+        return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
     except Exception as exc:  # noqa: BLE001 — never block create on carry collection
         logger.warning(
             "worktree carry: could not compose role %r: %s — dropping carry",
@@ -256,7 +342,14 @@ def compose_for_carry(project_dir: Path, role: str | None = None):
         return None
 
 
-def _composition_snapshot(assembler, role_name: str, result) -> dict:
+def _composition_snapshot(
+    assembler,
+    role_name: str,
+    result: CompositionResult,
+    *,
+    runtime_overlay: OverlayConfig | None = None,
+    spec: RoleSpec | None = None,
+) -> dict:
     """Build the composition snapshot dict for ``Session.init_audit`` (HATS-442).
 
     Moved from ``runtime_common`` (HATS-865): it walks private Assembler API
@@ -264,8 +357,10 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
     travels down in the payload — bricks never drive assembler machinery.
     """
     try:
-        effective_traits = assembler._effective_traits(role_name)
-        provenance = assembler._get_overlay_provenance(role_name, result=result)
+        effective_traits = assembler._effective_traits(role_name, runtime_overlay=runtime_overlay)
+        provenance = assembler._get_overlay_provenance(
+            role_name, result=result, runtime_overlay=runtime_overlay
+        )
     except Exception as exc:
         # Defensive: a broken overlay shouldn't kill session start.
         logger.warning(
@@ -275,12 +370,19 @@ def _composition_snapshot(assembler, role_name: str, result) -> dict:
             exc,
         )
         return {}
-    return {
+    snap = {
         "traits": effective_traits,
         "rules": [r.name for r in result.rules],
         "skills": [s.name for s in result.skills],
         "provenance": provenance,
     }
+    if spec and (spec.adds or spec.removes):
+        snap["runtime"] = {
+            "spec": spec.raw,
+            "add": list(spec.adds),
+            "remove": list(spec.removes),
+        }
+    return snap
 
 
 def _static_cost_analyzer(project_dir: Path):
@@ -331,7 +433,7 @@ def resolve_provider_for_help(provider_name: str | None, role_name: str | None):
 
     if role_name:
         try:
-            asm, cfg, effective_role = _project_context(_project_dir(), role_name)
+            asm, cfg, effective_role, _runtime, _spec = _project_context(_project_dir(), role_name)
             eff = cfg.provider
             if eff:
                 return get_provider(eff)

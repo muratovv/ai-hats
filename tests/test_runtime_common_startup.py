@@ -131,13 +131,15 @@ class TestFormatHookHeal:
     def test_groups_by_surface_and_names_kinds(self):
         text = _format_hook_heal(
             [
-                HookChange("wt", "hunk-review-comments-drain-review.sh", "missing"),
-                HookChange("git", "pre-push", "content"),
+                HookChange("runtime", "safety-guard-safety_gate.py", "missing"),
+                HookChange("runtime", "markdown-format-post_md_format.py", "content"),
             ]
         )
         assert text.startswith("managed hooks healed at start — ")
-        assert "wt-hook hunk-review-comments-drain-review materialized (was missing)" in text
-        assert "git-hook pre-push updated (content drift)" in text
+        # HATS-1337 retired the git surface, HATS-1269 the wt one — runtime is
+        # the only healed surface left, so two of them carry the grouping.
+        assert "runtime-hook safety-guard-safety_gate materialized (was missing)" in text
+        assert "runtime-hook markdown-format-post_md_format updated (content drift)" in text
 
     def test_folds_multiple_kinds_on_one_hook(self):
         text = _format_hook_heal(

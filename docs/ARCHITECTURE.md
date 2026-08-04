@@ -68,7 +68,7 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
-The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
+The overlays apply in order `[global, project, runtime]`: global customizations (`~/.ai-hats/customizations.yaml`) first, project customizations (`ai-hats.yaml`) second, and ephemeral runtime role specs (`-r "maintainer + leader"`, HATS-1456) last. Overlay `add` / `remove` patches component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored (first-wins).
 
 <a id="materialization"></a>
 
@@ -284,11 +284,14 @@ ai_hats:
       - git_hooks/check.sh   # path relative to the skill directory
 ```
 
-The builder copies scripts to `.githooks/<event>.d/<skill>-<basename>`,
-generates a dispatcher at `.githooks/<event>`, and sets
-`core.hooksPath = .githooks` idempotently. If the user has already
-configured a `core.hooksPath` or has their own dispatcher without our
-marker — those are not touched; a warning with instructions is printed.
+`ai-hats init` generates a dispatcher at `.githooks/<event>` and sets
+`core.hooksPath` to that directory's **absolute** path, idempotently — a
+relative value would be resolved against whichever working tree git runs in,
+leaving every linked worktree ungated. Nothing is copied: the dispatcher asks
+the composition for the event's gates at commit time and runs them in place
+(ADR-0020 D3), so a `self update` needs no re-materialization step. If the user
+has already configured a `core.hooksPath` or has their own dispatcher without
+our marker — those are not touched; a warning with instructions is printed.
 
 ### Skill ↔ tool dependencies (`requires`, ADR-0016)
 

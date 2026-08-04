@@ -4,8 +4,16 @@
 # Sourced, never executed.
 #
 # A hatch (AI_HATS_*_ACK / _SKIP / _OFF / YOLO) and a fail-open branch both let
-# a commit past a gate while printing only to stderr. This delegates writing to
-# bypass_journal.py located in the same directory.
+# a commit past a gate while printing only to stderr. The line format lives in
+# bypass_journal.py alone — hand-rolled JSON escaping in bash emitted raw
+# control characters, which no reader could parse (HATS-1486).
+#
+# Consumers source this file by its resolved path; the runner exports it:
+#   . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journal.sh}"
+#
+# The writer is found as a SIBLING of this file, so every directory holding
+# bypass_journal.sh must hold bypass_journal.py too — a symlink to the canon is
+# how the skill trees do it (HATS-1268), and a contract test enforces it.
 
 # ai_hats_journal_bypass <kind> <reason> [cmd] [session_id]
 #   kind   : hatch | fail_open

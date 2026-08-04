@@ -21,7 +21,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 JOURNAL_HELPER = LIB / "hooks/bypass_journal.sh"
-JOURNAL_PY_HELPER = LIB / "hooks/bypass_journal.py"
 PRIVACY_HOOK = LIB / "core/skills/git-mastery/git_hooks/pre-commit-privacy.sh"
 
 GM = "core/skills/git-mastery/git_hooks"
@@ -70,21 +69,8 @@ def gated_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
 
-    githooks = tmp_path / ".githooks"
-    event_d = githooks / "pre-commit.d"
-    event_d.mkdir(parents=True)
-
-    helper = githooks / "bypass_journal.sh"
-    helper.write_bytes(JOURNAL_HELPER.read_bytes())
-    helper.chmod(0o755)
-
-    py_helper = githooks / "bypass_journal.py"
-    py_helper.write_bytes(JOURNAL_PY_HELPER.read_bytes())
-    py_helper.chmod(0o755)
-
-    hook = event_d / "git-mastery-pre-commit-privacy.sh"
-    hook.write_bytes(PRIVACY_HOOK.read_bytes())
-    hook.chmod(0o755)
+    # HATS-1337: nothing is copied any more — a gate runs in place from the
+    # library, with the journal handed to it by the dispatcher as env.
     return tmp_path
 
 
@@ -97,10 +83,11 @@ def _run_hook(repo: Path, **env_overrides: str) -> subprocess.CompletedProcess:
     env.pop("AI_HATS_PRIVACY_ACK", None)
     env.pop("AI_HATS_SESSION_ID", None)
     env["AI_HATS_HOOK_EVENT"] = "pre-commit"  # the dispatcher exports this
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)  # ...and this (HATS-1337)
     env.update(env_overrides)
 
     return subprocess.run(
-        ["bash", str(repo / ".githooks/pre-commit.d/git-mastery-pre-commit-privacy.sh")],
+        ["bash", str(PRIVACY_HOOK)],
         cwd=str(repo),
         capture_output=True,
         text=True,
@@ -136,7 +123,9 @@ def test_tripped_hatch_is_recorded(gated_repo: Path):
     assert entry["kind"] == "hatch"
     assert entry["reason"] == "AI_HATS_PRIVACY_ACK"
     assert entry["event"] == "pre-commit"
-    assert entry["hook"] == "git-mastery-pre-commit-privacy.sh"
+    # HATS-1337: gates run in place, so the journal names the real script
+    # rather than the retired flattened copy `<skill>-<basename>`.
+    assert entry["hook"] == "pre-commit-privacy.sh"
 
 
 @pytest.mark.integration
@@ -183,20 +172,36 @@ def test_a_clean_run_records_nothing(gated_repo: Path):
 @pytest.mark.integration
 def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     """The journal's own failure mode must not be the defect it exists to remove."""
-    (gated_repo / ".githooks/bypass_journal.sh").unlink()
-
-    res = _run_hook(gated_repo, AI_HATS_PRIVACY_ACK="1")
+    # HATS-1337: no copy to delete — an unreachable journal is now a resolved
+    # path that does not exist (and a relative fallback that misses too).
+    res = _run_hook(
+        gated_repo,
+        AI_HATS_PRIVACY_ACK="1",
+        AI_HATS_BYPASS_JOURNAL=str(gated_repo / "nope" / "bypass_journal.sh"),
+    )
     assert res.returncode == 0, "a broken journal must not block the commit"
     assert "NOT RECORDED" in res.stderr, res.stderr
     assert _journal_lines(gated_repo) == []
 
 
 @pytest.mark.integration
-def test_a_missing_py_helper_fails_loud_not_silent(gated_repo: Path):
-    """.sh present but .py removed -> NOT RECORDED in stderr, returncode 0, empty journal."""
-    (gated_repo / ".githooks/bypass_journal.py").unlink()
+def test_a_lone_shell_helper_without_its_writer_fails_loud_not_silent(gated_repo: Path):
+    """HATS-1486: the shell side only wraps — the writer is a sibling .py.
 
-    res = _run_hook(gated_repo, AI_HATS_PRIVACY_ACK="1")
+    Resolving to a `bypass_journal.sh` with no `bypass_journal.py` beside it is a
+    reachable state (a copy taken out of its directory), and it must fail the way
+    every other unreachable-journal path does: loudly, without blocking.
+    """
+    orphan_dir = gated_repo / "orphan"
+    orphan_dir.mkdir()
+    orphan = orphan_dir / "bypass_journal.sh"
+    orphan.write_bytes(JOURNAL_HELPER.read_bytes())
+
+    res = _run_hook(
+        gated_repo,
+        AI_HATS_PRIVACY_ACK="1",
+        AI_HATS_BYPASS_JOURNAL=str(orphan),
+    )
     assert res.returncode == 0, "a broken journal must not block the commit"
     assert "NOT RECORDED" in res.stderr, res.stderr
     assert _journal_lines(gated_repo) == []
@@ -218,20 +223,15 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
 
-    githooks = repo / ".githooks"
-    event_d = githooks / f"{event}.d"
-    event_d.mkdir(parents=True)
-    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
-    (githooks / "bypass_journal.py").write_bytes(JOURNAL_PY_HELPER.read_bytes())
-    hook = event_d / f"skill-{Path(hook_rel).name}"
-    hook.write_bytes((LIB / hook_rel).read_bytes())
-    hook.chmod(0o755)
+    # HATS-1337: gates run in place from the library, journal handed over as env.
+    hook = LIB / hook_rel
 
     env = os.environ.copy()
     for key in list(env):
         if key.startswith("AI_HATS_"):
             env.pop(key)
     env["AI_HATS_HOOK_EVENT"] = event
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
     env[hatch] = "1"
 
     res = subprocess.run(
@@ -255,13 +255,35 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
 # --- the post-commit stamp closes the join to a real commit ------------------
 
 
+def _ai_hats_pin() -> dict[str, str]:
+    """Env making the installed stub delegate to THIS checkout's ai-hats.
+
+    HATS-1337: the stub is a bootstrap — without a resolvable install it fails
+    open and runs nothing, so a fixture that hand-builds `.githooks/` must supply
+    one or every assertion below passes vacuously.
+    """
+    import sys
+
+    from _helpers.env import checkout_pythonpath
+    from ai_hats.paths import ENV_AI_HATS_VENV
+
+    return {
+        "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
+        ENV_AI_HATS_VENV: str(Path(sys.executable).parent.parent),
+    }
+
+
 def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
-    """Install a minimal `.githooks/` the way the real installer does."""
+    """A dispatcher plus gates on the `<event>.d/` drop-in path.
+
+    HATS-1337: the installer no longer copies gates, and this project has no
+    ai-hats install for the dispatcher to resolve against — so the gates ride
+    the drop-in path the dispatcher still reads, and the caller exports
+    AI_HATS_BYPASS_JOURNAL the way a resolved run would.
+    """
     githooks = repo / ".githooks"
     event_d = githooks / f"{event}.d"
     event_d.mkdir(parents=True, exist_ok=True)
-    (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
-    (githooks / "bypass_journal.py").write_bytes(JOURNAL_PY_HELPER.read_bytes())
     for src in hooks:
         dest = event_d / f"git-mastery-{src.name}"
         dest.write_bytes(src.read_bytes())
@@ -290,6 +312,8 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     # GIT_* must not leak into a nested git (HATS-886); the hook re-derives its own.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_PRIVACY_ACK"] = "1"
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
+    env.update(_ai_hats_pin())
     subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
 
     head = subprocess.run(
@@ -303,7 +327,12 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
 
 @pytest.mark.integration
 def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
-    """Trap 2b: invalid JSON lines in journal must be kept verbatim on stamp."""
+    """HATS-1486: awk passed junk through line-wise; the python stamper must too.
+
+    A journal can hold a line no parser accepts — that is exactly what the old
+    shell escaper produced. Rewriting the file must not drop it: the stamper is
+    not a validator, and losing a bypass record is the defect this file removes.
+    """
     repo = tmp_path
     subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
     subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
@@ -313,7 +342,7 @@ def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
     _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
     subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=str(repo), check=True)
 
-    journal_path = repo / ".git/ai-hats/bypasses.jsonl"
+    journal_path = repo / JOURNAL_REL
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     broken_line = "THIS IS NOT VALID JSON {"
     journal_path.write_text(broken_line + "\n")
@@ -322,13 +351,14 @@ def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
     subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_PRIVACY_ACK"] = "1"
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
+    env.update(_ai_hats_pin())
     subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
 
     raw_lines = journal_path.read_text().splitlines()
     assert len(raw_lines) == 2, raw_lines
-    assert raw_lines[0] == broken_line
-    valid_entry = json.loads(raw_lines[1])
-    assert valid_entry["sha"] != ""
+    assert raw_lines[0] == broken_line, "the unparseable line was not preserved"
+    assert json.loads(raw_lines[1])["sha"] != "", "the valid row was not stamped"
 
 
 # --- the consumer: a journal nobody reads is a sensor nobody consumes --------
@@ -432,7 +462,7 @@ def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
         input=payload,
         capture_output=True,
         text=True,
-        env=dict(os.environ) | {"AI_HATS_SHARED_STATE_ACK": "1"},
+        env=dict(os.environ) | {"AI_HATS_SHARED_STATE_ACK": "1"} | _ai_hats_pin(),
     )
     assert res.returncode == 0
     lines = _journal_lines(repo)

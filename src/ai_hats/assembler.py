@@ -40,7 +40,6 @@ from .paths import (
     hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
-    user_home,
 )
 from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
@@ -161,46 +160,20 @@ class Assembler:
         content), resolved from the `ai_hats_library` package. Override points
         (user-global, project-config, project-local) layer on top via last-wins.
         """
+        from ai_hats.library_paths import build_library_paths
         from ai_hats.library_schema import check_library_schema
         from ai_hats.paths import builtin_library_root
 
-        paths: list[Path] = []
-
-        # Built-in: core + usage. Fail loud FIRST if the pinned library declares a
-        # format-schema newer than this ai-hats understands (T18; built-in only).
+        # Fail loud FIRST if the pinned library declares a format-schema newer
+        # than this ai-hats understands (T18; built-in only).
         check_library_schema(builtin_library_root(self.project_dir))
-        for layer in _builtin_library_layers(self.project_dir):
-            paths.append(layer)
-
-        # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via
-        # the ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks
-        # above the builtins, below the user/config/project overrides that follow.
-        from ai_hats.skill_sources import skill_source_roots
-
-        paths.extend(skill_source_roots())
-
-        # Global user libraries — ``user_home()`` honours
-        # ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
-        global_lib = user_home() / ".ai-hats"
-        if global_lib.is_dir():
-            paths.append(global_lib)
-
-        # Config-specified paths
-        for p in self.project_config.library_paths:
-            expanded = Path(p).expanduser()
-            if expanded.is_dir():
-                paths.append(expanded)
-
-        # Project-local libraries — re-pointed to the worktree when composing
-        # inside one (HATS-831); see :meth:`_worktree_local_libraries`.
-        local_lib = self._worktree_local_libraries() or self.project_dir / LIBRARIES_DIRNAME
-        if local_lib.is_dir():
-            paths.append(local_lib)
-
-        # Explicit extra paths (highest priority)
-        paths.extend(extra)
-
-        return paths
+        return build_library_paths(
+            self.project_dir,
+            config_paths=self.project_config.library_paths,
+            # Re-pointed to the worktree when composing inside one (HATS-831).
+            local_libraries=self._worktree_local_libraries(),
+            extra=extra,
+        )
 
     def _worktree_local_libraries(self) -> Path | None:
         """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
@@ -584,15 +557,22 @@ class Assembler:
         """
         return self.user_config.overlay_for(role_name)
 
-    def _effective_traits(self, role_name: str) -> list[str]:
-        """Role's base traits with global-then-project overlay edits applied.
+    def _effective_traits(
+        self, role_name: str, runtime_overlay: OverlayConfig | None = None
+    ) -> list[str]:
+        """Role's base traits with global-then-project-then-runtime overlay edits applied.
 
         One home for a walk `config status` and the audit snapshot both need —
         two copies would have to agree forever (HATS-1435).
         """
         base_cfg = self.resolver.resolve_role_config(role_name)
         traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (self._get_global_overlay(role_name), self._get_overlay(role_name)):
+        layers = [
+            self._get_global_overlay(role_name),
+            self._get_overlay(role_name),
+            runtime_overlay,
+        ]
+        for layer in layers:
             if layer is None:
                 continue
             for name in layer.remove_traits:
@@ -633,15 +613,19 @@ class Assembler:
         )
 
     def _get_overlay_provenance(
-        self, role_name: str, *, result: CompositionResult | None = None
+        self,
+        role_name: str,
+        *,
+        result: CompositionResult | None = None,
+        runtime_overlay: OverlayConfig | None = None,
     ) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
         ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
-        ``{"built-in", "global", "project"}``. Used by ``config status`` to
+        ``{"built-in", "global", "project", "runtime"}``. Used by ``config status`` to
         annotate the dependency tree with a source-tag per node.
 
-        Walked in the same global-then-project order used by ``_get_overlays``
+        Walked in the same global-then-project-then-runtime order used by ``_get_overlays``
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
 
@@ -663,18 +647,23 @@ class Assembler:
             # which `config status` renders as "role has no rules" (HATS-1373).
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
-        effective_traits = self._effective_traits(role_name)
+        effective_traits = self._effective_traits(role_name, runtime_overlay=runtime_overlay)
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
-            provenance["traits"][trait_name] = self._classify_component_layer(p).value
+            if p is not None:  # silent-ok: synthetic/missing trait has no filesystem path
+                provenance["traits"][trait_name] = self._classify_component_layer(p).value
 
         # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
         # drops the entry so a later layer's add can re-claim it.
-        for layer, label in (
+        layers_with_labels: list[tuple[OverlayConfig | None, str]] = [
             (self._get_global_overlay(role_name), ComponentLayer.GLOBAL.value),
             (self._get_overlay(role_name), ComponentLayer.PROJECT.value),
-        ):
+        ]
+        if runtime_overlay is not None:
+            layers_with_labels.append((runtime_overlay, ComponentLayer.RUNTIME.value))
+
+        for layer, label in layers_with_labels:
             if layer is None:
                 continue
             for name in layer.remove_traits:

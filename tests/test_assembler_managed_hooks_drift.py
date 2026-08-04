@@ -18,8 +18,6 @@ from ai_hats.models import ProjectConfig
 from ai_hats.paths import (
     hooks_dir,
     managed_runtime_hook_filename,
-    managed_wt_hook_filename,
-    wt_hooks_dir,
     PROJECT_CONFIG,
 )
 from ai_hats.surfaces.claude.provider import ClaudeProvider
@@ -46,20 +44,6 @@ def _skill_runtime(base: Path, name: str, event: str, matcher: str, script: str)
     (d / "SKILL.md").write_text(
         f"---\nname: {name}\nai_hats:\n  runtime_hooks:\n    {event}:\n"
         f"      - matcher: {matcher}\n        script: {script}\n---\n# {name}\n"
-    )
-    sp = d / script
-    sp.parent.mkdir(parents=True, exist_ok=True)
-    sp.write_text("#!/usr/bin/env bash\nexit 0\n")
-    sp.chmod(0o755)
-    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=d)
-
-
-def _skill_wt(base: Path, name: str, script: str):
-    d = base / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "SKILL.md").write_text(
-        f"---\nname: {name}\nai_hats:\n  worktree:\n    wt_out:\n"
-        f"      - script: {script}\n        on: [merge]\n---\n# {name}\n"
     )
     sp = d / script
     sp.parent.mkdir(parents=True, exist_ok=True)
@@ -116,29 +100,6 @@ class TestRuntimeBytesDrift:
                 "shared_state_classifier.sh",
                 "missing",
             ) in assembler.hooks._runtime_bytes_changes(res)
-
-
-# ----- wt-hook BYTES drift -----
-
-
-class TestWtBytesDrift:
-    def test_in_sync_after_materialize(self, assembler, tmp_path):
-        s = _skill_wt(tmp_path / "sk", "drn", "d.sh")
-        res = _result([s])
-        assembler.hooks.materialize_worktree_hooks(res)
-        assert assembler.hooks._wt_hooks_changes(res) == []
-
-    def test_missing_reported(self, assembler, tmp_path):
-        s = _skill_wt(tmp_path / "sk", "drn", "d.sh")
-        res = _result([s])
-        assembler.hooks.materialize_worktree_hooks(res)
-        dest = wt_hooks_dir(assembler.project_dir) / managed_wt_hook_filename("drn", "d.sh")
-        dest.unlink()
-        changes = assembler.hooks._wt_hooks_changes(res)
-        assert HookChange("wt", dest.name, "missing") in changes
-
-    def test_clean_project_no_changes(self, assembler):
-        assert assembler.hooks._wt_hooks_changes(_result([])) == []
 
 
 # ----- runtime-hook WIRING drift (retired with root .claude/settings.json) -----
@@ -200,17 +161,15 @@ class TestSyncHooksOrchestration:
         )
         return Assembler(project_dir=project)
 
-    def _wire(self, monkeypatch, asm, *, runtime, wt, git, behind=False):
+    def _wire(self, monkeypatch, asm, *, runtime, behind=False):
+        """Only the runtime arm is left. No git arm (HATS-1337): the dispatcher
+        is static and carries no gate set to drift from. No wt arm (HATS-1269):
+        the scripts spawn in place, so there is no copy to drift."""
         calls: list[str] = []
         monkeypatch.setattr(asm.hooks, "_runtime_hooks_changes", lambda result, provider: runtime)
-        monkeypatch.setattr(asm.hooks, "_wt_hooks_changes", lambda result: wt)
-        monkeypatch.setattr(asm.hooks, "_git_hooks_changes", lambda result: git)
         monkeypatch.setattr(asm.hooks, "binary_behind_source", lambda: behind)
         monkeypatch.setattr(
             asm.hooks, "materialize_runtime_hooks", lambda result: calls.append("rt_bytes")
-        )
-        monkeypatch.setattr(
-            asm.hooks, "materialize_worktree_hooks", lambda result: calls.append("wt")
         )
         monkeypatch.setattr(asm.hooks, "install_git_hooks", lambda result: calls.append("git"))
         monkeypatch.setattr(
@@ -222,7 +181,7 @@ class TestSyncHooksOrchestration:
 
     def test_in_sync_is_silent_noop(self, tmp_path, monkeypatch):
         asm = self._role_project(tmp_path)
-        calls = self._wire(monkeypatch, asm, runtime=[], wt=[], git=[])
+        calls = self._wire(monkeypatch, asm, runtime=[])
         res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "in-sync"
         assert res.changes == ()
@@ -238,8 +197,6 @@ class TestSyncHooksOrchestration:
             monkeypatch,
             asm,
             runtime=[HookChange("runtime", "x", "content")],
-            wt=[],
-            git=[],
         )
         res = asm.hooks.sync_hooks(result=_result([]))
         assert res.status == "synced"
@@ -252,8 +209,6 @@ class TestSyncHooksOrchestration:
             monkeypatch,
             asm,
             runtime=[HookChange("runtime", "x", "content")],
-            wt=[],
-            git=[],
             behind=True,
         )
         res = asm.hooks.sync_hooks(result=_result([]))

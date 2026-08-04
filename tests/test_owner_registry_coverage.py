@@ -22,8 +22,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # sweeper treats a marker with an unregistered owner_key as dead.
 MATERIALIZERS: dict[str, str] = {
     "git-hooks": (
-        ".githooks/ dispatchers + <event>.d/ scripts — git can only exec "
-        "hooks from the repo working tree (hooks_manager.install_git_hooks)"
+        ".githooks/<event> dispatchers — git can only exec hooks from a real "
+        "file under core.hooksPath (hooks_manager.install_git_hooks). HATS-1337: "
+        "the per-gate <event>.d/ copies and their manifest are retired; gates "
+        "are resolved live from the composition at commit time"
     ),
     # HATS-1336: "runtime-hooks" is deliberately ABSENT — HATS-1170 moved the
     # entries into the session cache, so nothing materializes into the root.

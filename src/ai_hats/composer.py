@@ -80,9 +80,17 @@ class Composer:
         # within a layer; project-after-global means project wins cross-layer).
         requested_skill_removes: set[str] = set()
         role_level_skill_removes: set[str] = set()
+        requested_rule_removes: set[str] = set()
+        role_level_rule_removes: set[str] = set()
         for layer in layers:
             self._apply_overlay(
-                config, layer, errors, requested_skill_removes, role_level_skill_removes
+                config,
+                layer,
+                errors,
+                requested_skill_removes,
+                role_level_skill_removes,
+                requested_rule_removes,
+                role_level_rule_removes,
             )
 
         # Traits are single-level (sub-traits are rejected in _resolve_traits),
@@ -110,6 +118,23 @@ class Composer:
             rules=rules,
             errors=errors,
         )
+
+        # HATS-1456 (S2b): resolve deferred rule removals against the composed set
+        # so an overlay can drop a TRAIT-brought rule (mirroring HATS-1046 skills).
+        effective_rule_removes = requested_rule_removes - set(config.composition.rules)
+        if effective_rule_removes:
+            removed_rule_names: set[str] = set()
+            kept_rules: list[ResolvedComponent] = []
+            for rule in rules:
+                if rule.name in effective_rule_removes:
+                    removed_rule_names.add(rule.name)
+                else:
+                    kept_rules.append(rule)
+            rules = kept_rules
+            for name in effective_rule_removes - removed_rule_names - role_level_rule_removes:
+                errors.append(
+                    f"Overlay: cannot remove rule '{name}' — not in the role or any composed trait"
+                )
 
         # Then resolve role's own skills
         self._resolve_skills(
@@ -182,6 +207,8 @@ class Composer:
         errors: list[str],
         requested_skill_removes: set[str],
         role_level_skill_removes: set[str],
+        requested_rule_removes: set[str],
+        role_level_rule_removes: set[str],
     ) -> None:
         """Mutate config composition lists according to overlay add/remove."""
         comp = config.composition
@@ -191,11 +218,13 @@ class Composer:
                 comp.traits.remove(trait)
             else:
                 errors.append(f"Overlay: cannot remove trait '{trait}' — not in base role")
+        # Rule removals are deferred: a trait may bring the rule later, so the
+        # verdict is resolved post-resolution in compose() (HATS-1456 / S2b).
         for rule in overlay.remove_rules:
+            requested_rule_removes.add(rule)
             if rule in comp.rules:
                 comp.rules.remove(rule)
-            else:
-                errors.append(f"Overlay: cannot remove rule '{rule}' — not in base role")
+                role_level_rule_removes.add(rule)
         # Skill removals are deferred: a trait may bring the skill later, so the
         # verdict is resolved post-resolution in compose() (HATS-1046).
         for skill in overlay.remove_skills:

@@ -8,7 +8,7 @@
 set -uo pipefail
 
 # shellcheck source=../../../../hooks/bypass_journal.sh
-if ! . "$(dirname "$0")/../bypass_journal.sh" 2>/dev/null; then
+if ! . "${AI_HATS_BYPASS_JOURNAL:-$(dirname "$0")/../../../../hooks/bypass_journal.sh}" 2>/dev/null; then
     echo "[bypass-journal] sha NOT STAMPED — bypass_journal.sh missing" >&2
     exit 0
 fi

@@ -50,13 +50,18 @@ def _binary_env() -> dict[str, str]:
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     # HATS-887: strip GIT_* so ambient GIT_DIR can't retarget the repo.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    # HATS-1337: the dispatcher resolves its gate set by spawning an
+    # interpreter, so a commit needs THIS checkout's ai-hats pinned — with the
+    # ambient session's venv it would (correctly) fail open and run no gates,
+    # and every assertion below would pass vacuously.
+    env.update(_binary_env())
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd),
         capture_output=True,
         text=True,
-        timeout=30,
-        env=env,
+        timeout=120,
+        env={k: v for k, v in env.items() if not k.startswith("GIT_")},
     )
 
 
@@ -149,7 +154,10 @@ def test_simple_git_hooks_coexistence_on_commit(tmp_path: Path):
     _write_hook(project / ".git" / "hooks" / "pre-commit", ".marker-project-pre-commit")
 
     _self_init(project)
-    assert _git_ok("config", "--get", "core.hooksPath", cwd=project) == ".githooks"
+    # HATS-1337: absolute, so a commit inside a linked worktree finds it too.
+    assert _git_ok("config", "--get", "core.hooksPath", cwd=project) == str(
+        (project / ".githooks").resolve()
+    )
 
     cp = _commit_file(project)
     assert cp.returncode == 0, f"commit failed:\n{cp.stdout}\n{cp.stderr}"
@@ -171,9 +179,9 @@ def test_preset_hookspath_taken_over_with_chaining(tmp_path: Path):
     _git_ok("config", "core.hooksPath", ".husky", cwd=project)
 
     cp = _self_init(project)
-    assert _git_ok("config", "--get", "core.hooksPath", cwd=project) == ".githooks", (
-        "self init left core.hooksPath at '.husky' — ai-hats guards silently absent"
-    )
+    assert _git_ok("config", "--get", "core.hooksPath", cwd=project) == str(
+        (project / ".githooks").resolve()
+    ), "self init left core.hooksPath at '.husky' — ai-hats guards silently absent"
     assert _git_ok("config", "--get", "ai-hats.previousHooksPath", cwd=project) == ".husky", (
         "previous hooks dir not recorded for chaining"
     )
@@ -242,10 +250,15 @@ def test_failing_project_hook_blocks_commit(tmp_path: Path):
 
 def test_foreign_dot_d_entry_survives_reinit(tmp_path: Path):
     """A user-added ``.d/`` script (the HATS-999 manual-workaround shape) must
-    survive a repeated ``self init`` — sweep is manifest-scoped."""
+    survive a repeated ``self init`` and still run.
+
+    HATS-1337: ai-hats never writes `<event>.d/` any more, but the dispatcher
+    still reads it — the affordance is kept deliberately (R8)."""
     project = _make_coexist_project(tmp_path)
     _self_init(project)
     foreign = project / ".githooks" / "pre-commit.d" / "zz-user-custom.sh"
+    # ai-hats no longer creates `<event>.d/` — whoever drops a script in makes it.
+    foreign.parent.mkdir(parents=True, exist_ok=True)
     foreign.write_text("#!/bin/sh\ntouch .marker-foreign-entry\nexit 0\n")
     foreign.chmod(0o755)
 

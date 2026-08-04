@@ -85,17 +85,17 @@ def test_e2e_self_update_check_triages_layers(tmp_path: Path) -> None:
     assert "Layer triage" in healthy.stdout
     assert "MANAGED" in healthy.stdout
 
-    # ----- HATS-1163: a declared-but-missing wt_out script is a broken layer -----
-    # The state that blocked the HATS-595 merge: the manifest still names the script
-    # the teardown resolves by name, but the file is gone. Seeded explicitly rather
-    # than relying on the composed role to ship a wt_out hook — a conditional here
-    # would pass vacuously on any role that composes none.
-    wt_hooks = project / ".agent" / "ai-hats" / "library" / "wt-hooks"
-    wt_hooks.mkdir(parents=True, exist_ok=True)
-    hook = wt_hooks / "hunk-review-comments-drain-review.sh"
-    (wt_hooks / ".manifest").write_text(
-        f"# ai-hats managed — do not edit\n{hook.name}\n", encoding="utf-8"
-    )
+    # ----- HATS-1163: a declared-but-missing managed script is a broken layer -----
+    # The state that blocked the HATS-595 merge: the manifest still names a script,
+    # but the file is gone. Seeded explicitly rather than relying on the composed
+    # role — a conditional here would pass vacuously. (HATS-1269 retired the
+    # wt-hooks dir this used to seed; the runtime dir carries the same contract.)
+    managed = project / ".agent" / "ai-hats" / "library" / "hooks"
+    managed.mkdir(parents=True, exist_ok=True)
+    hook = managed / "e2e-triage-probe.sh"
+    manifest = managed / ".manifest"
+    manifest_before = manifest.read_text(encoding="utf-8") if manifest.exists() else ""
+    manifest.write_text(f"# ai-hats managed — do not edit\n{hook.name}\n", encoding="utf-8")
     hook.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
     _run([str(launcher_dest), "self", "update", "--check"], cwd=project, env=env, timeout=120)
 
@@ -108,9 +108,9 @@ def test_e2e_self_update_check_triages_layers(tmp_path: Path) -> None:
         expect_exit=1,
     )
     assert hook.name in missing_hook.stdout, (
-        "--check must name the wt_out script the manifest declares but disk lacks"
+        "--check must name the script the manifest declares but disk lacks"
     )
-    shutil.rmtree(wt_hooks)
+    manifest.write_text(manifest_before, encoding="utf-8")
 
     # ----- destroy a MANAGED layer: exit 1 + the exact remediation -----
     library = project / ".agent" / "ai-hats" / "library"

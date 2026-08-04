@@ -105,10 +105,29 @@ def repo_and_remote(tmp_path: Path) -> tuple[Path, Path]:
     return work, bare
 
 
+def _ai_hats_pin() -> dict[str, str]:
+    """Env making the installed stub delegate to THIS checkout's ai-hats.
+
+    HATS-1337: the stub is a bootstrap — without a resolvable install it fails
+    open and runs nothing, so a fixture that hand-builds `.githooks/` must supply
+    one or every assertion below passes vacuously.
+    """
+    import sys
+
+    from _helpers.env import checkout_pythonpath
+    from ai_hats.paths import ENV_AI_HATS_VENV
+
+    return {
+        "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
+        ENV_AI_HATS_VENV: str(Path(sys.executable).parent.parent),
+    }
+
+
 def _push(work: Path, marker: Path) -> subprocess.CompletedProcess[str]:
     # HATS-887: strip GIT_* so an ambient GIT_DIR can't retarget the push.
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["AI_HATS_TEST_MARKER"] = str(marker)
+    env.update(_ai_hats_pin())
     return subprocess.run(
         ["git", "push", "origin", "master"],
         cwd=str(work),

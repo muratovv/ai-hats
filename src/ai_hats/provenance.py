@@ -14,6 +14,7 @@ class ComponentLayer(str, Enum):
     BUILT_IN = "built-in"
     GLOBAL = "global"
     PROJECT = "project"
+    RUNTIME = "runtime"
 
 
 def _try_get_global_layer(resolved: Path) -> ComponentLayer | None:

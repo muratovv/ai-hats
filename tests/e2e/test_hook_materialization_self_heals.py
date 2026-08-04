@@ -234,15 +234,22 @@ def initialised_project(tmp_path: Path):
     _self_init(project)
     githooks = project / ".githooks"
     assert (githooks / "pre-push").is_file(), "pre-push dispatcher not installed"
-    assert (githooks / "pre-push.d" / "gate_skill-gate.sh").is_file()
+    # HATS-1337: the dispatcher is the ONLY thing installed; the gate stays in
+    # the library and is resolved at spawn time.
+    assert not (githooks / "pre-push.d").exists()
     return project, lib
 
 
-def test_dispatcher_blocks_when_managed_hook_missing(initialised_project):
+def test_a_missing_gate_no_longer_blocks_the_push(initialised_project):
+    """HATS-1337 inverts HATS-593: degradation is fail-OPEN.
+
+    The old dispatcher refused the event when a managed hook went missing and
+    told the operator to run `ai-hats self init` — the one command that needs
+    exactly the binary whose absence caused the degradation. A gate that cannot
+    be resolved is a gate that does not run, never a push that cannot happen.
+    """
     project, _lib = initialised_project
     githooks = project / ".githooks"
-    gate = githooks / "pre-push.d" / "gate_skill-gate.sh"
-    gate.unlink()  # worst case: the managed hook is gone
 
     cp = subprocess.run(
         [str(githooks / "pre-push")],
@@ -250,28 +257,31 @@ def test_dispatcher_blocks_when_managed_hook_missing(initialised_project):
         input="refs/heads/master " + "1" * 40 + " refs/heads/master " + "2" * 40 + "\n",
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
-    assert cp.returncode == 1, (
-        "dispatcher must FAIL CLOSED on a missing managed hook, "
-        f"got exit {cp.returncode}\nstdout:{cp.stdout}\nstderr:{cp.stderr}"
+
+    assert cp.returncode == 0, (
+        f"a degraded install must not wedge the push\nstdout:{cp.stdout}\nstderr:{cp.stderr}"
     )
-    assert "corrupt" in cp.stderr
-    assert "ai-hats self init" in cp.stderr
+    assert "corrupt" not in cp.stderr
+    assert "ai-hats self init" not in cp.stderr
 
 
-def test_dispatcher_runs_clean_when_intact(initialised_project):
-    """Counter-test: an intact gate runs normally (exit 0), no false block."""
+def test_the_resolved_gate_runs_through_the_installed_dispatcher(initialised_project):
+    """Chain-level (HATS-1113): compose -> install -> dispatcher -> library gate."""
     project, _lib = initialised_project
     githooks = project / ".githooks"
 
     cp = subprocess.run(
         [str(githooks / "pre-push")],
         cwd=str(project),
+        env=_binary_env(),
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
+
     assert cp.returncode == 0, f"intact gate must not block:\n{cp.stderr}"
-    assert "GATE v1" in cp.stdout
-    assert "corrupt" not in cp.stderr
+    assert "GATE v1" in cp.stdout, (
+        f"the gate never ran through the dispatcher\nstdout:{cp.stdout}\nstderr:{cp.stderr}"
+    )
