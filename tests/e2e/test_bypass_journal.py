@@ -21,6 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 JOURNAL_HELPER = LIB / "hooks/bypass_journal.sh"
+JOURNAL_PY_HELPER = LIB / "hooks/bypass_journal.py"
 PRIVACY_HOOK = LIB / "core/skills/git-mastery/git_hooks/pre-commit-privacy.sh"
 
 GM = "core/skills/git-mastery/git_hooks"
@@ -76,6 +77,10 @@ def gated_repo(tmp_path: Path) -> Path:
     helper = githooks / "bypass_journal.sh"
     helper.write_bytes(JOURNAL_HELPER.read_bytes())
     helper.chmod(0o755)
+
+    py_helper = githooks / "bypass_journal.py"
+    py_helper.write_bytes(JOURNAL_PY_HELPER.read_bytes())
+    py_helper.chmod(0o755)
 
     hook = event_d / "git-mastery-pre-commit-privacy.sh"
     hook.write_bytes(PRIVACY_HOOK.read_bytes())
@@ -186,6 +191,17 @@ def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     assert _journal_lines(gated_repo) == []
 
 
+@pytest.mark.integration
+def test_a_missing_py_helper_fails_loud_not_silent(gated_repo: Path):
+    """.sh present but .py removed -> NOT RECORDED in stderr, returncode 0, empty journal."""
+    (gated_repo / ".githooks/bypass_journal.py").unlink()
+
+    res = _run_hook(gated_repo, AI_HATS_PRIVACY_ACK="1")
+    assert res.returncode == 0, "a broken journal must not block the commit"
+    assert "NOT RECORDED" in res.stderr, res.stderr
+    assert _journal_lines(gated_repo) == []
+
+
 # --- every git-hook hatch, in the real install layout ------------------------
 
 
@@ -206,6 +222,7 @@ def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: 
     event_d = githooks / f"{event}.d"
     event_d.mkdir(parents=True)
     (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
+    (githooks / "bypass_journal.py").write_bytes(JOURNAL_PY_HELPER.read_bytes())
     hook = event_d / f"skill-{Path(hook_rel).name}"
     hook.write_bytes((LIB / hook_rel).read_bytes())
     hook.chmod(0o755)
@@ -244,6 +261,7 @@ def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
     event_d = githooks / f"{event}.d"
     event_d.mkdir(parents=True, exist_ok=True)
     (githooks / "bypass_journal.sh").write_bytes(JOURNAL_HELPER.read_bytes())
+    (githooks / "bypass_journal.py").write_bytes(JOURNAL_PY_HELPER.read_bytes())
     for src in hooks:
         dest = event_d / f"git-mastery-{src.name}"
         dest.write_bytes(src.read_bytes())
@@ -281,6 +299,36 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     entries = _journal_lines(repo)
     assert len(entries) == 1, entries
     assert entries[0]["sha"] == head, "the bypass is not attributable to its commit"
+
+
+@pytest.mark.integration
+def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
+    """Trap 2b: invalid JSON lines in journal must be kept verbatim on stamp."""
+    repo = tmp_path
+    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+
+    _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
+    _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=str(repo), check=True)
+
+    journal_path = repo / ".git/ai-hats/bypasses.jsonl"
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    broken_line = "THIS IS NOT VALID JSON {"
+    journal_path.write_text(broken_line + "\n")
+
+    (repo / "a.txt").write_text("first\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["AI_HATS_PRIVACY_ACK"] = "1"
+    subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
+
+    raw_lines = journal_path.read_text().splitlines()
+    assert len(raw_lines) == 2, raw_lines
+    assert raw_lines[0] == broken_line
+    valid_entry = json.loads(raw_lines[1])
+    assert valid_entry["sha"] != ""
 
 
 # --- the consumer: a journal nobody reads is a sensor nobody consumes --------

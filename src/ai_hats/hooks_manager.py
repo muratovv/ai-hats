@@ -550,8 +550,8 @@ PREVIOUS_HOOKS_PATH_KEY = "ai-hats.previousHooksPath"
 GITHOOKS_DISPATCHER_MARKER = "AI-HATS-DISPATCHER-MARKER"
 GITHOOKS_DISPATCHER_TEMPLATE = Path(__file__).parent / "templates" / "githooks" / "dispatcher.sh"
 #: Lives in `.githooks/`, not `<event>.d/` — the dispatcher executes everything
-#: in `<event>.d/`, and this file is sourced, not run (HATS-1407).
-GITHOOKS_BYPASS_JOURNAL = "bypass_journal.sh"
+#: in `<event>.d/`, and this file is sourced, not run (HATS-1407, HATS-1486).
+GITHOOKS_BYPASS_JOURNAL = ("bypass_journal.sh", "bypass_journal.py")
 
 
 def install_git_hooks(
@@ -590,7 +590,7 @@ def install_git_hooks(
     warnings: list[str] = []
 
     if _install_bypass_journal(project_dir, githooks_dir, warnings):
-        new_manifest.append(GITHOOKS_BYPASS_JOURNAL)
+        new_manifest.extend(GITHOOKS_BYPASS_JOURNAL)
 
     for event, entries in declared.items():
         if not entries:
@@ -672,25 +672,25 @@ def _resolve_skill_script(
 
 
 def _install_bypass_journal(project_dir: Path, githooks_dir: Path, warnings: list[str]) -> bool:
-    """Copy the bypass-journal helper into `.githooks/`. Returns True if installed."""
+    """Copy the bypass-journal helpers into `.githooks/`. Returns True if at least one installed."""
     source_root = _builtin_library_hooks(project_dir)
-    src = None if source_root is None else source_root / GITHOOKS_BYPASS_JOURNAL
-    if src is None or not src.is_file():
-        # Every hatch branch sources this file; without it the gates still run
-        # but stop recording bypasses, which is the defect HATS-1407 removes.
-        warnings.append(
-            f"git_hooks: {GITHOOKS_BYPASS_JOURNAL} not found in package data — "
-            "gate bypasses will NOT be journaled"
+    installed_any = False
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        src = None if source_root is None else source_root / name
+        if src is None or not src.is_file():
+            warnings.append(
+                f"git_hooks: {name} not found in package data — gate bypasses will NOT be journaled"
+            )
+            continue
+        _safe_replace(
+            githooks_dir / name,
+            src.read_bytes(),
+            reason="githook-bypass-journal",
+            project_dir=project_dir,
+            mode=0o755,
         )
-        return False
-    _safe_replace(
-        githooks_dir / GITHOOKS_BYPASS_JOURNAL,
-        src.read_bytes(),
-        reason="githook-bypass-journal",
-        project_dir=project_dir,
-        mode=0o755,
-    )
-    return True
+        installed_any = True
+    return installed_any
 
 
 def _install_dispatcher(dispatcher_path: Path) -> bool:
@@ -838,9 +838,11 @@ def expected_git_hook_files(project_dir: Path, result: CompositionResult) -> dic
         # Installed alongside the dispatchers, so it must be expected alongside
         # them too — otherwise every session reports drift and re-heals forever.
         src_root = _builtin_library_hooks(project_dir)
-        helper = None if src_root is None else src_root / GITHOOKS_BYPASS_JOURNAL
-        if helper is not None and helper.is_file():
-            expected[GITHOOKS_BYPASS_JOURNAL] = helper.read_bytes()
+        if src_root is not None:
+            for name in GITHOOKS_BYPASS_JOURNAL:
+                helper = src_root / name
+                if helper.is_file():
+                    expected[name] = helper.read_bytes()
     return expected
 
 

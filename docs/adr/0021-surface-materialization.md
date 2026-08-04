@@ -611,8 +611,9 @@ managed-поверхности; замер на этом репозитории:
 2. `<ai_hats_dir>/library/wt-hooks/` + `.manifest`: 2 скрипта
    (`hooks_manager.py:264-298`).
 3. `.githooks/`: диспетчер + `<event>.d/` с копиями гейтов +
-   `bypass_journal.sh` + `.ai-hats-manifest` + `core.hooksPath`
+   `bypass_journal.{sh,py}` + `.ai-hats-manifest` + `core.hooksPath`
    (`install_git_hooks` `hooks_manager.py:557-645`); здесь —
+
    `pre-commit.d/` ×6, `pre-push.d/` ×4, `commit-msg.d/` ×1,
    `post-commit.d/` ×1.
 

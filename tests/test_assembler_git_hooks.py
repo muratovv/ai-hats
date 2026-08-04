@@ -194,7 +194,7 @@ def test_manifest_hashed_owner_format(project_with_hook_skill):
     assert set(by_name) == {
         "pre-commit",
         "pre-commit.d/hook_skill-check.sh",
-        GITHOOKS_BYPASS_JOURNAL,  # HATS-1407 — managed, so the sweeper must see it
+        *GITHOOKS_BYPASS_JOURNAL,  # HATS-1407 — managed, so the sweeper must see it
     }
     for name, entry in by_name.items():
         on_disk = (project / GITHOOKS_DIR / name).read_bytes()
@@ -962,10 +962,10 @@ def test_install_places_bypass_journal_beside_the_dispatcher(project_with_hook_s
     asm.init()
     asm.set_role("test-role")
 
-    helper = project / GITHOOKS_DIR / GITHOOKS_BYPASS_JOURNAL
-    assert helper.is_file(), "hatch branches would print to stderr and record nothing"
-    assert helper.stat().st_mode & stat.S_IXUSR
-    assert "ai_hats_journal_bypass" in helper.read_text()
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        helper = project / GITHOOKS_DIR / name
+        assert helper.is_file(), f"{name}: hatch branches would print to stderr and record nothing"
+        assert helper.stat().st_mode & stat.S_IXUSR
 
 
 def test_bypass_journal_is_not_in_the_event_dir(project_with_hook_skill):
@@ -976,7 +976,8 @@ def test_bypass_journal_is_not_in_the_event_dir(project_with_hook_skill):
     asm.set_role("test-role")
 
     event_d = project / GITHOOKS_DIR / "pre-commit.d"
-    assert not (event_d / GITHOOKS_BYPASS_JOURNAL).exists()
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        assert not (event_d / name).exists()
 
 
 def test_bypass_journal_is_manifest_tracked(project_with_hook_skill):
@@ -987,7 +988,8 @@ def test_bypass_journal_is_manifest_tracked(project_with_hook_skill):
     asm.set_role("test-role")
 
     manifest = (project / GITHOOKS_DIR / GITHOOKS_MANIFEST).read_text()
-    assert GITHOOKS_BYPASS_JOURNAL in manifest
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        assert name in manifest
 
 
 def test_sweep_removes_the_managed_helper(tmp_path):
@@ -996,15 +998,16 @@ def test_sweep_removes_the_managed_helper(tmp_path):
     project = tmp_path / "p"
     githooks = project / GITHOOKS_DIR
     githooks.mkdir(parents=True)
-    helper = githooks / GITHOOKS_BYPASS_JOURNAL
-    helper.write_text("#!/usr/bin/env bash\n# ai-hats managed — do not edit\n")
-    (githooks / GITHOOKS_MANIFEST).write_text(
-        "# ai-hats managed — do not edit\n" + GITHOOKS_BYPASS_JOURNAL + "\n"
-    )
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        helper = githooks / name
+        helper.write_text("#!/usr/bin/env bash\n# ai-hats managed — do not edit\n")
+    manifest_text = "# ai-hats managed — do not edit\n" + "\n".join(GITHOOKS_BYPASS_JOURNAL) + "\n"
+    (githooks / GITHOOKS_MANIFEST).write_text(manifest_text)
 
     _cleanup_managed_git_hooks(project)
 
-    assert not helper.exists()
+    for name in GITHOOKS_BYPASS_JOURNAL:
+        assert not (githooks / name).exists()
 
 
 def test_sweep_leaves_a_foreign_bare_file_alone(tmp_path):
