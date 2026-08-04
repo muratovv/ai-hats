@@ -35,6 +35,7 @@ from .models import (
 from .paths import (
     AI_HATS_MANAGED_MARKER,
     builtin_library_hooks as _builtin_library_hooks,
+    builtin_library_layers as _builtin_library_layers,
     claude_skills_dir,
     hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
