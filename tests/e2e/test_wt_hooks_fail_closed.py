@@ -39,8 +39,7 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
+from _helpers.git import git as _git
 
 
 def _branch_exists(project: Path, branch: str) -> bool:
