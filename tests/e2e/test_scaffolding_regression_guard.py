@@ -25,6 +25,7 @@ _GIT_EXEMPTIONS: dict[str, str] = {
     "test_launcher_worktree_execution.py": "Tests launcher worktree execution with custom commit tree.",
     "test_prepush_e2e_master_gate.py": "Tests pre-push master gate with custom GIT_CONFIG_GLOBAL isolation.",
     "test_session_cache_out_of_tree.py": "Tests out-of-tree session cache with custom git status output parsing.",
+    "test_broken_hook_ref_startup_warn.py": "Tests broken hook ref startup warning with raw git process.",
 }
 
 _PROCESS_ATTRS = {"run", "Popen", "check_output", "check_call", "call", "system", "popen"}
