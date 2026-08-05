@@ -12,14 +12,32 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**2 of 220 files catalogued.**
+**9 of 220 files catalogued — 10 flows.**
+
+## `test_agy_bypass.py`
+
+*pins HATS-1096*
+
+- **flow** — a user whose repo root holds a GEMINI.md full of standing instructions runs an agy-provider role, and expects agy not to obey that file
+- **cmds**
+
+  ```console
+  ai-hats self init --provider agy
+  ai-hats agent assistant --task "Say hi"
+  ```
+
+- **expect** — the run exits 0 and nothing from GEMINI.md reaches stdout or stderr; the file is left byte-identical on disk and no `.GEMINI.md.ai_hats_bak` sidecar appears
+- **why** — left alone, the repo's root GEMINI.md becomes ambient instructions for every agy role — and a bypass built by moving the file aside would mutate the user's tree to get there, so both are forbidden
 
 ## `test_close_from_inside_worktree_refused.py`
+
+*pins HATS-788*
 
 - **flow** — a maintainer closes a worktree-backed task while cd'd INSIDE that task's own linked worktree
 - **cmds**
 
   ```console
+  # in an initialised ai-hats project (ai-hats.yaml + a git repo)
   rack create A --id HATS-1
   rack create B --id HATS-2
   rack transition HATS-1 plan       # then execute -> document -> review
@@ -31,9 +49,27 @@ as a claim to check, not as evidence.
 
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
-- **pins** — HATS-788
+
+## `test_docs_index_guard.py`
+
+*pins HATS-444*
+
+- **flow** — a maintainer commits a change under docs/, and the pre-commit docs-index hook decides whether docs/INDEX.md must be staged with it
+- **cmds**
+
+  ```console
+  git add docs/new-doc.md && git commit                  # blocked
+  git add docs/new-doc.md docs/INDEX.md && git commit    # allowed
+  git mv docs/a.md docs/b.md && git commit               # blocked
+  AI_HATS_DOCS_INDEX_ACK=1 git commit                    # allowed, override
+  ```
+
+- **expect** — adding, renaming or deleting a `docs/*.md` without staging INDEX.md is blocked; staging INDEX.md alongside allows it; a content-only edit to an existing doc, an empty stage, a non-docs change and an ADR subdir add all pass; the env ack overrides the block and names itself on stderr. Separately, the initial-wizard config still points at docs/INDEX.md instead of hardcoding the per-step bullet list.
+- **why** — INDEX.md is what the initial-wizard role reads at session start, so a doc added without registering it is invisible to every later session — and the hook is pure bash, unreachable from the unit tier
 
 ## `test_e2e_catalog_gate.py`
+
+*pins HATS-1498*
 
 - **flow** — a maintainer runs the pre-push gate, which must refuse the push when tests/e2e/CATALOG.md no longer matches the flow blocks it is rendered from
 - **cmds**
@@ -45,14 +81,108 @@ as a claim to check, not as evidence.
 
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
-- **pins** — HATS-1498
+
+## `test_golden_path.py`
+
+*pins HATS-483*
+
+- **flow** — a new user installs the launcher, initialises a project, checks the composed prompt, and runs one real batch turn — the canonical journey, end to end against a live Claude SDK
+- **cmds**
+
+  ```console
+  bash scripts/install-launcher.sh        # via the tmp_venv_project fixture
+  ai-hats self init -r assistant -p claude --no-update
+  ai-hats config show-prompt
+  ai-hats execute --batch -r assistant -p claude --model claude-haiku-4-5         --prompt "Reply with exactly: OK. No other text." --json
+  ai-hats                                 # bare HITL, driven over a PTY
+  ```
+
+- **expect** — `self init` reports the role and provider and writes default_role into ai-hats.yaml; `show-prompt` carries the composed role's markers; the batch run exits 0 and emits one JSON envelope with exit_code 0, a session_id and a session_dir, alongside audit.md and a trace.jsonl naming every pipeline step; the turn's cost stays under the $0.10 cap; and bare `ai-hats` surfaces its session-start and session-end banners in the parent's stdout through the PTY proxy
+- **why** — every layer the product sells sits on this one path — launcher install, yaml parsing, role and provider validation, composition, prompt materialisation, the pipeline harness and both runners. Three of bare `ai-hats`'s four steps are byte-identical to the batch pipeline's, so a composition or provider regression that breaks the product breaks here.
+
+## `test_prepush_e2e_master_gate.py`
+
+*pins HATS-550, HATS-686*
+
+- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this commit
+- **cmds**
+
+  ```console
+  git push origin master    # allowed only with a green marker for the pushed sha
+  ```
+
+- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another sha, or carries a body sha that disagrees; in a mixed payload the master line still needs its own marker
+- **why** — the marker is the only evidence the tier ever ran — honour one written for a different commit and the gate certifies code nobody tested
+
+- **flow** — the same maintainer runs the gate itself, which must clear lint and unit before spending ~25 minutes on the tier, then record the marker
+- **cmds**
+
+  ```console
+  bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
+  ```
+
+- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep is dry-run unless opted into; and the wrapper errors when the hook is absent
+- **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
+
+## `test_role_session_retro_vertical.py`
+
+*pins HATS-498*
+
+- **flow** — a user carrying customizations at both the global and the project layer runs a role, and afterwards the session-reviewer audits that session back into the tracker
+- **cmds**
+
+  ```console
+  ai-hats self init -r <role>
+  ai-hats execute --batch -r <role> --prompt "<echo the magic word>" --json
+  ai-hats session retro <sid>
+  ```
+
+- **expect** — the right role is composed into the child claude process, and entries from BOTH ~/.ai-hats/customizations.yaml and <project>/ai-hats.yaml reach the materialized prompt tagged with the correct provenance; the child echoes the magic word, proving the composed prompt actually arrived rather than merely being written to disk; the reviewer then runs under the correct role and emits draft HYP verdicts and PROP actions into the tracker; the two turns stay under the $0.20 cap
+- **why** — composition can be correct on disk and still never reach the child — HATS-452 and HATS-501 were exactly that, so only an echo from the model proves delivery. The true user-facing flow here is bare `ai-hats` HITL; this drives `execute --batch` as a standing workaround because HITL audit.md does not capture assistant responses (HATS-529) and auto-retro spawn lives only in WrapRunner finalize (HATS-530). Swap back when both land — the catalog row is the reminder that this one is not yet the flow it means to pin.
+
+## `test_runtime_role_composition.py`
+
+*pins HATS-1456*
+
+- **flow** — a user composes a role at runtime with `+` / `-` instead of editing ai-hats.yaml, then inspects or runs the result
+- **cmds**
+
+  ```console
+  ai-hats self init -r assistant -p claude --no-update   # the precondition
+  ai-hats config show-prompt -r "assistant + ai-hats-framework"
+  ai-hats config show-prompt -r "assistant - trait-se-mindset"
+  ai-hats config show-prompt -r "assistant+ai-hats-framework"    # compact form
+  ai-hats agent "assistant + ai-hats-framework" --task hello --dry-run --json
+  ai-hats --dry-run-json -r "assistant + ai-hats-framework"
+  ai-hats config set -r "assistant + ai-hats-framework"          # must refuse
+  ai-hats -r assistant + ai-hats-framework                       # bare +, must refuse
+  ```
+
+- **expect** — an added trait's injection appears in the prompt, a removed one disappears while its siblings stay, and compact and spaced spellings are byte-identical; the composed prompt is measurably larger than the base through both `agent --dry-run --json` and `--dry-run-json`; an unknown component, a role in second position, and a bare unquoted `+` each exit 2 with a named error and no traceback; `config set` refuses to persist and leaves ai-hats.yaml byte-identical
+- **why** — composition is the surface where a wrong answer is silent — a trait that fails to attach still yields a working prompt, just not the one asked for, so only comparing prompts catches it
+
+## `test_shared_state_guard.py`
+
+*pins HATS-437, HATS-633*
+
+- **flow** — a maintainer pushes, and git hands the pre-push shared-state hook the refspec on stdin before anything leaves the machine
+- **cmds**
+
+  ```console
+  git push                                       # fast-forward -> allowed
+  git push --force                               # rewrites history -> blocked
+  git push origin :branch                        # deletion -> allowed
+  AI_HATS_SHARED_STATE_ACK=1 git push --force    # ack -> allowed
+  ```
+
+- **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
+- **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
 
 ## Not yet catalogued
 
-218 files carry no flow block yet:
+211 files carry no flow block yet:
 
 - `test_agent_orchestration.py`
-- `test_agy_bypass.py`
 - `test_agy_detection.py`
 - `test_agy_dispatcher_out_of_tree.py`
 - `test_agy_headless_hook_execution.py`
@@ -88,14 +218,12 @@ as a claim to check, not as evidence.
 - `test_customize_parallel_writes.py`
 - `test_dead_cwd_fail_loud.py`
 - `test_default_composition_flip.py`
-- `test_docs_index_guard.py`
 - `test_env_drift_startup_warn.py`
 - `test_env_scrub.py`
 - `test_epic_auto_transition_e2e.py`
 - `test_execute_batch_requires_role.py`
 - `test_githooks_coexistence.py`
 - `test_githooks_orchestrator.py`
-- `test_golden_path.py`
 - `test_hats541_silent_done_regression.py`
 - `test_hook_chain_fail_open_recorded.py`
 - `test_hook_chain_permissions.py`
@@ -134,7 +262,6 @@ as a claim to check, not as evidence.
 - `test_plan_gate_per_section_e2e.py`
 - `test_pre_commit_smoke_collection.py`
 - `test_prepush_dispatcher_stdin_fanout.py`
-- `test_prepush_e2e_master_gate.py`
 - `test_pretooluse_hook_cwd_resolution.py`
 - `test_pretooluse_hook_materialization.py`
 - `test_privacy_hook.py`
@@ -160,14 +287,12 @@ as a claim to check, not as evidence.
 - `test_remote_channel_install.py`
 - `test_retired_dist_prune_e2e.py`
 - `test_role_isolation.py`
-- `test_role_session_retro_vertical.py`
 - `test_role_switch_does_not_narrow_hooks.py`
 - `test_root_residue_swept.py`
 - `test_rule_delivery_gate.py`
 - `test_runtime_hook_fires.py`
 - `test_runtime_hook_propagation.py`
 - `test_runtime_hooks_execute_from_session_tree.py`
-- `test_runtime_role_composition.py`
 - `test_safe_delete_and_bump_internal.py`
 - `test_safety_gate_hook.py`
 - `test_scaffolding_regression_guard.py`
@@ -202,7 +327,6 @@ as a claim to check, not as evidence.
 - `test_settings_lint_startup_warn.py`
 - `test_shadow_guard_refuses_foreign_venv.py`
 - `test_shared_launcher_env_isolation.py`
-- `test_shared_state_guard.py`
 - `test_skill_lint_gate.py`
 - `test_skill_source_entry_point_discovery.py`
 - `test_skills_mirror_self_heals.py`

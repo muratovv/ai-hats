@@ -1,12 +1,20 @@
-"""HATS-437 — end-to-end behaviour of the git pre-push shared-state-guard hook.
+"""e2e (HATS-437, HATS-633)
 
-Per ``dev_rule_e2e_gate``: git pre-push hook behavior requires a real git repo
-subprocess run. The PreToolUse hook half is parametrized in unit tests
-(``tests/test_shared_state_guard.py``). This file retains the git pre-push
-integration tests:
-
-  * Git pre-push hook: non-fast-forward detection, deletion / new-branch
-    short-circuit, ack-override.
+flow:   a maintainer pushes, and git hands the pre-push shared-state hook the
+        refspec on stdin before anything leaves the machine
+cmds:
+    git push                                       # fast-forward -> allowed
+    git push --force                               # rewrites history -> blocked
+    git push origin :branch                        # deletion -> allowed
+    AI_HATS_SHARED_STATE_ACK=1 git push --force    # ack -> allowed
+expect: a fast-forward, a branch deletion, a brand-new branch and an empty stdin
+        all pass; a non-fast-forward exits 1, and the refusal names
+        `rule_pause_before_shared_state_write` and says "Do NOT retry" rather
+        than failing bare; the env ack overrides the block
+why:    the hook is pure bash driven by git over stdin, so nothing in-process
+        reaches it — and a hook that blocks a legal fast-forward is as broken as
+        one that waves a force-push through. The PreToolUse half is unit-tested
+        in tests/test_shared_state_guard.py; only this half needs a real repo.
 """
 
 from __future__ import annotations

@@ -41,7 +41,7 @@ def test_gate_dispatches_to_the_catalog_check():
     combined = done.stdout + done.stderr
     assert done.returncode == 0, combined
     assert "[ci-local] e2e-catalog" in combined, combined
-    assert "catalogued" in combined, combined
+    assert "[e2e-catalog] current" in combined, combined
 
 
 def test_unknown_stage_lists_the_catalog_stage():

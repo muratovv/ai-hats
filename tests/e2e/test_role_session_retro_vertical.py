@@ -1,41 +1,27 @@
-"""E2E test of the ai-hats role+composition+auto-retro vertical.
+"""e2e (HATS-498)
 
-Validates five orthogonal claims (HATS-498):
-
-1. The right role is composed into the child claude process.
-2. Customization layering works end-to-end — BOTH global-layer
-   (``~/.ai-hats/customizations.yaml``) AND project-layer
-   (``<project>/ai-hats.yaml``) entries reach the materialized prompt
-   with correct ``provenance`` tagging.
-3. The composed prompt actually reaches the child claude (magic-word
-   proxy — HATS-452 / HATS-501 regression guard).
-4. After the session, the session-reviewer runs with the correct role
-   and emits draft HYP verdicts + PROP actions into the tracker.
-
-Implementation as five composable phases, each a helper function with
-an explicit dataclass contract — extension points marked per phase.
-
-**Driver is ``execute --batch`` (SubAgent / SDK), NOT bare ``ai-hats``
-HITL** — temporary workaround for two harness asymmetries discovered
-during HATS-498 implementation:
-
-- HATS-529 — HITL audit.md doesn't capture assistant responses, so
-  the magic-word proxy for claim #3 (echo verification) is impossible
-  via audit. Without this fix the behavioural turn cannot be asserted.
-- HATS-530 — auto-retro spawn lives only in WrapRunner finalize, not
-  in SubAgent finalize. With this workaround, Phase 5 invokes
-  ``ai-hats session retro <sid>`` manually instead of relying on
-  auto-spawn.
-
-TODO(HATS-529, HATS-530): swap drive_bare_hitl + auto-spawn assertion
-in once both harness fixes land. The TRUE user-facing flow this test
-guards is bare ``ai-hats`` HITL; the current shape exercises the same
-composition + reviewer machinery via the cleanest available channel.
-
-Cost: two LLM turns (drive on sonnet-4-5, reviewer on haiku-4-5); cost cap
-asserted at the $0.20 envelope in Phase 5.
-
-Deliberate long e2e vertical scenario contract — noqa: comment-length.
+flow:   a user carrying customizations at both the global and the project layer
+        runs a role, and afterwards the session-reviewer audits that session
+        back into the tracker
+cmds:
+    ai-hats self init -r <role>
+    ai-hats execute --batch -r <role> --prompt "<echo the magic word>" --json
+    ai-hats session retro <sid>
+expect: the right role is composed into the child claude process, and entries
+        from BOTH ~/.ai-hats/customizations.yaml and <project>/ai-hats.yaml
+        reach the materialized prompt tagged with the correct provenance; the
+        child echoes the magic word, proving the composed prompt actually
+        arrived rather than merely being written to disk; the reviewer then
+        runs under the correct role and emits draft HYP verdicts and PROP
+        actions into the tracker; the two turns stay under the $0.20 cap
+why:    composition can be correct on disk and still never reach the child —
+        HATS-452 and HATS-501 were exactly that, so only an echo from the model
+        proves delivery. The true user-facing flow here is bare `ai-hats` HITL;
+        this drives `execute --batch` as a standing workaround because HITL
+        audit.md does not capture assistant responses (HATS-529) and auto-retro
+        spawn lives only in WrapRunner finalize (HATS-530). Swap back when both
+        land — the catalog row is the reminder that this one is not yet the
+        flow it means to pin.
 """
 
 from __future__ import annotations

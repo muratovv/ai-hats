@@ -3,6 +3,7 @@
 flow:   a maintainer closes a worktree-backed task while cd'd INSIDE that
         task's own linked worktree
 cmds:
+    # in an initialised ai-hats project (ai-hats.yaml + a git repo)
     rack create A --id HATS-1
     rack create B --id HATS-2
     rack transition HATS-1 plan       # then execute -> document -> review

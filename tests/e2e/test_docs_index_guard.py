@@ -1,19 +1,21 @@
-"""HATS-444 — end-to-end behaviour of the docs-INDEX freshness hook.
+"""e2e (HATS-444)
 
-The pre-commit hook (`pre-commit-docs-index.sh`) is a pure-bash surface;
-the unit suite cannot meaningfully exercise it. This file drives the
-script against a real ephemeral git repo to cover:
-
-  * blocks when docs/*.md is added/deleted/renamed without staging INDEX
-  * allows when INDEX is staged alongside
-  * allows content-only edits to existing docs (status M)
-  * AI_HATS_DOCS_INDEX_ACK=1 overrides the block
-  * empty stage / no docs changes → no-op
-
-A separate regression check asserts the wizard injection points at
-docs/INDEX.md and no longer hardcodes the per-step bullet-list.
-
-Slow only because of git init + subprocess spin-up (~ms each).
+flow:   a maintainer commits a change under docs/, and the pre-commit
+        docs-index hook decides whether docs/INDEX.md must be staged with it
+cmds:
+    git add docs/new-doc.md && git commit                  # blocked
+    git add docs/new-doc.md docs/INDEX.md && git commit    # allowed
+    git mv docs/a.md docs/b.md && git commit               # blocked
+    AI_HATS_DOCS_INDEX_ACK=1 git commit                    # allowed, override
+expect: adding, renaming or deleting a `docs/*.md` without staging INDEX.md is
+        blocked; staging INDEX.md alongside allows it; a content-only edit to an
+        existing doc, an empty stage, a non-docs change and an ADR subdir add all
+        pass; the env ack overrides the block and names itself on stderr.
+        Separately, the initial-wizard config still points at docs/INDEX.md
+        instead of hardcoding the per-step bullet list.
+why:    INDEX.md is what the initial-wizard role reads at session start, so a
+        doc added without registering it is invisible to every later session —
+        and the hook is pure bash, unreachable from the unit tier
 """
 
 from __future__ import annotations
