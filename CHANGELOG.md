@@ -28,6 +28,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed — BREAKING
 
+- **Inverted rule-delivery default: every composed rule body is delivered in full** (HATS-1515). Every rule in `composition.rules` delivers its `rule.md` body into system prompt `## RULES`. Removed `ALWAYS_ON_RULES` and `SUMMARIZED_IN_INJECTION` sets; `rule-delivery-gate` checks that all rule pointers name existing rules in the library.
+
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
   When `AI_HATS_DIR` is set to a sandbox directory and `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` commands and `ai-hats wait` now refuse execution with exit code 1 and typed error `foreign_project_pin` detailing both paths and `ai_hats_dir`. Previously, `rack` ignored `AI_HATS_DIR` on CLI resolution and wrote to the live project root.
 

@@ -25,39 +25,15 @@ from .provider_entry_points import (
 )
 from .models import RuleMetadata
 from .resolver import read_rule_body
-from .rule_delivery import SUMMARIZED_IN_INJECTION
 
 
 logger = logging.getLogger(__name__)
 
 
-def _is_rule_always_on(rule: ResolvedComponent) -> bool:
-    if rule.name in ALWAYS_ON_RULES:
-        return True
-    if rule.source_path and rule.source_path.is_dir():
-        meta_file = rule.source_path / "metadata.yaml"
-        if meta_file.is_file():
-            try:
-                meta = RuleMetadata.from_yaml(meta_file)
-                if meta.delivery == "always_on":
-                    return True
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "rule %r: failed to load metadata at %s: %s",
-                    rule.name,
-                    meta_file,
-                    exc,
-                )
-    return False
-
-
 # HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
 # designed switch, so the sweeper now reclaims the root ai-hats:* entries.
 
-# HATS-865: definition moved to the constants leaf; re-exported here for the
-# existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
 from .constants import (  # noqa: E402
-    ALWAYS_ON_RULES,
     INJECTION_START,
     INJECTION_END,
     PROVIDER_CLAUDE,
@@ -320,24 +296,36 @@ class Provider(abc.ABC):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        # HATS-700 / HATS-1511: Body delivered if rule is in ALWAYS_ON_RULES or metadata.yaml has delivery: always_on.
-        # Composed rules that are not delivered and rules with empty bodies log explicit warnings to close silences.
         rules_to_deliver: list[tuple[ResolvedComponent, str]] = []
         for rule in result.rules:
-            if _is_rule_always_on(rule):
-                body = read_rule_body(rule.source_path) if rule.source_path else ""
-                if body:
-                    rules_to_deliver.append((rule, body))
-                else:
-                    logger.warning(
-                        "rule %r: body is empty or unreadable at %s",
-                        rule.name,
-                        rule.source_path,
-                    )
-            elif rule.name not in SUMMARIZED_IN_INJECTION:
+            if rule.source_path and rule.source_path.is_dir():
+                meta_file = rule.source_path / "metadata.yaml"
+                if meta_file.is_file():
+                    try:
+                        meta = RuleMetadata.from_yaml(meta_file)
+                        if meta.delivery is not None and meta.delivery not in ("always_on", ""):
+                            logger.warning(
+                                "rule %r: unrecognized delivery value %r at %s",
+                                rule.name,
+                                meta.delivery,
+                                meta_file,
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "rule %r: failed to load metadata at %s: %s",
+                            rule.name,
+                            meta_file,
+                            exc,
+                        )
+
+            body = read_rule_body(rule.source_path) if rule.source_path else ""
+            if body:
+                rules_to_deliver.append((rule, body))
+            else:
                 logger.warning(
-                    "rule %r: composed but undelivered (body not marked delivery: always_on and not in ALWAYS_ON_RULES)",
+                    "rule %r: body is empty or unreadable at %s",
                     rule.name,
+                    rule.source_path,
                 )
 
         if rules_to_deliver:

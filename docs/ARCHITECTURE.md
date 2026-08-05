@@ -326,9 +326,8 @@ Some operations write shared state with no undo path — `gh pr merge` and
 `git push --force` chief among them. The framework defends against
 autonomous invocations in two layers:
 
-1. **Always-on rule** `rule_pause_before_shared_state_write` — injected
-   via `trait-agent` into every agent role; registered in
-   `ALWAYS_ON_RULES` so it ships inline in the provider system prompt
+1. **Rule** `rule_pause_before_shared_state_write` — injected
+   via `trait-agent` into every agent role so it ships inline in the provider system prompt
    on every session. Requires the agent to pause and name the command
    before any shared-state write (PR/issue/release/push/TaskCreate), and
    forbids chaining such commands with other Bash calls in one

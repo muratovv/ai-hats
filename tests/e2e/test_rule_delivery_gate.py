@@ -171,3 +171,28 @@ def test_real_checker_blocks_dangling_pointer(repo: Path):
     )
     assert res.returncode == 1, res.stderr
     assert "rule_totally_undelivered" in res.stderr
+
+
+@pytest.mark.integration
+def test_real_checker_allows_existing_rule_without_delivery_field(repo: Path):
+    """HATS-1515: An existing rule without delivery: always_on in metadata is allowed by real checker."""
+    from _helpers.env import checkout_pythonpath
+
+    rule_dir = repo / "library" / "core" / "rules" / "rule_existing"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "metadata.yaml").write_text("name: rule_existing\n")
+    (rule_dir / "rule.md").write_text("Existing rule body.\n")
+
+    _stage_cfg(
+        repo,
+        "library/core/traits/trait-good/config.yaml",
+        "name: trait-good\ninjection: |\n  Follow policy — see rule `rule_existing`.\n",
+    )
+    res = _run_hook(
+        repo,
+        env={
+            "AI_HATS_RULE_DELIVERY_CMD": "python3 -m ai_hats.rule_delivery",
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
+        },
+    )
+    assert res.returncode == 0, res.stderr

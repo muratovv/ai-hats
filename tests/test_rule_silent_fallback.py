@@ -12,7 +12,6 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentConfig
-from ai_hats.providers import ALWAYS_ON_RULES
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -72,7 +71,7 @@ def test_a_go_role_is_not_handed_a_python_rule() -> None:
     ``go-dev`` composes trait-se-mindset alongside dev::go-core, so hanging the
     rule on SE mindset shipped ``except`` / ``# noqa: S110`` guidance to a Go
     developer. Delivery is gated by the composed rule set
-    (``providers.build_system_prompt`` filters ALWAYS_ON_RULES by result.rules),
+    (``providers.build_system_prompt`` delivers rules in result.rules),
     so the trait a rule hangs on decides who reads it.
     """
     asm = Assembler(REPO_ROOT)
@@ -81,10 +80,6 @@ def test_a_go_role_is_not_handed_a_python_rule() -> None:
 
     assert "dev_rule_silent_fallback" not in {r.name for r in result.rules}
     assert "dev_rule_silent_fallback" not in composed
-
-
-def test_rule_is_always_on() -> None:
-    assert "dev_rule_silent_fallback" in ALWAYS_ON_RULES
 
 
 def test_rule_present_in_composed_maintainer_prompt() -> None:

@@ -13,10 +13,10 @@ Reused by:
 
 **Behaviour change** (documented in plan ``HATS-474``): the legacy
 sub-agent path built its prompt via ``_build_meta_prompt`` which omitted
-``ALWAYS_ON_RULES``. The new builder reuses
+rule bodies. The new builder reuses
 :meth:`ClaudeProvider.build_system_prompt` so HITL (WrapRunner) and
 Automate (SubAgentRunner) paths get the same composition surface, and
-sub-agents now see the always-on safety rules they previously lacked.
+sub-agents now see safety rules they previously lacked.
 
 Skill discovery is NOT carried by the system prompt for Claude: HATS-701
 suppresses the ``AVAILABLE SKILLS`` index in

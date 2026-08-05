@@ -16,14 +16,10 @@ import pytest
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.composer import Composer
-from ai_hats.providers import ALWAYS_ON_RULES
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 from ai_hats_agy.provider import AgyProvider
 from ai_hats.resolver import LibraryResolver
-from ai_hats.rule_delivery import (
-    SUMMARIZED_IN_INJECTION,
-    find_dangling_rule_pointers,
-)
+from ai_hats.rule_delivery import find_dangling_rule_pointers
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIB_LAYERS = [
@@ -84,19 +80,19 @@ def test_maintainer_prompt_delivers_harness_bullet_not_edit_efficiency():
 
 
 # --------------------------------------------------------------------------- #
-# G1 — every always-on rule's body actually reaches the prompt, for BOTH
-# providers. Cases derive from ALWAYS_ON_RULES (no hand-maintained list). Guards
-# the lazy read_rule_body path against a refactor that resolves the wrong
-# source_path or drops the body.
+# G1 — every composed rule's body reaches the prompt for BOTH providers.
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize("provider_cls", PROVIDERS)
-@pytest.mark.parametrize("rule_name", sorted(ALWAYS_ON_RULES))
-def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
+@pytest.mark.parametrize(
+    "rule_name",
+    ["global_rule_destructive_actions", "dev_rule_secure_coding", "rule_backlog_discipline"],
+)
+def test_composed_rule_body_reaches_prompt(rule_name, provider_cls):
     resolver = _resolver()
     rule_dir = resolver.resolve_rule_dir(rule_name)
-    assert rule_dir is not None, f"always-on rule {rule_name} absent from library"
+    assert rule_dir is not None, f"rule {rule_name} absent from library"
 
     rule = ResolvedComponent(
         name=rule_name,
@@ -119,10 +115,7 @@ def test_always_on_rule_body_reaches_prompt(rule_name, provider_cls):
 
 
 # --------------------------------------------------------------------------- #
-# G2 — no `see rule X` pointer reaches the agent for a rule it cannot read. The
-# invariant lives in find_dangling_rule_pointers (shared by this test and the
-# rule-delivery-gate pre-commit hook). This is the test that would have caught
-# HATS-700.
+# G2 — no `see rule X` pointer reaches the agent for a rule that does not exist.
 # --------------------------------------------------------------------------- #
 
 
@@ -131,21 +124,13 @@ def test_no_dangling_rule_pointers_in_shipped_library():
         REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
     )
     assert violations == [], (
-        "Undelivered `see rule X` pointers — each rule must be always-on or "
-        "registered in SUMMARIZED_IN_INJECTION:\n"
+        "Dangling `see rule X` pointers — each rule must exist in library:\n"
         + "\n".join(f"  {v.source}: see rule `{v.rule}`" for v in violations)
     )
 
 
-def test_summarized_allowlist_has_no_always_on_overlap():
-    # An allowlisted rule is, by definition, NOT delivered as a body; if it is
-    # also always-on the registration is contradictory/stale.
-    assert SUMMARIZED_IN_INJECTION.isdisjoint(ALWAYS_ON_RULES)
-
-
 def test_g2_catches_an_undelivered_pointer(tmp_path):
-    # Sanity: the gate is not vacuous. A trait that points at a rule which is
-    # neither always-on nor allowlisted must be flagged.
+    # Sanity: the gate is not vacuous. A trait that points at a non-existent rule must be flagged.
     trait = tmp_path / "core" / "traits" / "trait-bad"
     trait.mkdir(parents=True)
     (trait / "config.yaml").write_text(
@@ -156,12 +141,12 @@ def test_g2_catches_an_undelivered_pointer(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# HATS-1511: delivery field in metadata.yaml + non-delivered & empty warnings
+# HATS-1511 / HATS-1515: delivery metadata & warnings
 # --------------------------------------------------------------------------- #
 
 
 def test_rule_with_metadata_delivery_always_on_included_in_prompt(tmp_path):
-    """HATS-1511: A rule declaring delivery: always_on in metadata.yaml is delivered in ## RULES."""
+    """HATS-1511 / HATS-1515: A rule declaring delivery: always_on in metadata.yaml is delivered in ## RULES."""
     rule_dir = tmp_path / "custom_rule"
     rule_dir.mkdir()
     (rule_dir / "metadata.yaml").write_text("name: custom_rule\ndelivery: always_on\n")
@@ -186,22 +171,22 @@ def test_rule_with_metadata_delivery_always_on_included_in_prompt(tmp_path):
     assert "Body of custom rule." in prompt
 
 
-def test_rule_without_delivery_always_on_not_included_and_warns(tmp_path, caplog):
-    """HATS-1511: Composed rule without delivery: always_on is undelivered and issues warning."""
+def test_rule_with_unrecognized_delivery_value_warns_and_delivers(tmp_path, caplog):
+    """HATS-1515: Unrecognized delivery metadata logs warning, but body is still delivered."""
     import logging
 
-    rule_dir = tmp_path / "undelivered_rule"
+    rule_dir = tmp_path / "unrecognized_rule"
     rule_dir.mkdir()
-    (rule_dir / "metadata.yaml").write_text("name: undelivered_rule\n")
-    (rule_dir / "rule.md").write_text("Body of undelivered rule.\n")
+    (rule_dir / "metadata.yaml").write_text("name: unrecognized_rule\ndelivery: summarized\n")
+    (rule_dir / "rule.md").write_text("Body of unrecognized rule.\n")
 
     rule = ResolvedComponent(
-        name="undelivered_rule",
+        name="unrecognized_rule",
         component_type=ComponentKind.RULE,
         source_path=rule_dir,
     )
     result = CompositionResult(
-        name="undelivered_test",
+        name="unrecognized_delivery_test",
         priorities=[],
         rules=[rule],
         skills=[],
@@ -211,12 +196,12 @@ def test_rule_without_delivery_always_on_not_included_and_warns(tmp_path, caplog
     with caplog.at_level(logging.WARNING):
         prompt = ClaudeProvider().build_system_prompt(result)
 
-    assert "### undelivered_rule" not in prompt
-    assert "rule 'undelivered_rule': composed but undelivered" in caplog.text
+    assert "### unrecognized_rule" in prompt
+    assert "rule 'unrecognized_rule': unrecognized delivery value 'summarized'" in caplog.text
 
 
 def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
-    """HATS-1511: Opt-in or always-on rule with empty/missing body issues warning."""
+    """HATS-1511: Rule with empty/missing body issues warning."""
     import logging
 
     rule_dir = tmp_path / "empty_rule"
@@ -244,36 +229,6 @@ def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
     assert "rule 'empty_rule': body is empty or unreadable" in caplog.text
 
 
-def test_summarized_in_injection_rule_does_not_warn(tmp_path, caplog):
-    """HATS-1511: Rules in SUMMARIZED_IN_INJECTION are intentionally summarized and issue no warning."""
-    import logging
-
-    rule_name = sorted(SUMMARIZED_IN_INJECTION)[0]
-    rule_dir = tmp_path / rule_name
-    rule_dir.mkdir()
-    (rule_dir / "metadata.yaml").write_text(f"name: {rule_name}\n")
-    (rule_dir / "rule.md").write_text("Body text.\n")
-
-    rule = ResolvedComponent(
-        name=rule_name,
-        component_type=ComponentKind.RULE,
-        source_path=rule_dir,
-    )
-    result = CompositionResult(
-        name="summarized_test",
-        priorities=[],
-        rules=[rule],
-        skills=[],
-        injections=[],
-    )
-
-    with caplog.at_level(logging.WARNING):
-        prompt = ClaudeProvider().build_system_prompt(result)
-
-    assert f"### {rule_name}" not in prompt
-    assert f"rule '{rule_name}': composed but undelivered" not in caplog.text
-
-
 def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
     """HATS-1511: Unreadable/malformed metadata.yaml is caught, logs warning, and does not crash prompt build."""
     import logging
@@ -299,7 +254,7 @@ def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         prompt = ClaudeProvider().build_system_prompt(result)
 
-    assert "### bad_meta_rule" not in prompt
+    assert "### bad_meta_rule" in prompt
     assert "rule 'bad_meta_rule': failed to load metadata at" in caplog.text
 
 
