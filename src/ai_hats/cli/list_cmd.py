@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import click
 
 from ._helpers import _assembler, console
+
+logger = logging.getLogger(__name__)
 
 
 @click.group("list")
@@ -36,7 +39,11 @@ def list_roles():
     table.add_column("Priorities", style="dim")
 
     for name in names:
-        cfg = asm.resolver.resolve_config(name, ComponentType.ROLE)
+        try:
+            cfg = asm.resolver.resolve_config(name, ComponentType.ROLE)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("role %r: failed to load config: %s", name, exc)
+            cfg = None
         if cfg:
             table.add_row(
                 name,
@@ -87,8 +94,16 @@ def list_rules():
         if path:
             meta_path = path / "metadata.yaml"
             if meta_path.exists():
-                meta = RuleMetadata.from_yaml(meta_path)
-                desc = meta.description
+                try:
+                    meta = RuleMetadata.from_yaml(meta_path)
+                    desc = meta.description
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "rule %r: failed to load metadata at %s: %s",
+                        name,
+                        meta_path,
+                        exc,
+                    )
         if desc:
             console.print(f"  [cyan]{name}[/]  [dim]{desc}[/]")
         else:
