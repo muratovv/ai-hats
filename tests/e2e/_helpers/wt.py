@@ -23,8 +23,14 @@ run it
 """
 
 
-def git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+from _helpers.git import git as _git, init_repo as _init_repo
+
+git = _git
+
+
+def init_repo(main: Path) -> None:
+    _init_repo(main, branch="master", harden=False)
+
 
 
 def child_env(repo_root: Path) -> dict[str, str]:
@@ -82,13 +88,7 @@ def worktree_branches(main: Path) -> dict[str, Path]:
     return branches
 
 
-def init_repo(main: Path) -> None:
-    (main / ".gitignore").write_text(".agent/\nai-hats.yaml\n")
-    git(main, "init", "-b", "master")
-    git(main, "config", "user.email", "t@e")
-    git(main, "config", "user.name", "T")
-    git(main, "add", "-A")
-    git(main, "commit", "-m", "init", "--allow-empty")
+
 
 
 def spawn_worktree(main: Path, task_id: str, env: dict[str, str]) -> None:
