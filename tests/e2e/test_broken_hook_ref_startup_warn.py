@@ -9,10 +9,10 @@ the only signal the user gets is harness spam on every Bash call.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
+from _helpers.git import git
 from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
@@ -25,17 +25,13 @@ pytestmark = pytest.mark.integration
 BROKEN_CMD = "$CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh"
 
 
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
-
-
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + minimal synthetic library (one role, one trait)."""
     project = tmp_path / "project"
     project.mkdir()
-    _git("init", "--quiet", cwd=project)
-    _git("config", "user.email", "t@e.com", cwd=project)
-    _git("config", "user.name", "t", cwd=project)
+    git(project, "init", "--quiet")
+    git(project, "config", "user.email", "t@e.com")
+    git(project, "config", "user.name", "t")
 
     lib = tmp_path / "lib"
     trait = lib / "traits" / "trait-base"
