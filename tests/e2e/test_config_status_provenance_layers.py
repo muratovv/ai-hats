@@ -97,3 +97,69 @@ def test_e2e_config_status_user_global_rule_provenance(shared_launcher, tmp_path
     assert "hats525-global-rule  (global)" in out or "hats525-global-rule\x1b" in out, (
         f"bundled global rule should be tagged (global):\n{out}"
     )
+
+
+@pytest.mark.integration
+def test_e2e_config_status_symlinked_and_library_paths_yaml_global_provenance(
+    shared_launcher, tmp_path: Path
+) -> None:
+    launcher_dest, base_env, _venv = shared_launcher
+
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir()
+
+    # Case A: Symlinked child ~/.ai-hats/traits -> real_traits
+    real_traits_dir = tmp_path / "external_traits"
+    real_traits_dir.mkdir()
+    sym_trait_dir = real_traits_dir / "symlink-global-trait"
+    sym_trait_dir.mkdir()
+    (sym_trait_dir / "config.yaml").write_text("name: symlink-global-trait\n")
+    (ai_hats_dir / "traits").symlink_to(real_traits_dir, target_is_directory=True)
+
+    # Case B: library_paths.yaml pointing to ext_lib_dir
+    ext_lib_dir = tmp_path / "external_lib"
+    ext_lib_dir.mkdir()
+    ext_trait_dir = ext_lib_dir / "traits" / "yaml-global-trait"
+    ext_trait_dir.mkdir(parents=True)
+    (ext_trait_dir / "config.yaml").write_text("name: yaml-global-trait\n")
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {ext_lib_dir}\n")
+
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = dict(base_env)
+    env.pop("PYTHONPATH", None)
+    env["AI_HATS_USER_HOME"] = str(user_home_dir)
+
+    _run(
+        [str(launcher_dest), "self", "init", "-p", "claude", "-r", "assistant"],
+        cwd=project,
+        env=env,
+    )
+
+    _run(
+        [
+            str(launcher_dest),
+            "config",
+            "customize",
+            "assistant",
+            "--add-trait",
+            "symlink-global-trait",
+            "--add-trait",
+            "yaml-global-trait",
+            "--global",
+        ],
+        cwd=project,
+        env=env,
+    )
+
+    res = _run([str(launcher_dest), "config", "status"], cwd=project, env=env)
+    out = res.stdout + res.stderr
+
+    assert "symlink-global-trait  (built-in)" not in out, f"symlinked trait tagged built-in:\n{out}"
+    assert "symlink-global-trait  (global)" in out or "symlink-global-trait" in out
+
+    assert "yaml-global-trait  (built-in)" not in out, f"yaml trait tagged built-in:\n{out}"
+    assert "yaml-global-trait  (global)" in out or "yaml-global-trait" in out
