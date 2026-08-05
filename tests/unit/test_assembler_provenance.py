@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ai_hats.assembler import Assembler
+from ai_hats.library_paths import build_library_paths
 from ai_hats.models import ComponentType, ProjectConfig, UserConfig
 from ai_hats.provenance import ComponentLayer, classify_component_layer
 
@@ -116,3 +117,28 @@ def test_get_overlay_provenance_bundled_rule(tmp_path: Path, monkeypatch) -> Non
     ):
         provenance = assembler._get_overlay_provenance("assistant")
         assert provenance["rules"].get("custom-global-rule") == ComponentLayer.GLOBAL.value
+
+
+def test_relative_library_path_anchors_to_project_dir(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    rel_lib_dir = project_dir / "custom_libs"
+    rel_lib_dir.mkdir()
+    rule_dir = rel_lib_dir / "rules" / "rel-rule"
+    rule_dir.mkdir(parents=True)
+
+    # Subdirectory outside project_dir to test relative path resolution
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    paths = build_library_paths(project_dir=project_dir, config_paths=["custom_libs"])
+    assert rel_lib_dir.resolve() in paths
+
+    layer = classify_component_layer(
+        rule_dir.resolve(),
+        project_dir=project_dir,
+        library_paths=paths,
+        project_config_paths=["custom_libs"],
+    )
+    assert layer == ComponentLayer.PROJECT

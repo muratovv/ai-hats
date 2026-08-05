@@ -108,7 +108,8 @@ def build_library_paths(
     paths.extend(_user_global_library_paths())
 
     for configured in config_paths:
-        expanded = Path(configured).expanduser()
+        p = Path(configured).expanduser()
+        expanded = (project_dir / p).resolve() if not p.is_absolute() else p.resolve()
         if expanded.is_dir():
             paths.append(expanded)
 

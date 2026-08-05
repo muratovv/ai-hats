@@ -53,7 +53,11 @@ def _try_get_project_layer(
                 return ComponentLayer.PROJECT
             for proj_p in project_config_paths:
                 try:
-                    if lib_resolved == Path(proj_p).expanduser().resolve():
+                    p = Path(proj_p).expanduser()
+                    proj_resolved = (
+                        (proj_root / p).resolve() if not p.is_absolute() else p.resolve()
+                    )
+                    if lib_resolved == proj_resolved:
                         return ComponentLayer.PROJECT
                 except (OSError, ValueError, TypeError):
                     pass
