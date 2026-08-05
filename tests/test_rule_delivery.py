@@ -153,3 +153,93 @@ def test_g2_catches_an_undelivered_pointer(tmp_path):
     )
     violations = find_dangling_rule_pointers(tmp_path)
     assert [v.rule for v in violations] == ["rule_totally_undelivered"]
+
+
+# --------------------------------------------------------------------------- #
+# HATS-1511: delivery field in metadata.yaml + non-delivered & empty warnings
+# --------------------------------------------------------------------------- #
+
+
+def test_rule_with_metadata_delivery_always_on_included_in_prompt(tmp_path):
+    """HATS-1511: A rule declaring delivery: always_on in metadata.yaml is delivered in ## RULES."""
+    rule_dir = tmp_path / "custom_rule"
+    rule_dir.mkdir()
+    (rule_dir / "metadata.yaml").write_text("name: custom_rule\ndelivery: always_on\n")
+    (rule_dir / "rule.md").write_text("### custom_rule\nBody of custom rule.\n")
+
+    rule = ResolvedComponent(
+        name="custom_rule",
+        component_type=ComponentKind.RULE,
+        source_path=rule_dir,
+    )
+    result = CompositionResult(
+        name="opt_in_test",
+        priorities=[],
+        rules=[rule],
+        skills=[],
+        injections=[],
+    )
+    prompt = ClaudeProvider().build_system_prompt(result)
+
+    assert "## RULES" in prompt
+    assert "### custom_rule" in prompt
+    assert "Body of custom rule." in prompt
+
+
+def test_rule_without_delivery_always_on_not_included_and_warns(tmp_path, caplog):
+    """HATS-1511: Composed rule without delivery: always_on is undelivered and issues warning."""
+    import logging
+
+    rule_dir = tmp_path / "undelivered_rule"
+    rule_dir.mkdir()
+    (rule_dir / "metadata.yaml").write_text("name: undelivered_rule\n")
+    (rule_dir / "rule.md").write_text("Body of undelivered rule.\n")
+
+    rule = ResolvedComponent(
+        name="undelivered_rule",
+        component_type=ComponentKind.RULE,
+        source_path=rule_dir,
+    )
+    result = CompositionResult(
+        name="undelivered_test",
+        priorities=[],
+        rules=[rule],
+        skills=[],
+        injections=[],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        prompt = ClaudeProvider().build_system_prompt(result)
+
+    assert "### undelivered_rule" not in prompt
+    assert "rule 'undelivered_rule': composed but undelivered" in caplog.text
+
+
+def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
+    """HATS-1511: Opt-in or always-on rule with empty/missing body issues warning."""
+    import logging
+
+    rule_dir = tmp_path / "empty_rule"
+    rule_dir.mkdir()
+    (rule_dir / "metadata.yaml").write_text("name: empty_rule\ndelivery: always_on\n")
+    (rule_dir / "rule.md").write_text("")
+
+    rule = ResolvedComponent(
+        name="empty_rule",
+        component_type=ComponentKind.RULE,
+        source_path=rule_dir,
+    )
+    result = CompositionResult(
+        name="empty_body_test",
+        priorities=[],
+        rules=[rule],
+        skills=[],
+        injections=[],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        prompt = ClaudeProvider().build_system_prompt(result)
+
+    assert "### empty_rule" not in prompt
+    assert "rule 'empty_rule': body is empty or unreadable" in caplog.text
+

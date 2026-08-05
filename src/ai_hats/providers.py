@@ -23,10 +23,23 @@ from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
 )
+from .models import RuleMetadata
 from .resolver import read_rule_body
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_rule_always_on(rule: ResolvedComponent) -> bool:
+    if rule.name in ALWAYS_ON_RULES:
+        return True
+    if rule.source_path and rule.source_path.is_dir():
+        meta_file = rule.source_path / "metadata.yaml"
+        if meta_file.is_file():
+            meta = RuleMetadata.from_yaml(meta_file)
+            if meta.delivery == "always_on":
+                return True
+    return False
 
 # HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
 # designed switch, so the sweeper now reclaims the root ai-hats:* entries.
@@ -281,15 +294,30 @@ class Provider(abc.ABC):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        # Only always-on rules in prompt; body read on demand from source_path
-        # (HATS-700 — composer no longer eager-loads rule bodies).
-        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
-        if always_on:
-            rules_section = "## RULES\n"
-            for rule in always_on:
-                body = read_rule_body(rule.source_path)
+        # HATS-700 / HATS-1511: Body delivered if rule is in ALWAYS_ON_RULES or metadata.yaml has delivery: always_on.
+        # Composed rules that are not delivered and rules with empty bodies log explicit warnings to close silences.
+        rules_to_deliver: list[tuple[ResolvedComponent, str]] = []
+        for rule in result.rules:
+            if _is_rule_always_on(rule):
+                body = read_rule_body(rule.source_path) if rule.source_path else ""
                 if body:
-                    rules_section += f"\n### {rule.name}\n{body}\n"
+                    rules_to_deliver.append((rule, body))
+                else:
+                    logger.warning(
+                        "rule %r: body is empty or unreadable at %s",
+                        rule.name,
+                        rule.source_path,
+                    )
+            else:
+                logger.warning(
+                    "rule %r: composed but undelivered (body not marked delivery: always_on and not in ALWAYS_ON_RULES)",
+                    rule.name,
+                )
+
+        if rules_to_deliver:
+            rules_section = "## RULES\n"
+            for rule, body in rules_to_deliver:
+                rules_section += f"\n### {rule.name}\n{body}\n"
             sections.append(rules_section)
 
         # HATS-1203: project-authored rules, after the framework's own so they
