@@ -1,12 +1,11 @@
-"""E2E: ``--dry-run`` reports the launch and writes nothing (HATS-1211).
+"""``--dry-run`` reports the launch and writes nothing (HATS-1211).
 
-Per ``dev_rule_e2e_gate``: the change touches ``src/ai_hats/cli/`` — e2e
-required. Real composition against this repo's library, real CLI, real
-filesystem; the only stub is ``bootstrap_or_die`` (network / self-update probe).
+The side effect under test is an ABSENCE: after a dry-run the project tree is
+byte-identical. A write escaping the materialization port happens for real here
+and fails this test.
 
-The observable side effect under test is an ABSENCE: after a dry-run the project
-tree is byte-identical. That is the guarantee — a write that escapes the
-materialization port happens for real here and fails this test.
+Moved out of ``tests/e2e/`` by HATS-1493 — it never drove the binary, and the
+``dev_rule_e2e_gate`` claim it used to carry was false (see the card).
 """
 
 from __future__ import annotations
@@ -26,8 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIB_CORE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core"
 LIB_USAGE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage"
-
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 def _fingerprint(project: Path) -> dict[str, str]:

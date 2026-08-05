@@ -1,14 +1,11 @@
-"""E2E: ``ai-hats config show-prompt`` materializes role prompts on demand.
+"""``ai-hats config show-prompt`` materializes role prompts on demand.
 
-HATS-452 Phase 1. The CLI command is the user-facing surface for
-"what would the agent actually see for role X". Verifies both text and
-``--stats`` modes against a temp project pointed at this repo's
-``library/``.
+HATS-452 Phase 1. The CLI command is the user-facing surface for "what would
+the agent actually see for role X". Verifies text and ``--stats`` modes; real
+composition + real provider rendering, only ``bootstrap_or_die`` stubbed.
 
-Per ``dev_rule_e2e_gate``: change touches ``src/ai_hats/cli/`` —
-e2e required. Mocking is limited to ``bootstrap_or_die`` (network /
-self-update probe); the rest is real composition + real provider
-rendering.
+Moved out of ``tests/e2e/`` by HATS-1493 — in-process ``CliRunner``, no
+binary, so the ``dev_rule_e2e_gate`` claim it carried was false (see the card).
 """
 
 from __future__ import annotations
@@ -28,10 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIB_CORE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "core"
 LIB_USAGE = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library" / "usage"
-
-
-# smoke: also run by the merge-to-master CI gate (HATS-783)
-pytestmark = [pytest.mark.integration, pytest.mark.smoke]
 
 
 @pytest.fixture

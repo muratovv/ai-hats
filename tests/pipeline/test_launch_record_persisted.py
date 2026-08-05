@@ -1,5 +1,7 @@
-"""E2E regression: HATS-1216 — HITL and Automate sessions must persist launch record
-to ``<session_dir>/role_materialization.json``.
+"""HATS-1216 — HITL and Automate sessions persist the launch record to
+``<session_dir>/role_materialization.json``.
+
+Moved out of ``tests/e2e/`` by HATS-1493: it drives the runners in-process.
 """
 
 from __future__ import annotations
@@ -21,8 +23,6 @@ from ai_hats.paths import PROJECT_CONFIG
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.fixture
 def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
@@ -39,6 +39,9 @@ def project_with_maintainer_default(tmp_path: Path, monkeypatch) -> Path:
     asm.init()
     asm.set_role("maintainer", provider_name="claude")
     monkeypatch.chdir(project)
+    # HATS-1493: check_update_async is step 1 of the real human pipeline and
+    # would fire a detached network probe from a test that spawns nothing else.
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     return project
 
 
@@ -103,11 +106,12 @@ def test_automate_subagent_persists_role_materialization_json(
     from ai_hats.runtime import SubAgentRunner
     from ai_hats_observe import SessionManager
 
-    # Stub SDK runner so no real Claude API calls are made
+    # HATS-1493: no raising=False. This patched a name that never existed, so
+    # the stub was inert and the SDK spawned the real `claude` CLI — invisibly,
+    # because SubAgentRunner swallows every engine exception.
     monkeypatch.setattr(
-        "ai_hats.surfaces.claude.sdk_runner.run_sdk_subagent",
+        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
         lambda *args, **kwargs: None,
-        raising=False,
     )
 
     payload = build_composition_payload(project_with_maintainer_default, role_override="maintainer")

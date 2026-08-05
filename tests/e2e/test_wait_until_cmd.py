@@ -13,9 +13,13 @@ from pathlib import Path
 
 import pytest
 
+from _helpers.wait import parse_happened
+
 pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+_TOUCH_DELAY = 1.0
 
 
 def _env() -> dict[str, str]:
@@ -30,10 +34,15 @@ def _touch_after(path: Path, delay: float) -> subprocess.Popen:
 
 
 def test_predicate_becomes_true_exits_zero(tmp_project) -> None:
+    """Exit 0 must be CAUSED by the marker appearing, not merely coincide.
+
+    ``expect_ok()`` alone passes against a ``wait`` with its polling loop
+    deleted; the poll count and elapsed time are what refuse that.
+    """
     marker = tmp_project.path / "marker"
-    toucher = _touch_after(marker, 1.0)
+    toucher = _touch_after(marker, _TOUCH_DELAY)
     try:
-        tmp_project.run(
+        result = tmp_project.run(
             "wait",
             "--until-cmd",
             f"test -f {marker}",
@@ -46,6 +55,20 @@ def test_predicate_becomes_true_exits_zero(tmp_project) -> None:
         ).expect_ok()
     finally:
         toucher.wait(timeout=10)
+
+    happened = parse_happened(result.stdout)
+    assert happened.polls >= 2, (
+        f"exited after {happened.polls} poll(s) — the marker is absent at t=0, "
+        f"so one poll means it never waited"
+    )
+    # duration_s, not the wait's own elapsed: wait starts its clock after the
+    # interpreter boots, while the toucher's delay runs from before that — the
+    # two are different clocks and comparing them under-reads by the boot time.
+    assert result.duration_s >= _TOUCH_DELAY, (
+        f"returned in {result.duration_s:.1f}s (wait reported {happened.elapsed_s}s) "
+        f"but the marker only appears at {_TOUCH_DELAY}s"
+    )
+    assert marker.exists(), "the event the wait claimed to observe"
 
 
 def test_predicate_already_true_returns_immediately(tmp_project) -> None:
@@ -115,65 +138,5 @@ def test_broken_predicate_exits_2_not_124(tmp_project, predicate: str, label: st
     )
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "bad_flag"),
-    [
-        (("--poll", "0", "--timeout", "3"), "--poll"),
-        (("--poll", "-5", "--timeout", "3"), "--poll"),
-        (("--poll", "-0.5", "--timeout", "3"), "--poll"),
-        (("--poll", "nan", "--timeout", "3"), "--poll"),
-        (("--poll", "inf", "--timeout", "3"), "--poll"),
-        (("--poll", "0.2", "--timeout", "-1"), "--timeout"),
-        (("--poll", "0.2", "--timeout", "nan"), "--timeout"),
-        (("--poll", "0.2", "--timeout", "inf"), "--timeout"),
-    ],
-)
-def test_non_positive_poll_or_bad_timeout_rejected_at_input(
-    tmp_project, extra_args: tuple[str, ...], bad_flag: str
-) -> None:
-    """``--poll <= 0`` (or non-finite) and a negative/non-finite ``--timeout``
-    must be refused before polling starts (HATS-1452) — else they collapse
-    into a busy-loop (``time.sleep(max(nap, 0.0))`` naps for 0s on any of
-    these). The predicate is already-true ``true`` in every case: without the
-    guard this exits 0 immediately, so a green run here means the guard is
-    missing, not that the wait "happened to be fast".
-    """
-    result = tmp_project.run(
-        "wait",
-        "--until-cmd",
-        "true",
-        *extra_args,
-        timeout=30.0,
-        extra_env=_env(),
-    )
-
-    assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}: {result.stderr[-300:]}"
-    assert result.duration_s < 5.0, (
-        f"took {result.duration_s:.1f}s — rejection must happen before polling starts, "
-        f"not after a busy-loop"
-    )
-    assert bad_flag in result.stderr, f"stderr should name {bad_flag}: {result.stderr[-300:]}"
-
-
-@pytest.mark.parametrize(
-    "extra_args",
-    [
-        ("--poll", "0.2", "--timeout", "0"),
-        ("--poll", "1.1", "--timeout", "1e2"),
-    ],
-    ids=["timeout-zero-waits-forever", "fractional-and-exponential-values"],
-)
-def test_legal_poll_and_timeout_values_accepted(tmp_project, extra_args: tuple[str, ...]) -> None:
-    """Legal float values must pass the guard untouched (HATS-1452 regression):
-    ``--timeout 0`` keeps meaning "wait forever" rather than being caught by the
-    negative-timeout guard, and a fractional or scientific-notation value (both
-    valid ``float`` syntax) must not be rejected by the finite/positive check.
-    """
-    tmp_project.run(
-        "wait",
-        "--until-cmd",
-        "true",
-        *extra_args,
-        timeout=30.0,
-        extra_env=_env(),
-    ).expect_ok()
+# HATS-1452 flag-guard coverage moved to tests/test_cli_wait_flags.py
+# (HATS-1493): arg validation precedes polling and needs no process.

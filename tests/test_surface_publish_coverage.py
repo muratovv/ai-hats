@@ -1,4 +1,4 @@
-"""E2E: every known surface has a publish path (HATS-1353).
+"""Every known surface has a publish path (HATS-1353).
 
 `self_heal` does not merely advise an install for a selected surface — it runs
 `uv pip install <package_name>`, so a surface in `KNOWN_SURFACES` whose
@@ -11,14 +11,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 from ai_hats.surfaces_registry import KNOWN_SURFACES
 
-pytestmark = [pytest.mark.integration]
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-packages.yml"
 
 # The integrator ships from release.yml on the v* tag, not from this workflow.
