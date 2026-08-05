@@ -77,6 +77,31 @@ class RunResult:
                 f"cmd: {' '.join(self.cmd)}\n"
                 f"stdout (tail 500):\n{self.stdout[-500:]}"
             )
+    @property
+    def output(self) -> str:
+        """Combined stdout and stderr."""
+        return self.stdout + self.stderr
+
+    def expect_exit(self, n: int) -> "RunResult":
+        """Exit code must match n."""
+        if self.exit_code != n:
+            raise AssertionError(
+                f"expected exit {n}, got {self.exit_code}\n"
+                f"cmd: {' '.join(self.cmd)}\n"
+                f"stdout (tail 500):\n{self.stdout[-500:]}\n"
+                f"stderr (tail 500):\n{self.stderr[-500:]}"
+            )
+        return self
+
+    def expect_output_contains(self, *markers: str) -> "RunResult":
+        """All ``markers`` must appear in combined stdout + stderr."""
+        missing = [m for m in markers if m not in self.output]
+        if missing:
+            raise AssertionError(
+                f"output missing markers: {missing}\n"
+                f"cmd: {' '.join(self.cmd)}\n"
+                f"output (tail 500):\n{self.output[-500:]}"
+            )
         return self
 
     def expect_stdout_contains(self, *markers: str) -> "RunResult":
