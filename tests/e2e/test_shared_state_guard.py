@@ -29,9 +29,6 @@ PREPUSH_HOOK = (
 # --- Git pre-push hook -----------------------------------------------------
 
 
-
-
-
 def _git(cwd: Path, *args: str) -> str:
     return _git_helper(cwd, *args).stdout.strip()
 

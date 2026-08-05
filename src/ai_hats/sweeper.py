@@ -32,12 +32,14 @@ from .paths import (
     AI_HATS_MANAGED_MARKER,
     claude_dir,
     claude_settings_json,
+    claude_settings_local_json,
     claude_skills_dir,
     gemini_settings_path,
 )
 from .plugin_dir import _is_safe_relative
 
 _SETTINGS_RELPATH = str(claude_settings_json(Path(".")))
+_LOCAL_SETTINGS_RELPATH = str(claude_settings_local_json(Path(".")))
 _GEMINI_SETTINGS_RELPATH = str(gemini_settings_path(Path(".")))
 
 OWNER_HEADER_PREFIX = "# ai-hats-owner:"
@@ -123,6 +125,13 @@ def default_surfaces() -> tuple[Surface, ...]:
             embedded_marker=GITHOOKS_DISPATCHER_MARKER,
         ),
         SettingsTagsSurface(owner_key="runtime-hooks"),
+        # HATS-1513: the asserter has always read the user-private overlay
+        # (migration_assert.SETTINGS_TARGETS), so leaving it unswept meant a
+        # tagged broken ref there refused every bump with no CLI way out.
+        SettingsTagsSurface(
+            owner_key="local-runtime-hooks",
+            settings_relpath=_LOCAL_SETTINGS_RELPATH,
+        ),
         # HATS-1336: agy stopped writing the project root in HATS-1166 and left
         # no owner behind, so this location sweeps on sight.
         SettingsTagsSurface(

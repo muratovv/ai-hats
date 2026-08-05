@@ -11,7 +11,12 @@ import hashlib
 import pytest
 
 from ai_hats import owners, sweeper
-from ai_hats.paths import claude_dir, claude_settings_json, claude_skills_dir
+from ai_hats.paths import (
+    claude_dir,
+    claude_settings_json,
+    claude_settings_local_json,
+    claude_skills_dir,
+)
 from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_SESSION_START
 
 
@@ -375,6 +380,9 @@ def test_default_surfaces_cover_all_known_owners():
     assert keys == [
         "git-hooks",
         "runtime-hooks",
+        # HATS-1513: the user-private overlay. The asserter always read it, so
+        # without this the sweep could not heal what the assert refuses on.
+        "local-runtime-hooks",
         # HATS-1336: agy's pre-1166 root remnant. A location outlives its
         # owner, so it gets its own key rather than riding runtime-hooks.
         "agy-root-runtime-hooks",
@@ -382,6 +390,39 @@ def test_default_surfaces_cover_all_known_owners():
         "claude-publish",
         "root-skills-export",
     ]
+
+
+def test_default_surfaces_sweep_tagged_entries_in_settings_local(tmp_path):
+    """HATS-1513: a tagged ref here used to wedge ``self update`` forever —
+    the end-of-bump assert refused on it and no surface could reclaim it."""
+    import json
+
+    local = claude_settings_local_json(tmp_path)
+    local.parent.mkdir(parents=True)
+    user_entry = {"matcher": "*", "hooks": [{"command": "user-own.sh"}]}
+    local.write_text(
+        json.dumps(
+            {
+                "permissions": {"allow": ["Bash(ls:*)"]},
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {"matcher": "Bash", "_ai_hats_managed": "ai-hats:hats-437"},
+                        user_entry,
+                    ]
+                },
+            }
+        )
+    )
+
+    reports = sweeper.sweep_unclaimed(tmp_path, surfaces=sweeper.default_surfaces())
+
+    by_owner = {r.owner_key: r for r in reports}
+    assert list(by_owner["local-runtime-hooks"].swept) == ["ai-hats:hats-437"]
+    data = json.loads(local.read_text())
+    assert data["hooks"][HOOK_PRE_TOOL_USE] == [user_entry], "user entry must survive intact"
+    assert data["permissions"] == {"allow": ["Bash(ls:*)"]}, (
+        "non-hook keys are none of our business"
+    )
 
 
 def test_default_surfaces_sweep_real_legacy_leftovers(tmp_path):

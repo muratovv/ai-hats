@@ -17,8 +17,9 @@ CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
 
-# HATS-700: the ONLY rule-delivery channel — body delivered iff named here;
-# adding one is a deliberate prompt-budget decision. HATS-865: leaf home.
+# HATS-700 / HATS-1511: rule-delivery channel — body delivered iff named here
+# or declared with 'delivery: always_on' in metadata.yaml;
+# adding/declaring one is a deliberate prompt-budget decision. HATS-865: leaf home.
 ALWAYS_ON_RULES = {
     "global_rule_destructive_actions",
     "global_rule_resource_hygiene",

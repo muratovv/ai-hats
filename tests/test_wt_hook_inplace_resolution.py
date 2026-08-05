@@ -118,4 +118,3 @@ def test_symlinked_skill_layer_resolves(tmp_path):
     )
 
     assert resolved == script_file.resolve(), why
-

@@ -19,10 +19,12 @@ When resolving a component by name, ai-hats walks these paths in order; **later 
 | - | ------------------------------------------- | ------------------ |
 | 1 | `<pkg>/ai_hats_library/core/`               | built-in (shipped) |
 | 2 | `<pkg>/ai_hats_library/usage/`              | built-in (shipped) |
-| 3 | `~/.ai-hats/`                               | user-global        |
-| 4 | each path in `ai-hats.yaml: library_paths:` | project-config     |
-| 5 | `<project>/libraries/`                      | project-local      |
-| 6 | CLI `--library-path` extras (rarely used)   | session-scoped     |
+| 3 | `ai_hats.skills` entry-point packages       | out-of-tree plugins|
+| 4 | `~/.ai-hats/`                               | user-global        |
+| 5 | each path in `~/.ai-hats/library_paths.yaml`| user-global config |
+| 6 | each path in `ai-hats.yaml: library_paths:` | project-config     |
+| 7 | `<project>/libraries/`                      | project-local      |
+| 8 | CLI `--library-path` extras (rarely used)   | session-scoped     |
 
 So a `~/.ai-hats/roles/my-role/` is visible to every project on your machine; a `<project>/libraries/roles/my-role/` is visible only to that project; both override anything with the same name in the built-in layers.
 
@@ -540,8 +542,7 @@ libraries/
 ```
 
 The `--prompt <name>` flag resolves `initial_injections/<name>.md` across the
-**full `library_paths` chain** (built-in core → usage → `~/.ai-hats/` →
-`cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
+**full `library_paths` chain** (built-in core → usage → entry-point packages → `~/.ai-hats/` → `~/.ai-hats/library_paths.yaml` → `cfg.library_paths` → `<project>/libraries/`), last-wins. So your plugin's
 prompts are discoverable by short name without any package fork (HATS-445).
 
 **2. Shell wrapper** (in `~/.zshrc` or `~/.bashrc`):

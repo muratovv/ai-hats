@@ -12,9 +12,17 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **Opt-in rule delivery (`delivery: always_on` in `metadata.yaml`)** (HATS-1511). Allow rules from any library layer (including user-global and project-local) to request full body delivery into system prompt `## RULES` via `delivery: always_on` in `metadata.yaml`.
+
+- **User-global library paths (`~/.ai-hats/library_paths.yaml`)** (HATS-1508). Support user-level external library directories (`paths: [<dir>, ...]`) inside `build_library_paths` without modifying project `ai-hats.yaml` or using symlinks.
+
 - **Runtime role spec composition (`-r "maintainer + leader"` / `-r "maintainer - trait-base"`)** (HATS-1456). Support ad-hoc runtime expressions in `-r` / `--role` to add or remove traits, rules, or skills for a single session without editing `ai-hats.yaml`. Evaluates as an ephemeral third overlay layer (`[global, project, runtime]`).
 
 - **`leader` and `worker` traits for paired sessions** (HATS-1491). Two `usage/` traits that split one card between two live sessions: the leader owns the plan and a two-contour review (completeness first, then discipline) and writes no code; the worker owns every mechanical step, sleeps on `ai-hats wait --until execute --until done`, and hands work back with the artifacts that settle each claim. Mix onto any base role — `ai-hats -r "maintainer + leader"`, `ai-hats -p agy -r "maintainer + worker"`. Until now the `leader` / `worker` examples in the docs named components that did not exist, so a command copied from them exited 2.
+
+### Fixed
+
+- **Silent drop of composed rules and empty rule bodies** (HATS-1511). Log explicit warnings when a rule in composition is not delivered to the prompt or when an always-on/opt-in rule has an empty body, closing previously silent drop paths.
 
 ### Changed — BREAKING
 
