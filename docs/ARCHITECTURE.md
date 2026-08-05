@@ -247,7 +247,7 @@ ai_hats_library/
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)
 ```
 
-The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
+The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `~/.ai-hats/library_paths.yaml`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
 
 Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system (see HATS-050).
 
