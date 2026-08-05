@@ -33,6 +33,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **`LibraryResolver.list_components` now discovers symlinked components and namespaces** (HATS-1505). Replaced `Path.rglob` with `os.walk(followlinks=True)` guarded by realpath traversal tracking, allowing symlinked trait, skill, rule, and role directories to be listed properly and preventing `RoleSpecError` during runtime composition.
+
 - **Symlinked library components no longer break worktree teardown** (HATS-1494). ``resolve_hook_script`` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. ``~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills``). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
 
 - **Deferred rule removals in overlays and customizations** (HATS-1456). Rule removals (`remove: rules: [name]`) in `customizations` and overlays now resolve against the full composed set (mirroring skill removals), allowing rules brought by traits to be removed cleanly.
