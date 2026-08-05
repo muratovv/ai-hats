@@ -232,12 +232,15 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     itself name the sub-agent recovery (D8 provenance).
     """
     skill = row.get("skill", "?")
-    if event == "merge":
-        cmd_hint = f"ai-hats wt merge {branch_name} --skip-hooks"
-    elif event == "discard":
-        cmd_hint = f"ai-hats wt discard {branch_name} --skip-hooks"
-    else:
-        cmd_hint = f"ai-hats wt {event} {branch_name} --skip-hooks"
+    match event:
+        case "merge":
+            subcmd = "merge"
+        case "discard" | "cleanup":
+            subcmd = "discard"
+        case _:
+            raise ValueError(f"Unknown wt teardown event: {event!r}")
+
+    cmd_hint = f"ai-hats wt {subcmd} {branch_name} --skip-hooks"
 
     detail = (
         f"wt_out hook from skill '{skill}' failed on {event} ({reason}). "
