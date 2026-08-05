@@ -29,9 +29,6 @@ pytestmark = pytest.mark.integration
 
 from _helpers.git import git as _git_helper
 
-def _git(*args: str, cwd: Path) -> None:
-    _git_helper(cwd, *args)
-
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + synthetic library whose role ships skill ``alpha``."""
@@ -121,3 +118,6 @@ def test_session_start_heals_stale_skills_mirror(tmp_path: Path, monkeypatch):
     second = _launch(project, monkeypatch)
     assert "skills mirror" not in second, second
     assert (mirror / "beta" / "SKILL.md").read_text() == beta_content
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

@@ -29,7 +29,7 @@ git = _git
 
 
 def init_repo(main: Path) -> None:
-    _init_repo(main, branch="master", harden=False)
+    _init_repo(main, branch="master", harden=True)
 
 
 

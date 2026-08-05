@@ -27,9 +27,6 @@ DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv
 
 from _helpers.git import git as _git_helper
 
-def _git(*args: str, cwd: Path) -> None:
-    _git_helper(cwd, *args)
-
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + minimal synthetic library (one role, one trait)."""
@@ -102,3 +99,6 @@ def test_in_sync_env_launches_silent(tmp_path: Path, monkeypatch):
     output = _launch(project, monkeypatch)
 
     assert "dev env outdated" not in output, output
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

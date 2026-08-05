@@ -61,10 +61,7 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git_helper
-
-def _git(args, cwd):
-    _git_helper(Path.cwd(), "-C", str(cwd), *args)
+from _helpers.git import git
 
 
 def _head_sha(repo: Path) -> str:
@@ -78,8 +75,8 @@ def _head_sha(repo: Path) -> str:
 
 def _advance(src_repo: Path, marker: str) -> str:
     (src_repo / marker).write_text("hats-653 e2e\n")
-    _git(["add", marker], src_repo)
-    _git(["commit", "--quiet", "-m", f"test: advance HEAD ({marker})"], src_repo)
+    git(src_repo, "add", marker)
+    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
     return _head_sha(src_repo)
 
 
@@ -96,9 +93,9 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -131,3 +128,6 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
     assert not legacy_venv.exists(), (
         "legacy .venv must be reclaimed once the updater runs from a versioned venv"
     )
+
+def _git(args, cwd):
+    return git(cwd, *args)

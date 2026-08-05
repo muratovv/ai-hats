@@ -49,10 +49,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-from _helpers.git import git as _git_helper
-
-def _git(cwd: Path, *args: str) -> None:
-    _git_helper(cwd, *args)
+from _helpers.git import git as _git
 
 
 def _run_hats(

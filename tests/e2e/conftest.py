@@ -397,22 +397,12 @@ def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
 
+    from _helpers.git import init_repo
     from _helpers.project import Project
 
     project_path = tmp_path / "project"
     project_path.mkdir()
-    import subprocess
-
-    subprocess.run(
-        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
-    )
+    init_repo(project_path, branch="master")
     ProjectConfig(provider="claude", library_paths=[]).save(project_path / PROJECT_CONFIG)
     Assembler(project_path).init()
     return Project(
@@ -523,24 +513,14 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     sandboxed launcher (NOT the dev venv binary used by
     :func:`tmp_project`).
     """
+    from _helpers.git import init_repo
     from _helpers.project import Project
     from _helpers.repo_src import build_src
 
     launcher, shared_venv = _shared_launcher_venv
     project_path = tmp_path / "project"
     project_path.mkdir()
-    import subprocess
-
-    subprocess.run(
-        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
-    )
+    init_repo(project_path, branch="master")
     return Project(
         path=project_path,
         ai_hats_binary=launcher,

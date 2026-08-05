@@ -28,10 +28,7 @@ _PLAN_SECTIONS = (
 )
 
 
-from _helpers.git import git as _git_helper
-
-def _git(cwd: Path, *args: str) -> None:
-    _git_helper(cwd, *args)
+from _helpers.git import git as _git
 
 
 def _rack(rack: Path, *args: str, cwd: Path, env: dict) -> subprocess.CompletedProcess[str]:

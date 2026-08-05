@@ -71,10 +71,7 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git_helper
-
-def _git(args, cwd):
-    _git_helper(Path.cwd(), "-C", str(cwd), *args)
+from _helpers.git import git
 
 
 def _head_sha(repo: Path) -> str:
@@ -102,9 +99,9 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -127,8 +124,8 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     (src_repo / "pyproject.toml").write_text(
         "this is not valid TOML @@@ [[[ HATS-718 broken build\n"
     )
-    _git(["add", "pyproject.toml"], src_repo)
-    _git(["commit", "--quiet", "-m", "test: break pyproject so pip install fails"], src_repo)
+    git(src_repo, "add", "pyproject.toml")
+    git(src_repo, "commit", "--quiet", "-m", "test: break pyproject so pip install fails")
     sha_b = _head_sha(src_repo)
     assert sha_b != sha_a
 
@@ -151,3 +148,6 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     assert (versions / sha_a / "bin" / "python").is_file(), (
         "previous working version dir was damaged by the failed update"
     )
+
+def _git(args, cwd):
+    return git(cwd, *args)

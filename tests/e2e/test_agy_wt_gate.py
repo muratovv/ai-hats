@@ -24,10 +24,7 @@ from ai_hats_agy.provider import AgyProvider
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-from _helpers.git import git as _git_helper
-
-def _git(cwd: Path, *args: str) -> None:
-    _git_helper(cwd, *args)
+from _helpers.git import git as _git
 
 
 @pytest.mark.integration

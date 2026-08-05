@@ -13,14 +13,12 @@ def git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def init_repo(path: Path, *, branch: str = "main", harden: bool = True) -> None:
     """Initialize a git repository with default email/name and optional hardening."""
-    (path / ".gitignore").write_text(".agent/\nai-hats.yaml\n")
     git(path, "init", "-b", branch)
     git(path, "config", "user.email", "t@e")
     git(path, "config", "user.name", "T")
     if harden:
         git(path, "config", "core.hooksPath", "/dev/null")
         git(path, "config", "commit.gpgsign", "false")
-    git(path, "add", "-A")
     git(path, "commit", "-m", "init", "--allow-empty")
 
 

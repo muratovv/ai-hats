@@ -87,9 +87,8 @@ def test_e2e_wt_merge_head_wandered_guard(shared_launcher, tmp_path):
         )
 
     # ---- 1. bootstrap project ----
-    _git(project, "init", "-b", "main")
-    _git(project, "config", "user.email", "e2e@test")
-    _git(project, "config", "user.name", "E2E")
+    from _helpers.git import init_repo
+    init_repo(project, branch="main")
     (project / "README.md").write_text("# e2e\n")
     _git(project, "add", "README.md")
     _git(project, "commit", "-m", "init")

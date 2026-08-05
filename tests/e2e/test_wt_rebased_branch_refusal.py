@@ -66,12 +66,8 @@ def test_e2e_wt_rebased_branch_refusal(shared_launcher, tmp_path):
             expect_exit=expect_exit,
         )
 
-    _git(project, "init", "-b", "master")
-    _git(project, "config", "user.email", "e2e@test.com")
-    _git(project, "config", "user.name", "E2E Test")
-    (project / "README.md").write_text("# main repo\n")
-    _git(project, "add", ".")
-    _git(project, "commit", "-m", "init")
+    from _helpers.git import init_repo
+    init_repo(project, branch="master")
 
     # Create worktree
     ai_hats("wt", "create", "task/rebased-e2e")
