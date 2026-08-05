@@ -66,10 +66,13 @@ EXPECTED_FIELDS = {
 @pytest.fixture
 def gated_repo(tmp_path: Path) -> Path:
     """A git repo wired the way ``install_git_hooks`` wires a real one."""
-    init_repo(tmp_path)
+    from _helpers.git import git
 
-    # HATS-1337: nothing is copied any more — a gate runs in place from the
-    # library, with the journal handed to it by the dispatcher as env.
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "t@t")
+    git(tmp_path, "config", "user.name", "t")
+    git(tmp_path, "config", "core.hooksPath", "/dev/null")
+    git(tmp_path, "config", "commit.gpgsign", "false")
     return tmp_path
 
 
