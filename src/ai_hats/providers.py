@@ -25,6 +25,7 @@ from .provider_entry_points import (
 )
 from .models import RuleMetadata
 from .resolver import read_rule_body
+from .rule_delivery import SUMMARIZED_IN_INJECTION
 
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,17 @@ def _is_rule_always_on(rule: ResolvedComponent) -> bool:
     if rule.source_path and rule.source_path.is_dir():
         meta_file = rule.source_path / "metadata.yaml"
         if meta_file.is_file():
-            meta = RuleMetadata.from_yaml(meta_file)
-            if meta.delivery == "always_on":
-                return True
+            try:
+                meta = RuleMetadata.from_yaml(meta_file)
+                if meta.delivery == "always_on":
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "rule %r: failed to load metadata at %s: %s",
+                    rule.name,
+                    meta_file,
+                    exc,
+                )
     return False
 
 # HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
@@ -308,7 +317,7 @@ class Provider(abc.ABC):
                         rule.name,
                         rule.source_path,
                     )
-            else:
+            elif rule.name not in SUMMARIZED_IN_INJECTION:
                 logger.warning(
                     "rule %r: composed but undelivered (body not marked delivery: always_on and not in ALWAYS_ON_RULES)",
                     rule.name,

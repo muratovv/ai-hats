@@ -243,3 +243,62 @@ def test_rule_always_on_with_empty_body_warns(tmp_path, caplog):
     assert "### empty_rule" not in prompt
     assert "rule 'empty_rule': body is empty or unreadable" in caplog.text
 
+
+def test_summarized_in_injection_rule_does_not_warn(tmp_path, caplog):
+    """HATS-1511: Rules in SUMMARIZED_IN_INJECTION are intentionally summarized and issue no warning."""
+    import logging
+
+    rule_name = sorted(SUMMARIZED_IN_INJECTION)[0]
+    rule_dir = tmp_path / rule_name
+    rule_dir.mkdir()
+    (rule_dir / "metadata.yaml").write_text(f"name: {rule_name}\n")
+    (rule_dir / "rule.md").write_text("Body text.\n")
+
+    rule = ResolvedComponent(
+        name=rule_name,
+        component_type=ComponentKind.RULE,
+        source_path=rule_dir,
+    )
+    result = CompositionResult(
+        name="summarized_test",
+        priorities=[],
+        rules=[rule],
+        skills=[],
+        injections=[],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        prompt = ClaudeProvider().build_system_prompt(result)
+
+    assert f"### {rule_name}" not in prompt
+    assert f"rule '{rule_name}': composed but undelivered" not in caplog.text
+
+
+def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
+    """HATS-1511: Unreadable/malformed metadata.yaml is caught, logs warning, and does not crash prompt build."""
+    import logging
+
+    rule_dir = tmp_path / "bad_meta_rule"
+    rule_dir.mkdir()
+    (rule_dir / "metadata.yaml").write_text("name: : : invalid yaml syntax [[[\n")
+    (rule_dir / "rule.md").write_text("Body text.\n")
+
+    rule = ResolvedComponent(
+        name="bad_meta_rule",
+        component_type=ComponentKind.RULE,
+        source_path=rule_dir,
+    )
+    result = CompositionResult(
+        name="bad_meta_test",
+        priorities=[],
+        rules=[rule],
+        skills=[],
+        injections=[],
+    )
+
+    with caplog.at_level(logging.WARNING):
+        prompt = ClaudeProvider().build_system_prompt(result)
+
+    assert "### bad_meta_rule" not in prompt
+    assert "rule 'bad_meta_rule': failed to load metadata at" in caplog.text
+
