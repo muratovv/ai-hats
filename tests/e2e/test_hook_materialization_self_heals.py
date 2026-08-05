@@ -53,8 +53,10 @@ def _binary_env() -> dict[str, str]:
     return env
 
 
+from _helpers.git import git as _git_helper
+
 def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+    _git_helper(cwd, *args)
 
 
 # ----- Guarantee 1: `self sync-hooks` removed -------------------------------

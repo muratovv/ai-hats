@@ -25,8 +25,10 @@ pytestmark = pytest.mark.integration
 DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync'"
 
 
+from _helpers.git import git as _git_helper
+
 def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+    _git_helper(cwd, *args)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:

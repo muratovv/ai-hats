@@ -55,8 +55,10 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
     return result
 
 
+from _helpers.git import git as _git_helper
+
 def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
+    _git_helper(cwd, *args)
 
 
 def _init_git_project(root: Path) -> None:
