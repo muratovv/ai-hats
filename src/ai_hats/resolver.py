@@ -48,7 +48,19 @@ class LibraryResolver:
         config_file = path / "config.yaml"
         if not config_file.exists():
             return None
-        return ComponentConfig.from_yaml(config_file)
+        try:
+            return ComponentConfig.from_yaml(config_file)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "%s %r: failed to load config at %s: %s",
+                component_type.value,
+                name,
+                config_file,
+                exc,
+            )
+            return None
 
     def resolve_rule_dir(self, name: str) -> Path | None:
         """Resolve a rule name to its directory."""

@@ -1,4 +1,4 @@
-"""Tests for `ai-hats list rules` resilience when metadata.yaml is broken (HATS-1510)."""
+"""Tests for `ai-hats list` resilience when metadata.yaml or config.yaml is broken (HATS-1510)."""
 
 from __future__ import annotations
 
@@ -35,3 +35,30 @@ def test_list_rules_survives_broken_metadata(tmp_path, monkeypatch, caplog):
     assert result.exit_code == 0, f"list rules failed with {result.exit_code}: {result.output}"
     assert "broken_rule" in result.output
     assert "failed to load metadata at" in caplog.text or "broken_rule" in caplog.text
+
+
+def test_list_roles_survives_broken_config(tmp_path, monkeypatch, caplog):
+    project = tmp_path / "project"
+    project.mkdir()
+    user_home = tmp_path / "user_home"
+    user_home.mkdir()
+
+    # Create a user role with broken config.yaml
+    broken_role_dir = user_home / ".ai-hats" / "roles" / "broken_role"
+    broken_role_dir.mkdir(parents=True)
+    (broken_role_dir / "config.yaml").write_text("description: unquoted: colon string\n")
+
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home))
+
+    (project / PROJECT_CONFIG).write_text(
+        "schema_version: 2\nprovider: claude\nactive_role: assistant\ndefault_role: ''\nlibrary_paths: []\n"
+    )
+
+    runner = CliRunner()
+    with caplog.at_level(logging.WARNING):
+        result = runner.invoke(main, ["list", "roles"])
+
+    assert result.exit_code == 0, f"list roles failed with {result.exit_code}: {result.output}"
+    assert "broken_role" in result.output
+    assert "failed to load config at" in caplog.text or "broken_role" in caplog.text
