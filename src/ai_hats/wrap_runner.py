@@ -163,6 +163,19 @@ def _format_version_skew(changes) -> str:
     )
 
 
+def _broken_hook_ref_text(ref) -> str:
+    """Warn note per broken hook ref; the remedy follows ownership (HATS-1509)."""
+    remedy = (
+        "ai-hats owns this entry — run 'ai-hats self update' to reclaim it"
+        if ref.managed
+        else "not an ai-hats entry — remove it or restore the script"
+    )
+    return (
+        f"{ref.settings_file}: {ref.event} hook points at a missing file "
+        f"({ref.command}) — the harness errors on every matching call; {remedy}."
+    )
+
+
 class WrapRunner:
     """PTY-proxied CLI wrapper for interactive sessions.
 
@@ -337,6 +350,26 @@ class WrapRunner:
         if findings:
             session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
+
+    def _check_broken_hook_refs(self, session: "Session") -> list[StartupNotice]:
+        """HATS-1509: WARN per settings hook ref pointing at a missing script —
+        the harness prints 'No such file or directory' on every matching call,
+        with no hint that an ``ai-hats:``-tagged one is ours to reclaim. Reports
+        only; the install-time sweep stays the sole deleter (HATS-905). Fail-open.
+        """
+        try:
+            from . import migration_assert
+
+            broken = migration_assert.find_broken_hook_refs(
+                self.project_dir, targets=migration_assert.SESSION_SCAN_TARGETS
+            )
+        except Exception as exc:
+            logger.warning("broken-hook-ref scan at session start failed", exc_info=True)
+            session.log_sys(f"broken-hook-ref scan FAILED — {type(exc).__name__}: {exc}")
+            return []
+        if broken:
+            session.log_sys(f"broken hook refs: {len(broken)} finding(s)")
+        return [StartupNotice("warn", _broken_hook_ref_text(ref)) for ref in broken]
 
     def _check_skill_script_collisions(
         self, session: "Session", result: "CompositionResult"
@@ -564,6 +597,7 @@ class WrapRunner:
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
+        startup_notices.extend(self._check_broken_hook_refs(session))
 
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")
