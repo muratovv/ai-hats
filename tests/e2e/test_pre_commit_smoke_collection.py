@@ -32,8 +32,10 @@ HOOK_PATH = (
 )
 
 
+from _helpers.git import git as _git_helper
+
 def _git(project: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(project), *args], check=True, capture_output=True)
+    _git_helper(Path.cwd(), "-C", str(project), *args)
 
 
 def _armed_project(tmp_path: Path, name: str) -> Path:
