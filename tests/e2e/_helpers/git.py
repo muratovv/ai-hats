@@ -11,7 +11,7 @@ def git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
-def init_repo(path: Path, *, branch: str = "main", harden: bool = False) -> None:
+def init_repo(path: Path, *, branch: str = "main", harden: bool = True) -> None:
     """Initialize a git repository with default email/name and optional hardening."""
     (path / ".gitignore").write_text(".agent/\nai-hats.yaml\n")
     git(path, "init", "-b", branch)
