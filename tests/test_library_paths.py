@@ -241,3 +241,133 @@ def test_ai_hats_project_dir_env_wins_over_cwd(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "proj_repo"))
 
     assert builtin_library_root() == proj_lib
+
+
+# ---- HATS-1508: user-global library_paths.yaml ------------------------------
+
+
+def test_user_global_library_paths_loaded(tmp_path, monkeypatch):
+    """HATS-1508: ~/.ai-hats/library_paths.yaml specifies extra user-global library paths."""
+    from ai_hats.library_paths import build_library_paths
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    ext_lib = tmp_path / "external_lib"
+    ext_lib.mkdir()
+
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {ext_lib}\n")
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    paths = build_library_paths(tmp_path / "project")
+    assert ext_lib in paths
+
+
+def test_user_global_library_paths_nonexistent_directory_warns(tmp_path, monkeypatch, caplog):
+    """HATS-1508: Non-existent directory in library_paths.yaml logs a warning and is skipped."""
+    import logging
+    from ai_hats.library_paths import build_library_paths
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    non_existent = tmp_path / "does_not_exist"
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {non_existent}\n")
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    with caplog.at_level(logging.WARNING):
+        paths = build_library_paths(tmp_path / "project")
+
+    assert non_existent not in paths
+    assert "user library paths: directory does not exist" in caplog.text
+    assert str(non_existent) in caplog.text
+
+
+def test_user_global_library_paths_malformed_yaml_warns(tmp_path, monkeypatch, caplog):
+    """HATS-1508: Malformed YAML in library_paths.yaml logs a warning and returns empty."""
+    import logging
+    from ai_hats.library_paths import build_library_paths
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    (ai_hats_dir / "library_paths.yaml").write_text("paths: [unclosed list")
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    with caplog.at_level(logging.WARNING):
+        build_library_paths(tmp_path / "project")
+
+    assert "user library paths: failed to load" in caplog.text
+
+
+def test_user_global_library_paths_missing_file_silent(tmp_path, monkeypatch, caplog):
+    """HATS-1508: Missing library_paths.yaml returns empty silently with no warnings."""
+    import logging
+    from ai_hats.library_paths import build_library_paths
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    with caplog.at_level(logging.WARNING):
+        build_library_paths(tmp_path / "project")
+
+    assert "user library paths" not in caplog.text
+
+
+def test_layer_precedence_project_overrides_user_global(tmp_path, monkeypatch):
+    """HATS-1508: Precedence order: project config_paths override user-global library_paths.yaml."""
+    from ai_hats.library_paths import build_library_paths
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    user_ext_lib = tmp_path / "user_ext_lib"
+    user_ext_lib.mkdir()
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {user_ext_lib}\n")
+
+    proj_cfg_lib = tmp_path / "proj_cfg_lib"
+    proj_cfg_lib.mkdir()
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    paths = build_library_paths(tmp_path / "project", config_paths=[proj_cfg_lib])
+
+    user_idx = paths.index(user_ext_lib)
+    proj_idx = paths.index(proj_cfg_lib)
+    assert user_idx < proj_idx, "User-global paths must rank lower than project config_paths"
+
+
+def test_skill_search_roots_and_assembler_parity(tmp_path, monkeypatch):
+    """HATS-1508 / Verification #3: _skill_search_roots (wt_lifecycle) and
+    build_library_paths return identical lists when given the same inputs."""
+    from ai_hats.library_paths import build_library_paths
+    from ai_hats.wt_lifecycle import _skill_search_roots
+
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    user_ext_lib = tmp_path / "user_ext_lib"
+    user_ext_lib.mkdir()
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {user_ext_lib}\n")
+
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    paths_direct = build_library_paths(project_dir)
+    paths_wt = _skill_search_roots(project_dir, worktree_path=None)
+
+    assert paths_direct == paths_wt
+
