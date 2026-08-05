@@ -27,6 +27,7 @@ from ai_hats.constants import (
 from ai_hats.paths import claude_settings_json, claude_settings_local_json
 from ai_hats.migration_assert import (
     BrokenHookRef,
+    SESSION_SCAN_TARGETS,
     SETTINGS_TARGETS,
     assert_runtime_hooks_resolve,
     find_broken_hook_refs,
@@ -526,6 +527,118 @@ def test_settings_targets_include_local_overlay() -> None:
     override file and can hold its own hook refs."""
     assert ".claude/settings.json" in SETTINGS_TARGETS
     assert ".claude/settings.local.json" in SETTINGS_TARGETS
+
+
+def test_session_scan_targets_extend_the_install_time_set() -> None:
+    """The session-start scan sees everything the assert sees, plus agy's root."""
+    assert set(SETTINGS_TARGETS) < set(SESSION_SCAN_TARGETS)
+    assert ".gemini/settings.json" in SESSION_SCAN_TARGETS
+
+
+# ---------- Session scan: agy surface + managed flag (HATS-1509) ----------
+
+
+def _write_gemini_settings(project_dir: Path, settings: dict) -> Path:
+    target = project_dir / ".gemini" / "settings.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    return target
+
+
+def _gemini_legacy_entry(command: str, tag: str | None = None) -> dict:
+    """Pre-HATS-1166 agy shape: ``command`` on the matcher dict itself."""
+    entry = {"matcher": "Bash", "command": command}
+    if tag is not None:
+        entry["tag"] = tag
+    return entry
+
+
+def test_gemini_legacy_shape_is_walked_when_targeted(tmp_path: Path) -> None:
+    """agy's remnant hangs ``command`` off the matcher, with no nested
+    ``hooks`` list — walking only the Claude shape misses it entirely."""
+    _write_gemini_settings(
+        tmp_path,
+        {
+            "hooks": {
+                HOOK_PRE_TOOL_USE: [
+                    _gemini_legacy_entry(
+                        ".agy/skills/tool-call-hygiene/hooks/guard.sh",
+                        tag="ai-hats:tool-call-hygiene:PreToolUse:Bash",
+                    )
+                ]
+            }
+        },
+    )
+
+    broken = find_broken_hook_refs(tmp_path, targets=SESSION_SCAN_TARGETS)
+
+    assert [b.command for b in broken] == [".agy/skills/tool-call-hygiene/hooks/guard.sh"]
+    assert broken[0].settings_file == ".gemini/settings.json"
+
+
+def test_default_targets_stay_claude_only(tmp_path: Path) -> None:
+    """Install-time behaviour is unchanged: agy residue must not start
+    hard-failing bump (that is the WARN's job, not the assert's)."""
+    _write_gemini_settings(
+        tmp_path,
+        {"hooks": {HOOK_PRE_TOOL_USE: [_gemini_legacy_entry("/nowhere/guard.sh")]}},
+    )
+
+    assert find_broken_hook_refs(tmp_path) == []
+    assert_runtime_hooks_resolve(tmp_path)  # must not raise
+
+
+def test_matcher_level_command_stays_invisible_in_claude_settings(tmp_path: Path) -> None:
+    """The flat shape is agy's alone. In ``.claude/settings.json`` such an entry
+    is malformed and never executed — reporting it would newly refuse bumps on
+    something the harness ignores."""
+    _write_settings(
+        tmp_path,
+        {"hooks": {HOOK_PRE_TOOL_USE: [{"matcher": "Bash", "command": "/nowhere/flat.sh"}]}},
+    )
+
+    assert find_broken_hook_refs(tmp_path, targets=SESSION_SCAN_TARGETS) == []
+    assert_runtime_hooks_resolve(tmp_path)  # must not raise
+
+
+def test_managed_flag_tracks_the_ai_hats_tag(tmp_path: Path) -> None:
+    """``self update`` only reclaims ``ai-hats:``-tagged entries, so the
+    flag decides which remedy a caller may offer for each finding."""
+    _write_settings(
+        tmp_path,
+        {
+            "hooks": {
+                HOOK_PRE_TOOL_USE: [
+                    {
+                        "matcher": "Bash",
+                        "_ai_hats_managed": "ai-hats:hats-437",
+                        "hooks": [{"type": "command", "command": "/nowhere/managed.sh"}],
+                    },
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "/nowhere/mine.sh"}],
+                    },
+                ]
+            }
+        },
+    )
+    _write_gemini_settings(
+        tmp_path,
+        {
+            "hooks": {
+                HOOK_PRE_TOOL_USE: [
+                    _gemini_legacy_entry("/nowhere/agy.sh", tag="ai-hats:markdown-format:X")
+                ]
+            }
+        },
+    )
+
+    flags = {
+        Path(b.command).name: b.managed
+        for b in find_broken_hook_refs(tmp_path, targets=SESSION_SCAN_TARGETS)
+    }
+
+    assert flags == {"managed.sh": True, "mine.sh": False, "agy.sh": True}
 
 
 def test_broken_hook_ref_is_frozen_dataclass() -> None:
