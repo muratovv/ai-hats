@@ -36,8 +36,6 @@ WIZARD_CONFIG = (
 )
 
 
-
-
 def _git(cwd: Path, *args: str) -> str:
     return _git_helper(cwd, *args).stdout.strip()
 

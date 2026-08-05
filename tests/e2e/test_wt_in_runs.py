@@ -37,8 +37,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_wt_in_runs_after_worktree_add(installed_launcher, tmp_path):
     launcher, env, _ = installed_launcher

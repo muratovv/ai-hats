@@ -45,8 +45,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "lifecycle_tombstone_lib"
 
 
-
-
 def _run_rack(project_dir: Path, *args: str, timeout: float = 60.0):
     """Run ``python -m ai_hats_rack <args>`` against the current checkout."""
     from _helpers.env import checkout_pythonpath

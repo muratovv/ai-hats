@@ -49,8 +49,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path):
     """HATS-714 on the `task transition done` surface.

@@ -33,8 +33,6 @@ def _run(cmd, *, cwd, env, timeout=120, expect_exit=0):
     return result
 
 
-
-
 def _locate_worktree(project: Path, branch: str) -> Path:
     listing = _git(project, "worktree", "list", "--porcelain").stdout
     current_path: Path | None = None

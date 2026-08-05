@@ -37,8 +37,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     """Deny without ack (directive message, branch preserved) → ack merges.

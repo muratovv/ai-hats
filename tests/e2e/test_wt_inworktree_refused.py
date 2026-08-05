@@ -22,8 +22,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-
-
 def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(binary), *args],

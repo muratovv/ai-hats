@@ -51,8 +51,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_merge_head_wandered_guard(shared_launcher, tmp_path):
     """HATS-533: ``wt merge`` refuses when main-repo HEAD is no longer

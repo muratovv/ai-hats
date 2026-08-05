@@ -44,8 +44,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     """HATS-1274: the drift refusal on rack names the correct command surface

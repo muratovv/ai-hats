@@ -25,8 +25,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-
-
 def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:
     """The venv's real ``rack`` console script (HATS-1263)."""
     import os

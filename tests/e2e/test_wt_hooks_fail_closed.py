@@ -40,8 +40,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-
-
 def _branch_exists(project: Path, branch: str) -> bool:
     return bool(
         subprocess.run(

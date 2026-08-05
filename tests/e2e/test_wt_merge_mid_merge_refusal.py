@@ -51,8 +51,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_merge_refuses_when_main_repo_mid_merge(shared_launcher, tmp_path):
     """HATS-587 / F4: ``wt merge`` refuses cleanly when the main repo has

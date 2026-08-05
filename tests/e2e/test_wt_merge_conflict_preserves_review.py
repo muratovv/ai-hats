@@ -46,8 +46,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _task_state(project: Path, task_id: str) -> str:
     """Read state field from on-disk task.yaml — no CLI involved."""
     yaml_path = (

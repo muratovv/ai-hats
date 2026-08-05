@@ -46,8 +46,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-
-
 def _wt_path(project: Path, branch: str) -> Path | None:
     out = _git(project, "worktree", "list", "--porcelain").stdout
     cur: Path | None = None

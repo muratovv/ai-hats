@@ -31,7 +31,6 @@ def init_repo(main: Path) -> None:
     _init_repo(main, branch="master", harden=True)
 
 
-
 def child_env(repo_root: Path) -> dict[str, str]:
     """Subprocess env pointed at the checkout under test.
 
@@ -85,9 +84,6 @@ def worktree_branches(main: Path) -> dict[str, Path]:
         elif line.startswith("branch ") and cur_path is not None:
             branches[line[len("branch ") :].removeprefix("refs/heads/")] = cur_path
     return branches
-
-
-
 
 
 def spawn_worktree(main: Path, task_id: str, env: dict[str, str]) -> None:

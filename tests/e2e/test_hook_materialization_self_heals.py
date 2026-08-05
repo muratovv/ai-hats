@@ -54,8 +54,6 @@ def _binary_env() -> dict[str, str]:
     return env
 
 
-
-
 # ----- Guarantee 1: `self sync-hooks` removed -------------------------------
 
 
@@ -284,6 +282,7 @@ def test_the_resolved_gate_runs_through_the_installed_dispatcher(initialised_pro
     assert "GATE v1" in cp.stdout, (
         f"the gate never ran through the dispatcher\nstdout:{cp.stdout}\nstderr:{cp.stderr}"
     )
+
 
 def _git(*args: str, cwd: Path) -> None:
     _git_helper(cwd, *args)

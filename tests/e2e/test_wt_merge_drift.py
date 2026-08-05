@@ -42,8 +42,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _git_no_hooks(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Linked worktrees inherit the parent repo's hooks; `self init` installs
     privacy/pre-commit ones that would reject these synthetic commits."""

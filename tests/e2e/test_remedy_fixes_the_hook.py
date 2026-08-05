@@ -108,8 +108,6 @@ class Sandbox:
     probe: Path
 
 
-
-
 def _bash(script: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-c", script], cwd=cwd, env=env, capture_output=True, text=True, timeout=600

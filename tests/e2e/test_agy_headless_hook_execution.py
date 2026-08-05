@@ -16,8 +16,6 @@ from ai_hats_agy.provider import AgyProvider
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-
-
 @pytest.mark.skip(reason="Failing in master, agy doesn't trigger hook in headless mode natively")
 @pytest.mark.integration
 def test_agy_headless_p_mode_triggers_runtime_hooks(tmp_path: Path) -> None:

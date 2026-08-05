@@ -33,8 +33,6 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 pytestmark = pytest.mark.integration
 
 
-
-
 def _rack_driver(proj):
     """Same project + env, driven through the `rack` console script that the
     shared venv installs alongside the launcher (HATS-1263)."""

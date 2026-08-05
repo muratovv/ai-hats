@@ -28,8 +28,6 @@ HOOK = (
 )
 
 
-
-
 @pytest.fixture
 def repos(tmp_path):
     """A main checkout + one linked worktree, both real git work trees."""

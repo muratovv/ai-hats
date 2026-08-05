@@ -33,8 +33,6 @@ HOOK_PATH = (
 )
 
 
-
-
 def _armed_project(tmp_path: Path, name: str) -> Path:
     """A git repo whose active task arms the smoke gate."""
     project = tmp_path / name

@@ -44,8 +44,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _worktree_branches(project: Path) -> list[str]:
     """Branch refs across all registered git worktrees of ``project``."""
     listing = _git(project, "worktree", "list", "--porcelain").stdout

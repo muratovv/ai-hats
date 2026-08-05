@@ -67,8 +67,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _task_state(project: Path, task_id: str) -> str:
     yaml_path = (
         project / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / task_id / "task.yaml"

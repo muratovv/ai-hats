@@ -31,8 +31,6 @@ _PLAN_SECTIONS = (
 )
 
 
-
-
 def _rack(project: Path, *args: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "ai_hats_rack", *args],

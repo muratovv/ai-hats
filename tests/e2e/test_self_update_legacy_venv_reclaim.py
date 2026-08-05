@@ -62,8 +62,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -128,6 +126,7 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
     assert not legacy_venv.exists(), (
         "legacy .venv must be reclaimed once the updater runs from a versioned venv"
     )
+
 
 def _git(args, cwd):
     return git(cwd, *args)

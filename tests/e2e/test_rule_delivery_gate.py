@@ -27,8 +27,6 @@ HOOK = (
 )
 
 
-
-
 def _make_stub(path: Path, rc: int, message: str = "") -> Path:
     """A fake checker: prints `message` then exits with `rc`."""
     path.write_text(f"#!/usr/bin/env bash\necho {message!r}\nexit {rc}\n")

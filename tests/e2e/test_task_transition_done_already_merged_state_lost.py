@@ -58,8 +58,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path):
     """HATS-697 on the `rack transition done` surface.

@@ -24,8 +24,6 @@ from _helpers.wt import spawn_worktree
 pytestmark = pytest.mark.integration
 
 
-
-
 def _child_env(repo_root: Path) -> dict[str, str]:
     """Subprocess env pointed at the checkout under test (worktree or main)."""
     from _helpers.env import checkout_pythonpath

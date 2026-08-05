@@ -49,8 +49,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_path):
     """HATS-596 on the `rack transition done` surface.

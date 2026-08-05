@@ -47,8 +47,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _git_clean(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """git with hooks/gpg disabled — for commits/merges in throwaway repos."""
     return _git(cwd, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", *args)

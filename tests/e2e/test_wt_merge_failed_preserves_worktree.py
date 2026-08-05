@@ -54,8 +54,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
     """HATS-587 / F5: a failed ``wt merge`` leaves the worktree dir + branch

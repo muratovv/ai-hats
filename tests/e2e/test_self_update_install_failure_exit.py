@@ -72,8 +72,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -148,6 +146,7 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     assert (versions / sha_a / "bin" / "python").is_file(), (
         "previous working version dir was damaged by the failed update"
     )
+
 
 def _git(args, cwd):
     return git(cwd, *args)

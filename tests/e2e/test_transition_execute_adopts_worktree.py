@@ -36,8 +36,6 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-
-
 def _child_env() -> dict[str, str]:
     from _helpers.env import checkout_pythonpath
 

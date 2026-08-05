@@ -64,8 +64,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -226,6 +224,7 @@ def test_e2e_gc_lock_serializes_complete_flip_window(tmp_path: Path) -> None:
     assert current == sha_b
     assert (versions / current).is_dir(), "current points at a reclaimed dir (corruption)"
     assert (versions / current / ".complete").exists()
+
 
 def _git(args, cwd):
     return git(cwd, *args)

@@ -75,8 +75,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],

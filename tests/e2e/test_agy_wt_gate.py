@@ -25,8 +25,6 @@ from ai_hats_agy.provider import AgyProvider
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-
-
 @pytest.mark.integration
 def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) -> None:
     # Set up a real main checkout repo

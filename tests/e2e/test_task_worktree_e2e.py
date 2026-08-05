@@ -29,8 +29,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-
-
 def _rack(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     """The backlog CLI (HATS-1263). This tier ships no ``rack`` console script,
     but the dev venv has the package, so ``python -m`` reaches it."""

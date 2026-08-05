@@ -29,8 +29,6 @@ _PLAN_SECTIONS = (
 )
 
 
-
-
 def _rack(rack: Path, *args: str, cwd: Path, env: dict) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(rack), *args], cwd=str(cwd), env=env, capture_output=True, text=True, timeout=90

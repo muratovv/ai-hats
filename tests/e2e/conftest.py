@@ -148,7 +148,6 @@ def _trace_e2e_subprocesses(request, monkeypatch):
     monkeypatch.setattr(subprocess.Popen, "__init__", traced_popen_init)
 
 
-
 # HATS-678 / HATS-771: cap on how many INSTALL-heavy e2e tests (~26 across 21
 # files doing a real ``uv pip install``) may run concurrently under the gate's
 # ``-n8 --dist=loadgroup``. ``_install_heavy_group_map`` round-robins their
@@ -587,4 +586,3 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
 def installed_launcher(shared_launcher):
     """Delegate to session-scoped shared_launcher (HATS-1497). Returns (launcher, env, shared_venv)."""
     return shared_launcher
-

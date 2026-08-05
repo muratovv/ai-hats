@@ -25,8 +25,6 @@ pytestmark = pytest.mark.integration
 DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync'"
 
 
-
-
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + minimal synthetic library (one role, one trait)."""
     project = tmp_path / "project"
@@ -98,6 +96,7 @@ def test_in_sync_env_launches_silent(tmp_path: Path, monkeypatch):
     output = _launch(project, monkeypatch)
 
     assert "dev env outdated" not in output, output
+
 
 def _git(*args: str, cwd: Path) -> None:
     _git_helper(cwd, *args)

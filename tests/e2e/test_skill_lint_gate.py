@@ -35,8 +35,6 @@ HOOK = (
 )
 
 
-
-
 def _make_stub(path: Path, rc: int, message: str = "") -> Path:
     """A fake agnix: prints `message` then exits with `rc`."""
     path.write_text(f"#!/usr/bin/env bash\necho {message!r}\nexit {rc}\n")

@@ -50,8 +50,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_create_concurrent_same_branch(shared_launcher, tmp_path):
     """Two parallel ``ai-hats wt create task/race`` processes converge on

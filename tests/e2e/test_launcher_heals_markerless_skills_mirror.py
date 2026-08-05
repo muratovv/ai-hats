@@ -23,8 +23,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-
-
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + synthetic library whose role ships skill ``alpha``."""
     project = tmp_path / "project"
@@ -113,6 +111,7 @@ def test_session_start_heals_markerless_skills_mirror(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "skills mirror" not in second, second
     assert (mirror / "gamma" / "SKILL.md").read_text() == gamma_content
+
 
 def _git(*args: str, cwd: Path) -> None:
     _git_helper(cwd, *args)

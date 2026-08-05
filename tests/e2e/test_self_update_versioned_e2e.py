@@ -66,8 +66,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -155,6 +153,7 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     # ----- 4. the real launcher (no env) resolves the new current end-to-end -----
     clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)
+
 
 def _git(args, cwd):
     return git(cwd, *args)

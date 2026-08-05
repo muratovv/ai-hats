@@ -56,8 +56,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
     return result
 
 
-
-
 def _init_git_project(root: Path) -> None:
     _git(root, "init", "-b", "master")
     _git(root, "config", "user.email", "t@example.com")

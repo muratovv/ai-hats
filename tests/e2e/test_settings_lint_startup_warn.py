@@ -25,8 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-
-
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
     """Real git project + minimal synthetic library (one role, one trait)."""
     project = tmp_path / "project"
@@ -99,6 +97,7 @@ def test_session_start_warns_on_deprecated_write_rule(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "Edit(//**/.env)" not in second, second
     assert "is ignored by Claude Code" not in second, second
+
 
 def _git(*args: str, cwd: Path) -> None:
     _git_helper(cwd, *args)

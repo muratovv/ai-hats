@@ -24,8 +24,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-
-
 def _git_init_on_master(project: Path) -> None:
     _git(project, "init", "-b", "master")
     _git(project, "config", "user.email", "test@test.com")

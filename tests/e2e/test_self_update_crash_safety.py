@@ -60,8 +60,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -152,7 +150,6 @@ def test_e2e_self_update_reclaims_incomplete_residue(tmp_path: Path) -> None:
     assert (versions / sha_a / ".complete").is_file(), "complete shaA was touched"
     assert (versions / "current").read_text().strip() == sha_b
     assert (versions / sha_b / ".complete").is_file()
-
 
 
 def _git(args, cwd):

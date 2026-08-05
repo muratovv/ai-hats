@@ -53,8 +53,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_wt_merge_null_original_branch(shared_launcher, tmp_path):
     """HATS-714: ``wt merge`` on a state file with ``original_branch=null``

@@ -42,8 +42,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-
-
 def _run_rack(
     project_dir: Path, *args: str, timeout: float = 30.0
 ) -> subprocess.CompletedProcess[str]:

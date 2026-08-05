@@ -43,8 +43,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-
-
 @pytest.mark.integration
 def test_e2e_rack_transition_done_head_wandered(shared_launcher, tmp_path):
     """HATS-1274: the base-branch-mismatch refusal on rack carries the

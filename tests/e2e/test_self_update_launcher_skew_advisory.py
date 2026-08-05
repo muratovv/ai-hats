@@ -83,8 +83,6 @@ def _run(cmd, *, cwd, env, timeout):
     )
 
 
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -164,6 +162,7 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     assert launcher.read_bytes() == launcher_bytes_before, (
         "the advisory must NEVER write the host launcher"
     )
+
 
 def _git(args, cwd):
     return git(cwd, *args)

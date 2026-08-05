@@ -31,8 +31,6 @@ _PLAN = (
 )
 
 
-
-
 def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.CompletedProcess[str]:
     """Run the backlog CLI (HATS-1263). No ``rack`` console script on this tier;
     PYTHONPATH puts the checkout in reach of ``python -m``."""
