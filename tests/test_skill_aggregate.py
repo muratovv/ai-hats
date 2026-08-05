@@ -84,6 +84,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_aggregate_report_against_builtin_packages():
-    roots = builtin_library_layers(REPO_ROOT)
+    roots = list(builtin_library_layers())
     report = agg.aggregate_report(roots)
-    assert isinstance(report, agg.AggregateReport)
+    assert isinstance(report.dangling, list)
+    assert isinstance(report.cross_package, list)
+
+
+def test_aggregate_report_enters_symlinked_children(tmp_path: Path) -> None:
+    real_dir = tmp_path / "real_traits"
+    real_dir.mkdir()
+    trait_dir = real_dir / "my-trait"
+    trait_dir.mkdir()
+    (trait_dir / "config.yaml").write_text("name: my-trait\nrules: [ghost]\n")
+
+    root = tmp_path / "global_lib"
+    root.mkdir()
+    (root / "traits").symlink_to(real_dir, target_is_directory=True)
+
+    report = agg.aggregate_report([root])
+    assert "ghost" in [r.target for r in report.dangling]

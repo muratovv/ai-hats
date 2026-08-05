@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-
-from .paths import user_home
 
 
 class ComponentLayer(str, Enum):
@@ -17,11 +16,36 @@ class ComponentLayer(str, Enum):
     RUNTIME = "runtime"
 
 
-def _try_get_global_layer(resolved: Path) -> ComponentLayer | None:
-    """Probe if path belongs to user-global library (~/.ai-hats)."""
-    global_lib = (user_home() / ".ai-hats").resolve()
-    if resolved.is_relative_to(global_lib):
-        return ComponentLayer.GLOBAL
+def _try_get_global_layer(
+    raw_path: Path | None,
+    resolved: Path,
+    global_roots: Sequence[Path] | None = None,
+) -> ComponentLayer | None:
+    """Probe if raw or resolved path belongs to any user-global library root."""
+    if global_roots is None:
+        from .library_paths import user_global_library_paths
+
+        global_roots = user_global_library_paths()
+
+    for root in global_roots:
+        try:
+            root_resolved = root.resolve()
+        except (OSError, ValueError, TypeError):
+            root_resolved = root
+
+        if raw_path is not None:
+            try:
+                if raw_path.is_relative_to(root) or raw_path.is_relative_to(root_resolved):
+                    return ComponentLayer.GLOBAL
+            except (ValueError, TypeError):
+                pass
+
+        try:
+            if resolved.is_relative_to(root) or resolved.is_relative_to(root_resolved):
+                return ComponentLayer.GLOBAL
+        except (ValueError, TypeError):
+            pass
+
     return None
 
 
@@ -32,7 +56,6 @@ def _try_get_project_layer(
     project_config_paths: list[str],
 ) -> ComponentLayer | None:
     """Probe if path belongs to project-local or project-configured library."""
-    global_lib = (user_home() / ".ai-hats").resolve()
     proj_root = project_dir.resolve()
 
     for lib in library_paths:
@@ -48,12 +71,16 @@ def _try_get_project_layer(
         except (OSError, ValueError, TypeError):
             continue
 
-        if lib_resolved != global_lib and resolved.is_relative_to(lib_resolved):
+        if resolved.is_relative_to(lib_resolved):
             if lib_resolved.is_relative_to(proj_root):
                 return ComponentLayer.PROJECT
             for proj_p in project_config_paths:
                 try:
-                    if lib_resolved == Path(proj_p).expanduser().resolve():
+                    p = Path(proj_p).expanduser()
+                    proj_resolved = (
+                        (proj_root / p).resolve() if not p.is_absolute() else p.resolve()
+                    )
+                    if lib_resolved == proj_resolved:
                         return ComponentLayer.PROJECT
                 except (OSError, ValueError, TypeError):
                     pass
@@ -71,17 +98,19 @@ def classify_component_layer(
     project_dir: Path,
     library_paths: list[Path | tuple],
     project_config_paths: list[str] | None = None,
+    global_roots: Sequence[Path] | None = None,
 ) -> ComponentLayer:
-    """Classify a resolved component directory path into a ComponentLayer enum (HATS-525)."""
+    """Classify a component directory path into a ComponentLayer enum (HATS-525 / HATS-1506)."""
     if path is None:
         return ComponentLayer.BUILT_IN
 
+    raw_path = Path(path) if isinstance(path, (str, Path)) else None
     try:
         resolved = Path(path).resolve()
     except (OSError, ValueError, TypeError):
         return ComponentLayer.BUILT_IN
 
-    global_layer = _try_get_global_layer(resolved)
+    global_layer = _try_get_global_layer(raw_path, resolved, global_roots=global_roots)
     if global_layer is not None:
         return global_layer
 

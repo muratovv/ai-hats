@@ -173,7 +173,13 @@ def aggregate_report(library_paths: list[Path]) -> AggregateReport:
         bodies = [*(root / "skills").rglob("SKILL.md"), *(root / "rules").rglob("rule.md")]
         for md in bodies:
             _bucket(_refs_in(md.read_text(), md, _package_of(md), skills, rules), report)
-        for cfg in root.rglob("config.yaml"):
+        cfgs: list[Path] = []
+        if (root / "config.yaml").is_file():
+            cfgs.append(root / "config.yaml")
+        for child in root.iterdir():
+            if child.is_dir():
+                cfgs.extend(child.rglob("config.yaml"))
+        for cfg in cfgs:
             pkg = _package_of(cfg)
             _bucket(_composition_refs(cfg, pkg, skills, rules), report)
             # Injection prose in a config carries couplings too ("see `X` skill").

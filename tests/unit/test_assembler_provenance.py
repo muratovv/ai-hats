@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ai_hats.assembler import Assembler
+from ai_hats.library_paths import build_library_paths
 from ai_hats.models import ComponentType, ProjectConfig, UserConfig
 from ai_hats.provenance import ComponentLayer, classify_component_layer
 
@@ -116,3 +117,80 @@ def test_get_overlay_provenance_bundled_rule(tmp_path: Path, monkeypatch) -> Non
     ):
         provenance = assembler._get_overlay_provenance("assistant")
         assert provenance["rules"].get("custom-global-rule") == ComponentLayer.GLOBAL.value
+
+
+def test_relative_library_path_anchors_to_project_dir(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    rel_lib_dir = project_dir / "custom_libs"
+    rel_lib_dir.mkdir()
+    rule_dir = rel_lib_dir / "rules" / "rel-rule"
+    rule_dir.mkdir(parents=True)
+
+    # Subdirectory outside project_dir to test relative path resolution
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    monkeypatch.chdir(other_dir)
+
+    paths = build_library_paths(project_dir=project_dir, config_paths=["custom_libs"])
+    assert rel_lib_dir.resolve() in paths
+
+    layer = classify_component_layer(
+        rule_dir.resolve(),
+        project_dir=project_dir,
+        library_paths=paths,
+        project_config_paths=["custom_libs"],
+    )
+    assert layer == ComponentLayer.PROJECT
+
+
+def test_classify_global_layer_three_ways(tmp_path: Path, monkeypatch) -> None:
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir()
+
+    # Way 1: Regular dir inside ~/.ai-hats
+    regular_dir = ai_hats_dir / "rules" / "reg-rule"
+    regular_dir.mkdir(parents=True)
+
+    # Way 2: Symlinked child ~/.ai-hats/traits -> real_dir
+    real_traits_dir = tmp_path / "external_traits"
+    real_traits_dir.mkdir()
+    symlinked_rule = real_traits_dir / "sym-rule"
+    symlinked_rule.mkdir()
+    (ai_hats_dir / "traits").symlink_to(real_traits_dir, target_is_directory=True)
+    symlink_path = ai_hats_dir / "traits" / "sym-rule"
+
+    # Way 3: External library configured in ~/.ai-hats/library_paths.yaml
+    ext_lib_dir = tmp_path / "external_lib"
+    ext_lib_dir.mkdir()
+    ext_rule = ext_lib_dir / "rules" / "ext-rule"
+    ext_rule.mkdir(parents=True)
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {ext_lib_dir}\n")
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / ".agent" / "ai-hats").mkdir(parents=True)
+
+    lib_paths = build_library_paths(project_dir=project_dir)
+
+    # Way 1 check: regular dir in ~/.ai-hats
+    assert (
+        classify_component_layer(regular_dir, project_dir=project_dir, library_paths=lib_paths)
+        == ComponentLayer.GLOBAL
+    )
+
+    # Way 2 check: symlinked child in ~/.ai-hats
+    assert (
+        classify_component_layer(symlink_path, project_dir=project_dir, library_paths=lib_paths)
+        == ComponentLayer.GLOBAL
+    )
+
+    # Way 3 check: external library from library_paths.yaml
+    assert (
+        classify_component_layer(ext_rule, project_dir=project_dir, library_paths=lib_paths)
+        == ComponentLayer.GLOBAL
+    )

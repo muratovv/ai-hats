@@ -76,6 +76,16 @@ def _user_global_library_paths() -> list[Path]:
     return result
 
 
+def user_global_library_paths() -> list[Path]:
+    """All user-global library roots: ``~/.ai-hats`` (if dir) + ``library_paths.yaml``."""
+    roots: list[Path] = []
+    global_lib = user_home() / ".ai-hats"
+    if global_lib.is_dir():
+        roots.append(global_lib)
+    roots.extend(_user_global_library_paths())
+    return roots
+
+
 def build_library_paths(
     project_dir: Path,
     *,
@@ -83,13 +93,14 @@ def build_library_paths(
     local_libraries: Path | None = None,
     extra: Sequence[Path] = (),
 ) -> list[Path]:
-    """Ordered library roots, earlier = lower priority (``LibraryResolver`` last-wins).
+    """Build the ordered list of library root paths for component resolution.
 
-    Built-in shipping (``core`` then ``usage``) first; override points —
-    entry-point packages, user-global (``~/.ai-hats/`` and ``~/.ai-hats/library_paths.yaml``),
-    config-specified, project-local, explicit ``extra`` — layer on top. ``local_libraries``
-    overrides the project-local layer (the worktree re-point, HATS-831); ``None`` means
-    ``<project_dir>/libraries``.
+    Order (first-wins in search, last-wins in layer override):
+    1. Built-in skill source packages (e.g. ``ai-hats-library``)
+    2. User global library (``~/.ai-hats`` + ``library_paths.yaml``)
+    3. Project configured library paths (from ``ai-hats.yaml``)
+    4. Project local libraries (``./libraries`` or explicit)
+    5. Extra runtime overrides
     """
     paths: list[Path] = list(builtin_library_layers(project_dir))
 
@@ -100,15 +111,11 @@ def build_library_paths(
 
     paths.extend(skill_source_roots())
 
-    # ``user_home()`` honours ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
-    global_lib = user_home() / ".ai-hats"
-    if global_lib.is_dir():
-        paths.append(global_lib)
-
-    paths.extend(_user_global_library_paths())
+    paths.extend(user_global_library_paths())
 
     for configured in config_paths:
-        expanded = Path(configured).expanduser()
+        p = Path(configured).expanduser()
+        expanded = (project_dir / p).resolve() if not p.is_absolute() else p.resolve()
         if expanded.is_dir():
             paths.append(expanded)
 
