@@ -57,8 +57,22 @@ class DanglingPointer:
     source: str  # library-relative path of the config carrying the pointer
 
 
+def _get_search_roots(roots: list[Path]) -> list[Path]:
+    all_roots = list(roots)
+    try:
+        from .library_paths import build_library_paths
+
+        for p in build_library_paths():
+            if p not in all_roots and p.exists():
+                all_roots.append(p)
+    except Exception:  # noqa: S110, BLE001 # silent-ok: fallback when build_library_paths unavailable
+        pass
+    return all_roots
+
+
 def _is_trait_or_skill(name: str, roots: list[Path]) -> bool:
-    for root in roots:
+    all_roots = _get_search_roots(roots)
+    for root in all_roots:
         if (root / "traits" / name).is_dir() or (root / "skills" / name).is_dir():
             return True
         if list(root.rglob(f"traits/{name}")) or list(root.rglob(f"skills/{name}")):
@@ -69,7 +83,8 @@ def _is_trait_or_skill(name: str, roots: list[Path]) -> bool:
 def _is_rule_deliverable(rule_name: str, roots: list[Path]) -> bool:
     if rule_name in ALWAYS_ON_RULES or rule_name in SUMMARIZED_IN_INJECTION:
         return True
-    for root in roots:
+    all_roots = _get_search_roots(roots)
+    for root in all_roots:
         direct_meta = root / "rules" / rule_name / "metadata.yaml"
         meta_paths = (
             [direct_meta]
@@ -98,7 +113,7 @@ def find_dangling_rule_pointers(
             from .library_paths import build_library_paths
 
             roots = build_library_paths()
-        except Exception:
+        except Exception:  # noqa: S110, BLE001 # silent-ok: fallback when build_library_paths unavailable
             roots = [_installed_library_root()]
     elif isinstance(library_root, (Path, str)):
         roots = [Path(library_root)]
@@ -159,8 +174,8 @@ def _installed_library_root() -> Path:
 
 def _main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    root = Path(args[0]) if args else _installed_library_root()
-    violations = find_dangling_rule_pointers(root)
+    roots = [Path(a) for a in args] if args else None
+    violations = find_dangling_rule_pointers(roots)
     if not violations:
         return 0
     print(

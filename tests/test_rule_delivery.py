@@ -365,3 +365,21 @@ def test_opt_in_delivery_rule_not_flagged_as_dangling(tmp_path):
 
     violations = find_dangling_rule_pointers(lib)
     assert violations == []
+
+
+def test_main_cli_entry_accepts_multiple_args(tmp_path):
+    """HATS-1514 Gap 2: _main accepts multiple root path arguments."""
+    from ai_hats.rule_delivery import _main
+
+    root1 = tmp_path / "root1"
+    root2 = tmp_path / "root2"
+    trait1 = root1 / "traits" / "t1"
+    trait2 = root2 / "traits" / "t2"
+    trait1.mkdir(parents=True)
+    trait2.mkdir(parents=True)
+
+    (trait1 / "config.yaml").write_text("name: t1\ninjection: |\n  see rule `dangling-one`.\n")
+    (trait2 / "config.yaml").write_text("name: t2\ninjection: |\n  see rule `dangling-two`.\n")
+
+    rc = _main([str(root1), str(root2)])
+    assert rc == 1
