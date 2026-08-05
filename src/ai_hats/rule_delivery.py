@@ -57,21 +57,29 @@ class DanglingPointer:
     source: str  # library-relative path of the config carrying the pointer
 
 
-def _get_search_roots(roots: list[Path]) -> list[Path]:
-    all_roots = list(roots)
+def _default_library_paths(project_dir: Path | None = None) -> list[Path]:
+    p = project_dir or Path.cwd()
     try:
         from .library_paths import build_library_paths
 
-        for p in build_library_paths():
-            if p not in all_roots and p.exists():
-                all_roots.append(p)
-    except Exception:  # noqa: S110, BLE001 # silent-ok: fallback when build_library_paths unavailable
-        pass
+        return build_library_paths(p)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("Failed to build library paths for %s: %s", p, exc)
+        return [_installed_library_root()]
+
+
+def _get_search_roots(roots: list[Path], project_dir: Path | None = None) -> list[Path]:
+    all_roots = list(roots)
+    for p in _default_library_paths(project_dir):
+        if p not in all_roots and p.exists():
+            all_roots.append(p)
     return all_roots
 
 
-def _is_trait_or_skill(name: str, roots: list[Path]) -> bool:
-    all_roots = _get_search_roots(roots)
+def _is_trait_or_skill(name: str, roots: list[Path], project_dir: Path | None = None) -> bool:
+    all_roots = _get_search_roots(roots, project_dir)
     for root in all_roots:
         if (root / "traits" / name).is_dir() or (root / "skills" / name).is_dir():
             return True
@@ -80,10 +88,12 @@ def _is_trait_or_skill(name: str, roots: list[Path]) -> bool:
     return False
 
 
-def _is_rule_deliverable(rule_name: str, roots: list[Path]) -> bool:
+def _is_rule_deliverable(
+    rule_name: str, roots: list[Path], project_dir: Path | None = None
+) -> bool:
     if rule_name in ALWAYS_ON_RULES or rule_name in SUMMARIZED_IN_INJECTION:
         return True
-    all_roots = _get_search_roots(roots)
+    all_roots = _get_search_roots(roots, project_dir)
     for root in all_roots:
         direct_meta = root / "rules" / rule_name / "metadata.yaml"
         meta_paths = (
@@ -104,17 +114,13 @@ def _is_rule_deliverable(rule_name: str, roots: list[Path]) -> bool:
 
 def find_dangling_rule_pointers(
     library_root: Path | Sequence[Path] | None = None,
+    project_dir: Path | None = None,
 ) -> list[DanglingPointer]:
     """Return every ``see rule X`` pointer and undelivered ``composition.rules`` item
     in ``library_root`` (or default library paths) for a rule that reaches the agent through no channel.
     """
     if library_root is None:
-        try:
-            from .library_paths import build_library_paths
-
-            roots = build_library_paths()
-        except Exception:  # noqa: S110, BLE001 # silent-ok: fallback when build_library_paths unavailable
-            roots = [_installed_library_root()]
+        roots = _default_library_paths(project_dir)
     elif isinstance(library_root, (Path, str)):
         roots = [Path(library_root)]
     else:
@@ -137,9 +143,9 @@ def find_dangling_rule_pointers(
             # 1. Prose pointers matching see rule `X` or see `X`
             for match in _SEE_RULE.finditer(text):
                 rule = match.group(1)
-                if _is_trait_or_skill(rule, roots):
+                if _is_trait_or_skill(rule, roots, project_dir):
                     continue
-                if not _is_rule_deliverable(rule, roots):
+                if not _is_rule_deliverable(rule, roots, project_dir):
                     key = (rule, rel)
                     if key not in seen:
                         seen.add(key)
@@ -154,7 +160,9 @@ def find_dangling_rule_pointers(
                         rules = comp.get("rules")
                         if isinstance(rules, list):
                             for rule in rules:
-                                if isinstance(rule, str) and not _is_rule_deliverable(rule, roots):
+                                if isinstance(rule, str) and not _is_rule_deliverable(
+                                    rule, roots, project_dir
+                                ):
                                     key = (rule, rel)
                                     if key not in seen:
                                         seen.add(key)

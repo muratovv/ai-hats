@@ -383,3 +383,24 @@ def test_main_cli_entry_accepts_multiple_args(tmp_path):
 
     rc = _main([str(root1), str(root2)])
     assert rc == 1
+
+
+def test_find_dangling_pointers_default_scans_user_global_library_paths(tmp_path, monkeypatch):
+    """HATS-1514 Leader Remark 1: default invocation scans user-global library_paths.yaml."""
+    user_home_dir = tmp_path / "user_home"
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir(parents=True)
+
+    custom_lib = tmp_path / "custom_lib"
+    custom_trait = custom_lib / "traits" / "t_custom"
+    custom_trait.mkdir(parents=True)
+    (custom_trait / "config.yaml").write_text(
+        "name: t_custom\ninjection: |\n  see rule `custom-dangling`.\n"
+    )
+
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {custom_lib}\n")
+    monkeypatch.setenv("AI_HATS_USER_HOME", str(user_home_dir))
+
+    violations = find_dangling_rule_pointers(None, project_dir=tmp_path)
+    rules = [v.rule for v in violations]
+    assert "custom-dangling" in rules
