@@ -77,6 +77,8 @@ class RunResult:
                 f"cmd: {' '.join(self.cmd)}\n"
                 f"stdout (tail 500):\n{self.stdout[-500:]}"
             )
+        return self
+
     @property
     def output(self) -> str:
         """Combined stdout and stderr."""
