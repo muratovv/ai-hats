@@ -39,7 +39,11 @@ def list_roles():
     table.add_column("Priorities", style="dim")
 
     for name in names:
-        cfg = asm.resolver.resolve_config(name, ComponentType.ROLE)
+        try:
+            cfg = asm.resolver.resolve_config(name, ComponentType.ROLE)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("role %r: failed to load config: %s", name, exc)
+            cfg = None
         if cfg:
             table.add_row(
                 name,
