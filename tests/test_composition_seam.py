@@ -338,8 +338,10 @@ def test_snapshot_and_provenance_agree_on_effective_traits(tmp_path: Path):
 def test_runtime_role_composition_overlay_and_snapshot(tmp_path: Path):
     """HATS-1456: runtime role composition adds overlay, updates snapshot and provenance."""
     project = _real_project(tmp_path, active_role="maintainer")
-    payload = build_composition_payload(project, role_override="maintainer + ai-hats-framework", interactive=False)
-    
+    payload = build_composition_payload(
+        project, role_override="maintainer + ai-hats-framework", interactive=False
+    )
+
     assert "ai-hats-framework" in payload.snapshot["traits"]
     assert payload.snapshot["provenance"]["traits"]["ai-hats-framework"] == "runtime"
     assert payload.snapshot["runtime"] == {
@@ -355,7 +357,9 @@ def test_runtime_role_composition_role_in_second_position(tmp_path: Path):
 
     project = _real_project(tmp_path, active_role="maintainer")
     with pytest.raises(RoleSpecError, match="'assistant' is a role"):
-        build_composition_payload(project, role_override="maintainer + assistant", interactive=False)
+        build_composition_payload(
+            project, role_override="maintainer + assistant", interactive=False
+        )
 
 
 def test_runtime_role_composition_unknown_component(tmp_path: Path):
@@ -364,7 +368,9 @@ def test_runtime_role_composition_unknown_component(tmp_path: Path):
 
     project = _real_project(tmp_path, active_role="maintainer")
     with pytest.raises(RoleSpecError, match="'non-existent' is not a known trait, rule or skill"):
-        build_composition_payload(project, role_override="maintainer + non-existent", interactive=False)
+        build_composition_payload(
+            project, role_override="maintainer + non-existent", interactive=False
+        )
 
 
 def test_runtime_role_composition_ambiguous_component(tmp_path: Path):
@@ -381,7 +387,10 @@ def test_runtime_role_composition_ambiguous_component(tmp_path: Path):
         ComponentType.ROLE: [],
     }[ctype]
 
-    spec = RoleSpec(role="maintainer", adds=("shared-name",), removes=(), raw="maintainer + shared-name")
-    with pytest.raises(RoleSpecError, match="'shared-name' is ambiguous — it is both a trait and a skill"):
+    spec = RoleSpec(
+        role="maintainer", adds=("shared-name",), removes=(), raw="maintainer + shared-name"
+    )
+    with pytest.raises(
+        RoleSpecError, match="'shared-name' is ambiguous — it is both a trait and a skill"
+    ):
         _runtime_overlay(resolver, spec)
-

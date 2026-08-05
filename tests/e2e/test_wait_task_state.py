@@ -128,8 +128,7 @@ def test_until_is_repeatable_and_or_combined(tmp_project, lands_on: str, positio
     happened = parse_happened(result.stdout)
     assert happened.polls >= 2, f"{position} --until: {happened.polls} poll(s), it never waited"
     assert result.duration_s >= _FLIP_DELAY, (
-        f"{position} --until: returned in {result.duration_s:.1f}s, before the "
-        f"{_FLIP_DELAY}s flip"
+        f"{position} --until: returned in {result.duration_s:.1f}s, before the {_FLIP_DELAY}s flip"
     )
     assert f"state: {lands_on}" in card.read_text()
 

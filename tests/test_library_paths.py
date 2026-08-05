@@ -370,4 +370,3 @@ def test_skill_search_roots_and_assembler_parity(tmp_path, monkeypatch):
     paths_wt = _skill_search_roots(project_dir, worktree_path=None)
 
     assert paths_direct == paths_wt
-

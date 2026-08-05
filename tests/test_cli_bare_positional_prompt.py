@@ -55,4 +55,3 @@ def test_plus_inside_argument_allowed() -> None:
         result = runner.invoke(main, ["--model", "gpt-4+turbo"])
         assert result.exit_code == 0, result.output
         mock_launch.assert_called_once()
-
