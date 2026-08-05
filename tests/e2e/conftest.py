@@ -602,3 +602,10 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
         user_home=tmp_path_factory.mktemp("shared-launcher-user-home"),
     )
     return launcher, env, shared_venv
+
+
+@pytest.fixture
+def installed_launcher(shared_launcher):
+    """Delegate to session-scoped shared_launcher (HATS-1497). Returns (launcher, env, shared_venv)."""
+    return shared_launcher
+

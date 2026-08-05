@@ -161,26 +161,9 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     return paths
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder (~90s) — now reuses the single session venv
-    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
-    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
-    the ``(launcher, env)`` 2-tuple this module's tests unpack (the shared
-    venv path is dropped — tests here don't need it).
-    """
-    launcher, env, _shared_venv = shared_launcher
-    return launcher, env
-
-
-# ----- Test 1: default behaviour refuses, makes no changes -----
-
-
 @pytest.mark.integration
 def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)
@@ -240,7 +223,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     write_canonical). No atomic commit — the worktree carries unstaged
     deletions. Variant B (auto-commit) was explicitly rejected during the
     HATS-415 design fork."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)
@@ -309,7 +292,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     no Tier-1 findings → migration skips entirely (HATS-415 trigger
     contract). Subsequent bump work (scaffold, write_canonical) is also
     idempotent on a clean v0.7 layout."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     _seed_v06_project(project)
@@ -363,7 +346,7 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
     sibling branch modifies a path slated for deletion. Does not block —
     the user-edit refusal still fires for the same reason it would
     without the flag."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)

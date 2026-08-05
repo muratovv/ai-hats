@@ -66,18 +66,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     return None
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session venv with a clean env (HATS-685/582):
-    pop PYTHONPATH (else the launcher imports the source tree without
-    ``library/``) and isolate HOME (no dev ``~/.ai-hats/`` bleed)."""
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wthook-home"))
-    return launcher, env, shared_venv
-
-
 def _init(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     _git(project, "init", "-b", "main")

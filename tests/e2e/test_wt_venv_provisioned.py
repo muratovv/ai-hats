@@ -54,15 +54,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     return None
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wtvenv-home"))
-    return launcher, env, shared_venv
-
-
 def _init(launcher: Path, env: dict, project: Path) -> None:
     """A minimal but REAL python project — the hook declines without a pyproject."""
     project.mkdir(parents=True, exist_ok=True)

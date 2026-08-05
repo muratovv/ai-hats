@@ -40,15 +40,6 @@ def _git(cwd: Path, *args: str):
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wtin-home"))
-    return launcher, env, shared_venv
-
-
 @pytest.mark.integration
 def test_wt_in_runs_after_worktree_add(installed_launcher, tmp_path):
     launcher, env, _ = installed_launcher

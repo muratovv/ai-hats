@@ -61,15 +61,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     return None
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wt-inplace-home"))
-    return launcher, env, shared_venv
-
-
 def _seed_project(launcher: Path, env: dict, project: Path, role: str) -> None:
     project.mkdir(parents=True, exist_ok=True)
     _git(project, "init", "-b", "main")

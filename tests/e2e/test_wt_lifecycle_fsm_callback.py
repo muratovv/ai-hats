@@ -72,17 +72,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
     return None
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Clean env on the session venv (HATS-685/582): pop PYTHONPATH (else the
-    launcher imports the source tree without ``library/``) and isolate HOME."""
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wtfsm-home"))
-    return launcher, env, shared_venv
-
-
 def _init(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     _git(project, "init", "-b", "main")
