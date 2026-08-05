@@ -301,4 +301,3 @@ def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
 
     assert "### bad_meta_rule" not in prompt
     assert "rule 'bad_meta_rule': failed to load metadata at" in caplog.text
-

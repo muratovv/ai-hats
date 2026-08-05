@@ -50,6 +50,7 @@ def _is_rule_always_on(rule: ResolvedComponent) -> bool:
                 )
     return False
 
+
 # HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
 # designed switch, so the sweeper now reclaims the root ai-hats:* entries.
 
