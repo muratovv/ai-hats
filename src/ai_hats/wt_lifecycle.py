@@ -232,10 +232,17 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     itself name the sub-agent recovery (D8 provenance).
     """
     skill = row.get("skill", "?")
+    if event == "merge":
+        cmd_hint = f"ai-hats wt merge {branch_name} --skip-hooks"
+    elif event == "discard":
+        cmd_hint = f"ai-hats wt discard {branch_name} --skip-hooks"
+    else:
+        cmd_hint = f"ai-hats wt {event} {branch_name} --skip-hooks"
+
     detail = (
         f"wt_out hook from skill '{skill}' failed on {event} ({reason}). "
         f"Teardown aborted — worktree '{branch_name}' preserved. Fix the hook "
-        f"and retry, or force with --skip-hooks (accepts the data loss)."
+        f"and retry, or force with `{cmd_hint}` and repeat the command (accepts the data loss)."
     )
     cause = WorktreeHookError(detail)
     if event == "cleanup":

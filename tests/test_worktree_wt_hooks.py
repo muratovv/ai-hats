@@ -97,6 +97,9 @@ def test_failing_wt_out_aborts_merge_fail_closed(git_project):
     with pytest.raises(WorktreeTeardownAborted) as ei:
         mgr.merge()
     assert isinstance(ei.value.__cause__, WorktreeHookError)  # hook detail rides as cause
+    msg = str(ei.value.__cause__)
+    assert "ai-hats wt merge task/c --skip-hooks" in msg
+    assert "and repeat the command" in msg
     assert wt.exists()  # preserved
     assert WorktreeManager.branch_exists(git_project, "task/c")
 
@@ -108,6 +111,9 @@ def test_failing_wt_out_aborts_discard_fail_closed(git_project):
     with pytest.raises(WorktreeTeardownAborted) as ei:
         mgr.discard()
     assert isinstance(ei.value.__cause__, WorktreeHookError)
+    msg = str(ei.value.__cause__)
+    assert "ai-hats wt discard task/d --skip-hooks" in msg
+    assert "and repeat the command" in msg
     assert wt.exists()
 
 
