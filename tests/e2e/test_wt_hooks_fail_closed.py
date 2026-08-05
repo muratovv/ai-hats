@@ -106,7 +106,9 @@ def test_failing_wt_out_aborts_discard(installed_launcher, tmp_path):
 
     (project / ".drain-fail").touch()
     res = ai("wt", "discard", "task/probe", expect_exit=1)
-    assert "hook" in (res.stdout + res.stderr).lower()
+    out = re.sub(r"\s+", " ", res.stdout + res.stderr)
+    assert "hook" in out.lower()
+    assert "`ai-hats wt discard task/probe --skip-hooks` and repeat the command" in out
     assert _wt_path(project, "task/probe") is not None  # preserved
     assert _branch_exists(project, "task/probe")
     assert not (project / ".drained").exists()

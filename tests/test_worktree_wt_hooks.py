@@ -97,6 +97,9 @@ def test_failing_wt_out_aborts_merge_fail_closed(git_project):
     with pytest.raises(WorktreeTeardownAborted) as ei:
         mgr.merge()
     assert isinstance(ei.value.__cause__, WorktreeHookError)  # hook detail rides as cause
+    msg = str(ei.value.__cause__)
+    assert "ai-hats wt merge task/c --skip-hooks" in msg
+    assert "and repeat the command" in msg
     assert wt.exists()  # preserved
     assert WorktreeManager.branch_exists(git_project, "task/c")
 
@@ -108,6 +111,9 @@ def test_failing_wt_out_aborts_discard_fail_closed(git_project):
     with pytest.raises(WorktreeTeardownAborted) as ei:
         mgr.discard()
     assert isinstance(ei.value.__cause__, WorktreeHookError)
+    msg = str(ei.value.__cause__)
+    assert "ai-hats wt discard task/d --skip-hooks" in msg
+    assert "and repeat the command" in msg
     assert wt.exists()
 
 
@@ -139,6 +145,25 @@ def test_cleanup_preserves_worktree_on_hook_failure(git_project):
     wt = mgr.create(wt_hooks=_carry_out())
     mgr.cleanup()  # must NOT raise (auto path)
     assert wt.exists()  # preserved, not removed
+
+
+def test_teardown_aborted_hint_subcommands_are_valid():
+    import re
+    from ai_hats.wt_lifecycle import _raise_teardown_aborted, WorktreeTeardownAborted
+    from ai_hats.cli.worktree import wt
+
+    valid_subcmds = set(wt.commands.keys())
+
+    for event in ("merge", "discard", "cleanup"):
+        with pytest.raises(WorktreeTeardownAborted) as ei:
+            _raise_teardown_aborted(event, "task/test", {"skill": "s"}, "failed")
+        cause_msg = str(ei.value.__cause__)
+        match = re.search(r"ai-hats wt ([a-z]+) task/test --skip-hooks", cause_msg)
+        assert match is not None, f"No command match in cause message for {event}: {cause_msg}"
+        subcmd = match.group(1)
+        assert subcmd in valid_subcmds, (
+            f"Subcommand '{subcmd}' for event '{event}' is not a valid wt subcommand"
+        )
 
 
 def test_persistence_roundtrip_runs_create_time_hooks(git_project, tmp_path):
