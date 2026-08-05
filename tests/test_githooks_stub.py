@@ -96,7 +96,16 @@ def test_an_ai_hats_without_the_entry_point_fails_open(tmp_path: Path):
     The stub imports and catches instead.
     """
     project = _project(tmp_path)
-    system_python = shutil.which("python3")
+    venv_dir = os.environ.get("VIRTUAL_ENV", "")
+    clean_path = (
+        os.pathsep.join(
+            p
+            for p in os.environ.get("PATH", "").split(os.pathsep)
+            if not (venv_dir and p.startswith(venv_dir)) and "venv" not in p and ".venv" not in p
+        )
+        or os.defpath
+    )
+    system_python = shutil.which("python3", path=clean_path)
     assert system_python, "need a system python3 to play the older install"
     _stub_interpreter(
         project,

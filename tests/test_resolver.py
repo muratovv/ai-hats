@@ -229,5 +229,3 @@ def test_list_components_symlink_cycle(tmp_path: Path) -> None:
     components = resolver.list_components(ComponentType.TRAIT)
 
     assert "valid" in components
-
-

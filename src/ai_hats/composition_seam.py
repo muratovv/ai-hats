@@ -266,7 +266,9 @@ def build_composition_payload(
         result=result,
         provider=provider,
         effective_role=effective_role,
-        snapshot=_composition_snapshot(asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec),
+        snapshot=_composition_snapshot(
+            asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
+        ),
         hooks=asm.hooks,
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,

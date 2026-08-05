@@ -713,5 +713,3 @@ def test_remove_and_add_same_rule_reorders_to_tail(composer):
     rule_names = [r.name for r in result.rules]
     assert rule_names[-1] == "own_rule"
     assert result.errors == []
-
-

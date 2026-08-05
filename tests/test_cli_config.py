@@ -93,7 +93,8 @@ def test_config_set_runtime_composition_refused(cli_project):
 def test_config_customize_runtime_composition_refused(cli_project):
     """HATS-1456 R5: config customize refuses role names with operators."""
     project, runner = cli_project
-    result = runner.invoke(main, ["config", "customize", "assistant + leader", "--add-trait", "foo"])
+    result = runner.invoke(
+        main, ["config", "customize", "assistant + leader", "--add-trait", "foo"]
+    )
     assert result.exit_code != 0
     assert "runtime composition ('+' / '-') cannot be persisted" in result.output
-
