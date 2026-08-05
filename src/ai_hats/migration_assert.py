@@ -272,8 +272,11 @@ def assert_runtime_hooks_resolve(
     if not broken:
         return
 
+    # HATS-1513: name the files that actually hold the findings — a hardcoded
+    # settings.json sent whoever hit an overlay ref to edit an innocent file.
+    where = ", ".join(sorted({ref.settings_file for ref in broken}))
     lines = [
-        f"{len(broken)} hook command path(s) in .claude/settings.json "
+        f"{len(broken)} hook command path(s) in {where} "
         "do not resolve to an existing file. Claude Code will print "
         "'No such file or directory' on every matching tool call.",
         "",

@@ -428,6 +428,28 @@ def test_assert_raises_on_broken_ref(tmp_path: Path) -> None:
     assert HOOK_PRE_TOOL_USE in msg
 
 
+def test_assert_header_names_the_file_that_actually_holds_the_ref(tmp_path: Path) -> None:
+    """HATS-1513: the header used to hardcode ``.claude/settings.json``, sending
+    whoever hit it to edit a file that was fine."""
+    _write_settings(
+        tmp_path,
+        {
+            "hooks": {
+                HOOK_PRE_TOOL_USE: [
+                    {"matcher": "Bash", "hooks": [{"type": "command", "command": "/nowhere/x.sh"}]}
+                ]
+            }
+        },
+        local=True,
+    )
+
+    with pytest.raises(AssemblyError) as exc:
+        assert_runtime_hooks_resolve(tmp_path)
+
+    header = str(exc.value).splitlines()[0]
+    assert ".claude/settings.local.json" in header, header
+
+
 def test_assert_includes_backup_recovery_hint(tmp_path: Path) -> None:
     """AC5: error message carries the Phase 1 backup path with a
     ``tar -xzf`` one-liner so the user has a recovery handle."""
