@@ -82,8 +82,10 @@ def _run(cmd, *, cwd, env, timeout):
     )
 
 
+from _helpers.git import git as _git_helper
+
 def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
+    _git_helper(Path.cwd(), "-C", str(cwd), *args)
 
 
 def _head_sha(repo: Path) -> str:
