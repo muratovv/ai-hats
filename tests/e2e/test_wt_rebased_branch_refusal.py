@@ -8,6 +8,7 @@ Verifies that:
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -32,14 +33,6 @@ def _run(cmd, *, cwd, env, timeout=120, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _locate_worktree(project: Path, branch: str) -> Path:
@@ -73,12 +66,7 @@ def test_e2e_wt_rebased_branch_refusal(shared_launcher, tmp_path):
             expect_exit=expect_exit,
         )
 
-    _git(project, "init", "-b", "master")
-    _git(project, "config", "user.email", "e2e@test.com")
-    _git(project, "config", "user.name", "E2E Test")
-    (project / "README.md").write_text("# main repo\n")
-    _git(project, "add", ".")
-    _git(project, "commit", "-m", "init")
+    init_repo(project, branch="master")
 
     # Create worktree
     ai_hats("wt", "create", "task/rebased-e2e")

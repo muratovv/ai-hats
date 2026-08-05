@@ -22,6 +22,7 @@ the legacy ``ai-hats task`` CLI, HATS-1263).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -41,14 +42,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
 
 
 def _run_rack(

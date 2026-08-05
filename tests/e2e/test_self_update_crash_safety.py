@@ -21,6 +21,7 @@ Fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -59,8 +60,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
@@ -153,3 +152,8 @@ def test_e2e_self_update_reclaims_incomplete_residue(tmp_path: Path) -> None:
     assert (versions / sha_a / ".complete").is_file(), "complete shaA was touched"
     assert (versions / "current").read_text().strip() == sha_b
     assert (versions / sha_b / ".complete").is_file()
+
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

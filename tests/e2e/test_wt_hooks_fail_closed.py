@@ -15,6 +15,7 @@ Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import re
 import shutil
@@ -39,8 +40,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 def _branch_exists(project: Path, branch: str) -> bool:
@@ -64,18 +63,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
             if line.strip().endswith("/" + branch):
                 return cur
     return None
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session venv with a clean env (HATS-685/582):
-    pop PYTHONPATH (else the launcher imports the source tree without
-    ``library/``) and isolate HOME (no dev ``~/.ai-hats/`` bleed)."""
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wthook-home"))
-    return launcher, env, shared_venv
 
 
 def _init(launcher: Path, env: dict, project: Path) -> None:

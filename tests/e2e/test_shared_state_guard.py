@@ -10,6 +10,7 @@ integration tests:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -29,13 +30,7 @@ PREPUSH_HOOK = (
 
 
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return _git_helper(cwd, *args).stdout.strip()
 
 
 @pytest.fixture

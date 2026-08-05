@@ -28,6 +28,7 @@ Fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -82,8 +83,6 @@ def _run(cmd, *, cwd, env, timeout):
     )
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
@@ -97,8 +96,8 @@ def _head_sha(repo: Path) -> str:
 
 def _advance(src_repo: Path, marker: str) -> str:
     (src_repo / marker).write_text("hats-655 e2e\n")
-    _git(["add", marker], src_repo)
-    _git(["commit", "--quiet", "-m", f"test: advance HEAD ({marker})"], src_repo)
+    git(src_repo, "add", marker)
+    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
     return _head_sha(src_repo)
 
 
@@ -115,9 +114,9 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     # Install the STALE launcher shim.
@@ -165,3 +164,6 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     assert launcher.read_bytes() == launcher_bytes_before, (
         "the advisory must NEVER write the host launcher"
     )
+
+def _git(args, cwd):
+    return git(cwd, *args)

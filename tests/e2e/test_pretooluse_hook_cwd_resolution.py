@@ -57,28 +57,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only launcher on the session-shared venv (HATS-582).
-
-    Mirrors ``test_pretooluse_hook_materialization``: this test only
-    ``self init``s into a fresh ``tmp_path`` project and reads settings.json
-    back — it never mutates the venv. Two hygiene knobs on a COPY of the
-    shared env:
-
-    * pop ``PYTHONPATH`` — ``ai-hats wt exec`` sets ``PYTHONPATH=src`` which
-      shadows the installed package with the source tree (no ``library``
-      subpackage) → "no roles found".
-    * isolate ``HOME`` — keep the dev user's ``~/.ai-hats/`` customizations
-      out of composition.
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("cwd-resolution-home"))
-    return launcher, env, shared_venv
-
-
 def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(exist_ok=True)
     _run(

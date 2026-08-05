@@ -10,6 +10,7 @@ resolver gitlink hop) makes `context` from the worktree fail to resolve.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -28,8 +29,6 @@ _PLAN_SECTIONS = (
 )
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 def _rack(rack: Path, *args: str, cwd: Path, env: dict) -> subprocess.CompletedProcess[str]:

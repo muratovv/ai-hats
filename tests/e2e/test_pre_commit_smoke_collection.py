@@ -9,6 +9,7 @@ dropping the scoping altogether still passes.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -32,8 +33,6 @@ HOOK_PATH = (
 )
 
 
-def _git(project: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(project), *args], check=True, capture_output=True)
 
 
 def _armed_project(tmp_path: Path, name: str) -> Path:

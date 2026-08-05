@@ -25,6 +25,7 @@ main test's failure is the fan-out, not the marker logic.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -61,14 +62,10 @@ exit 0
 """
 
 
+
+
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return _git_helper(cwd, *args).stdout.strip()
 
 
 def _write_hook(path: Path, body: str) -> None:

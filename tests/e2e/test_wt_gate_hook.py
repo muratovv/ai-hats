@@ -9,6 +9,7 @@ rides in JSON (a final decision that binds headless too), not a non-zero exit.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -27,8 +28,6 @@ HOOK = (
 )
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 @pytest.fixture

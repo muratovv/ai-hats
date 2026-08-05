@@ -24,6 +24,7 @@ the shared project, so the module fixture stays immutable across tests.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo
 
 import hashlib
 import json
@@ -82,31 +83,7 @@ def _seed_proxmox_shape(project_path: Path) -> None:
         + "\n"
     )
     # Git init so the healer's git-clean gate has a baseline.
-    subprocess.run(
-        ["git", "init", "-q"],
-        cwd=str(project_path),
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@t.t"],
-        cwd=str(project_path),
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "t"],
-        cwd=str(project_path),
-        check=True,
-    )
-    subprocess.run(
-        ["git", "add", "-A"],
-        cwd=str(project_path),
-        check=True,
-    )
-    subprocess.run(
-        ["git", "commit", "-q", "-m", "seed"],
-        cwd=str(project_path),
-        check=True,
-    )
+    init_repo(project_path)
 
 
 @pytest.fixture(scope="module")

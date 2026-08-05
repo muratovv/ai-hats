@@ -19,6 +19,7 @@ Modelled on ``tests/e2e/test_task_transition_done_already_merged_head_wandered.p
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -43,14 +44,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _worktree_branches(project: Path) -> list[str]:

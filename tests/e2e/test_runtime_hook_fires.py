@@ -55,22 +55,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session-scoped shared venv (HATS-582 pattern).
-
-    Mirrors ``test_runtime_hook_propagation.installed_launcher``: pop
-    ``PYTHONPATH`` (``wt exec`` sets ``PYTHONPATH=src`` which shadows the
-    installed package carrying ``library``) and isolate ``HOME`` (so the dev
-    user's ``~/.ai-hats/`` customizations do not bleed into composition).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("rthook-fires-home"))
-    return launcher, env, shared_venv
-
-
 def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     project.mkdir(parents=True, exist_ok=True)
     shutil.copytree(FIXTURE_LIB, project / "libraries")

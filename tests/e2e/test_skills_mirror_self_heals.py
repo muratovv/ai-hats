@@ -13,8 +13,8 @@ fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -27,8 +27,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -119,3 +117,6 @@ def test_session_start_heals_stale_skills_mirror(tmp_path: Path, monkeypatch):
     second = _launch(project, monkeypatch)
     assert "skills mirror" not in second, second
     assert (mirror / "beta" / "SKILL.md").read_text() == beta_content
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

@@ -75,24 +75,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session-scoped shared venv (HATS-582 pattern).
-
-    Mirrors ``test_pretooluse_hook_materialization.installed_launcher``: the
-    test only ``self init``s a fresh project and reads it back, so it reuses
-    the shared venv. Layer two hygiene knobs on a COPY of the neutral env:
-    pop ``PYTHONPATH`` (``wt exec`` sets ``PYTHONPATH=src`` which shadows the
-    installed package that carries ``library``) and isolate ``HOME`` (so the
-    dev user's ``~/.ai-hats/`` customizations do not bleed into composition).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("rthook-home"))
-    return launcher, env, shared_venv
-
-
 def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:
     """Copy the fixture library into ``<project>/libraries`` and init the role.
 

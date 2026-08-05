@@ -22,6 +22,7 @@ Per dev_rule_e2e_gate: real bash + real pip + real ``ai-hats`` binary,
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -45,8 +46,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 def _wt_path(project: Path, branch: str) -> Path | None:
@@ -59,15 +58,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
             if line.strip().endswith("/" + branch):
                 return cur
     return None
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wt-inplace-home"))
-    return launcher, env, shared_venv
 
 
 def _seed_project(launcher: Path, env: dict, project: Path, role: str) -> None:

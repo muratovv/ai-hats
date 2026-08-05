@@ -28,6 +28,7 @@ the real ``self update`` produces and advances the versioned layout.
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -65,8 +66,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
@@ -103,13 +102,13 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
     # Align the clone's symbolic HEAD with its checked-out working tree so
     # `git ls-remote <src> HEAD` (what the edge resolver reads to name the
     # version dir) matches the installed source — robust whether REPO_ROOT is a
     # master checkout or a linked worktree on a feature branch.
-    _git(["checkout", "-B", "e2e-main"], src_repo)
+    git(src_repo, "checkout", "-B", "e2e-main")
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -139,8 +138,8 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
 
     # ----- 2. advance src-repo HEAD → shaB (trivial, still installable) -----
     (src_repo / "E2E_VERSIONED_MARKER.txt").write_text("hats-647 e2e\n")
-    _git(["add", "E2E_VERSIONED_MARKER.txt"], src_repo)
-    _git(["commit", "--quiet", "-m", "test: advance HEAD for versioned e2e"], src_repo)
+    git(src_repo, "add", "E2E_VERSIONED_MARKER.txt")
+    git(src_repo, "commit", "--quiet", "-m", "test: advance HEAD for versioned e2e")
     sha_b = _head_sha(src_repo)
     assert sha_b != sha_a
 
@@ -156,3 +155,6 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     # ----- 4. the real launcher (no env) resolves the new current end-to-end -----
     clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)
+
+def _git(args, cwd):
+    return git(cwd, *args)

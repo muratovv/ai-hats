@@ -10,9 +10,9 @@ only the PTY spawn is stubbed). Guarantees, each fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,8 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -101,3 +99,6 @@ def test_session_start_warns_on_deprecated_write_rule(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "Edit(//**/.env)" not in second, second
     assert "is ignored by Claude Code" not in second, second
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

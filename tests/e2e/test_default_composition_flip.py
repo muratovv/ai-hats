@@ -21,6 +21,7 @@ the task card); the same composition feeds this test's ``list tokens`` output.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -55,8 +56,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=None, check=False):
     return result
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 def _init_git_project(root: Path) -> None:

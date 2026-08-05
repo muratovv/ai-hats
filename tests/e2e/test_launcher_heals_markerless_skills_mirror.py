@@ -9,8 +9,8 @@ never collides and survives; (3) the second launch is silent.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,8 +23,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -115,3 +113,6 @@ def test_session_start_heals_markerless_skills_mirror(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "skills mirror" not in second, second
     assert (mirror / "gamma" / "SKILL.md").read_text() == gamma_content
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

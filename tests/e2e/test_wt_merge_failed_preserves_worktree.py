@@ -26,6 +26,7 @@ Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -53,14 +54,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration
@@ -95,9 +88,7 @@ def test_e2e_wt_merge_failure_preserves_worktree(shared_launcher, tmp_path):
         )
 
     # ---- 1. bootstrap project ----
-    _git(project, "init", "-b", "main")
-    _git(project, "config", "user.email", "e2e@test")
-    _git(project, "config", "user.name", "E2E")
+    init_repo(project, branch="main")
     (project / "README.md").write_text("# e2e\n")
     _git(project, "add", "README.md")
     _git(project, "commit", "-m", "init")

@@ -28,6 +28,7 @@ Deliberate long contract module docstring — noqa: comment-length.
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import json
 import os
@@ -74,8 +75,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
@@ -99,9 +98,9 @@ def _clone_pair(tmp_path: Path) -> tuple[Path, Path]:
     src_new = tmp_path / "src-new"
     for clone, ref in ((src_old, PRE_RETIREMENT_REF), (src_new, "HEAD")):
         subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(clone)], check=True)
-        _git(["config", "user.email", "e2e@test"], clone)
-        _git(["config", "user.name", "E2E"], clone)
-        _git(["checkout", "-B", "e2e-main", ref], clone)  # align ls-remote HEAD
+        git(clone, "config", "user.email", "e2e@test")
+        git(clone, "config", "user.name", "E2E")
+        git(clone, "checkout", "-B", "e2e-main", ref)  # align ls-remote HEAD
     assert RETIRED_DIST in (src_old / "pyproject.toml").read_text(), (
         f"{PRE_RETIREMENT_REF[:12]} does not depend on {RETIRED_DIST} — wrong ref; "
         "the install below would carry nothing to prune"
@@ -191,11 +190,11 @@ def test_e2e_first_managed_update_prunes_retired_console_script(tmp_path: Path) 
 
     for clone, ref in ((src_old, PRE_RETIREMENT_REF), (src_new, "HEAD")):
         subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(clone)], check=True)
-        _git(["config", "user.email", "e2e@test"], clone)
-        _git(["config", "user.name", "E2E"], clone)
+        git(clone, "config", "user.email", "e2e@test")
+        git(clone, "config", "user.name", "E2E")
         # `e2e-main` aligns the clone's symbolic HEAD (what the edge resolver
         # reads via `git ls-remote HEAD`) with the checked-out tree.
-        _git(["checkout", "-B", "e2e-main", ref], clone)
+        git(clone, "checkout", "-B", "e2e-main", ref)
     sha_new = _head_sha(src_new)
 
     assert RETIRED_DIST in (src_old / "pyproject.toml").read_text(), (

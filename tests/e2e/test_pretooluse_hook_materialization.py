@@ -63,40 +63,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only tests (A/B/D) on the session-scoped shared venv (HATS-582).
-
-    Tests A (init materializes), B (idempotent re-init) and D (safety net
-    live) only ``self init`` into a fresh ``tmp_path`` project and read the
-    materialized hooks back — they never mutate the venv, so they reuse the
-    single session venv from :func:`tests.e2e.conftest.shared_launcher`.
-
-    The shared ``env`` is NEUTRAL; this module needs two extra hygiene knobs
-    that the old module fixture applied, so we layer them on a COPY:
-
-    * pop ``PYTHONPATH`` — ``ai-hats wt exec`` sets ``PYTHONPATH=src`` which
-      shadows the installed ``ai_hats`` package with the source tree (which
-      lacks the ``library`` subpackage) → "no roles found".
-    * isolate ``HOME`` to an empty tmpdir — otherwise the dev user's
-      ``~/.ai-hats/`` customizations (personal-workflow trait, custom roles)
-      bleed into composition and shadow framework roles.
-
-    Returns ``(launcher, env, shared_venv)`` — the same shape Test C's
-    :func:`private_launcher` returns.
-
-    Test C (``test_e2e_self_update_refreshes_hook_after_drift``) runs
-    ``self update --force-downgrade`` which REINSTALLS into the pinned venv —
-    it is the lone mutator and keeps a private builder (:func:`private_launcher`).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    isolated_home = tmp_path_factory.mktemp("pretooluse-home")
-    env["HOME"] = str(isolated_home)
-    return launcher, env, shared_venv
-
-
 @pytest.fixture(scope="module")
 def private_launcher(tmp_path_factory):
     """Private module-scoped builder for the LONE venv-mutating test (HATS-582).

@@ -69,20 +69,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder that ran ``install-launcher.sh`` +
-    ``self update`` (~90s) once per module. Every test here is read-only on
-    the venv (each works in a fresh ``tmp_path`` project), so they now reuse
-    the single session venv from
-    :func:`tests.e2e.conftest.shared_launcher`. Returns the same
-    ``(launcher, env, shared_venv)`` tuple the old fixture did.
-    """
-    return shared_launcher
-
-
 def _init(launcher: Path, project: Path, env: dict[str, str], *args: str):
     project.mkdir(parents=True, exist_ok=True)
     return _run(
