@@ -73,6 +73,9 @@ def gated_repo(tmp_path: Path) -> Path:
     git(tmp_path, "config", "user.name", "t")
     git(tmp_path, "config", "core.hooksPath", "/dev/null")
     git(tmp_path, "config", "commit.gpgsign", "false")
+
+    # HATS-1337: nothing is copied any more — a gate runs in place from the
+    # library, with the journal handed to it by the dispatcher as env.
     return tmp_path
 
 
