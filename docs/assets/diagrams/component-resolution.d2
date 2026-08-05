@@ -7,6 +7,7 @@ core: builtin core/\n(фундамент)
 usage: builtin usage/\n(каталог)
 ep: пакеты entry-point\nai_hats.skills
 user: ~/.ai-hats/\n(пользовательский)
+user_lp: ~/.ai-hats/\nlibrary_paths.yaml
 lp: ai-hats.yaml:\nlibrary_paths
 proj: <project>/libraries/\n(проектный)
 resolve: LibraryResolver.resolve:\nпоследнее совпадение выигрывает
@@ -16,7 +17,8 @@ result: CompositionResult\n(frozen) {shape: page}
 core -> usage: переопределяется ниже
 usage -> ep: переопределяется ниже
 ep -> user: переопределяется ниже
-user -> lp: переопределяется ниже
+user -> user_lp: переопределяется ниже
+user_lp -> lp: переопределяется ниже
 lp -> proj: переопределяется ниже
 proj -> resolve
 name -> composer

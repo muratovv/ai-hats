@@ -86,9 +86,9 @@ def build_library_paths(
     """Ordered library roots, earlier = lower priority (``LibraryResolver`` last-wins).
 
     Built-in shipping (``core`` then ``usage``) first; override points —
-    entry-point packages, user-global, config-specified, project-local, explicit
-    ``extra`` — layer on top. ``local_libraries`` overrides the project-local
-    layer (the worktree re-point, HATS-831); ``None`` means
+    entry-point packages, user-global (``~/.ai-hats/`` and ``~/.ai-hats/library_paths.yaml``),
+    config-specified, project-local, explicit ``extra`` — layer on top. ``local_libraries``
+    overrides the project-local layer (the worktree re-point, HATS-831); ``None`` means
     ``<project_dir>/libraries``.
     """
     paths: list[Path] = list(builtin_library_layers(project_dir))
