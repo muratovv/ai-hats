@@ -9,6 +9,7 @@ rides in JSON (a final decision that binds headless too), not a non-zero exit.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -27,7 +28,6 @@ HOOK = (
 )
 
 
-from _helpers.git import git as _git
 
 
 @pytest.fixture

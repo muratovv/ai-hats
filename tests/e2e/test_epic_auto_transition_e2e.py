@@ -13,6 +13,7 @@ differs between the CLIs (legacy ``TASK``, rack ``HATS``).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -23,7 +24,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _git_init_on_master(project: Path) -> None:

@@ -25,6 +25,7 @@ main test's failure is the fan-out, not the marker logic.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -61,7 +62,6 @@ exit 0
 """
 
 
-from _helpers.git import git as _git_helper
 
 
 def _git(cwd: Path, *args: str) -> str:

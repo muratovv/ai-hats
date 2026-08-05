@@ -10,6 +10,7 @@ Fail-under-revert: drop the entry point → no worktree on execute → RED.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -30,7 +31,6 @@ _PLAN_SECTIONS = (
 )
 
 
-from _helpers.git import git as _git
 
 
 def _rack(project: Path, *args: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:

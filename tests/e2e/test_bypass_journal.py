@@ -10,6 +10,7 @@ nothing about production.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo
 
 import json
 import os
@@ -65,7 +66,6 @@ EXPECTED_FIELDS = {
 @pytest.fixture
 def gated_repo(tmp_path: Path) -> Path:
     """A git repo wired the way ``install_git_hooks`` wires a real one."""
-    from _helpers.git import init_repo
     init_repo(tmp_path)
 
     # HATS-1337: nothing is copied any more — a gate runs in place from the
@@ -218,7 +218,6 @@ def test_a_lone_shell_helper_without_its_writer_fails_loud_not_silent(gated_repo
 def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: str, hatch: str):
     """One row per hatch: tripping it must leave a line naming that variable."""
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
 
     # HATS-1337: gates run in place from the library, journal handed over as env.
@@ -297,7 +296,6 @@ def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
 def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     """The card's question: was THIS commit gated? Unstamped, the journal cannot say."""
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
 
     _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
@@ -331,7 +329,6 @@ def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
     not a validator, and losing a bypass record is the defect this file removes.
     """
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
 
     _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
@@ -363,7 +360,6 @@ def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
 @pytest.mark.integration
 def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
     (repo / "a.txt").write_text("one\n")
     subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
@@ -402,7 +398,6 @@ def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
 def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
     """Negative control — the report must mean 'these commits skipped a gate'."""
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
     (repo / "a.txt").write_text("one\n")
     subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
@@ -437,7 +432,6 @@ def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
 def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
     """3a and 3b: pre_bash_shared_state_guard records cmd and session_id from stdin JSON payload."""
     repo = tmp_path
-    from _helpers.git import init_repo
     init_repo(repo)
 
     guard = LIB / "core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh"

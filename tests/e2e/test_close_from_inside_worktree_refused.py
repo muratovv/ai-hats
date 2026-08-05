@@ -10,6 +10,7 @@ sibling lookup from the dead cwd fails.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -21,7 +22,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _rack(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:

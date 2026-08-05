@@ -18,6 +18,7 @@ Guarantees, each with a fail-under-revert property:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -53,7 +54,6 @@ def _binary_env() -> dict[str, str]:
     return env
 
 
-from _helpers.git import git as _git_helper
 
 
 # ----- Guarantee 1: `self sync-hooks` removed -------------------------------

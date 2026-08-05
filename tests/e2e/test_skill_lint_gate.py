@@ -19,6 +19,7 @@ Slow only because of git init + subprocess spin-up (~ms each).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -34,7 +35,6 @@ HOOK = (
 )
 
 
-from _helpers.git import git as _git
 
 
 def _make_stub(path: Path, rc: int, message: str = "") -> Path:

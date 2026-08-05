@@ -9,8 +9,8 @@ through the startup-notice channel.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,7 +25,6 @@ pytestmark = pytest.mark.integration
 DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync'"
 
 
-from _helpers.git import git as _git_helper
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:

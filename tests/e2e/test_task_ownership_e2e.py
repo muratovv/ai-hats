@@ -10,6 +10,7 @@ steals the task) and a dead owner is never detected.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -30,7 +31,6 @@ _PLAN = (
 )
 
 
-from _helpers.git import git as _git
 
 
 def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.CompletedProcess[str]:

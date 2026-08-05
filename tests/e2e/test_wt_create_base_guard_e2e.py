@@ -14,6 +14,7 @@ both with and without the guard.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -24,7 +25,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:

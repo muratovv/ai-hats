@@ -9,8 +9,8 @@ never collides and survives; (3) the second launch is silent.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,7 +23,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git_helper
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:

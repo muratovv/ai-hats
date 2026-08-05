@@ -24,6 +24,7 @@ Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import subprocess
@@ -52,7 +53,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 @pytest.mark.integration

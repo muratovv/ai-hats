@@ -11,6 +11,7 @@ prints "Merged" (returncode 0).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -21,7 +22,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _ai_hats(binary: Path, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:

@@ -23,6 +23,7 @@ Modelled on ``tests/e2e/test_wt_merge_drift.py``.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -50,7 +51,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 @pytest.mark.integration
@@ -87,7 +87,6 @@ def test_e2e_wt_merge_head_wandered_guard(shared_launcher, tmp_path):
         )
 
     # ---- 1. bootstrap project ----
-    from _helpers.git import init_repo
     init_repo(project, branch="main")
     (project / "README.md").write_text("# e2e\n")
     _git(project, "add", "README.md")

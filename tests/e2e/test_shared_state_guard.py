@@ -10,6 +10,7 @@ integration tests:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -29,7 +30,6 @@ PREPUSH_HOOK = (
 
 
 
-from _helpers.git import git as _git_helper
 
 
 def _git(cwd: Path, *args: str) -> str:

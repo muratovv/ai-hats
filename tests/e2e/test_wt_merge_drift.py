@@ -14,6 +14,7 @@ actually exercises the new behavior (not some pre-existing guard).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -41,7 +42,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 def _git_no_hooks(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

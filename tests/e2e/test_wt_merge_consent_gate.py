@@ -12,6 +12,7 @@ directive refusal, and the test fails.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -36,7 +37,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 @pytest.mark.integration

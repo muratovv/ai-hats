@@ -11,6 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _helpers.git import git as _git, init_repo as _init_repo
+
+git = _git
+
 PLAN = """# Plan
 ## Requirements
 do the thing
@@ -21,11 +25,6 @@ in: thing; out: other
 ## Verification Protocol
 run it
 """
-
-
-from _helpers.git import git as _git, init_repo as _init_repo
-
-git = _git
 
 
 def init_repo(main: Path) -> None:

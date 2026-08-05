@@ -31,6 +31,7 @@ Deliberate long contract module docstring — noqa: comment-length.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import shutil
@@ -107,7 +108,6 @@ class Sandbox:
     probe: Path
 
 
-from _helpers.git import git as _git
 
 
 def _bash(script: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:

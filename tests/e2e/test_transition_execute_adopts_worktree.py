@@ -17,6 +17,7 @@ adoption hint never prints.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import os
 import subprocess
@@ -35,7 +36,6 @@ pytestmark = pytest.mark.integration
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-from _helpers.git import git as _git
 
 
 def _child_env() -> dict[str, str]:
@@ -107,7 +107,6 @@ def test_transition_execute_from_inside_worktree_adopts(tmp_project, tmp_path):
     main = tmp_project
     binary = main.ai_hats_binary
 
-    from _helpers.git import init_repo
     init_repo(main.path, branch="master")
 
     # A planned, worktree-eligible task (plan filled so the execute gate passes).

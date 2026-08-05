@@ -25,6 +25,7 @@ interpreter + an explicit ``PYTHONPATH`` so it runs from either location.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -49,7 +50,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
 
 
-from _helpers.git import git as _git
 
 
 def _run_hats(

@@ -20,6 +20,7 @@ Fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -57,7 +58,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-from _helpers.git import git
 
 
 def _head_sha(repo: Path) -> str:

@@ -23,6 +23,7 @@ Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -46,7 +47,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 def _task_state(project: Path, task_id: str) -> str:

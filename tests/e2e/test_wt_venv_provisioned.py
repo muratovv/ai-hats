@@ -8,6 +8,7 @@ and no venv is minted → this test goes red.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -38,7 +39,6 @@ def _run(cmd, *, cwd, env, timeout=300, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 def _wt_path(project: Path, branch: str) -> Path | None:

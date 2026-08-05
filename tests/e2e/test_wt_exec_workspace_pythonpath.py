@@ -8,6 +8,7 @@ to ``src``-only) and the inner ``import mypkg`` raises ModuleNotFoundError —
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -23,7 +24,6 @@ from _helpers.wt import spawn_worktree
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _child_env(repo_root: Path) -> dict[str, str]:

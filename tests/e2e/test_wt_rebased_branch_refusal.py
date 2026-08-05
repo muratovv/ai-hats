@@ -8,6 +8,7 @@ Verifies that:
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -32,7 +33,6 @@ def _run(cmd, *, cwd, env, timeout=120, expect_exit=0):
     return result
 
 
-from _helpers.git import git as _git
 
 
 def _locate_worktree(project: Path, branch: str) -> Path:
@@ -66,7 +66,6 @@ def test_e2e_wt_rebased_branch_refusal(shared_launcher, tmp_path):
             expect_exit=expect_exit,
         )
 
-    from _helpers.git import init_repo
     init_repo(project, branch="master")
 
     # Create worktree

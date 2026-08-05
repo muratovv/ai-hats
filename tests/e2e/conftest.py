@@ -18,10 +18,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -63,9 +65,6 @@ def _scrub_redirect_env(monkeypatch):
     for key in ENV_DENYLIST:
         monkeypatch.delenv(key, raising=False)
 
-
-import json
-import threading
 
 _trace_lock = threading.Lock()
 _in_traced_run = threading.local()

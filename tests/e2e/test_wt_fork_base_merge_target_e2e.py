@@ -21,8 +21,8 @@ Satisfies ``dev_rule_e2e_gate`` for ``src/ai_hats/cli/worktree.py`` /
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,7 +33,6 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _rack_driver(proj):

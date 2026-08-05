@@ -24,6 +24,7 @@ the shared project, so the module fixture stays immutable across tests.
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo
 
 import hashlib
 import json
@@ -82,7 +83,6 @@ def _seed_proxmox_shape(project_path: Path) -> None:
         + "\n"
     )
     # Git init so the healer's git-clean gate has a baseline.
-    from _helpers.git import init_repo
     init_repo(project_path)
 
 

@@ -17,6 +17,7 @@ Slow only because of git init + subprocess spin-up (~ms each).
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -35,7 +36,6 @@ WIZARD_CONFIG = (
 )
 
 
-from _helpers.git import git as _git_helper
 
 
 def _git(cwd: Path, *args: str) -> str:

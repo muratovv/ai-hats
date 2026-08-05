@@ -10,9 +10,9 @@ only the PTY spawn is stubbed). Guarantees, each fail-under-revert:
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,7 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git_helper
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:

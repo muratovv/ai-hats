@@ -9,6 +9,7 @@ and the inner ``rev-parse --absolute-git-dir`` returns the main ``.git``.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -21,7 +22,6 @@ from _helpers.wt import spawn_worktree
 pytestmark = pytest.mark.integration
 
 
-from _helpers.git import git as _git
 
 
 def _ai_hats(binary: Path, *args: str, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
