@@ -120,3 +120,114 @@ def test_resolve_injection_with_builtin_core(tmp_path) -> None:
         path = resolver.resolve_injection(name)
         assert path is not None, f"built-in injection {name!r} not found"
         assert path.read_text()  # non-empty
+
+
+def test_list_components_symlinked_component(tmp_path: Path) -> None:
+    """HATS-1505: list_components discovers components whose directory is a symlink."""
+    from ai_hats.models import ComponentType
+
+    lib = tmp_path / "lib"
+    traits_dir = lib / "traits"
+    traits_dir.mkdir(parents=True)
+
+    # Regular component
+    (traits_dir / "regular").mkdir()
+    (traits_dir / "regular" / "config.yaml").write_text("name: regular\n")
+
+    # Symlinked component
+    external = tmp_path / "external_trait"
+    external.mkdir()
+    (external / "config.yaml").write_text("name: symlinked\n")
+    (traits_dir / "symlinked").symlink_to(external, target_is_directory=True)
+
+    resolver = LibraryResolver([lib])
+    components = resolver.list_components(ComponentType.TRAIT)
+
+    assert "regular" in components
+    assert "symlinked" in components
+
+
+def test_list_components_symlinked_namespace(tmp_path: Path) -> None:
+    """HATS-1505: list_components discovers components under a symlinked namespace directory."""
+    from ai_hats.models import ComponentType
+
+    lib = tmp_path / "lib"
+    traits_dir = lib / "traits"
+    traits_dir.mkdir(parents=True)
+
+    external_ns = tmp_path / "external_ns"
+    (external_ns / "python").mkdir(parents=True)
+    (external_ns / "python" / "config.yaml").write_text("name: dev::python\n")
+
+    (traits_dir / "dev").symlink_to(external_ns, target_is_directory=True)
+
+    resolver = LibraryResolver([lib])
+    components = resolver.list_components(ComponentType.TRAIT)
+
+    assert "dev::python" in components
+
+
+def test_list_components_convergence_with_find_component_dir(tmp_path: Path) -> None:
+    """HATS-1505: Every directory bearing a marker listed by list_components must be
+    resolvable by find_component_dir, and vice versa."""
+    from ai_hats.library_paths import find_component_dir
+    from ai_hats.models import ComponentType
+
+    lib = tmp_path / "lib"
+    traits_dir = lib / "traits"
+    traits_dir.mkdir(parents=True)
+
+    # 1. Plain
+    (traits_dir / "plain").mkdir()
+    (traits_dir / "plain" / "config.yaml").write_text("name: plain\n")
+
+    # 2. Symlinked component
+    ext1 = tmp_path / "ext1"
+    ext1.mkdir()
+    (ext1 / "config.yaml").write_text("name: symlink_comp\n")
+    (traits_dir / "symlink_comp").symlink_to(ext1, target_is_directory=True)
+
+    # 3. Symlinked namespace
+    ext_ns = tmp_path / "ext_ns"
+    (ext_ns / "sub").mkdir(parents=True)
+    (ext_ns / "sub" / "config.yaml").write_text("name: ns::sub\n")
+    (traits_dir / "ns").symlink_to(ext_ns, target_is_directory=True)
+
+    # 4. DAG aliases (two symlinks pointing to the same real directory)
+    ext_shared = tmp_path / "ext_shared"
+    ext_shared.mkdir()
+    (ext_shared / "config.yaml").write_text("name: shared\n")
+    (traits_dir / "alias_a").symlink_to(ext_shared, target_is_directory=True)
+    (traits_dir / "alias_b").symlink_to(ext_shared, target_is_directory=True)
+
+    resolver = LibraryResolver([lib])
+    listed = set(resolver.list_components(ComponentType.TRAIT))
+
+    expected_marker_components = {"plain", "symlink_comp", "ns::sub", "alias_a", "alias_b"}
+    assert listed == expected_marker_components
+
+    for comp in expected_marker_components:
+        found = find_component_dir([lib], "traits", comp.replace("::", "/"))
+        assert found is not None, f"find_component_dir failed for {comp!r}"
+
+
+def test_list_components_symlink_cycle(tmp_path: Path) -> None:
+    """HATS-1505: list_components terminates safely on directory symlink cycles."""
+    from ai_hats.models import ComponentType
+
+    lib = tmp_path / "lib"
+    traits_dir = lib / "traits"
+    traits_dir.mkdir(parents=True)
+
+    (traits_dir / "valid").mkdir()
+    (traits_dir / "valid" / "config.yaml").write_text("name: valid\n")
+
+    # Symlink cycle: traits/loop points back to traits_dir
+    (traits_dir / "loop").symlink_to(traits_dir, target_is_directory=True)
+
+    resolver = LibraryResolver([lib])
+    components = resolver.list_components(ComponentType.TRAIT)
+
+    assert "valid" in components
+
+

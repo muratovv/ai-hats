@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .models import ComponentConfig, ComponentType, resolve_namespace
@@ -109,10 +110,24 @@ class LibraryResolver:
                 ComponentType.TRAIT: "config.yaml",
                 ComponentType.ROLE: "config.yaml",
             }[component_type]
-            for item in base.rglob(marker):
-                rel = item.parent.relative_to(base)
-                name = str(rel).replace("/", "::")
-                seen.add(name)
+            seen_dirs: set[Path] = set()
+            for root, dirs, files in os.walk(base, followlinks=True):
+                root_path = Path(root)
+
+                if marker in files:
+                    rel = root_path.relative_to(base)
+                    name = str(rel).replace("/", "::")
+                    seen.add(name)
+
+                try:
+                    resolved_root = root_path.resolve()
+                except (OSError, ValueError):
+                    dirs.clear()
+                    continue
+                if resolved_root in seen_dirs:
+                    dirs.clear()
+                    continue
+                seen_dirs.add(resolved_root)
         return sorted(seen)
 
     @staticmethod
