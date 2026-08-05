@@ -301,3 +301,67 @@ def test_malformed_metadata_yaml_does_not_crash_and_warns(tmp_path, caplog):
 
     assert "### bad_meta_rule" not in prompt
     assert "rule 'bad_meta_rule': failed to load metadata at" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# HATS-1514: Dangling pointer checker fixes (hyphens, composition.rules, multi-root, HATS-1511 opt-in)
+# --------------------------------------------------------------------------- #
+
+
+def test_dangling_pointer_with_hyphens_detected(tmp_path):
+    """HATS-1514 Gap 1: pointers with hyphens in rule names are detected."""
+    trait = tmp_path / "core" / "traits" / "trait-hyphen"
+    trait.mkdir(parents=True)
+    (trait / "config.yaml").write_text(
+        "name: trait-hyphen\ninjection: |\n  Follow policy — see rule `no-leverage`.\n"
+    )
+    violations = find_dangling_rule_pointers(tmp_path)
+    assert [v.rule for v in violations] == ["no-leverage"]
+
+
+def test_undelivered_composition_rule_detected(tmp_path):
+    """HATS-1514 Gap 3: undelivered rule declared under composition.rules: is detected."""
+    trait = tmp_path / "core" / "traits" / "trait-comp"
+    trait.mkdir(parents=True)
+    (trait / "config.yaml").write_text(
+        "name: trait-comp\ncomposition:\n  rules:\n    - undelivered-rule\n"
+    )
+    violations = find_dangling_rule_pointers(tmp_path)
+    assert [v.rule for v in violations] == ["undelivered-rule"]
+
+
+def test_find_dangling_pointers_scans_multiple_library_roots(tmp_path):
+    """HATS-1514 Gap 2: find_dangling_rule_pointers accepts a list of library roots."""
+    root1 = tmp_path / "root1"
+    root2 = tmp_path / "root2"
+    trait1 = root1 / "traits" / "t1"
+    trait2 = root2 / "traits" / "t2"
+    trait1.mkdir(parents=True)
+    trait2.mkdir(parents=True)
+
+    (trait1 / "config.yaml").write_text("name: t1\ninjection: |\n  see rule `dangling-one`.\n")
+    (trait2 / "config.yaml").write_text("name: t2\ninjection: |\n  see rule `dangling-two`.\n")
+
+    violations = find_dangling_rule_pointers([root1, root2])
+    rules = [v.rule for v in violations]
+    assert "dangling-one" in rules
+    assert "dangling-two" in rules
+
+
+def test_opt_in_delivery_rule_not_flagged_as_dangling(tmp_path):
+    """HATS-1514 / HATS-1511 regression: rule with delivery: always_on is deliverable and not flagged."""
+    lib = tmp_path / "lib"
+    trait_dir = lib / "traits" / "t_opt"
+    rule_dir = lib / "rules" / "opt-in-rule"
+    trait_dir.mkdir(parents=True)
+    rule_dir.mkdir(parents=True)
+
+    (rule_dir / "metadata.yaml").write_text("name: opt-in-rule\ndelivery: always_on\n")
+    (rule_dir / "rule.md").write_text("Rule body.\n")
+
+    (trait_dir / "config.yaml").write_text(
+        "name: t_opt\ncomposition:\n  rules:\n    - opt-in-rule\ninjection: |\n  see rule `opt-in-rule`.\n"
+    )
+
+    violations = find_dangling_rule_pointers(lib)
+    assert violations == []

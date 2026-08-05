@@ -21,7 +21,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from typing import Sequence
+
+import yaml
+
 from .constants import ALWAYS_ON_RULES
+from .models import RuleMetadata
 
 # Non-always-on rules whose essence is intentionally summarized inline in the
 # injection that points at them. Their full body is NOT delivered (provenance
@@ -40,9 +45,8 @@ SUMMARIZED_IN_INJECTION: frozenset[str] = frozenset(
     }
 )
 
-# Matches the shipped convention: ``see rule `rule_name` `` (backtick-quoted).
-# Scoped to this phrasing so prose that merely names a rule is not flagged.
-_SEE_RULE = re.compile(r"see rules?\s+`([a-z0-9_]+)`", re.IGNORECASE)
+# Matches conventions: ``see rule `rule_name` ``, ``see `rule_name` ``, ``see rules `rule_name` `` (case insensitive, hyphens + underscores).
+_SEE_RULE = re.compile(r"see\s+(?:rules?\s+)?`([a-z0-9_-]+)`", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -53,17 +57,96 @@ class DanglingPointer:
     source: str  # library-relative path of the config carrying the pointer
 
 
-def find_dangling_rule_pointers(library_root: Path) -> list[DanglingPointer]:
-    """Return every ``see rule X`` pointer in ``library_root`` for a rule that is
-    neither always-on nor summarized-in-injection (i.e. undelivered)."""
-    deliverable = set(ALWAYS_ON_RULES) | set(SUMMARIZED_IN_INJECTION)
+def _is_trait_or_skill(name: str, roots: list[Path]) -> bool:
+    for root in roots:
+        if (root / "traits" / name).is_dir() or (root / "skills" / name).is_dir():
+            return True
+        if list(root.rglob(f"traits/{name}")) or list(root.rglob(f"skills/{name}")):
+            return True
+    return False
+
+
+def _is_rule_deliverable(rule_name: str, roots: list[Path]) -> bool:
+    if rule_name in ALWAYS_ON_RULES or rule_name in SUMMARIZED_IN_INJECTION:
+        return True
+    for root in roots:
+        direct_meta = root / "rules" / rule_name / "metadata.yaml"
+        meta_paths = (
+            [direct_meta]
+            if direct_meta.is_file()
+            else list(root.rglob(f"rules/{rule_name}/metadata.yaml"))
+        )
+        for meta_path in meta_paths:
+            if meta_path.is_file():
+                try:
+                    meta = RuleMetadata.from_yaml(meta_path)
+                    if meta.delivery == "always_on":
+                        return True
+                except Exception:  # noqa: S110, BLE001 # silent-ok: malformed metadata treated as non-always-on
+                    pass
+    return False
+
+
+def find_dangling_rule_pointers(
+    library_root: Path | Sequence[Path] | None = None,
+) -> list[DanglingPointer]:
+    """Return every ``see rule X`` pointer and undelivered ``composition.rules`` item
+    in ``library_root`` (or default library paths) for a rule that reaches the agent through no channel.
+    """
+    if library_root is None:
+        try:
+            from .library_paths import build_library_paths
+
+            roots = build_library_paths()
+        except Exception:
+            roots = [_installed_library_root()]
+    elif isinstance(library_root, (Path, str)):
+        roots = [Path(library_root)]
+    else:
+        roots = [Path(p) for p in library_root]
+
     violations: list[DanglingPointer] = []
-    for cfg in sorted(library_root.rglob("config.yaml")):
-        rel = str(cfg.relative_to(library_root))
-        for match in _SEE_RULE.finditer(cfg.read_text()):
-            rule = match.group(1)
-            if rule not in deliverable:
-                violations.append(DanglingPointer(rule=rule, source=rel))
+    seen: set[tuple[str, str]] = set()
+
+    for root in roots:
+        if not root.exists():
+            continue
+        for cfg in sorted(root.rglob("config.yaml")):
+            try:
+                rel = str(cfg.relative_to(root))
+            except ValueError:
+                rel = str(cfg)
+
+            text = cfg.read_text()
+
+            # 1. Prose pointers matching see rule `X` or see `X`
+            for match in _SEE_RULE.finditer(text):
+                rule = match.group(1)
+                if _is_trait_or_skill(rule, roots):
+                    continue
+                if not _is_rule_deliverable(rule, roots):
+                    key = (rule, rel)
+                    if key not in seen:
+                        seen.add(key)
+                        violations.append(DanglingPointer(rule=rule, source=rel))
+
+            # 2. Structural composition.rules: [X, ...]
+            try:
+                data = yaml.safe_load(text) or {}
+                if isinstance(data, dict):
+                    comp = data.get("composition")
+                    if isinstance(comp, dict):
+                        rules = comp.get("rules")
+                        if isinstance(rules, list):
+                            for rule in rules:
+                                if isinstance(rule, str) and not _is_rule_deliverable(rule, roots):
+                                    key = (rule, rel)
+                                    if key not in seen:
+                                        seen.add(key)
+                                        violations.append(DanglingPointer(rule=rule, source=rel))
+            except Exception:  # noqa: S110, BLE001 # silent-ok: non-yaml or malformed config ignored in structural parse
+                pass
+
     return violations
 
 

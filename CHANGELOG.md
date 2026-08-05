@@ -22,6 +22,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **Multi-root, hyphenated, and structural dangling rule pointer detection** (HATS-1514). Fix four gaps in `find_dangling_rule_pointers`: support hyphenated rule names in prose regex, scan all library roots (`build_library_paths()`), validate `composition.rules` in `config.yaml`, and recognize HATS-1511 `delivery: always_on` opt-ins.
+
 - **Silent drop of composed rules and empty rule bodies** (HATS-1511). Log explicit warnings when a rule in composition is not delivered to the prompt or when an always-on/opt-in rule has an empty body, closing previously silent drop paths.
 
 ### Changed — BREAKING

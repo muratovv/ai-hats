@@ -3,3 +3,5 @@ license: MIT
 description: Proxmox-specific IaC tool hierarchy and observation loop
 author: ai-hats
 tags: [proxmox, infrastructure, environment-specific]
+delivery: always_on
+
