@@ -90,6 +90,14 @@ ci_silent_fallback() {
     "$PY" scripts/check_silent_fallback.py
 }
 
+# Offline and instant, like the two above. HATS-1498: the flow catalog is
+# rendered from the tests' own docstrings, so it goes stale the moment one is
+# edited without regenerating.
+ci_e2e_catalog() {
+    echo "[ci-local] e2e-catalog (tests/e2e/CATALOG.md vs the flow blocks)" >&2
+    "$PY" scripts/gen_e2e_catalog.py --check
+}
+
 # The full maintainer tier (~25 min). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -138,6 +146,7 @@ case "$stage" in
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
     silent-fallback) ci_silent_fallback ;;
+    e2e-catalog) ci_e2e_catalog ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
     all)
@@ -145,6 +154,7 @@ case "$stage" in
         ci_lint
         ci_dependency_floor
         ci_silent_fallback
+        ci_e2e_catalog
         ci_unit
         ci_coverage
         ci_merge_smoke
@@ -152,7 +162,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | done-gate | dependency-floor | silent-fallback | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | done-gate | dependency-floor | silent-fallback | version-skew | all" >&2
         exit 2
         ;;
 esac

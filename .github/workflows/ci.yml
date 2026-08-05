@@ -176,3 +176,9 @@ jobs:
       - name: Check no broad handler swallows a failure silently
         if: always()
         run: bash scripts/ci-local.sh silent-fallback
+      # Offline as well (HATS-1498) — the e2e tier itself runs in no CI job, but
+      # its catalog is rendered from docstrings a PR can edit, so the freshness
+      # check is cheap enough to run where the tier is not.
+      - name: Check the e2e flow catalog is current
+        if: always()
+        run: bash scripts/ci-local.sh e2e-catalog

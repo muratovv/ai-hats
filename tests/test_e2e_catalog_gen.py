@@ -1,0 +1,142 @@
+"""HATS-1498 — the parser behind the e2e flow catalog.
+
+The catalog's source of truth is a structured block in each e2e test's module
+docstring; this file pins how that block is read. A malformed block must be a
+named refusal rather than a silently dropped row — a row that vanishes takes
+the flow it documented with it, and the generated file still renders green.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = REPO_ROOT / "scripts" / "gen_e2e_catalog.py"
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("gen_e2e_catalog", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+mod = _load()
+
+
+WELL_FORMED = '''"""e2e (HATS-788)
+
+flow:   a maintainer closes a task from inside that task's own worktree
+cmds:
+    rack create A --id HATS-1
+    cd <worktree>
+    rack transition HATS-1 done       # must refuse
+expect: the refusal exits non-zero and names "linked worktree"
+why:    otherwise the close deletes the operator's cwd
+"""
+'''
+
+
+def test_well_formed_block_parses_every_field():
+    row = mod.parse_row(WELL_FORMED, "test_x.py")
+    assert row.pins == ["HATS-788"]
+    assert row.flow == "a maintainer closes a task from inside that task's own worktree"
+    assert row.expect == 'the refusal exits non-zero and names "linked worktree"'
+    assert row.why == "otherwise the close deletes the operator's cwd"
+
+
+def test_cmds_keep_their_lines_and_lose_only_the_block_indent():
+    row = mod.parse_row(WELL_FORMED, "test_x.py")
+    assert row.cmds == [
+        "rack create A --id HATS-1",
+        "cd <worktree>",
+        "rack transition HATS-1 done       # must refuse",
+    ]
+
+
+def test_a_wrapped_field_joins_into_one_sentence():
+    src = WELL_FORMED.replace(
+        "why:    otherwise the close deletes the operator's cwd",
+        "why:    otherwise the close deletes the operator's cwd and every\n"
+        "        later invocation mis-resolves the tracker",
+    )
+    row = mod.parse_row(src, "test_x.py")
+    assert row.why == (
+        "otherwise the close deletes the operator's cwd and every "
+        "later invocation mis-resolves the tracker"
+    )
+
+
+# --- a file with no block is pending, not an error -------------------------
+
+
+def test_docstring_without_a_block_is_uncatalogued():
+    assert mod.parse_row('"""just prose about HATS-1."""\n', "test_x.py") is None
+
+
+def test_no_docstring_at_all_is_uncatalogued():
+    assert mod.parse_row("import os\n", "test_x.py") is None
+
+
+# --- a block that exists but cannot be read is a NAMED refusal -------------
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        pytest.param(
+            lambda s: s.replace("why:    otherwise the close deletes the operator's cwd\n", ""),
+            "missing why",
+            id="missing-field",
+        ),
+        pytest.param(
+            lambda s: s.replace(
+                'expect: the refusal exits non-zero and names "linked worktree"', "expect:"
+            ),
+            "empty",
+            id="empty-field",
+        ),
+        pytest.param(
+            lambda s: s.replace("flow:   a maintainer", "flow:   x\nflow:   a maintainer"),
+            "twice",
+            id="duplicate-field",
+        ),
+        pytest.param(
+            lambda s: s.replace("e2e (HATS-788)", "some prose header"),
+            "must be `e2e (HATS-NNN",
+            id="bad-header",
+        ),
+        pytest.param(
+            lambda s: s.replace("e2e (HATS-788)", "e2e (no id here)"),
+            "provenance",
+            id="header-without-id",
+        ),
+    ],
+)
+def test_malformed_block_is_refused_by_name(mutation, expected):
+    with pytest.raises(mod.CatalogError) as exc:
+        mod.parse_row(mutation(WELL_FORMED), "test_x.py")
+    assert "test_x.py" in str(exc.value)
+    assert expected in str(exc.value)
+
+
+# --- the live tree ---------------------------------------------------------
+
+
+def test_every_block_in_the_real_tier_is_readable():
+    """A malformed block goes red HERE, not only in the pre-push gate."""
+    _, _, errors = mod.collect(REPO_ROOT / "tests" / "e2e")
+    assert not errors, "\n".join(errors)
+
+
+def test_render_lists_the_files_still_awaiting_a_row():
+    row = mod.parse_row(WELL_FORMED, "test_x.py")
+    out = mod.render([row], ["test_pending.py", "test_other.py"])
+    assert "**1 of 3 files catalogued.**" in out
+    assert "- `test_pending.py`" in out
+    assert "2 files carry no flow block yet" in out
