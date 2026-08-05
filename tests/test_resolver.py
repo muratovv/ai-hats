@@ -193,10 +193,17 @@ def test_list_components_convergence_with_find_component_dir(tmp_path: Path) -> 
     (ext_ns / "sub" / "config.yaml").write_text("name: ns::sub\n")
     (traits_dir / "ns").symlink_to(ext_ns, target_is_directory=True)
 
+    # 4. DAG aliases (two symlinks pointing to the same real directory)
+    ext_shared = tmp_path / "ext_shared"
+    ext_shared.mkdir()
+    (ext_shared / "config.yaml").write_text("name: shared\n")
+    (traits_dir / "alias_a").symlink_to(ext_shared, target_is_directory=True)
+    (traits_dir / "alias_b").symlink_to(ext_shared, target_is_directory=True)
+
     resolver = LibraryResolver([lib])
     listed = set(resolver.list_components(ComponentType.TRAIT))
 
-    expected_marker_components = {"plain", "symlink_comp", "ns::sub"}
+    expected_marker_components = {"plain", "symlink_comp", "ns::sub", "alias_a", "alias_b"}
     assert listed == expected_marker_components
 
     for comp in expected_marker_components:

@@ -113,6 +113,12 @@ class LibraryResolver:
             seen_dirs: set[Path] = set()
             for root, dirs, files in os.walk(base, followlinks=True):
                 root_path = Path(root)
+
+                if marker in files:
+                    rel = root_path.relative_to(base)
+                    name = str(rel).replace("/", "::")
+                    seen.add(name)
+
                 try:
                     resolved_root = root_path.resolve()
                 except (OSError, ValueError):
@@ -122,11 +128,6 @@ class LibraryResolver:
                     dirs.clear()
                     continue
                 seen_dirs.add(resolved_root)
-
-                if marker in files:
-                    rel = root_path.relative_to(base)
-                    name = str(rel).replace("/", "::")
-                    seen.add(name)
         return sorted(seen)
 
     @staticmethod
