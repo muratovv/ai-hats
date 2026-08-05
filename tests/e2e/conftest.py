@@ -64,6 +64,92 @@ def _scrub_redirect_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
+import json
+import threading
+
+_trace_lock = threading.Lock()
+_in_traced_run = threading.local()
+
+
+@pytest.fixture(autouse=True)
+def _trace_e2e_subprocesses(request, monkeypatch):
+    """Step 1 equivalence harness (HATS-1497): record subprocess spawns to AI_HATS_E2E_TRACE."""
+    trace_path = os.environ.get("AI_HATS_E2E_TRACE")
+    if not trace_path:
+        return
+
+    seq = 0
+
+    def _record(args, cwd, env, rc):
+        nonlocal seq
+        seq += 1
+        argv_clean = [str(a) for a in (args if isinstance(args, (list, tuple)) else [args])]
+        env_delta = {}
+        if env is not None:
+            for k, v in env.items():
+                if os.environ.get(k) != v:
+                    env_delta[k] = str(v)
+        rec = {
+            "nodeid": request.node.nodeid,
+            "seq": seq,
+            "argv": argv_clean,
+            "cwd": str(cwd) if cwd else str(Path.cwd()),
+            "env_delta": env_delta,
+            "returncode": rc,
+        }
+        with _trace_lock:
+            with open(trace_path, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+
+    orig_run = subprocess.run
+
+    def traced_run(*args, **kwargs):
+        _in_traced_run.active = True
+        try:
+            res = orig_run(*args, **kwargs)
+        finally:
+            _in_traced_run.active = False
+        cmd_args = args[0] if args else kwargs.get("args")
+        cwd = kwargs.get("cwd")
+        env = kwargs.get("env")
+        _record(cmd_args, cwd, env, res.returncode)
+        return res
+
+    orig_popen_init = subprocess.Popen.__init__
+
+    def traced_popen_init(self, *args, **kwargs):
+        orig_popen_init(self, *args, **kwargs)
+        if getattr(_in_traced_run, "active", False):
+            return
+        cmd_args = args[0] if args else kwargs.get("args")
+        cwd = kwargs.get("cwd")
+        env = kwargs.get("env")
+        orig_wait = self.wait
+
+        def traced_wait(*wargs, **wkwargs):
+            rc = orig_wait(*wargs, **wkwargs)
+            if not getattr(self, "_traced_recorded", False):
+                self._traced_recorded = True
+                _record(cmd_args, cwd, env, rc)
+            return rc
+
+        self.wait = traced_wait
+        orig_comm = self.communicate
+
+        def traced_comm(*cargs, **ckwargs):
+            res = orig_comm(*cargs, **ckwargs)
+            if not getattr(self, "_traced_recorded", False):
+                self._traced_recorded = True
+                _record(cmd_args, cwd, env, self.returncode)
+            return res
+
+        self.communicate = traced_comm
+
+    monkeypatch.setattr(subprocess, "run", traced_run)
+    monkeypatch.setattr(subprocess.Popen, "__init__", traced_popen_init)
+
+
+
 # HATS-678 / HATS-771: cap on how many INSTALL-heavy e2e tests (~26 across 21
 # files doing a real ``uv pip install``) may run concurrently under the gate's
 # ``-n8 --dist=loadgroup``. ``_install_heavy_group_map`` round-robins their
