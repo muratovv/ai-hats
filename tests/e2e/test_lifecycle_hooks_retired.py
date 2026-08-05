@@ -44,10 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "lifecycle_tombstone_lib"
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(  # noqa: S603 — fixed argv, test helper
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
+from _helpers.git import git as _git
 
 
 def _run_rack(project_dir: Path, *args: str, timeout: float = 60.0):

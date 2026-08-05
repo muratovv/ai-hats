@@ -35,14 +35,11 @@ WIZARD_CONFIG = (
 )
 
 
+from _helpers.git import git as _git_helper
+
+
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return _git_helper(cwd, *args).stdout.strip()
 
 
 def _run_hook(cwd: Path, env: dict | None = None, timeout: int = 5):
