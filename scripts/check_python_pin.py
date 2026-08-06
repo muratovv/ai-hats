@@ -23,7 +23,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The one declaration; every other site is a copy that must agree with it.
-PIN_SOURCE = "src/ai_hats/cli/maintenance.py"
+PIN_SOURCE = "src/ai_hats/constants.py"
 PIN_RE = re.compile(r'^PINNED_PYTHON\s*=\s*"(\d+\.\d+)"', re.M)
 
 # Files that provision an interpreter, in their two spellings.
@@ -59,7 +59,7 @@ def read_pin(root: Path) -> str:
     text = (root / PIN_SOURCE).read_text()
     match = PIN_RE.search(text)
     if match is None:
-        raise LookupError(f"{PIN_SOURCE}: no `PINNED_PYTHON = \"X.Y\"` declaration found")
+        raise LookupError(f'{PIN_SOURCE}: no `PINNED_PYTHON = "X.Y"` declaration found')
     return match.group(1)
 
 
@@ -110,7 +110,12 @@ def metadata_violations(root: Path, pin: str) -> list[Violation]:
         floor = (project.get("requires-python") or "").strip()
         if floor != f">={pin}":
             out.append(
-                Violation(f"{site} [requires-python]", floor or "<absent>", f">={pin}", "declared floor disagrees with the pin")
+                Violation(
+                    f"{site} [requires-python]",
+                    floor or "<absent>",
+                    f">={pin}",
+                    "declared floor disagrees with the pin",
+                )
             )
 
         declared = [

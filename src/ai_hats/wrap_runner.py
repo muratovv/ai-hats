@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID
+from .constants import ENV_ROLE, ENV_ROOT_PID, PINNED_PYTHON
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -241,6 +241,25 @@ class WrapRunner:
         carried on the payload → surfaced as WARN notices so they hit the read-hold
         instead of a bare pre-launch print (HATS-970)."""
         return [StartupNotice("warn", w) for w in self.payload.startup_warnings]
+
+    def _check_interpreter_pin(self) -> list[StartupNotice]:
+        """HATS-1521: WARN when this venv is not on the pinned interpreter.
+
+        The session IS the venv's python (`$VENV/bin/python -m ai_hats`), so
+        `sys.version_info` answers it without reading `pyvenv.cfg`. Never blocks:
+        a wrong-version venv still runs, it just runs somewhere untested.
+        """
+        running = "{}.{}".format(*sys.version_info[:2])
+        if running == PINNED_PYTHON:
+            return []
+        return [
+            StartupNotice(
+                "warn",
+                f"venv runs Python {running}, ai-hats pins {PINNED_PYTHON} — this "
+                f"interpreter is outside the tested matrix. Rebuild with "
+                f"`ai-hats self update --reinstall`.",
+            )
+        ]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;
@@ -598,6 +617,7 @@ class WrapRunner:
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
+        startup_notices.extend(self._check_interpreter_pin())
 
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")

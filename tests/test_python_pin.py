@@ -49,19 +49,15 @@ def _pyproject(pin: str, *, classifiers: list[str] | None = None, ruff: str | No
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
     """A minimal repo whose every pin site agrees on PIN."""
-    (tmp_path / "src/ai_hats/cli").mkdir(parents=True)
-    (tmp_path / "src/ai_hats/cli/maintenance.py").write_text(f'PINNED_PYTHON = "{PIN}"\n')
+    (tmp_path / "src/ai_hats").mkdir(parents=True)
+    (tmp_path / "src/ai_hats/constants.py").write_text(f'PINNED_PYTHON = "{PIN}"\n')
 
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts/ai-hats-launcher").write_text(f'uv venv --python {PIN} "$VENV"\n')
 
     (tmp_path / ".github/workflows").mkdir(parents=True)
     (tmp_path / ".github/workflows/ci.yml").write_text(
-        "jobs:\n"
-        "  test:\n"
-        "    strategy:\n"
-        "      matrix:\n"
-        f'        python-version: ["{PIN}", "3.14"]\n'
+        f'jobs:\n  test:\n    strategy:\n      matrix:\n        python-version: ["{PIN}", "3.14"]\n'
     )
     (tmp_path / ".github/workflows/release-packages.yml").write_text(
         f"            uv venv --python {PIN} /tmp/verify-venv\n"
@@ -144,7 +140,7 @@ def test_an_unreadable_matrix_is_a_violation_not_a_pass(tree: Path):
 
 
 def test_a_gate_that_cannot_find_the_pin_must_not_pass(tree: Path):
-    (tree / "src/ai_hats/cli/maintenance.py").write_text("PINNED_PYTHON = 3.13\n")
+    (tree / "src/ai_hats/constants.py").write_text("PINNED_PYTHON = 3.13\n")
 
     with pytest.raises(LookupError):
         mod.read_pin(tree)

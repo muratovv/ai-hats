@@ -12,6 +12,11 @@ HATS-948: ``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
 AGENT_DIR = ".agent"
 GITIGNORE_FILE = ".gitignore"
 
+# HATS-1521: the interpreter `self init` / `self update` provision. A leaf home so
+# the venv builder and the session-start check share one value; the hand-written
+# copies (launcher, floors, CI) are held to it by scripts/check_python_pin.py.
+PINNED_PYTHON = "3.13"
+
 # HATS-282 — canonical layered layer
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
