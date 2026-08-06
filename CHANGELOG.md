@@ -28,6 +28,23 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Changed — BREAKING
 
+- **Python pin and floor raised to 3.13; one `--repair` needed to cross it** (HATS-1521).
+  `PINNED_PYTHON` is 3.13 (was 3.11) and `requires-python` is `>=3.13` on the
+  integrator and all seven workspace members; the CI matrix is now 3.13 + 3.14.
+  The old pin sat on the floor of the support matrix, so every fresh install got
+  the version where the HATS-1519 argparse defect lives (`--` before positionals
+  is rejected on 3.11/3.12, accepted on 3.13+).
+  **Upgrading from an earlier version fails once**: `self update` builds the new
+  version's venv with the *old* code's pin (3.11), then cannot resolve a
+  distribution requiring `>=3.13`, and exits 1 with uv's
+  `does not satisfy Python>=3.13`. Nothing is damaged and the old install keeps
+  working. Recover out-of-band, once per install:
+  `curl -LsSf https://github.com/muratovv/ai-hats/raw/master/scripts/bootstrap.sh | bash -s -- --repair`
+  — the launcher, not the old Python, builds the replacement venv. A session
+  whose interpreter is off the pin now says so at startup instead of failing
+  later somewhere unrelated. `scripts/check_python_pin.py` (stage `python-pin`)
+  refuses a partial bump and a pin the matrix does not run.
+
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
   When `AI_HATS_DIR` is set to a sandbox directory and `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` commands and `ai-hats wait` now refuse execution with exit code 1 and typed error `foreign_project_pin` detailing both paths and `ai_hats_dir`. Previously, `rack` ignored `AI_HATS_DIR` on CLI resolution and wrote to the live project root.
 
@@ -45,7 +62,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **`LibraryResolver.list_components` now discovers symlinked components and namespaces** (HATS-1505). Replaced `Path.rglob` with `os.walk(followlinks=True)` guarded by realpath traversal tracking, allowing symlinked trait, skill, rule, and role directories to be listed properly and preventing `RoleSpecError` during runtime composition.
 
-- **Symlinked library components no longer break worktree teardown** (HATS-1494). ``resolve_hook_script`` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. ``~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills``). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
+- **Symlinked library components no longer break worktree teardown** (HATS-1494). `resolve_hook_script` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. `~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills`). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
 
 - **Deferred rule removals in overlays and customizations** (HATS-1456). Rule removals (`remove: rules: [name]`) in `customizations` and overlays now resolve against the full composed set (mirroring skill removals), allowing rules brought by traits to be removed cleanly.
 
