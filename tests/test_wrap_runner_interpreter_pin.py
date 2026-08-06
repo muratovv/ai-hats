@@ -10,6 +10,7 @@ import sys
 
 import pytest
 
+from ai_hats import wrap_runner
 from ai_hats.constants import PINNED_PYTHON
 from ai_hats.paths import runs_dir
 from ai_hats.wrap_runner import WrapRunner
@@ -72,10 +73,49 @@ def test_a_newer_interpreter_warns_too(runner, monkeypatch):
     assert [n.level for n in runner._check_interpreter_pin()] == ["warn"]
 
 
-def test_the_warning_names_the_command_that_fixes_it(runner, monkeypatch):
+def _managed_venv(monkeypatch, project, *, ours: bool) -> None:
+    """Put the running venv under the framework dir, with ai-hats installed into
+    it (``ours``) or pointing back at a checkout outside it (editable)."""
+    prefix = project / ".agent" / "ai-hats" / ".venv"
+    (prefix / "lib").mkdir(parents=True)
+    monkeypatch.setattr(sys, "prefix", str(prefix))
+    pkg = prefix / "lib" / "ai_hats" if ours else project / "src" / "ai_hats"
+    pkg.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wrap_runner, "__file__", str(pkg / "wrap_runner.py"))
+
+
+def test_the_managed_venv_gets_the_command_that_rebuilds_it(runner, tmp_path, monkeypatch):
+    """House format (HATS-1522): exactly one `Fix:` line, self-contained enough to
+    copy. `self update` is NOT it — on a current sha it rebuilds nothing."""
+    monkeypatch.setattr(sys, "version_info", (3, 11, 15, "final", 0))
+    _managed_venv(monkeypatch, tmp_path, ours=True)
+
+    text = runner._check_interpreter_pin()[0].text
+
+    fix = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("Fix:")]
+    assert fix == [f"Fix: {wrap_runner._REPAIR_CMD}"]
+
+
+def test_a_venv_ai_hats_did_not_build_is_not_offered_a_rebuild(runner, tmp_path, monkeypatch):
+    """`--repair` deletes the managed venv and leaves a user-owned one alone, so
+    offering it to an override / editable install would be a command that lies."""
+    monkeypatch.setattr(sys, "version_info", (3, 11, 15, "final", 0))
+    _managed_venv(monkeypatch, tmp_path, ours=False)
+
+    text = runner._check_interpreter_pin()[0].text
+
+    assert "Fix:" not in text
+    assert "will not touch it" in text
+
+
+def test_the_warning_names_no_ai_hats_subcommand(runner, monkeypatch):
+    """The first cut said `ai-hats self update --reinstall`: a flag click rejects
+    with exit 2, and `self update` cannot be relied on to move a venv onto the pin
+    (a current sha reuses the venv it runs from). The remedy is the rebuild — name
+    a CLI command here again only after checking it parses AND that it rebuilds."""
     monkeypatch.setattr(sys, "version_info", (3, 11, 15, "final", 0))
 
-    assert "self update" in runner._check_interpreter_pin()[0].text
+    assert "ai-hats self" not in runner._check_interpreter_pin()[0].text
 
 
 def test_this_very_session_is_on_the_pin_or_says_so(runner):
