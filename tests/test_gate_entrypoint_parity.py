@@ -28,6 +28,7 @@ _RUNNERS = (
     # a gate script this ratchet was silently not ratcheting.
     "check_dependency_floor.py",
     "check_silent_fallback.py",
+    "check_python_pin.py",
 )
 
 # The two sanctioned entry points: the CI stage dispatcher and the thin e2e

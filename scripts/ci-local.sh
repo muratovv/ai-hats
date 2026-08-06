@@ -76,6 +76,12 @@ ci_dependency_floor() {
 }
 
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
+ci_python_pin() {
+    echo "[ci-local] python-pin (every copy of the pin agrees; CI runs it)" >&2
+    "$PY" scripts/check_python_pin.py
+}
+
+# Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
     "$PY" scripts/check_silent_fallback.py
@@ -106,6 +112,7 @@ case "$stage" in
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
+    python-pin) ci_python_pin ;;
     silent-fallback) ci_silent_fallback ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
@@ -113,6 +120,7 @@ case "$stage" in
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_lint
         ci_dependency_floor
+        ci_python_pin
         ci_silent_fallback
         ci_unit
         ci_coverage
@@ -121,7 +129,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | dependency-floor | silent-fallback | version-skew | all" >&2
+        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | dependency-floor | python-pin | silent-fallback | version-skew | all" >&2
         exit 2
         ;;
 esac

@@ -176,3 +176,8 @@ jobs:
       - name: Check no broad handler swallows a failure silently
         if: always()
         run: bash scripts/ci-local.sh silent-fallback
+      # HATS-1521: the pin is re-spelled by hand in ~40 places; this refuses a
+      # partial bump, and a pin the matrix above does not run.
+      - name: Check every copy of the Python pin agrees
+        if: always()
+        run: bash scripts/ci-local.sh python-pin
