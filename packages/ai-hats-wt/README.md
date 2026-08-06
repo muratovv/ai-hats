@@ -17,7 +17,7 @@ filesystem primitives) and [`filelock`](https://pypi.org/project/filelock/).
 pip install ai-hats-wt
 ```
 
-Requires Python 3.11+.
+Requires Python 3.13+.
 
 ## Quickstart
 

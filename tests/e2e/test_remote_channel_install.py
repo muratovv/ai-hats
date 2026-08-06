@@ -59,7 +59,7 @@ def test_remote_style_install_resolves_core_with_migrations(tmp_path: Path) -> N
     wheel = next(dist.glob("ai_hats-*.whl"))
 
     venv = tmp_path / "venv"
-    _run(["uv", "venv", "--python", "3.11", str(venv)], cwd=tmp_path)
+    _run(["uv", "venv", "--python", "3.13", str(venv)], cwd=tmp_path)
     py = venv / "bin" / "python"
 
     # cwd=tmp_path (outside the repo) so uv resolves deps from the index, not the

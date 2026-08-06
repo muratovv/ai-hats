@@ -416,7 +416,7 @@ def test_inplace_upgrade_prunes_the_distribution(tmp_path: Path) -> None:
     _run(["bash", str(INSTALL_LAUNCHER)], cwd=tmp_path, env=env, timeout=60)
 
     # ----- 1. pre-retirement install into the override venv -----
-    _run(["uv", "venv", "--python", "3.11", str(override_venv)], cwd=tmp_path, env=env, timeout=300)
+    _run(["uv", "venv", "--python", "3.13", str(override_venv)], cwd=tmp_path, env=env, timeout=300)
     _run(
         ["uv", "pip", "install", "--python", str(venv_python), str(src_old)],
         cwd=tmp_path,

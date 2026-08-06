@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 # defer to pip's own resolution downstream).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 
-# Lowest supported interpreter (pyproject requires-python>=3.11); uv provisions it.
-PINNED_PYTHON = "3.11"
+# Lowest supported interpreter (pyproject requires-python>=3.13); uv provisions it.
+PINNED_PYTHON = "3.13"
 
 
 def _require_uv() -> None:

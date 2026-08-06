@@ -40,7 +40,7 @@ def test_foreign_source_checkout_different_root(tmp_path: Path) -> None:
 
 def test_foreign_source_checkout_site_packages(tmp_path: Path) -> None:
     repo_root = tmp_path / "worktree"
-    site_packages = tmp_path / ".venv" / "lib" / "python3.11" / "site-packages"
+    site_packages = tmp_path / ".venv" / "lib" / "python3.13" / "site-packages"
     init_py = site_packages / "ai_hats" / "__init__.py"
     init_py.parent.mkdir(parents=True)
     init_py.touch()
@@ -157,7 +157,7 @@ def test_foreign_library_layers_site_packages_is_not_foreign(tmp_path: Path) -> 
     """A wheel install is a legitimate downstream resolution, not a wrong checkout."""
     repo_root = tmp_path / "worktree"
     repo_root.mkdir()
-    site_packages = tmp_path / ".venv" / "lib" / "python3.11" / "site-packages"
+    site_packages = tmp_path / ".venv" / "lib" / "python3.13" / "site-packages"
     layers = [site_packages / "ai_hats_library" / name for name in ("core", "usage")]
     for layer in layers:
         layer.mkdir(parents=True)

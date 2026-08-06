@@ -78,7 +78,7 @@ def _foreign_venv(tmp_path: Path, env: dict) -> Path:
     wheel = _build_wheel(tmp_path / "dist", env)
     venv = tmp_path / "foreign" / "venv"
     subprocess.run(
-        ["uv", "venv", "--python", "3.11", str(venv)],
+        ["uv", "venv", "--python", "3.13", str(venv)],
         check=True,
         capture_output=True,
         text=True,
@@ -131,7 +131,7 @@ def test_foreign_venv_invocation_is_refused(tmp_path: Path) -> None:
     # configured project whose managed venv is shadowed by the foreign one.
     managed = project / ".agent" / "ai-hats" / ".venv"
     subprocess.run(
-        ["uv", "venv", "--python", "3.11", str(managed)],
+        ["uv", "venv", "--python", "3.13", str(managed)],
         check=True,
         capture_output=True,
         text=True,

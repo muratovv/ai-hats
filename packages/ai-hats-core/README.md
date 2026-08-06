@@ -28,7 +28,7 @@ It ships five mechanisms:
 pip install ai-hats-core
 ```
 
-Requires Python 3.11+.
+Requires Python 3.13+.
 
 ## Usage
 

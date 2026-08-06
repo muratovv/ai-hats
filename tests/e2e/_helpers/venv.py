@@ -118,7 +118,7 @@ def build_launcher_venv(work_dir: Path, repo_root: Path) -> tuple[Path, Path]:
     # (~2s warm cache). The generous 600s ceiling absorbs the slow case without
     # tripping: a cold uv cache / first run on a fresh host downloads ~35
     # transitive deps (ai-hats → claude-agent-sdk → mcp → starlette, uvicorn,
-    # httpx, jsonschema, …) over the network, and `uv venv --python 3.11` may
+    # httpx, jsonschema, …) over the network, and `uv venv --python 3.13` may
     # provision the interpreter itself. ``subprocess.TimeoutExpired`` still
     # propagates so the session-scoped fixture can skip the venv tier gracefully
     # on a genuinely stuck host.

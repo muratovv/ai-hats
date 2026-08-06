@@ -25,7 +25,7 @@ make tests
 
 Requirements:
 
-- [uv](https://docs.astral.sh/uv/) — the env engine; provisions Python 3.11+ and builds the venv (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
+- [uv](https://docs.astral.sh/uv/) — the env engine; provisions Python 3.13+ and builds the venv (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 - A POSIX shell (the launcher and pre-commit hooks are bash scripts).
 - `ruff` for linting (installed via `[dev]` extra).
 

@@ -26,7 +26,7 @@ def build_editable_venv(
     checkout = repo_root
     venv = work_dir / venv_name
     subprocess.run(
-        ["uv", "venv", str(venv), "--python", "3.11"],
+        ["uv", "venv", str(venv), "--python", "3.13"],
         check=True,
         capture_output=True,
         timeout=300,
