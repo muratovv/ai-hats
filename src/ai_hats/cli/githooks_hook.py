@@ -35,7 +35,27 @@ def main(argv: list[str] | None = None) -> int:
         "may name any directory, and only the stub knows which one ran.",
     )
     parser.add_argument("hook_args", nargs="*", help="arguments git passed to the hook")
-    args = parser.parse_args(argv)
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # The stub's `--` guards a hook argument starting with `-`; argparse honours
+    # that separator only on 3.13+, so the split is ours to make (HATS-1519).
+    passthrough: list[str] | None = None
+    if "--" in raw:
+        cut = raw.index("--")
+        raw, passthrough = raw[:cut], raw[cut + 1 :]
+    try:
+        args = parser.parse_args(raw)
+    except SystemExit as exc:
+        # Scoped to the parse alone: past this point a non-zero code is a gate's
+        # verdict, and swallowing that would disable the gates silently.
+        code = exc.code if isinstance(exc.code, int) else 0
+        if code:
+            print(
+                f"ai-hats: hook dispatcher cannot parse its own arguments (exit {code}) "
+                "— hooks SKIPPED (fail-open); run 'ai-hats self update'",
+                file=sys.stderr,
+            )
+        return 0
 
     project_dir: Path = args.project_dir
     assembler = Assembler(project_dir)
@@ -68,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         githooks_dir=args.githooks_dir,
         gates=gates,
         journal=journal,
-        argv=args.hook_args,
+        argv=args.hook_args if passthrough is None else passthrough,
     )
 
 

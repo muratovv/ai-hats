@@ -220,3 +220,160 @@ def test_a_project_with_no_role_runs_no_gates_and_passes(tmp_path: Path) -> None
         )
         == 0
     )
+
+
+# ----- the argv the stub actually builds (HATS-1519) -----
+
+
+def _hook_args_project(tmp_path: Path, seen: Path, *, gate_exit: int = 0) -> Path:
+    """A project whose single pre-commit gate records the argv it was handed."""
+    from ai_hats.models import ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+
+    project = tmp_path / "project"
+    (project / ".githooks").mkdir(parents=True)
+    lib = tmp_path / "lib"
+    _skill(lib, "hook_skill", event="pre-commit", scripts=["git_hooks/check.sh"])
+    gate = lib / "skills" / "hook_skill" / "git_hooks" / "check.sh"
+    gate.write_text(f'#!/usr/bin/env bash\nprintf "%s\\0" "$@" > "{seen}"\nexit {gate_exit}\n')
+    gate.chmod(0o755)
+
+    (lib / "traits" / "trait-base").mkdir(parents=True)
+    (lib / "traits" / "trait-base" / "config.yaml").write_text(
+        "name: trait-base\ncomposition:\n  skills:\n    - hook_skill\ninjection: Base.\n"
+    )
+    (lib / "roles" / "test-role").mkdir(parents=True)
+    (lib / "roles" / "test-role" / "config.yaml").write_text(
+        "name: test-role\npriorities: [Quality]\n"
+        "composition:\n  traits:\n    - trait-base\ninjection: Role.\n"
+    )
+    ProjectConfig(provider="agy", library_paths=[str(lib)], default_role="test-role").save(
+        project / PROJECT_CONFIG
+    )
+    return project
+
+
+@pytest.mark.integration
+def test_the_entry_point_accepts_the_argv_the_stub_actually_builds(tmp_path: Path) -> None:
+    """The stub separates its own flags from the hook's with `--`.
+
+    That separator is pinned on the stub side by
+    `test_githooks_stub.py::test_it_delegates_the_event_project_and_hook_args`,
+    but nothing fed it back into this entry point — so argparse dropping it only
+    on 3.13+ went unnoticed. On 3.11/3.12 it lands as `unrecognized arguments:
+    --`, and the resulting SystemExit(2) becomes the hook's verdict: every commit
+    in the project refused (HATS-1519).
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    seen = tmp_path / "argv.txt"
+    project = _hook_args_project(tmp_path, seen)
+
+    rc = main(
+        [
+            "pre-commit",
+            "--project-dir",
+            str(project),
+            "--githooks-dir",
+            str(project / ".githooks"),
+            "--",
+            ".git/COMMIT_EDITMSG",
+        ]
+    )
+
+    assert rc == 0
+    assert seen.read_text().split("\0")[:-1] == [".git/COMMIT_EDITMSG"]
+
+
+@pytest.mark.integration
+def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(tmp_path: Path) -> None:
+    """The guard the separator exists for, held on every supported version.
+
+    Dropping the `--` token and handing the rest to argparse would pass the test
+    above and silently lose this: `-x` becomes an unrecognized flag on 3.11/3.12,
+    where argparse never consumed the separator in the first place.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    seen = tmp_path / "argv.txt"
+    project = _hook_args_project(tmp_path, seen)
+
+    rc = main(
+        [
+            "pre-commit",
+            "--project-dir",
+            str(project),
+            "--githooks-dir",
+            str(project / ".githooks"),
+            "--",
+            "-x",
+            "--project-dir",
+        ]
+    )
+
+    assert rc == 0
+    assert seen.read_text().split("\0")[:-1] == ["-x", "--project-dir"]
+
+
+@pytest.mark.integration
+def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stub newer than the installed ai-hats must not wedge the commit.
+
+    The separator was one shape of that skew; a flag a later stub learns to pass
+    is the next. argparse answers both with SystemExit(2) from inside `main`,
+    past the stub's import guard, and that 2 becomes the hook's verdict — so the
+    degradation has to happen here (HATS-1519).
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    seen = tmp_path / "argv.txt"
+    project = _hook_args_project(tmp_path, seen)
+
+    rc = main(
+        [
+            "pre-commit",
+            "--project-dir",
+            str(project),
+            "--githooks-dir",
+            str(project / ".githooks"),
+            "--hook-stdin-mode",
+            "replay",
+            "--",
+            ".git/COMMIT_EDITMSG",
+        ]
+    )
+
+    assert rc == 0, "a dispatcher that cannot parse itself must skip, never refuse"
+    assert "fail-open" in capsys.readouterr().err
+    assert not seen.exists(), "no gate may run when the dispatcher gave up"
+
+
+@pytest.mark.integration
+def test_a_refusing_gate_still_blocks_the_event(tmp_path: Path) -> None:
+    """The other half of the fail-open contract: degrade on OUR failure only.
+
+    A gate's verdict arrives as `run_chain`'s exit code, so widening the skew
+    hatch past the parse would turn every refusal into a silent pass — gates
+    installed, gates ignored.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    seen = tmp_path / "argv.txt"
+    project = _hook_args_project(tmp_path, seen, gate_exit=1)
+
+    rc = main(
+        [
+            "pre-commit",
+            "--project-dir",
+            str(project),
+            "--githooks-dir",
+            str(project / ".githooks"),
+            "--",
+            ".git/COMMIT_EDITMSG",
+        ]
+    )
+
+    assert rc != 0, "a gate that refused must still block the commit"
+    assert seen.exists(), "the gate must actually have run"
