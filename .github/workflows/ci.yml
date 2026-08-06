@@ -34,7 +34,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        # HATS-1521: 3.13 is the pin (what self init provisions and what the
+        # floors declare); 3.14 is the upper probe, so a break on the newest
+        # stable surfaces here rather than in someone's dev venv.
+        python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
