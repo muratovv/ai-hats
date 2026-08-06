@@ -99,11 +99,15 @@ def test_session_start_warns_on_broken_managed_hook_ref(tmp_path: Path, monkeypa
     output = _launch(project, monkeypatch)
 
     assert "pre_bash_shared_state_guard.sh" in output, output
-    assert "ai-hats self update" in output, output
+    assert "ai-hats self init --no-wizard" in output, output
+    assert str(project) in output, output
     assert "startup warning" in output, output
+    # HATS-1522: the old text sent the reader to `self update`, which reinstalls
+    # the harness from GitHub instead of repairing this project.
+    assert "self update" not in output, output
 
-    # Removing the residue — what `self update` does — silences the surface.
+    # Removing the residue — what the named command does — silences the surface.
     _write_hooks(project, [])
     second = _launch(project, monkeypatch)
     assert "pre_bash_shared_state_guard.sh" not in second, second
-    assert "points at a missing file" not in second, second
+    assert "harness reports an error" not in second, second
