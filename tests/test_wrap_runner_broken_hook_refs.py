@@ -1,7 +1,9 @@
-"""HATS-1509: seam tests for ``WrapRunner._check_broken_hook_refs``.
+"""HATS-1509 / HATS-1522: seam tests for ``WrapRunner._check_broken_hook_refs``.
 
-The remedy differs by ownership: ``self update`` reclaims an ``ai-hats:``-tagged
-entry, and must not be promised for a user's own. Detection itself is covered in
+The remedy differs by ownership: ai-hats can clean up its own entries and must
+not promise that for a user's. HATS-1522 adds what the message owes the reader —
+what broke, what to run, and what the run changes beyond the repair — because
+this text is the only instruction anyone gets. Detection itself is covered in
 ``tests/test_migration_assert.py``.
 """
 
@@ -53,19 +55,74 @@ def _seed_claude_hook(project, command: str, tag: str | None = None) -> None:
     settings.write_text(json.dumps({"hooks": {HOOK_PRE_TOOL_USE: [entry]}}))
 
 
-def test_managed_broken_ref_warns_with_the_self_update_remedy(tmp_path):
+def test_managed_broken_ref_names_the_command_that_heals_locally(tmp_path):
     _seed_claude_hook(tmp_path, "/nowhere/guard.sh", tag="ai-hats:hats-437")
     traces: list[str] = []
 
     notices = _runner(tmp_path)._check_broken_hook_refs(_session(traces))
 
     assert [n.level for n in notices] == ["warn"]
-    assert "/nowhere/guard.sh" in notices[0].text
-    assert "ai-hats self update" in notices[0].text
+    text = notices[0].text
+    assert "/nowhere/guard.sh" in text
+    assert "ai-hats self init --no-wizard" in text
+    assert str(tmp_path) in text, "the command is useless without the dir to run it in"
+    # HATS-1522: `self update` reinstalls the harness from GitHub — on an
+    # editable install that is somebody's working checkout.
+    assert "self update" not in text
     assert traces  # finding logged to the session
 
 
-def test_user_owned_broken_ref_is_not_promised_a_self_update_fix(tmp_path):
+def test_managed_remedy_says_what_the_command_changes_beyond_the_repair(tmp_path):
+    """Q9.3 — the install-time path also runs migrations. Learning that from
+    the diff afterwards is the failure this text exists to prevent."""
+    _seed_claude_hook(tmp_path, "/nowhere/guard.sh", tag="ai-hats:hats-437")
+
+    text = _runner(tmp_path)._check_broken_hook_refs(_session([]))[0].text
+
+    assert "migration" in text.lower()
+    assert "harness reports an error" in text, "the reader must know what breaks today"
+
+
+def test_remedy_avoids_ai_hats_internal_vocabulary(tmp_path):
+    """Q9 — 'managed entry' / 'reclaim' / 'owner' mean nothing outside the repo."""
+    _seed_claude_hook(tmp_path, "/nowhere/guard.sh", tag="ai-hats:hats-437")
+
+    text = _runner(tmp_path)._check_broken_hook_refs(_session([]))[0].text.lower()
+
+    for jargon in ("reclaim", "managed entry", "owner", "surface"):
+        assert jargon not in text, f"internal vocabulary leaked into the user message: {jargon}"
+
+
+def test_many_broken_refs_collapse_into_one_instruction(tmp_path):
+    """Six refs used to print the same three-line remedy six times."""
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": f"ai-hats:guard-{i}",
+                            "hooks": [{"type": "command", "command": f"/nowhere/guard-{i}.sh"}],
+                        }
+                        for i in range(3)
+                    ]
+                }
+            }
+        )
+    )
+
+    notices = _runner(tmp_path)._check_broken_hook_refs(_session([]))
+
+    assert len(notices) == 1, "one instruction, not one per finding"
+    for i in range(3):
+        assert f"/nowhere/guard-{i}.sh" in notices[0].text
+    assert notices[0].text.count("ai-hats self init --no-wizard") == 1
+
+
+def test_user_owned_broken_ref_is_not_promised_an_ai_hats_fix(tmp_path):
     _seed_claude_hook(tmp_path, "/nowhere/mine.sh")
 
     notices = _runner(tmp_path)._check_broken_hook_refs(_session([]))
@@ -73,6 +130,41 @@ def test_user_owned_broken_ref_is_not_promised_a_self_update_fix(tmp_path):
     assert [n.level for n in notices] == ["warn"]
     assert "/nowhere/mine.sh" in notices[0].text
     assert "self update" not in notices[0].text
+    assert "self init" not in notices[0].text
+
+
+def test_mixed_ownership_splits_into_two_instructions(tmp_path):
+    """One remedy cannot serve both: ai-hats cleans up only what it wrote."""
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    HOOK_PRE_TOOL_USE: [
+                        {
+                            "matcher": "Bash",
+                            "_ai_hats_managed": "ai-hats:hats-437",
+                            "hooks": [{"type": "command", "command": "/nowhere/ours.sh"}],
+                        },
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"type": "command", "command": "/nowhere/theirs.sh"}],
+                        },
+                    ]
+                }
+            }
+        )
+    )
+
+    texts = [n.text for n in _runner(tmp_path)._check_broken_hook_refs(_session([]))]
+
+    assert len(texts) == 2
+    ours = [t for t in texts if "/nowhere/ours.sh" in t]
+    theirs = [t for t in texts if "/nowhere/theirs.sh" in t]
+    assert len(ours) == 1 and len(theirs) == 1
+    assert "ai-hats self init --no-wizard" in ours[0]
+    assert "self init" not in theirs[0]
 
 
 def test_resolving_refs_yield_no_notices(tmp_path):

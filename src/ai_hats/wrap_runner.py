@@ -163,17 +163,39 @@ def _format_version_skew(changes) -> str:
     )
 
 
-def _broken_hook_ref_text(ref) -> str:
-    """Warn note per broken hook ref; the remedy follows ownership (HATS-1509)."""
-    remedy = (
-        "ai-hats owns this entry — run 'ai-hats self update' to reclaim it"
-        if ref.managed
-        else "not an ai-hats entry — remove it or restore the script"
+def _broken_hook_refs_text(refs, *, project_dir: Path, ours: bool) -> str:
+    """One instruction for the refs of one ownership (HATS-1522).
+
+    This text is the only instruction anyone gets — nobody reads the source
+    after it — so it answers three questions on its own: what broke and how
+    badly, what to run, and what that run changes beyond the repair. It names
+    `self init`, not `self update`: the latter reinstalls the harness from
+    GitHub, which on an editable install is somebody's working checkout.
+    """
+    files = ", ".join(sorted({r.settings_file for r in refs}))
+    head = (
+        f"1 hook in {files} points at a file that is gone"
+        if len(refs) == 1
+        else f"{len(refs)} hooks in {files} point at files that are gone"
     )
-    return (
-        f"{ref.settings_file}: {ref.event} hook points at a missing file "
-        f"({ref.command}) — the harness errors on every matching call; {remedy}."
-    )
+    them = "these entries" if len(refs) > 1 else "this entry"
+    lines = [f"{head} — the harness reports an error on every matching tool call:"]
+    lines += [f"    {r.event}  →  {r.command}" for r in refs]
+    if ours:
+        lines += [
+            f"    ai-hats wrote {them}, so it can clean up for you:",
+            f"    run  ai-hats self init --no-wizard  in {project_dir}",
+            "    That command also applies any ai-hats migration this project has",
+            "    not seen yet, so expect other files under it to change.",
+        ]
+    else:
+        it = "them" if len(refs) > 1 else "it"
+        missing = "files" if len(refs) > 1 else "file"
+        lines += [
+            f"    ai-hats did not write {them} and will not touch {it} —",
+            f"    delete {it} yourself, or put the missing {missing} back.",
+        ]
+    return "\n".join(lines)
 
 
 class WrapRunner:
@@ -369,7 +391,19 @@ class WrapRunner:
             return []
         if broken:
             session.log_sys(f"broken hook refs: {len(broken)} finding(s)")
-        return [StartupNotice("warn", _broken_hook_ref_text(ref)) for ref in broken]
+        # One instruction per ownership, not per finding: the remedy differs by
+        # ownership and only by that (HATS-1522).
+        notices = []
+        for ours in (True, False):
+            group = [ref for ref in broken if bool(ref.managed) is ours]
+            if group:
+                notices.append(
+                    StartupNotice(
+                        "warn",
+                        _broken_hook_refs_text(group, project_dir=self.project_dir, ours=ours),
+                    )
+                )
+        return notices
 
     def _check_skill_script_collisions(
         self, session: "Session", result: "CompositionResult"
