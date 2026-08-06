@@ -225,8 +225,8 @@ def test_a_project_with_no_role_runs_no_gates_and_passes(tmp_path: Path) -> None
 # ----- the argv the stub actually builds (HATS-1519) -----
 
 
-def _hook_args_project(tmp_path: Path, seen: Path, *, gate_exit: int = 0) -> Path:
-    """A project whose single pre-commit gate records the argv it was handed."""
+def _gate_project(tmp_path: Path, *, body: str = "exit 0") -> Path:
+    """A project composing exactly one pre-commit gate, whose script runs ``body``."""
     from ai_hats.models import ProjectConfig
     from ai_hats.paths import PROJECT_CONFIG
 
@@ -235,7 +235,7 @@ def _hook_args_project(tmp_path: Path, seen: Path, *, gate_exit: int = 0) -> Pat
     lib = tmp_path / "lib"
     _skill(lib, "hook_skill", event="pre-commit", scripts=["git_hooks/check.sh"])
     gate = lib / "skills" / "hook_skill" / "git_hooks" / "check.sh"
-    gate.write_text(f'#!/usr/bin/env bash\nprintf "%s\\0" "$@" > "{seen}"\nexit {gate_exit}\n')
+    gate.write_text(f"#!/usr/bin/env bash\n{body}\n")
     gate.chmod(0o755)
 
     (lib / "traits" / "trait-base").mkdir(parents=True)
@@ -253,8 +253,27 @@ def _hook_args_project(tmp_path: Path, seen: Path, *, gate_exit: int = 0) -> Pat
     return project
 
 
-@pytest.mark.integration
-def test_the_entry_point_accepts_the_argv_the_stub_actually_builds(tmp_path: Path) -> None:
+def _captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Record what `main` forwards as the chain's argv, running no gate.
+
+    Deliberately subprocess-free so these carry NO `integration` marker: the
+    defect is version-dependent, and `ci-local.sh unit` — the only stage running
+    3.11/3.12 — deselects `-m integration`. Marked, they would exercise the bug
+    on no CI leg at all (HATS-1519 rework).
+    """
+    seen: list[list[str]] = []
+
+    def _spy(*, argv: list[str], **_: object) -> int:
+        seen.append(list(argv))
+        return 0
+
+    monkeypatch.setattr("ai_hats.githooks_run.run_chain", _spy)
+    return seen
+
+
+def test_the_entry_point_accepts_the_argv_the_stub_actually_builds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The stub separates its own flags from the hook's with `--`.
 
     That separator is pinned on the stub side by
@@ -266,8 +285,8 @@ def test_the_entry_point_accepts_the_argv_the_stub_actually_builds(tmp_path: Pat
     """
     from ai_hats.cli.githooks_hook import main
 
-    seen = tmp_path / "argv.txt"
-    project = _hook_args_project(tmp_path, seen)
+    project = _gate_project(tmp_path)
+    seen = _captured_argv(monkeypatch)
 
     rc = main(
         [
@@ -282,11 +301,12 @@ def test_the_entry_point_accepts_the_argv_the_stub_actually_builds(tmp_path: Pat
     )
 
     assert rc == 0
-    assert seen.read_text().split("\0")[:-1] == [".git/COMMIT_EDITMSG"]
+    assert seen == [[".git/COMMIT_EDITMSG"]]
 
 
-@pytest.mark.integration
-def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(tmp_path: Path) -> None:
+def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The guard the separator exists for, held on every supported version.
 
     Dropping the `--` token and handing the rest to argparse would pass the test
@@ -295,8 +315,8 @@ def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(tmp_path: 
     """
     from ai_hats.cli.githooks_hook import main
 
-    seen = tmp_path / "argv.txt"
-    project = _hook_args_project(tmp_path, seen)
+    project = _gate_project(tmp_path)
+    seen = _captured_argv(monkeypatch)
 
     rc = main(
         [
@@ -312,12 +332,11 @@ def test_a_hook_argument_starting_with_a_dash_is_not_read_as_our_flag(tmp_path: 
     )
 
     assert rc == 0
-    assert seen.read_text().split("\0")[:-1] == ["-x", "--project-dir"]
+    assert seen == [["-x", "--project-dir"]]
 
 
-@pytest.mark.integration
 def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stub newer than the installed ai-hats must not wedge the commit.
 
@@ -328,8 +347,8 @@ def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
     """
     from ai_hats.cli.githooks_hook import main
 
-    seen = tmp_path / "argv.txt"
-    project = _hook_args_project(tmp_path, seen)
+    project = _gate_project(tmp_path)
+    seen = _captured_argv(monkeypatch)
 
     rc = main(
         [
@@ -347,7 +366,7 @@ def test_arguments_this_dispatcher_cannot_parse_skip_the_gates(
 
     assert rc == 0, "a dispatcher that cannot parse itself must skip, never refuse"
     assert "fail-open" in capsys.readouterr().err
-    assert not seen.exists(), "no gate may run when the dispatcher gave up"
+    assert seen == [], "no gate may run when the dispatcher gave up"
 
 
 @pytest.mark.integration
@@ -356,12 +375,13 @@ def test_a_refusing_gate_still_blocks_the_event(tmp_path: Path) -> None:
 
     A gate's verdict arrives as `run_chain`'s exit code, so widening the skew
     hatch past the parse would turn every refusal into a silent pass — gates
-    installed, gates ignored.
+    installed, gates ignored. Runs the gate for real: the verdict this pins is
+    a process exit code, and a stubbed chain could not produce one.
     """
     from ai_hats.cli.githooks_hook import main
 
-    seen = tmp_path / "argv.txt"
-    project = _hook_args_project(tmp_path, seen, gate_exit=1)
+    ran = tmp_path / "ran.txt"
+    project = _gate_project(tmp_path, body=f'printf "%s\\0" "$@" > "{ran}"\nexit 1')
 
     rc = main(
         [
@@ -376,4 +396,6 @@ def test_a_refusing_gate_still_blocks_the_event(tmp_path: Path) -> None:
     )
 
     assert rc != 0, "a gate that refused must still block the commit"
-    assert seen.exists(), "the gate must actually have run"
+    assert ran.read_text().split("\0")[:-1] == [".git/COMMIT_EDITMSG"], (
+        "the gate must have run, with git's argument intact across the separator"
+    )
