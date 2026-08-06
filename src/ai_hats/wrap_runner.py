@@ -184,7 +184,9 @@ def _broken_hook_refs_text(refs, *, project_dir: Path, ours: bool) -> str:
     if ours:
         lines += [
             f"    ai-hats wrote {them}, so it can clean up for you:",
-            f"    run  ai-hats self init --no-wizard  in {project_dir}",
+            "",
+            f"    Fix: cd {project_dir} && ai-hats self init --no-wizard",
+            "",
             "    That command also applies any ai-hats migration this project has",
             "    not seen yet, so expect other files under it to change.",
         ]

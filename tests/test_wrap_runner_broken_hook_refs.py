@@ -72,6 +72,19 @@ def test_managed_broken_ref_names_the_command_that_heals_locally(tmp_path):
     assert traces  # finding logged to the session
 
 
+def test_the_command_stands_alone_on_a_copyable_line(tmp_path):
+    """House format for a remedy (``cli/_helpers.py``, ``migration_backup.py``):
+    a ``Fix:``/``Recovery:`` line carrying one self-contained command. Buried
+    mid-sentence it cannot be copied without editing."""
+    _seed_claude_hook(tmp_path, "/nowhere/guard.sh", tag="ai-hats:hats-437")
+
+    text = _runner(tmp_path)._check_broken_hook_refs(_session([]))[0].text
+
+    fix = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("Fix:")]
+    assert len(fix) == 1, f"expected exactly one Fix: line, got {fix}"
+    assert fix[0] == f"Fix: cd {tmp_path} && ai-hats self init --no-wizard"
+
+
 def test_managed_remedy_says_what_the_command_changes_beyond_the_repair(tmp_path):
     """Q9.3 — the install-time path also runs migrations. Learning that from
     the diff afterwards is the failure this text exists to prevent."""
