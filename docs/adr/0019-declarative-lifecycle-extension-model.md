@@ -365,7 +365,8 @@ borrowing the *provider's* cache instead of owning one.
    a provider layout, so no surface can be forgotten.
 2. **Inside a session, the root is ai-hats's own snapshot** — *implemented
    (HATS-1241)*, written at session entry by `check_snapshot.snapshot_checks` — at
-   `<ai_hats_dir>/.cache/sessions/<sid>/checks/<skill>/` — the declaring skill's
+   `<cache_root>/sessions/<sid>/checks/<skill>/`, outside the project (`paths.session_checks_dir`;
+   see the HATS-1398 note below) — the declaring skill's
    directory copied *whole*, through the existing `Materializer` port. Whole, not
    just the script, so sibling data files survive (ADR-0020 [4] D1, `bundle`). A
    session must execute the same bytes from start to finish and stay isolated
@@ -385,10 +386,14 @@ borrowing the *provider's* cache instead of owning one.
    own: a snapshot copies whatever `source_path` points at, so a session started
    inside a worktree would freeze that branch's bytes. The guard belongs to the
    resolver, and sits there: `check_resolve._reject_worktree_root` walks up from
-   the resolved script to the nearest `.git` and refuses when it is a *file* — a
-   linked worktree — rather than a directory, the main checkout. It runs in both
-   modes, after the root is picked, so neither clause can smuggle a branch's
-   bytes past it.
+   the path the *composition* resolved (`source_path / script`) to the nearest
+   `.git`. A `.git` directory is the main checkout and resolves. A `.git` *file*
+   is either a linked worktree or a submodule working tree, told apart by the
+   `gitdir:` it carries — `…/worktrees/<id>` is refused, `…/modules/<path>` is a
+   vendored dependency and resolves. The guard runs in both modes and **before**
+   the root is picked, which is the only place it can bite: rebased first, it
+   would inspect the snapshot copy under `<cache_root>` — outside every checkout,
+   so inside nothing — and clause 2 would smuggle the branch's bytes past it.
 
 Snapshot location superseded by **HATS-1398** — clause 2's root is unchanged as a concept but now resolves outside the project, at `<cache_root>/sessions/<sid>/checks/<skill>/` (default `~/.cache/ai-hats/<project-key>/`); the surface table above shifts with it.
 
