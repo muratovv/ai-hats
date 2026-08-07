@@ -56,28 +56,33 @@ def _rebased(project_dir: Path, check: ResolvedCheck, session_id: str) -> Resolv
     In a session that is the snapshot, and a snapshot that is not there stays
     the answer — re-resolving live would disarm the isolation (R10).
     """
+    _reject_worktree_root(check.script_path, check)
     if not session_id:
-        script_path = check.script_path
-    else:
-        from .libraries.models import resolve_namespace
-        from .paths import session_checks_dir
+        return check
 
-        root = (
-            session_checks_dir(project_dir, session_id) / resolve_namespace(check.skill)
-        ).resolve()
-        script_path = (root / check.script).resolve()
-        if not script_path.is_relative_to(root):
-            raise CheckResolutionError(
-                f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, which "
-                f"resolves to {script_path} — outside this session's snapshot root {root}"
-            )
-    _reject_worktree_root(script_path, check)
+    from .libraries.models import resolve_namespace
+    from .paths import session_checks_dir
+
+    root = (session_checks_dir(project_dir, session_id) / resolve_namespace(check.skill)).resolve()
+    script_path = (root / check.script).resolve()
+    if not script_path.is_relative_to(root):
+        raise CheckResolutionError(
+            f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, which "
+            f"resolves to {script_path} — outside this session's snapshot root {root}"
+        )
     return replace(check, script_path=script_path)
 
 
 def _reject_worktree_root(script_path: Path, check: ResolvedCheck) -> None:
     """D9 clause 4: a linked worktree is never a resolution root — a gate must
-    not run the half-written copy of itself that lives on the branch it judges."""
+    not run the half-written copy of itself that lives on the branch it judges.
+
+    Guards the path the COMPOSITION resolved, in both modes and before the root
+    is picked: a snapshot copies whatever ``source_path`` points at, so checking
+    the rebased path would leave a session started inside a worktree running
+    that branch's frozen bytes — and would inspect the cache root, which is
+    outside every checkout and therefore never inside anything.
+    """  # comment-length: allow — clause 2 not discharging clause 4 is the whole point
     for parent in script_path.parents:
         marker = parent / ".git"
         if not marker.exists():

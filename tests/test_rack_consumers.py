@@ -434,3 +434,28 @@ def test_the_probe_reads_exactly_the_roots_the_composition_reads(tmp_path, monke
 
     assert check_resolve._library_roots(main) == Assembler(main).library_paths
     assert check_resolve.declares_checks(main) is True
+
+
+def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_path):
+    """D9 clause 4, in the mode clause 2 owns. The guard ran on the REBASED
+    path, which in a session is the cache root — outside any checkout, so the
+    walk-up found no ``.git`` and the guard was dead. A snapshot copies whatever
+    ``source_path`` points at, so a session started inside a worktree froze and
+    ran that branch's bytes."""
+    main = _repo(tmp_path / "proj")
+    worktree = tmp_path / "ai-hats-wt-task-1"
+    _git(main, "worktree", "add", "-b", "task/1", str(worktree))
+    branch_copy = _script(worktree, "exit 0")
+    snapshot_dir = session_checks_dir(main, "sess-a") / "quality" / "gates"
+    snapshot_dir.mkdir(parents=True)
+    _script(snapshot_dir, "exit 0")
+
+    with pytest.raises(CheckResolutionError) as exc_info:
+        check_resolve.resolve_edge_checks(
+            main,
+            topology=_topology(),
+            session_id="sess-a",
+            compose=lambda _p: _composition(checks=(_check(branch_copy),)),
+        )
+
+    assert str(worktree) in str(exc_info.value)
