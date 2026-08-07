@@ -182,6 +182,33 @@ def test_an_unparseable_project_config_refuses_instead_of_tracebacking(tmp_path)
     assert "schema_version 99" in exc_info.value.reason
 
 
+def test_a_project_with_no_active_role_takes_its_edges_untouched(tmp_path):
+    """A builtin binding must not brick every role-less project (HATS-1137).
+
+    ``declares_checks`` answers "is a declaration in reach", and the builtin
+    library is in reach of everyone — so the moment a builtin trait or role
+    ships one row, the probe says True for projects that never opted in. With
+    no active role there is no composition and therefore no binding (D7), so
+    the honest answer is "nothing bound", not a refusal.
+    """
+    (tmp_path / "ai-hats.yaml").write_text("schema_version: 1\n")
+    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+
+    assert runner.on_event(_ctx()) is None
+
+
+def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
+    """The other side of the line above: absence of a role is not a defect,
+    a named role that does not compose is."""
+    (tmp_path / "ai-hats.yaml").write_text("schema_version: 1\nactive_role: ghost\n")
+    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert "ghost" in exc_info.value.reason
+
+
 # ---------------------------------------------------------------------------
 # resolution (ADR-0019 D9) — two modes, one composition
 # ---------------------------------------------------------------------------
