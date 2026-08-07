@@ -56,6 +56,37 @@ def _kernel(project: Path, **kwargs):
     )
 
 
+def _check_pack(project: Path, script: Path | None = None):
+    """The consumer pack with its resolution stubbed to one binding — this file
+    pins the wiring, not the two-mode resolver (``test_rack_consumers``)."""
+    from ai_hats_core import ResolvedCheck
+    from ai_hats_rack.definition import resolve_definition
+
+    from ai_hats.rack_consumers import CheckRunnerExtension
+
+    checks = ()
+    if script is not None:
+        checks = (
+            ResolvedCheck(
+                skill="quality::gates",
+                script=script.name,
+                point="edge:plan--execute",
+                on_error="refuse",
+                script_path=script,
+                declared_by="maintainer",
+            ),
+        )
+    tasks_dir = project / ".agent" / "tasks"
+    return [
+        CheckRunnerExtension(
+            project,
+            tasks_dir=tasks_dir,
+            topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
+            resolve=lambda: checks,
+        )
+    ]
+
+
 class _Sink:
     def __init__(self):
         self.records = []
@@ -127,6 +158,49 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
 
     epicify = [s.name for s in kernel._dispatcher.subscribers_for("epicify", Phase.POST_LOCK)]
     assert epicify == ["ownership-release", "worktree", "epic-automation", "derived-views"]
+
+
+def test_check_runner_takes_the_reserved_hook_slot(project):
+    """HATS-1141: the checks runner books priority 15 — after the plan-gate,
+    before the ownership claim and the worktree, so a refusal costs nothing."""
+    kernel = _kernel(project, extra_subscribers=_check_pack(project))
+    into_execute = [
+        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+    ]
+    assert into_execute == [
+        "ownership-single-slot",
+        "frozen-integrity",
+        "plan-gate",
+        "plan-consent",
+        "checks",
+        "ownership",
+        "worktree",
+    ]
+
+
+def test_check_refusal_leaves_no_ownership_and_no_worktree(project, monkeypatch):
+    """R2 with the REAL extensions: slot 15 sits before the claim, so a refused
+    check leaves no registry record, no worktree and an unchanged card."""
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    script = project / "gate.sh"
+    script.write_text("#!/bin/sh\necho 'plan not signed off'\nexit 2\n")
+    script.chmod(0o755)
+
+    kernel = _kernel(project, extra_subscribers=_check_pack(project, script))
+    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
+    kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
+    (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+    before = (kernel.tasks_dir / "T-1" / "task.yaml").read_bytes()
+
+    with pytest.raises(OperationAborted) as exc_info:
+        kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
+
+    assert exc_info.value.subscriber == "checks"
+    assert exc_info.value.reason == "plan not signed off"
+    assert not (kernel.tasks_dir.parent / "ownership.json").exists()
+    assert WorktreeManager.load_for_task(project, "T-1", state_dir=worktrees_dir(project)) is None
+    assert (kernel.tasks_dir / "T-1" / "task.yaml").read_bytes() == before
 
 
 def test_reopen_edge_skips_gate_but_clear_lifecycle_fires(project):
