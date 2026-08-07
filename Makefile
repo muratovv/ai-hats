@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit e2e lint check gates coverage security version-skew dependency-floor silent-fallback relay-server relay-client
+.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -40,6 +40,9 @@ tests: unit ## Alias for unit
 
 unit: ## Run the unit stage (bounded by TIMEOUT_TESTS, default 300s)
 	$(call timed_stage,unit,$(TIMEOUT_TESTS))
+
+integration: ## Run the integration stage (real-subprocess tests outside tests/e2e)
+	$(call timed_stage,integration,$(TIMEOUT_TESTS))
 
 lint: ## Run the lint stage (ruff check + formatter check)
 	$(CI_LOCAL) lint

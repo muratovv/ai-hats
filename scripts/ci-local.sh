@@ -16,6 +16,7 @@
 #   scripts/ci-local.sh lint       # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage   # the stage that was the sole failing executor
 #   scripts/ci-local.sh security   # CI-only stage; env-scoped (see NOTE below)
+#   scripts/ci-local.sh done-gate  # what edge:review--done demands (HATS-1137)
 #
 # NOTE: the `install-smoke` CI job is deliberately NOT a stage here — it runs
 # install-launcher.sh which writes ~/.local/bin/ai-hats, an unwanted side effect
@@ -46,6 +47,14 @@ ci_lint() {
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
     "$PY" -m pytest -m "not integration" -q ${@+"$@"}
+}
+
+# HATS-1137: the integration tier OUTSIDE tests/e2e — the half `unit` excludes
+# by marker and `merge-smoke` does not reach by path. Without it the done-gate
+# would call itself green while skipping every real-subprocess test in tests/.
+ci_integration() {
+    echo "[ci-local] integration (pytest --ignore=tests/e2e -m integration)" >&2
+    "$PY" -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
 }
 
 ci_coverage() {
@@ -89,6 +98,26 @@ ci_e2e() {
     "$PY" -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
+# HATS-1137: the composition of the `edge:review--done` quality gate, and the
+# ONE place it is configured. `maintainer-quality-gate/hooks/done-gate.sh --run`
+# executes this stage and marks the SHA on green; changing what "green enough to
+# be done" means is an edit HERE, never in the gate script.
+#
+# Excluded from `all`: `all` is the pre-push bundle and already runs `coverage`,
+# which collects the same non-e2e integration tests without a marker filter.
+ci_done_gate() {
+    echo "[ci-local] done-gate (lint -> unit -> integration -> merge-smoke)" >&2
+    local stage rc
+    for stage in lint unit integration merge-smoke; do
+        "ci_${stage//-/_}" || {
+            rc=$?
+            echo "[ci-local] done-gate: stage '$stage' FAILED (rc=$rc) — stopping here" >&2
+            return "$rc"
+        }
+    done
+    echo "[ci-local] done-gate: every stage green" >&2
+}
+
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
 # dev box would fail a legitimate push. CI is authoritative; run explicitly
 # (optionally SKEW_BASE=<sha>) to reproduce.
@@ -102,7 +131,9 @@ shift 2>/dev/null || true   # remaining argv is passed through to the pytest sta
 case "$stage" in
     lint) ci_lint ${@+"$@"} ;;
     unit) ci_unit ${@+"$@"} ;;
+    integration) ci_integration ${@+"$@"} ;;
     coverage) ci_coverage ${@+"$@"} ;;
+    done-gate) ci_done_gate ;;
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
@@ -121,7 +152,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | dependency-floor | silent-fallback | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | done-gate | dependency-floor | silent-fallback | version-skew | all" >&2
         exit 2
         ;;
 esac
