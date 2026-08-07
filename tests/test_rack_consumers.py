@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from ai_hats_core import CompositionResult, ResolvedCheck
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
@@ -520,6 +521,36 @@ def test_a_symlink_cycle_does_not_hang_the_probe(tmp_path, monkeypatch):
     """Following symlinks buys the loop that comes with them."""
     root = _library(tmp_path / "lib", declares=False)
     (root / "traits" / "maintainer" / "loop").symlink_to(root / "traits")
+    monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
+
+    assert check_resolve.declares_checks(tmp_path) is False
+
+
+@pytest.mark.parametrize("spelling", ['"checks":', "'checks':", "checks :"])
+def test_every_yaml_spelling_of_checks_is_seen_by_the_probe(tmp_path, monkeypatch, spelling):
+    """The parser accepts quoted keys and space-before-colon; a substring test
+    for ``checks:`` does not. Each miss is a gate that never installs."""
+    root = tmp_path / "lib"
+    trait = root / "traits" / "maintainer"
+    trait.mkdir(parents=True)
+    (trait / "config.yaml").write_text(
+        f"name: maintainer\ncomposition:\n  {spelling}\n"
+        f"    - skill: quality::gates\n      script: gate.sh\n"
+        f"      on:\n        - edge:review--done\n"
+    )
+    monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
+
+    assert yaml.safe_load((trait / "config.yaml").read_text())["composition"]["checks"]
+    assert check_resolve.declares_checks(tmp_path) is True
+
+
+def test_a_word_ending_in_checks_does_not_trip_the_probe(tmp_path, monkeypatch):
+    """The other side of widening the match: ``composition.checks`` is a key at
+    the start of its line, not any occurrence of the seven letters."""
+    root = tmp_path / "lib"
+    trait = root / "traits" / "maintainer"
+    trait.mkdir(parents=True)
+    (trait / "config.yaml").write_text("name: maintainer\ndescription: runs prechecks: no\n")
     monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
 
     assert check_resolve.declares_checks(tmp_path) is False

@@ -9,6 +9,7 @@ differs is only the root each ``ResolvedCheck.script`` is re-based against.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
@@ -21,6 +22,11 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 
 
 _EDGE_PREFIX = "edge:"
+
+#: The ``checks`` mapping key in every spelling the YAML parser accepts, anchored
+#: to a line start so ``prechecks:`` is not one. A scan still, not a parse: a
+#: false positive costs one compose, a false negative disarms a gate.
+_CHECKS_KEY = re.compile(rb"""^[ \t]*(?:checks|"checks"|'checks')[ \t]*:""", re.MULTILINE)
 
 
 class CheckResolutionError(Exception):
@@ -184,7 +190,9 @@ def declares_checks(project_dir: Path) -> bool:
             if not base.is_dir():
                 continue
             for config in _component_configs(base):
-                if b"checks:" in config.read_bytes():
+                data = config.read_bytes()
+                # memchr throws out the files with no `checks` at all before the regex
+                if b"checks" in data and _CHECKS_KEY.search(data):
                     return True
     return False
 
