@@ -18,6 +18,7 @@ from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode,
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
+from .check_snapshot import snapshot_checks
 from .frontmatter import FrontmatterError, read_frontmatter
 from .provider_entry_points import (
     _is_first_party_entry_point,
@@ -222,6 +223,9 @@ class Provider(abc.ABC):
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
         artifacts.policy = policy
+        # HATS-1241: above the loop and outside the policy gate — no surface may
+        # override a check away, no policy may switch a declared gate off.
+        snapshot_checks(project_dir, result, session_id, port=artifacts.port)
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(
