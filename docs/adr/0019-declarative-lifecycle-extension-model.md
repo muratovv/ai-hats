@@ -157,20 +157,26 @@ silently.
 
 ### D3 — The point catalog
 
-| point                                  | when                                                                                          | may veto           | replaces          | execution           |
-| -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------- | ------------------- |
-| `edge:<from>--<to>`                    | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | `lifecycle_hooks` | planned (HATS-1141) |
-| `card:pre-create`                      | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | yes                | **new**           | planned (HATS-1404) |
-| `wt:pre-merge`                         | in `merge()`, before **any** mutation — beside `_check_clean` / `_check_drift` / consent      | yes                | **new**           | planned (HATS-1143) |
-| `wt:create`                            | after `git worktree add`                                                                      | no (warn-continue) | `worktree.wt_in`  | planned (HATS-1146) |
-| `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146) |
-| `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145) |
+| point                                  | when                                                                                          | may veto           | replaces          | execution               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------- | ----------------------- |
+| `edge:<from>--<to>`                    | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | `lifecycle_hooks` | implemented (HATS-1141) |
+| `card:pre-create`                      | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | yes                | **new**           | planned (HATS-1404)     |
+| `wt:pre-merge`                         | in `merge()`, before **any** mutation — beside `_check_clean` / `_check_drift` / consent      | yes                | **new**           | planned (HATS-1143)     |
+| `wt:create`                            | after `git worktree add`                                                                      | no (warn-continue) | `worktree.wt_in`  | planned (HATS-1146)     |
+| `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146)     |
+| `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
 
 Every row except the last is **implemented (HATS-1140)** as a *catalog entry*:
 `check_points.known_points()` knows the name and a binding to it validates, so a
 typo is refused at composition. The `execution` column tracks something else —
-the caller that actually fires the point — and **no point has one in master
-today**: `rack_consumers.consumer_subscribers()` still returns `[]`.
+the caller that actually fires the point — and there the rows part company.
+**`edge:` has one:** `rack_consumers.consumer_subscribers()` no longer returns
+`[]` but the check runner, which subscribes at `Phase.IN_LOCK` priority 15 to
+every edge key of the topology the kernel runs, so a binding declared there
+fires. **The `card:` and `wt:` rows remain catalog-only** — each still owes the
+call site named in its column, and until then a binding to one of them validates
+at composition and then never runs, which is precisely the silent no-op this ADR
+exists to remove; it is tolerable only because no consumer binds there yet.
 `wt:pre-reclaim` is the one row `check_points.py` does not know at all; it is
 listed here, and in `docs/glossary.md`, so the catalog and the glossary agree
 about what is coming.
@@ -185,7 +191,15 @@ rule carries over unchanged. **Known gap:** the catalog resolves that topology
 from the *packaged* tasks backlog, while the kernel runs the catalog-local one
 (`resolve_definition`), so a binding to an edge of a sibling backlog — this
 repository ships two, for hypotheses and proposals — is refused as an unknown
-point. Owner: HATS-1141.
+point. **HATS-1141 did not close this**; it made the other half of the same
+divergence loud. The runner is handed the topology the kernel actually runs, and
+a bound point that is no edge of it aborts the transition naming both topologies
+and both state sets (`check_resolve._guard_topology`) instead of sitting there
+never matching. So a name the packaged catalog accepted and the running topology
+has no edge for now fails out loud — but the catalog is still the packaged one,
+and the sibling-backlog binding is still rejected before it ever reaches the
+runner. Resolving the catalog's topology the way the kernel resolves its own is
+the successor work; **it is unfiled** — no card owns it.
 
 `wt:pre-merge` is a **precondition**, in the same class as the accepted
 `WorktreeDirtyError` / `WorktreeDriftError` / `WorktreeMergeConsentError`
@@ -244,11 +258,14 @@ it did not, and strips the colour-forcing variables. Rev 4 presented several of
 those as this ADR's own additions; they are the primitive's, for every channel.
 
 Still owed here is not the vocabulary but the resolution — *planned (HATS-1142)*:
-the primitive takes `task_id` and `worktree_path` as parameters, and
-at `edge:` points nobody computes them yet, so a script must still hand-roll
-`task.yaml` → task id → `sessions/worktrees/task-<id>.json` →
-`jq -r .worktree_path`. Resolving it once, centrally, is what makes one script
-bind to both `edge:` and `wt:` points — the payoff of D2.
+the primitive takes `task_id` and `worktree_path` as parameters, and at `edge:`
+points only the first is computed. HATS-1141's runner passes the dispatched
+task's id straight through, so `AI_HATS_TASK_ID` is set there; nobody computes
+the worktree path, so the primitive *removes* `AI_HATS_WORKTREE_PATH` from the
+child's environment and a script must still hand-roll
+`sessions/worktrees/task-<id>.json` → `jq -r .worktree_path`. Resolving that
+once, centrally, is what makes one script bind to both `edge:` and `wt:` points
+— the payoff of D2.
 
 Existing point-specific variables keep their names; migrated scripts do not churn.
 
@@ -346,28 +363,32 @@ borrowing the *provider's* cache instead of owning one.
    skill's own directory (`ai_hats_core/composition.py`). A binding resolves as
    `source_path / script`. Surface-independent by construction: no code consults
    a provider layout, so no surface can be forgotten.
-2. **Inside a session, the root is ai-hats's own snapshot** — *planned (HATS-1241)*;
-   no writer exists in `master`, the work sits on a parked branch — at
+2. **Inside a session, the root is ai-hats's own snapshot** — *implemented
+   (HATS-1241)*, written at session entry by `check_snapshot.snapshot_checks` — at
    `<ai_hats_dir>/.cache/sessions/<sid>/checks/<skill>/` — the declaring skill's
    directory copied *whole*, through the existing `Materializer` port. Whole, not
    just the script, so sibling data files survive (ADR-0020 [4] D1, `bundle`). A
    session must execute the same bytes from start to finish and stay isolated
    from a library being edited concurrently; relying on worktree discipline for
    that isolation would be a policy, not a mechanism, and it lapses at merge.
-3. **Outside a session the root is the live library** — *planned (HATS-1141)*. `rack transition` from a
+3. **Outside a session the root is the live library** — *implemented (HATS-1141)*. `rack transition` from a
    bare terminal, from cron, or via the standalone `rack` binary has no
    `AI_HATS_SESSION_ID` (`_session_id()` returns `""` there) and no snapshot, so
    the runner composes the active role from config and resolves from the library.
    The two modes are not a blemish: the non-negotiable property is that the
    out-of-session mode is **live**, never **absent**. Fail-open there would leave
    HATS-1137 one `env -u AI_HATS_SESSION_ID` away from useless.
-4. **A task worktree is never a resolution root** — *planned (HATS-1141)*.
+4. **A task worktree is never a resolution root** — *implemented (HATS-1141)*.
    `builtin_library_root()` is worktree-aware, so a naive resolve inside a
    worktree would run the branch's own half-written check — a gate judging the
    change it is part of. Note that clause 2 does **not** discharge this on its
    own: a snapshot copies whatever `source_path` points at, so a session started
    inside a worktree would freeze that branch's bytes. The guard belongs to the
-   resolver.
+   resolver, and sits there: `check_resolve._reject_worktree_root` walks up from
+   the resolved script to the nearest `.git` and refuses when it is a *file* — a
+   linked worktree — rather than a directory, the main checkout. It runs in both
+   modes, after the root is picked, so neither clause can smuggle a branch's
+   bytes past it.
 
 Snapshot location superseded by **HATS-1398** — clause 2's root is unchanged as a concept but now resolves outside the project, at `<cache_root>/sessions/<sid>/checks/<skill>/` (default `~/.cache/ai-hats/<project-key>/`); the surface table above shifts with it.
 
@@ -645,7 +666,8 @@ role-aware materialization, the role stamp and the role-aware drift detector, an
 becomes "resolve bindings from the composition, with the session snapshot as the
 in-session root and a live compose out of session" — the wording first recorded
 here said "from the session skill tree", which is the *provider* tree rev 7
-falsified; **HATS-1147**'s deletion set grows (manifest, sweep,
+falsified (that re-scope has since happened: HATS-1141 landed in exactly this
+shape, see D3 and D9); **HATS-1147**'s deletion set grows (manifest, sweep,
 `_assert_manifest_intact`, managed-name helpers); the "binding catalog"
 (`bindings.yaml`) named above is no longer needed as a *materialized* artifact —
 `on_error` travels with the binding in the composition itself.
