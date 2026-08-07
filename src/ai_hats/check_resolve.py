@@ -169,8 +169,22 @@ def _compose_role(project_dir: Path) -> CompositionResult:
 
 def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
     """``None`` iff nothing is declared. Any other trouble raises — the
-    fail-open ``compose_for_carry`` is right for carry and is HYP-078 here."""
-    if not declares_checks(project_dir):
+    fail-open ``compose_for_carry`` is right for carry and is HYP-078 here.
+
+    The probe is inside the boundary, not before it: it reads ``ai-hats.yaml``
+    and walks library roots, so it raises config and OS errors of its own (R8).
+    A probe that cannot finish has not established that nothing is declared —
+    only that it cannot tell — and this channel refuses on that, deliberately
+    stricter than ``load_root``, which defaults a broken config through for
+    read-only verbs.
+    """  # comment-length: allow — the asymmetry with the rest of rack is a decision
+    try:
+        declared = declares_checks(project_dir)
+    except Exception as exc:
+        raise CheckResolutionError(
+            f"whether any check is declared could not be determined ({type(exc).__name__}): {exc}"
+        ) from exc
+    if not declared:
         return None
     try:
         result = _compose_role(project_dir)

@@ -164,6 +164,22 @@ def test_a_resolution_failure_is_a_typed_refusal_not_a_traceback(tmp_path):
     assert "active role 'ghost' does not exist" in exc_info.value.reason
 
 
+def test_an_unparseable_project_config_refuses_instead_of_tracebacking(tmp_path):
+    """R8: the declaration probe reads ``ai-hats.yaml``, so its parse errors are
+    this channel's errors. A project declaring NOTHING still reached
+    ``ProjectConfig.from_yaml`` before the fail-closed boundary, and
+    ``ProjectConfigError`` is neither ``OSError`` nor one of the typed two — so
+    every transition ended in a stack trace."""
+    (tmp_path / "ai-hats.yaml").write_text("schema_version: 99\n")
+    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert "ai-hats.yaml" in exc_info.value.reason
+    assert "schema_version 99" in exc_info.value.reason
+
+
 # ---------------------------------------------------------------------------
 # resolution (ADR-0019 D9) — two modes, one composition
 # ---------------------------------------------------------------------------
