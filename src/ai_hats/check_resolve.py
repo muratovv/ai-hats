@@ -117,17 +117,25 @@ def _guard_topology(checks: tuple[ResolvedCheck, ...], topology: Topology) -> No
 
 
 def _library_roots(project_dir: Path) -> list[Path]:
-    """The roots a composition could draw a declaration from.
+    """The roots a composition could draw a declaration from — every one of them.
 
-    Project-local ``libraries/`` is NOT re-pointed into a linked worktree the way
-    ``Assembler`` does it — a worktree is never a resolution root (D9 clause 4).
-    """
-    from .library_paths import build_library_paths
+    Derived exactly the way ``Assembler`` derives them, ``local_libraries``
+    included: a root the probe cannot see hides a binding that composes for
+    real, and the probe then reports "nothing declared" (R3). Not re-pointing
+    here would not keep a worktree from being a resolution root — the assembler
+    re-points during the compose regardless; it would only blind the probe. D9
+    clause 4 is enforced where it can be, in ``_reject_worktree_root``.
+    """  # comment-length: allow — this divergence was the HYP-078 hole, twice
+    from .library_paths import build_library_paths, worktree_local_libraries
     from .models import ProjectConfig
     from .paths.constants import PROJECT_CONFIG
 
     config = ProjectConfig.from_yaml(project_dir / PROJECT_CONFIG)
-    return build_library_paths(project_dir, config_paths=config.library_paths)
+    return build_library_paths(
+        project_dir,
+        config_paths=config.library_paths,
+        local_libraries=worktree_local_libraries(project_dir),
+    )
 
 
 def declares_checks(project_dir: Path) -> bool:

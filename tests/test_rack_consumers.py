@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -380,3 +381,40 @@ def test_the_check_budget_stays_under_the_rack_lock():
     """R9 / ADR-0020 D2: a hung check must be bounded by ITS timeout, not by the
     task lock — else a lock-waiting peer mis-blames a concurrent operation."""
     assert EDGE_CHECK_TIMEOUT_S < LOCK_TIMEOUT
+
+
+# ---------------------------------------------------------------------------
+# the declaration probe and the worktree guard, against real git
+# ---------------------------------------------------------------------------
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _repo(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-b", "main")
+    _git(path, "config", "user.email", "t@e")
+    _git(path, "config", "user.name", "T")
+    _git(path, "config", "core.hooksPath", "/dev/null")
+    _git(path, "config", "commit.gpgsign", "false")
+    _git(path, "commit", "-m", "init", "--allow-empty")
+    return path
+
+
+def test_the_probe_reads_exactly_the_roots_the_composition_reads(tmp_path, monkeypatch):
+    """``Assembler`` re-points project-local ``libraries/`` into the linked
+    worktree it is invoked from (HATS-831) while ``find_project_root`` hops back
+    to MAIN. A probe deriving its own roots misses that one, so a binding that
+    composes for real answers ``False`` here — a silently absent gate (R3)."""
+    main = _repo(tmp_path / "proj")
+    worktree = tmp_path / "ai-hats-wt-task-1"
+    _git(main, "worktree", "add", "-b", "task/1", str(worktree))
+    _library(worktree / "libraries", declares=True)
+    monkeypatch.chdir(worktree)
+
+    from ai_hats.assembler import Assembler
+
+    assert check_resolve._library_roots(main) == Assembler(main).library_paths
+    assert check_resolve.declares_checks(main) is True
