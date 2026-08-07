@@ -7,6 +7,7 @@ deliberately does NOT share, since that channel is uniformly fail-closed.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 import subprocess
@@ -500,3 +501,42 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
         )
 
     assert str(worktree) in str(exc_info.value)
+
+
+def test_the_probe_descends_into_a_symlinked_component_dir(tmp_path, monkeypatch):
+    """``find_component_dir`` resolves a symlinked trait via ``is_dir()``, so a
+    shared component wired in with a symlink composes for real. A scan that does
+    not follow one skips its declaration in silence."""
+    root = tmp_path / "lib"
+    (root / "traits").mkdir(parents=True)
+    shared = _library(tmp_path / "shared", declares=True)
+    (root / "traits" / "maintainer").symlink_to(shared / "traits" / "maintainer")
+    monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
+
+    assert check_resolve.declares_checks(tmp_path) is True
+
+
+def test_a_symlink_cycle_does_not_hang_the_probe(tmp_path, monkeypatch):
+    """Following symlinks buys the loop that comes with them."""
+    root = _library(tmp_path / "lib", declares=False)
+    (root / "traits" / "maintainer" / "loop").symlink_to(root / "traits")
+    monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
+
+    assert check_resolve.declares_checks(tmp_path) is False
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads an unreadable directory anyway")
+def test_an_unreadable_component_tree_is_loud_not_a_silent_false(tmp_path, monkeypatch):
+    """Same class as the config parse error: a subtree the probe cannot read may
+    hold the declaration, so ``False`` there is a guess, not an answer."""
+    root = _library(tmp_path / "lib", declares=True)
+    (root / "traits").chmod(0o000)
+    monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
+
+    try:
+        with pytest.raises(CheckResolutionError) as exc_info:
+            check_resolve.resolve_edge_checks(tmp_path, topology=_topology())
+    finally:
+        (root / "traits").chmod(0o755)
+
+    assert "traits" in str(exc_info.value)

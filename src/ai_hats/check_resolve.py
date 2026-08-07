@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from ai_hats_observe.trace import ENV_SESSION_ID
 
@@ -183,10 +183,42 @@ def declares_checks(project_dir: Path) -> bool:
             base = root / kind
             if not base.is_dir():
                 continue
-            for config in base.rglob("config.yaml"):
+            for config in _component_configs(base):
                 if b"checks:" in config.read_bytes():
                     return True
     return False
+
+
+def _component_configs(base: Path) -> Iterator[Path]:
+    """Every ``config.yaml`` under ``base``, through symlinked directories too.
+
+    ``find_component_dir`` reaches a symlinked trait via ``is_dir()``, which
+    follows, so a component shared by symlink composes for real; a scan that
+    stops at the link would report its declaration as absent. ``os.walk`` is the
+    3.11-compatible way to follow — ``Path.rglob(recurse_symlinks=…)`` is 3.13+.
+    Errors are raised, never walked past: an unreadable subtree may hold the
+    declaration, so skipping it would answer ``False`` without knowing.
+    """  # comment-length: allow — both halves are silent-skip holes this closed
+    seen: set[tuple[int, int]] = set()
+    _unvisited(base, seen)
+    for dirpath, dirnames, filenames in os.walk(base, onerror=_reraise, followlinks=True):
+        # Following links buys their cycles; identity, not path, ends the walk.
+        dirnames[:] = [name for name in dirnames if _unvisited(Path(dirpath, name), seen)]
+        if "config.yaml" in filenames:
+            yield Path(dirpath, "config.yaml")
+
+
+def _unvisited(directory: Path, seen: set[tuple[int, int]]) -> bool:
+    info = directory.stat()
+    key = (info.st_dev, info.st_ino)
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
+
+
+def _reraise(exc: OSError) -> None:
+    raise exc
 
 
 def _compose_role(project_dir: Path) -> CompositionResult:
