@@ -436,6 +436,47 @@ def test_the_probe_reads_exactly_the_roots_the_composition_reads(tmp_path, monke
     assert check_resolve.declares_checks(main) is True
 
 
+def test_a_submodule_is_not_a_task_worktree(tmp_path):
+    """A vendored component library carries a ``.git`` FILE too (``gitdir:
+    …/.git/modules/…``). Refusing it names a worktree that does not exist, and
+    since resolution precedes the per-edge filter it refuses every transition."""
+    shared = _repo(tmp_path / "shared-lib")
+    gate = _script(shared, "exit 0")
+    _git(shared, "add", "-A")
+    _git(shared, "commit", "-m", "lib")
+    main = _repo(tmp_path / "proj")
+    _git(main, "-c", "protocol.file.allow=always", "submodule", "add", str(shared), "vendor/shared")
+
+    vendored = main / "vendor" / "shared" / gate.name
+    assert (main / "vendor" / "shared" / ".git").is_file()
+
+    resolved = check_resolve.resolve_edge_checks(
+        main,
+        topology=_topology(),
+        compose=lambda _p: _composition(checks=(_check(vendored),)),
+    )
+
+    assert [c.script_path for c in resolved] == [vendored]
+
+
+def test_a_real_linked_worktree_is_still_refused(tmp_path):
+    """The other half of the same discrimination, on git's own output rather
+    than a forged marker: ``gitdir: …/.git/worktrees/<id>`` still refuses."""
+    main = _repo(tmp_path / "proj")
+    worktree = tmp_path / "ai-hats-wt-task-1"
+    _git(main, "worktree", "add", "-b", "task/1", str(worktree))
+    branch_copy = _script(worktree, "exit 0")
+
+    with pytest.raises(CheckResolutionError) as exc_info:
+        check_resolve.resolve_edge_checks(
+            main,
+            topology=_topology(),
+            compose=lambda _p: _composition(checks=(_check(branch_copy),)),
+        )
+
+    assert str(worktree) in str(exc_info.value)
+
+
 def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_path):
     """D9 clause 4, in the mode clause 2 owns. The guard ran on the REBASED
     path, which in a session is the cache root — outside any checkout, so the

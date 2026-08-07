@@ -89,11 +89,39 @@ def _reject_worktree_root(script_path: Path, check: ResolvedCheck) -> None:
             continue
         if marker.is_dir():
             return  # a main checkout — the ordinary case
+        if not _is_worktree_marker(marker, check):
+            continue  # a submodule; the enclosing checkout is still to come
         raise CheckResolutionError(
             f"checks: {check.declared_by!r} binds {check.skill}/{check.script} to "
             f"{script_path}, inside the linked worktree {parent} — a worktree is never a "
             f"resolution root (ADR-0019 D9 clause 4)"
         )
+
+
+def _is_worktree_marker(marker: Path, check: ResolvedCheck) -> bool:
+    """A ``.git`` FILE is a linked worktree OR a submodule working tree.
+
+    Git writes the admin dir as ``<common>/worktrees/<id>`` for the first and
+    ``<common>/modules/<path>`` for the second, so the segment above the target
+    separates them from one file read — no ``rev-parse`` subprocess in the
+    in-lock path, and an answer even where git would refuse to give one. A
+    submodule is a vendored dependency, not a task branch, so it resolves.
+    """  # comment-length: allow — the layout IS the discriminator
+    try:
+        text = marker.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise CheckResolutionError(
+            f"checks: {check.declared_by!r} binds {check.skill}/{check.script} under {marker}, "
+            f"which cannot be read ({exc}) — so whether that is a linked worktree cannot be "
+            f"told, and D9 clause 4 cannot be honoured"
+        ) from exc
+    for line in text.splitlines():
+        if line.startswith("gitdir:"):
+            return Path(line.partition(":")[2].strip()).parent.name == "worktrees"
+    raise CheckResolutionError(
+        f"checks: {check.declared_by!r} binds {check.skill}/{check.script} under {marker}, a "
+        f".git file carrying no 'gitdir:' line — whether that is a linked worktree cannot be told"
+    )
 
 
 def _guard_topology(checks: tuple[ResolvedCheck, ...], topology: Topology) -> None:
