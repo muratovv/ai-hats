@@ -180,9 +180,11 @@ def _library_roots(project_dir: Path) -> list[Path]:
 def declares_checks(project_dir: Path) -> bool:
     """Whether any trait or role in reach declares ``composition.checks``.
 
-    A byte scan, not a parse: composing costs an order of magnitude more, and a
-    project with no bindings must not pay it on every transition (S3). Only
-    traits and roles are read — those are the two the composer collects from.
+    A byte scan, not a parse, so a project with no bindings does not compose on
+    every transition (S3). Only traits and roles are read — the two the composer
+    collects from. The margin is real but modest, and it shrinks where it is
+    needed least: both this and the compose resolve the same library roots, and
+    outside ``project_dir`` that costs git subprocesses neither can skip.
     """
     for root in _library_roots(project_dir):
         for kind in ("traits", "roles"):
