@@ -31,7 +31,8 @@ class CliKernelProvider:
 
     def build_kernel(self, root: Any, caller_cwd: Path):
         """The full integrator assembly (mirror of the K6 driver) — kernel +
-        every stock extension + the (currently empty) consumer add-on pack."""
+        every stock extension + the consumer add-on pack (the ``checks:``
+        runner, subscribed to THIS definition's topology)."""
         defn = resolve_definition(
             root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
         )

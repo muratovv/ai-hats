@@ -322,6 +322,26 @@ def build_preview_payload(
     )
 
 
+def compose_for_checks(project_dir: Path) -> CompositionResult:
+    """Fail-CLOSED compose for the ``checks:`` gate channel (HATS-1141).
+
+    The exact opposite of :func:`compose_for_carry` below, and deliberately so:
+    carry degrades to ``None`` because trouble there must never block a worktree,
+    while a gate that cannot compose must refuse — silence is HYP-078 (ADR-0019
+    D9 / R6). ``result.errors`` is left to the caller: this channel treats a
+    missing role as a refusal, other callers as a warning.
+    """  # comment-length: allow — the contrast with its neighbour IS the contract
+    from .materialize import compose_for_role
+
+    asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, None)
+    if not effective:
+        raise RuntimeError(
+            "no role is active in ai-hats.yaml, so no check binding can resolve — "
+            "set one (`ai-hats config set-role <role>`) or drop the declarations"
+        )
+    return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
+
+
 def compose_for_carry(project_dir: Path, role: str | None = None):
     """Fail-open compose for worktree-carry collection; a ``CompositionResult``
     or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts

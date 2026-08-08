@@ -26,10 +26,10 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
+from .check_snapshot import legacy_launch_notices
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
-    SessionPolicy,
     assemble_launch_command,
     consumed_session_id,
 )
@@ -457,19 +457,15 @@ class WrapRunner:
                 session_env = artifacts.extra_env
                 meta_prompt = artifacts.full_content or ""
             else:
-                # HATS-1207 R4: the legacy entry point predates SessionPolicy, so
-                # a non-default policy is dropped — loudly, not in silence.
+                # HATS-1207 R4 / HATS-1241: the legacy entry point predates both
+                # SessionPolicy and the check snapshot — loudly, not in silence.
                 session_args, session_env, meta_prompt = provider.build_session_prompt(
                     self.project_dir, result, session.session_id
                 )
-                if payload.policy != SessionPolicy():
-                    builder_notices.append(
-                        StartupNotice(
-                            "warn",
-                            f"provider '{provider_name}' predates the artifact builder: "
-                            f"session policy {payload.policy} is NOT applied to it.",
-                        )
-                    )
+                builder_notices.extend(
+                    StartupNotice("warn", text)
+                    for text in legacy_launch_notices(provider_name, result, payload.policy)
+                )
         session.init_audit(
             role=active_role,
             provider=provider_name,

@@ -150,6 +150,27 @@ def test_non_wt_exception_is_not_owned(capsys):
     assert handled is False
 
 
+# ----- wired kernel ----------------------------------------------------------
+
+
+def test_build_kernel_wires_the_consumer_check_runner(tmp_path):
+    """HATS-1141: the pack this provider passes is no longer empty, and the
+    runner reaches the kernel subscribed to the edges of ITS topology."""
+    from ai_hats_rack.dispatch import Phase
+
+    tasks_dir = tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks_dir.mkdir(parents=True)
+    root = RackRoot(project_dir=tmp_path, tasks_dir=tasks_dir, prefix="HATS")
+
+    kernel = CliKernelProvider().build_kernel(root, tmp_path)
+
+    on_done = [
+        s.name for s in kernel._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
+    ]
+    assert "checks" in on_done
+    assert on_done.index("checks") < on_done.index("worktree")
+
+
 # ----- post-create STATE.md refresh ------------------------------------------
 
 

@@ -86,6 +86,35 @@ def user_global_library_paths() -> list[Path]:
     return roots
 
 
+def worktree_local_libraries(project_dir: Path) -> Path | None:
+    """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
+
+    Inside a linked worktree ``project_dir`` hopped to MAIN (HATS-524), so the
+    git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
+    edits. Re-point only when cwd is in a worktree whose main checkout IS
+    ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
+    common main-checkout path (and under subprocess-mocking tests).
+
+    Lives beside :func:`build_library_paths` because every caller of that one
+    owes this: a caller that skips it searches a root set the composition does
+    not have, and a declaration it cannot see reads as absent (HATS-1141).
+    """  # comment-length: allow — the second paragraph IS the reason it moved here
+    cwd = Path.cwd()
+    try:
+        if cwd.resolve().is_relative_to(project_dir.resolve()):
+            return None
+    except (OSError, ValueError):
+        return None
+
+    from ai_hats_wt import WorktreeManager
+
+    main_root = WorktreeManager.main_worktree_root(cwd)
+    if main_root is None or main_root.resolve() != project_dir.resolve():
+        return None
+    wt_top = WorktreeManager.worktree_toplevel(cwd)
+    return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
+
+
 def build_library_paths(
     project_dir: Path,
     *,

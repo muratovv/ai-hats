@@ -40,7 +40,7 @@ from .paths import (
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
 )
-from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
+from .paths.constants import PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
 from .plugin_dir import (
     drop_legacy_claude_publish,
@@ -168,28 +168,9 @@ class Assembler:
         )
 
     def _worktree_local_libraries(self) -> Path | None:
-        """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
+        from ai_hats.library_paths import worktree_local_libraries
 
-        Inside a linked worktree ``_project_dir`` hopped to MAIN (HATS-524), so the
-        git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
-        edits. Re-point only when cwd is in a worktree whose main checkout IS
-        ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
-        common main-checkout path (and under subprocess-mocking tests).
-        """
-        cwd = Path.cwd()
-        try:
-            if cwd.resolve().is_relative_to(self.project_dir.resolve()):
-                return None
-        except (OSError, ValueError):
-            return None
-
-        from ai_hats_wt import WorktreeManager
-
-        main_root = WorktreeManager.main_worktree_root(cwd)
-        if main_root is None or main_root.resolve() != self.project_dir.resolve():
-            return None
-        wt_top = WorktreeManager.worktree_toplevel(cwd)
-        return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
+        return worktree_local_libraries(self.project_dir)
 
     def _cleanup_legacy_claude_publish(self) -> None:
         """Thin seam over the shared legacy sweeps (HATS-905, HATS-1172): the generic

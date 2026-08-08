@@ -157,11 +157,11 @@ overlay-append. Тела
   исполняются git'ом даже когда ai-hats на машине нет. Регистрируются
   git-оркестратором на install (S6).
 - **`[checks]`** — проверки на рёбрах FSM бэклога и wt-точках («нельзя
-  `review→done` с неразобранными ревью-заметками»), ADR-0019 [2]. Канал
-  наполовину живой: декларация, каталог точек и валидация —
-  *реализовано (HATS-1140)*; исполнение — *запланировано (HATS-1141)*,
-  снапшот `checks/` сессии — *запланировано (HATS-1241)*. До HATS-1141 биндинг проверяется на
-  композиции, но не срабатывает ни на одной точке.
+  `review→done` с неразобранными ревью-заметками»), ADR-0019 [2]. Декларация,
+  каталог точек и валидация — *реализовано (HATS-1140)*; исполнение на рёбрах
+  `edge:` — *реализовано (HATS-1141)*, снапшот `checks/` сессии —
+  *реализовано (HATS-1241)*. Точки `card:` и `wt:` в каталоге объявлены, но
+  пока не срабатывают — вызывающего у них нет (ADR-0019 [2] D3).
 
 Сводно — куда что раскладывается:
 
@@ -172,7 +172,7 @@ overlay-append. Тела
 | `[runtime_hooks]` | проводка хуков сессии (`settings.json` / `hooks.json`)     |
 | `[wt_hooks]`      | carry в состоянии worktree                                 |
 | `[git_hooks]`     | git-оркестратор (install-time)                             |
-| `[checks]`        | резолв из композиции; снапшот `checks/` сессии — HATS-1241 |
+| `[checks]`        | резолв из композиции; снапшот `checks/` сессии (HATS-1241) |
 
 Материализатор ничего не изобретает — он раскладывает эти артефакты по
 корням из S3.
@@ -372,7 +372,7 @@ S3–S9.
 | **проект, `<ai_hats_dir>`** | каноническая композиция + `user-rules/`, `library/{rules,skills}`, трекер, `sessions/runs/`                                                                                                                                                    | install-time `_refresh` и `set_role` (`write_canonical`); rack (трекер); observe (`runs/`)                             | проект                                                           | `library/hooks/` + `.manifest` — снесён (HATS-1480, done — миграция step 10; проводка отцеплена от неё в HATS-1268); `library/wt-hooks/` + `.manifest` — снесён (HATS-1269, done — миграция step 9); `tracker/lifecycle-hooks/` — снесён (HATS-1147, done); `sessions/runs/` ограничен GC (HATS-1339)                                                                                                                                                                   |
 | **корень проекта**          | диспетчеры `.githooks/<event>` + `core.hooksPath`; managed-строка `.gitignore`                                                                                                                                                                 | только `ai-hats init`                                                                                                  | переживает `self update` по содержимому                          | копии гейтов `<event>.d/` и `.ai-hats-manifest` **исчезли**; остался статический диспетчер с live-резолвом и fail-open, `core.hooksPath` абсолютный (HATS-1337, done). Других корневых файлов нет: проводка в корневом `.claude/settings.json` выметена, со сторожем (HATS-1336, done); `./GEMINI.md` — последняя живая корневая запись (`assembler.py:772-776`) — ретайр либо документированное gitignored-исключение, решается замером (HATS-1338) |
 | **`$HOME` (глобальный)**    | `~/.gemini/antigravity-cli/settings.json` (запись agy-диспетчера); `<cache_home>/<project-key>/` (дефолт `~/.cache/ai-hats/`)                                                                                                                  | сборка agy-сессии — **каждая**, не init (`agy/provider.py:206`, вопреки ADR-0018 §5.1); сборка сессии + recovery-свипы | пользователь / машина                                            | read-modify-write получает лок или CAS (HATS-1338); каждый класс кэша ограничен liveness-aware GC (HATS-1339)                                                                                                                                                                                                                                                                                                                                        |
-| **дерево сессии**           | `<cache_root>/sessions/<sid>/` — `prompt.md`; зеркало скиллов (`plugin/skills/` claude, `rules/.agents/skills/` agy, `skills/` cline); `settings.json` (claude) / `hooks.json` (agy); `checks/` (*запланировано — HATS-1241*, ADR-0019 [2] D9) | сборка сессии; единственный writer = сессия-владелец (id сессий уникальны на процесс, HATS-1248)                       | сессия; удаляется на выходе; сироты после падения — по TTL       | проводка хуков claude перенацеливается с `library/hooks/<skill>-<basename>` (`surfaces/claude/provider.py:442`) на `<sid>/plugin/skills/<skill>/<script>` (HATS-1268); wt-хуки резолвятся из директорий скиллов через carry (HATS-1269, done)                                                                                                                                                                                                        |
+| **дерево сессии**           | `<cache_root>/sessions/<sid>/` — `prompt.md`; зеркало скиллов (`plugin/skills/` claude, `rules/.agents/skills/` agy, `skills/` cline); `settings.json` (claude) / `hooks.json` (agy); `checks/` (*реализовано — HATS-1241*, ADR-0019 [2] D9) | сборка сессии; единственный writer = сессия-владелец (id сессий уникальны на процесс, HATS-1248)                       | сессия; удаляется на выходе; сироты после падения — по TTL       | проводка хуков claude перенацеливается с `library/hooks/<skill>-<basename>` (`surfaces/claude/provider.py:442`) на `<sid>/plugin/skills/<skill>/<script>` (HATS-1268); wt-хуки резолвятся из директорий скиллов через carry (HATS-1269, done)                                                                                                                                                                                                        |
 
 Материализованное состояние трогают четыре точки записи — и только они:
 
@@ -409,8 +409,8 @@ S3–S9.
    правка проводки mid-session не действует; проверка хук-изменения требует
    свежей сессии (замер HATS-1266 findings §4).
 6. **Работа**: spawn хуков — S5. Runtime-хуки порождает сама поверхность,
-   wt-хуки и checks (*запланировано (HATS-1141)*) — процесс ai-hats, git-хуки
-   — git через `.githooks/`.
+   wt-хуки и checks (*реализовано (HATS-1141)*) — процесс ai-hats, git-хуки —
+   git через `.githooks/`.
 7. **Выход**: `_cleanup_session_cache` сносит дерево сессии
    (`wrap_runner.py:703`); crash оставляет сироту до TTL-свипа на следующем
    старте (S9). Долговечная запись `sessions/runs/` остаётся — это журнал,
@@ -560,9 +560,9 @@ HATS-1341.* Механика честности: отсутствующая па
 <!-- Source: docs/assets/diagrams/hook-registration.d2 — render: docs/assets/diagrams/render.sh -->
 
 **Вызов в рантайме.** Ни один runtime-хук не исполняется процессом ai-hats
-— их порождает сама поверхность; сам ai-hats порождает wt-хуки, а с
-HATS-1141 — ещё и checks на точках `edge:`/`card:`; git-хуки порождает git,
-возможно вообще без ai-hats на машине:
+— их порождает сама поверхность; сам ai-hats порождает wt-хуки и checks на
+рёбрах `edge:` (HATS-1141); git-хуки порождает git, возможно вообще без
+ai-hats на машине:
 
 <p align="center">
   <img src="../assets/diagrams/hook-runtime.svg" alt="Вызов хуков в рантайме" width="560">
@@ -601,21 +601,20 @@ HATS-1141 — ещё и checks на точках `edge:`/`card:`; git-хуки �
   корнем своего скилла), примитив ADR-0020 D2. Шим не понадобился: шейп
   carry не менялся, поэтому worktree, созданные до перехода, резолвятся так
   же. Политика прежняя: `wt_in` warn-continue, `wt_out` fail-closed.
-- **checks — *запланировано (HATS-1141)*, канал без регистрации по
-  устройству:** биндинг живёт в трейте/роли и приезжает уже разрешённым в
-  `CompositionResult.checks` — абсолютный `script_path`, собранный из
-  `source_path` объявившего скилла, плюс `on_error` и имя места объявления
-  (*реализовано (HATS-1140)*). Поэтому точки записи у канала нет: писать
-  нечего, набор заморожен в композиции. Containment и здоровье скрипта
+- **checks — *реализовано (HATS-1141)* на рёбрах `edge:`, канал без
+  регистрации по устройству:** биндинг живёт в трейте/роли и приезжает уже
+  разрешённым в `CompositionResult.checks` — абсолютный `script_path`,
+  собранный из `source_path` объявившего скилла, плюс `on_error` и имя места
+  объявления (*реализовано (HATS-1140)*). Поэтому точки записи у канала нет:
+  писать нечего, набор заморожен в композиции. Containment и здоровье скрипта
   проверяются на композиции, а не на spawn (`check_points`: путь обязан
   остаться под директорией скилла, файл — существовать, быть непустым, нести
   шебанг и exec-бит). Корень исполнения: в сессии — снапшот
-  `<cache_root>/sessions/<sid>/checks/<skill>/` (*запланировано (HATS-1241)*),
+  `<cache_root>/sessions/<sid>/checks/<skill>/` (*реализовано (HATS-1241)*),
   вне сессии — живая компоновка активной роли; воркдерево корнем не бывает
   никогда (ADR-0019 [2] D9). Исполняет примитив ADR-0020 [3] D2, политику
   (`refuse`/`warn`) держит вызывающий, полный вывод — в
-  `tasks/<ID>/.checks/<event>.log`. *Сегодня:* ни одна точка не срабатывает —
-  `rack_consumers.consumer_subscribers()` возвращает пустой пак.
+  `tasks/<ID>/.checks/<event>.log`.
 - **git — уже целевая форма (HATS-1337):** статический по-событийный
   диспетчер, поставленный `init`-ом; набор гейтов резолвится на spawn через
   `python -m ai_hats.cli.githooks_hook` (интерпретатор берётся по цепочке
@@ -805,7 +804,7 @@ mtime непосредственных детей — mtime самого кат�
   категории × режимы, clean-root инвариант, референсная реализация claude,
   agy global dispatcher (с поправками HATS-1465).
 - [2] `docs/adr/0019-declarative-lifecycle-extension-model.md` — `checks:`-канал
-  и его снапшот-корень (D9, *запланировано (HATS-1241)*) — четвёртый класс
+  и его снапшот-корень (D9, *реализовано (HATS-1241)*) — четвёртый класс
   содержимого дерева сессии.
 - [3] `docs/adr/0020-hook-execution-and-materialization-substrate.md` —
   hook-подложка: таксономия `in_process`/`detached` (D1), примитив
