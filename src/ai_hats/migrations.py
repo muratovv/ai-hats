@@ -295,7 +295,6 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
     # --- Pass 1: legacy partition ---
     legacy = a.project_dir / AGENT_DIR / "hooks"
     if legacy.is_dir():
-        managed_dst.mkdir(parents=True, exist_ok=True)
         try:
             entries = list(legacy.iterdir())
         except OSError:
@@ -303,17 +302,17 @@ def migrate_layout_v4_hooks_partition(a: "Assembler") -> None:
 
         for entry in entries:
             if entry.name in whitelist:
-                target = managed_dst / entry.name
+                _safe_discard(entry, reason="hooks-partition-retired", project_dir=a.project_dir)
             else:
                 user_dst.mkdir(parents=True, exist_ok=True)
                 target = user_dst / entry.name
-            if target.exists():
-                a._safe_discard_with_warn(
-                    entry,
-                    reason="hooks-partition-collision",
-                )
-                continue
-            shutil.move(str(entry), str(target))
+                if target.exists():
+                    a._safe_discard_with_warn(
+                        entry,
+                        reason="hooks-partition-collision",
+                    )
+                    continue
+                shutil.move(str(entry), str(target))
 
         try:
             if not any(legacy.iterdir()):
@@ -443,6 +442,32 @@ def _m_drop_retired_wt_hooks(a: "Assembler") -> None:
         )
 
 
+def _m_drop_retired_runtime_hooks(a: "Assembler") -> None:
+    """Discard the retired ``library/hooks/`` tree (HATS-1480).
+
+    Runtime hooks live in session cache (HATS-1268), so nothing writes or
+    sweeps this dir any more and an upgraded project would keep a managed tree
+    with no owner. Only what the manifest claimed is removed — an unmanaged file
+    beside it is somebody's, and the dir goes only once it is empty.
+    """
+    from .sweeper import read_marker_names
+
+    retired = _lib_dir(a.project_dir) / "hooks"
+    manifest = retired / ".manifest"
+    if not retired.is_dir():
+        return
+    for name in sorted(read_marker_names(manifest)):
+        _safe_discard(retired / name, reason="retire-runtime-hooks", project_dir=a.project_dir)
+    _safe_discard(manifest, reason="retire-runtime-hooks-manifest", project_dir=a.project_dir)
+    try:
+        retired.rmdir()  # safe-delete: ok empty-dir
+    except OSError:
+        logger.warning(
+            "hooks retirement: %s still holds files ai-hats never managed — left in place",
+            retired,
+        )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(
         step=1,
@@ -488,6 +513,11 @@ MIGRATIONS: list[Migration] = [
         step=9,
         run=_m_drop_retired_wt_hooks,
         label="drop retired library/wt-hooks HATS-1269",
+    ),
+    Migration(
+        step=10,
+        run=_m_drop_retired_runtime_hooks,
+        label="drop retired library/hooks HATS-1480",
     ),
 ]
 

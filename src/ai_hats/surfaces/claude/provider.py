@@ -352,9 +352,7 @@ class ClaudeProvider(Provider):
 
     # settings.json root key holding the hooks map (also the per-entry command list).
     _SETTINGS_HOOKS_KEY = "hooks"
-    # Path fragment marking a command as an ai-hats project hook — short segment
-    # so it also matches a bare-relative or absolute-path leak (HATS-961).
-    _LEAKED_PROJECT_HOOK_MARKER = "ai-hats/library/hooks/"
+    _LEAKED_PROJECT_HOOK_MARKERS = ("plugin/skills/", "ai-hats/library/hooks/")
 
     def ensure_runtime_hooks(
         self, project_dir: Path, result: CompositionResult | None = None, **kwargs
@@ -549,7 +547,7 @@ class ClaudeProvider(Provider):
                     if not isinstance(hook, dict):
                         continue
                     command = str(hook.get("command", ""))
-                    if self._LEAKED_PROJECT_HOOK_MARKER in command:
+                    if any(m in command for m in self._LEAKED_PROJECT_HOOK_MARKERS):
                         leaked.append(command)
         return leaked
 

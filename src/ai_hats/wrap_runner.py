@@ -67,47 +67,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ----- HATS-833 session-start heal-note formatting -----
-
-# No "git" entry since HATS-1337: git hooks are not a healed surface —
-# the dispatcher carries no gate set, and the project is written at
-# install time only.
-_SURFACE_LABEL = {"runtime": "runtime-hook", "wt": "wt-hook"}
-_KIND_PHRASE = {
-    "missing": "materialized (was missing)",
-    "content": "updated (content drift)",
-    "wiring": "re-wired",
-    "stale": "swept (no longer composed)",
-}
-
-
-def _hook_display_name(surface: str, name: str) -> str:
-    """Drop the script extension for runtime/wt names (git ``name`` is the bare
-    event)."""
-    if surface in ("runtime", "wt") and "." in name:
-        return name.rsplit(".", 1)[0]
-    return name
-
-
-def _format_hook_heal(changes) -> str:
-    """One-glance heal note: one clause per changed hook, kinds on the same hook
-    folded (``content`` + ``wiring`` → ``updated (content drift) + re-wired``)."""
-    grouped: dict[tuple[str, str], list[str]] = {}
-    order: list[tuple[str, str]] = []
-    for c in changes:
-        key = (c.surface, _hook_display_name(c.surface, c.name))
-        if key not in grouped:
-            grouped[key] = []
-            order.append(key)
-        if c.kind not in grouped[key]:
-            grouped[key].append(c.kind)
-    clauses = []
-    for surface, dname in order:
-        phrases = " + ".join(_KIND_PHRASE.get(k, k) for k in grouped[(surface, dname)])
-        clauses.append(f"{_SURFACE_LABEL.get(surface, surface)} {dname} {phrases}")
-    return "managed hooks healed at start — " + "; ".join(clauses)
-
-
 _COLLISION_HINTS = {
     "identical": "exact duplicate of the session plugin — safe to remove",
     "differs": "content differs from the ai-hats version — review: remove or rename",
@@ -142,24 +101,6 @@ def _format_mirror_heal(removed: list[str], trash_root) -> str:
     return (
         f"removed stale ai-hats skills mirror from .claude/skills "
         f"({len(removed)} skill(s): {listed}){where}"
-    )
-
-
-def _format_version_skew(changes) -> str:
-    """Warn note when drift exists but the binary is behind upstream (req-7:
-    name the unhealed drift rather than skip silently)."""
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for c in changes:
-        label = f"{c.surface} {_hook_display_name(c.surface, c.name)}"
-        if label not in seen:
-            seen.add(label)
-            uniq.append(label)
-    listed = ", ".join(uniq[:6])
-    more = "" if len(uniq) <= 6 else f" (+{len(uniq) - 6} more)"
-    return (
-        "managed hooks drifted but not healed — installed ai-hats is behind "
-        "upstream. Run 'ai-hats self update'. Stale: " + listed + more + "."
     )
 
 
@@ -226,39 +167,9 @@ class WrapRunner:
     def _resync_managed_hooks(
         self, session: Session | None = None, result=None
     ) -> list[StartupNotice]:
-        """Heal drift of ALL managed-hook surfaces at session start (HATS-833,
-        generalizing HATS-593 layer B from git-only to runtime + wt + git).
-
-        ``HooksManager.sync_hooks()`` is idempotent, drift-gated, skips a role-less
-        project, and refuses to heal from a stale binary. Fail-open: a best-effort
-        drift-heal must never block session start. The sole trigger is here —
-        there is no ``ai-hats self sync-hooks`` command and no git-event hook
-        anymore (HATS-833 Q2).
-
-        Returns startup notices to surface (HATS-833 req-5): a single NOTE naming
-        each healed hook + change kind on the heal path; a WARN on failure or when
-        drift was detected but left unhealed under version-skew. Empty list on a
-        clean in-sync start (silent). ``result`` reuses the session's composition
-        to avoid a second compose.
-        """
-        try:
-            res = self.hooks.sync_hooks(result)
-            if session is not None:
-                session.log_sys(f"managed-hook resync: {res.status}")
-            notices: list[StartupNotice] = []
-            if res.status == "synced" and res.changes:
-                notices.append(StartupNotice("note", _format_hook_heal(res.changes)))
-            if res.status == "version-skew":
-                notices.append(StartupNotice("warn", _format_version_skew(res.changes)))
-            # Genuine hooks warnings raised while healing (HATS-969) — through the hold.
-            notices.extend(StartupNotice("warn", w) for w in res.warnings)
-            return notices
-        except Exception as exc:
-            logger.warning("managed-hook resync at session start failed", exc_info=True)
-            summary = f"managed-hook resync failed: {type(exc).__name__}: {exc}"
-            if session is not None:
-                session.log_sys(f"managed-hook resync FAILED — {summary}")
-            return [StartupNotice("warn", summary)]
+        """Retired per HATS-1480 / D5: all managed hook surfaces are materialized
+        at init/session-build time; no session-start drift net remains."""
+        return []
 
     def _payload_startup_notices(self) -> list[StartupNotice]:
         """Hooks warnings from the first-run compose seam (set_role materialize),

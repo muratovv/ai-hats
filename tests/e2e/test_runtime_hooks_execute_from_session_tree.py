@@ -62,9 +62,10 @@ def hooked_project(shared_launcher, tmp_path_factory):
 
 @pytest.mark.integration
 def test_every_wired_command_resolves_inside_the_session_tree(hooked_project):
-    """Fail-under-revert: point _desired_runtime_entries back at
-    ``_lib_hooks_dir`` / ``managed_runtime_hook_filename`` and every path below
-    lands in ``.agent/ai-hats/library/hooks/`` instead."""
+    """Fail-under-revert: point _desired_runtime_entries back at a shared
+    managed directory and every path below leaves the session tree. The old
+    negative form (``"library/hooks" not in command``) became untestable when
+    HATS-1480 deleted that directory, so the assertion is positive now."""
     project, _env, settings = hooked_project
     commands = pretooluse_hooks(settings, "Bash")
 
@@ -79,7 +80,9 @@ def test_every_wired_command_resolves_inside_the_session_tree(hooked_project):
         assert script.is_relative_to(session_root), (
             f"command escapes the session tree: {command} (root {session_root})"
         )
-        assert "library/hooks" not in command, f"still wired to the flat copy: {command}"
+        assert "plugin/skills" in command, (
+            f"wired command is not in the session skill mirror: {command}"
+        )
 
 
 @pytest.mark.integration
