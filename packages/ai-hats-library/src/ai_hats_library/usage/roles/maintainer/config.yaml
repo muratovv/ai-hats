@@ -25,10 +25,13 @@ composition:
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
   # HATS-1137 — the first live consumer of the `checks:` channel. Fires in the
-  # per-task lock at priority 15, so a refusal lands before ownership (20) and
-  # before the worktree merge (30): the card stays in `review` and no merge
-  # commit appears. The check itself is only a marker lookup; the suite behind it
-  # runs out of band via `make done-gate` (see the skill's SKILL.md).
+  # per-task lock at priority 15, ahead of what this edge actually reaches: the
+  # worktree teardown-merge at 30 and the ownership release at 40. So a refusal
+  # leaves the card in `review` with no merge commit. Not the ownership claim at
+  # 20 — that subscribes only to edges INTO execute (`rack_wiring.py` uses
+  # `_keys_into(topology, "execute")`), so it never runs on this edge. The check
+  # itself is only a marker lookup; the suite runs out of band via
+  # `make done-gate` (see the skill's SKILL.md).
   #
   # Role-scoped on purpose (ADR-0019 D7): the gate demands a `done-gate` stage in
   # scripts/ci-local.sh and refuses a project that has none, so it belongs to a
