@@ -11,6 +11,7 @@ D4), which is per-binding, not the worktree channel's uniform fail-closed.
 
 from __future__ import annotations
 
+import string
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -21,7 +22,7 @@ from ai_hats_rack.kernel import LOCK_TIMEOUT
 
 from .check_resolve import CheckResolutionError, resolve_edge_checks, session_id
 from .hook_exec import HookRun, HookVerdict, run_hook
-from .libraries.models import CheckBindingError
+from .libraries.models import CheckBindingError, resolve_namespace
 
 #: Reserved "hook" slot of the in-lock ladder (``rack_wiring.build_rack_kernel``)
 #: — after the plan-gate, before the ownership claim, so a refusal leaves neither
@@ -76,7 +77,7 @@ class CheckRunnerExtension:
                 project_dir=self.project_dir,
                 force=ctx.force,
                 task_id=ctx.task.id,
-                log_path=self._log_path(ctx.task.id, ctx.event.key),
+                log_path=self._log_path(ctx.task.id, ctx.event.key, check),
             )
             if run.ok:
                 continue
@@ -100,10 +101,46 @@ class CheckRunnerExtension:
             raise AbortOperation(f"checks: {exc}") from exc
         return tuple(check for check in resolved if check.point == event_key)
 
-    def _log_path(self, task_id: str, event_key: str) -> Path:
+    def _log_path(self, task_id: str, event_key: str, check: ResolvedCheck) -> Path:
         """R3.4. The dot-component keeps the log out of the document registry, so
-        a check's output never gets pinned into ``rack context``."""
-        return self._tasks_dir / task_id / ".checks" / f"{event_key.replace(':', '-')}.log"
+        a check's output never gets pinned into ``rack context``.
+
+        One file per (task, edge, binding). ``run_hook`` truncates the log it is
+        handed, so a name built from the edge alone let the second binding on an
+        edge wipe the first one's file — and ``_note_truncation`` went on
+        pointing the first one's reason at it (HATS-1137). The discriminator is
+        the dedup identity ``check_points.resolve_checks`` keys on, so a retry
+        of the same edge still lands on that binding's own previous log.
+        """
+        binding = f"{_escaped(resolve_namespace(check.skill))}~{_escaped(check.script)}"
+        name = f"{event_key.replace(':', '-')}~{binding}.log"
+        return self._tasks_dir / task_id / ".checks" / name
+
+
+#: Characters a binding component keeps verbatim in a log name.
+_LITERAL = frozenset(string.ascii_letters + string.digits + "._-")
+
+
+def _escaped(part: str) -> str:
+    """One binding component as a filename-safe token, REVERSIBLY.
+
+    A skill name carries a namespace separator and a script is a relative path,
+    so both must lose their slashes; replacing them would collapse ``a/b.sh``
+    and ``a-b.sh`` onto one name, which is the truncation defect again. ``/``
+    therefore becomes ``+`` (readable) and every other non-literal byte becomes
+    ``%XX`` — including ``+`` and ``%`` themselves, so the mapping decodes and
+    two different components can never produce the same token. ``~`` is
+    non-literal too, which is what makes it a safe joiner.
+    """  # comment-length: allow — why it escapes rather than replaces is the fix
+    out = []
+    for char in part:
+        if char in _LITERAL:
+            out.append(char)
+        elif char == "/":
+            out.append("+")
+        else:
+            out.extend(f"%{byte:02X}" for byte in char.encode())
+    return "".join(out)
 
 
 def _binding(check: ResolvedCheck) -> str:

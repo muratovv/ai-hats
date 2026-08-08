@@ -24,6 +24,23 @@ composition:
     # first commit clears the smoke gate without hand-provisioning. Pure
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
+  # HATS-1137 — the first live consumer of the `checks:` channel. Fires in the
+  # per-task lock at priority 15, ahead of what this edge actually reaches: the
+  # worktree teardown-merge at 30 and the ownership release at 40. So a refusal
+  # leaves the card in `review` with no merge commit. Not the ownership claim at
+  # 20 — that subscribes only to edges INTO execute (`rack_wiring.py` uses
+  # `_keys_into(topology, "execute")`), so it never runs on this edge. The check
+  # itself is only a marker lookup; the suite runs out of band via
+  # `make done-gate` (see the skill's SKILL.md).
+  #
+  # Role-scoped on purpose (ADR-0019 D7): the gate demands a `done-gate` stage in
+  # scripts/ci-local.sh and refuses a project that has none, so it belongs to a
+  # role only this codebase wears — never to a base trait.
+  checks:
+    - skill: maintainer-quality-gate
+      script: hooks/done-gate.sh
+      on: [edge:review--done]
+      on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,

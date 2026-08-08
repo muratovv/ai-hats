@@ -231,11 +231,11 @@ def _reraise(exc: OSError) -> None:
     raise exc
 
 
-def _compose_role(project_dir: Path) -> CompositionResult:
+def _compose_role(project_dir: Path) -> CompositionResult | None:
     """The active role's live composition — the binding list in BOTH modes.
 
     Through the seam: the composition layer is integrator-only (HATS-865), and
-    this module is a consumer of it, not a member.
+    this module is a consumer of it, not a member. ``None`` when no role is set.
     """
     from .composition_seam import compose_for_checks
 
@@ -252,6 +252,12 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
     only that it cannot tell — and this channel refuses on that, deliberately
     stricter than ``load_root``, which defaults a broken config through for
     read-only verbs.
+
+    The probe answers "is a declaration in reach", not "does THIS project use
+    one", and once a builtin trait or role ships a binding it answers ``True``
+    everywhere. So the no-role composition is the second ``None``, and it has to
+    be: otherwise a builtin binding would refuse every transition of every
+    role-less project on that build (HATS-1137).
     """  # comment-length: allow — the asymmetry with the rest of rack is a decision
     try:
         declared = declares_checks(project_dir)
@@ -267,6 +273,8 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
         raise CheckResolutionError(
             f"checks are declared but the role could not be composed ({type(exc).__name__}): {exc}"
         ) from exc
+    if result is None:
+        return None
     if result.errors:
         raise CheckResolutionError(
             f"checks are declared but composing role {result.name!r} reported "

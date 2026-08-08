@@ -322,23 +322,25 @@ def build_preview_payload(
     )
 
 
-def compose_for_checks(project_dir: Path) -> CompositionResult:
+def compose_for_checks(project_dir: Path) -> CompositionResult | None:
     """Fail-CLOSED compose for the ``checks:`` gate channel (HATS-1141).
 
     The exact opposite of :func:`compose_for_carry` below, and deliberately so:
     carry degrades to ``None`` because trouble there must never block a worktree,
     while a gate that cannot compose must refuse — silence is HYP-078 (ADR-0019
-    D9 / R6). ``result.errors`` is left to the caller: this channel treats a
-    missing role as a refusal, other callers as a warning.
+    D9 / R6). ``result.errors`` is left to the caller.
+
+    ``None`` for a project with **no active role** is not an exception to that.
+    Bindings are collected per-role over a ``CompositionResult`` (ADR-0019 D7),
+    so with no role there is no composition and therefore no binding — refusing
+    would be refusing on the absence of the very thing that would carry a gate.
+    A role that IS set but does not resolve still refuses, via ``result.errors``.
     """  # comment-length: allow — the contrast with its neighbour IS the contract
     from .materialize import compose_for_role
 
     asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, None)
     if not effective:
-        raise RuntimeError(
-            "no role is active in ai-hats.yaml, so no check binding can resolve — "
-            "set one (`ai-hats config set-role <role>`) or drop the declarations"
-        )
+        return None
     return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
 
 
