@@ -11,15 +11,10 @@ from pathlib import Path
 import pytest
 
 from ai_hats.assembler import Assembler
-from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE
-from ai_hats.hooks_manager import HookChange
+from ai_hats.constants import HOOK_POST_TOOL_USE
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import (
-    hooks_dir,
-    managed_runtime_hook_filename,
-    PROJECT_CONFIG,
-)
+from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 
@@ -53,53 +48,6 @@ def _skill_runtime(base: Path, name: str, event: str, matcher: str, script: str)
 
 
 # ----- runtime-hook BYTES drift -----
-
-
-class TestRuntimeBytesDrift:
-    def test_in_sync_after_materialize(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
-        res = _result([s])
-        assembler.hooks.materialize_runtime_hooks(res)
-        assert assembler.hooks._runtime_bytes_changes(res) == []
-
-    def test_missing_script_reported(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
-        res = _result([s])
-        assembler.hooks.materialize_runtime_hooks(res)
-        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename("sa", "h/a.sh")
-        dest.unlink()
-        changes = assembler.hooks._runtime_bytes_changes(res)
-        assert (dest.name, "missing") in changes
-
-    def test_content_drift_reported(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
-        res = _result([s])
-        assembler.hooks.materialize_runtime_hooks(res)
-        dest = hooks_dir(assembler.project_dir) / managed_runtime_hook_filename("sa", "h/a.sh")
-        dest.write_text("#!/usr/bin/env bash\necho drifted\n")
-        changes = assembler.hooks._runtime_bytes_changes(res)
-        assert (dest.name, "content") in changes
-
-    def test_stale_reported_when_skill_leaves(self, assembler, tmp_path):
-        s = _skill_runtime(tmp_path / "sk", "sa", HOOK_PRE_TOOL_USE, "Bash", "h/a.sh")
-        assembler.hooks.materialize_runtime_hooks(_result([s]))
-        # Skill gone from composition, file+manifest still list it → stale.
-        name = managed_runtime_hook_filename("sa", "h/a.sh")
-        changes = assembler.hooks._runtime_bytes_changes(_result([]))
-        assert (name, "stale") in changes
-
-    def test_package_guard_helper_tracked(self, assembler, tmp_path):
-        # The classifier helper is materialized but NOT wired — the bytes
-        # detector must still cover it (review pt-2). Delete it → missing.
-        res = _result([])
-        assembler.hooks.materialize_runtime_hooks(res)
-        helper = hooks_dir(assembler.project_dir) / "shared_state_classifier.sh"
-        if helper.exists():  # only if the package ships it
-            helper.unlink()
-            assert (
-                "shared_state_classifier.sh",
-                "missing",
-            ) in assembler.hooks._runtime_bytes_changes(res)
 
 
 # ----- runtime-hook WIRING drift (retired with root .claude/settings.json) -----
@@ -149,69 +97,3 @@ class TestRuntimeWiringRetired:
 
 
 # ----- sync_hooks orchestration (drift-gate / version-skew / per-surface heal) -----
-
-
-class TestSyncHooksOrchestration:
-    def _role_project(self, tmp_path: Path) -> Assembler:
-        project = tmp_path / "proj"
-        project.mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-        ProjectConfig(provider="claude", active_role="r", default_role="r").save(
-            project / PROJECT_CONFIG
-        )
-        return Assembler(project_dir=project)
-
-    def _wire(self, monkeypatch, asm, *, runtime, behind=False):
-        """Only the runtime arm is left. No git arm (HATS-1337): the dispatcher
-        is static and carries no gate set to drift from. No wt arm (HATS-1269):
-        the scripts spawn in place, so there is no copy to drift."""
-        calls: list[str] = []
-        monkeypatch.setattr(asm.hooks, "_runtime_hooks_changes", lambda result, provider: runtime)
-        monkeypatch.setattr(asm.hooks, "binary_behind_source", lambda: behind)
-        monkeypatch.setattr(
-            asm.hooks, "materialize_runtime_hooks", lambda result: calls.append("rt_bytes")
-        )
-        monkeypatch.setattr(asm.hooks, "install_git_hooks", lambda result: calls.append("git"))
-        monkeypatch.setattr(
-            # HATS-1130: ec85f43d relocated ClaudeProvider into surfaces/.
-            "ai_hats.surfaces.claude.provider.ClaudeProvider.ensure_runtime_hooks",
-            lambda self, p, r: calls.append("rt_wire"),
-        )
-        return calls
-
-    def test_in_sync_is_silent_noop(self, tmp_path, monkeypatch):
-        asm = self._role_project(tmp_path)
-        calls = self._wire(monkeypatch, asm, runtime=[])
-        res = asm.hooks.sync_hooks(result=_result([]))
-        assert res.status == "in-sync"
-        assert res.changes == ()
-        assert calls == []
-
-    def test_skipped_when_no_role(self, assembler):
-        # plain project: no active/default role → skipped, no compose.
-        assert assembler.hooks.sync_hooks(result=_result([])).status == "skipped"
-
-    def test_heals_only_drifted_surface(self, tmp_path, monkeypatch):
-        asm = self._role_project(tmp_path)
-        calls = self._wire(
-            monkeypatch,
-            asm,
-            runtime=[HookChange("runtime", "x", "content")],
-        )
-        res = asm.hooks.sync_hooks(result=_result([]))
-        assert res.status == "synced"
-        assert HookChange("runtime", "x", "content") in res.changes
-        assert set(calls) == {"rt_wire", "rt_bytes"}  # git/wt NOT healed
-
-    def test_version_skew_refuses_but_names_drift(self, tmp_path, monkeypatch):
-        asm = self._role_project(tmp_path)
-        calls = self._wire(
-            monkeypatch,
-            asm,
-            runtime=[HookChange("runtime", "x", "content")],
-            behind=True,
-        )
-        res = asm.hooks.sync_hooks(result=_result([]))
-        assert res.status == "version-skew"
-        assert HookChange("runtime", "x", "content") in res.changes  # named, not silent
-        assert calls == []  # nothing healed from a stale binary

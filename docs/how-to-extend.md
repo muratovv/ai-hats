@@ -255,13 +255,10 @@ skill is the live example: it declares `requires.cli: ai-hats-rack` and drives
 the `rack` CLI, but lives in the library content layer — it is *not*
 bundled inside the `ai-hats-rack` engine package.
 
-On `self init` the assembler copies each script to
-`<ai_hats_dir>/library/hooks/` under a collision-free `<skill>-<basename>` name
-(basename = the script's filename) and
-`ClaudeProvider` wires one managed entry per `(event, matcher)` into
-`.claude/settings.json`, tagged `ai-hats:<skill>:<event>:<matcher>`. Managed
-entries are refreshed in place and swept when the skill leaves the role;
-user-authored entries are never touched.
+On session creation, the assembler resolves skill scripts into the session tree
+(`<cache>/sessions/<sid>/plugin/skills/<skill>/hooks/`) and
+`ClaudeProvider` wires managed entries into the session's
+`settings.json` pointing directly to the session tree copy.
 
 Two behaviours worth knowing:
 
@@ -273,8 +270,10 @@ Two behaviours worth knowing:
     `(event, matcher)` is supported, so a duplicate would collapse onto a
     single hook entry and silently drop one;
   - two *distinct* scripts whose filenames share a basename — they would
-    collide on the materialized `<skill>-<basename>` name (reusing the *same*
-    script across events is fine).
+    collide on the materialized filename (reusing the *same* script across
+    events is fine). The flattened `<skill>-<basename>` form that made this
+    a collision is retired (HATS-1480); the validation stays because the
+    declaration is still keyed by basename.
 
   A silently dropped runtime hook could be a safety hole (a guard that never
   fires), so these are hard errors — unlike `git_hooks`, which skips unknown
@@ -294,12 +293,13 @@ skill is the `PostToolUse` counterpart — on each `.py` edit it runs `ruff
 --select S` and forwards any security findings via `additionalContext`.
 
 > **Write-path discipline — never derive a WRITE path from `__file__` depth.**
-> Materialization copies the script to
-> `<ai_hats_dir>/library/hooks/<skill>-<basename>`, so at runtime its `__file__`
-> no longer sits beside the skill source. A hook that builds a WRITE target by
-> walking up from `__file__` (e.g. `Path(__file__).parent.parent/…`) therefore
-> writes relative to *wherever the copy lives* — and when the hook is invoked
-> from a non-materialized location (the skill's dev repo, a smoke test) that
+> Since HATS-1268/1480 the session mirror copies the *whole* skill directory, so
+> `__file__` does sit beside its siblings — but it sits inside a per-session tree
+> that dies with the session, and inside the skill's own source tree when the
+> hook is run directly. A hook that builds a WRITE target by walking up from
+> `__file__` (e.g. `Path(__file__).parent.parent/…`) therefore writes relative to
+> *whichever root it happens to be running from* — and when it is invoked from a
+> non-materialized location (the skill's dev repo, a smoke test) that
 > path can land **inside the committed source tree** (the secret-guard wrote a
 > telemetry `.log` into `skills/…/user-hooks/`, HATS-819). Instead, take the
 > writable anchor from **`$AI_HATS_DIR`** — the engine exports it into the
@@ -501,6 +501,7 @@ validation upfront):
 
 ```python
 from ai_hats.composition_seam import build_composition_payload
+
 payload = build_composition_payload(project_dir)
 PipelineHarness("smoke", project_dir).run({"composition": payload})
 ```

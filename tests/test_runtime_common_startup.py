@@ -1,13 +1,11 @@
 """HATS-833 — the startup-notice channel: structured note/warn rendering and the
 session-start heal-note formatting (folded kinds, version-skew warn)."""
 
-from ai_hats.hooks_manager import HookChange
 from ai_hats.runtime_common import (
     StartupNotice,
     _print_startup_notices,
     _print_startup_warnings,
 )
-from ai_hats.wrap_runner import _format_hook_heal, _format_version_skew
 
 
 class TestPrintStartupNotices:
@@ -125,41 +123,3 @@ class TestDiagnosticsPersistence:
         diag = json.loads((s_dir / "diagnostics.json").read_text())
         assert diag["startup"]["notices"][0]["level"] == "fatal"
         assert "role foo not found" in diag["startup"]["notices"][0]["text"]
-
-
-class TestFormatHookHeal:
-    def test_groups_by_surface_and_names_kinds(self):
-        text = _format_hook_heal(
-            [
-                HookChange("runtime", "safety-guard-safety_gate.py", "missing"),
-                HookChange("runtime", "markdown-format-post_md_format.py", "content"),
-            ]
-        )
-        assert text.startswith("managed hooks healed at start — ")
-        # HATS-1337 retired the git surface, HATS-1269 the wt one — runtime is
-        # the only healed surface left, so two of them carry the grouping.
-        assert "runtime-hook safety-guard-safety_gate materialized (was missing)" in text
-        assert "runtime-hook markdown-format-post_md_format updated (content drift)" in text
-
-    def test_folds_multiple_kinds_on_one_hook(self):
-        text = _format_hook_heal(
-            [
-                HookChange("runtime", "markdown-format-post_md_format.py", "content"),
-                HookChange("runtime", "markdown-format-post_md_format.py", "wiring"),
-            ]
-        )
-        # one clause, both kinds folded; extension stripped for display
-        assert (
-            "runtime-hook markdown-format-post_md_format updated (content drift) + re-wired" in text
-        )
-        assert text.count("markdown-format-post_md_format") == 1
-
-
-class TestFormatVersionSkew:
-    def test_names_unhealed_drift_and_points_at_update(self):
-        text = _format_version_skew(
-            [HookChange("runtime", "markdown-format-post_md_format.py", "content")]
-        )
-        assert "behind upstream" in text
-        assert "ai-hats self update" in text
-        assert "runtime markdown-format-post_md_format" in text
