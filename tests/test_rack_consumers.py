@@ -202,8 +202,21 @@ def test_a_project_with_no_active_role_takes_its_edges_untouched(tmp_path):
 
 def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
     """The other side of the line above: absence of a role is not a defect,
-    a named role that does not compose is."""
+    a named role that does not compose is.
+
+    The declaration is project-local on purpose. Reading it out of the ambient
+    library made this test pass only while some shipped role happened to carry a
+    ``checks:`` row — HATS-1538 withdrew that row and the test went red without
+    the behaviour changing at all.
+    """
     (tmp_path / "ai-hats.yaml").write_text("schema_version: 1\nactive_role: ghost\n")
+    declaring = tmp_path / "libraries" / "roles" / "declares"
+    declaring.mkdir(parents=True)
+    (declaring / "config.yaml").write_text(
+        "name: declares\ncomposition:\n  checks:\n"
+        "    - {skill: s, script: hooks/x.sh, on: ['edge:review--done']}\n"
+    )
+    assert check_resolve.declares_checks(tmp_path) is True, "precondition: probe must see it"
     runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
 
     with pytest.raises(AbortOperation) as exc_info:
