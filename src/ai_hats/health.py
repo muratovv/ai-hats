@@ -16,8 +16,7 @@ from typing import Iterator
 from .constants import USER_RULES_SUBDIR
 from .migration_assert import find_broken_hook_refs
 from .migration_backup import latest_snapshot
-from .paths import ai_hats_dir, hooks_dir, library_dir, tracker_dir
-from .sweeper import read_marker_names
+from .paths import ai_hats_dir, library_dir, tracker_dir
 
 
 __all__ = ["Layer", "Status", "LayerReport", "triage", "worst_status", "check_venv_consistency"]
@@ -99,30 +98,6 @@ def _data_reports(project_dir: Path) -> list[LayerReport]:
     return [r if r.status is Status.OK else replace(r, remediation=fix) for r in rows]
 
 
-def _manifest_report(name: str, directory: Path, project_dir: Path) -> LayerReport:
-    """A managed hook dir is complete iff every name its ``.manifest`` claims is on disk.
-
-    Presence of the dir proves nothing: the HATS-595 incident was a manifest still
-    listing a wt_out script whose file had gone, which merges consume by name. The
-    runtime dir always carries the built-in guards, so its absence is a defect.
-    """
-    shown = _rel(directory, project_dir)
-    if not directory.is_dir():
-        return LayerReport(Layer.MANAGED, name, Status.BROKEN, f"missing: {shown}", _INIT)
-    declared = read_marker_names(directory / ".manifest")
-    missing = sorted(n for n in declared if not (directory / n).is_file())
-    if not missing:
-        detail = f"{shown} ({len(declared)} managed)" if declared else shown
-        return LayerReport(Layer.MANAGED, name, Status.OK, detail)
-    return LayerReport(
-        Layer.MANAGED,
-        name,
-        Status.BROKEN,
-        f"declared but missing: {', '.join(missing)}",
-        _INIT,
-    )
-
-
 def _hook_refs_report(project_dir: Path) -> LayerReport:
     broken = find_broken_hook_refs(project_dir)
     if not broken:
@@ -134,7 +109,6 @@ def _hook_refs_report(project_dir: Path) -> LayerReport:
 def _managed_reports(project_dir: Path) -> list[LayerReport]:
     return [
         _presence(Layer.MANAGED, "library", library_dir(project_dir), _INIT, project_dir),
-        _manifest_report("library/hooks", hooks_dir(project_dir), project_dir),
         _hook_refs_report(project_dir),
     ]
 

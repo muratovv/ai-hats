@@ -12,6 +12,7 @@ import pytest
 
 from ai_hats.assembler import Assembler
 from ai_hats.constants import HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE
+from ai_hats.hook_collection import collect_runtime_hooks
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from ai_hats.models import RuntimeHook
 
@@ -68,7 +69,7 @@ def _result(skills: list[ResolvedComponent]) -> CompositionResult:
 
 
 class TestCollectSkillRuntimeHooks:
-    def test_collects_pre_and_post_from_multiple_skills(self, assembler, tmp_path):
+    def test_collects_pre_and_post_from_multiple_skills(self, tmp_path):
         s1 = _make_skill_with_runtime_hooks(
             tmp_path / "skills",
             "skill-a",
@@ -82,7 +83,7 @@ class TestCollectSkillRuntimeHooks:
                 HOOK_POST_TOOL_USE: [("Write", "hooks/c.sh")],
             },
         )
-        collected = assembler.hooks._collect_skill_runtime_hooks(_result([s1, s2]))
+        collected = collect_runtime_hooks(_result([s1, s2]))
 
         assert set(collected) == {HOOK_PRE_TOOL_USE, HOOK_POST_TOOL_USE}
         pre = collected[HOOK_PRE_TOOL_USE]
@@ -91,69 +92,9 @@ class TestCollectSkillRuntimeHooks:
         post = collected[HOOK_POST_TOOL_USE]
         assert post == [("skill-b", RuntimeHook(matcher="Write", script="hooks/c.sh"))]
 
-    def test_empty_when_no_skill_declares(self, assembler, tmp_path):
+    def test_empty_when_no_skill_declares(self, tmp_path):
         plain = tmp_path / "skills" / "plain"
         plain.mkdir(parents=True)
         (plain / "metadata.yaml").write_text("name: plain\n")
-        collected = assembler.hooks._collect_skill_runtime_hooks(_result([_skill("plain", plain)]))
+        collected = collect_runtime_hooks(_result([_skill("plain", plain)]))
         assert collected == {}
-
-
-class TestMaterializeRuntimeHooks:
-    """Materialization of skill-declared runtime-hook scripts (HATS-597 step 3).
-
-    The script declared in a skill's ``runtime_hooks:`` lands under
-    :func:`hooks_dir` at the collision-free
-    :func:`managed_runtime_hook_filename` path — the SAME path the provider
-    writes into settings.json — ``0o755``, tracked in ``.manifest``, swept
-    when the skill leaves the composition. The package-data helpers stay
-    materialized throughout — since HATS-1268 that is bypass_journal alone,
-    the guards having moved into the skills that declare them.
-    """
-
-    def test_materializes_skill_script_alongside_package_guards(self, assembler, tmp_path):
-        from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
-
-        s = _make_skill_with_runtime_hooks(
-            tmp_path / "skills",
-            "skill-a",
-            {HOOK_PRE_TOOL_USE: [("Bash", "hooks/guard.sh")]},
-        )
-        assembler.hooks.materialize_runtime_hooks(_result([s]))
-
-        target = hooks_dir(assembler.project_dir)
-        dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
-        assert dest.is_file()
-        assert dest.read_text() == "#!/usr/bin/env bash\nexit 0\n"
-        assert dest.stat().st_mode & 0o777 == 0o755
-        manifest = (target / ".manifest").read_text()
-        assert dest.name in manifest
-        # Package-data helper materialized as before (HATS-1268: the guards
-        # are skill-declared now, so only bypass_journal ships this way).
-        assert (target / "bypass_journal.sh").is_file()
-
-    def test_removing_skill_sweeps_its_runtime_hook(self, assembler, tmp_path):
-        from ai_hats.paths import hooks_dir, managed_runtime_hook_filename
-
-        s = _make_skill_with_runtime_hooks(
-            tmp_path / "skills",
-            "skill-a",
-            {HOOK_PRE_TOOL_USE: [("Bash", "hooks/guard.sh")]},
-        )
-        target = hooks_dir(assembler.project_dir)
-        dest = target / managed_runtime_hook_filename("skill-a", "hooks/guard.sh")
-
-        assembler.hooks.materialize_runtime_hooks(_result([s]))
-        assert dest.is_file()
-
-        # Skill leaves the composition → its script is swept; helper survives.
-        assembler.hooks.materialize_runtime_hooks(_result([]))
-        assert not dest.exists()
-        assert (target / "bypass_journal.sh").is_file()
-
-    def test_none_result_materializes_only_package_guards(self, assembler):
-        from ai_hats.paths import hooks_dir
-
-        # Legacy bare-bump path (no active role) — helpers only, no crash.
-        assembler.hooks.materialize_runtime_hooks(None)
-        assert (hooks_dir(assembler.project_dir) / "bypass_journal.sh").is_file()

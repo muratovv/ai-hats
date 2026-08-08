@@ -1,16 +1,11 @@
-"""Managed-hook materialization + drift-sync (HATS-837 extract from Assembler).
+"""Managed-hook materialization (HATS-837 extract from Assembler, updated HATS-1480).
 
-Owns the managed-hook cluster: runtime-hook scripts (``library/hooks/``) and
-their ``.claude/settings.json`` wiring, and skill-declared git hooks
-(``.githooks/``), plus the HATS-833 drift detectors and the session-start
-:meth:`HooksManager.sync_hooks`. Worktree hooks left this cluster with
-HATS-1269 — they spawn in place from the declaring skill and are materialized
-nowhere.
+Owns skill-declared git hooks (``.githooks/``). Worktree hooks spawn in place
+from their declaring skills (HATS-1269); runtime hooks live in the session tree
+(HATS-1268).
 
 Narrow DI: ``project_dir`` + a live ``project_config`` reference + a ``compose``
-callable (carve-out #2, HATS-865: result-less resync edges only) + a
-``resolve_provider`` callable. This module never imports ``Assembler`` or the
-composition layer — the dependency runs the other way.
+callable + a ``resolve_provider`` callable.
 """
 
 from __future__ import annotations
@@ -19,77 +14,14 @@ import logging
 import shutil
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .hook_collection import (
-    collect_runtime_hooks as _collect_runtime_hooks,
-    resolve_skill_script as _resolve_runtime_script,
-)
 from ai_hats_core import CompositionResult, scrubbed_git_env
-from .models import SkillMetadata
-from .paths import (
-    builtin_library_hooks as _builtin_library_hooks,
-    hooks_dir as _lib_hooks_dir,
-    managed_runtime_hook_filename as _managed_runtime_hook_filename,
-)
-from . import owners
 from ai_hats_core.safe_delete import discard as _safe_discard
-from ai_hats_core.safe_delete import replace as _safe_replace
-
-if TYPE_CHECKING:
-    from .models import ProjectConfig, RuntimeHook
-    from .providers import Provider
-
-logger = logging.getLogger(__name__)
-
-_MANAGED_HEADER = "# ai-hats managed — do not edit"
-
-#: Package-data guard extensions. The writer and the drift detector MUST read
-#: the same list, or an in-sync tree reports as stale (HATS-1407).
-_RUNTIME_GUARD_SUFFIXES = (".sh", ".py")
-
-# HATS-905: retiring this mechanism = dropping this line; the unclaimed-marker
-# sweeper then reclaims marker-listed .githooks/ artifacts on next init/bump.
-owners.register_owner("git-hooks", module=__name__)
-
-
-class HookError(Exception):
-    """Unrecoverable managed-hook materialization fault (e.g. broken package data).
-
-    Hook-local so this low-level module never imports from the higher-level
-    ``assembler`` package (which imports *us*, not the reverse).
-    """
-
-
-class HookSurface(StrEnum):
-    """The managed-hook surfaces a :class:`HookChange` can belong to.
-
-    No ``GIT`` member since HATS-1337: the dispatcher carries no gate set, so
-    there is nothing for the session-start net to detect or heal.
-    """
-
-    RUNTIME = "runtime"
-
-
-class HookChangeKind(StrEnum):
-    """What changed on a managed hook."""
-
-    MISSING = "missing"  # absent → materialized
-    CONTENT = "content"  # bytes drifted → updated
-    WIRING = "wiring"  # settings.json managed entry (re)written
-    STALE = "stale"  # no longer composed → swept
-
-
-class HookSyncStatus(StrEnum):
-    """Outcome status of :meth:`HooksManager.sync_hooks`."""
-
-    SYNCED = "synced"  # drifted surfaces were re-materialized
-    IN_SYNC = "in-sync"  # already consistent; no-op
-    SKIPPED = "skipped"  # nothing to do (not a git repo / no active role)
-    VERSION_SKEW = "version-skew"  # binary behind upstream — refuse to heal blind
+from .hook_collection import resolve_skill_script as _resolve_runtime_script
+from .models import SkillMetadata
+from . import owners
 
 
 def _read_manifest(path: Path) -> set[str]:
@@ -99,48 +31,27 @@ def _read_manifest(path: Path) -> set[str]:
     return read_marker_names(path)
 
 
-def _write_manifest(path: Path, names: set[str], *, reason: str, project_dir: Path) -> None:
-    """Write the managed-names manifest (sorted, do-not-edit header)."""
-    body = _MANAGED_HEADER + "\n" + "\n".join(sorted(names)) + "\n"
-    _safe_replace(path, body.encode(), reason=reason, project_dir=project_dir)
+if TYPE_CHECKING:
+    from .models import ProjectConfig
+    from .providers import Provider
+
+logger = logging.getLogger(__name__)
+
+# HATS-905: retiring this mechanism = dropping this line; the unclaimed-marker
+# sweeper then reclaims marker-listed .githooks/ artifacts on next init/bump.
+owners.register_owner("git-hooks", module=__name__)
 
 
-@dataclass(frozen=True)
-class HookChange:
-    """One managed-hook surface change detected/healed by :meth:`HooksManager.sync_hooks`.
+class HookError(Exception):
+    """Unrecoverable managed-hook materialization fault.
 
-    ``name`` is the script name (runtime/wt) or git event (git). ``surface`` and
-    ``kind`` are coerced+validated at construction — a bad value raises ``ValueError``.
+    Hook-local so this low-level module never imports from the higher-level
+    ``assembler`` package (which imports *us*, not the reverse).
     """
-
-    surface: HookSurface
-    name: str
-    kind: HookChangeKind
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "surface", HookSurface(self.surface))
-        object.__setattr__(self, "kind", HookChangeKind(self.kind))
-
-
-@dataclass(frozen=True)
-class HookSyncResult:
-    """Outcome of :meth:`HooksManager.sync_hooks`.
-
-    ``changes`` lists per-hook drift (and, on ``synced``, what was healed); empty
-    on ``in-sync`` / ``skipped``. Drives the session-start heal note (HATS-833).
-    """
-
-    status: HookSyncStatus
-    detail: str = ""
-    changes: tuple[HookChange, ...] = ()
-    warnings: tuple[str, ...] = ()  # genuine hooks warnings raised while healing (HATS-969)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "status", HookSyncStatus(self.status))
 
 
 class HooksManager:
-    """Materialize + drift-sync all managed-hook surfaces (HATS-837).
+    """Materialize managed-hook surfaces (HATS-837, HATS-1480).
 
     See module docstring for the narrow-DI contract.
     """
@@ -153,26 +64,15 @@ class HooksManager:
         compose: Callable[[str], CompositionResult],
         resolve_provider: "Callable[[str], Provider]",
     ) -> None:
-        # HATS-865: provider lookup is DI'd (like ``compose``) so this brick
-        # never imports the composition layer.
         self.project_dir = project_dir
         self.project_config = project_config
         self.compose = compose
         self.resolve_provider = resolve_provider
 
-    # ----- materialization (the init/materialization-phase facade) -----
-
     def materialize(
         self, result: "CompositionResult | None", *, warnings_sink: list[str] | None = None
     ) -> None:
-        """Bring every managed-hook surface on disk in sync with ``result``.
-
-        Single facade for the materialization phase (HATS-837 review): provider
-        settings.json wiring + the three surfaces. The git-repo guard lives here,
-        not in the caller — a non-git project dir simply skips git hooks.
-        ``warnings_sink`` collects git-hooks warnings instead of printing so the
-        HITL first-run compose seam can route them through the hold (HATS-970).
-        """
+        """Bring managed-hook surfaces on disk in sync with ``result``."""
         if self.binary_behind_source():
             if warnings_sink is not None:
                 warnings_sink.append(
@@ -180,262 +80,17 @@ class HooksManager:
                 )
             return
 
-        provider = self.resolve_provider(self.project_config.provider)
-        # HATS-1123: scripts BEFORE wiring. Wiring-first leaves a window where a
-        # managed command points at a not-yet-written file; a crash or external
-        # revert inside it strands the wiring, and every Bash call in every live
-        # session then fails — settings.json is not re-read mid-session.
-        self.materialize_runtime_hooks(result)
-        provider.ensure_runtime_hooks(self.project_dir, result)
         if result is not None and (self.project_dir / ".git").exists():
             self.install_git_hooks(result, warnings_sink=warnings_sink)
-
-    def materialize_runtime_hooks(self, result: "CompositionResult | None" = None) -> None:
-        """Materialize runtime-hook scripts to ``<ai_hats_dir>/library/hooks/``.
-
-        Two sources under one managed manifest: the package-data ``*.sh`` guards
-        (the shared-state safety net, HATS-467/437 — must exist on disk because
-        Claude Code's PreToolUse channel execs the file) and each composed skill's
-        declared ``runtime_hooks`` script (HATS-597). ``result`` is ``None`` on the
-        bare-bump path, leaving only the guards. Idempotent; raises
-        :class:`HookError` on a broken install (package data missing).
-        """
-        source_root = _builtin_library_hooks(self.project_dir)
-        if source_root is None:
-            raise HookError("ai_hats.library.hooks not found in package data — broken install")
-
-        target_dir = _lib_hooks_dir(self.project_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = target_dir / ".manifest"
-
-        previous = _read_manifest(manifest_path)
-        new_names = self._write_runtime_guards(target_dir, source_root)
-        new_names |= self._write_skill_runtime_scripts(target_dir, result)
-        self._sweep_stale(target_dir, previous - new_names, reason="materialize-pretooluse-sweep")
-        _write_manifest(
-            manifest_path,
-            new_names,
-            reason="materialize-pretooluse-manifest",
-            project_dir=self.project_dir,
-        )
-
-    def _write_runtime_guards(self, target_dir: Path, source_root: Path) -> set[str]:
-        """Copy package-data guards into ``target_dir``; return their names.
-
-        ``.py`` joined at HATS-1407 for the sibling-imported journal."""
-        names: set[str] = set()
-        for src in sorted(source_root.iterdir()):
-            if not src.is_file() or src.suffix not in _RUNTIME_GUARD_SUFFIXES:
-                continue
-            names.add(src.name)
-            _safe_replace(
-                target_dir / src.name,
-                src.read_bytes(),
-                reason="materialize-pretooluse",
-                project_dir=self.project_dir,
-                mode=0o755,
-            )
-        return names
-
-    def _write_skill_runtime_scripts(
-        self, target_dir: Path, result: "CompositionResult | None"
-    ) -> set[str]:
-        """Copy composed skills' ``runtime_hooks`` scripts into ``target_dir`` (HATS-597)."""
-        names: set[str] = set()
-        if result is None:
-            return names
-        for _event, entries in self._collect_skill_runtime_hooks(result).items():
-            for skill_name, hook in entries:
-                src = _resolve_skill_script(skill_name, hook.script, result)
-                if src is None:
-                    continue
-                dest_name = _managed_runtime_hook_filename(skill_name, hook.script)
-                names.add(dest_name)
-                _safe_replace(
-                    target_dir / dest_name,
-                    src.read_bytes(),
-                    reason="materialize-runtime-hook",
-                    project_dir=self.project_dir,
-                    mode=0o755,
-                )
-        return names
 
     def install_git_hooks(
         self, result: CompositionResult, *, warnings_sink: list[str] | None = None
     ) -> None:
-        """Install skill-declared git hooks (mechanics are the module functions
-        below — HATS-837 merged the former ``githooks`` module in)."""
+        """Install skill-declared git hooks (mechanics are the module functions below)."""
         install_git_hooks(self.project_dir, result, warnings_sink=warnings_sink)
 
-    def _sweep_stale(self, target_dir: Path, stale_names: set[str], *, reason: str) -> None:
-        """Discard managed files no longer in the composition."""
-        for stale in stale_names:
-            _safe_discard(target_dir / stale, reason=reason, project_dir=self.project_dir)
-
-    # ----- composition derivations (thin delegates to composer) -----
-
-    def _collect_skill_runtime_hooks(
-        self, result: CompositionResult
-    ) -> dict[str, list[tuple[str, RuntimeHook]]]:
-        """Composed skills' declared runtime hooks (HATS-597). Delegates to composer."""
-        return _collect_runtime_hooks(result)
-
-    # ----- HATS-593/833: drift-detecting re-materialization -----
-
-    # HATS-865: ``result`` required-explicit; ``None`` marks the genuinely
-    # result-less resync edge where the compose carve-out (#2) fires.
-    def sync_hooks(self, result: CompositionResult | None) -> HookSyncResult:
-        """Re-materialize ANY drifted managed-hook surface (HATS-593 → HATS-833).
-
-        Generalizes the git-only drift net to all three surfaces that
-        :meth:`materialize` writes but a plain interactive launch skips. Drift-gated
-        + idempotent: a clean no-op when every surface is in sync. The sole trigger
-        is session start (:meth:`WrapRunner._resync_managed_hooks`); ``result`` may
-        be supplied to reuse the session's composition, composed here when ``None``.
-
-        Refuses to heal from a stale binary (``version-skew``): materializing from
-        an out-of-date ai-hats could write hooks that don't match the merged source.
-        """
-        cfg = self.project_config
-        effective_role = cfg.active_role or cfg.default_role
-        if not effective_role:
-            return HookSyncResult(status=HookSyncStatus.SKIPPED, detail="no active role")
-        if result is None:
-            result = self.compose(effective_role)
-        provider = self.resolve_provider(cfg.provider)
-
-        changes = self._detect_changes(result, provider)
-        if not changes:
-            return HookSyncResult(status=HookSyncStatus.IN_SYNC)
-
-        # Failure-mode #5: a binary strictly behind upstream may derive hooks that
-        # don't match the merged repo — name the drift but refuse to heal blind
-        # (HATS-833 req-7: never silently skip). Excludes LOCAL channel and a cache
-        # about a different build — see `upstream_update` (HATS-846).
-        if self.binary_behind_source():
-            return HookSyncResult(
-                status=HookSyncStatus.VERSION_SKEW,
-                detail="installed ai-hats is behind upstream — run 'ai-hats self update'",
-                changes=tuple(changes),
-            )
-
-        warnings = self._heal_surfaces({c.surface for c in changes}, result, provider)
-        return HookSyncResult(
-            status=HookSyncStatus.SYNCED, changes=tuple(changes), warnings=tuple(warnings)
-        )
-
-    def _detect_changes(self, result: CompositionResult, provider) -> list[HookChange]:
-        """All drifted managed-hook changes across the managed surfaces."""
-        changes: list[HookChange] = []
-        changes.extend(self._runtime_hooks_changes(result, provider))
-        # No GIT arm (HATS-1337): the dispatcher is static and carries no gate
-        # set to drift from, and healing it here would write the project at
-        # session start — install-time is the only write point (M2). No WT arm
-        # (HATS-1269): the scripts spawn in place, so there is no copy to drift.
-        return changes
-
-    def _heal_surfaces(
-        self, surfaces: set[HookSurface], result: CompositionResult, provider
-    ) -> list[str]:
-        """Re-materialize only the drifted surfaces (each materializer is idempotent).
-
-        Returns warnings raised while healing (git surface) so the caller can route
-        them through the session-start read-hold instead of losing them (HATS-969)."""
-        warnings: list[str] = []
-
-        def _heal_runtime() -> None:
-            provider.ensure_runtime_hooks(self.project_dir, result)
-            self.materialize_runtime_hooks(result)
-
-        healers = {
-            HookSurface.RUNTIME: _heal_runtime,
-        }
-        for surface in surfaces:
-            healer = healers.get(surface)
-            if healer is None:
-                logger.warning("sync_hooks: no healer for surface %r — left undrifted", surface)
-                continue
-            healer()
-        return warnings
-
-    def _runtime_hooks_changes(
-        self, result: "CompositionResult | None", provider
-    ) -> list[HookChange]:
-        """Runtime-hook drift: script bytes (``library/hooks/``) + settings.json wiring.
-
-        Bytes and wiring operate on DIFFERENT sets (the ``shared_state_classifier.sh``
-        helper is materialized but not wired), so the two detectors stay separate.
-        """
-        return [
-            HookChange(surface=HookSurface.RUNTIME, name=name, kind=kind)
-            for name, kind in (
-                *self._runtime_bytes_changes(result),
-                *provider.runtime_wiring_changes(self.project_dir, result),
-            )
-        ]
-
-    def _runtime_bytes_changes(self, result: "CompositionResult | None") -> list[tuple[str, str]]:
-        """Drift of materialized ``library/hooks/`` bytes vs the composed source.
-
-        Mirrors :meth:`materialize_runtime_hooks`'s dual source (package guards +
-        skill scripts) so the detector cannot false-report in-sync.
-        """
-        expected: dict[str, bytes] = {}
-        try:
-            src_root = _builtin_library_hooks(
-                self.project_dir
-            )  # worktree-aware builtin resolver (HATS-831 / HATS-1127)
-            if src_root is not None and src_root.is_dir():
-                for src in src_root.iterdir():
-                    if src.is_file() and src.suffix in _RUNTIME_GUARD_SUFFIXES:
-                        expected[src.name] = src.read_bytes()
-        except OSError:
-            return []  # broken install — let the loud materialize path own it
-        if result is not None:
-            for _event, entries in self._collect_skill_runtime_hooks(result).items():
-                for skill_name, hook in entries:
-                    src = _resolve_skill_script(skill_name, hook.script, result)
-                    if src is None:
-                        continue
-                    expected[_managed_runtime_hook_filename(skill_name, hook.script)] = (
-                        src.read_bytes()
-                    )
-        return self._bytes_surface_changes(_lib_hooks_dir(self.project_dir), expected)
-
-    @staticmethod
-    def _bytes_surface_changes(
-        target_dir: Path, expected: dict[str, bytes]
-    ) -> list[tuple[str, HookChangeKind]]:
-        """Diff a managed bytes-surface dir against ``{name: bytes}`` via its ``.manifest``.
-
-        Returns ``[(name, kind)]`` with kind ``stale`` / ``missing`` / ``content``.
-        """
-        managed = _read_manifest(target_dir / ".manifest")
-        out: list[tuple[str, HookChangeKind]] = []
-        for name in sorted(managed - set(expected)):
-            out.append((name, HookChangeKind.STALE))
-        for name in sorted(expected):
-            p = target_dir / name
-            if name not in managed or not p.is_file():
-                out.append((name, HookChangeKind.MISSING))
-                continue
-            try:
-                if p.read_bytes() != expected[name]:
-                    out.append((name, HookChangeKind.CONTENT))
-            except OSError:
-                out.append((name, HookChangeKind.MISSING))
-        return out
-
     def binary_behind_source(self) -> bool:
-        """True if the installed ai-hats binary is strictly behind upstream.
-        Public since HATS-907: the skills-mirror heal shares this gate.
-
-        Routes through the canonical ``update_check.upstream_update`` predicate
-        (HATS-846) — honours LOCAL channel + running-SHA match identically to
-        the update banner (on LOCAL always False: the working tree IS the
-        merged source). Best-effort — any error means "unknown", treated as
-        "not behind" so a healthy heal is never blocked by a cold cache.
-        """
+        """True if the installed ai-hats binary is strictly behind upstream."""
         try:
             from .update_check import upstream_update
 

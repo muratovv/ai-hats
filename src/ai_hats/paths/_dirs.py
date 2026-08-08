@@ -414,20 +414,6 @@ def hooks_dir(project_dir: Path) -> Path:
     return library_dir(project_dir) / "hooks"
 
 
-def managed_runtime_hook_filename(skill_name: str, script: str) -> str:
-    """Collision-free on-disk filename for a skill-declared runtime-hook script.
-
-    Single source of truth shared by the assembler (which materializes the
-    file under :func:`hooks_dir`) and ``ClaudeProvider.ensure_runtime_hooks``
-    (which writes the same path as the settings.json ``command``). The two
-    sides MUST agree byte-for-byte — any drift means settings.json points at a
-    script that was never written (the e2e catches this as an ``exit 127``).
-    Mirrors the ``git_hooks`` dest convention (``<skill>-<basename>``);
-    ``script`` may be a relpath — only its basename is used.
-    """
-    return f"{skill_name}-{Path(script).name}"
-
-
 def user_hooks_dir(project_dir: Path) -> Path:
     """User-owned hooks sibling: ``<ai_hats_dir>/user-hooks/`` (HATS-549).
 
@@ -747,7 +733,6 @@ __all__ = [
     "rules_dir",
     "skills_dir",
     "hooks_dir",
-    "managed_runtime_hook_filename",
     "user_hooks_dir",
     "user_rules_dir",
     "last_backup_path",
