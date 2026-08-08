@@ -75,17 +75,17 @@ _CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
 
 
 def shipped_binding() -> dict:
-    """The ``checks:`` row the ``maintainer`` role actually ships.
+    """The ``checks:`` row this sandbox binds.
 
-    Read from the library rather than restated here, so the sandbox exercises the
-    row under review — a hand-copied literal could drift from it silently. The
-    bare ``on`` key resolves to ``True`` under YAML 1.1, exactly as the library's
-    own ``_parse_check_row`` finds it.
+    It used to be read out of the ``maintainer`` role so the suite could not
+    drift from what the library ships. HATS-1538 withdrew that row — role scope
+    is not backlog scope, so a shipped binding fired on every scratch tasks-dir
+    the rack CLI touched — and there is now nothing to read. Kept as a literal,
+    and ``test_the_maintainer_role_ships_no_checks_row`` below is what stops the
+    two from silently diverging again: re-couple this to the library in the same
+    change that re-lands the row.
     """
-    config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
-    rows = config["composition"]["checks"]
-    assert len(rows) == 1, f"expected exactly one checks row, got {rows}"
-    return {("on" if key is True else key): value for key, value in rows[0].items()}
+    return {"skill": SKILL, "script": SCRIPT, "on": [EDGE], "on_error": "refuse"}
 
 
 # ---------------------------------------------------------------------------
@@ -259,13 +259,21 @@ def _write_marker(project: Path, sha: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_maintainer_role_binds_the_done_gate_to_the_review_done_edge():
-    """S4: the row this suite exercises is the row the library ships."""
-    row = shipped_binding()
-    assert row["skill"] == SKILL
-    assert row["script"] == SCRIPT
-    assert row["on"] == [EDGE]
-    assert row["on_error"] == "refuse"
+def test_the_maintainer_role_ships_no_checks_row():
+    """HATS-1538: the row stays withdrawn until scoping is ruled on.
+
+    A role-scoped binding fires on EVERY backlog the rack CLI touches, not only
+    the project's own — so the shipped row refused scratch tasks-dirs, including
+    the ones this repo's rack tests build. Re-landing it before that is answered
+    turns `make check` red again, and the symptom surfaces two subsystems away
+    (the card strands in `review`, and the NEXT transition fails naming
+    plan-gate). This test is the tombstone that makes the return deliberate.
+    """
+    config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
+    assert "checks" not in config["composition"], (
+        "the maintainer role carries a checks: row again — HATS-1538 S2 must rule "
+        "on backlog scope and on a session that predates a binding first"
+    )
 
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
