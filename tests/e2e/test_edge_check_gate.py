@@ -26,7 +26,9 @@ pytestmark = pytest.mark.integration
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "edge:brainstorm--plan"
-EDGE_LOG = "edge-brainstorm--plan.log"
+#: The event half of a check-log filename; the binding half follows it
+#: (``<event>~<skill>~<script>.log``, ``rack_consumers._log_path``).
+EDGE_LOG_PREFIX = "edge-brainstorm--plan"
 SKILL = "gate-skill"
 
 #: The surfaces the composition registry knows, and where each materializes its
@@ -211,8 +213,14 @@ def _card(project: Path, task_id: str) -> Path:
     return project / TASKS_SUB / task_id / "task.yaml"
 
 
-def _check_log(project: Path, task_id: str) -> Path:
-    return project / TASKS_SUB / task_id / ".checks" / EDGE_LOG
+def _checks_dir(project: Path, task_id: str) -> Path:
+    return project / TASKS_SUB / task_id / ".checks"
+
+
+def _check_log(project: Path, task_id: str, script: str) -> Path:
+    """One log per (task, edge, binding), so two bindings on one edge cannot
+    truncate each other's transcript (HATS-1137)."""
+    return _checks_dir(project, task_id) / f"{EDGE_LOG_PREFIX}~{SKILL}~{script}.log"
 
 
 def _ran_script(log: Path) -> Path:
@@ -364,7 +372,7 @@ def test_out_of_session_the_same_binding_refuses_from_the_live_library(gate_proj
     assert _reason(refused) == "drain the review notes first"
     assert _card(project, task_id).read_bytes() == before
     # The live library copy ran — no session root was involved.
-    ran = _ran_script(_check_log(project, task_id))
+    ran = _ran_script(_check_log(project, task_id, "refuse.sh"))
     assert ran == project / "libraries" / "skills" / SKILL / "refuse.sh"
 
 
@@ -401,7 +409,7 @@ def test_the_gate_ignores_every_surface_skill_tree(gate_project, rack_bin, venv_
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
     assert _reason(refused) == SNAPSHOT_WORDS
-    ran = _ran_script(_check_log(project, task_id))
+    ran = _ran_script(_check_log(project, task_id, "refuse.sh"))
     assert ran == snapshot
     assert ran.parent.parent == session_dir / "checks"
     for name, tree in SURFACE_SKILL_TREES.items():
@@ -465,7 +473,7 @@ def _live_session_gate(launcher: Path, rack: Path, project: Path, env: dict[str,
         )
         assert refused.returncode == 1, refused.stdout + refused.stderr
         assert _reason(refused) == "drain the review notes first"
-        assert _ran_script(_check_log(project, task_id)) == snapshot
+        assert _ran_script(_check_log(project, task_id, "refuse.sh")) == snapshot
     finally:
         child.terminate()
         try:
@@ -545,7 +553,7 @@ def test_a_project_that_binds_nothing_takes_the_edge_untaxed(gate_project, rack_
     assert taken.returncode == 0, taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "plan"
     assert _outcomes(taken)["checks"]["outcome"] == "ok"
-    assert not _check_log(project, task_id).parent.exists(), "no bindings must write no logs"
+    assert not _checks_dir(project, task_id).exists(), "no bindings must write no logs"
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +610,7 @@ def test_the_reason_carries_no_escape_sequences_under_force_color(gate_project, 
     assert "\x1b" not in refused.stdout
     # Positive control: the script really did emit escapes, and the postmortem
     # record keeps them verbatim (hook_exec._decode_tail touches the tail only).
-    assert "\x1b[31m" in _check_log(project, task_id).read_text(encoding="utf-8")
+    assert "\x1b[31m" in _check_log(project, task_id, "ansi.sh").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +628,7 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
 
     assert _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env).returncode == 0
 
-    log = _check_log(project, task_id)
+    log = _check_log(project, task_id, "pass.sh")
     assert log.is_file(), f"expected the check log at {log}"
     text = log.read_text(encoding="utf-8")
     assert f"point={EDGE}" in text
@@ -631,4 +639,4 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
     # Positive control: the registry DOES list the card's ordinary files.
     assert "plan.md" in context.stdout
     assert ".checks" not in context.stdout
-    assert EDGE_LOG not in context.stdout
+    assert log.name not in context.stdout

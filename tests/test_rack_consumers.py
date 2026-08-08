@@ -11,11 +11,12 @@ import os
 import shutil
 import stat
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import yaml
-from ai_hats_core import CompositionResult, ResolvedCheck
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.fsm import Topology, all_edge_keys
@@ -23,7 +24,9 @@ from ai_hats_rack.kernel import LOCK_TIMEOUT
 from ai_hats_rack.models import TaskCard
 
 from ai_hats import check_resolve
+from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
+from ai_hats.models import CheckBinding
 from ai_hats.paths import session_cache_dir, session_checks_dir
 from ai_hats.rack_consumers import (
     CHECK_PRIORITY,
@@ -144,7 +147,7 @@ def test_pass_leaves_no_delta_and_writes_the_log_beside_the_card(tmp_path):
 
     assert runner.on_event(_ctx()) is None
 
-    log = tmp_path / "tasks" / "T-1" / ".checks" / "edge-review--done.log"
+    log = tmp_path / "tasks" / "T-1" / ".checks" / "edge-review--done~quality+gates~gate.sh.log"
     assert "all good" in log.read_text()
 
 
@@ -207,6 +210,193 @@ def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
         runner.on_event(_ctx())
 
     assert "ghost" in exc_info.value.reason
+
+
+# ---------------------------------------------------------------------------
+# several bindings on one point (HATS-1137)
+# ---------------------------------------------------------------------------
+
+
+def _logs(tmp_path: Path, task_id: str = "T-1") -> dict[str, str]:
+    """Every check log left beside one card, by filename."""
+    return {
+        p.name: p.read_text() for p in sorted((tmp_path / "tasks" / task_id / ".checks").iterdir())
+    }
+
+
+def test_two_bindings_on_one_edge_each_keep_their_own_log(tmp_path):
+    """The log name carries a binding discriminator, so binding #2 cannot wipe
+    #1's file. ``run_hook`` opens the log ``"wb"``, so one name per edge left
+    only the last run's bytes on disk — while ``_note_truncation`` kept pointing
+    #1's reason at that path, which is a wrong pointer, not a missing one."""
+    first = _script(tmp_path, "echo 'first ran'", name="first.sh")
+    second = _script(tmp_path, "echo 'second ran'", name="second.sh")
+    runner = _runner(tmp_path, _check(first), _check(second))
+
+    assert runner.on_event(_ctx()) is None
+
+    logs = _logs(tmp_path)
+    assert sorted(logs) == [
+        "edge-review--done~quality+gates~first.sh.log",
+        "edge-review--done~quality+gates~second.sh.log",
+    ]
+    assert "first ran" in logs["edge-review--done~quality+gates~first.sh.log"]
+    assert "second ran" not in logs["edge-review--done~quality+gates~first.sh.log"]
+    assert "second ran" in logs["edge-review--done~quality+gates~second.sh.log"]
+
+
+def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path):
+    """The discriminator is the dedup identity — namespaced skill plus script —
+    and both can carry separators (``dev::python``, ``hooks/done-gate.sh``), so
+    both are escaped into one filename component that stays readable."""
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    check = ResolvedCheck(
+        skill="dev::python",
+        script="hooks/done-gate.sh",
+        point="edge:review--done",
+        on_error="refuse",
+        script_path=_script(hooks, "echo 'nested ran'", name="done-gate.sh"),
+        declared_by="maintainer",
+    )
+
+    assert _runner(tmp_path, check).on_event(_ctx()) is None
+
+    logs = _logs(tmp_path)
+    assert list(logs) == ["edge-review--done~dev+python~hooks+done-gate.sh.log"]
+    assert "nested ran" in logs["edge-review--done~dev+python~hooks+done-gate.sh.log"]
+
+
+def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
+    """Escaping, not replacing. A naive ``/`` → ``-`` would give ``a/b.sh`` and
+    ``a-b.sh`` one filename, which is the very defect again — so the separator
+    a script path collapses to is one no unescaped component can contain."""
+    nested = tmp_path / "a"
+    nested.mkdir()
+    dashed = _check(_script(tmp_path, "echo 'dashed ran'", name="a-b.sh"))
+    slashed = replace(_check(_script(nested, "echo 'slashed ran'", name="b.sh")), script="a/b.sh")
+
+    assert _runner(tmp_path, slashed, dashed).on_event(_ctx()) is None
+
+    logs = _logs(tmp_path)
+    assert sorted(logs) == [
+        "edge-review--done~quality+gates~a+b.sh.log",
+        "edge-review--done~quality+gates~a-b.sh.log",
+    ]
+    assert "slashed ran" in logs["edge-review--done~quality+gates~a+b.sh.log"]
+    assert "dashed ran" in logs["edge-review--done~quality+gates~a-b.sh.log"]
+
+
+def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
+    """One file per (task, edge, binding): a retry replaces its own previous
+    transcript rather than growing a pile beside the card."""
+    runner = _runner(tmp_path, _check(_script(tmp_path, "echo 'first attempt'")))
+    assert runner.on_event(_ctx()) is None
+
+    _script(tmp_path, "echo 'second attempt'")  # same binding, new bytes
+    assert runner.on_event(_ctx()) is None
+
+    logs = _logs(tmp_path)
+    assert list(logs) == ["edge-review--done~quality+gates~gate.sh.log"]
+    assert "second attempt" in logs["edge-review--done~quality+gates~gate.sh.log"]
+    assert "first attempt" not in logs["edge-review--done~quality+gates~gate.sh.log"]
+
+
+def test_bindings_run_in_composition_order_and_the_runner_never_re_sorts(tmp_path):
+    """Composition order is traits in declaration order, then the role's own
+    rows (``composer._resolve_traits`` before the role's own ``extend``, pinned
+    by ``test_compose_collects_checks_traits_before_role``). ``_bound_to``
+    filters that tuple by point without reordering it, so the names below are
+    deliberately anti-alphabetical and one foreign point sits in the middle."""
+    order = tmp_path / "order.txt"
+    scripts = [
+        _script(tmp_path, f"echo {name} >> '{order}'", name=f"{name}.sh")
+        for name in ("c", "a", "b")
+    ]
+    elsewhere = _check(
+        _script(tmp_path, f"echo z >> '{order}'", name="z.sh"), point="edge:open--review"
+    )
+    runner = _runner(
+        tmp_path, _check(scripts[0]), elsewhere, _check(scripts[1]), _check(scripts[2])
+    )
+
+    assert runner.on_event(_ctx()) is None
+
+    assert order.read_text().split() == ["c", "a", "b"]
+
+
+def test_the_first_refusal_stops_every_later_binding(tmp_path):
+    """Fail on first: the loop raises, so #2 and #3 never spawn at all."""
+    refusing = _script(tmp_path, "echo 'drain the review notes first'\nexit 2", name="refuse.sh")
+    later = [_script(tmp_path, f"touch ran-{n}", name=f"{n}.sh") for n in ("second", "third")]
+    runner = _runner(tmp_path, _check(refusing), *(_check(s) for s in later))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert exc_info.value.reason == "drain the review notes first"
+    assert not (tmp_path / "ran-second").exists()
+    assert not (tmp_path / "ran-third").exists()
+    assert list(_logs(tmp_path)) == ["edge-review--done~quality+gates~refuse.sh.log"]
+
+
+def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
+    """The other side of fail-on-first: ``on_error: warn`` on a BROKE outcome
+    continues the loop, so the bindings behind it still run and still log."""
+    broke = _script(tmp_path, "echo 'ruff exploded'\nexit 1", name="broke.sh")
+    after = _script(tmp_path, "touch ran-second\necho 'second ran'", name="second.sh")
+    runner = _runner(tmp_path, _check(broke, on_error="warn"), _check(after))
+
+    delta = runner.on_event(_ctx())
+
+    assert delta is not None
+    assert "downgraded by on_error: warn" in "\n".join(delta.work_log)
+    assert (tmp_path / "ran-second").is_file()
+    logs = _logs(tmp_path)
+    assert "ruff exploded" in logs["edge-review--done~quality+gates~broke.sh.log"]
+    assert "second ran" in logs["edge-review--done~quality+gates~second.sh.log"]
+
+
+def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_path):
+    """``check_points._stricter`` collapses a repeated (skill, script, point)
+    into the FIRST declaration's slot while hardening ``on_error`` to the
+    strictest. Both halves have a runtime consequence, and this pins them there:
+    the re-declared row runs FIRST because it kept slot 0, and its exit 1 aborts
+    because the later ``refuse`` won — so the row declared between them, which
+    a last-slot dedup would have run first, never runs at all."""
+    skill_dir = tmp_path / "skills" / "gate-skill"
+    skill_dir.mkdir(parents=True)
+    _script(skill_dir, "echo 'ruff exploded'\nexit 1", name="a.sh")
+    _script(skill_dir, "touch ran-b", name="b.sh")
+    composed = ResolvedComponent(
+        name="gate-skill", component_type=ComponentKind.SKILL, source_path=skill_dir
+    )
+    point = "edge:plan--execute"
+
+    def row(script: str, on_error: str) -> CheckBinding:
+        return CheckBinding.model_validate(
+            {"skill": "gate-skill", "script": script, "on": (point,), "on_error": on_error}
+        )
+
+    resolved = resolve_checks(
+        [
+            ("trait-x", row("a.sh", "warn")),
+            ("trait-y", row("b.sh", "refuse")),
+            ("role-z", row("a.sh", "refuse")),
+        ],
+        [composed],
+    )
+
+    assert [(c.declared_by, c.script, c.on_error) for c in resolved] == [
+        ("trait-x", "a.sh", "refuse"),
+        ("trait-y", "b.sh", "refuse"),
+    ]
+
+    with pytest.raises(AbortOperation) as exc_info:
+        _runner(tmp_path, *resolved).on_event(_ctx(point))
+
+    assert "ruff exploded" in exc_info.value.reason
+    assert not (tmp_path / "ran-b").exists(), "the hardened first slot must stop the rest"
 
 
 # ---------------------------------------------------------------------------

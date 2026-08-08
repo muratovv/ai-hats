@@ -35,8 +35,10 @@ MAINTAINER_ROLE = (
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "edge:review--done"
-EDGE_LOG = "edge-review--done.log"
 SCRIPT = "hooks/done-gate.sh"
+#: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
+#: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
+EDGE_LOG = f"edge-review--done~{SKILL}~hooks+done-gate.sh.log"
 GATE_MARKER_DIR = Path(".git") / "ai-hats" / "done-gate"
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.

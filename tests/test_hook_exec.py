@@ -206,8 +206,8 @@ def test_a_hook_that_removes_its_own_log_still_returns_an_outcome(tmp_path):
 def test_an_unusable_log_path_is_a_governed_outcome(tmp_path):
     """A log path that cannot be opened fails closed and says so, rather than
     raising out of the primitive. HATS-1141 points this at
-    ``tasks/<ID>/.checks/<event>.log``, where a name collision is far likelier
-    than under the worktree state dir.
+    ``tasks/<ID>/.checks/<event>~<skill>~<script>.log``, where a name collision
+    is far likelier than under the worktree state dir.
     """
     collision = tmp_path / "taken"
     collision.mkdir()
