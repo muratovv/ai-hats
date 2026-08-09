@@ -75,17 +75,18 @@ _CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
 
 
 def shipped_binding() -> dict:
-    """The ``checks:`` row this sandbox binds.
+    """The ``checks:`` row the ``maintainer`` role actually ships.
 
-    It used to be read out of the ``maintainer`` role so the suite could not
-    drift from what the library ships. HATS-1538 withdrew that row — role scope
-    is not backlog scope, so a shipped binding fired on every scratch tasks-dir
-    the rack CLI touched — and there is now nothing to read. Kept as a literal,
-    and ``test_the_maintainer_role_ships_no_checks_row`` below is what stops the
-    two from silently diverging again: re-couple this to the library in the same
-    change that re-lands the row.
+    Read from the library rather than restated here, so the sandbox exercises
+    the row under review — a hand-copied literal drifts from it in silence, and
+    HATS-1538 proved the drift is what survives. The bare ``on`` key resolves to
+    ``True`` under YAML 1.1, exactly as the library's own ``_parse_check_row``
+    finds it.
     """
-    return {"skill": SKILL, "script": SCRIPT, "on": [EDGE], "on_error": "refuse"}
+    config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
+    rows = config["composition"]["checks"]
+    assert len(rows) == 1, f"expected exactly one checks row, got {rows}"
+    return {("on" if key is True else key): value for key, value in rows[0].items()}
 
 
 # ---------------------------------------------------------------------------
@@ -259,21 +260,20 @@ def _write_marker(project: Path, sha: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_maintainer_role_ships_no_checks_row():
-    """HATS-1538: the row stays withdrawn until scoping is ruled on.
+def test_the_maintainer_role_binds_the_gate_to_both_roads_into_master():
+    """S4 / the epic's acceptance: a live consumer, bound and proven to refuse.
 
-    A role-scoped binding fires on EVERY backlog the rack CLI touches, not only
-    the project's own — so the shipped row refused scratch tasks-dirs, including
-    the ones this repo's rack tests build. Re-landing it before that is answered
-    turns `make check` red again, and the symptom surfaces two subsystems away
-    (the card strands in `review`, and the NEXT transition fails naming
-    plan-gate). This test is the tombstone that makes the return deliberate.
+    Both points in ONE row, deliberately. `edge:review--done` is the FSM
+    automerge and `wt:pre-merge` is a direct `ai-hats wt merge`; a gate holding
+    only one of them is the asymmetry that started the epic, and HATS-1538 left
+    through the unheld one. HATS-1137's tombstone stood here until the two
+    reasons it was withdrawn for were closed (HATS-1540 S1 and S5).
     """
-    config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
-    assert "checks" not in config["composition"], (
-        "the maintainer role carries a checks: row again — HATS-1538 S2 must rule "
-        "on backlog scope and on a session that predates a binding first"
-    )
+    row = shipped_binding()
+    assert row["skill"] == SKILL
+    assert row["script"] == SCRIPT
+    assert row["on"] == [EDGE, "wt:pre-merge"]
+    assert row["on_error"] == "refuse"
 
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
@@ -430,3 +430,142 @@ def test_removing_the_checks_row_lets_the_red_card_through(gate_project, rack_bi
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
     assert not _check_log(project, task_id).parent.exists()
+
+
+# ---------------------------------------------------------------------------
+# 7. the OTHER road into master — a direct `ai-hats wt merge` (HATS-1540)
+# ---------------------------------------------------------------------------
+
+
+def _ai_hats(launcher: Path, *args: str, cwd: Path, env: dict[str, str]):
+    return subprocess.run(  # noqa: S603 - launcher from the shared-launcher fixture
+        [str(launcher), *args],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
+def test_a_direct_wt_merge_is_refused_before_it_mutates_anything(
+    gate_project, rack_bin, shared_launcher
+):
+    """The door HATS-1538 left through, now held.
+
+    ``ai-hats wt merge`` is the second road into master and had no precondition
+    at all — the incident that opened this epic (HATS-1130) and the way HATS-1538
+    itself escaped the stuck card it had created. Everything the merge would
+    touch is asserted untouched: no merge commit on master, the worktree still on
+    disk, the branch still there, the card still in ``review``.
+    """
+    launcher, _base_env, _venv = shared_launcher
+    project, env = gate_project("gated")
+    task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
+    branch = f"task/{task_id.lower()}"
+    master_before = git(project, "rev-parse", "master").stdout.strip()
+
+    merged = _ai_hats(
+        launcher, "wt", "merge", branch, cwd=project, env={**env, "AI_HATS_MERGE_ACK": "1"}
+    )
+
+    said = merged.stdout + merged.stderr
+    assert merged.returncode != 0, f"the direct merge road is unguarded\n{said}"
+    assert "checks" in said.lower(), f"the refusal must name the subsystem\n{said}"
+    assert "make done-gate" in said, f"the refusal must carry the command that clears it\n{said}"
+    assert git(project, "rev-parse", "master").stdout.strip() == master_before, "master moved"
+    assert Path(worktree).is_dir(), "a refused pre-merge destroyed the worktree"
+    assert branch in git(project, "branch", "--list", branch).stdout
+    assert _state(project, task_id)["state"] == "review"
+
+
+def test_a_marker_lets_the_direct_wt_merge_through(gate_project, rack_bin, shared_launcher):
+    """The same road, satisfied: one script, two points, one marker clears both."""
+    launcher, _base_env, _venv = shared_launcher
+    project, env = gate_project("gated")
+    task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
+    branch = f"task/{task_id.lower()}"
+    _write_marker(project, git(Path(worktree), "rev-parse", "HEAD").stdout.strip())
+
+    merged = _ai_hats(
+        launcher, "wt", "merge", branch, cwd=project, env={**env, "AI_HATS_MERGE_ACK": "1"}
+    )
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert not Path(worktree).exists(), "a merged worktree is torn down"
+
+
+def test_removing_the_checks_row_lets_the_direct_merge_through(
+    gate_project, rack_bin, shared_launcher
+):
+    """Fail-under-revert for the second road — both outcomes asserted, not two
+    green runs. Same sandbox, same unmarked branch, only the row is gone."""
+    launcher, _base_env, _venv = shared_launcher
+    project, env = gate_project("gated", bind=False)
+    task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
+    branch = f"task/{task_id.lower()}"
+
+    merged = _ai_hats(
+        launcher, "wt", "merge", branch, cwd=project, env={**env, "AI_HATS_MERGE_ACK": "1"}
+    )
+
+    assert merged.returncode == 0, (
+        "with the checks row removed the unmarked branch MUST merge — if it "
+        f"still refuses, the case above was never proving the gate\n"
+        f"{merged.stdout}{merged.stderr}"
+    )
+    assert not Path(worktree).exists()
+
+
+# ---------------------------------------------------------------------------
+# 8. someone else's backlog — the case that turned master red (HATS-1538)
+# ---------------------------------------------------------------------------
+
+
+def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
+    gate_project, rack_bin, tmp_path: Path
+):
+    """G: the measured leak, inverted.
+
+    Role scope is not backlog scope. The shipped row fired on EVERY backlog the
+    rack CLI touched — including the scratch ``--tasks-dir`` this repo's own rack
+    tests build — and refused them by its own contract, which is what turned
+    master red. The engine still fires (the binding is role-scoped, deliberately:
+    supervisor ruling 2026-08-08 P1); what changed is that the SCRIPT now gets
+    the backlog context and declares the answer. Fail-open, and the price is
+    stated in ``done-gate.sh`` where the role author can see it.
+    """
+    project, env = gate_project("gated")
+    scratch = tmp_path / "scratch-backlog" / "tasks"
+    scratch.mkdir(parents=True)
+    foreign = {**env, "RACK_TASKS_DIR": str(scratch)}
+
+    created = _rack(rack_bin, "create", "someone else's card", cwd=project, env=foreign)
+    assert created.returncode == 0, created.stdout + created.stderr
+    task_id = re.search(r"Created: (\S+)", created.stdout).group(1)
+    forced = _rack(
+        rack_bin,
+        "transition",
+        task_id,
+        "review",
+        "--force",
+        "--reason",
+        "straight to review",
+        cwd=project,
+        env=foreign,
+    )
+    assert forced.returncode == 0, forced.stdout + forced.stderr
+
+    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=foreign)
+
+    assert taken.returncode == 0, (
+        "a card outside this project's own tracker must not be refused by this "
+        f"project's gate — that is the HATS-1538 regression\n{taken.stdout}{taken.stderr}"
+    )
+    assert json.loads(taken.stdout)["task"]["state"] == "done"
+    log = scratch / task_id / ".checks" / EDGE_LOG
+    assert log.is_file(), (
+        "the gate must actually FIRE and decide — a test that passes because the "
+        "binding never installed proves nothing"
+    )
+    assert "not this project's backlog" in log.read_text(encoding="utf-8")

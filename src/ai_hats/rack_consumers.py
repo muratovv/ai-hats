@@ -117,12 +117,14 @@ class CheckRunnerExtension:
             return WorktreeManager.peek_worktree_path(
                 self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
             )
-        except OSError as exc:
-            # Named, never swallowed: an unreadable state dir means the gate
-            # would judge with no tree rather than with the wrong one, and
-            # `run_hook` removes the variable so no stale ambient path survives.
-            print(f"WARN: checks: could not resolve the worktree of {task_id}: {exc}", flush=True)
-            return None
+        except (OSError, ValueError) as exc:
+            # "Cannot tell" is not "no worktree". Handing a gate an absent
+            # variable here reads to it as "this card brings no commits, nothing
+            # to gate" — the wave-through the channel exists to remove.
+            raise AbortOperation(
+                f"checks: the worktree of {task_id} could not be resolved "
+                f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
+            ) from exc
 
     def _resolve_bound(self) -> tuple[ResolvedCheck, ...]:
         return resolve_edge_checks(

@@ -24,16 +24,31 @@ composition:
     # first commit clears the smoke gate without hand-provisioning. Pure
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
-  # HATS-1137 shipped a `checks:` row here binding hooks/done-gate.sh to
-  # edge:review--done. HATS-1538 withdrew it: role scope is not backlog scope.
-  # A role-scoped binding fires on EVERY backlog the rack CLI touches, so the
-  # gate also ran against scratch tasks-dirs — including the ones this repo's
-  # own rack tests create — and refused them, correctly by its own contract
-  # ("no tracker holds card X, refusing rather than reading that as 'no
-  # worktree'"). Everything else 1137 built is still here: the script, the
-  # extracted lib/gate-marker.sh, the `integration` and `done-gate` stages.
-  # The row re-lands once HATS-1538 S2 rules on scoping and on a session that
-  # predates a binding (no snapshot -> CORRUPT today).
+  # HATS-1540 — the live consumer of the `checks:` channel, on BOTH roads into
+  # master. One script, one row: `edge:review--done` is the FSM automerge and
+  # `wt:pre-merge` is a direct `ai-hats wt merge`, and a gate that holds only
+  # one of them is the asymmetry that started this epic (HATS-1130). The check
+  # is a marker lookup; the suite runs out of band via `make done-gate`.
+  #
+  # On the edge it fires in the per-task lock at priority 15, ahead of the
+  # worktree teardown-merge (30) and the ownership release (40), so a refusal
+  # leaves the card in `review` with no merge commit. In `wt merge` it fires
+  # after `_check_clean` / `_check_drift` and before any mutation.
+  #
+  # HATS-1137 shipped the edge half and HATS-1538 withdrew it an hour later for
+  # two reasons, both now closed: the gate fired on every backlog the rack CLI
+  # touched (the script decides that itself now — AI_HATS_TASKS_DIR, see
+  # done-gate.sh), and a session predating the binding had no snapshot to
+  # resolve from (there is no separate snapshot any more — HATS-1540 S1).
+  #
+  # Role-scoped on purpose (ADR-0019 D7): the gate demands a `done-gate` stage
+  # in scripts/ci-local.sh and refuses a project that has none, so it belongs to
+  # a role only this codebase wears — never to a base trait.
+  checks:
+    - skill: maintainer-quality-gate
+      script: hooks/done-gate.sh
+      on: [edge:review--done, wt:pre-merge]
+      on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,

@@ -1405,9 +1405,13 @@ class WorktreeManager:
             f"{_state_key(f'task/{task_id.lower()}')}.json"
         )
         try:
-            data = json.loads(state_path.read_text())
-        except (OSError, json.JSONDecodeError, ValueError):
-            return None
+            raw = state_path.read_text()
+        except FileNotFoundError:
+            return None  # no record is an ANSWER: this task has no worktree
+        # Every other failure is "cannot tell", which a caller must not read as
+        # "no worktree" — that is how a gate waves through the tree it exists to
+        # judge. OSError and JSONDecodeError both propagate.
+        data = json.loads(raw)
         recorded = data.get("worktree_path")
         if not recorded:
             return None
