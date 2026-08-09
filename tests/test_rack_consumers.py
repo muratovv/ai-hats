@@ -7,6 +7,7 @@ deliberately does NOT share, since that channel is uniformly fail-closed.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -96,6 +97,139 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15
+
+
+def _wt_state(project_dir: Path, task_id: str, worktree: Path) -> Path:
+    """The worktree-state record rack writes at execute, as the runner reads it."""
+    from ai_hats.paths import worktrees_dir
+
+    state_dir = worktrees_dir(project_dir)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"task-{task_id.lower()}.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "branch": f"task/{task_id.lower()}",
+                "worktree_path": str(worktree),
+                "original_branch": "master",
+            },
+            indent=2,
+        )
+    )
+    return state_path
+
+
+def test_the_runner_hands_every_check_the_tasks_dir_of_this_transition(tmp_path):
+    """R4 / HATS-1540: role scope is not backlog scope.
+
+    One role fires on EVERY backlog the rack CLI touches, scratch ``--tasks-dir``
+    included — that is what turned master red in HATS-1538. Without the dir a
+    script cannot tell "this card is not mine" from "``AI_HATS_DIR`` leaked", so
+    the runner states which backlog the transition runs against. Asserted by
+    dumping the child's environment, never by reading the source.
+    """
+    scratch = tmp_path / "elsewhere" / "tasks"
+    scratch.mkdir(parents=True)
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+    runner = CheckRunnerExtension(
+        tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
+    )
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert exc_info.value.reason == str(scratch)
+
+
+def test_the_runner_resolves_the_worktree_so_no_gate_parses_the_state_json(tmp_path):
+    """R2 / HATS-1540: one resolution, not one per gate.
+
+    Every FSM gate used to re-derive
+    ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and ``jq`` the path out.
+    The primitive has taken ``worktree_path`` since HATS-1151 and no edge point
+    computed it — so the same lookup was open-coded in shell, three spellings of
+    it, each able to judge the wrong tree on its own.
+    """
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    _wt_state(tmp_path, "T-1", worktree)
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == str(worktree)
+
+
+def test_a_card_with_no_worktree_gets_no_stale_path(tmp_path, monkeypatch):
+    """ADR-0019 D5/D7: a wrong-tree pass is worse than an absent variable.
+
+    The ambient environment of whoever launched the session may carry another
+    worktree's path — an epic, a forced execute and a card whose tree was
+    discarded all reach a gate with no tree of their own.
+    """
+    monkeypatch.setenv("AI_HATS_WORKTREE_PATH", "/stale/from/another/worktree")
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == "unset"
+
+
+def test_a_record_whose_worktree_is_gone_reads_as_no_worktree(tmp_path, monkeypatch):
+    """A swept ``$TMPDIR`` leaves the record behind; the tree is what matters.
+
+    And the read is PURE: ``load_for_task`` unlinks such a record, which would
+    make a refused transition mutate lifecycle state on its way out.
+    """
+    monkeypatch.setenv("AI_HATS_WORKTREE_PATH", "/stale/from/another/worktree")
+    state_path = _wt_state(tmp_path, "T-1", tmp_path / "swept-away")
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == "unset"
+    assert state_path.is_file(), "a refused transition must not delete worktree state"
+
+
+def test_one_worktree_lookup_serves_every_binding_on_the_edge(tmp_path):
+    """Two bindings on one edge resolve the tree once — it cannot change between
+    them, and the lookup takes a lock."""
+    calls: list[str] = []
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    _wt_state(tmp_path, "T-1", worktree)
+    runner = _runner(
+        tmp_path,
+        _check(_script(tmp_path, "exit 0", name="a.sh")),
+        _check(_script(tmp_path, "exit 0", name="b.sh")),
+    )
+    original = runner._worktree_path
+
+    def counting(task_id):
+        calls.append(task_id)
+        return original(task_id)
+
+    runner._worktree_path = counting
+    runner.on_event(_ctx(task_id="T-1"))
+
+    assert calls == ["T-1"]
+
+
+def test_no_binding_on_the_edge_resolves_no_worktree(tmp_path):
+    """The lookup takes a filelock, so an edge with nothing bound must not pay
+    for it — the overwhelmingly common case on every transition."""
+    runner = _runner(tmp_path)  # nothing bound
+    called = []
+    runner._worktree_path = lambda task_id: called.append(task_id)
+
+    assert runner.on_event(_ctx()) is None
+    assert called == []
 
 
 def test_refuse_aborts_the_transition_with_the_verbatim_reason(tmp_path):

@@ -1347,6 +1347,35 @@ class WorktreeManager:
         )
 
     @classmethod
+    def peek_worktree_path(
+        cls,
+        project_dir: Path,
+        task_id: str,
+        *,
+        state_dir: Path | None = None,
+    ) -> Path | None:
+        """The live worktree recorded for ``task_id``, or ``None`` — a pure read.
+
+        ``load_for_task`` unlinks a state file whose worktree is gone; a caller
+        that only wants to NAME the tree must not mutate lifecycle state as a
+        side effect of looking. HATS-1540 wants it so the check runner can hand
+        every gate ``AI_HATS_WORKTREE_PATH`` instead of each one re-deriving the
+        state path and parsing the JSON by hand.
+        """
+        state_path = _resolve_state_dir(project_dir, state_dir, NOOP_LIFECYCLE) / (
+            f"{_state_key(f'task/{task_id.lower()}')}.json"
+        )
+        try:
+            data = json.loads(state_path.read_text())
+        except (OSError, json.JSONDecodeError, ValueError):
+            return None
+        recorded = data.get("worktree_path")
+        if not recorded:
+            return None
+        path = Path(recorded)
+        return path if path.exists() else None
+
+    @classmethod
     def load_for_branch(
         cls,
         project_dir: Path,

@@ -24,6 +24,13 @@ from .check_resolve import CheckResolutionError, resolve_edge_checks, session_id
 from .hook_exec import HookRun, HookVerdict, run_hook
 from .libraries.models import CheckBindingError, resolve_namespace
 
+#: The tasks dir this transition runs against (HATS-1540 R4). Role scope is not
+#: backlog scope: one role fires on every backlog the rack CLI touches, including
+#: a scratch ``--tasks-dir``, so without this a script cannot tell "not my card"
+#: from "``AI_HATS_DIR`` leaked". The prefix is derivable from ``AI_HATS_TASK_ID``
+#: and is deliberately not a second variable.
+ENV_TASKS_DIR = "AI_HATS_TASKS_DIR"
+
 #: Reserved "hook" slot of the in-lock ladder (``rack_wiring.build_rack_kernel``)
 #: — after the plan-gate, before the ownership claim, so a refusal leaves neither
 #: ownership nor a worktree. Explicit: list position only breaks ties.
@@ -69,7 +76,11 @@ class CheckRunnerExtension:
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         notes: list[str] = []
-        for check in self._bound_to(ctx.event.key):
+        bound = self._bound_to(ctx.event.key)
+        if not bound:
+            return None
+        worktree_path = self._worktree_path(ctx.task.id)
+        for check in bound:
             run = run_hook(
                 check.script_path,
                 point=check.point,
@@ -77,6 +88,8 @@ class CheckRunnerExtension:
                 project_dir=self.project_dir,
                 force=ctx.force,
                 task_id=ctx.task.id,
+                worktree_path=worktree_path,
+                extra_env={ENV_TASKS_DIR: str(self._tasks_dir)},
                 log_path=self._log_path(ctx.task.id, ctx.event.key, check),
             )
             if run.ok:
@@ -86,6 +99,30 @@ class CheckRunnerExtension:
                 continue
             raise AbortOperation(_refusal(check, run))
         return Delta(work_log=tuple(notes)) if notes else None
+
+    def _worktree_path(self, task_id: str) -> Path | None:
+        """The task's live worktree, resolved ONCE for every binding on the edge.
+
+        HATS-1540 R2: before this, each gate re-derived
+        ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and parsed the JSON
+        by hand — three spellings of one lookup, and a gate that got it wrong
+        judged the wrong tree. A pure read (``peek_worktree_path``), because a
+        refused transition must leave lifecycle state exactly as it found it.
+        """
+        from ai_hats_wt import WorktreeManager
+
+        from .paths import worktrees_dir
+
+        try:
+            return WorktreeManager.peek_worktree_path(
+                self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
+            )
+        except OSError as exc:
+            # Named, never swallowed: an unreadable state dir means the gate
+            # would judge with no tree rather than with the wrong one, and
+            # `run_hook` removes the variable so no stale ambient path survives.
+            print(f"WARN: checks: could not resolve the worktree of {task_id}: {exc}", flush=True)
+            return None
 
     def _resolve_bound(self) -> tuple[ResolvedCheck, ...]:
         return resolve_edge_checks(
@@ -180,6 +217,7 @@ def consumer_subscribers(
 __all__ = [
     "CHECK_PRIORITY",
     "EDGE_CHECK_TIMEOUT_S",
+    "ENV_TASKS_DIR",
     "CheckRunnerExtension",
     "consumer_subscribers",
 ]
