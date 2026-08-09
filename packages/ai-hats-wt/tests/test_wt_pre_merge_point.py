@@ -192,3 +192,46 @@ def test_a_bare_core_fires_nothing(repo: Path):
     mgr.merge()
 
     assert not mgr.worktree_path
+
+
+def test_the_squash_cleanup_path_does_not_fire_the_point(repo: Path):
+    """RECORDED DECISION (HATS-1540 review, supervisor ruling 2026-08-09).
+
+    `cleanup(IsolationMode.SQUASH)` commits to the base branch WITHOUT firing
+    the point — a third road into the base, and the sub-agent one (`__exit__` →
+    `cleanup`, `--isolation squash` on `ai-hats agent` / `execute`). ADR-0019
+    asks every path that can reach a point to carry either a test that the check
+    fires or a recorded decision that it must not; this is the decision.
+
+    Firing here would be WORSE than not firing: `cleanup` suppresses a lifecycle
+    veto by design (ADR-0013 D8, so a sub-agent's own error is not masked), so a
+    refusal would be swallowed and the gate would look armed while passing
+    everything. Making it non-suppressible changes D8's contract. Revisit
+    behaviour and ADR together — this test is what makes that deliberate.
+    """
+    from ai_hats_wt import IsolationMode
+
+    recorder = _Recording(veto=True)
+    mgr = WorktreeManager(
+        repo,
+        branch_name="agent/role/sid",
+        lifecycle=recorder,
+        state_dir=repo / ".wt-state",
+        isolation_mode=IsolationMode.SQUASH,
+    )
+    wt = mgr.create()
+    (wt / "work.txt").write_text("done\n")
+    _git(wt, "add", ".")
+    _git(wt, "commit", "-m", "work")
+    base_before = _git(repo, "rev-parse", "main").stdout.strip()
+
+    mgr.cleanup()
+
+    assert "before_merge" not in recorder.calls, (
+        "the squash-cleanup road now fires the point — that is a behaviour "
+        "change, so update ADR-0019 and this decision in the same commit"
+    )
+    assert _git(repo, "rev-parse", "main").stdout.strip() != base_before, (
+        "precondition: this path must actually publish to the base branch, "
+        "otherwise the decision it records is about nothing"
+    )

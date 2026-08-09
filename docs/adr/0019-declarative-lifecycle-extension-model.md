@@ -180,10 +180,26 @@ the caller that actually fires the point — and there the rows part company.
 **`edge:` has one:** `rack_consumers.consumer_subscribers()` no longer returns
 `[]` but the check runner, which subscribes at `Phase.IN_LOCK` priority 15 to
 every edge key of the topology the kernel runs, so a binding declared there
-fires. **The `card:` and `wt:` rows remain catalog-only** — each still owes the
+fires. **`wt:pre-merge` fires since HATS-1540** — in `merge()`, after the cheap
+local guards and before every mutation — and the `maintainer` role binds there.
+**The `card:` and remaining `wt:` rows are still catalog-only**: each owes the
 call site named in its column, and until then a binding to one of them validates
 at composition and then never runs, which is precisely the silent no-op this ADR
 exists to remove; it is tolerable only because no consumer binds there yet.
+
+Two roads publish to a base branch without firing `wt:pre-merge`, both by
+**recorded decision** rather than omission, because this ADR's *Risk* section
+demands one or the other. The `merge()` short-circuits (HATS-596 already-merged,
+HATS-1370 patch-integrated) tear a worktree down without merging: their content
+reached the base by another route, so gating them would refuse a supported
+recovery instead of protecting anything. And `cleanup(IsolationMode.SQUASH)` —
+the sub-agent teardown — commits to the base and does **not** fire it: `cleanup`
+suppresses a lifecycle veto by design (ADR-0013 [5] D8, so a sub-agent's own
+error is not masked), so a refusal there would be swallowed and the gate would
+look armed while passing everything. Making it non-suppressible is a change to
+D8's contract, not to that call site; revisit behaviour and this paragraph
+together. Both decisions are pinned by tests in
+`packages/ai-hats-wt/tests/test_wt_pre_merge_point.py`.
 `wt:pre-reclaim` is the one row `check_points.py` does not know at all; it is
 listed here, and in `docs/glossary.md`, so the catalog and the glossary agree
 about what is coming.
@@ -402,7 +418,7 @@ borrowing the *provider's* cache instead of owning one.
    skills, so a session started before a binding existed had no root at all,
    `run_hook` returned `CORRUPT`, and every transition in that session was
    refused until restart (the second reason HATS-1538 withdrew the shipped row).
-   The mirror holds every composed skill, so that case resolves.
+   The mirror holds every composed skill whose `source_path` is a directory on disk — both writers skip one that is not (`skills_dir.py`, `plugin_dir.py`) — so a session that predates a binding resolves, while a binding on a directory-less skill still reaches `run_hook` as CORRUPT.
 
    Two properties moved, and both are asserted in `tests/test_check_mirror.py`.
    The leaf name is now the composed skill's raw `name` — what every surface
@@ -626,7 +642,34 @@ supersede the body above:
   `add_/remove_{traits,rules,skills}` (`config/overlay.py:31-53`), and the
   composer never reads `composition.checks`.
 
-**Open question 3 is REVERSED.** `wt:pre-merge` must **not** fire on the FSM
+**Open question 3 was REVERSED at rev 4 and is REVERSED BACK at rev 8
+(HATS-1540) — its premise does not hold.** The rev-4 argument is kept verbatim
+below because the correction is the interesting part.
+
+Its load-bearing claim is that firing at worktree-effects priority 30 lands
+*after the ownership claim at 20*. On `edge:review--done` the claim never runs:
+`OwnershipClaim.subscriptions` uses `_keys_into(topology, "execute")`, so it
+subscribes only to edges INTO `execute` (`rack_wiring.py`). The in-lock ladder
+this edge actually walks is single-slot(5) → plan-gate(10) → **checks(15)** →
+worktree teardown-merge(30) → ownership release(40); a refusal at 30 precedes
+the release, and nothing at 20 fired. So the property rev 4 was protecting is
+not at risk here, and the code fires the point regardless of caller —
+suppressing it for one caller would be exactly the caller-aware coupling D2
+exists to avoid.
+
+The consequence, stated rather than discovered: on the FSM road the same script
+runs **twice** for one transition — at `edge:review--done` and again inside the
+teardown-merge at `wt:pre-merge`. The second run is a marker lookup on the same
+commit, so it is cheap and its verdict cannot disagree with the first. One
+asymmetry survives and is deliberate: `AI_HATS_TASKS_DIR` is absent at
+`wt:pre-merge` (D5 — that point resolves no backlog), so a script's
+backlog-scope policy does not apply on the second leg. That matters only for a
+card living in a foreign backlog that ALSO has a worktree recorded under this
+project keyed by the same id; the first leg passes it as foreign and the second
+gates its tree. Narrow, and preferable to teaching the wt engine which caller it
+serves.
+
+*Rev 4's text, superseded:* `wt:pre-merge` must **not** fire on the FSM
 auto-merge path: there it runs at worktree-effects priority 30, i.e. *after* the
 ownership claim at 20, discarding the "an abort leaves zero resource side
 effects" property that priority 15 exists for (`rack_consumers.py:47-55`, fix

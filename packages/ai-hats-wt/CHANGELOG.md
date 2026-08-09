@@ -6,6 +6,35 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Added
+
+- **`WorktreeLifecycle.before_merge` and `WorktreeMergeAborted`** (HATS-1540) —
+  the `wt:pre-merge` extension point. Fires inside `merge()` after `_check_clean`
+  / `_check_drift` / consent and before every mutation, so a veto leaves the base
+  branch, the worktree and the branch exactly as they were and the retry is in
+  place. Deliberately not the teardown veto (ADR-0012 / HATS-775 rejected that as
+  a gate: it fires after the merge commit exists and can only strand a worktree).
+- **`WorktreeManager.peek_worktree_path`** — the recorded worktree for a task as
+  a **pure read**. `load_for_task` unlinks a state file whose worktree is gone,
+  which makes merely *naming* a tree mutate lifecycle state; a caller that only
+  wants the path (a gate's env) must not do that. `FileNotFoundError` answers
+  `None`; every other error propagates, because "cannot read the record" is not
+  "this card has no worktree".
+
+### Changed
+
+- **BREAKING for out-of-tree lifecycle bundles.** `WorktreeLifecycle` is a
+  structural Protocol, so a bundle written against the two-method shape now
+  raises `AttributeError` mid-`merge()`. This is deliberate — a tolerant
+  `getattr` would mean a gate that silently does not fire. Add a no-op
+  `before_merge(self, ctx) -> None` to any custom bundle.
+- `cleanup(IsolationMode.SQUASH)` publishes to the base branch and does **not**
+  fire `before_merge` — a recorded decision, not an omission (`cleanup`
+  suppresses lifecycle vetoes by design, ADR-0013 D8, so a refusal there would be
+  swallowed). Pinned by `test_the_squash_cleanup_path_does_not_fire_the_point`.
+
 ## [0.4.2]
 
 ### Fixed

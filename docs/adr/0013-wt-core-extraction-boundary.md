@@ -114,16 +114,26 @@ one-directional import rule. ai-hats accretions stay where they are and import
 
 ### D2 — Extension-point mechanism: a callback bundle, not an event-bus
 
-The core exposes a small **callback bundle** with exactly two methods, default
-**no-op** (so a bare core runs no hooks — hook-agnostic by default):
+The core exposes a small **callback bundle**, default **no-op** (so a bare core
+runs no hooks — hook-agnostic by default). Two methods at rev 1; a third,
+`before_merge`, was added by HATS-1540 (ADR-0019 [n] `wt:pre-merge`):
 
 ```python
 class WorktreeLifecycle(Protocol):
     def on_created(self, ctx: LifecycleContext) -> None:
         """Never raises (warn-continue, D8); a create-time failure is friction."""
+    def before_merge(self, ctx: LifecycleContext) -> None:
+        """Raises core-owned WorktreeMergeAborted; nothing has mutated yet."""
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Raises core-owned WorktreeTeardownAborted to abort the route (D3/D8)."""
 ```
+
+**The Protocol is structural, so growing it is a breaking change** for an
+out-of-tree bundle: nothing enforces it at construction, and a bundle written
+against the two-method shape raises `AttributeError` mid-`merge()`. Deliberately
+loud rather than a tolerant `getattr` — an absent `before_merge` means a gate
+that does not fire, which is the silence this extension point exists to remove.
+`ai-hats-wt` 0.5.0 carries the floor.
 
 - `on_created` fires once after `git worktree add` succeeds (the current
   `_run_wt_in_hooks` site, `worktree.py:633`).
@@ -146,10 +156,12 @@ exceptions — the opposite of what fail-closed needs. A direct callback invoked
 inline where `_run_wt_out_hooks` sits today preserves the existing ordering and
 exception semantics with a near-mechanical edit.
 
-**Why two methods, not N (design-minimalism).** Only two lifecycle directions
-exist (create, teardown); one event-parameterized `before_teardown` covers all
-teardown routes. A generic N-kind extension registry is out of scope until a
-third independent extension kind with a real consumer appears.
+**Why a handful of named methods, not N (design-minimalism).** One
+event-parameterized `before_teardown` still covers every teardown route, and a
+generic N-kind extension registry stays out of scope. The bar for adding a
+method is a lifecycle *moment* with different semantics and a real consumer:
+`before_merge` cleared it — it fires before any mutation and its veto is
+propagated rather than suppressed, which no teardown event can express.
 
 ### D3 — Injection point + the fail-closed ordering invariant
 

@@ -28,9 +28,11 @@ Two gates and the mechanism they share:
 - `git_hooks/pre-push-e2e-master.sh` — the dual-mode **pre-push** gate on
   pushes to master (HATS-550 / HATS-686), plus its wrapper
   `scripts/run-e2e-gate.sh`.
-- `hooks/done-gate.sh` — the dual-mode **`edge:review--done`** gate
-  (HATS-1137). Its `--check` mode is what the `composition.checks` binding
-  runs in the rack lock; its `--run` mode is what `make done-gate` invokes.
+- `hooks/done-gate.sh` — the dual-mode gate bound to **both roads into
+  master**: `edge:review--done` (the FSM automerge) and `wt:pre-merge` (a direct
+  `ai-hats wt merge`) — HATS-1137, both points since HATS-1540. Its `--check`
+  mode is what the `composition.checks` binding runs; its `--run` mode is what
+  `make done-gate` invokes.
 - `lib/gate-marker.sh` — the SHA pass-marker store both read and write,
   parameterised by gate name.
 
@@ -59,8 +61,9 @@ That is the only step invoked by hand. It runs the whole `done-gate` stage
    ladder. The checks runner (`ai_hats.rack_consumers.CheckRunnerExtension`,
    subscriber name `checks`) sits at **priority 15**, `Phase.IN_LOCK`.
 4. The runner resolves what the **active role** composes for that point — in a
-   session from the session snapshot, outside one from the live library
-   (ADR-0019 D9) — and finds the `maintainer` role's single `checks:` row.
+   session from the surface's own skill mirror, outside one from the live
+   library (ADR-0019 D9) — and finds the `maintainer` role's single `checks:`
+   row, which binds this script to both points.
 5. `hook_exec.run_hook` spawns the script with **no argv at all**, `stdin`
    `/dev/null`, `cwd` = the project dir, a 20s budget
    (`EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
@@ -93,33 +96,38 @@ the kernel's single persist is always last — and **no merge commit on master**
 
 In the script's real order; every branch below is an explicit `exit`:
 
-1. No `AI_HATS_TASK_ID` → **refuse (2)**. The gate cannot tell which branch to
-   judge, and guessing is worse than refusing.
+1. `AI_HATS_TASKS_DIR` set and NOT this project's own tracker tasks dir →
+   **pass (0)**. Role scope is not backlog scope: a role-scoped binding fires on
+   every backlog the rack CLI touches, scratch `--tasks-dir` included, and this
+   gate guards what enters THIS repo. A **declared** fail-open — the engine
+   states the context and the policy lives here (supervisor ruling 2026-08-08).
+   The comparison reads `ai-hats.yaml` and the documented default, never
+   `AI_HATS_DIR`: that variable is the leaky one, and whose tracker this is is
+   the whole question. Absent at `wt:pre-merge`, which resolves no backlog.
 2. No `<project>/scripts/ci-local.sh` → **refuse (2)**. No dispatcher means no
    `done-gate` stage, so no marker could ever be earned honestly. A gate that
    cannot verify must not pass; the message names both fixes (add the stage, or
    drop the `checks:` row).
-3. Locate the tracker that actually holds this card — `AI_HATS_DIR`, then
-   `ai-hats.yaml`'s `ai_hats_dir:`, then `.agent/ai-hats`. Anchoring on the
-   card, not on a bare `tracker/`, is what stops a leaked `AI_HATS_DIR` from
-   another checkout reading as "this card has no worktree". None holds it →
-   **refuse (2)**.
-4. `<base>/sessions/worktrees/task-<id, lowercased>.json` absent → **pass (0)**.
-   The subject of the gate is the code entering master through this card; a
-   doc/research card brings none.
-5. The record's `worktree_path` empty or gone from disk → **pass (0)**. Rack's
+3. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
+   code entering master through this card; a doc/research card brings none. The
+   runner refuses on its own when it could not TELL, so absent means absent here,
+   never unknown.
+4. The path gone from disk → **pass (0)**. Rack's
    own teardown either finalizes an already-merged branch or refuses the merge
    itself, so there is no live branch content to gate.
-6. `git -C <wt> rev-parse HEAD` — the **task branch's tip**, never the main
+5. `git -C <wt> rev-parse HEAD` — the **task branch's tip**, never the main
    checkout's HEAD: at priority 15 the merge has not happened, so the content
    under judgement is what the branch holds. Unresolvable → **refuse (2)**.
-7. Marker for that exact SHA → **pass (0)**. Missing → **refuse (2)** with the
+6. Marker for that exact SHA → **pass (0)**. Missing → **refuse (2)** with the
    copy-pasteable `cd <wt> && make done-gate`.
 
-`AI_HATS_WORKTREE_PATH` is deliberately absent at edge points —
-`hook_exec._hook_env` *removes* an unresolved value from the inherited
-environment rather than letting the ambient one through, so the script resolves
-the worktree from the session record instead of trusting a stale path.
+**One script, two points, no branch between them.** The tree under judgement
+arrives as `AI_HATS_WORKTREE_PATH` at *both*, resolved once by the runner
+(HATS-1540 R2) instead of each gate re-deriving
+`sessions/worktrees/task-<id>.json` and parsing the JSON by hand. The primitive
+*removes* an unresolved value from the inherited environment rather than letting
+an ambient one through — that applies to `AI_HATS_TASKS_DIR` too, so a stale one
+cannot reach the script at `wt:pre-merge` and read as "not my backlog".
 
 ### `--run` — `make done-gate`, and where the marker lands
 

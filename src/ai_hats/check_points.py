@@ -9,6 +9,7 @@ exists to remove.
 
 from __future__ import annotations
 
+import string
 import sys
 from collections.abc import Iterable, Sequence, Set as AbstractSet
 from dataclasses import dataclass, replace
@@ -126,7 +127,7 @@ def _resolve_script(row: CheckBinding, declared_by: str, skill: ResolvedComponen
         )
     if not script_path.stat().st_mode & 0o111:
         raise CheckBindingError(
-            f"{label}: script is not executable — the session snapshot copies modes "
+            f"{label}: script is not executable — the session skill mirror copies modes "
             f"verbatim, so a non-executable script is dead at every bound point"
         )
     return script_path
@@ -167,4 +168,49 @@ def _validate_point(
         )
 
 
-__all__ = ["CheckBindingError", "PointSpec", "known_points", "resolve_checks"]
+#: Characters a binding component keeps verbatim in a log name.
+_LITERAL = frozenset(string.ascii_letters + string.digits + "._-")
+
+
+def _escaped(part: str) -> str:
+    """One binding component as a filename-safe token, REVERSIBLY.
+
+    A skill name carries a namespace separator and a script is a relative path,
+    so both must lose their slashes; replacing them would collapse ``a/b.sh``
+    and ``a-b.sh`` onto one name, which is the truncation defect again. ``/``
+    therefore becomes ``+`` (readable) and every other non-literal byte becomes
+    ``%XX`` — including ``+`` and ``%`` themselves, so the mapping decodes and
+    two different components can never produce the same token. ``~`` is
+    non-literal too, which is what makes it a safe joiner.
+    """  # comment-length: allow — why it escapes rather than replaces is the fix
+    out = []
+    for char in part:
+        if char in _LITERAL:
+            out.append(char)
+        elif char == "/":
+            out.append("+")
+        else:
+            out.extend(f"%{byte:02X}" for byte in char.encode())
+    return "".join(out)
+
+
+def check_log_token(check: ResolvedCheck) -> str:
+    """One binding's dedup identity as a filename-safe token (HATS-1137).
+
+    ONE function for every point that logs. ``run_hook`` truncates the log it is
+    handed, so a name built from anything coarser than ``(skill, script)`` lets
+    a second binding wipe the first one's file while the first one's reason goes
+    on pointing at it. HATS-1540 reintroduced exactly that at ``wt:pre-merge``
+    by naming the log after the script's basename; sharing this is what stops
+    the next point from doing it again.
+    """  # comment-length: allow — the defect recurred once already
+    return f"{_escaped(resolve_namespace(check.skill))}~{_escaped(check.script)}"
+
+
+__all__ = [
+    "CheckBindingError",
+    "PointSpec",
+    "check_log_token",
+    "known_points",
+    "resolve_checks",
+]

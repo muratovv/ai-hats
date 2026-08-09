@@ -11,7 +11,6 @@ D4), which is per-binding, not the worktree channel's uniform fail-closed.
 
 from __future__ import annotations
 
-import string
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -20,16 +19,10 @@ from ai_hats_rack.dispatch import AbortOperation, Delta, DispatchContext, Phase,
 from ai_hats_rack.fsm import Topology, all_edge_keys
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 
+from .check_points import check_log_token
 from .check_resolve import CheckResolutionError, resolve_edge_checks, session_id
 from .hook_exec import HookRun, HookVerdict, run_hook
-from .libraries.models import CheckBindingError, resolve_namespace
-
-#: The tasks dir this transition runs against (HATS-1540 R4). Role scope is not
-#: backlog scope: one role fires on every backlog the rack CLI touches, including
-#: a scratch ``--tasks-dir``, so without this a script cannot tell "not my card"
-#: from "``AI_HATS_DIR`` leaked". The prefix is derivable from ``AI_HATS_TASK_ID``
-#: and is deliberately not a second variable.
-ENV_TASKS_DIR = "AI_HATS_TASKS_DIR"
+from .libraries.models import CheckBindingError
 
 #: Reserved "hook" slot of the in-lock ladder (``rack_wiring.build_rack_kernel``)
 #: — after the plan-gate, before the ownership claim, so a refusal leaves neither
@@ -89,7 +82,7 @@ class CheckRunnerExtension:
                 force=ctx.force,
                 task_id=ctx.task.id,
                 worktree_path=worktree_path,
-                extra_env={ENV_TASKS_DIR: str(self._tasks_dir)},
+                tasks_dir=self._tasks_dir,
                 log_path=self._log_path(ctx.task.id, ctx.event.key, check),
             )
             if run.ok:
@@ -151,35 +144,8 @@ class CheckRunnerExtension:
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
         """
-        binding = f"{_escaped(resolve_namespace(check.skill))}~{_escaped(check.script)}"
-        name = f"{event_key.replace(':', '-')}~{binding}.log"
+        name = f"{event_key.replace(':', '-')}~{check_log_token(check)}.log"
         return self._tasks_dir / task_id / ".checks" / name
-
-
-#: Characters a binding component keeps verbatim in a log name.
-_LITERAL = frozenset(string.ascii_letters + string.digits + "._-")
-
-
-def _escaped(part: str) -> str:
-    """One binding component as a filename-safe token, REVERSIBLY.
-
-    A skill name carries a namespace separator and a script is a relative path,
-    so both must lose their slashes; replacing them would collapse ``a/b.sh``
-    and ``a-b.sh`` onto one name, which is the truncation defect again. ``/``
-    therefore becomes ``+`` (readable) and every other non-literal byte becomes
-    ``%XX`` — including ``+`` and ``%`` themselves, so the mapping decodes and
-    two different components can never produce the same token. ``~`` is
-    non-literal too, which is what makes it a safe joiner.
-    """  # comment-length: allow — why it escapes rather than replaces is the fix
-    out = []
-    for char in part:
-        if char in _LITERAL:
-            out.append(char)
-        elif char == "/":
-            out.append("+")
-        else:
-            out.extend(f"%{byte:02X}" for byte in char.encode())
-    return "".join(out)
 
 
 def _binding(check: ResolvedCheck) -> str:
@@ -219,7 +185,6 @@ def consumer_subscribers(
 __all__ = [
     "CHECK_PRIORITY",
     "EDGE_CHECK_TIMEOUT_S",
-    "ENV_TASKS_DIR",
     "CheckRunnerExtension",
     "consumer_subscribers",
 ]

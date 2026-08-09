@@ -380,3 +380,53 @@ def test_a_surface_below_the_builder_says_it_mirrors_nothing(tmp_path: Path):
 def test_a_legacy_surface_with_no_bindings_is_quiet(tmp_path: Path):
     """Nothing bound, nothing lost — a warning here would be noise."""
     assert legacy_launch_notices("legacy", _result(), SessionPolicy()) == []
+
+
+# ---------------------------------------------------------------------------
+# The launch-time skew notice (HATS-1540 review)
+# ---------------------------------------------------------------------------
+
+
+class _StaleSurface(_MirrorSurface):
+    """A surface package older than the accessor: implements the ADR-0018 seam
+    perfectly well, inherits the `Provider` default of ``None`` for the root."""
+
+    def session_skills_root(self, project_dir: Path, session_id: str):
+        return Provider.session_skills_root(self, project_dir, session_id)
+
+
+def test_a_surface_that_cannot_root_a_bound_check_says_so_at_launch(tmp_path: Path):
+    """The notice `legacy_launch_notices` does NOT give, and the ADR claimed it did.
+
+    An out-of-date agy/cline handles the artifact-builder seam, so it never
+    reaches the legacy notice — and then EVERY transition in its sessions is
+    refused with a message about a missing file. Measured: the real e2e tier
+    caught exactly this against a published surface package.
+    """
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    notice = surface_skew_notice("agy", _StaleSurface(), tmp_path, result)
+
+    assert notice is not None
+    assert "gate-skill" in notice
+    assert "session_skills_root" in notice, "the notice must name the fix"
+
+
+def test_a_surface_that_roots_checks_is_quiet(tmp_path: Path):
+    """No skew, no noise — the notice must not fire on every ordinary launch."""
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    assert surface_skew_notice("stub", _MirrorSurface(), tmp_path, result) is None
+
+
+def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
+    """Nothing bound, nothing to root — the skew is harmless and stays silent."""
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    assert surface_skew_notice("agy", _StaleSurface(), tmp_path, _result()) is None

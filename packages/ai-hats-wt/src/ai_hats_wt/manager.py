@@ -1238,6 +1238,18 @@ class WorktreeManager:
 
             mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
 
+            # HATS-1540, recorded decision (supervisor ruling 2026-08-09): this
+            # squash publishes to the base branch and DOES NOT fire
+            # `wt:pre-merge`. ADR-0019 asks every path reaching a point to carry
+            # either a test that the check fires or a recorded decision that it
+            # must not; this is the latter, pinned by
+            # `test_the_squash_cleanup_path_does_not_fire_the_point`.
+            # Firing here would be worse than not firing: `cleanup` SUPPRESSES a
+            # lifecycle veto by design (ADR-0013 D8 — a sub-agent's own error
+            # must not be masked), so a refusal would be swallowed and the gate
+            # would look armed while passing everything. Making it
+            # non-suppressible is a change to D8's contract, not to this call
+            # site. Revisit together: behaviour and ADR in one change.
             try:
                 if mode == IsolationMode.SQUASH:
                     self._squash_merge()

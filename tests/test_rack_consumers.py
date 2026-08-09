@@ -26,6 +26,7 @@ from ai_hats_rack.models import TaskCard
 from ai_hats import check_resolve
 from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
+from ai_hats.hook_exec import run_hook
 from ai_hats.models import CheckBinding
 from ai_hats.paths import session_cache_dir
 from ai_hats.rack_consumers import (
@@ -161,6 +162,40 @@ def test_the_runner_resolves_the_worktree_so_no_gate_parses_the_state_json(tmp_p
     assert exc_info.value.reason == str(worktree)
 
 
+def test_an_ambient_tasks_dir_never_reaches_a_check(tmp_path, monkeypatch):
+    """HATS-1540 review: the primitive OWNS this variable, so a point that does
+    not resolve a backlog removes it instead of inheriting it.
+
+    Left to ``extra_env`` — which can only add — a stale ``AI_HATS_TASKS_DIR``
+    from the ambient environment reached the gate at ``wt:pre-merge``, the script
+    compared it to its own tracker, read "not my backlog" and waved an unmarked
+    branch into master. Measured on the real script, not feared.
+    """
+    monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+
+    run = run_hook(script, point="wt:pre-merge", timeout=10, project_dir=tmp_path)
+
+    assert run.reason == "unset"
+
+
+def test_the_edge_runner_overwrites_an_ambient_tasks_dir(tmp_path, monkeypatch):
+    """The other half: where a backlog IS resolved, its value wins over the
+    ambient one rather than being merged with it."""
+    monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
+    scratch = tmp_path / "real" / "tasks"
+    scratch.mkdir(parents=True)
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+    runner = CheckRunnerExtension(
+        tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
+    )
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert exc_info.value.reason == str(scratch)
+
+
 def test_a_card_with_no_worktree_gets_no_stale_path(tmp_path, monkeypatch):
     """ADR-0019 D5/D7: a wrong-tree pass is worse than an absent variable.
 
@@ -194,6 +229,34 @@ def test_a_record_whose_worktree_is_gone_reads_as_no_worktree(tmp_path, monkeypa
 
     assert exc_info.value.reason == "unset"
     assert state_path.is_file(), "a refused transition must not delete worktree state"
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        pytest.param(lambda p: p.write_text("{not json"), id="malformed-json"),
+        pytest.param(lambda p: p.write_text(""), id="empty-file"),
+        pytest.param(lambda p: (p.unlink(), p.mkdir()), id="directory-not-file"),
+    ],
+)
+def test_a_state_file_that_cannot_be_READ_refuses_rather_than_gating_no_tree(tmp_path, corrupt):
+    """ "Cannot tell" is not "no worktree" — and nothing asserted it until now.
+
+    A gate handed no ``AI_HATS_WORKTREE_PATH`` reads it as "this card brings no
+    commits, nothing to gate" and passes (``done-gate.sh`` F-11). So an
+    unreadable record must abort, not answer None. The behaviour shipped with
+    HATS-1540 and its review found that mutating the refusal back to
+    ``return None`` broke ZERO of 3358 tests — this is that hole closed.
+    """
+    state_path = _wt_state(tmp_path, "T-1", tmp_path / "wt")
+    corrupt(state_path)
+    runner = _runner(tmp_path, _check(_script(tmp_path, "exit 0")))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert "could not be resolved" in exc_info.value.reason
+    assert "T-1" in exc_info.value.reason
 
 
 def test_one_worktree_lookup_serves_every_binding_on_the_edge(tmp_path):

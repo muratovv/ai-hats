@@ -27,6 +27,7 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
+from .check_points import check_log_token
 from .hook_exec import HookRun, HookVerdict, run_hook
 from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
 from ai_hats_wt import (
@@ -201,7 +202,11 @@ class HookRunningLifecycle:
                 project_dir=ctx.project_dir,
                 worktree_path=ctx.worktree_path,
                 extra_env={"AI_HATS_BRANCH_NAME": ctx.branch_name},
-                log_path=log_dir / f"pre-merge-{check.script_path.name}.log",
+                # The dedup identity, not the basename: two rows whose scripts
+                # share a basename would otherwise truncate each other's log
+                # while the first one's reason still points at it — the HATS-1137
+                # defect `rack_consumers._escaped` exists to prevent.
+                log_path=log_dir / f"pre-merge~{check_log_token(check)}.log",
             )
             if not run.ok:
                 _raise_merge_aborted(ctx.branch_name, _check_refusal(check, run))

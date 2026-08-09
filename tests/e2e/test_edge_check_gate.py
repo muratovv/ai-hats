@@ -31,9 +31,12 @@ EDGE = "edge:brainstorm--plan"
 EDGE_LOG_PREFIX = "edge-brainstorm--plan"
 SKILL = "gate-skill"
 
-#: The surfaces the composition registry knows, and where each materializes its
-#: OWN skill mirror inside a session (ADR-0019 D9 / R3.1). A resolver keyed on
-#: any one of them is dead under the other two.
+#: Where each known surface mirrors the session's composed skills — since
+#: HATS-1540 also the root a bound check resolves from (ADR-0019 D9 / R3.1), so
+#: these are three answers to one question and the ACTIVE surface picks. Literal
+#: because the decoys need the roots the active surface does NOT own; every entry
+#: is pinned against ``Provider.session_skills_root`` below, so it cannot drift.
+#  comment-length: allow — why a literal table is safe here is the contract
 SURFACE_SKILL_TREES = {
     "claude": Path("plugin") / "skills",
     "agy": Path("rules") / ".agents" / "skills",
@@ -144,8 +147,8 @@ def gate_project(shared_launcher, tmp_path: Path):
     """Factory: ``(project, env)`` for a git sandbox whose active role is ``role``.
 
     ``AI_HATS_USER_HOME`` is re-pinned per test (the shared launcher's is
-    session-scoped) so the session cache — and the check snapshot in it — is
-    born and swept with this test's ``tmp_path``.
+    session-scoped) so the session cache — and the skill mirror in it a bound
+    check resolves from — is born and swept with this test's ``tmp_path``.
     """
     _launcher, base_env, _venv = shared_launcher
     counter = {"n": 0}
@@ -172,7 +175,7 @@ def gate_project(shared_launcher, tmp_path: Path):
             **base_env,
             "AI_HATS_USER_HOME": str(home),
             # Both roots per test: the launcher's are session-scoped, and the
-            # session snapshot this file plants and reads must not outlive it.
+            # session mirror this file plants and reads must not outlive it.
             "AI_HATS_CACHE_HOME": str(tmp_path / f"cache{counter['n']}"),
             "AI_HATS_SESSION_ID": f"e2e-checks-{counter['n']}",
         }
@@ -260,13 +263,35 @@ def _sessions_root(project: Path, env: dict[str, str]) -> Path:
         return session_cache_root(project)
 
 
-def _seed_snapshot(project: Path, env: dict[str, str], *, script: str, body: str) -> Path:
-    """Plant this session's check snapshot the way session entry would.
+def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Path:
+    """Where the project's ACTIVE surface mirrors this session's composed skills.
 
-    The bytes deliberately differ from the library's: the refusal quotes them,
-    so the message itself names which root the resolver chose.
+    Asked of the real accessor (``Provider.session_skills_root``, HATS-1540) with
+    the surface read back out of the sandbox's own ``ai-hats.yaml`` — the two
+    steps ``composition_seam.session_skills_root_for_checks`` takes. Hard-coding
+    a root here would let a test plant where the child never reads and still go
+    green on some other surface's tree.
     """
-    dest = _session_dir(project, env, env["AI_HATS_SESSION_ID"]) / "checks" / SKILL
+    from ai_hats.models import ProjectConfig
+    from ai_hats.paths.constants import PROJECT_CONFIG
+    from ai_hats.providers import get_provider
+
+    with mock.patch.dict(os.environ, env, clear=True):
+        surface = ProjectConfig.from_yaml(project / PROJECT_CONFIG).provider
+        return get_provider(surface).session_skills_root(
+            project, session_id or env["AI_HATS_SESSION_ID"]
+        )
+
+
+def _seed_mirror(project: Path, env: dict[str, str], *, script: str, body: str) -> Path:
+    """Plant the bound skill into the surface's mirror, the way launch would.
+
+    HATS-1540 retired the channel's private ``<sid>/checks/`` copy: the surface's
+    own skill mirror is the only one, so this is where a session-mode binding
+    resolves. The bytes deliberately differ from the library's — the refusal
+    quotes them, so the message itself names which root the resolver chose.
+    """
+    dest = _mirror_root(project, env) / SKILL
     dest.mkdir(parents=True)
     (dest / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
     _write_script(dest / script, body)
@@ -283,19 +308,30 @@ def rack_bin(shared_launcher) -> Path:
 
 @pytest.fixture(scope="session")
 def venv_surfaces(shared_launcher) -> dict[str, bool]:
-    """``{provider: handles_artifact_categories}`` as the venv under test sees it.
+    """``{provider: roots_a_bound_check}`` as the venv under test sees it.
 
     The launcher venv resolves the out-of-tree surfaces from the index, so which
-    ones it has — and which of them predate the artifact builder — is a property
-    of the install, not of this branch.
+    ones it has — and which of them predate a given accessor — is a property of
+    the install, not of this branch.
+
+    HATS-1540 made the ANSWER here two-part: a surface must both reach the
+    artifact builder AND say where it mirrors skills (`session_skills_root`,
+    concrete on `Provider` with a `None` default, so an older surface package
+    keeps importing and simply cannot root a bound check). A surface failing
+    either half cannot exercise these cases and is skipped with that named as
+    the reason — a coordinated release of core + surface is what clears it, and
+    `check_snapshot.surface_skew_notice` is what tells a real operator.
     """
     _launcher, _env, venv = shared_launcher
     probe = subprocess.run(  # noqa: S603 - interpreter from the shared fixture
         [
             str(venv / "bin" / "python"),
             "-c",
-            "import json; from ai_hats.providers import provider_names, get_provider; "
-            "print(json.dumps({n: get_provider(n).handles_artifact_categories() "
+            "import json, pathlib; "
+            "from ai_hats.providers import provider_names, get_provider; "
+            "p = pathlib.Path('/tmp'); "
+            "print(json.dumps({n: bool(get_provider(n).handles_artifact_categories() "
+            "and get_provider(n).session_skills_root(p, 'probe') is not None) "
             "for n in provider_names()}))",
         ],
         capture_output=True,
@@ -310,7 +346,7 @@ def venv_surfaces(shared_launcher) -> dict[str, bool]:
 # 1. the tracer bullet — R1 / R2 / R3.3 / R5 (in-session branch)
 # ---------------------------------------------------------------------------
 
-SNAPSHOT_WORDS = "the snapshot says: drain the review notes first"
+MIRROR_WORDS = "the mirror says: drain the review notes first"
 
 
 def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
@@ -319,12 +355,13 @@ def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
     """R1 + R2 + R3.3: the declared binding fires in the lock, the edge is
     refused before the single persist, and the reason is the child's own words.
 
-    The snapshot's script says something the library's does not — so this also
-    pins D9 clause 2: in a session the bytes come from the session root.
+    The mirror's copy of the script says something the library's does not — so
+    this also pins D9 clause 2 as HATS-1540 re-cut it: in a session the bytes
+    come from the surface's skill mirror, never from the live library.
     """
     project, env = gate_project("refusing")
     task_id = _create(rack_bin, project, env)
-    _seed_snapshot(project, env, script="refuse.sh", body=f'printf "{SNAPSHOT_WORDS}\\n"\nexit 2\n')
+    _seed_mirror(project, env, script="refuse.sh", body=f'printf "{MIRROR_WORDS}\\n"\nexit 2\n')
     before = _card(project, task_id).read_bytes()
 
     refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env)
@@ -334,13 +371,13 @@ def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
     assert _card(project, task_id).read_bytes() == before
     # The human channel is stderr (`cli_common.fail`), prefixed by the dispatcher.
     assert f"{EDGE} aborted by 'checks'" in refused.stderr
-    assert SNAPSHOT_WORDS in refused.stderr
+    assert MIRROR_WORDS in refused.stderr
     assert "Traceback" not in refused.stderr, "a refusal must be typed, not a stack"
 
     as_json = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
     assert as_json.returncode == 1
     # R3.3: verbatim in --json — the prefix belongs to the text surface only.
-    assert _reason(as_json) == SNAPSHOT_WORDS
+    assert _reason(as_json) == MIRROR_WORDS
     assert _card(project, task_id).read_bytes() == before
 
 
@@ -382,25 +419,37 @@ def test_out_of_session_the_same_binding_refuses_from_the_live_library(gate_proj
 
 
 @pytest.mark.parametrize("surface", sorted(SURFACE_SKILL_TREES))
-def test_the_gate_ignores_every_surface_skill_tree(gate_project, rack_bin, venv_surfaces, surface):
-    """R3.1 without auth — the half of surface independence that always runs.
+def test_a_bound_check_runs_the_active_surfaces_mirror_and_no_other(
+    gate_project, rack_bin, venv_surfaces, surface
+):
+    """R3.1 without auth — surface independence as HATS-1540 re-cut it.
 
-    Each surface mirrors the SAME skill at its own path inside the session. Here
-    ALL THREE mirrors exist and every one of them would PASS the edge; only the
-    ai-hats-owned ``checks/`` root refuses. A resolver reading any provider tree
-    would let the transition through, so the refusal is the assertion — and
-    since every case plants all three decoys, the in-tree ``claude`` case pins
-    the property even where the out-of-tree surfaces are not installed.
-    """
-    if surface not in venv_surfaces:
-        pytest.skip(f"surface {surface!r} is not installed in the venv under test")
+    The channel's own ``<sid>/checks/`` root is retired, so "the gate ignores
+    every surface tree" is no longer true of anything: the surface mirror IS the
+    resolution root. What survives is the other half of the same idea, and it is
+    the half that can still go wrong — the resolver must read the root the
+    ACTIVE surface declares, and neither of the other two.
+
+    Shaped as a choice rather than a lookup: the active surface's mirror holds
+    the REFUSING script and both other surfaces' trees hold PASSING decoys of
+    the same skill and script name. A resolver keyed on a fixed surface, or on
+    "whichever tree happens to exist", takes the edge instead of refusing.
+    """  # comment-length: allow — this test's premise was inverted; say why
+    _require_a_rootable_surface(venv_surfaces, surface)
     project, env = gate_project("refusing", provider=surface)
     task_id = _create(rack_bin, project, env)
-    snapshot = _seed_snapshot(
-        project, env, script="refuse.sh", body=f'printf "{SNAPSHOT_WORDS}\\n"\nexit 2\n'
-    )
+
     session_dir = _session_dir(project, env, env["AI_HATS_SESSION_ID"])
-    for tree in SURFACE_SKILL_TREES.values():
+    # The one place the literal table is pinned against the real accessor: the
+    # decoys below are planted from it, and a stale entry would spell a "decoy"
+    # onto the very root the resolver reads — making the refusal prove nothing.
+    assert _mirror_root(project, env) == session_dir / SURFACE_SKILL_TREES[surface]
+
+    mirrored = _seed_mirror(
+        project, env, script="refuse.sh", body=f'printf "{MIRROR_WORDS}\\n"\nexit 2\n'
+    )
+    others = {name: tree for name, tree in SURFACE_SKILL_TREES.items() if name != surface}
+    for tree in others.values():
         decoy_dir = session_dir / tree / SKILL
         decoy_dir.mkdir(parents=True)
         _write_script(decoy_dir / "refuse.sh", 'printf "decoy passed\\n"\nexit 0\n')
@@ -408,22 +457,29 @@ def test_the_gate_ignores_every_surface_skill_tree(gate_project, rack_bin, venv_
     refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
-    assert _reason(refused) == SNAPSHOT_WORDS
+    assert _reason(refused) == MIRROR_WORDS
     ran = _ran_script(_check_log(project, task_id, "refuse.sh"))
-    assert ran == snapshot
-    assert ran.parent.parent == session_dir / "checks"
-    for name, tree in SURFACE_SKILL_TREES.items():
+    assert ran == mirrored
+    for name, tree in others.items():
         assert not ran.is_relative_to(session_dir / tree), f"resolved through the {name} tree"
 
 
-def _live_session_gate(launcher: Path, rack: Path, project: Path, env: dict[str, str]) -> None:
+def _live_session_gate(
+    launcher: Path, rack: Path, project: Path, env: dict[str, str], surface: str
+) -> None:
     """Drive a REAL surface session and gate a transition from inside it.
 
-    The session cache (snapshot included) is dropped when the session ends
-    (``wrap_runner._cleanup_session_cache``), so the provider child is held
-    alive while the gate runs — which is also the production shape: an agent
+    The session cache — the skill mirror with it — is dropped when the session
+    ends (``runtime_common._cleanup_session_cache``), so the provider child is
+    held alive while the gate runs, which is also the production shape: an agent
     inside a live session invoking ``rack``.
-    """
+
+    The sid is minted by the child, so the mirror is FOUND rather than computed:
+    the glob is this surface's own declared tree under a wildcard sid, and once
+    the sid is known the accessor is asked to confirm the tree — that is what
+    keeps ``SURFACE_SKILL_TREES`` honest against a real surface's writer.
+    """  # comment-length: allow — why the root is discovered, not computed
+    tree = SURFACE_SKILL_TREES[surface]
     task_id = _create(rack, project, env)
     live_env = {k: v for k, v in env.items() if k != "AI_HATS_SESSION_ID"}
     sessions = _sessions_root(project, env)
@@ -441,26 +497,21 @@ def _live_session_gate(launcher: Path, rack: Path, project: Path, env: dict[str,
         deadline = time.monotonic() + 90
         planted: list[Path] = []
         while time.monotonic() < deadline and not planted:
-            planted = list(sessions.glob(f"*/checks/{SKILL}/refuse.sh"))
+            planted = list(sessions.glob(f"*/{tree.as_posix()}/{SKILL}/refuse.sh"))
             if not planted and child.poll() is not None:
                 said, _ = child.communicate()
                 raise AssertionError(
-                    f"the surface exited (rc={child.returncode}) before it snapshotted the "
+                    f"the surface exited (rc={child.returncode}) before it mirrored the "
                     f"bound skill; no session under {sessions}\n{(said or '')[-1500:]}"
                 )
             time.sleep(0.1)
-        assert planted, f"no check snapshot appeared under {sessions} within 90s"
+        assert planted, f"no skill mirror appeared under {sessions}/*/{tree.as_posix()} within 90s"
 
-        snapshot = planted[0]
-        session_dir = snapshot.parents[2]
-        # Positive control: this surface ALSO mirrored the same skill into its
-        # own tree, so "the checks root won" is a real choice, not a default.
-        mirrors = [
-            p
-            for p in session_dir.rglob("refuse.sh")
-            if p.relative_to(session_dir).parts[0] != "checks"
-        ]
-        assert mirrors, f"surface materialized no skill tree of its own under {session_dir}"
+        mirrored = planted[0]
+        session_dir = mirrored.parents[len(tree.parts) + 1]
+        # The writer wrote where the reader's accessor says it would: this is the
+        # live half of the drift guard the in-process cases assert on the table.
+        assert _mirror_root(project, env, session_dir.name) == session_dir / tree
 
         refused = _rack(
             rack,
@@ -473,7 +524,11 @@ def _live_session_gate(launcher: Path, rack: Path, project: Path, env: dict[str,
         )
         assert refused.returncode == 1, refused.stdout + refused.stderr
         assert _reason(refused) == "drain the review notes first"
-        assert _ran_script(_check_log(project, task_id, "refuse.sh")) == snapshot
+        # Positive control for the mode split: the bytes came from the session's
+        # mirror, not from the live library the surface copied them out of.
+        ran = _ran_script(_check_log(project, task_id, "refuse.sh"))
+        assert ran == mirrored
+        assert not ran.is_relative_to(project), "in a session the library copy must not run"
     finally:
         child.terminate()
         try:
@@ -483,44 +538,55 @@ def _live_session_gate(launcher: Path, rack: Path, project: Path, env: dict[str,
             child.communicate()
 
 
-def _require_artifact_builder(venv_surfaces: dict[str, bool], surface: str) -> None:
-    """A surface below ADR-0018 snapshots no checks BY DESIGN — ``check_snapshot.
-    legacy_launch_notices`` says so and names the loss. There is no session root
-    to gate from there, so this premise is absent rather than broken."""
+def _require_a_rootable_surface(venv_surfaces: dict[str, bool], surface: str) -> None:
+    """Two ways a surface has no session root to gate from, both ABSENT premises
+    rather than broken ones — and each says so at launch, to a real operator.
+
+    Below ADR-0018 it mirrors no skills BY DESIGN (`legacy_launch_notices` names
+    the loss). Below HATS-1540 it mirrors them and will not say where
+    (`surface_skew_notice`), which a coordinated release of core + surface
+    clears. Either way the property under test cannot be exercised here."""
     if surface not in venv_surfaces:
         pytest.skip(f"surface {surface!r} is not installed in the venv under test")
     if not venv_surfaces[surface]:
-        pytest.skip(f"surface {surface!r} predates the artifact builder — it snapshots no checks")
+        pytest.skip(
+            f"surface {surface!r} cannot root a bound check in the venv under test — it is "
+            f"below the artifact builder, or a package older than `session_skills_root` "
+            f"(HATS-1540 ships core and surface together)"
+        )
 
 
 def test_the_gate_fires_inside_a_live_claude_session(
     gate_project, rack_bin, shared_launcher, venv_surfaces, requires_claude_auth
 ):
-    """R3.1 with the real surface: claude mirrors skills at ``<sid>/plugin/skills``."""
+    """R3.1 with the real surface: claude mirrors — and so gates — at
+    ``<sid>/plugin/skills``."""
     launcher, _env, _venv = shared_launcher
-    _require_artifact_builder(venv_surfaces, "claude")
+    _require_a_rootable_surface(venv_surfaces, "claude")
     project, env = gate_project("refusing", provider="claude")
-    _live_session_gate(launcher, rack_bin, project, env)
+    _live_session_gate(launcher, rack_bin, project, env, "claude")
 
 
 def test_the_gate_fires_inside_a_live_agy_session(
     gate_project, rack_bin, shared_launcher, venv_surfaces, requires_agy_auth
 ):
-    """R3.1 with the real surface: agy mirrors at ``<sid>/rules/.agents/skills``."""
+    """R3.1 with the real surface: agy mirrors — and so gates — at
+    ``<sid>/rules/.agents/skills``."""
     launcher, _env, _venv = shared_launcher
-    _require_artifact_builder(venv_surfaces, "agy")
+    _require_a_rootable_surface(venv_surfaces, "agy")
     project, env = gate_project("refusing", provider="agy")
-    _live_session_gate(launcher, rack_bin, project, env)
+    _live_session_gate(launcher, rack_bin, project, env, "agy")
 
 
 def test_the_gate_fires_inside_a_live_cline_session(
     gate_project, rack_bin, shared_launcher, venv_surfaces, requires_cline_auth
 ):
-    """R3.1 with the real surface: cline mirrors at ``<sid>/skills``."""
+    """R3.1 with the real surface: cline mirrors — and so gates — at
+    ``<sid>/skills``."""
     launcher, _env, _venv = shared_launcher
-    _require_artifact_builder(venv_surfaces, "cline")
+    _require_a_rootable_surface(venv_surfaces, "cline")
     project, env = gate_project("refusing", provider="cline")
-    _live_session_gate(launcher, rack_bin, project, env)
+    _live_session_gate(launcher, rack_bin, project, env, "cline")
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +599,7 @@ def test_a_passing_check_lets_the_transition_complete(gate_project, rack_bin):
     subscriber RAN and said ok, rather than being absent from the ladder."""
     project, env = gate_project("passing")
     task_id = _create(rack_bin, project, env)
-    _seed_snapshot(project, env, script="pass.sh", body='printf "gate cleared\\n"\nexit 0\n')
+    _seed_mirror(project, env, script="pass.sh", body='printf "gate cleared\\n"\nexit 0\n')
 
     taken = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
 
@@ -566,7 +632,7 @@ def test_on_error_warn_downgrades_a_broken_check_but_records_it(gate_project, ra
     and the card carries why, so a softened gate is never a silent one."""
     project, env = gate_project("warned")
     task_id = _create(rack_bin, project, env)
-    _seed_snapshot(project, env, script="broke.sh", body='printf "ruff exploded\\n"\nexit 1\n')
+    _seed_mirror(project, env, script="broke.sh", body='printf "ruff exploded\\n"\nexit 1\n')
 
     taken = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
 
@@ -591,7 +657,7 @@ def test_the_reason_carries_no_escape_sequences_under_force_color(gate_project, 
     the escapes, which is what makes the absence non-vacuous."""
     project, env = gate_project("ansi")
     task_id = _create(rack_bin, project, env)
-    _seed_snapshot(project, env, script="ansi.sh", body=SCRIPTS["ansi.sh"])
+    _seed_mirror(project, env, script="ansi.sh", body=SCRIPTS["ansi.sh"])
 
     refused = _rack(
         rack_bin,
@@ -624,7 +690,7 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
     into every agent's reading list (``docstore._is_document``)."""
     project, env = gate_project("passing")
     task_id = _create(rack_bin, project, env)
-    _seed_snapshot(project, env, script="pass.sh", body='printf "gate cleared\\n"\nexit 0\n')
+    _seed_mirror(project, env, script="pass.sh", body='printf "gate cleared\\n"\nexit 0\n')
 
     assert _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env).returncode == 0
 
