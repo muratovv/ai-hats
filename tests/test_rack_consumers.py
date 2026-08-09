@@ -27,7 +27,7 @@ from ai_hats import check_resolve
 from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
 from ai_hats.models import CheckBinding
-from ai_hats.paths import session_cache_dir, session_checks_dir
+from ai_hats.paths import session_cache_dir
 from ai_hats.rack_consumers import (
     CHECK_PRIORITY,
     EDGE_CHECK_TIMEOUT_S,
@@ -433,16 +433,51 @@ def _library(root: Path, *, declares: bool) -> Path:
     return root
 
 
+#: The skill every ``_check`` above declares. Composed, because a binding never
+#: pulls its skill in (ADR-0019 D2) — and since HATS-1540 the mirror's leaf name
+#: comes from the COMPOSED skill, so a composition without it resolves to nothing.
+_GATE_SKILL = ResolvedComponent(
+    name="quality::gates",
+    component_type=ComponentKind.SKILL,
+    source_path=Path("/nonexistent/quality-gates"),
+)
+
+
 def _composition(*, checks: tuple[ResolvedCheck, ...] = (), errors: list[str] | None = None):
     return CompositionResult(
         name="maintainer",
         priorities=[],
         rules=[],
-        skills=[],
+        skills=[_GATE_SKILL],
         injections=[],
         errors=errors or [],
         checks=checks,
     )
+
+
+def _mirror_root(project_dir: Path, session_id: str) -> Path:
+    """Where the stub surface below mirrors this session's composed skills."""
+    from ai_hats.paths import session_cache_dir
+
+    return session_cache_dir(project_dir, session_id) / "mirror"
+
+
+@pytest.fixture(autouse=True)
+def _mirroring_surface(monkeypatch):
+    """A surface whose skill mirror is one named dir — HATS-1540 resolves there.
+
+    Autouse so every in-session case in this module reads one root; the real
+    surfaces each scan a different relative path, which is exactly why the root
+    is asked of the provider rather than guessed here.
+    """
+    from ai_hats import providers
+
+    class _Mirroring:
+        def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+            return _mirror_root(project_dir, session_id)
+
+    monkeypatch.setattr(providers, "get_provider", lambda _name: _Mirroring())
+    yield
 
 
 def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
@@ -537,13 +572,18 @@ def test_out_of_session_a_binding_resolves_live(tmp_path):
     assert [c.script_path for c in resolved] == [live]
 
 
-def test_in_session_a_binding_resolves_from_the_session_snapshot(tmp_path):
-    """R5 / D9 clause 2: a session runs the same bytes start to finish, isolated
-    from the library it may be editing — so the root is ai-hats's own snapshot."""
+def test_in_session_a_binding_resolves_from_the_session_mirror(tmp_path):
+    """R5 / D9 clause 2: a session runs from the copy it was launched with,
+    isolated from the library it may be editing — the surface's skill mirror.
+
+    The leaf is the composed skill's raw ``name`` (``quality::gates``), which is
+    what every surface writes; HATS-1540 dropped the ``resolve_namespace``
+    re-derivation that looked for ``quality/gates`` instead.
+    """
     live = _script(tmp_path, "exit 0")
-    snapshot_dir = session_checks_dir(tmp_path, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    frozen = _script(snapshot_dir, "exit 0")
+    mirrored_dir = _mirror_root(tmp_path, "sess-a") / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    mirrored = _script(mirrored_dir, "exit 0")
 
     resolved = check_resolve.resolve_edge_checks(
         tmp_path,
@@ -552,11 +592,11 @@ def test_in_session_a_binding_resolves_from_the_session_snapshot(tmp_path):
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
-    assert [c.script_path for c in resolved] == [frozen]
+    assert [c.script_path for c in resolved] == [mirrored]
 
 
-def test_in_session_a_missing_snapshot_never_falls_back_to_the_live_path(tmp_path):
-    """R10: silently re-resolving live would disarm the isolation the snapshot
+def test_in_session_a_missing_mirror_never_falls_back_to_the_live_path(tmp_path):
+    """R10: silently re-resolving live would disarm the isolation the mirror
     exists for. The absent path stands, and ``run_hook`` calls it corruption."""
     live = _script(tmp_path, "exit 0")
 
@@ -569,7 +609,7 @@ def test_in_session_a_missing_snapshot_never_falls_back_to_the_live_path(tmp_pat
 
     assert resolved[0].script_path != live
     assert not resolved[0].script_path.exists()
-    assert session_checks_dir(tmp_path, "sess-a") in resolved[0].script_path.parents
+    assert _mirror_root(tmp_path, "sess-a") in resolved[0].script_path.parents
 
 
 def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
@@ -593,34 +633,40 @@ def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
     assert str(worktree) in str(exc_info.value)
 
 
-def test_resolution_reads_no_provider_specific_path(tmp_path):
+@pytest.mark.parametrize(
+    "layout", ["plugin/skills", "rules/.agents/skills", "skills", "somewhere/else"]
+)
+def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeypatch, layout):
     """R3.1 / D9: each surface materializes skills where its own binary scans —
-    ``<sid>/plugin/skills``, ``<sid>/rules/.agents/skills``, ``<sid>/skills``. A
-    resolver keyed on any of them does nothing under the other two."""
+    ``<sid>/plugin/skills``, ``<sid>/rules/.agents/skills``, ``<sid>/skills``.
+
+    HATS-1540 made that difference the ONLY thing the resolver asks a provider
+    for, so the answer must follow whatever root the surface declares — a
+    resolver keyed on one layout does nothing under the other two. The fourth
+    case is a layout no shipped surface uses: an out-of-tree one is served too.
+    """
+    from ai_hats import providers
+
+    root = session_cache_dir(tmp_path, "sess-a") / layout
+
+    class _Elsewhere:
+        def session_skills_root(self, project_dir, session_id):
+            return root
+
+    monkeypatch.setattr(providers, "get_provider", lambda _n: _Elsewhere())
     live = _script(tmp_path, "exit 0")
-    snapshot_dir = session_checks_dir(tmp_path, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    frozen = _script(snapshot_dir, "exit 0")
-    decoys = []
-    for surface in ("plugin/skills", "rules/.agents/skills", "skills"):
-        tree = session_cache_dir(tmp_path, "sess-a").joinpath(surface, "quality", "gates")
-        tree.mkdir(parents=True)
-        decoys.append(_script(tree, "exit 2"))
+    mirrored_dir = root / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    mirrored = _script(mirrored_dir, "exit 0")
 
-    def resolve():
-        return check_resolve.resolve_edge_checks(
-            tmp_path,
-            topology=_topology(),
-            session_id="sess-a",
-            compose=lambda _p: _composition(checks=(_check(live),)),
-        )
+    resolved = check_resolve.resolve_edge_checks(
+        tmp_path,
+        topology=_topology(),
+        session_id="sess-a",
+        compose=lambda _p: _composition(checks=(_check(live),)),
+    )
 
-    assert [c.script_path for c in resolve()] == [frozen]
-
-    for decoy in decoys:  # and the answer does not change when no surface tree exists
-        shutil.rmtree(decoy.parent.parent.parent, ignore_errors=True)
-    assert [c.script_path for c in resolve()] == [frozen]
-
+    assert [c.script_path for c in resolved] == [mirrored]
     source = Path(check_resolve.__file__).read_text()
     assert "plugin" not in source and ".agents" not in source
 
@@ -719,9 +765,9 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
     worktree = tmp_path / "ai-hats-wt-task-1"
     _git(main, "worktree", "add", "-b", "task/1", str(worktree))
     branch_copy = _script(worktree, "exit 0")
-    snapshot_dir = session_checks_dir(main, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    _script(snapshot_dir, "exit 0")
+    mirrored_dir = _mirror_root(main, "sess-a") / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    _script(mirrored_dir, "exit 0")
 
     with pytest.raises(CheckResolutionError) as exc_info:
         check_resolve.resolve_edge_checks(

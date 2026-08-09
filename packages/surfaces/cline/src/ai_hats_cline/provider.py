@@ -134,11 +134,17 @@ class ClineProvider(Provider):
 
     # -- skills ----------------------------------------------------------------
 
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        """HATS-1540: what a bound check resolves its script from in-session."""
+        from ai_hats.paths import session_cache_dir
+
+        return session_cache_dir(project_dir, session_id) / "skills"
+
     def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
-        skills_dir = cache_dir / "skills"
+        skills_dir = self.session_skills_root(project_dir, session_id)
         # Shared with agy (HATS-1271): a private copy drifted and lost the
         # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
         materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
