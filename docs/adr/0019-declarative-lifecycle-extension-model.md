@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (HATS-1139, 2026-07-24; last revised at rev 7 — HATS-1240, 2026-07-27).
+Accepted (HATS-1139, 2026-07-24; last revised at rev 8 — HATS-1540, 2026-08-09).
 Governs epic **HATS-1138** — the declarative mechanism (HATS-1152 → 1140 → 1241
 → 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
 HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). The substrate
@@ -11,10 +11,17 @@ channel postures and the git_hooks orchestrator (epic **HATS-1266**, which runs
 first per D8) — is **ADR-0020 [4]**, split out of this document's rev 7 during
 review. Driver: HATS-1134 (incident HATS-1130).
 
-**It stays `Proposed` on purpose.** This ADR replaces a channel with zero
-declared consumers, and neither candidate consumer is live yet. It becomes
-`Accepted` when one is bound and proven to refuse — not when the mechanism
-merges. See *Consequences*.
+**It became `Accepted` at rev 8 (HATS-1540), on the condition it set itself:** a
+live consumer bound and proven to refuse, not merely a merged mechanism. The
+`maintainer` role binds `maintainer-quality-gate/hooks/done-gate.sh` to
+`edge:review--done` **and** `wt:pre-merge`, and both refusals are asserted
+against the real binary — each one also asserted to flip to a pass when the row
+is removed (`tests/e2e/test_done_gate.py`).
+
+It took two attempts. HATS-1137 bound the edge half; HATS-1538 withdrew it an
+hour later, for two reasons this rev closes — see D9 clause 2 (a session that
+predated a binding had no root to resolve from) and D7 (role scope is not
+backlog scope).
 
 **Renumbered from ADR-0018.** This decision was drafted as ADR-0018 in
 `HATS-1139/design.md`. Cross-epic coordination (2026-07-24) assigned **ADR-0018**
@@ -161,7 +168,7 @@ silently.
 | -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------- | ----------------------- |
 | `edge:<from>--<to>`                    | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | `lifecycle_hooks` | implemented (HATS-1141) |
 | `card:pre-create`                      | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | yes                | **new**           | planned (HATS-1404)     |
-| `wt:pre-merge`                         | in `merge()`, before **any** mutation — beside `_check_clean` / `_check_drift` / consent      | yes                | **new**           | planned (HATS-1143)     |
+| `wt:pre-merge`                         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes                | **new**           | implemented (HATS-1540) |
 | `wt:create`                            | after `git worktree add`                                                                      | no (warn-continue) | `worktree.wt_in`  | planned (HATS-1146)     |
 | `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146)     |
 | `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
@@ -257,15 +264,28 @@ the caller resolved them, **removes** either from the inherited environment when
 it did not, and strips the colour-forcing variables. Rev 4 presented several of
 those as this ADR's own additions; they are the primitive's, for every channel.
 
-Still owed here is not the vocabulary but the resolution — *planned (HATS-1142)*:
-the primitive takes `task_id` and `worktree_path` as parameters, and at `edge:`
-points only the first is computed. HATS-1141's runner passes the dispatched
-task's id straight through, so `AI_HATS_TASK_ID` is set there; nobody computes
-the worktree path, so the primitive *removes* `AI_HATS_WORKTREE_PATH` from the
-child's environment and a script must still hand-roll
-`sessions/worktrees/task-<id>.json` → `jq -r .worktree_path`. Resolving that
-once, centrally, is what makes one script bind to both `edge:` and `wt:` points
-— the payoff of D2.
+The resolution behind that vocabulary is *implemented (HATS-1540)*, the remainder
+of HATS-1142 after HATS-1151 took the shared primitive. Until then only
+`AI_HATS_TASK_ID` was computed at `edge:` points, and every gate hand-rolled
+`sessions/worktrees/task-<id>.json` → `jq -r .worktree_path`. The runner now
+resolves the worktree **once per edge** and hands it to every binding, through a
+pure read (`WorktreeManager.peek_worktree_path`) — `load_for_task` unlinks a
+record whose tree is gone, and a *refused* transition must leave lifecycle state
+as it found it. "Cannot read the record" is **not** "no worktree": the first
+refuses, only the second answers. That single resolution is what lets one script
+bind to both `edge:` and `wt:` points — the payoff of D2, and it is verified by
+running the same file under each point's env, not by reading the code.
+
+**Backlog context** — *implemented (HATS-1540)*. `AI_HATS_TASKS_DIR` names the
+tasks dir the transition runs against. A role-scoped binding (D7) fires on every
+backlog the rack CLI touches, a scratch `--tasks-dir` included, and without this
+a script cannot tell "this card is not mine" from "`AI_HATS_DIR` leaked" — the
+ambiguity that turned master red in HATS-1538. The engine states the context and
+decides nothing (supervisor ruling 2026-08-08): the scoping policy belongs to
+the script's author, where it is visible and testable. No second variable carries
+the prefix; it is derivable from `AI_HATS_TASK_ID`. At `wt:pre-merge` the
+variable is absent — that point is not a backlog operation — and
+`AI_HATS_BRANCH_NAME` rides instead, this channel's existing spelling.
 
 Existing point-specific variables keep their names; migrated scripts do not churn.
 
@@ -288,8 +308,9 @@ Existing point-specific variables keep their names; migrated scripts do not chur
 
 - **The exec bit is checked, at composition time.** Rev 5 deferred it to run time
   on the reasoning that "with no copy step there is no `0o755` rewrite". D9 now
-  *does* copy into the session snapshot — via `copytree`, which preserves mode and
-  never chmods — so a `644` script is dead on arrival at every point it is bound
+  resolves through a copy — the surface's skill mirror, written by `copytree`,
+  which preserves mode and never chmods — so a `644` script is dead on arrival at
+  every point it is bound
   to. Checking it beside the shebang costs nothing and converts a runtime *broke*
   into an authoring-time error. (Note the rev-5 text also mis-stated the existing
   `_health_check` as validating executability; it never has.) Audited before
@@ -363,15 +384,35 @@ borrowing the *provider's* cache instead of owning one.
    skill's own directory (`ai_hats_core/composition.py`). A binding resolves as
    `source_path / script`. Surface-independent by construction: no code consults
    a provider layout, so no surface can be forgotten.
-2. **Inside a session, the root is ai-hats's own snapshot** — *implemented
-   (HATS-1241)*, written at session entry by `check_snapshot.snapshot_checks` — at
-   `<cache_root>/sessions/<sid>/checks/<skill>/`, outside the project (`paths.session_checks_dir`;
-   see the HATS-1398 note below) — the declaring skill's
-   directory copied *whole*, through the existing `Materializer` port. Whole, not
-   just the script, so sibling data files survive (ADR-0020 [4] D1, `bundle`). A
-   session must execute the same bytes from start to finish and stay isolated
+2. **Inside a session, the root is the surface's own skill mirror** — *implemented
+   (HATS-1540)*, asked of the provider through `Provider.session_skills_root`
+   (via `composition_seam`, since the check channel is a brick and the
+   composition layer is integrator-only — HATS-865). The mirror is the same one
+   the agent's own skills and runtime hooks come from: written unconditionally
+   at session entry, whole-directory, so sibling data files survive (ADR-0020 [4]
+   D1, `bundle`). A session executes bytes frozen at launch and stays isolated
    from a library being edited concurrently; relying on worktree discipline for
    that isolation would be a policy, not a mechanism, and it lapses at merge.
+
+   *This replaces the channel's private `<sid>/checks/` copy (HATS-1241, and its
+   relocation HATS-1398).* That copy was adopted because the surfaces' mirrors
+   sat at three different paths and a resolver keyed on one did nothing under
+   the other two. The fix for that is the accessor above, not a fourth tree —
+   and the private copy carried a defect of its own: it held only the **bound**
+   skills, so a session started before a binding existed had no root at all,
+   `run_hook` returned `CORRUPT`, and every transition in that session was
+   refused until restart (the second reason HATS-1538 withdrew the shipped row).
+   The mirror holds every composed skill, so that case resolves.
+
+   Two properties moved, and both are asserted in `tests/test_check_mirror.py`.
+   The leaf name is now the composed skill's raw `name` — what every surface
+   writes — where this module used to re-derive it with `resolve_namespace`, so a
+   namespaced skill (`dev::python` against `dev/python`) resolved to a directory
+   no surface had written. And the private copy was first-writer-wins while every
+   mirror is wipe-and-rebuild (HATS-1248): a rebuild for a live sid re-copies the
+   source, so a check runs exactly the bytes that session's own runtime hooks run.
+   A surface that mirrors no skills returns `None` and the channel **refuses** —
+   `check_snapshot.legacy_launch_notices` announces that at launch.
 3. **Outside a session the root is the live library** — *implemented (HATS-1141)*. `rack transition` from a
    bare terminal, from cron, or via the standalone `rack` binary has no
    `AI_HATS_SESSION_ID` (`_session_id()` returns `""` there) and no snapshot, so
@@ -392,10 +433,11 @@ borrowing the *provider's* cache instead of owning one.
    `gitdir:` it carries — `…/worktrees/<id>` is refused, `…/modules/<path>` is a
    vendored dependency and resolves. The guard runs in both modes and **before**
    the root is picked, which is the only place it can bite: rebased first, it
-   would inspect the snapshot copy under `<cache_root>` — outside every checkout,
+   would inspect the mirror copy under `<cache_root>` — outside every checkout,
    so inside nothing — and clause 2 would smuggle the branch's bytes past it.
-
-Snapshot location superseded by **HATS-1398** — clause 2's root is unchanged as a concept but now resolves outside the project, at `<cache_root>/sessions/<sid>/checks/<skill>/` (default `~/.cache/ai-hats/<project-key>/`); the surface table above shifts with it.
+   HATS-1540 moved it ahead of the mirror lookup for every binding, so the
+   message that refuses names the worktree rather than whatever the surface
+   lookup happened to say.
 
 **The out-of-session cost, measured rather than feared.** Rev 5 priced this path
 off the `~99 SKILL.md parses` figure from the HATS-1149 research. That is the
@@ -410,7 +452,7 @@ flattened `<skill>-<basename>` managed name and its collision rule; the
 `.manifest`; the `previous - new_names` sweep; `_assert_manifest_intact`; the
 role-stamped manifest and the role-aware drift detector.
 
-**What the per-session snapshot does *not* bring back.** Every hazard rev 5
+**What a per-session copy does *not* bring back.** Every hazard rev 5
 dissolved — the sweep-vs-manifest wedge, last-writer-wins mis-gating between
 concurrent roles, silent disarmament via `materialize(result=None)`, the
 `config set-role` window, version-skew freezing another role's gates — was an
@@ -483,8 +525,8 @@ merged.* The channel taxonomy (`in_process` vs `detached`), the
 `bundle`/`selection` attributes, the git_hooks orchestrator contract (the
 fail-open dispatcher) and the substrate migration table are epic HATS-1266's
 design of record and live in **ADR-0020 [4]**. This ADR consumes them in two
-places: D9's `checks/` snapshot root is `in_process`, and D8's ordering leans
-on the substrate epic running first.
+places: D9's resolution root — the surface's skill mirror since HATS-1540 — is
+`in_process`, and D8's ordering leans on the substrate epic running first.
 
 ## Consequences
 
@@ -514,11 +556,12 @@ one of them being tested is how a gate ships half-armed.
   path that can reach a point carries either a test that the check fires or a
   recorded decision that it must not.
 
-**Deliberately unresolved.** This ADR stays `Proposed` until a live consumer is
-bound and proven to refuse. The mechanism replaces a channel with zero declared
-consumers, and its two candidate consumers (HATS-1137, HATS-1144) are not yet
-live; shipping it unbound would leave a fifth channel in the accretion this ADR
-is meant to end.
+**Resolved at rev 8 (HATS-1540).** The condition was a live consumer bound and
+proven to refuse, because shipping the mechanism unbound would have left a fifth
+channel in the accretion this ADR exists to end. `maintainer` now binds
+`done-gate.sh` to both `edge:review--done` and `wt:pre-merge`, and each refusal
+is asserted together with its flip-to-pass when the row is removed. HATS-1144
+(hunk-review) remains a candidate and is no longer load-bearing for this status.
 
 ## Alternatives considered
 
