@@ -291,6 +291,7 @@ def wt_merge(
         WorktreePartialCleanupError,
         WorktreeRebasedBranchError,  # HATS-1370
         WorktreeRemoveError,
+        WorktreeMergeAborted,  # HATS-1540 / ADR-0019
         WorktreeStateIncompleteError,  # HATS-714
         WorktreeTeardownAborted,  # HATS-823 / ADR-0013 D8
     )
@@ -321,6 +322,14 @@ def wt_merge(
         from rich.markup import escape as _escape
 
         console.print(f"[red]Refused (wt_out hook failed)[/]: {_escape(str(e.__cause__ or e))}")
+        sys.exit(1)
+    except WorktreeMergeAborted as e:
+        # HATS-1540: a `wt:pre-merge` check refused. Nothing was merged and the
+        # worktree is intact, so the recipe is the check's own words — it names
+        # the command that clears it (ADR-0019: a refusal is an action).
+        from rich.markup import escape as _escape
+
+        console.print(f"[red]Refused (checks)[/]: {_escape(str(e))}")
         sys.exit(1)
     except WorktreeMergeConsentError as e:
         # HATS-1019: recipe lives here (HATS-509 split) — the deny doubles

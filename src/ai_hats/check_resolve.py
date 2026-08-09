@@ -59,6 +59,38 @@ def resolve_edge_checks(
     if not checks:
         return ()
     _guard_topology(checks, topology)
+    return _rooted(project_dir, result, checks, session_id)
+
+
+def resolve_checks_at(
+    project_dir: Path,
+    point: str,
+    *,
+    session_id: str = "",
+    compose: Callable[[Path], CompositionResult | None] | None = None,
+) -> tuple[ResolvedCheck, ...]:
+    """Every binding on one non-``edge:`` point, re-based onto its root.
+
+    The sibling of :func:`resolve_edge_checks` for the ``wt:`` namespace
+    (HATS-1540): one point, named by the caller that fires it, so there is no
+    topology to guard — the catalog validated the name at composition.
+    """
+    result = (compose or _compose_fail_closed)(project_dir)
+    if result is None:
+        return ()
+    checks = tuple(check for check in result.checks if check.point == point)
+    if not checks:
+        return ()
+    return _rooted(project_dir, result, checks, session_id)
+
+
+def _rooted(
+    project_dir: Path,
+    result: CompositionResult,
+    checks: tuple[ResolvedCheck, ...],
+    session_id: str,
+) -> tuple[ResolvedCheck, ...]:
+    """Pick the root every one of ``checks`` runs from — the mode split."""
     # D9 clause 4 first, over every binding: a source inside a linked worktree is
     # refused before the mirror is even located, so the message names the tree
     # rather than whatever the surface lookup happens to say.
@@ -351,4 +383,10 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
     return result
 
 
-__all__ = ["CheckResolutionError", "declares_checks", "resolve_edge_checks", "session_id"]
+__all__ = [
+    "CheckResolutionError",
+    "declares_checks",
+    "resolve_checks_at",
+    "resolve_edge_checks",
+    "session_id",
+]

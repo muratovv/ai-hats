@@ -545,6 +545,17 @@ class WorktreeTeardownAborted(Exception):
     """
 
 
+class WorktreeMergeAborted(Exception):
+    """A ``before_merge`` extension-point vetoed the merge (HATS-1540 / ADR-0019).
+
+    The sibling of :class:`WorktreeTeardownAborted`, and hook-agnostic the same
+    way: the core knows a merge was refused, never by what. Deliberately NOT the
+    teardown veto reused — that one fires after the merge commit exists and can
+    only strand a worktree (ADR-0012 / HATS-775 rejected it as a gate), while
+    this one fires before any mutation and leaves the tree exactly as it was.
+    """
+
+
 @dataclass(frozen=True)
 class LifecycleContext:
     """What a lifecycle extension-point needs — and nothing hook-policy (D2).
@@ -570,12 +581,17 @@ class WorktreeLifecycle(Protocol):
     """Core lifecycle extension-points (ADR-0013 D2). Default impl is no-op.
 
     ``on_created`` fires once after ``git worktree add`` (warn-continue — it
-    must never raise). ``before_teardown`` fires at every teardown route just
-    before ``_remove_worktree``; raising :class:`WorktreeTeardownAborted`
-    aborts the route fail-closed.
+    must never raise). ``before_merge`` fires in ``merge()`` after the cheap
+    local guards and before any mutation; raising
+    :class:`WorktreeMergeAborted` refuses the merge with the tree untouched.
+    ``before_teardown`` fires at every teardown route just before
+    ``_remove_worktree``; raising :class:`WorktreeTeardownAborted` aborts the
+    route fail-closed.
     """
 
     def on_created(self, ctx: LifecycleContext) -> None: ...
+
+    def before_merge(self, ctx: LifecycleContext) -> None: ...
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None: ...
 
@@ -584,6 +600,9 @@ class _NoopLifecycle:
     """Hook-agnostic default: a bare core runs no hooks (ADR-0013 D2)."""
 
     def on_created(self, ctx: LifecycleContext) -> None:
+        return None
+
+    def before_merge(self, ctx: LifecycleContext) -> None:
         return None
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
@@ -1034,6 +1053,16 @@ class WorktreeManager:
                 self._check_clean()
             if not accept_drift:
                 self._check_drift()
+
+            # HATS-1540 / ADR-0019: the `wt:pre-merge` extension-point. AFTER the
+            # cheap local guards so a broken check cannot mask a dirty tree or a
+            # drifted base, and BEFORE every mutation below — a refusal leaves
+            # the worktree, the branch and the base exactly as they were. Fires
+            # regardless of the caller: suppressing it for the FSM automerge
+            # would be caller-aware coupling, and the FSM path is one of the two
+            # roads into master this point exists to hold.
+            self._fire_before_merge(skip_hooks=skip_hooks)
+
             if self._original_branch and not self._branch_exists(self._original_branch):
                 self._fire_before_teardown("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
@@ -1274,6 +1303,16 @@ class WorktreeManager:
         runs nothing.
         """
         self._lifecycle.on_created(self._lifecycle_ctx())
+
+    def _fire_before_merge(self, *, skip_hooks: bool = False) -> None:
+        """Fire the pre-merge extension-point (HATS-1540).
+
+        A raised :class:`WorktreeMergeAborted` propagates: nothing below it has
+        run, so the caller's refusal is total. Only ``merge()`` fires it —
+        ``discard`` publishes nothing to a base branch and deliberately has no
+        pre-operation point of its own.
+        """
+        self._lifecycle.before_merge(self._lifecycle_ctx(skip_hooks=skip_hooks))
 
     def _fire_before_teardown(self, event: str, *, skip_hooks: bool = False) -> None:
         """Fire a teardown extension-point before ``_remove_worktree`` (D3).
