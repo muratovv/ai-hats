@@ -346,9 +346,7 @@ def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
     result = _result(skills=[skill], checks=[_check(skill, script="../../../etc/passwd")])
 
     with pytest.raises(CheckResolutionError, match="outside this session's mirror root"):
-        resolve_edge_checks(
-            project, topology=_topology(), session_id=SID, compose=lambda _: result
-        )
+        resolve_edge_checks(project, topology=_topology(), session_id=SID, compose=lambda _: result)
 
 
 def test_outside_a_session_the_library_copy_runs(tmp_path: Path):
