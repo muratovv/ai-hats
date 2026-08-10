@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
 
-from ai_hats.check_resolve import CheckResolutionError, resolve_edge_checks
+from ai_hats.check_resolve import CheckResolutionError, resolve_carried_checks
 from ai_hats.check_snapshot import legacy_launch_notices
 from ai_hats.materialization import PlanMaterializer
 from ai_hats.providers import Provider
@@ -121,9 +121,8 @@ def _mirrored(project: Path, skill: ResolvedComponent, sid: str = SID) -> Path:
 
 def _resolve(project: Path, skill: ResolvedComponent, sid: str = SID, **kw):
     result = _result(skills=[skill], checks=[_check(skill)])
-    return resolve_edge_checks(
+    return resolve_carried_checks(
         project,
-        topology=_topology(),
         session_id=sid,
         compose=lambda _: result,
         **kw,
@@ -347,7 +346,7 @@ def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
     result = _result(skills=[skill], checks=[_check(skill, script="../../../etc/passwd")])
 
     with pytest.raises(CheckResolutionError, match="outside this session's mirror root"):
-        resolve_edge_checks(project, topology=_topology(), session_id=SID, compose=lambda _: result)
+        resolve_carried_checks(project, session_id=SID, compose=lambda _: result)
 
 
 def test_outside_a_session_the_library_copy_runs(tmp_path: Path):

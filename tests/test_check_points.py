@@ -11,7 +11,12 @@ from __future__ import annotations
 import pytest
 from ai_hats_core import ComponentKind, ResolvedComponent
 
-from ai_hats.check_points import CheckBindingError, known_points, resolve_checks
+from ai_hats.check_points import (
+    CheckBindingError,
+    known_points,
+    owns_point,
+    resolve_checks,
+)
 from ai_hats.models import CheckBinding
 
 
@@ -39,28 +44,39 @@ def _row(**overrides) -> CheckBinding:
     )
 
 
-def test_catalog_carries_every_namespace_of_d3():
-    """R7: the full catalog ships now, including points whose executors land in
-    HATS-1141 / HATS-1143 — D4's warn-rejection is composition-time validation,
-    so the attributes must exist before the runners do."""
+def test_catalog_carries_only_the_points_ai_hats_fires():
+    """ADR-0019 D11: the catalog is scoped to ai-hats\'s own call sites.
+
+    ``edge:`` is deliberately absent — it used to be built here from the
+    PACKAGED tasks topology while the kernel ran the resolved one, which is the
+    divergence D11 removes by moving the grammar to its owner.
+    """
     catalog = known_points()
 
-    assert catalog["edge:plan--execute"].namespace == "edge"
-    assert catalog["edge:execute--execute"].namespace == "edge"  # reclaim self-loop
     assert catalog["card:pre-create"].namespace == "card"
     assert catalog["wt:pre-merge"].allow_warn is False
     assert catalog["wt:teardown[merge]"].allow_warn is False
     assert catalog["wt:create"].allow_warn is True
+    assert not [point for point in catalog if point.startswith("edge:")]
+    assert not owns_point("edge:plan--execute")
 
 
-def test_unknown_point_is_loud(skill):
-    with pytest.raises(CheckBindingError, match="unknown point"):
-        resolve_checks([("trait-x", _row(on=("edge:bogus--state",)))], [skill])
+def test_a_foreign_namespace_is_carried_not_judged(skill):
+    """D11: what ``edge:`` or any other foreign namespace means is the owning
+    application\'s question. Carried verbatim, with provenance intact."""
+    resolved = resolve_checks(
+        [("trait-x", _row(on=("edge:bogus--state", "gh:pre-push")))], [skill]
+    )
+
+    assert [c.point for c in resolved] == ["edge:bogus--state", "gh:pre-push"]
+    assert {c.declared_by for c in resolved} == {"trait-x"}
 
 
-def test_unknown_namespace_is_loud(skill):
-    with pytest.raises(CheckBindingError, match="unknown point"):
-        resolve_checks([("trait-x", _row(on=("gh:pre-push",)))], [skill])
+def test_a_point_with_no_namespace_is_still_loud(skill):
+    """The one shape ai-hats keeps: a name with no namespace can reach no
+    application at all, so it is a typo by construction."""
+    with pytest.raises(CheckBindingError, match="names no point"):
+        resolve_checks([("trait-x", _row(on=("plan--execute",)))], [skill])
 
 
 def test_warn_is_rejected_at_data_protection_points(skill):

@@ -146,9 +146,11 @@ def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
     result = composer.compose("checks-role")
     assert result.errors == ["Rule 'ghost_rule' not found"]
 
+    # A point with no namespace: the one shape ai-hats still judges after
+    # ADR-0019 D11 moved foreign grammars to their owners.
     (checks_library / "roles" / "checks-role" / "config.yaml").write_text(
         "name: checks-role\ncomposition:\n  skills: [test_skill]\n  checks:\n"
-        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:bogus--state']}\n"
+        "    - {skill: test_skill, script: hooks/gate.sh, on: ['bogus--state']}\n"
     )
     composer = Composer(LibraryResolver([checks_library]))
 

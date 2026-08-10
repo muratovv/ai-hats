@@ -62,7 +62,9 @@ def _check_pack(project: Path, script: Path | None = None):
     from ai_hats_core import ResolvedCheck
     from ai_hats_rack.definition import resolve_definition
 
-    from ai_hats.rack_consumers import CheckRunnerExtension
+    from ai_hats_rack.checks import CheckSubscriber
+
+    from ai_hats.rack_consumers import AiHatsCheckPort
 
     checks = ()
     if script is not None:
@@ -78,11 +80,9 @@ def _check_pack(project: Path, script: Path | None = None):
         )
     tasks_dir = project / ".agent" / "tasks"
     return [
-        CheckRunnerExtension(
-            project,
-            tasks_dir=tasks_dir,
+        CheckSubscriber(
+            AiHatsCheckPort(project, tasks_dir=tasks_dir, resolve=lambda: checks),
             topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
-            resolve=lambda: checks,
         )
     ]
 

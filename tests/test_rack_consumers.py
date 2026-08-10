@@ -29,12 +29,25 @@ from ai_hats.check_resolve import CheckResolutionError
 from ai_hats.hook_exec import run_hook
 from ai_hats.models import CheckBinding
 from ai_hats.paths import session_cache_dir
+from ai_hats_rack.checks import CheckSubscriber
+
 from ai_hats.rack_consumers import (
     CHECK_PRIORITY,
     EDGE_CHECK_TIMEOUT_S,
-    CheckRunnerExtension,
+    AiHatsCheckPort,
     consumer_subscribers,
 )
+
+
+def _extension(project_dir, *, tasks_dir, topology, resolve=None, **kwargs) -> CheckSubscriber:
+    """The channel as production wires it: the rack\'s subscriber over ai-hats\'s
+    port (ADR-0019 D11). ``resolve`` injects the carried rows, the seam the old
+    ``CheckRunnerExtension`` exposed for the same reason."""
+    return CheckSubscriber(
+        AiHatsCheckPort(project_dir, tasks_dir=tasks_dir, resolve=resolve),
+        topology=topology,
+        **kwargs,
+    )
 
 
 def _topology() -> Topology:
@@ -75,8 +88,8 @@ def _ctx(event_key: str = "edge:review--done", *, task_id: str = "T-1") -> Dispa
     )
 
 
-def _runner(tmp_path: Path, *checks: ResolvedCheck, **kwargs) -> CheckRunnerExtension:
-    return CheckRunnerExtension(
+def _runner(tmp_path: Path, *checks: ResolvedCheck, **kwargs) -> CheckSubscriber:
+    return _extension(
         tmp_path,
         tasks_dir=tmp_path / "tasks",
         topology=_topology(),
@@ -131,7 +144,7 @@ def test_the_runner_hands_every_check_the_tasks_dir_of_this_transition(tmp_path)
     scratch = tmp_path / "elsewhere" / "tasks"
     scratch.mkdir(parents=True)
     script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
-    runner = CheckRunnerExtension(
+    runner = _extension(
         tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
     )
 
@@ -186,7 +199,7 @@ def test_the_edge_runner_overwrites_an_ambient_tasks_dir(tmp_path, monkeypatch):
     scratch = tmp_path / "real" / "tasks"
     scratch.mkdir(parents=True)
     script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
-    runner = CheckRunnerExtension(
+    runner = _extension(
         tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
     )
 
@@ -261,7 +274,8 @@ def test_a_state_file_that_cannot_be_READ_refuses_rather_than_gating_no_tree(tmp
 
 def test_one_worktree_lookup_serves_every_binding_on_the_edge(tmp_path):
     """Two bindings on one edge resolve the tree once — it cannot change between
-    them, and the lookup takes a lock."""
+    them, and the lookup takes a lock. Since HATS-1541 the rack calls the port
+    once per row, so the "once" is the memo in the port, not the call count."""
     calls: list[str] = []
     worktree = tmp_path / "wt"
     worktree.mkdir()
@@ -271,13 +285,14 @@ def test_one_worktree_lookup_serves_every_binding_on_the_edge(tmp_path):
         _check(_script(tmp_path, "exit 0", name="a.sh")),
         _check(_script(tmp_path, "exit 0", name="b.sh")),
     )
-    original = runner._worktree_path
+    port = runner._port
+    original = port._lookup_worktree
 
     def counting(task_id):
         calls.append(task_id)
         return original(task_id)
 
-    runner._worktree_path = counting
+    port._lookup_worktree = counting
     runner.on_event(_ctx(task_id="T-1"))
 
     assert calls == ["T-1"]
@@ -288,7 +303,7 @@ def test_no_binding_on_the_edge_resolves_no_worktree(tmp_path):
     for it — the overwhelmingly common case on every transition."""
     runner = _runner(tmp_path)  # nothing bound
     called = []
-    runner._worktree_path = lambda task_id: called.append(task_id)
+    runner._port._lookup_worktree = lambda task_id: called.append(task_id)
 
     assert runner.on_event(_ctx()) is None
     assert called == []
@@ -355,7 +370,7 @@ def test_a_resolution_failure_is_a_typed_refusal_not_a_traceback(tmp_path):
     def boom() -> tuple[ResolvedCheck, ...]:
         raise CheckResolutionError("active role 'ghost' does not exist")
 
-    runner = CheckRunnerExtension(
+    runner = _extension(
         tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=boom
     )
 
@@ -372,7 +387,7 @@ def test_an_unparseable_project_config_refuses_instead_of_tracebacking(tmp_path)
     ``ProjectConfigError`` is neither ``OSError`` nor one of the typed two — so
     every transition ended in a stack trace."""
     (tmp_path / "ai-hats.yaml").write_text("schema_version: 99\n")
-    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+    runner = _extension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
 
     with pytest.raises(AbortOperation) as exc_info:
         runner.on_event(_ctx())
@@ -391,7 +406,7 @@ def test_a_project_with_no_active_role_takes_its_edges_untouched(tmp_path):
     the honest answer is "nothing bound", not a refusal.
     """
     (tmp_path / "ai-hats.yaml").write_text("schema_version: 1\n")
-    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+    runner = _extension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
 
     assert runner.on_event(_ctx()) is None
 
@@ -413,7 +428,7 @@ def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
         "    - {skill: s, script: hooks/x.sh, on: ['edge:review--done']}\n"
     )
     assert check_resolve.declares_checks(tmp_path) is True, "precondition: probe must see it"
-    runner = CheckRunnerExtension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
+    runner = _extension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
 
     with pytest.raises(AbortOperation) as exc_info:
         runner.on_event(_ctx())
@@ -580,7 +595,7 @@ def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_pat
     composed = ResolvedComponent(
         name="gate-skill", component_type=ComponentKind.SKILL, source_path=skill_dir
     )
-    point = "edge:plan--execute"
+    point = "edge:review--done"  # an edge of _topology(): the rack subscribes by its own
 
     def row(script: str, on_error: str) -> CheckBinding:
         return CheckBinding.model_validate(
@@ -688,7 +703,7 @@ def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
         lambda _p: pytest.fail("composed a project that declares no checks"),
     )
 
-    assert check_resolve.resolve_edge_checks(tmp_path, topology=_topology()) == ()
+    assert check_resolve.resolve_carried_checks(tmp_path) == ()
 
 
 def test_a_declared_binding_is_detected_by_the_byte_probe(tmp_path, monkeypatch):
@@ -714,7 +729,7 @@ def test_a_broken_composition_refuses_instead_of_passing_quietly(tmp_path, monke
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(tmp_path, topology=_topology())
+        check_resolve.resolve_carried_checks(tmp_path)
 
     assert "library schema is newer" in str(exc_info.value)
 
@@ -730,28 +745,37 @@ def test_a_composition_error_list_is_a_refusal_not_a_warning(tmp_path, monkeypat
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(tmp_path, topology=_topology())
+        check_resolve.resolve_carried_checks(tmp_path)
 
     assert "Role 'ghost' not found" in str(exc_info.value)
 
 
-def test_a_point_outside_the_kernel_topology_names_both_topologies(tmp_path, monkeypatch):
-    """R7: ``known_points`` validates against the PACKAGED tasks backlog while
-    the kernel runs the catalog-local one. A gate that can never fire under the
-    running topology is a silent skip — so it is named, loudly, on both sides."""
-    stray = _check(_script(tmp_path, "exit 0"), point="edge:plan--execute")
+def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_path, monkeypatch):
+    """ADR-0019 D11, replacing ``_guard_topology``.
+
+    The carrier hands the row over — it cannot tell a typo from a point aimed at
+    a sibling backlog — and the rack, which holds the running topology, does not
+    subscribe it. Measured before: the abort took an UNRELATED edge down with it.
+    """
+    stray = _check(_script(tmp_path, "exit 0", name="stray.sh"), point="edge:plan--execute")
+    live = _check(_script(tmp_path, "exit 2", name="real.sh"), point="edge:review--done")
     monkeypatch.setattr(
         check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=True)]
     )
-    monkeypatch.setattr(check_resolve, "_compose_role", lambda _p: _composition(checks=(stray,)))
+    monkeypatch.setattr(
+        check_resolve, "_compose_role", lambda _p: _composition(checks=(stray, live))
+    )
 
-    with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(tmp_path, topology=_topology())
+    carried = check_resolve.resolve_carried_checks(tmp_path)
+    assert [c.point for c in carried] == ["edge:plan--execute", "edge:review--done"]
 
-    message = str(exc_info.value)
-    assert "edge:plan--execute" in message
-    assert "review" in message and "done" in message  # the topology the kernel holds
-    assert "ai_hats_rack/backlog.yaml" in message  # the catalog composition validated against
+    runner = _extension(
+        tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=lambda: carried
+    )
+    # The stray edge fires nothing; the real one still refuses.
+    assert runner.on_event(_ctx("edge:open--review")) is None
+    with pytest.raises(AbortOperation):
+        runner.on_event(_ctx("edge:review--done"))
 
 
 def test_out_of_session_a_binding_resolves_live(tmp_path):
@@ -759,9 +783,8 @@ def test_out_of_session_a_binding_resolves_live(tmp_path):
     standalone binary) means live, never absent."""
     live = _script(tmp_path, "exit 0")
 
-    resolved = check_resolve.resolve_edge_checks(
+    resolved = check_resolve.resolve_carried_checks(
         tmp_path,
-        topology=_topology(),
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
@@ -781,9 +804,8 @@ def test_in_session_a_binding_resolves_from_the_session_mirror(tmp_path):
     mirrored_dir.mkdir(parents=True)
     mirrored = _script(mirrored_dir, "exit 0")
 
-    resolved = check_resolve.resolve_edge_checks(
+    resolved = check_resolve.resolve_carried_checks(
         tmp_path,
-        topology=_topology(),
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -796,9 +818,8 @@ def test_in_session_a_missing_mirror_never_falls_back_to_the_live_path(tmp_path)
     exists for. The absent path stands, and ``run_hook`` calls it corruption."""
     live = _script(tmp_path, "exit 0")
 
-    resolved = check_resolve.resolve_edge_checks(
+    resolved = check_resolve.resolve_carried_checks(
         tmp_path,
-        topology=_topology(),
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -820,9 +841,8 @@ def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
     branch_copy = _script(skill_dir, "exit 0")
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(
+        check_resolve.resolve_carried_checks(
             tmp_path,
-            topology=_topology(),
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
 
@@ -855,9 +875,8 @@ def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeyp
     mirrored_dir.mkdir(parents=True)
     mirrored = _script(mirrored_dir, "exit 0")
 
-    resolved = check_resolve.resolve_edge_checks(
+    resolved = check_resolve.resolve_carried_checks(
         tmp_path,
-        topology=_topology(),
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -924,9 +943,8 @@ def test_a_submodule_is_not_a_task_worktree(tmp_path):
     vendored = main / "vendor" / "shared" / gate.name
     assert (main / "vendor" / "shared" / ".git").is_file()
 
-    resolved = check_resolve.resolve_edge_checks(
+    resolved = check_resolve.resolve_carried_checks(
         main,
-        topology=_topology(),
         compose=lambda _p: _composition(checks=(_check(vendored),)),
     )
 
@@ -942,9 +960,8 @@ def test_a_real_linked_worktree_is_still_refused(tmp_path):
     branch_copy = _script(worktree, "exit 0")
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(
+        check_resolve.resolve_carried_checks(
             main,
-            topology=_topology(),
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
 
@@ -966,9 +983,8 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
     _script(mirrored_dir, "exit 0")
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_edge_checks(
+        check_resolve.resolve_carried_checks(
             main,
-            topology=_topology(),
             session_id="sess-a",
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
@@ -1038,7 +1054,7 @@ def test_an_unreadable_component_tree_is_loud_not_a_silent_false(tmp_path, monke
 
     try:
         with pytest.raises(CheckResolutionError) as exc_info:
-            check_resolve.resolve_edge_checks(tmp_path, topology=_topology())
+            check_resolve.resolve_carried_checks(tmp_path)
     finally:
         (root / "traits").chmod(0o755)
 

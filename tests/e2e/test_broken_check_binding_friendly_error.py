@@ -47,7 +47,6 @@ def broken_binding_project(tmp_project):
     """``tmp_project`` plus a project-local library whose role binds a
     skill it does not compose — the cheapest unusable binding there is."""
     from ai_hats.models import ProjectConfig
-    from ai_hats.paths.constants import PROJECT_CONFIG
 
     lib = tmp_project.path / "libraries"
     role_dir = lib / "roles" / "broken"

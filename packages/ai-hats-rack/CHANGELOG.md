@@ -3,6 +3,26 @@
 All notable changes to this package are documented here. Semantic versioning on
 the `rack` CLI surface and the backlog-kernel format.
 
+## 0.2.0
+
+- **The rack owns its own point names** (HATS-1541, ADR-0019 D11). New public
+  module `ai_hats_rack.checks`: the `edge:<from>--<to>` grammar, the filter
+  against the topology the kernel is running, the in-lock subscriber, and the
+  `CheckPort` an integrator implements to supply declarations and to run one.
+  Until now the integrator held all of it and validated names against a
+  *packaged* topology while the kernel ran the resolved one, so a point aimed at
+  a sibling backlog was indistinguishable from a typo — and refusing on it took
+  unrelated transitions down. A point this instance has no edge for is now
+  skipped, not refused.
+- **The kernel-factory entry point is loaded inside a `try`**. A half-installed
+  or version-skewed integrator raised a bare `ImportError`/`AttributeError` out
+  of `_provider()` naming nothing; it is now a `RackConfigError` that says which
+  entry point failed and why running bare instead would be worse.
+- The rack still never executes: `subprocess` remains forbidden by the import
+  pin, so a bound check travels back over the port to the integrator that can
+  spawn it. The per-check deadline moved here with `LOCK_TIMEOUT`, and is passed
+  in the request rather than duplicated on both sides.
+
 ## 0.1.7
 
 - **`depends_on` has a reverse view: `blocks`** (HATS-1208). Derived-kind

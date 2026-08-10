@@ -24,10 +24,7 @@ from ai_hats_observe.trace import ENV_SESSION_ID
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import CompositionResult, ResolvedCheck
-    from ai_hats_rack.fsm import Topology
 
-
-_EDGE_PREFIX = "edge:"
 
 #: The ``checks`` mapping key in every spelling the YAML parser accepts, anchored
 #: to a line start so ``prechecks:`` is not one. A scan still, not a parse: a
@@ -44,21 +41,27 @@ def session_id() -> str:
     return os.environ.get(ENV_SESSION_ID, "")
 
 
-def resolve_edge_checks(
+def resolve_carried_checks(
     project_dir: Path,
     *,
-    topology: Topology,
     session_id: str = "",
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Every ``edge:`` binding this project declares, re-based onto its root."""
+    """Every binding on a point ai-hats does NOT own, re-based onto its root.
+
+    The carrier half of ADR-0019 D11: which of these the caller subscribes to is
+    the caller's decision, made against the topology it runs. Rows on ai-hats's
+    own points (``card:``, ``wt:``) are excluded — they have their own call
+    sites, and a broken one of those must not abort a foreign point's event.
+    """
     result = (compose or _compose_fail_closed)(project_dir)
     if result is None:
         return ()
-    checks = tuple(check for check in result.checks if check.point.startswith(_EDGE_PREFIX))
+    from .check_points import owns_point
+
+    checks = tuple(check for check in result.checks if not owns_point(check.point))
     if not checks:
         return ()
-    _guard_topology(checks, topology)
     return _rooted(project_dir, result, checks, session_id)
 
 
@@ -69,11 +72,11 @@ def resolve_checks_at(
     session_id: str = "",
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Every binding on one non-``edge:`` point, re-based onto its root.
+    """Every binding on one point ai-hats owns, re-based onto its root.
 
-    The sibling of :func:`resolve_edge_checks` for the ``wt:`` namespace
-    (HATS-1540): one point, named by the caller that fires it, so there is no
-    topology to guard — the catalog validated the name at composition.
+    The sibling of :func:`resolve_carried_checks` for the ``wt:`` namespace
+    (HATS-1540): one point, named by the call site that fires it, and that name
+    IS in ``known_points()`` — these are the points ai-hats validates itself.
     """
     result = (compose or _compose_fail_closed)(project_dir)
     if result is None:
@@ -239,29 +242,11 @@ def _is_worktree_marker(marker: Path, check: ResolvedCheck) -> bool:
     )
 
 
-def _guard_topology(checks: tuple[ResolvedCheck, ...], topology: Topology) -> None:
-    """R7: the kernel's topology comes through the seam and is authoritative.
-
-    A point the running topology has no edge for would just never match — the
-    silent skip this channel exists to remove — so name the divergence, and both
-    of its sides. Sibling catalogs are NOT taught to ``known_points()`` here.
-    """
-    from ai_hats_rack.fsm import all_edge_keys
-
-    stray = sorted(
-        {check.point for check in checks if check.point not in set(all_edge_keys(topology))}
-    )
-    if not stray:
-        return
-    from ai_hats_rack import load_backlog
-
-    catalog = load_backlog().topology
-    raise CheckResolutionError(
-        f"bound point(s) {stray} are not edges of the topology this backlog runs "
-        f"(states {list(topology.states)}); they were validated against the packaged "
-        f"catalog 'ai_hats_rack/backlog.yaml' (states {list(catalog.states)}). The two "
-        f"topologies diverge, so the gate could never fire here (ADR-0019 D3)"
-    )
+# HATS-1541 retired `_guard_topology`. It existed to NAME the divergence between
+# the packaged catalog ai-hats validated against and the topology the kernel ran
+# — and could do nothing else, because it could not tell a typo from a point
+# addressed to a sibling backlog. Both halves are gone with the catalog: the
+# owner of a topology now filters its own points (ADR-0019 D11).
 
 
 def _library_roots(project_dir: Path) -> list[Path]:
@@ -395,7 +380,7 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
 __all__ = [
     "CheckResolutionError",
     "declares_checks",
+    "resolve_carried_checks",
     "resolve_checks_at",
-    "resolve_edge_checks",
     "session_id",
 ]

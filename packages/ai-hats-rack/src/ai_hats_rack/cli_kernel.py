@@ -19,6 +19,7 @@ import click
 from .cli_common import resolved_root as _resolved_root
 from .composition import build_card_schema, stock_validators
 from .definition import resolve_definition
+from .errors import RackConfigError
 from .dispatch import bind_subscribers, validate_requires_states
 from .extensions import standalone_extensions
 from .journal import JsonlJournalSink
@@ -42,9 +43,25 @@ class KernelProvider(Protocol):
 
 @lru_cache(maxsize=1)
 def _provider() -> KernelProvider | None:
-    """First registered wiring factory, or None → bare standalone kernel."""
+    """First registered wiring factory, or None → bare standalone kernel.
+
+    The load is wrapped (HATS-1541): a half-installed or version-skewed
+    integrator raised out of here as an ``ImportError`` / ``AttributeError``
+    with no mention of what was being loaded, and ``lru_cache`` does not cache
+    an exception, so every verb paid the same traceback again. Refusing is still
+    right — a wired surface that silently degrades to the bare kernel drops
+    ownership, worktrees and every bound check — but it must say so.
+    """  # comment-length: allow — why it refuses rather than degrades is the point
     for ep in importlib.metadata.entry_points(group=KERNEL_FACTORY_GROUP):
-        return ep.load()()
+        try:
+            return ep.load()()
+        except Exception as exc:
+            raise RackConfigError(
+                f"the integrator registered under '{KERNEL_FACTORY_GROUP}' as {ep.value!r} "
+                f"could not be loaded ({type(exc).__name__}): {exc} — the wired kernel "
+                f"cannot be built, and running bare would silently drop ownership, "
+                f"worktrees and every bound check"
+            ) from exc
     return None
 
 

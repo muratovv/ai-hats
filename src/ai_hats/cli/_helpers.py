@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ..composition_seam import MissingProviderError, RoleNotFoundError
+    from ..libraries.models import CheckBindingError
     from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
     from ..role_spec import RoleSpecError

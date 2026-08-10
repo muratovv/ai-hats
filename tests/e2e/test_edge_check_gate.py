@@ -70,6 +70,16 @@ ROLES = {
     "ansi": ("ansi.sh", "refuse"),
 }
 
+#: A point no topology in this sandbox has an edge for. It stands in for the two
+#: cases the carrier cannot tell apart and the rack can: a typo, and a row
+#: addressed to a SIBLING backlog (this repository ships HYP and PROP next to
+#: tasks). ``reviw`` is the exact string measured on 2026-08-09 taking an
+#: unrelated ``edge:brainstorm--plan`` down with it.
+STRAY_EDGE = "edge:reviw--done"
+
+#: Roles binding a stray point: alone, and next to a real gate on a real edge.
+STRAY_ROLES = ("stray", "strayed")
+
 _ROLE_YAML = """\
 name: {name}
 priorities:
@@ -86,6 +96,30 @@ composition:
       on_error: {on_error}
 injection: |
   # ROLE: {name}
+"""
+
+#: ``stray`` binds ONLY the stray point; ``strayed`` puts it next to a real gate
+#: on a real edge, so a skipped row cannot be mistaken for a disarmed channel.
+_STRAY_ROLE_YAML = """\
+name: {name}
+priorities:
+  - Reliability
+composition:
+  traits: []
+  rules: []
+  skills:
+    - {skill}
+  checks:
+{rows}
+injection: |
+  # ROLE: {name}
+"""
+
+_CHECK_ROW = """\
+    - skill: {skill}
+      script: {script}
+      "on": [{point}]
+      on_error: refuse
 """
 
 _PLAIN_YAML = f"""\
@@ -139,6 +173,25 @@ def _seed_library(project: Path) -> None:
     plain = lib / "roles" / "plain"
     plain.mkdir(parents=True)
     (plain / "config.yaml").write_text(_PLAIN_YAML, encoding="utf-8")
+
+    stray_rows = {
+        "stray": ((STRAY_EDGE, "pass.sh"),),
+        "strayed": ((STRAY_EDGE, "pass.sh"), (EDGE, "refuse.sh")),
+    }
+    for name, rows in stray_rows.items():
+        role_dir = lib / "roles" / name
+        role_dir.mkdir(parents=True)
+        (role_dir / "config.yaml").write_text(
+            _STRAY_ROLE_YAML.format(
+                name=name,
+                skill=SKILL,
+                rows="".join(
+                    _CHECK_ROW.format(skill=SKILL, script=script, point=point)
+                    for point, script in rows
+                ),
+            ),
+            encoding="utf-8",
+        )
 
 
 @pytest.fixture
@@ -705,3 +758,43 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
     assert "plan.md" in context.stdout
     assert ".checks" not in context.stdout
     assert log.name not in context.stdout
+
+
+# ---------------------------------------------------------------------------
+# 8. a point this topology has no edge for — ADR-0019 D11
+# ---------------------------------------------------------------------------
+
+
+def test_a_point_outside_this_topology_does_not_abort_an_unrelated_edge(gate_project, rack_bin):
+    """D11 clause 2. Measured on 2026-08-09: one row on ``edge:reviw--done``
+    refused ``edge:brainstorm--plan`` — the "every transition refused" symptom
+    that made HATS-1538 withdraw the shipped binding an hour after it landed.
+
+    The carrier cannot tell that row from a sibling backlog's (this repository
+    ships HYP and PROP), so it carries both and the rack — the only holder of
+    the running topology — decides that neither is this instance's business.
+    """
+    project, env = gate_project("stray")
+    task_id = _create(rack_bin, project, env)
+
+    taken = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+
+    assert taken.returncode == 0, taken.stdout + taken.stderr
+    assert json.loads(taken.stdout)["task"]["state"] == "plan"
+    assert _outcomes(taken)["checks"]["outcome"] == "ok"
+    assert not _checks_dir(project, task_id).exists(), "a skipped row must run nothing"
+
+
+def test_a_stray_row_does_not_disarm_the_gate_on_a_real_edge(gate_project, rack_bin):
+    """The other half: skipping the unknown row must not skip the known one.
+    Same role declares both, and the real gate still refuses in its own words."""
+    project, env = gate_project("strayed")
+    task_id = _create(rack_bin, project, env)
+    _seed_mirror(project, env, script="refuse.sh", body=f'printf "{MIRROR_WORDS}\\n"\nexit 2\n')
+    before = _card(project, task_id).read_bytes()
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _reason(refused) == MIRROR_WORDS
+    assert _card(project, task_id).read_bytes() == before
