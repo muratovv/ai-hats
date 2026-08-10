@@ -235,3 +235,13 @@ def test_main_malformed_block_not_bypassed_by_env_ack(tmp_path: Path, monkeypatc
     assert rc == 1
     err = capsys.readouterr().err
     assert "malformed flow block(s):" in err
+
+
+def test_main_stale_catalog_not_bypassed_by_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "CATALOG.md").write_text("stale content\n")
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "is stale — run `python scripts/gen_e2e_catalog.py --write`" in err
