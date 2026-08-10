@@ -143,14 +143,20 @@ composition:
 ```
 
 *(HATS-1545 replaced the flat `checks:` list with this shape. The application is
-a **key**, so ai-hats routes a row without knowing any application's namespaces:
-it owns exactly `run:` and `on_error:` and carries every other key verbatim.
+a **key**, so ai-hats routes a row without knowing any application's namespaces.
+It owns three keys — `run:`, `at:` and `on_error:` — and carries every other key
+verbatim. `at:` is owned but never *interpreted*: ai-hats checks only that a row
+names at least one point, since a row bound to nothing is a gate that never
+fires and neither side would otherwise be looking (HATS-1545 F3); what each name
+MEANS stays the owning application's question.
 Depth below the app key belongs to the app — `rack` puts the backlog it gates
 there, `wt` has one namespace and puts rows directly under its own key, and
 ai-hats checks neither. `at:` rather than `on:` because YAML 1.1 resolves a bare
 `on` to `True`; the old channel remapped that for one known field, which is
-impossible under an opaque block. The old key is retired rather than translated:
-a config still carrying it gets the strip-unknown WARN naming `apps`.)*
+impossible under an opaque block. The old key is retired rather than translated,
+and a config still carrying it gets a **typed refusal** naming where the rows
+moved — the strip-unknown WARN would drop a declared gate and carry on, which is
+the silence this channel exists to remove (supervisor ruling 2026-08-10).)*
 
 The script stays where scripts already live — in the skill directory, resolved
 skill-relative exactly like `git_hooks` / `runtime_hooks` / `worktree` entries.
@@ -166,7 +172,8 @@ What this buys against the two consequences above:
   traits/rules/skills — same overlay precedence, last-wins, dedup.
   `lifecycle_hooks`' union-scope special case disappears rather than being
   extended to a fifth channel.
-- **Referential integrity.** `skill:` naming a skill nobody composed is a loud
+- **Referential integrity.** The skill named by `run:` (its first segment; the
+  pair `skill:`/`script:` below is the pre-1545 spelling) naming a skill nobody composed is a loud
   composition error (a skill an overlay *removed* is a warning — D6); `script:`
   is health-checked at composition for exists / non-empty / shebang / executable
   per **D6**. *(Rev 7: this bullet used to attribute that check to "the existing
@@ -183,6 +190,16 @@ silently.
 
 ### D3 — The point catalog
 
+> **Spelling note (HATS-1545).** The `point` column below is the *pre-1545*
+> spelling, kept because the rest of this section reasons about it. There is no
+> single catalog any more: the application owns its point names, and the
+> namespace prefix became the `apps.<app>` key. As written today, `edge:…` and
+> `card:pre-create` are **rack** cargo under `apps.rack.<backlog>`, and the `wt:`
+> rows lose their prefix under `apps.wt` — `wt:pre-merge` is `at: [pre-merge]`.
+> The `wt` names ai-hats validates are `check_points.wt_points()`; a name in any
+> other app's cargo is that app's question. See D2 for the shape and ADR-0017 §3
+> for the rack's own grammar.
+
 | point                                  | when                                                                                          | may veto           | replaces          | execution               |
 | -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------- | ----------------------- |
 | `edge:<from>--<to>`                    | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | `lifecycle_hooks` | implemented (HATS-1141) |
@@ -193,7 +210,7 @@ silently.
 | `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
 
 The catalog is **ai-hats's own namespaces only** since rev 9 (D11): `card:` and
-`wt:` rows above are catalog entries — `check_points.known_points()` knows the
+`wt:` rows above are catalog entries — `check_points.wt_points()` knows the
 name and a binding to it validates, so a typo there is still refused at
 composition. The `edge:` row is **not** in that catalog and is not validated by
 ai-hats at all; its grammar, its topology and its subscriptions belong to the
@@ -783,7 +800,7 @@ supersede the body above:
   work, not reuse**: `CompositionResult` has no `checks` field
   (`ai_hats_core/composition.py:41-59`), `OverlayConfig` has only
   `add_/remove_{traits,rules,skills}` (`config/overlay.py:31-53`), and the
-  composer never reads `composition.checks`.
+  composer never reads `composition.apps` cargo.
 
 **Open question 3 was REVERSED at rev 4 and is REVERSED BACK at rev 8
 (HATS-1540) — its premise does not hold.** The rev-4 argument is kept verbatim
