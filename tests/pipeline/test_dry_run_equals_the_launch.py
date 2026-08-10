@@ -21,6 +21,7 @@ it together. The bindings section has its own inversion in
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from pathlib import Path
@@ -31,7 +32,7 @@ from click.testing import CliRunner
 
 from ai_hats.assembler import Assembler
 from ai_hats.cli import main
-from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID, dry_run_hitl
+from ai_hats.dry_run import AT_LAUNCH, DRY_RUN_SESSION_ID, dry_run_automate, dry_run_hitl
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats_observe.artifacts import ROLE_MATERIALIZATION_JSON
@@ -166,3 +167,154 @@ def test_the_gates_survive_the_round_trip(project: Path, monkeypatch):
 
     assert planned["checks"], "the maintainer role binds a gate — the fixture must show it"
     assert planned["checks"] == _normalize(launched["checks"], _sid_of(launched))
+
+
+# AUTOMATE (HATS-1552): the HITL half above shares its launch assembly between
+# report and launch; the sub-agent path shared none of it, hence everything below.
+
+TICKET = "HATS-0001"
+TASK_TEXT = "ship the thing"
+
+
+def _write_ticket(project: Path) -> str:
+    """A card on disk is what makes ``TICKET_CONTEXT`` non-empty — the section the
+    dry-run drops together with the ``ticket_id`` that selects it."""
+    from ai_hats.paths import tasks_dir
+
+    card = tasks_dir(project) / TICKET
+    card.mkdir(parents=True, exist_ok=True)
+    (card / "task.yaml").write_text(f"id: {TICKET}\ntitle: the card the sub-agent is handed\n")
+    return TICKET
+
+
+def _automate_for_real(monkeypatch, project: Path) -> dict:
+    """Drive the real sub-agent runner with only the SDK call excepted.
+
+    Everything up to ``run_claude_sdk_blocking`` runs for real, so the captured
+    options are the ones a sub-agent would have been launched with — not a
+    reconstruction the test agrees with by construction.
+    """
+    from ai_hats.composition_seam import build_composition_payload
+    from ai_hats.paths import runs_dir
+    from ai_hats.subagent_runner import SubAgentRunner
+    from ai_hats.surfaces.claude.sdk_runner import SdkRunResult
+    from ai_hats_observe import SessionManager
+
+    seen: dict[str, Any] = {}
+
+    def _capture(options, initial_message, *, timeout_s):  # noqa: ARG001
+        seen["options"] = options
+        seen["initial_message"] = initial_message
+        return SdkRunResult(
+            exit_code=0,
+            stdout="",
+            stderr="",
+            claude_session_id=None,
+            total_cost_usd=None,
+            num_turns=None,
+            stop_reason=None,
+            timed_out=False,
+            error=None,
+        )
+
+    monkeypatch.setattr(
+        "ai_hats.surfaces.claude.sdk_runner.run_claude_sdk_blocking",
+        _capture,
+    )
+
+    payload = build_composition_payload(project, role_override="maintainer")
+    session_mgr = SessionManager(project, runs_dir=runs_dir(project))
+    session = SubAgentRunner(project, payload, session_mgr=session_mgr).run(
+        task=TASK_TEXT,
+        ticket_id=TICKET,
+        isolation_mode="none",
+    )
+    seen["record"] = json.loads(Path(session.role_materialization_path).read_text())
+    seen["meta_prompt"] = Path(session.meta_prompt_path).read_text()
+    seen["sid"] = session.session_id
+    return seen
+
+
+def _planned_automate(project: Path):
+    return dry_run_automate(project, role="maintainer", task=TASK_TEXT, ticket_id=TICKET)
+
+
+def test_the_automate_dry_run_payload_equals_the_launch_record(project: Path, monkeypatch):
+    """Same claim as the HITL case, on the path that shares no assembly with it."""
+    _write_ticket(project)
+    planned = _planned_automate(project).to_dict()
+    real = _automate_for_real(monkeypatch, project)
+
+    assert _comparable(planned, real["sid"]) == _comparable(real["record"], real["sid"])
+
+
+def test_the_automate_dry_run_reports_the_prompt_the_sub_agent_receives(
+    project: Path, monkeypatch
+):
+    """The meta-prompt is the sub-agent's whole world and lives outside ``to_dict``.
+
+    Byte equality against ``meta_prompt.txt`` is the only assertion that can see
+    a dry-run building its prompt with a second, tidier function than the launch.
+    """
+    _write_ticket(project)
+    planned = _planned_automate(project)
+    real = _automate_for_real(monkeypatch, project)
+
+    assert planned.prompt_text, "the report must carry the prompt the sub-agent is given"
+    assert planned.prompt_text == _normalize(real["meta_prompt"], real["sid"])
+
+
+def test_the_automate_meta_prompt_is_what_the_sdk_was_actually_sent(project: Path, monkeypatch):
+    """``meta_prompt.txt`` is an audit artifact — so audit it against the SDK call.
+
+    Byte equality between the report and the record is worth nothing if both
+    describe a first user message the SDK never received.
+    """
+    _write_ticket(project)
+    real = _automate_for_real(monkeypatch, project)
+
+    assert real["initial_message"] in real["meta_prompt"], (
+        "the saved audit names a first user message the SDK was never sent"
+    )
+
+
+def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
+    project: Path, monkeypatch
+):
+    """``env_keys`` is a claim about a real child — so check the real child.
+
+    The HITL sibling of this test is what makes the equality above meaningful
+    rather than two copies of the same omission (HATS-1548 R8).
+    """
+    real = _automate_for_real(monkeypatch, project)
+    delivered = dict(real["options"].env or {})
+
+    assert set(real["record"]["env_keys"]) == set(delivered), (
+        "the record and the SDK disagree about what the sub-agent's environment is"
+    )
+
+
+def test_the_reported_automate_launch_is_the_options_the_sdk_receives(
+    project: Path, monkeypatch
+):
+    """Every option ai-hats sets on the SDK is named in the report.
+
+    Measured against the SDK's own defaults, so the set is what ai-hats CHANGED
+    rather than every field the dataclass happens to carry. ``cwd`` is excepted
+    by construction: the record is written before the worktree exists and
+    carries it in its own field as a sentinel.
+    """  # comment-length: allow — the diff-against-defaults is the whole trick
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    real = _automate_for_real(monkeypatch, project)
+    reported = {token.split("=", 1)[0] for token in real["record"]["launch"]}
+    stock = ClaudeAgentOptions()
+    delivered = {
+        f.name
+        for f in dataclasses.fields(real["options"])
+        if getattr(real["options"], f.name) != getattr(stock, f.name)
+    } - {"cwd"}
+
+    assert delivered <= reported, (
+        f"the SDK gets options the record never names: {sorted(delivered - reported)}"
+    )
