@@ -286,7 +286,12 @@ def _checks_dir(project: Path, task_id: str) -> Path:
 def _check_log(project: Path, task_id: str, script: str) -> Path:
     """One log per (task, edge, binding), so two bindings on one edge cannot
     truncate each other's transcript (HATS-1137)."""
-    return _checks_dir(project, task_id) / f"{EDGE_LOG_PREFIX}~rack~tasks~{SKILL}~{script}.log"
+    stem = f"{EDGE_LOG_PREFIX}~rack~tasks~{SKILL}~{script}"
+    found = sorted(
+        p for p in _checks_dir(project, task_id).glob("*.log") if p.name.rsplit("~", 1)[0] == stem
+    )
+    assert len(found) == 1, f"expected one {stem}* log, got {[p.name for p in found]}"
+    return found[0]
 
 
 def _ran_script(log: Path) -> Path:

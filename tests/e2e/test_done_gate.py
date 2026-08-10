@@ -39,7 +39,9 @@ SCRIPT = "hooks/done-gate.sh"
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
 #: One log per (task, point, row). The row identity carries the app and the
 #: backlog since HATS-1545, so two backlogs binding one script cannot collide.
-EDGE_LOG = f"edge-review--done~rack~tasks~{SKILL}~hooks+done-gate.sh.log"
+#: The readable stem of the check-log name; ``check_log_token`` appends an
+#: identity digest so two rows can never share a file (HATS-1137).
+EDGE_LOG_STEM = f"edge-review--done~rack~tasks~{SKILL}~hooks+done-gate.sh"
 GATE_MARKER_DIR = Path(".git") / "ai-hats" / "done-gate"
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.
@@ -183,8 +185,20 @@ def _state(project: Path, task_id: str) -> dict:
     return yaml.safe_load(_card(project, task_id).read_text(encoding="utf-8"))
 
 
+def _checks_dir(project: Path, task_id: str) -> Path:
+    """Where a check's log would land — asserted ABSENT where no gate should run."""
+    return project / TASKS_SUB / task_id / ".checks"
+
+
+def _sole_log(checks_dir: Path) -> Path:
+    """The one log under ``checks_dir`` whose stem is this gate's."""
+    found = sorted(p for p in checks_dir.glob("*.log") if p.name.rsplit("~", 1)[0] == EDGE_LOG_STEM)
+    assert len(found) == 1, f"expected one {EDGE_LOG_STEM}* log, got {[p.name for p in found]}"
+    return found[0]
+
+
 def _check_log(project: Path, task_id: str) -> Path:
-    return project / TASKS_SUB / task_id / ".checks" / EDGE_LOG
+    return _sole_log(project / TASKS_SUB / task_id / ".checks")
 
 
 def _reason(result: subprocess.CompletedProcess[str]) -> str:
@@ -404,7 +418,7 @@ def test_a_role_that_does_not_bind_the_gate_is_not_gated(gate_project, rack_bin)
 
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    assert not _check_log(project, task_id).parent.exists(), "an unbound role must run no check"
+    assert not _checks_dir(project, task_id).exists(), "an unbound role must run no check"
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +445,7 @@ def test_removing_the_checks_row_lets_the_red_card_through(gate_project, rack_bi
         f"if it still refuses, case 1 was never proving the gate\n{taken.stdout}{taken.stderr}"
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    assert not _check_log(project, task_id).parent.exists()
+    assert not _checks_dir(project, task_id).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +579,7 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
         f"project's gate — that is the HATS-1538 regression\n{taken.stdout}{taken.stderr}"
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    log = scratch / task_id / ".checks" / EDGE_LOG
+    log = _sole_log(scratch / task_id / ".checks")
     assert log.is_file(), (
         "the gate must actually FIRE and decide — a test that passes because the "
         "binding never installed proves nothing"

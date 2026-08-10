@@ -363,14 +363,9 @@ def test_pass_leaves_no_delta_and_writes_the_log_beside_the_card(tmp_path):
 
     assert runner.on_event(_ctx()) is None
 
-    log = (
-        tmp_path
-        / "tasks"
-        / "T-1"
-        / ".checks"
-        / "edge-review--done~rack~tasks~quality+gates~gate.sh.log"
+    assert "all good" in _by_stem(
+        _logs(tmp_path), "edge-review--done~rack~tasks~quality+gates~gate.sh"
     )
-    assert "all good" in log.read_text()
 
 
 def test_a_resolution_failure_is_a_typed_refusal_not_a_traceback(tmp_path):
@@ -450,6 +445,22 @@ def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _stems(logs: dict[str, str]) -> list[str]:
+    """Log names without the identity digest ``check_log_token`` appends.
+
+    The digest is what keeps two rows off one file (HATS-1137); these assertions
+    are about WHICH binding wrote WHICH log, so they pin the readable stem and
+    let the discriminator vary.
+    """
+    return sorted(name.rsplit("~", 1)[0] for name in logs)
+
+
+def _by_stem(logs: dict[str, str], stem: str) -> str:
+    matches = [body for name, body in logs.items() if name.rsplit("~", 1)[0] == stem]
+    assert len(matches) == 1, f"expected exactly one log for {stem!r}, got {sorted(logs)}"
+    return matches[0]
+
+
 def _logs(tmp_path: Path, task_id: str = "T-1") -> dict[str, str]:
     """Every check log left beside one card, by filename."""
     return {
@@ -469,13 +480,13 @@ def test_two_bindings_on_one_edge_each_keep_their_own_log(tmp_path):
     assert runner.on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert sorted(logs) == [
-        "edge-review--done~rack~tasks~quality+gates~first.sh.log",
-        "edge-review--done~rack~tasks~quality+gates~second.sh.log",
+    assert _stems(logs) == [
+        "edge-review--done~rack~tasks~quality+gates~first.sh",
+        "edge-review--done~rack~tasks~quality+gates~second.sh",
     ]
-    assert "first ran" in logs["edge-review--done~rack~tasks~quality+gates~first.sh.log"]
-    assert "second ran" not in logs["edge-review--done~rack~tasks~quality+gates~first.sh.log"]
-    assert "second ran" in logs["edge-review--done~rack~tasks~quality+gates~second.sh.log"]
+    assert "first ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~first.sh")
+    assert "second ran" not in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~first.sh")
+    assert "second ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~second.sh")
 
 
 def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path):
@@ -498,8 +509,10 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
     assert _runner(tmp_path, check).on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert list(logs) == ["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh.log"]
-    assert "nested ran" in logs["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh.log"]
+    assert _stems(logs) == ["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh"]
+    assert "nested ran" in _by_stem(
+        logs, "edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh"
+    )
 
 
 def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
@@ -517,12 +530,12 @@ def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
     assert _runner(tmp_path, slashed, dashed).on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert sorted(logs) == [
-        "edge-review--done~rack~tasks~quality+gates~a+b.sh.log",
-        "edge-review--done~rack~tasks~quality+gates~a-b.sh.log",
+    assert _stems(logs) == [
+        "edge-review--done~rack~tasks~quality+gates~a+b.sh",
+        "edge-review--done~rack~tasks~quality+gates~a-b.sh",
     ]
-    assert "slashed ran" in logs["edge-review--done~rack~tasks~quality+gates~a+b.sh.log"]
-    assert "dashed ran" in logs["edge-review--done~rack~tasks~quality+gates~a-b.sh.log"]
+    assert "slashed ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~a+b.sh")
+    assert "dashed ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~a-b.sh")
 
 
 def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
@@ -535,9 +548,11 @@ def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
     assert runner.on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert list(logs) == ["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
-    assert "second attempt" in logs["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
-    assert "first attempt" not in logs["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
+    assert _stems(logs) == ["edge-review--done~rack~tasks~quality+gates~gate.sh"]
+    assert "second attempt" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~gate.sh")
+    assert "first attempt" not in _by_stem(
+        logs, "edge-review--done~rack~tasks~quality+gates~gate.sh"
+    )
 
 
 def test_bindings_run_in_composition_order_and_the_runner_never_re_sorts(tmp_path):
@@ -575,7 +590,7 @@ def test_the_first_refusal_stops_every_later_binding(tmp_path):
     assert exc_info.value.reason == "drain the review notes first"
     assert not (tmp_path / "ran-second").exists()
     assert not (tmp_path / "ran-third").exists()
-    assert list(_logs(tmp_path)) == ["edge-review--done~rack~tasks~quality+gates~refuse.sh.log"]
+    assert _stems(_logs(tmp_path)) == ["edge-review--done~rack~tasks~quality+gates~refuse.sh"]
 
 
 def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
@@ -591,8 +606,8 @@ def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
     assert "downgraded by on_error: warn" in "\n".join(delta.work_log)
     assert (tmp_path / "ran-second").is_file()
     logs = _logs(tmp_path)
-    assert "ruff exploded" in logs["edge-review--done~rack~tasks~quality+gates~broke.sh.log"]
-    assert "second ran" in logs["edge-review--done~rack~tasks~quality+gates~second.sh.log"]
+    assert "ruff exploded" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~broke.sh")
+    assert "second ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~second.sh")
 
 
 def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_path):
