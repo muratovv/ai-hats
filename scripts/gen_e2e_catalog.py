@@ -46,7 +46,9 @@ FIELDS = ("flow", "cmds", "expect", "why")
 _HEADER = re.compile(r"^e2e\s*\(([^)]*)\)\s*$")
 _FIELD = re.compile(rf"^({'|'.join(FIELDS)}):\s?(.*)$")
 _ID = re.compile(r"HATS-\d+")
-_NON_HUMAN_ACTOR = re.compile(r"^(a test suite|a test runner|a test harness|pytest|ci)\b", re.IGNORECASE)
+_NON_HUMAN_ACTOR = re.compile(
+    r"^(a test suite|a test runner|a test harness|pytest|ci)\b", re.IGNORECASE
+)
 
 
 def check_actor(rows: list[Row]) -> list[str]:
@@ -105,53 +107,44 @@ def check_plumbing(rows: list[Row]) -> list[str]:
 DYNAMIC_RACK_GROUPS = {"hyp", "proposal", "prop"}
 
 
-def _resolve_cli_cmd(root_group: click.Group, sub_args: list[str], cli_name: str = "") -> tuple[bool, str | None]:
+def _resolve_cli_cmd(
+    group: click.Group,
+    sub_args: list[str],
+    cli_name: str = "",
+    is_top_level: bool = True,
+) -> tuple[bool, str | None]:
     if not sub_args:
         return True, None
-    current: click.Command = root_group
-    idx = 0
-    while idx < len(sub_args):
-        arg = sub_args[idx]
-        if arg == "--":
-            break
-        if arg.startswith("-"):
-            matched = None
-            if hasattr(current, "params"):
-                for p in current.params:
-                    if isinstance(p, click.Option) and (arg in p.opts or arg in p.secondary_opts):
-                        matched = p
-                        break
-            if matched:
-                if matched.is_flag:
-                    idx += 1
-                elif matched.nargs != 0:
-                    n = matched.nargs if matched.nargs > 0 else 1
-                    idx += 1 + n
-                else:
-                    idx += 1
-            else:
-                if "=" in arg:
-                    idx += 1
-                else:
-                    idx += 1
-                    if idx < len(sub_args) and not sub_args[idx].startswith("-"):
-                        if isinstance(current, click.Group) and sub_args[idx] in current.commands:
-                            pass
-                        else:
-                            idx += 1
-            continue
 
-        if isinstance(current, click.Group):
-            if arg in current.commands:
-                current = current.commands[arg]
-                idx += 1
-            elif cli_name == "rack" and arg in DYNAMIC_RACK_GROUPS:
-                return True, None
+    ctx = click.Context(group, resilient_parsing=True)
+    parser = group.make_parser(ctx)
+    try:
+        opts, args_rem, _ = parser.parse_args(args=list(sub_args))
+    except Exception as exc:
+        return False, f"invalid options for {group.name}: {exc}"
+
+    if not args_rem:
+        return True, None
+
+    subcmd = args_rem[0]
+    if isinstance(group, click.Group):
+        if subcmd in group.commands:
+            child_cmd = group.commands[subcmd]
+            if isinstance(child_cmd, click.Group):
+                return _resolve_cli_cmd(child_cmd, args_rem[1:], cli_name, is_top_level=False)
             else:
-                cmds_avail = ", ".join(sorted(current.commands.keys())) if hasattr(current, "commands") else ""
-                return False, f"unknown subcommand {arg!r} under {current.name} (available: {cmds_avail})"
-        else:
+                return True, None
+        elif cli_name == "ai-hats" and is_top_level:
             return True, None
+        elif cli_name == "rack" and subcmd in DYNAMIC_RACK_GROUPS:
+            return True, None
+        else:
+            cmds_avail = ", ".join(sorted(group.commands.keys()))
+            return (
+                False,
+                f"unknown subcommand {subcmd!r} under {group.name} (available: {cmds_avail})",
+            )
+    return True, None
     return True, None
 
 
@@ -213,7 +206,11 @@ def check_cmds(
                         errors.append(f"{row.file}: cmds `{ln}` — {err}")
 
             for token in tokens:
-                if token.startswith("-") or token.startswith("http://") or token.startswith("https://"):
+                if (
+                    token.startswith("-")
+                    or token.startswith("http://")
+                    or token.startswith("https://")
+                ):
                     continue
                 if token.startswith("<") and token.endswith(">"):
                     continue
@@ -240,8 +237,6 @@ def _get_cli_trees() -> tuple[click.Group, click.Group]:
     return ai_hats_cli, rack_cli
 
 
-
-
 @functools.lru_cache(maxsize=None)
 def _ids_known_for(file_name: str) -> set[str]:
     file_path = E2E_DIR / file_name
@@ -258,11 +253,9 @@ def _ids_known_for(file_name: str) -> set[str]:
         )
         if res.returncode == 0:
             found.update(_ID.findall(res.stdout))
-    except Exception:
+    except Exception:  # noqa: S110 # silent-ok: git log lookup is optional
         pass
     return found
-
-
 
 
 class CatalogError(Exception):

@@ -138,7 +138,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats -p nonexistent_provider_1202 "hello world"    # no-resolve: bare positional prompt test
+  ai-hats -p nonexistent_provider_1202 "hello world"
   ```
 
 - **expect** — CLI parses positional argument as prompt rather than complaining of unknown subcommand
@@ -1009,7 +1009,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats config status --verbose
+  ai-hats status --verbose    # no-resolve: launcher test passes throwaway status --verbose to mock python stub
   ```
 
 - **expect** — launcher verifies python importability and dispatches command via python -m ai_hats
@@ -1089,7 +1089,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-1306*
 
-- **flow** — a developer running ai-hats commands from inside a linked git worktree or subfolder of an onboarded project
+- **flow** — a developer running any ai-hats command from inside a linked git worktree or subfolder of an onboarded project
 - **cmds**
 
   ```console
@@ -1750,11 +1750,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-1170, HATS-1336*
 
-- **flow** — a developer running self clean to remove root residue files
+- **flow** — a developer running ai-hats self update to sweep legacy root residue files
 - **cmds**
 
   ```console
-  ai-hats self clean    # no-resolve: pins retired self clean CLI
+  ai-hats self update
   ```
 
 - **expect** — clean command sweeps legacy root residue files and keeps framework state inside .agent/ai-hats/

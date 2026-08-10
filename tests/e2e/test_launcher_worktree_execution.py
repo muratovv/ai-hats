@@ -1,6 +1,6 @@
 """e2e (HATS-1306)
 
-flow: a developer running ai-hats commands from inside a linked git worktree or
+flow: a developer running any ai-hats command from inside a linked git worktree or
       subfolder of
         an onboarded project
 cmds:

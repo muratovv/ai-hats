@@ -287,7 +287,3 @@ def test_check_cmds_with_real_click_trees():
     src2 = WELL_FORMED.replace("rack create A --id HATS-1", "rack hyp create")
     rows2 = mod.parse_rows(src2, "test_x.py")
     assert mod.check_cmds(rows2, resolve_cmd, lambda p: True) == []
-
-
-
-
