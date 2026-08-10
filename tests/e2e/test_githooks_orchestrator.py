@@ -3,6 +3,7 @@
 flow:   a developer committing code across git worktrees or after framework updates
         when ai-hats environment variables may be missing
 cmds:
+    # in a project with missing ai-hats binary or inside a linked worktree
     git commit -m "feature"
 expect: commits succeed gracefully when ai-hats binaries are unreachable and linked
         worktrees execute the same gate suite as the main checkout

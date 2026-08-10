@@ -2,6 +2,7 @@
 
 flow:   a developer committing trait configuration changes that reference rules
 cmds:
+    # with staged trait configuration referencing a missing rule
     git commit -m "add rule"
 expect: the pre-commit hook verifies that all referenced rules exist and blocks the
         commit with an error if a rule reference is missing

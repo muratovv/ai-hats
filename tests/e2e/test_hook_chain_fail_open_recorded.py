@@ -2,7 +2,8 @@
 
 flow:   an agent triggering tool execution with unparsable or malformed hook payloads
 cmds:
-    ai-hats self init -p claude -r assistant --no-wizard
+    # agent invoking a PreToolUse hook with an unparsable payload
+    bash .agent/ai-hats/library/hooks/safety_gate.py < /tmp/malformed.json
 expect: execution passes fail-open without blocking the call and the unparsable payload
         event is recorded in the bypass journal or stderr
 why:    a hook that fails on unreadable payload must allow the call while leaving an

@@ -1,13 +1,12 @@
-"""e2e (HATS-788): `wt merge` / `wt discard` / `wt create` issued from INSIDE a
-linked worktree must be refused.
+"""e2e (HATS-788)
 
-The pre-existing guard called `_guard_not_inside_linked_worktree(_project_dir())`
-— but `_project_dir()` has hopped to the MAIN checkout, so the guard inspected
-MAIN and silently no-op'd. `wt merge` from inside its own worktree then removed
-the operator's cwd. The fix checks the raw `Path.cwd()`.
-
-Fail-under-revert: without the raw-cwd guard, `wt merge` from inside the worktree
-prints "Merged" (returncode 0).
+flow:   a developer issuing worktree lifecycle commands from inside a linked worktree
+cmds:
+    # from inside a linked worktree
+    ai-hats wt merge
+expect: worktree lifecycle commands issued from inside a worktree are refused
+why:    worktree lifecycle operations must be run from main repository to avoid tearing
+        down cwd
 """
 
 from __future__ import annotations

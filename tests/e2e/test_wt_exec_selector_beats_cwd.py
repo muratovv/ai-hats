@@ -1,12 +1,12 @@
-"""e2e (HATS-1213): an explicit ``wt exec <branch>`` selector beats implicit cwd.
+"""e2e (HATS-1213)
 
-The peel ran only in the ``except click.UsageError`` path, so it was skipped
-whenever ``_resolve_worktree()`` resolved without raising — inside a linked
-worktree, and with a sole active worktree — leaving the branch in the argv.
-
-Fail-under-revert: put the peel back on the ambiguity-only path and every test
-here fails with ``Command not found: <branch>`` (rc=127), or under ``-C`` with a
-refusal naming a subdir of a worktree the caller never asked for.
+flow:   a developer executing wt exec with an explicit branch selector while standing
+        in another worktree
+cmds:
+    # from inside worktree A
+    ai-hats wt exec task/hats-b -- git rev-parse --abbrev-ref HEAD
+expect: explicit branch selector takes precedence over caller current working directory
+why:    explicit branch arguments in wt exec must override implicit directory context
 """
 
 from __future__ import annotations

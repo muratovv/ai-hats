@@ -1,11 +1,14 @@
-"""e2e (HATS-1205): PYTHONPATH is rooted at the project that OWNS the effective
-directory — the nearest ancestor with a ``pyproject.toml``, bounded by the
-worktree root. A subproject with its own venv stops getting the outer repo's
-packages Franken-mixed in, and gets its own ``src`` (which is what the observed
-fallback hand-rolled as ``sys.path.insert(0, "src")``).
+"""e2e (HATS-1205)
 
-Fail-under-revert: root ``workspace_pythonpath`` at ``wt_path`` again and
-``import mypkg`` under ``-C sub`` raises ModuleNotFoundError.
+flow:   a developer executing python commands via wt exec in a subproject with its own
+        pyproject.toml
+cmds:
+    # from inside a subproject directory with pyproject.toml
+    ai-hats wt exec -C sub -- python -c "import mypkg"
+expect: PYTHONPATH is rooted at the owning subproject directory containing
+        pyproject.toml
+why:    subprojects must resolve their own src packages without mixing outer repository
+        packages
 """
 
 from __future__ import annotations

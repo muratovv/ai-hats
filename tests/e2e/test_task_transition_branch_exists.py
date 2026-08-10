@@ -3,6 +3,7 @@
 flow:   a developer transitioning a task to execute when its target git branch already
         exists
 cmds:
+    # when target task branch already exists in the repository
     rack transition HATS-517A execute
 expect: the existing git branch is attached to a newly created worktree directory when
         not currently checked out in main

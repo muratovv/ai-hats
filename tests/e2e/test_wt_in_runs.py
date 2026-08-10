@@ -1,15 +1,11 @@
-"""E2E (HATS-823): a wt_in hook runs AFTER `git worktree add`, via the real binary.
+"""e2e (HATS-823)
 
-The fixture `wt_in` hook records the worktree path it was handed. Proving the
-path is the linked worktree (a temp `ai-hats-wt-*` dir), not the project root,
-confirms wt_in runs post-checkout (ADR-0012 Revisions #1 — git refuses a
-non-empty target dir, so the seed cannot run before `git worktree add`).
-
-fail-under-revert: drop the `_run_wt_in_hooks()` call from `create()` and the
-`.seeded` marker never appears → this test goes red.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
-@pytest.mark.integration.
+flow:   a developer creating a worktree when wt_in lifecycle hooks are registered
+cmds:   ai-hats wt create task/probe
+expect: wt_in lifecycle hook executes during worktree creation and populates initial
+        files
+why:    wt_in hook must fire during worktree setup to provision required environment
+        state
 """
 
 from __future__ import annotations

@@ -1,9 +1,10 @@
 """e2e (HATS-593, HATS-833)
 
-flow:   a developer starting a session in a project with missing or drifted managed
-        git hook scripts
+flow:   a developer executing git push when managed hook scripts are missing or
+        corrupted
 cmds:
-    ai-hats self init -p claude -r gate-role --no-wizard
+    # in a project with a missing or corrupted pre-push hook script
+    git push origin master
 expect: missing hook scripts fail open on execution without blocking git commands and
         session start restores missing script files
 why:    corrupted or removed hook scripts must not block developer git workflow while

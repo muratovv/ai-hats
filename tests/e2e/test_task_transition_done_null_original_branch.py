@@ -3,6 +3,7 @@
 flow:   a developer finalizing a task when worktree state metadata contains a null
         original_branch field
 cmds:
+    # when worktree state metadata contains null original_branch
     rack transition TST-001 done
 expect: transition to done is refused with a clean error message identifying the missing
         original_branch value without raising a Python exception

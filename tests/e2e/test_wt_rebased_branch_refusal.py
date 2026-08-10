@@ -1,10 +1,13 @@
-"""End-to-end coverage for rebased branch refusal and containment (HATS-1370).
+"""e2e (HATS-1370)
 
-Per ``dev_rule_e2e_gate``: changes touching ``packages/ai-hats-wt/src/ai_hats_wt/manager.py``
-or ``src/ai_hats/cli/worktree.py`` require an e2e test using the real launcher + real pip.
-Verifies that:
-1. Merging a rebased branch without --accept-drift exits 1 with WorktreeRebasedBranchError.
-2. Merging a rebased branch with --accept-drift exits 0 and cleans up worktree + branch.
+flow:   a developer merging a worktree branch whose commit was already cherry-picked
+        to base
+cmds:
+    # when worktree commit was cherry-picked to base branch
+    ai-hats wt merge task/rebased-e2e
+expect: merge is refused with WorktreeRebasedBranchError unless --accept-drift is passed
+why:    rebased branches must fail closed to ensure explicit operator consent before
+        cleanup
 """
 
 from __future__ import annotations

@@ -1,27 +1,13 @@
-"""HATS-502 / HATS-482 (R-08) — `ai-hats wt merge` ambiguity guard.
+"""e2e (HATS-482, HATS-496, HATS-502, HATS-790)
 
-Repro from HATS-502 (foot-gun observed during HATS-496 merge):
-
-    1. Two linked worktrees open: `task/hats-A`, `task/hats-B`.
-    2. cd to the main repo (NOT inside any worktree).
-    3. Run `ai-hats wt merge` with no BRANCH argument.
-
-Pre-HATS-482 result: silent pick of `list_active()[0]` (alphabetically
-first), wrong-target merge, recovery via `git merge --abort`.
-
-Post-HATS-482: `_resolve_worktree` raises `click.UsageError` when more
-than one worktree is tracked and BRANCH is omitted — non-zero exit + a
-message naming all candidate branches so the operator can disambiguate.
-
-Free-tier (no agent spawn) — bare `git init` + two `wt create`s + one
-bad `wt merge` invocation. Wall budget < 5s.
-
-Why not the ``tmp_project`` fixture? That fixture binds to the dev
-``<repo_root>/.venv`` which only exists in the main checkout, not in a linked
-worktree. This test invokes ``python -m ai_hats`` directly via the current
-interpreter + an explicit ``PYTHONPATH`` so it runs from either location.
-(HATS-790: ``python -m ai_hats`` is the sole entry point — there is no
-``bin/ai-hats`` console script in any venv.)
+flow:   a developer invoking wt merge without specifying a branch when multiple
+        worktrees exist
+cmds:
+    # with multiple active worktrees
+    ai-hats wt merge
+expect: merge is refused with an error listing candidate branches
+why:    wt merge must require an explicit branch argument when multiple worktrees are
+        active
 """
 
 from __future__ import annotations

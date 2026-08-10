@@ -3,6 +3,7 @@
 flow:   a developer finalizing a task when the base branch has advanced with new
         commits since the task worktree was created
 cmds:
+    # when base branch has advanced with new commits
     rack transition TST-001 done
 expect: transition to done is refused with detailed drift information and instructions
         to rebase or run ai-hats wt merge --accept-drift

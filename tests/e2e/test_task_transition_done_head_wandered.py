@@ -3,6 +3,7 @@
 flow:   a developer finalizing a task when main repository HEAD is checked out on a
         different branch than base
 cmds:
+    # when main HEAD is checked out on a different branch than base
     rack transition TST-001 done
 expect: transition to done is refused with an error detailing the HEAD mismatch and
         displaying the git checkout command to fix it

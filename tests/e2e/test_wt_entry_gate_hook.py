@@ -1,9 +1,12 @@
-"""HATS-1372 — the EnterWorktree gate actually denies.
+"""e2e (HATS-1372)
 
-Found by tests/test_gate_red_coverage.py on its first run: this `deny`-class
-hook was named by no test at all, only by its SKILL.md and an ADR.
-
-Per `dev_rule_e2e_gate` each case spawns the hook as a real subprocess.
+flow:   an agent attempting to enter or create a worktree directly via tool call
+cmds:
+    # agent triggering EnterWorktree tool call
+    python .agent/.../wt_entry_gate.py < /tmp/payload.json
+expect: direct worktree creation or entry tool calls are denied with actionable
+        instructions
+why:    agents must use ai-hats CLI commands rather than direct worktree navigation
 """
 
 from __future__ import annotations

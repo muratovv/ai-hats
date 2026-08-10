@@ -1,9 +1,9 @@
 """e2e (HATS-437, HATS-467)
 
-flow:   a developer initializing project configuration and verifying PreToolUse hook
-        file generation
+flow:   an agent executing destructive tool commands in an initialized project
 cmds:
-    ai-hats self init -p claude -r assistant --no-wizard
+    # in an initialized project workspace
+    gh pr merge 42 --merge --delete-branch
 expect: hook scripts are written to disk with executable permissions and block
         unacknowledged destructive tool commands
 why:    PreToolUse guards rely on materialized script files on disk to enforce state

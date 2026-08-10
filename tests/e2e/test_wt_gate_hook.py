@@ -1,11 +1,9 @@
-"""HATS-857/HATS-889 — script-level behaviour of the worktree-isolation PreToolUse gate.
+"""e2e (HATS-857, HATS-889)
 
-Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface: we feed it Claude Code
-``PreToolUse`` payloads on stdin. BLOCKING contract — a code/config file in the MAIN
-checkout emits ``permissionDecision == "deny"`` (HATS-889 turned the old nudge into a
-hard deny); a linked-worktree file, a non-trigger file, a gitignored path, a non-git
-path, the kill switch, and a garbage payload are all silent. Exit is always 0 — the deny
-rides in JSON (a final decision that binds headless too), not a non-zero exit.
+flow:   an agent attempting git push or worktree creation under gate hook policies
+cmds:   git push origin master
+expect: gate hook validates environment permissions and blocks unauthorized operations
+why:    gate hooks enforce permission boundaries during git and worktree operations
 """
 
 from __future__ import annotations

@@ -2,7 +2,8 @@
 
 flow:   an agent executing commands from a nested subdirectory inside a project
 cmds:
-    ai-hats self init -p claude -r assistant --no-wizard
+    # from a nested subdirectory inside a project workspace
+    gh pr merge 42 --merge --delete-branch
 expect: PreToolUse hook scripts execute using absolute path resolution and block
         destructive commands regardless of current working directory
 why:    relative hook paths fail when invoked from subdirectories, leaving safety

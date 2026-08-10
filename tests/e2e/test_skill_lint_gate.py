@@ -2,6 +2,7 @@
 
 flow:   a developer committing changes to skill markdown documentation
 cmds:
+    # with staged SKILL.md missing license frontmatter
     git commit -m "add skill"
 expect: the pre-commit hook runs agnix spec validation and license checks on staged
         SKILL.md files and blocks commits that violate standards

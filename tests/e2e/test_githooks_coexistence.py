@@ -1,9 +1,11 @@
 """e2e (HATS-999)
 
-flow:   a developer setting up ai-hats in a repository that already uses another
-        git hook manager like husky or simple-git-hooks
+flow:   a developer committing or pushing code in a repository that already uses
+        another git hook manager like husky or simple-git-hooks
 cmds:
-    ai-hats self init -p claude -r guard-role --no-wizard
+    # in a repository initialized with husky or simple-git-hooks
+    git commit -m "test"
+    git push origin master
 expect: core.hooksPath points to .githooks and both ai-hats guard hooks and the
         repository's existing hooks execute on git commit and push
 why:    overwriting existing repository hook configurations without chaining breaks

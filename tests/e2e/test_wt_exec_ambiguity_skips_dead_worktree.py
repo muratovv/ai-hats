@@ -1,17 +1,13 @@
-"""e2e (HATS-1205): a worktree git no longer knows about must drop out of the
-selector-ambiguity set.
+"""e2e (HATS-1205)
 
-``list_active`` claimed to prune stale entries but only dropped ones whose state
-JSON had vanished — a directory still on disk without a ``.git`` file survived.
-Observed: ``wt exec`` demanded a selector among 6 branches where 4 were real.
-
-Scope note: ``wt list`` was never affected — it enumerates git's own worktrees
-(and marks the ai-hats-tracked ones), so a pruned worktree is already absent
-there. Only the ``list_active`` consumers carried the phantom.
-
-Fail-under-revert: drop the liveness filter in ``list_active`` and the bare
-``wt exec`` form goes back to refusing with an ambiguity error naming the dead
-branch.
+flow:   a developer running commands via wt exec when a deleted worktree directory
+        remains
+cmds:
+    # when a worktree directory exists on disk but git worktree prune was run
+    ai-hats wt exec -- git rev-parse --abbrev-ref HEAD
+expect: dead worktrees drop out of active selector resolution without causing ambiguity
+        errors
+why:    list_active must verify git liveness so pruned worktrees do not block execution
 """
 
 from __future__ import annotations

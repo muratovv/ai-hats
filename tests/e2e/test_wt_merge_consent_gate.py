@@ -1,14 +1,9 @@
-"""End-to-end coverage for the merge consent gate (HATS-1019).
+"""e2e (HATS-1019)
 
-Per ``dev_rule_e2e_gate``: touches ``src/ai_hats/cli/worktree.py`` and
-``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` → real launcher + real
-``ai-hats`` binary. ``wt merge`` is default-deny without
-``AI_HATS_MERGE_ACK=1`` — review must actually reach the supervisor
-before a task branch is published to the base.
-
-**Fail-under-revert**: comment out the consent check in
-``WorktreeManager.merge`` → step (4) merges with exit 0 instead of the
-directive refusal, and the test fails.
+flow:   a developer merging a worktree branch without authorization acknowledgment
+cmds:   ai-hats wt merge task/test-consent
+expect: merge is refused without AI_HATS_MERGE_ACK and succeeds when ack is provided
+why:    worktree merge is default-deny to ensure supervisor review before landing work
 """
 
 from __future__ import annotations

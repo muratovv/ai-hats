@@ -1,12 +1,24 @@
 """e2e (HATS-1038)
 
-flow:   a developer executing a full task lifecycle through the rack CLI
+flow:   a developer creating a task and verifying state and plan gate enforcement
 cmds:
     rack create "wired flow" --role assistant
-expect: STATE.md is updated on creation, empty plans block execution, worktrees are
-        provisioned on execute, and context resolves inside linked worktrees
-why:    rack must integrate state management, plan validation, and worktree isolation
-        into a cohesive workflow
+    rack transition SBX-001 plan
+    rack transition SBX-001 execute
+expect: card is created with STATE.md updated and transition to execute fails on
+        an empty plan
+why:    rack must update project STATE.md on task creation and block execute on
+        unfilled plan scaffolds
+
+flow:   a developer executing a task with a filled plan and checking context from
+        inside a linked worktree
+cmds:
+    rack transition SBX-001 execute
+    rack context SBX-001
+expect: linked worktree is created on execute and rack context resolves the main
+        tracker from inside the worktree
+why:    rack must provision isolated worktrees on execute and resolve the main
+        tracker from worktree subdirectories
 """
 
 from __future__ import annotations

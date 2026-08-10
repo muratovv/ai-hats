@@ -1,25 +1,13 @@
-"""End-to-end coverage for ``ai-hats wt merge`` HEAD-wandered guard
-(HATS-533).
+"""e2e (HATS-486, HATS-509, HATS-518, HATS-533)
 
-The merge-time twin of HATS-518: if main-repo HEAD has moved off
-``_original_branch`` between ``wt create`` and ``wt merge`` (manual
-``git checkout``, a peer agent operating directly in the main repo
-without a linked worktree, an IDE branch-switch), ``git merge`` in the
-main-repo cwd would silently land on the current branch. Same
-silent-wrong-branch-merge class as HATS-486 — discovered live in the
-HATS-509 session.
-
-Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py``
-requires a real-launcher + real-binary e2e test. CliRunner / pipeline
-tests do NOT satisfy the gate.
-
-**Fail-under-revert**: remove the new ``WorktreeBaseBranchMismatchError``
-guard block in ``WorktreeManager.merge`` → step (5) below proceeds with
-exit 0, the wandered-feature branch absorbs the worktree commit, and
-the negative assertions fail. The test exercises the new behaviour,
-not some pre-existing guard.
-
-Modelled on ``tests/e2e/test_wt_merge_drift.py``.
+flow:   a developer merging a worktree branch when main repository HEAD is on a
+        different branch
+cmds:
+    # when main HEAD is checked out on a different branch than base
+    ai-hats wt merge task/wandered-probe
+expect: merge is refused with instructions to checkout base branch before retrying
+why:    wt merge requires main repository HEAD to match base branch to prevent
+        wrong-branch merges
 """
 
 from __future__ import annotations

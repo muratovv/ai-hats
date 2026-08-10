@@ -3,6 +3,7 @@
 flow:   a developer running task lifecycle commands via the module invocation interface
 cmds:
     rack create "wired probe" --role assistant
+    rack transition SBX-001 execute
 expect: STATE.md is refreshed on card creation and a git worktree is provisioned when
         transitioning to execute
 why:    module-level rack execution must bind the full kernel extensions rather than

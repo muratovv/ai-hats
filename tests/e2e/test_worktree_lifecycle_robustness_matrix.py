@@ -1,23 +1,10 @@
-"""Epic acceptance matrix for HATS-835 (worktree lifecycle & merge robustness).
+"""e2e (HATS-697, HATS-714, HATS-788, HATS-835)
 
-Each child of the epic hardened one failure mode of the
-``task transition`` / worktree lifecycle and shipped its own focused e2e.
-This module is the **capstone**: one parametrized real-launcher matrix that
-walks the shared bootstrap once per case and asserts the epic's user-visible
-guarantees hold together. It deliberately overlaps the per-child e2e — the
-value is a single "the lifecycle is robust as a whole" acceptance gate that
-fails loudly if any one invariant regresses.
-
-Covered invariants (child → scenario):
-- HATS-697 — an already-merged branch whose worktree state was lost finalizes
-  ``done`` without a re-merge instead of a false ``worktree state lost``.
-- HATS-697 — a forced ``execute`` spins NO fresh worktree.
-- HATS-714 — a state file with ``original_branch: null`` yields a typed
-  "incomplete worktree state" refusal, never an opaque traceback.
-- HATS-788 — ``transition done`` from INSIDE the task's own linked worktree is
-  refused before any teardown.
-
-Per ``dev_rule_e2e_gate``: this exercises the real launcher + real binary.
+flow:   a developer creating, executing, and finalizing task worktrees across edge cases
+cmds:   rack transition TST-001 done
+expect: task worktree transitions enforce state lost cleanup, forced execute overrides,
+        typed original_branch errors, and linked worktree close refusal
+why:    the worktree lifecycle must maintain state safety invariants across edge cases
 """
 
 from __future__ import annotations

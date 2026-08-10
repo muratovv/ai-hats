@@ -3,6 +3,7 @@
 flow:   a developer finalizing a task whose branch was manually merged and worktree
         state metadata was removed
 cmds:
+    # when task branch is merged into base and worktree state file is deleted
     rack transition TST-001 done
 expect: transition to done completes successfully and cleans up the merged branch
         without raising state lost errors

@@ -1,17 +1,10 @@
-"""E2E (HATS-823): wt_out hooks fire fail-closed at teardown, via the real binary.
+"""e2e (HATS-823)
 
-A fixture skill (`e2e-wthook`) declares a `wt_out` drain hook bound to all
-teardown routes. After a real `ai-hats self init` composes the role and
-`wt create` seeds + persists the carry, a failing drain ABORTS `wt discard`
-(worktree + branch preserved); `--skip-hooks` forces it through; a passing drain
-runs on `wt merge` and then the worktree tears down.
-
-fail-under-revert: drop the `_run_wt_out_hooks` call from `discard()` and the
-discard tears down despite the failing hook → `test_failing_wt_out_aborts_discard`
-goes red.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
-@pytest.mark.integration.
+flow:   a developer performing worktree operations when lifecycle hook scripts fail
+cmds:   ai-hats wt create task/failing-hook
+expect: worktree creation or deletion is refused when lifecycle hooks return non-zero
+why:    worktree lifecycle hooks must fail closed to prevent operating with broken
+        setups
 """
 
 from __future__ import annotations

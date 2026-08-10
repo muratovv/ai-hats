@@ -1,12 +1,19 @@
 """e2e (HATS-337, HATS-339, HATS-407, HATS-790, HATS-1203)
 
-flow:   a developer initializing project configuration or updating settings
+flow:   a developer initializing project configuration
 cmds:
     ai-hats self init -p claude -r assistant --no-wizard
 expect: project configuration creates ai-hats.yaml and user-rules/ without copying
         role content files or creating legacy backup directories
 why:    project initialization must create clean minimal configuration files without
         materializing redundant framework copies
+
+flow:   a developer updating default role configuration
+cmds:
+    ai-hats config set -r sre
+expect: default_role is updated in ai-hats.yaml without modifying the canonical
+        framework directory or creating backups
+why:    config set must perform yaml-only role configuration updates
 """
 
 from __future__ import annotations

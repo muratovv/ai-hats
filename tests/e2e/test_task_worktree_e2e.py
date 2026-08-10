@@ -2,6 +2,7 @@
 
 flow:   a developer executing rack commands from inside a linked worktree directory
 cmds:
+    # from inside a linked worktree directory
     rack context HATS-1
 expect: rack resolves the main repository tracker directory and successfully reads or
         updates task card data

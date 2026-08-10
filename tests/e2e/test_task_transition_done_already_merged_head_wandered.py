@@ -3,6 +3,7 @@
 flow:   a developer finalizing a task whose branch is already merged into base while
         main repository HEAD has moved to another branch
 cmds:
+    # when task branch is merged into base and main HEAD is on another branch
     rack transition TST-001 done
 expect: transition to done succeeds immediately via short-circuit without attempting
         to re-merge or complaining about main HEAD position
