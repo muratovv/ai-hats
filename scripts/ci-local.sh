@@ -31,10 +31,16 @@ set -euo pipefail
 
 export PYTHONDONTWRITEBYTECODE=1
 
-PY="${PYTHON:-python}"
-
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+
+if [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python" ]]; then
+    PY="$repo_root/.venv/bin/python"
+elif [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python3" ]]; then
+    PY="$repo_root/.venv/bin/python3"
+else
+    PY="${PYTHON:-python}"
+fi
 
 ci_lint() {
     echo "[ci-local] lint (ruff check + format)" >&2
@@ -46,7 +52,7 @@ ci_lint() {
 
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
-    "$PY" -m pytest -m "not integration" -q ${@+"$@"}
+    "$PY" -B -m pytest -m "not integration" -q ${@+"$@"}
 }
 
 # HATS-1137: the integration tier OUTSIDE tests/e2e — the half `unit` excludes
@@ -54,12 +60,12 @@ ci_unit() {
 # would call itself green while skipping every real-subprocess test in tests/.
 ci_integration() {
     echo "[ci-local] integration (pytest --ignore=tests/e2e -m integration)" >&2
-    "$PY" -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
+    "$PY" -B -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
 }
 
 ci_coverage() {
     echo "[ci-local] coverage (unit + real-git integration, --cov-fail-under=78)" >&2
-    "$PY" -m pytest --ignore=tests/e2e/ \
+    "$PY" -B -m pytest --ignore=tests/e2e/ \
         --cov=ai_hats \
         --cov-report=term-missing \
         --cov-report=xml \
@@ -75,7 +81,7 @@ ci_security() {
 
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
-    "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
 }
 
 # Offline and instant, so unlike version-skew it belongs in the `all` bundle.
@@ -95,7 +101,7 @@ ci_silent_fallback() {
 # narrower than the gate that guards the push (HATS-1372).
 ci_e2e() {
     echo "[ci-local] e2e (integration + smoke, quarantine excluded)" >&2
-    "$PY" -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
 # HATS-1137: the composition of the `edge:review--done` quality gate, and the
