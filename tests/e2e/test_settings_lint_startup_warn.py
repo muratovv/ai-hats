@@ -2,7 +2,7 @@
 
 flow:   a developer starting session when settings.json carries malformed JSON structure
 cmds:
-    ai-hats status
+    ai-hats
 expect: session startup warns user of settings.json lint errors without aborting
         execution
 why: without settings lint warnings, invalid settings.json entries cause silent hook

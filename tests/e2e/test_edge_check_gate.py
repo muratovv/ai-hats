@@ -2,7 +2,7 @@
 
 flow:   a developer checking edge channel update status
 cmds:
-    ai-hats self update --channel edge
+    ai-hats self update
 expect: edge gate verifies edge repository HEAD against current commit before proceeding
 why: without edge check gates, invalid edge channel references cause failed update
      attempts"""

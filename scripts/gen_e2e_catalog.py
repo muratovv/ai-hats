@@ -29,9 +29,12 @@ import argparse
 import ast
 import os
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import click
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
@@ -142,6 +145,85 @@ def _parse_block(lines: list[str], name: str, pins: list[str]) -> Row:
     )
 
 
+def validate_cmd_line(cmd_str: str) -> str | None:
+    """Verify that a `cmds:` line starting with `ai-hats` is valid Click CLI syntax.
+
+    Returns an error message if invalid, or None if valid/ignored.
+    Lines containing `# retired:` are ignored as declared opt-outs.
+    """
+    if "# retired:" in cmd_str:
+        return None
+
+    clean = cmd_str.split("#")[0].strip()
+    if not clean:
+        return None
+
+    if not (clean == "ai-hats" or clean.startswith("ai-hats ") or clean.startswith("ai-hats\t")):
+        return None
+
+    try:
+        tokens = shlex.split(clean)
+    except Exception as exc:
+        return f"cannot parse command line: {exc}"
+
+    args = tokens[1:]  # skip 'ai-hats'
+    from ai_hats.cli import main
+
+    curr_cmd: click.Command = main
+    ctx = click.Context(main, info_name="ai-hats")
+
+    i = 0
+    saw_dash_dash = False
+
+    while i < len(args):
+        arg = args[i]
+
+        if arg == "--":
+            saw_dash_dash = True
+            i += 1
+            continue
+
+        if not saw_dash_dash and arg.startswith("-"):
+            if arg in ("--help", "-h", "--version"):
+                i += 1
+                continue
+
+            param = next(
+                (p for p in curr_cmd.params if arg in p.opts or arg in p.secondary_opts),
+                None,
+            )
+            if param is None:
+                return f"unknown option {arg!r} for command {ctx.info_name!r}"
+
+            if param.is_flag or param.nargs == 0:
+                i += 1
+            else:
+                n = max(1, param.nargs) if param.nargs != -1 else 1
+                i += 1 + n
+            continue
+
+        if isinstance(curr_cmd, click.Group):
+            sub_cmd = curr_cmd.get_command(ctx, arg)
+            if sub_cmd is not None:
+                curr_cmd = sub_cmd
+                ctx = click.Context(curr_cmd, parent=ctx, info_name=arg)
+                i += 1
+                continue
+            if curr_cmd is main and getattr(curr_cmd, "allow_extra_args", False):
+                if " " in arg or (i > 0 and not arg.isalnum()):
+                    i += 1
+                    continue
+            return f"unknown subcommand {arg!r} for command {ctx.info_name!r}"
+
+        args_params = [p for p in curr_cmd.params if isinstance(p, click.Argument)]
+        if args_params:
+            i += 1
+            continue
+        return f"unexpected argument {arg!r} for command {ctx.info_name!r}"
+
+    return None
+
+
 def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
     """(rows, uncatalogued file names, errors) over every test file in `e2e_dir`."""
     rows: list[Row] = []
@@ -153,7 +235,15 @@ def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
         except CatalogError as exc:
             errors.append(str(exc))
             continue
-        (rows.extend(found) if found else pending.append(path.name))
+        if found:
+            rows.extend(found)
+            for row in found:
+                for cmd in row.cmds:
+                    err = validate_cmd_line(cmd)
+                    if err:
+                        errors.append(f"{path.name}: invalid `cmds:` line {cmd!r} — {err}")
+        else:
+            pending.append(path.name)
     return rows, pending, errors
 
 

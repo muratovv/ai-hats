@@ -4,7 +4,7 @@ flow: a developer running ai-hats CLI commands via launcher on a venv without
       bin/ai-hats
         console script
 cmds:
-    ai-hats status --verbose
+    ai-hats config status
 expect: launcher verifies python importability and dispatches command via python -m
         ai_hats
 why: without python -m module dispatch, removing console script binaries breaks host
@@ -73,7 +73,7 @@ def test_launcher_execs_python_m_on_scriptless_venv(tmp_path: Path) -> None:
     env.pop("PYTHONPATH", None)
 
     result = subprocess.run(
-        [str(LAUNCHER), "status", "--verbose"],
+        [str(LAUNCHER), "config", "status"],
         cwd=str(tmp_path),
         env=env,
         capture_output=True,
@@ -85,6 +85,6 @@ def test_launcher_execs_python_m_on_scriptless_venv(tmp_path: Path) -> None:
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     # The exec went through `python -m ai_hats` (the sentinel proves it), with argv.
-    assert f"{SENTINEL}: status --verbose" in result.stdout, (
+    assert f"{SENTINEL}: config status" in result.stdout, (
         f"launcher did not dispatch via `python -m ai_hats`:\n{result.stdout}"
     )

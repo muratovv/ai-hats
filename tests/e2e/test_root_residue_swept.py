@@ -1,10 +1,9 @@
 """e2e (HATS-1170, HATS-1336)
 
-flow:   a developer running self clean to remove root residue files
+flow:   a developer running self update to sweep legacy root residue files
 cmds:
-    ai-hats self clean
-expect: clean command sweeps legacy root residue files and keeps framework state inside
-        .agent/ai-hats/
+    ai-hats self update
+expect: update sweeps legacy root residue files from settings.json while keeping user entries
 why: without root residue sweeps, legacy config files remain in project root corrupting
      state resolution"""
 
