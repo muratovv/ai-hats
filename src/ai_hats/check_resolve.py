@@ -85,11 +85,7 @@ def resolve_checks_at(
         return ()
     from .check_points import WT_APP
 
-    checks = tuple(
-        check
-        for check in result.checks
-        if check.app == WT_APP and point in check.cargo.get("at", ())
-    )
+    checks = tuple(check for check in result.checks if check.app == WT_APP and point in check.at)
     if not checks:
         return ()
     return _rooted(project_dir, result, checks, session_id)

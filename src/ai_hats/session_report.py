@@ -88,7 +88,7 @@ class SessionReport:
                     "skill": c.binding.skill,
                     "script": c.binding.script,
                     "app": c.binding.app,
-                    "at": list(c.binding.cargo.get("at", ())),
+                    "at": list(c.binding.at),
                     "on_error": c.binding.on_error,
                     "declared_by": c.binding.declared_by,
                     "runs_from": str(c.runs_from) if c.runs_from else None,

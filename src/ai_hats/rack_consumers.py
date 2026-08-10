@@ -150,6 +150,7 @@ def _declaration(check: ResolvedCheck) -> CheckDeclaration:
     """
     return CheckDeclaration(
         path=check.path,
+        at=check.at,
         cargo=check.cargo,
         on_error=check.on_error,
         label=_binding(check),
@@ -176,7 +177,7 @@ def consumer_subscribers(
     *,
     tasks_dir: Path,
     topology: Topology,
-    backlog: str,
+    backlog: str | Sequence[str],
     known_backlogs: Sequence[str] = (),
 ) -> list:
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.

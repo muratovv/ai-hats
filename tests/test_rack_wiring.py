@@ -70,9 +70,11 @@ def _check_pack(project: Path, script: Path | None = None):
     if script is not None:
         checks = (
             ResolvedCheck(
-                skill="quality::gates",
-                script=script.name,
-                point="edge:plan--execute",
+                app="rack",
+                path=("tasks",),
+                run=f"quality::gates/{script.name}",
+                at=("edge:plan--execute",),
+                cargo={},
                 on_error="refuse",
                 script_path=script,
                 declared_by="maintainer",
@@ -83,6 +85,7 @@ def _check_pack(project: Path, script: Path | None = None):
         CheckSubscriber(
             AiHatsCheckPort(project, tasks_dir=tasks_dir, resolve=lambda: checks),
             topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
+            backlog=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).name,
         )
     ]
 

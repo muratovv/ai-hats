@@ -43,12 +43,14 @@ class ResolvedComponent:
 class ResolvedCheck:
     """One declared row, resolved to an absolute script (HATS-1140, HATS-1545).
 
-    ai-hats owns exactly two of a row's keys — ``run`` (what executes) and
-    ``on_error`` (how a verdict is read). ``app`` and ``path`` say which
-    application the row was written under and where in that application's own
-    tree it sat; ``cargo`` is every remaining key, carried byte-for-byte to
-    that application. Nothing here parses cargo: when a row fires, and what its
-    keys mean, belongs to whoever owns ``app`` (ADR-0019 D11).
+    ai-hats owns three of a row's keys — ``run`` (what executes), ``at`` (where)
+    and ``on_error`` (how a verdict is read). ``at`` is owned but never
+    interpreted: ai-hats only guarantees a row names at least one point, since a
+    row bound to nothing is a gate that never fires. ``app`` and ``path`` say
+    which application the row was written under and where in that application's
+    own tree it sat; ``cargo`` is every remaining key, carried byte-for-byte.
+    What a point NAME means, and when it fires, belongs to whoever owns ``app``
+    (ADR-0019 D11).
 
     ``script_path`` is absolute and comes from the declaring skill's
     ``source_path``, never from a provider's tree — that is what makes a row
@@ -58,6 +60,7 @@ class ResolvedCheck:
     app: str
     path: tuple[str, ...]
     run: str
+    at: tuple[str, ...]
     cargo: Mapping[str, Any]
     on_error: str
     script_path: Path

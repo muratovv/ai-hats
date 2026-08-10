@@ -45,16 +45,23 @@ class CheckBindingError(ValueError):
 class AppBinding:
     """One row of ``composition.apps``, with its declarer and its place in the tree.
 
-    ai-hats owns ``run`` and ``on_error``; ``cargo`` is every other key and is
-    never read here. ``path`` is the trail of keys from the app node down to the
-    row, so an application that nests (``apps.rack.<backlog>``) gets its level
-    back and one that does not (``apps.wt``) gets an empty trail.
-    """
+    ai-hats owns three keys — ``run`` (what executes), ``at`` (where) and
+    ``on_error`` (how a verdict is read); ``cargo`` is every other key and is
+    never read here. ``at`` is owned but not *interpreted*: ai-hats checks only
+    that a row names at least one point, because a row bound to nothing is a gate
+    that never fires — the silent absence this channel exists to remove. What each
+    name MEANS stays the owning application's question (HATS-1545 F3).
+
+    ``path`` is the trail of keys from the app node down to the row, so an
+    application that nests (``apps.rack.<backlog>``) gets its level back and one
+    that does not (``apps.wt``) gets an empty trail.
+    """  # comment-length: allow — which of the three keys is interpreted is the contract
 
     declared_by: str
     app: str
     path: tuple[str, ...]
     run: str
+    at: tuple[str, ...]
     on_error: str
     cargo: Mapping[str, Any]
 
@@ -75,7 +82,12 @@ class AppBinding:
         two declarations of one row keep the stricter. Cargo is compared whole
         and opaquely, so the same script at two different points is two rows.
         """
-        return (self.app, self.path, self.run, json.dumps(self.cargo, sort_keys=True, default=str))
+        return (
+            self.app,
+            self.path,
+            self.run,
+            json.dumps({"at": list(self.at), **dict(self.cargo)}, sort_keys=True, default=str),
+        )
 
 
 def parse_app_bindings(
@@ -151,12 +163,22 @@ def _app_row(
         raise CheckBindingError(
             f"{label}: 'on_error:' must be 'refuse' or 'warn', got {on_error!r}"
         )
-    cargo = {key: value for key, value in row.items() if key not in ("run", "on_error")}
+    at = row.get("at")
+    if isinstance(at, str):
+        at = [at]
+    if not isinstance(at, list) or not at or not all(isinstance(p, str) and p.strip() for p in at):
+        raise CheckBindingError(
+            f"{label}: 'at:' must name at least one point (a string or a list of strings); "
+            f"got {at!r} — a row bound to nothing is a gate that never fires. What each name "
+            f"means is {app!r}'s question, but that a row names one is not"
+        )
+    cargo = {key: value for key, value in row.items() if key not in ("run", "on_error", "at")}
     return AppBinding(
         declared_by=declared_by,
         app=app,
         path=path,
         run=run.strip(),
+        at=tuple(p.strip() for p in at),
         on_error=on_error,
         cargo=cargo,
     )
@@ -200,7 +222,8 @@ def load_component_yaml(path: Path) -> dict[str, Any]:
         if node is None:
             return {}
         _reject_duplicate_keys(node, path)
-        _reject_non_string_keys(_composition_node(node), path)
+        _refuse_retired_checks_key(_composition_node(node), path)
+        _reject_non_string_keys(_apps_node(node), path)
         return loader.construct_document(node) or {}
     finally:
         loader.dispose()
@@ -227,14 +250,45 @@ def _reject_duplicate_keys(node: yaml.Node, path: Path, trail: tuple[str, ...] =
         _reject_duplicate_keys(value_node, path, (*trail, key))
 
 
-def _composition_node(root: yaml.Node) -> yaml.Node | None:
-    """The ``composition:`` value node, if the document has one."""
-    if not isinstance(root, yaml.MappingNode):
+def _child_node(node: yaml.Node | None, key: str) -> yaml.Node | None:
+    """The value node under ``key``, if ``node`` is a mapping that has one."""
+    if not isinstance(node, yaml.MappingNode):
         return None
-    for key_node, value_node in root.value:
-        if getattr(key_node, "value", None) == "composition":
+    for key_node, value_node in node.value:
+        if getattr(key_node, "value", None) == key:
             return value_node
     return None
+
+
+def _composition_node(root: yaml.Node) -> yaml.Node | None:
+    """The ``composition:`` value node, if the document has one."""
+    return _child_node(root, "composition")
+
+
+def _apps_node(root: yaml.Node) -> yaml.Node | None:
+    """The ``composition.apps:`` value node — the only OPEN registry here."""
+    return _child_node(_composition_node(root), "apps")
+
+
+def _refuse_retired_checks_key(composition: yaml.Node | None, path: Path) -> None:
+    """Name the retirement of ``checks:`` instead of letting it read as no gates.
+
+    Falling through to the strip-unknown WARN would drop a declared gate and
+    carry on — the silence this channel exists to remove. So the retired key gets
+    its own refusal, and it says where the rows moved (supervisor ruling
+    2026-08-10; HATS-1545 F2).
+    """
+    if _child_node(composition, "checks") is None:
+        return
+    raise ComponentKeyError(
+        f"{path}: 'composition.checks:' was retired in HATS-1545 — its rows now live under "
+        f"'composition.apps.<app>', where the application owns the grammar below its own key. "
+        f"Move each row: the skill/script pair becomes 'run: <skill>/<script>', 'on:' becomes "
+        f"'at:' (YAML 1.1 reads a bare 'on' as True), and a rack row names the backlog it gates "
+        f"— apps.rack.<backlog>. A wt row keeps its points bare: apps.wt with at: [pre-merge]. "
+        f"Refusing rather than dropping it, because a gate that vanishes quietly is the defect "
+        f"this channel exists to remove"
+    )
 
 
 def _reject_non_string_keys(

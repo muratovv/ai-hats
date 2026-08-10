@@ -46,7 +46,8 @@ def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
 def _row(point: str, *, on_error: str = "refuse", backlog: str = "tasks") -> CheckDeclaration:
     return CheckDeclaration(
         path=(backlog,),
-        cargo={"at": [point]},
+        at=(point,),
+        cargo={},
         on_error=on_error,
         label=f"row on {point}",
         handle=point,
@@ -281,7 +282,8 @@ def test_a_rack_row_that_names_no_backlog_at_all_is_a_loud_refusal():
     port = _Port(
         CheckDeclaration(
             path=(),
-            cargo={"at": ["edge:review--done"]},
+            at=("edge:review--done",),
+            cargo={},
             on_error="refuse",
             label="row with no backlog",
             handle="x",
@@ -300,7 +302,8 @@ def test_a_row_binding_several_points_fires_once_per_event():
     port = _Port(
         CheckDeclaration(
             path=("tasks",),
-            cargo={"at": ["edge:open--review", "edge:review--done"]},
+            at=("edge:open--review", "edge:review--done"),
+            cargo={},
             on_error="refuse",
             label="two-point row",
             handle="x",
@@ -311,3 +314,21 @@ def test_a_row_binding_several_points_fires_once_per_event():
     assert subscriber.on_event(_ctx()) is None
 
     assert port.ran == ["edge:review--done"]
+
+
+def test_a_row_addressed_by_the_backlogs_cli_alias_fires(tmp_path):
+    """HATS-1545 F4. ADR-0017 §3 promises `name` OR `cli_alias` addresses a
+    backlog. Matching only the name sent an aliased row down the quiet
+    sibling-backlog branch: too known to refuse, too unequal to fire — a gate the
+    author wrote, that no message ever mentions again."""
+    port = _Port(_row("edge:review--done", backlog="cards"))
+
+    delta = CheckSubscriber(
+        port,
+        topology=_topology(),
+        backlog=("tasks", "cards"),
+        known_backlogs=("tasks", "cards"),
+    ).on_event(_ctx())
+
+    assert delta is None
+    assert port.ran == ["edge:review--done"], "the aliased row must actually run"

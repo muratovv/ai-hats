@@ -303,7 +303,8 @@ def test_apps_block_parses_into_rows_with_provenance(tmp_path):
     (row,) = parse_app_bindings(config.composition.apps, declared_by="r")
 
     assert (row.app, row.path, row.run) == ("rack", ("tasks",), "s/h.sh")
-    assert row.cargo == {"at": ["edge:plan--execute"]}
+    assert row.at == ("edge:plan--execute",)
+    assert row.cargo == {}, "at: is owned, so it is not cargo"
     assert row.on_error == "refuse", "the strict default, never inferred from cargo"
     assert row.declared_by == "r"
 
@@ -362,23 +363,49 @@ def test_apps_row_with_a_bad_on_error_is_loud(tmp_path):
         parse_app_bindings(config.composition.apps, declared_by="r")
 
 
-def test_the_retired_checks_key_warns_rather_than_installing_nothing(tmp_path, capsys):
-    """HATS-1545 contraction. A config still on the old key must not read as "no
-    gates declared": the strip-unknown WARN is what turns a silent disarm into a
-    named one, and `declares_checks` still matches the old spelling so the
-    composition that prints it actually happens (R11)."""
+def test_the_retired_checks_key_refuses_and_says_where_the_rows_moved(tmp_path):
+    """HATS-1545 F2 (supervisor ruling 2026-08-10).
+
+    Written against the shape legacy configs ACTUALLY have — `skill:`/`script:`
+    and a bare `on:`. An earlier version of this test used `at:` inside the
+    legacy block, a shape no real config carries, and so certified a migration
+    path nobody could take. The strip-unknown WARN is the wrong answer here: it
+    drops a declared gate and carries on, which is the silence this channel
+    exists to remove. So the retired key gets its own refusal, and the refusal
+    has to say where the rows go.
+    """
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
-        "name: r\ncomposition:\n  checks:\n"
-        "    - {skill: s, script: h.sh, at: ['edge:plan--execute']}\n"
+        "name: r\ncomposition:\n  skills: [s]\n  checks:\n"
+        "    - skill: s\n      script: h.sh\n      on: [edge:review--done]\n"
+        "      on_error: refuse\n"
+    )
+
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(config_file)
+
+    message = str(exc.value)
+    assert "composition.checks" in message, "name the key that was retired"
+    assert "composition.apps" in message, "name where the rows moved"
+    assert "run:" in message and "at:" in message, "name the field renames"
+    assert str(config_file) in message, "name the file the author must edit"
+
+
+def test_an_unknown_composition_key_holding_a_truthy_key_still_strips(tmp_path, capsys):
+    """HATS-1545 F8. The HATS-581 / ADR-0012 forward-compat policy is: strip, so
+    an OLDER binary survives a config a NEWER one wrote. The non-string-key
+    refusal is scoped to `composition.apps` — the one OPEN registry, where no
+    remap is possible — so an unknown subtree keeps warning rather than failing.
+    """
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  future_thing:\n    - widget: x\n      on: [a]\n"
     )
 
     config = ComponentConfig.from_yaml(config_file)
 
     assert config.composition.apps == {}
-    err = capsys.readouterr().err
-    assert "checks" in err
-    assert "apps" in err, "the WARN must name the key that replaced it"
+    assert "future_thing" in capsys.readouterr().err
 
 
 # -- OverlayConfig tests --

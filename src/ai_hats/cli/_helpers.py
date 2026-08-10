@@ -131,7 +131,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     """
     with catch_broken_install():
         from ..composition_seam import MissingProviderError, RoleNotFoundError
-        from ..libraries.models import CheckBindingError
+        from ..libraries.models import CheckBindingError, ComponentKeyError
         from ..paths import NotAnAiHatsProjectError
         from ..providers import UnknownProviderError
         from ..role_spec import RoleSpecError
@@ -143,6 +143,10 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
         (CheckBindingError, _handle_check_binding_error),
+        # HATS-1545 F7: a key defect is the same class of message as a binding
+        # defect — both are a declared gate that cannot install, and a traceback
+        # is what HATS-1541 measured and removed for the sibling type.
+        (ComponentKeyError, _handle_check_binding_error),
     )
 
 

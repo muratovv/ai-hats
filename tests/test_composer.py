@@ -125,7 +125,7 @@ def test_compose_collects_checks_traits_before_role(checks_composer, checks_libr
     result = checks_composer.compose("checks-role")
 
     assert result.errors == []
-    assert [(c.declared_by, c.cargo["at"], c.on_error) for c in result.checks] == [
+    assert [(c.declared_by, list(c.at), c.on_error) for c in result.checks] == [
         ("trait-checks", ["edge:plan--execute"], "refuse"),
         ("checks-role", ["edge:execute--review"], "warn"),
     ]
@@ -744,7 +744,7 @@ def test_a_trait_and_a_role_declaring_into_one_backlog_both_survive(checks_libra
     result = composer.compose("checks-role")
 
     assert result.errors == []
-    assert [(c.declared_by, c.path, c.cargo["at"]) for c in result.checks] == [
+    assert [(c.declared_by, c.path, list(c.at)) for c in result.checks] == [
         ("trait-checks", ("tasks",), ["edge:plan--execute"]),
         ("checks-role", ("tasks",), ["edge:execute--review"]),
     ]

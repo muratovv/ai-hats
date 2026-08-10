@@ -46,7 +46,7 @@ class CliKernelProvider:
                 root.project_dir,
                 tasks_dir=root.tasks_dir,
                 topology=defn.topology,
-                backlog=defn.name,
+                backlog=(defn.name, defn.cli_alias or defn.name),
                 known_backlogs=backlog_selectors_in_root(root),
             ),
         )

@@ -54,19 +54,16 @@ class CheckDeclaration:
     """
 
     path: tuple[str, ...]
+    at: tuple[str, ...]
     cargo: Mapping[str, Any]
     on_error: str
     label: str
     handle: Any
 
     def points(self) -> tuple[str, ...]:
-        """The point names this row binds — ``at:`` in the rack's own grammar."""
-        at = self.cargo.get("at")
-        if isinstance(at, str):
-            return (at,)
-        if isinstance(at, (list, tuple)):
-            return tuple(name for name in at if isinstance(name, str))
-        return ()
+        """The point names this row binds. The carrier guarantees it is non-empty
+        — that a row names SOMETHING is app-agnostic; what the names mean is ours."""
+        return tuple(self.at)
 
 
 @dataclass(frozen=True)
@@ -136,15 +133,18 @@ class CheckSubscriber:
         port: Any,
         *,
         topology: Topology,
-        backlog: str,
+        backlog: str | Sequence[str],
         known_backlogs: Sequence[str] = (),
         priority: int = CHECK_PRIORITY,
         timeout: float | None = None,
     ) -> None:
         self._port = port
         self._topology = topology
-        self._backlog = backlog
-        self._known = frozenset(known_backlogs) or frozenset({backlog})
+        # Every selector THIS instance answers to (name and cli_alias): the ADR
+        # promises both address it, and matching only the name sent an aliased
+        # row down the quiet sibling-backlog branch (HATS-1545 F4).
+        self._mine = frozenset({backlog} if isinstance(backlog, str) else backlog)
+        self._known = frozenset(known_backlogs) | self._mine
         self._priority = priority
         self._timeout = EDGE_CHECK_TIMEOUT_S if timeout is None else timeout
 
@@ -225,7 +225,7 @@ class CheckSubscriber:
                 f"project answers to {name!r} (mounted: {', '.join(sorted(self._known))}) — "
                 f"a gate on a backlog that does not exist would never fire"
             )
-        return name == self._backlog
+        return name in self._mine
 
     def _declarations(self) -> Sequence[CheckDeclaration]:
         """Ask the port, and turn any trouble into this channel's own refusal —

@@ -72,7 +72,8 @@ def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "r
         app="rack",
         path=("tasks",),
         run=f"quality::gates/{script.name}",
-        cargo={"at": [point]},
+        at=(point,),
+        cargo={},
         on_error=on_error,
         script_path=script,
         declared_by="maintainer",
@@ -487,7 +488,8 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
         app="rack",
         path=("tasks",),
         run="dev::python/hooks/done-gate.sh",
-        cargo={"at": ["edge:review--done"]},
+        at=("edge:review--done",),
+        cargo={},
         on_error="refuse",
         script_path=_script(hooks, "echo 'nested ran'", name="done-gate.sh"),
         declared_by="maintainer",
@@ -615,8 +617,9 @@ def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_pat
             app="rack",
             path=("tasks",),
             run=f"gate-skill/{script}",
+            at=(point,),
             on_error=on_error,
-            cargo={"at": [point]},
+            cargo={},
         )
 
     resolved = resolve_checks(
@@ -785,7 +788,7 @@ def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_pat
     )
 
     carried = check_resolve.resolve_carried_checks(tmp_path, "rack")
-    assert [c.cargo["at"] for c in carried] == [["edge:plan--execute"], ["edge:review--done"]]
+    assert [list(c.at) for c in carried] == [["edge:plan--execute"], ["edge:review--done"]]
 
     runner = _extension(
         tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=lambda: carried

@@ -14,6 +14,7 @@ from ai_hats_core import ComponentKind, ResolvedComponent
 from ai_hats.check_points import (
     KNOWN_APPS,
     CheckBindingError,
+    check_log_token,
     owns_app,
     resolve_checks,
     wt_points,
@@ -41,8 +42,9 @@ def _row(**overrides) -> AppBinding:
         "app": "rack",
         "path": ("tasks",),
         "run": "gate-skill/hooks/gate.sh",
+        "at": ("edge:plan--execute",),
         "on_error": "refuse",
-        "cargo": {"at": ["edge:plan--execute"]},
+        "cargo": {},
     }
     fields.update(overrides)
     return AppBinding(**fields)
@@ -50,7 +52,7 @@ def _row(**overrides) -> AppBinding:
 
 def _wt(**overrides) -> AppBinding:
     """A row under ai-hats's own app, whose cargo IS validated here."""
-    overrides.setdefault("cargo", {"at": ["pre-merge"]})
+    overrides.setdefault("at", ("pre-merge",))
     return _row(app="wt", path=(), **overrides)
 
 
@@ -71,9 +73,10 @@ def test_ai_hats_owns_one_app_and_judges_only_its_cargo():
 def test_a_foreign_apps_cargo_is_carried_not_judged(skill):
     """D11: what a rack row's cargo means is the rack's question. Carried
     verbatim, with provenance intact and no grammar check of any kind."""
-    (resolved,) = resolve_checks([_row(cargo={"at": ["edge:bogus--state"], "weird": 7})], [skill])
+    (resolved,) = resolve_checks([_row(at=("edge:bogus--state",), cargo={"weird": 7})], [skill])
 
-    assert resolved.cargo == {"at": ["edge:bogus--state"], "weird": 7}
+    assert resolved.cargo == {"weird": 7}
+    assert resolved.at == ("edge:bogus--state",)
     assert resolved.declared_by == "trait-x"
     assert resolved.app == "rack"
     assert resolved.path == ("tasks",)
@@ -92,11 +95,11 @@ def test_warn_is_rejected_at_wt_data_protection_points(skill):
     component opt out of the harvest."""
     for point in ("pre-merge", "teardown[merge]"):
         with pytest.raises(CheckBindingError, match="on_error: warn"):
-            resolve_checks([_wt(cargo={"at": [point]}, on_error="warn")], [skill])
+            resolve_checks([_wt(at=(point,), on_error="warn")], [skill])
 
 
 def test_warn_is_allowed_at_wt_policy_points(skill):
-    (resolved,) = resolve_checks([_wt(cargo={"at": ["create"]}, on_error="warn")], [skill])
+    (resolved,) = resolve_checks([_wt(at=("create",), on_error="warn")], [skill])
 
     assert resolved.on_error == "warn"
 
@@ -105,12 +108,23 @@ def test_a_wt_point_ai_hats_does_not_fire_is_loud(skill):
     """``wt`` is ai-hats's own app, so an unknown point there is not "someone
     else's grammar" — it is a name nothing will ever fire."""
     with pytest.raises(CheckBindingError, match="not a point of the 'wt' app"):
-        resolve_checks([_wt(cargo={"at": ["pre-merj"]})], [skill])
+        resolve_checks([_wt(at=("pre-merj",))], [skill])
 
 
-def test_a_wt_row_bound_to_nothing_is_loud(skill):
-    with pytest.raises(CheckBindingError, match="at least one point"):
-        resolve_checks([_wt(cargo={})], [skill])
+def test_a_row_bound_to_nothing_is_loud_for_EVERY_app(skill, tmp_path):
+    """HATS-1545 F3. `at:` is owned by ai-hats precisely so this is loud without
+    knowing any app's grammar: a row that names no point is a gate that never
+    fires, which is the silent absence the epic exists to remove. Asserted on
+    `rack` — a FOREIGN app — because the `wt` case would pass even if the check
+    lived in the wt-only branch, which is where the hole was."""
+    from ai_hats.models import parse_app_bindings
+
+    for cargo in ({}, {"ats": ["edge:plan--execute"]}):
+        with pytest.raises(CheckBindingError, match="at least one point"):
+            parse_app_bindings(
+                {"rack": {"tasks": [{"run": "gate-skill/hooks/gate.sh", **cargo}]}},
+                declared_by="trait-x",
+            )
 
 
 def test_binding_to_uncomposed_skill_is_loud(skill):
@@ -213,17 +227,16 @@ def test_duplicate_row_collapses_with_strictest_on_error_and_warns(skill, capsys
 
 
 def test_dedup_keeps_rows_whose_cargo_differs(skill):
-    """R6: cargo is compared whole and opaquely, so one script at two different
-    points is two rows — ai-hats cannot know that ``at`` is what separates
-    them, and does not need to."""
+    """R6: identity spans `at` and cargo whole, so one script at two different
+    points is two rows."""
     other = skill.source_path / "hooks" / "other.sh"
     other.write_text("#!/usr/bin/env bash\n")
     other.chmod(0o755)
 
     resolved = resolve_checks(
         [
-            _row(cargo={"at": ["edge:plan--execute"]}),
-            _row(cargo={"at": ["edge:execute--review"]}),
+            _row(at=("edge:plan--execute",)),
+            _row(at=("edge:execute--review",)),
             _row(run="gate-skill/hooks/other.sh"),
         ],
         [skill],
@@ -266,3 +279,36 @@ def test_namespaced_skill_name_matches_either_spelling(tmp_path):
     (resolved,) = resolve_checks([_row(run="dev::python/gate.sh")], [composed])
 
     assert resolved.script_path == script.resolve()
+
+
+def test_two_surviving_rows_never_share_a_log_name(skill):
+    """HATS-1545 F5 / HATS-1137 / HATS-1540 — the same defect, a third time.
+
+    The log token must not be COARSER than the identity `resolve_checks` keys on.
+    Two rows differing only in `at:` both survive dedup, both fire on the shared
+    edge, and a token built from (app, path, skill, script) alone gave them ONE
+    file — the second run truncating the first one's transcript while the first
+    one's reason still pointed at it.
+    """
+    rows = resolve_checks(
+        [
+            _row(at=("edge:a--b",)),
+            _row(at=("edge:a--b", "edge:c--d"), declared_by="role-y"),
+        ],
+        [skill],
+    )
+
+    assert len(rows) == 2, "different cargo means different rows — that half already held"
+    tokens = [check_log_token(row) for row in rows]
+    assert len(set(tokens)) == 2, f"two rows, one log file: {tokens}"
+
+
+def test_the_log_name_stays_readable_and_still_discriminates(skill):
+    """The readable components survive; the digest rides along as a suffix so the
+    token is never coarser than the identity, in EVERY case rather than in the
+    ones a condition happened to foresee."""
+    (row,) = resolve_checks([_row()], [skill])
+
+    token = check_log_token(row)
+    assert token.startswith("rack~tasks~gate-skill~hooks+gate.sh~")
+    assert len(token.rsplit("~", 1)[1]) == 8

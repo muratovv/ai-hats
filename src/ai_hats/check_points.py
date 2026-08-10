@@ -16,8 +16,10 @@ ai-hats no longer needs to know any application's namespaces to route a row.
 
 from __future__ import annotations
 
+import json
 import string
 import sys
+from hashlib import sha1
 from collections.abc import Iterable, Sequence, Set as AbstractSet
 from dataclasses import replace
 from pathlib import Path
@@ -80,11 +82,12 @@ def resolve_checks(
             continue
         script_path = _resolve_script(row, skill)
         if owns_app(row.app):
-            _validate_wt_cargo(row)
+            _validate_wt_points(row)
         check = ResolvedCheck(
             app=row.app,
             path=row.path,
             run=row.run,
+            at=row.at,
             cargo=row.cargo,
             on_error=row.on_error,
             script_path=script_path,
@@ -176,17 +179,15 @@ def _report_missing_skill(row: AppBinding, removed: AbstractSet[str]) -> None:
     )
 
 
-def _validate_wt_cargo(row: AppBinding) -> None:
-    """The ``wt`` app is ai-hats's own, so its cargo IS validated here."""
+def _validate_wt_points(row: AppBinding) -> None:
+    """The ``wt`` app is ai-hats's own, so its point NAMES are validated here.
+
+    That a row names at least one point is checked for every app, at parse time
+    (``_app_row``); this is the half only the owner can do.
+    """
     label = _label(row)
     points = wt_points()
-    at = row.cargo.get("at")
-    if not isinstance(at, list) or not at or not all(isinstance(name, str) for name in at):
-        raise CheckBindingError(
-            f"{label}: apps.wt rows need 'at: [<point>]' naming at least one point "
-            f"(known: {', '.join(sorted(points))}); a row bound to nothing never fires"
-        )
-    for name in at:
+    for name in row.at:
         if name not in points:
             raise CheckBindingError(
                 f"{label} at {name!r}, which is not a point of the 'wt' app "
@@ -238,7 +239,21 @@ def check_log_token(check: ResolvedCheck) -> str:
     """  # comment-length: allow — the defect recurred once already
     trail = "".join(f"~{_escaped(part)}" for part in check.path)
     skill = _escaped(resolve_namespace(check.skill))
-    return f"{_escaped(check.app)}{trail}~{skill}~{_escaped(check.script)}"
+    return f"{_escaped(check.app)}{trail}~{skill}~{_escaped(check.script)}{_cargo_tag(check)}"
+
+
+def _cargo_tag(check: ResolvedCheck) -> str:
+    """A short digest of the rest of the row's identity — ``at`` and cargo.
+
+    Always appended, never conditionally: the token must not be COARSER than the
+    identity ``resolve_checks`` keys on, or two rows that survive dedup share a
+    log name and the second truncates the first one's transcript while the first
+    one's reason still points at it (HATS-1137, again in HATS-1540, again here).
+    A discriminator that is present only "when needed" is that same bug waiting
+    for the case its condition did not foresee.
+    """  # comment-length: allow — the defect recurred twice; the token rule is why
+    payload = json.dumps({"at": list(check.at), **dict(check.cargo)}, sort_keys=True, default=str)
+    return f"~{sha1(payload.encode()).hexdigest()[:8]}"
 
 
 __all__ = [
