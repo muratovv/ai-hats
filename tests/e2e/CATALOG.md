@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**94 of 224 files catalogued — 97 flows.**
+**95 of 224 files catalogued — 98 flows.**
 
 ## `test_agy_bypass.py`
 
@@ -283,7 +283,7 @@ as a claim to check, not as evidence.
 
   ```console
   # agent invoking a PreToolUse hook with an unparsable payload
-  bash .agent/ai-hats/library/hooks/safety_gate.py < /tmp/malformed.json
+  python .agent/ai-hats/hooks/safety_gate.py < /tmp/malformed.json
   ```
 
 - **expect** — execution passes fail-open without blocking the call and the unparsable payload event is recorded in the bypass journal or stderr
@@ -893,6 +893,21 @@ as a claim to check, not as evidence.
 - **expect** — the PreToolUse hook emits additionalContext suggesting dedicated tools without blocking or modifying command permissions
 - **why** — tool hygiene guidance encourages efficient tool choices while remaining non-blocking to preserve execution flow
 
+## `test_transition_execute_adopts_worktree.py`
+
+*pins HATS-060, HATS-524, HATS-840*
+
+- **flow** — a developer transitioning a task to execute from inside a linked worktree
+- **cmds**
+
+  ```console
+  # from inside a linked worktree directory
+  rack transition HATS-1 execute
+  ```
+
+- **expect** — the existing worktree is adopted instead of provisioning a second worktree off main
+- **why** — transitioning to execute from inside a worktree must adopt the caller worktree to prevent duplicate worktree creation
+
 ## `test_user_rules_delivery.py`
 
 *pins HATS-1170, HATS-1203*
@@ -1433,7 +1448,7 @@ as a claim to check, not as evidence.
 
 ## Not yet catalogued
 
-130 files carry no flow block yet:
+129 files carry no flow block yet:
 
 - `test_agent_orchestration.py`
 - `test_agy_detection.py`
@@ -1555,7 +1570,6 @@ as a claim to check, not as evidence.
 - `test_stable_channel_live.py`
 - `test_stray_shadow_detector.py`
 - `test_subagent_sdk_smoke.py`
-- `test_transition_execute_adopts_worktree.py`
 - `test_unknown_provider_friendly_error.py`
 - `test_unknown_role_friendly_error.py`
 - `test_update_banner_e2e.py`
