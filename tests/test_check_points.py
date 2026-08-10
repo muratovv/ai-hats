@@ -64,9 +64,7 @@ def test_catalog_carries_only_the_points_ai_hats_fires():
 def test_a_foreign_namespace_is_carried_not_judged(skill):
     """D11: what ``edge:`` or any other foreign namespace means is the owning
     application\'s question. Carried verbatim, with provenance intact."""
-    resolved = resolve_checks(
-        [("trait-x", _row(on=("edge:bogus--state", "gh:pre-push")))], [skill]
-    )
+    resolved = resolve_checks([("trait-x", _row(on=("edge:bogus--state", "gh:pre-push")))], [skill])
 
     assert [c.point for c in resolved] == ["edge:bogus--state", "gh:pre-push"]
     assert {c.declared_by for c in resolved} == {"trait-x"}

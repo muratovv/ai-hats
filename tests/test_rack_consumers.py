@@ -370,9 +370,7 @@ def test_a_resolution_failure_is_a_typed_refusal_not_a_traceback(tmp_path):
     def boom() -> tuple[ResolvedCheck, ...]:
         raise CheckResolutionError("active role 'ghost' does not exist")
 
-    runner = _extension(
-        tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=boom
-    )
+    runner = _extension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=boom)
 
     with pytest.raises(AbortOperation) as exc_info:
         runner.on_event(_ctx())
