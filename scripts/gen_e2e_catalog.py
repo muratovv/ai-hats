@@ -135,6 +135,12 @@ def _resolve_cli_cmd(
             else:
                 return True, None
         elif cli_name == "ai-hats" and is_top_level:
+            if len(sub_args) == 1 and subcmd.isalnum():
+                cmds_avail = ", ".join(sorted(group.commands.keys()))
+                return (
+                    False,
+                    f"unknown subcommand {subcmd!r} under {group.name} (available: {cmds_avail})",
+                )
             return True, None
         elif cli_name == "rack" and subcmd in DYNAMIC_RACK_GROUPS:
             return True, None

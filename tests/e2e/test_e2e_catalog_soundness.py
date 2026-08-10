@@ -26,7 +26,6 @@ def test_e2e_catalog_check_refuses_unsound_flow_block(tmp_path: Path) -> None:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     shutil.copy(_REPO_ROOT / "scripts" / "gen_e2e_catalog.py", scripts_dir / "gen_e2e_catalog.py")
-
     e2e_dir = tmp_path / "tests" / "e2e"
     e2e_dir.mkdir(parents=True)
 
@@ -42,6 +41,11 @@ def test_e2e_catalog_check_refuses_unsound_flow_block(tmp_path: Path) -> None:
         '"""\n',
         encoding="utf-8",
     )
+
+    from scripts.gen_e2e_catalog import collect, render
+
+    rows, pending, _ = collect(e2e_dir)
+    (e2e_dir / "CATALOG.md").write_text(render(rows, pending), encoding="utf-8")
 
     # git init + commit for log lookup
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
