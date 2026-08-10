@@ -1,4 +1,4 @@
-"""e2e (HATS-1367, HATS-1368)
+"""e2e (HATS-1556)
 
 flow:   a developer executing printed rescue command when automatic bootstrap heal fails
 cmds:

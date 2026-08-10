@@ -1,4 +1,4 @@
-"""e2e (HATS-1280)
+"""e2e (HATS-1497)
 
 flow: a developer running self update after a framework package dependency has been
       retired

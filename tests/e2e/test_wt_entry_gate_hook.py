@@ -1,4 +1,4 @@
-"""e2e (HATS-1372)
+"""e2e (HATS-1556)
 
 flow:   an agent attempting to enter or create a worktree directly via tool call
 cmds:

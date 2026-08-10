@@ -1,4 +1,4 @@
-"""e2e (HATS-466)
+"""e2e (HATS-478)
 
 flow:   a developer running free-tier inspection commands in a role-less project
 cmds:

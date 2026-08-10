@@ -1,4 +1,4 @@
-"""e2e (HATS-861, HATS-876)
+"""e2e (HATS-861)
 
 flow:   a developer building wheel distribution packages for framework integration
 cmds:

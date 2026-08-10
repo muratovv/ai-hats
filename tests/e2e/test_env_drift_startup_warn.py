@@ -1,4 +1,4 @@
-"""e2e (HATS-1013)
+"""e2e (HATS-1192)
 
 flow:   a developer starts an interactive session when background tooling packages in
         their environment have fallen behind project declarations

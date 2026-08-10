@@ -1,4 +1,4 @@
-"""e2e (HATS-533, HATS-596)
+"""e2e (HATS-596)
 
 flow:   a developer merging an already-merged worktree branch when main repository HEAD
         has moved

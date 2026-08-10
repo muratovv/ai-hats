@@ -3,9 +3,9 @@
 flow:   a maintainer commits a change under docs/, and the pre-commit
         docs-index hook decides whether docs/INDEX.md must be staged with it
 cmds:
-    git add docs/new-doc.md && git commit                  # blocked
-    git add docs/new-doc.md docs/INDEX.md && git commit    # allowed
-    git mv docs/a.md docs/b.md && git commit               # blocked
+    git add docs/new-doc.md && git commit                  # no-resolve: blocked, path created in flow
+    git add docs/new-doc.md docs/INDEX.md && git commit    # no-resolve: allowed, path created in flow
+    git mv docs/a.md docs/b.md && git commit               # no-resolve: blocked, path created in flow
     AI_HATS_DOCS_INDEX_ACK=1 git commit                    # allowed, override
 expect: adding, renaming or deleting a `docs/*.md` without staging INDEX.md is
         blocked; staging INDEX.md alongside allows it; a content-only edit to an

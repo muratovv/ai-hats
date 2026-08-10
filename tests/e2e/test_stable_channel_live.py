@@ -1,4 +1,4 @@
-"""e2e (HATS-762, HATS-765)
+"""e2e (HATS-765)
 
 flow:   a developer updating framework version on stable release channel
 cmds:

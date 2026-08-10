@@ -1,4 +1,4 @@
-"""e2e (HATS-1115, HATS-1116, HATS-1215, HATS-1239)
+"""e2e (HATS-1239)
 
 flow: a developer running self update when python installation source carries import
       errors

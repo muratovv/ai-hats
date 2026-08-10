@@ -1,4 +1,4 @@
-"""e2e (HATS-1242, HATS-1291)
+"""e2e (HATS-1242)
 
 flow:   a developer creating a worktree in a project requiring isolated python
         environments

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**226 of 226 files catalogued — 233 flows.**
+**227 of 227 files catalogued — 234 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -59,7 +59,7 @@ as a claim to check, not as evidence.
 
 ## `test_agy_dispatcher_out_of_tree.py`
 
-*pins HATS-1356, HATS-1398*
+*pins HATS-1398*
 
 - **flow** — an agent executing tool calls under an out-of-tree session cache location
 - **cmds**
@@ -160,7 +160,7 @@ as a claim to check, not as evidence.
 
 ## `test_bootstrap_heals_underdeclared_editable.py`
 
-*pins HATS-1368*
+*pins HATS-1556*
 
 - **flow** — a developer running ai-hats when editable install metadata under-declares deps
 - **cmds**
@@ -174,7 +174,7 @@ as a claim to check, not as evidence.
 
 ## `test_bootstrap_noop_heal_fails_loud.py`
 
-*pins HATS-1262, HATS-1359, HATS-1368*
+*pins HATS-1359*
 
 - **flow** — a developer running ai-hats when a missing package cannot be healed by package manager
 - **cmds**
@@ -202,7 +202,7 @@ as a claim to check, not as evidence.
 
 ## `test_bootstrap_rescue_command_works_editable.py`
 
-*pins HATS-1367, HATS-1368*
+*pins HATS-1556*
 
 - **flow** — a developer executing printed rescue command when automatic bootstrap heal fails
 - **cmds**
@@ -244,7 +244,7 @@ as a claim to check, not as evidence.
 
 ## `test_broken_install_friendly_error.py`
 
-*pins HATS-1120, HATS-1263*
+*pins HATS-1263*
 
 - **flow** — a developer running ai-hats commands when package files are corrupted or mismatched
 - **cmds**
@@ -330,7 +330,7 @@ as a claim to check, not as evidence.
 
 ## `test_claude_scaffold_drop.py`
 
-*pins HATS-582, HATS-1170, HATS-1201*
+*pins HATS-1170, HATS-1201*
 
 - **flow** — a developer updating framework version on a project with orphan CLAUDE.md scaffolds
 - **cmds**
@@ -344,7 +344,7 @@ as a claim to check, not as evidence.
 
 ## `test_clean_root_sentinel.py`
 
-*pins HATS-1170, HATS-1336, HATS-1338*
+*pins HATS-1338*
 
 - **flow** — a developer running a session in a project workspace
 - **cmds**
@@ -600,9 +600,9 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  git add docs/new-doc.md && git commit                  # blocked
-  git add docs/new-doc.md docs/INDEX.md && git commit    # allowed
-  git mv docs/a.md docs/b.md && git commit               # blocked
+  git add docs/new-doc.md && git commit                  # no-resolve: blocked, path created in flow
+  git add docs/new-doc.md docs/INDEX.md && git commit    # no-resolve: allowed, path created in flow
+  git mv docs/a.md docs/b.md && git commit               # no-resolve: blocked, path created in flow
   AI_HATS_DOCS_INDEX_ACK=1 git commit                    # allowed, override
   ```
 
@@ -638,6 +638,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
 
+## `test_e2e_catalog_soundness.py`
+
+*pins HATS-1561*
+
+- **flow** — a maintainer runs e2e-catalog --check when an e2e test carries an unsound flow block
+- **cmds**
+
+  ```console
+  python scripts/gen_e2e_catalog.py --check
+  ```
+
+- **expect** — script exits non-zero and outputs an unsound row refusal naming file, command and reason
+- **why** — prevents mechanical catalog corruptions (invented pins, non-resolving commands, plumbing) from landing
+
 ## `test_e2e_catalog_uncatalogued_refusal.py`
 
 *pins HATS-1563*
@@ -668,7 +682,7 @@ as a claim to check, not as evidence.
 
 ## `test_env_drift_startup_warn.py`
 
-*pins HATS-1013*
+*pins HATS-1192*
 
 - **flow** — a developer starts an interactive session when background tooling packages in their environment have fallen behind project declarations
 - **cmds**
@@ -801,7 +815,7 @@ as a claim to check, not as evidence.
 
 ## `test_hook_chain_fail_open_recorded.py`
 
-*pins HATS-1252, HATS-1373*
+*pins HATS-1373*
 
 - **flow** — an agent triggering tool execution with unparsable or malformed hook payloads
 - **cmds**
@@ -845,7 +859,7 @@ as a claim to check, not as evidence.
 
 ## `test_init_leaves_venv_alone.py`
 
-*pins HATS-1125, HATS-1215, HATS-1250*
+*pins HATS-1215, HATS-1250*
 
 - **flow** — a developer reconfigures project settings using command flags on an already initialized project
 - **cmds**
@@ -901,7 +915,7 @@ as a claim to check, not as evidence.
 
 ## `test_install.py`
 
-*pins HATS-242, HATS-333*
+*pins HATS-333*
 
 - **flow** — a developer running venv-first launcher installation, initialization, and self-update recovery
 - **cmds**
@@ -920,7 +934,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-1118*
 
-- **flow** — a developer running launcher config status when a first-party entry point attribute is missing
+- **flow** — a developer running any ai-hats command when a first-party entry point attribute is missing
 - **cmds**
 
   ```console
@@ -932,7 +946,7 @@ as a claim to check, not as evidence.
 
 ## `test_install_heavy_sharding.py`
 
-*pins HATS-676, HATS-678, HATS-771*
+*pins HATS-676, HATS-771*
 
 - **flow** — a maintainer running the e2e test suite gate with xdist sharding
 - **cmds**
@@ -961,7 +975,7 @@ as a claim to check, not as evidence.
 
 ## `test_integrator_wheel_build.py`
 
-*pins HATS-861, HATS-876*
+*pins HATS-861*
 
 - **flow** — a developer building wheel distribution packages for framework integration
 - **cmds**
@@ -1005,14 +1019,14 @@ as a claim to check, not as evidence.
 
 *pins HATS-790*
 
-- **flow** — a developer running ai-hats CLI commands via launcher on a venv without bin/ai-hats console script
+- **flow** — a developer running any ai-hats command on a venv without a bin/ai-hats console script
 - **cmds**
 
   ```console
   ai-hats config status
   ```
 
-- **expect** — launcher verifies python importability and dispatches command via python -m ai_hats
+- **expect** — launcher verifies python importability and forwards verbatim argv through python -m ai_hats
 - **why** — without python -m module dispatch, removing console script binaries breaks host launcher command execution
 
 ## `test_launcher_heal_detects_missing_workspace_member.py`
@@ -1045,7 +1059,7 @@ as a claim to check, not as evidence.
 
 ## `test_launcher_heals_markerless_skills_mirror.py`
 
-*pins HATS-907, HATS-931*
+*pins HATS-931*
 
 - **flow** — an agent starting a session when project carries a stale marker-less skills mirror matching a composed skill
 - **cmds**
@@ -1089,11 +1103,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-1306*
 
-- **flow** — a developer running ai-hats commands from inside a linked git worktree or subfolder of an onboarded project
+- **flow** — a developer running any ai-hats command from inside a linked git worktree or subfolder of an onboarded project
 - **cmds**
 
   ```console
-  ai-hats config status
+  ai-hats wt status
   ```
 
 - **expect** — launcher resolves project root to main checkout and executes using main project managed venv
@@ -1103,11 +1117,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-815*
 
-- **flow** — a developer running self update when leftover hook sidecar files exist
+- **flow** — a developer running any ai-hats command when leftover hook sidecar files exist
 - **cmds**
 
   ```console
-  ai-hats self update
+  ai-hats config status
   ```
 
 - **expect** — CLI emits warning for leftover hook sidecar files without failing command execution
@@ -1115,13 +1129,13 @@ as a claim to check, not as evidence.
 
 ## `test_legacy_task_cli_removed.py`
 
-*pins HATS-087, HATS-790, HATS-1260*
+*pins HATS-1260*
 
 - **flow** — a developer invoking legacy task CLI commands
 - **cmds**
 
   ```console
-  ai-hats task list  # retired: expected to fail
+  ai-hats task list  # no-resolve: pins that this CLI was removed
   ```
 
 - **expect** — CLI exits with error code explaining legacy task CLI is replaced by rack command
@@ -1129,7 +1143,7 @@ as a claim to check, not as evidence.
 
 ## `test_library_package_standalone.py`
 
-*pins HATS-876*
+*pins HATS-971*
 
 - **flow** — a developer importing ai_hats_library sub-package independently
 - **cmds**
@@ -1214,7 +1228,7 @@ as a claim to check, not as evidence.
 
 ## `test_missing_provider_friendly_error.py`
 
-*pins HATS-965, HATS-1218, HATS-1224*
+*pins HATS-1224*
 
 - **flow** — a developer specifying a provider name whose package is not installed
 - **cmds**
@@ -1300,11 +1314,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-1345, HATS-1352*
 
-- **flow** — a maintainer running pre-commit smoke test collection
+- **flow** — a maintainer committing changes to trigger the pre-commit smoke hook
 - **cmds**
 
   ```console
-  bash scripts/pre-commit-smoke.sh
+  git commit
   ```
 
 - **expect** — smoke script collects fast smoke test suite and runs verification within target deadline
@@ -1408,7 +1422,7 @@ as a claim to check, not as evidence.
 
 ## `test_pty_escape_hatch.py`
 
-*pins HATS-675, HATS-679*
+*pins HATS-679*
 
 - **flow** — a developer pressing triple Ctrl-C during a wedged PTY session
 - **cmds**
@@ -1620,7 +1634,7 @@ as a claim to check, not as evidence.
 
 ## `test_reflect_role_e2e.py`
 
-*pins HATS-498, HATS-544, HATS-546*
+*pins HATS-546*
 
 - **flow** — a developer running role coherence audit command
 - **cmds**
@@ -1662,7 +1676,7 @@ as a claim to check, not as evidence.
 
 ## `test_remedy_fixes_the_hook.py`
 
-*pins HATS-1245, HATS-1291, HATS-1314*
+*pins HATS-1245, HATS-1291*
 
 - **flow** — a developer running self init to remedy broken settings.json hook references
 - **cmds**
@@ -1690,7 +1704,7 @@ as a claim to check, not as evidence.
 
 ## `test_retired_dist_prune_e2e.py`
 
-*pins HATS-1280*
+*pins HATS-1497*
 
 - **flow** — a developer running self update after a framework package dependency has been retired
 - **cmds**
@@ -1750,14 +1764,14 @@ as a claim to check, not as evidence.
 
 *pins HATS-1170, HATS-1336*
 
-- **flow** — a developer running self update to sweep legacy root residue files
+- **flow** — a developer running ai-hats self update to sweep legacy root residue files
 - **cmds**
 
   ```console
   ai-hats self update
   ```
 
-- **expect** — update sweeps legacy root residue files from settings.json while keeping user entries
+- **expect** — self update command sweeps legacy root residue files and keeps framework state inside .agent/ai-hats/
 - **why** — without root residue sweeps, legacy config files remain in project root corrupting state resolution
 
 ## `test_rule_delivery_gate.py`
@@ -1805,7 +1819,7 @@ as a claim to check, not as evidence.
 
 ## `test_runtime_hooks_execute_from_session_tree.py`
 
-*pins HATS-1113, HATS-1268*
+*pins HATS-1268*
 
 - **flow** — an agent executing tools in a session with materialized runtime hooks
 - **cmds**
@@ -1832,7 +1846,7 @@ as a claim to check, not as evidence.
   ai-hats agent "assistant + ai-hats-framework" --task hello --dry-run --json
   ai-hats --dry-run-json -r "assistant + ai-hats-framework"
   ai-hats config set -r "assistant + ai-hats-framework"          # must refuse
-  ai-hats -r assistant + ai-hats-framework                       # retired: bare +, must refuse
+  ai-hats -r assistant + ai-hats-framework                       # no-resolve: bare +, must refuse
   ```
 
 - **expect** — an added trait's injection appears in the prompt, a removed one disappears while its siblings stay, and compact and spaced spellings are byte-identical; the composed prompt is measurably larger than the base through both `agent --dry-run --json` and `--dry-run-json`; an unknown component, a role in second position, and a bare unquoted `+` each exit 2 with a named error and no traceback; `config set` refuses to persist and leaves ai-hats.yaml byte-identical
@@ -1855,7 +1869,7 @@ as a claim to check, not as evidence.
 
 ## `test_safety_gate_hook.py`
 
-*pins HATS-1372*
+*pins HATS-1556*
 
 - **flow** — an agent executing destructive bash commands during tool calls
 - **cmds**
@@ -1884,7 +1898,7 @@ as a claim to check, not as evidence.
 
 ## `test_self_bump_unclaimed_sweep.py`
 
-*pins HATS-582, HATS-905, HATS-912*
+*pins HATS-905*
 
 - **flow** — a developer running self update when unclaimed legacy files exist in .agent/ai-hats/
 - **cmds**
@@ -1914,15 +1928,15 @@ as a claim to check, not as evidence.
 
 *pins HATS-294, HATS-709*
 
-- **flow** — a developer running retired self clean command
+- **flow** — a developer invoking retired self clean CLI command
 - **cmds**
 
   ```console
-  ai-hats self clean  # retired: expected to fail
+  ai-hats self clean  # no-resolve: pins that this CLI was removed
   ```
 
-- **expect** — CLI rejects retired self clean subcommand with 'No such command' error
-- **why** — without command retirement guards, deprecated commands might be invoked silently
+- **expect** — CLI exits with error code explaining self clean command is retired
+- **why** — without self clean removal guard, deprecated self clean subcommand might be re-introduced
 
 ## `test_self_heal_broken_editable.py`
 
@@ -2278,11 +2292,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-1006*
 
-- **flow** — a developer starting session when settings.json carries malformed JSON structure
+- **flow** — a developer running any ai-hats command when settings.json carries malformed JSON structure
 - **cmds**
 
   ```console
-  ai-hats
+  ai-hats config status
   ```
 
 - **expect** — session startup warns user of settings.json lint errors without aborting execution
@@ -2292,7 +2306,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-790, HATS-791*
 
-- **flow** — a developer running commands when AI_HATS_VENV points to a foreign venv outside project
+- **flow** — a developer running any ai-hats command when AI_HATS_VENV points to a foreign venv outside project
 - **cmds**
 
   ```console
@@ -2350,7 +2364,7 @@ as a claim to check, not as evidence.
 
 ## `test_skill_source_entry_point_discovery.py`
 
-*pins HATS-871*
+*pins HATS-991*
 
 - **flow** — a developer listing available skills when third-party skill packages are installed
 - **cmds**
@@ -2364,13 +2378,13 @@ as a claim to check, not as evidence.
 
 ## `test_skills_mirror_self_heals.py`
 
-*pins HATS-294, HATS-469, HATS-906, HATS-907*
+*pins HATS-469, HATS-907*
 
-- **flow** — a developer running session commands when skills mirror directory is out of date
+- **flow** — a developer running any ai-hats command when skills mirror directory is out of date
 - **cmds**
 
   ```console
-  ai-hats
+  ai-hats config status
   ```
 
 - **expect** — session initialization detects stale skills mirror and self-heals mirror files from library
@@ -2378,7 +2392,7 @@ as a claim to check, not as evidence.
 
 ## `test_stable_channel_live.py`
 
-*pins HATS-762, HATS-765*
+*pins HATS-765*
 
 - **flow** — a developer updating framework version on stable release channel
 - **cmds**
@@ -2421,7 +2435,7 @@ as a claim to check, not as evidence.
 
 ## `test_surface_cleanup.py`
 
-*pins HATS-337, HATS-339, HATS-407, HATS-790, HATS-1203*
+*pins HATS-337, HATS-407, HATS-790, HATS-1203*
 
 - **flow** — a developer initializing project configuration
 - **cmds**
@@ -2577,7 +2591,7 @@ as a claim to check, not as evidence.
 
 ## `test_task_transition_final_state_e2e.py`
 
-*pins HATS-698, HATS-723, HATS-1260, HATS-1263, HATS-1275*
+*pins HATS-723, HATS-1260, HATS-1263, HATS-1275*
 
 - **flow** — a developer setting final_state notes during task transition
 - **cmds**
@@ -2620,7 +2634,7 @@ as a claim to check, not as evidence.
 
 ## `test_transition_execute_adopts_worktree.py`
 
-*pins HATS-060, HATS-524, HATS-840*
+*pins HATS-840*
 
 - **flow** — a developer transitioning a task to execute from inside a linked worktree
 - **cmds**
@@ -2677,7 +2691,7 @@ as a claim to check, not as evidence.
 
 ## `test_update_banner_non_editable_e2e.py`
 
-*pins HATS-432, HATS-441, HATS-458*
+*pins HATS-458*
 
 - **flow** — an agent running session execution on a non-editable package installation
 - **cmds**
@@ -2691,7 +2705,7 @@ as a claim to check, not as evidence.
 
 ## `test_update_verifies_install_before_success.py`
 
-*pins HATS-1115, HATS-1116, HATS-1215, HATS-1239*
+*pins HATS-1239*
 
 - **flow** — a developer running self update when python installation source carries import errors
 - **cmds**
@@ -2761,7 +2775,7 @@ as a claim to check, not as evidence.
 
 ## `test_wave1_free_tier.py`
 
-*pins HATS-466*
+*pins HATS-478*
 
 - **flow** — a developer running free-tier inspection commands in a role-less project
 - **cmds**
@@ -2836,7 +2850,7 @@ as a claim to check, not as evidence.
 
 ## `test_write_op_refused_at_non_project_root.py`
 
-*pins HATS-685, HATS-788, HATS-839, HATS-1263*
+*pins HATS-839, HATS-1263*
 
 - **flow** — a developer issuing write operations outside an onboarded ai-hats project root
 - **cmds**
@@ -2879,7 +2893,7 @@ as a claim to check, not as evidence.
 
 ## `test_wt_entry_gate_hook.py`
 
-*pins HATS-1372*
+*pins HATS-1556*
 
 - **flow** — an agent attempting to enter or create a worktree directly via tool call
 - **cmds**
@@ -2968,7 +2982,7 @@ as a claim to check, not as evidence.
 
 ## `test_wt_exec_selector.py`
 
-*pins HATS-685, HATS-826, HATS-859*
+*pins HATS-859*
 
 - **flow** — a developer executing commands in a specific worktree using a branch selector
 - **cmds**
@@ -3151,7 +3165,7 @@ as a claim to check, not as evidence.
 
 ## `test_wt_merge_already_merged_head_wandered.py`
 
-*pins HATS-533, HATS-596*
+*pins HATS-596*
 
 - **flow** — a developer merging an already-merged worktree branch when main repository HEAD has moved
 - **cmds**
@@ -3269,7 +3283,7 @@ as a claim to check, not as evidence.
 
 ## `test_wt_merge_null_original_branch.py`
 
-*pins HATS-479, HATS-714*
+*pins HATS-714*
 
 - **flow** — a developer merging a worktree with corrupt or null original_branch state metadata
 - **cmds**
@@ -3328,7 +3342,7 @@ as a claim to check, not as evidence.
 
 ## `test_wt_venv_provisioned.py`
 
-*pins HATS-1242, HATS-1291*
+*pins HATS-1242*
 
 - **flow** — a developer creating a worktree in a project requiring isolated python environments
 - **cmds**

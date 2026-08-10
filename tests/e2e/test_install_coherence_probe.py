@@ -1,6 +1,6 @@
 """e2e (HATS-1118)
 
-flow:   a developer running launcher config status when a first-party entry point attribute is
+flow:   a developer running any ai-hats command when a first-party entry point attribute is
         missing
 cmds:
     ai-hats config status
@@ -59,7 +59,7 @@ def test_launcher_probe_fails_on_broken_first_party_entry_point(tmp_path: Path) 
     env.pop("PYTHONPATH", None)
 
     proc = subprocess.run(
-        [str(LAUNCHER), "config", "status"],
+        [str(LAUNCHER), "status"],
         cwd=str(tmp_path),
         env=env,
         capture_output=True,

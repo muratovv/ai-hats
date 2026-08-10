@@ -1,4 +1,4 @@
-"""e2e (HATS-498, HATS-544, HATS-546)
+"""e2e (HATS-546)
 
 flow:   a developer running role coherence audit command
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-676, HATS-678, HATS-771)
+"""e2e (HATS-676, HATS-771)
 
 flow:   a maintainer running the e2e test suite gate with xdist sharding
 cmds:

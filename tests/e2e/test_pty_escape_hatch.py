@@ -1,4 +1,4 @@
-"""e2e (HATS-675, HATS-679)
+"""e2e (HATS-679)
 
 flow:   a developer pressing triple Ctrl-C during a wedged PTY session
 cmds:

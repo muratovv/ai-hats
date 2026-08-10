@@ -1,4 +1,4 @@
-"""e2e (HATS-060, HATS-524, HATS-840)
+"""e2e (HATS-840)
 
 flow:   a developer transitioning a task to execute from inside a linked worktree
 cmds:

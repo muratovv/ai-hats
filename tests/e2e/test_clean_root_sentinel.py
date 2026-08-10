@@ -1,4 +1,4 @@
-"""e2e (HATS-1170, HATS-1336, HATS-1338)
+"""e2e (HATS-1338)
 
 flow:   a developer running a session in a project workspace
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-1262, HATS-1359, HATS-1368)
+"""e2e (HATS-1359)
 
 flow:   a developer running ai-hats when a missing package cannot be healed by package
         manager

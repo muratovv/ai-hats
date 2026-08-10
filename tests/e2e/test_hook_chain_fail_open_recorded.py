@@ -1,4 +1,4 @@
-"""e2e (HATS-1252, HATS-1373)
+"""e2e (HATS-1373)
 
 flow:   an agent triggering tool execution with unparsable or malformed hook payloads
 cmds:

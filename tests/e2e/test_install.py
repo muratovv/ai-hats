@@ -1,4 +1,4 @@
-"""e2e (HATS-242, HATS-333)
+"""e2e (HATS-333)
 
 flow:   a developer running venv-first launcher installation, initialization, and
         self-update recovery

@@ -1,10 +1,10 @@
 """e2e (HATS-1306)
 
-flow: a developer running ai-hats commands from inside a linked git worktree or
+flow: a developer running any ai-hats command from inside a linked git worktree or
       subfolder of
         an onboarded project
 cmds:
-    ai-hats config status
+    ai-hats wt status
 expect: launcher resolves project root to main checkout and executes using main project
         managed
         venv
@@ -87,27 +87,27 @@ def test_launcher_worktree_execution_success(tmp_path: Path) -> None:
 
     # Case 1: Run launcher from worktree root
     res1 = subprocess.run(
-        [str(LAUNCHER), "config", "status"],
+        [str(LAUNCHER), "status"],
         cwd=str(wt_dir),
         env=env,
         capture_output=True,
         text=True,
     )
     assert res1.returncode == 0, f"launcher failed in worktree root:\n{res1.stderr}"
-    assert "main-repo-stub: config status" in res1.stdout
+    assert "main-repo-stub: status" in res1.stdout
     assert "foreign to" not in res1.stderr
     assert "ignoring the leaked session pin" not in res1.stderr
 
     # Case 2: Run launcher from deep subfolder in worktree
     res2 = subprocess.run(
-        [str(LAUNCHER), "config", "status"],
+        [str(LAUNCHER), "status"],
         cwd=str(deep_dir),
         env=env,
         capture_output=True,
         text=True,
     )
     assert res2.returncode == 0, f"launcher failed in deep subfolder:\n{res2.stderr}"
-    assert "main-repo-stub: config status" in res2.stdout
+    assert "main-repo-stub: status" in res2.stdout
     assert "foreign to" not in res2.stderr
 
 
@@ -139,14 +139,14 @@ def test_launcher_worktree_foreign_pin_dropped(tmp_path: Path) -> None:
     env[AI_HATS_PROJECT_DIR_ENV] = str(repo_a)
 
     res = subprocess.run(
-        [str(LAUNCHER), "config", "status"],
+        [str(LAUNCHER), "status"],
         cwd=str(wt_b),
         env=env,
         capture_output=True,
         text=True,
     )
     assert res.returncode == 0, f"launcher failed:\n{res.stderr}"
-    assert "proj-b-stub: config status" in res.stdout
+    assert "proj-b-stub: status" in res.stdout
     assert "ignoring the leaked session pin" in res.stderr
     assert "foreign to" in res.stderr
 
@@ -169,7 +169,7 @@ def test_launcher_non_ai_hats_worktree_no_hop(tmp_path: Path) -> None:
     env.pop(AI_HATS_PROJECT_DIR_ENV, None)
 
     res = subprocess.run(
-        [str(LAUNCHER), "config", "status"],
+        [str(LAUNCHER), "status"],
         cwd=str(wt_plain),
         env=env,
         capture_output=True,

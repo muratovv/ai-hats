@@ -1,4 +1,4 @@
-"""e2e (HATS-479, HATS-714)
+"""e2e (HATS-714)
 
 flow:   a developer merging a worktree with corrupt or null original_branch state
         metadata

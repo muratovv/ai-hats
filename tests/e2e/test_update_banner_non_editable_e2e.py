@@ -1,4 +1,4 @@
-"""e2e (HATS-432, HATS-441, HATS-458)
+"""e2e (HATS-458)
 
 flow:   an agent running session execution on a non-editable package installation
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-871)
+"""e2e (HATS-991)
 
 flow:   a developer listing available skills when third-party skill packages are
         installed

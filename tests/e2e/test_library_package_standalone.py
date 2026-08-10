@@ -1,4 +1,4 @@
-"""e2e (HATS-876)
+"""e2e (HATS-971)
 
 flow:   a developer importing ai_hats_library sub-package independently
 cmds:

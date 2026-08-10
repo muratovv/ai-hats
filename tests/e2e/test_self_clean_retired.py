@@ -1,10 +1,10 @@
 """e2e (HATS-294, HATS-709)
 
-flow:   a developer running retired self clean command
+flow:   a developer invoking retired self clean CLI command
 cmds:
-    ai-hats self clean  # retired: expected to fail
-expect: CLI rejects retired self clean subcommand with 'No such command' error
-why:    without command retirement guards, deprecated commands might be invoked silently"""
+    ai-hats self clean  # no-resolve: pins that this CLI was removed
+expect: CLI exits with error code explaining self clean command is retired
+why:    without self clean removal guard, deprecated self clean subcommand might be re-introduced"""
 
 from __future__ import annotations
 

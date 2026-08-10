@@ -18,7 +18,11 @@ The docstring is the source of truth (it cannot drift from the file it sits
 in); this script renders the whole-tier view that answers "is this flow already
 covered?", and `--check` keeps that view current. What `--check` CANNOT catch
 is a docstring drifting from its own code — both go stale together. The claim
-is "this view is current", never "these rows are true".
+is "this view is current", never "these rows are true". Check B resolves the
+subcommand path only, not options — `ai-hats config status --verbose` passes
+although `config status` declares no options. Check A accepts an id found
+anywhere in the file's git log, including the commit that wrote the flow block
+itself, so the cataloguing card's own id grounds a pin trivially (HATS-1567).
 
 comment-length: allow
 """
@@ -27,12 +31,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import os
 import re
 import shlex
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import click
 
@@ -44,6 +51,232 @@ FIELDS = ("flow", "cmds", "expect", "why")
 _HEADER = re.compile(r"^e2e\s*\(([^)]*)\)\s*$")
 _FIELD = re.compile(rf"^({'|'.join(FIELDS)}):\s?(.*)$")
 _ID = re.compile(r"HATS-\d+")
+_NON_HUMAN_ACTOR = re.compile(
+    r"^(a test suite|a test runner|a test harness|pytest|ci)\b", re.IGNORECASE
+)
+
+
+def check_actor(rows: list[Row]) -> list[str]:
+    errors = []
+    for row in rows:
+        match = _NON_HUMAN_ACTOR.match(row.flow.strip())
+        if match:
+            actor = match.group(1)
+            errors.append(
+                f"{row.file}: flow opens with non-human actor {actor!r} — flow must describe what a person does"
+            )
+    return errors
+
+
+def check_pins(rows: list[Row], ids_known_for: Callable[[str], set[str]]) -> list[str]:
+    errors = []
+    for row in rows:
+        known = ids_known_for(row.file)
+        for pin in row.pins:
+            if pin not in known:
+                errors.append(
+                    f"{row.file}: header pin {pin} has no basis (absent from file text and git log)"
+                )
+    return errors
+
+
+def check_plumbing(rows: list[Row]) -> list[str]:
+    errors = []
+    for row in rows:
+        for ln in row.cmds:
+            ln_s = ln.strip()
+            if not ln_s or ln_s.startswith("#"):
+                continue
+            code = ln_s.split("#")[0].strip()
+            if not code:
+                continue
+            tokens = code.split()
+            leading = tokens[0] if tokens else ""
+            is_plumbing = False
+            if leading == "pytest":
+                is_plumbing = True
+            elif leading == "python" and len(tokens) >= 3 and tokens[1] == "-m":
+                mod_name = tokens[2]
+                if mod_name.startswith("_helpers") or mod_name.startswith("ai_hats._"):
+                    is_plumbing = True
+            elif leading in ("_helpers", "conftest"):
+                is_plumbing = True
+
+            if is_plumbing:
+                errors.append(
+                    f"{row.file}: cmds `{ln_s}` demonstrates test plumbing — show the user-facing command instead"
+                )
+    return errors
+
+
+DYNAMIC_RACK_GROUPS = {"hyp", "proposal", "prop"}
+
+
+def _resolve_cli_cmd(
+    group: click.Group,
+    sub_args: list[str],
+    cli_name: str = "",
+    is_top_level: bool = True,
+) -> tuple[bool, str | None]:
+    if not sub_args:
+        return True, None
+
+    ctx = click.Context(group, resilient_parsing=True)
+    parser = group.make_parser(ctx)
+    try:
+        opts, args_rem, _ = parser.parse_args(args=list(sub_args))
+    except Exception as exc:
+        return False, f"invalid options for {group.name}: {exc}"
+
+    if not args_rem:
+        return True, None
+
+    subcmd = args_rem[0]
+    if isinstance(group, click.Group):
+        if subcmd in group.commands:
+            child_cmd = group.commands[subcmd]
+            if isinstance(child_cmd, click.Group):
+                return _resolve_cli_cmd(child_cmd, args_rem[1:], cli_name, is_top_level=False)
+            else:
+                return True, None
+        elif cli_name == "ai-hats" and is_top_level:
+            if len(sub_args) == 1 and subcmd.isalnum():
+                cmds_avail = ", ".join(sorted(group.commands.keys()))
+                return (
+                    False,
+                    f"unknown subcommand {subcmd!r} under {group.name} (available: {cmds_avail})",
+                )
+            return True, None
+        elif cli_name == "rack" and subcmd in DYNAMIC_RACK_GROUPS:
+            return True, None
+        else:
+            cmds_avail = ", ".join(sorted(group.commands.keys()))
+            return (
+                False,
+                f"unknown subcommand {subcmd!r} under {group.name} (available: {cmds_avail})",
+            )
+    return True, None
+
+
+def check_cmds(
+    rows: list[Row],
+    resolve_cmd: Callable[[str, list[str]], tuple[bool, str | None]],
+    path_exists: Callable[[str], bool],
+) -> list[str]:
+    errors = []
+    for row in rows:
+        for raw_ln in row.cmds:
+            ln = raw_ln.strip()
+            if not ln or ln.startswith("#"):
+                continue
+
+            if ".../" in ln:
+                errors.append(f"{row.file}: cmds `{ln}` uses literal `.../` ellipsis")
+                continue
+
+            marker_match = re.search(r"#\s*no-resolve:(.*)", ln)
+            if marker_match:
+                reason = marker_match.group(1).strip()
+                if not reason:
+                    errors.append(
+                        f"{row.file}: cmds `{ln}` has empty excuse reason after `# no-resolve:`"
+                    )
+                continue
+
+            code = ln.split("#")[0].strip()
+            if not code:
+                continue
+
+            try:
+                tokens = shlex.split(code)
+            except Exception:
+                tokens = code.split()
+
+            if not tokens:
+                continue
+
+            cmd_head = tokens[0]
+            if cmd_head in ("ai-hats", "rack") or (
+                cmd_head == "python"
+                and len(tokens) >= 3
+                and tokens[1] == "-m"
+                and tokens[2] in ("ai_hats", "ai_hats.cli", "ai_hats_rack")
+            ):
+                if cmd_head in ("ai-hats", "rack"):
+                    cli_name = cmd_head
+                    sub_args = tokens[1:]
+                else:
+                    cli_name = "ai-hats" if tokens[2].startswith("ai_hats") else "rack"
+                    sub_args = tokens[3:]
+
+                sub_args_clean = [a for a in sub_args if a not in ("--version", "--help", "-h")]
+                if sub_args_clean:
+                    ok, err = resolve_cmd(cli_name, sub_args_clean)
+                    if not ok:
+                        errors.append(f"{row.file}: cmds `{ln}` — {err}")
+
+            for token in tokens:
+                if (
+                    token.startswith("-")
+                    or token.startswith("http://")
+                    or token.startswith("https://")
+                ):
+                    continue
+                if token.startswith("<") and token.endswith(">"):
+                    continue
+                if token.startswith(
+                    ("scripts/", "tests/", "docs/", "src/", "packages/", ".agent/", ".github/")
+                ) or token in ("pyproject.toml", "README.md", "CONTRIBUTING.md"):
+                    if not path_exists(token):
+                        errors.append(f"{row.file}: cmds `{ln}` references missing path `{token}`")
+    return errors
+
+
+def _get_cli_trees() -> tuple[click.Group, click.Group]:
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    try:
+        from ai_hats.cli import main as ai_hats_cli
+    except ImportError as exc:
+        raise RuntimeError(f"[e2e-catalog] cannot import ai_hats.cli: {exc}") from exc
+
+    try:
+        from ai_hats_rack.cli import main as rack_cli
+    except ImportError as exc:
+        raise RuntimeError(f"[e2e-catalog] cannot import ai_hats_rack.cli: {exc}") from exc
+
+    return ai_hats_cli, rack_cli
+
+
+@functools.lru_cache(maxsize=None)
+def _ids_known_for(file_name: str, base_dir: Path = E2E_DIR) -> set[str]:
+    file_path = base_dir / file_name
+    found = set()
+    if file_path.exists():
+        text = file_path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text)
+            doc = ast.get_docstring(tree, clean=False)
+            if doc and doc in text:
+                text = text.replace(doc, "", 1)
+        except Exception:  # noqa: S110 # silent-ok: docstring parsing is best-effort
+            pass
+        found.update(_ID.findall(text))
+    try:
+        rel_path = (
+            file_path.relative_to(REPO_ROOT) if file_path.is_relative_to(REPO_ROOT) else file_path
+        )
+        res = subprocess.run(
+            ["git", "log", "--", str(rel_path)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            found.update(_ID.findall(res.stdout))
+    except Exception:  # noqa: S110 # silent-ok: git log lookup is optional
+        pass
+    return found
 
 
 class CatalogError(Exception):
@@ -151,7 +384,7 @@ def validate_cmd_line(cmd_str: str) -> str | None:
     Returns an error message if invalid, or None if valid/ignored.
     Lines containing `# retired:` are ignored as declared opt-outs.
     """
-    if "# retired:" in cmd_str:
+    if "# retired:" in cmd_str or "# no-resolve:" in cmd_str:
         return None
 
     clean = cmd_str.split("#")[0].strip()
@@ -355,6 +588,27 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[e2e-catalog] wrote {rel} ({tally})")
             return 1
 
+    ai_hats_cli, rack_cli = _get_cli_trees()
+
+    def resolve_cmd(cli_name: str, sub_args: list[str]) -> tuple[bool, str | None]:
+        root_group = ai_hats_cli if cli_name == "ai-hats" else rack_cli
+        return _resolve_cli_cmd(root_group, sub_args, cli_name)
+
+    def path_exists(rel_path: str) -> bool:
+        return (REPO_ROOT / rel_path).exists()
+
+    soundness_errors = (
+        check_actor(rows)
+        + check_pins(rows, lambda f: _ids_known_for(f, e2e_dir))
+        + check_plumbing(rows)
+        + check_cmds(rows, resolve_cmd, path_exists)
+    )
+    if soundness_errors:
+        print("[e2e-catalog] unsound row(s):", file=sys.stderr)
+        for err in soundness_errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
     rendered = render(rows, pending)
     # Files, not rows — a multi-flow file is still one file (it would read as
     # more progress than there is).
@@ -377,8 +631,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     where = "missing" if current is None else "stale"
     print(
-        f"[e2e-catalog] {rel} is {where} — "
-        "run `python scripts/gen_e2e_catalog.py --write`",
+        f"[e2e-catalog] {rel} is {where} — run `python scripts/gen_e2e_catalog.py --write`",
         file=sys.stderr,
     )
     return 1

@@ -1,4 +1,4 @@
-"""e2e (HATS-685, HATS-788, HATS-839, HATS-1263)
+"""e2e (HATS-839, HATS-1263)
 
 flow:   a developer issuing write operations outside an onboarded ai-hats project root
 cmds:
