@@ -638,6 +638,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
 
+## `test_e2e_catalog_soundness.py`
+
+*pins HATS-1561*
+
+- **flow** — a maintainer runs e2e-catalog --check when an e2e test carries an unsound flow block
+- **cmds**
+
+  ```console
+  python scripts/gen_e2e_catalog.py --check
+  ```
+
+- **expect** — script exits non-zero and outputs an unsound row refusal naming file, command and reason
+- **why** — prevents mechanical catalog corruptions (invented pins, non-resolving commands, plumbing) from landing
+
 ## `test_edge_check_gate.py`
 
 *pins HATS-1141*
