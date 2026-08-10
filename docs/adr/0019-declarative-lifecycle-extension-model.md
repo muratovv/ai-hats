@@ -130,12 +130,27 @@ One new field on `Composition`; **no new `SKILL.md` frontmatter**:
 name: hunk-review-trait
 composition:
   skills: [hunk-review-comments]
-  checks:
-    - skill: hunk-review-comments
-      script: hooks/check-review-availability.sh
-      on: [edge:review--done, wt:pre-merge]
-      on_error: warn
+  apps:
+    rack:                                                          # application
+      tasks:                                                       # its backlog
+        - run: hunk-review-comments/hooks/check-review-availability.sh
+          at: [edge:review--done]                                  # rack's cargo
+          on_error: warn
+    wt:
+      - run: hunk-review-comments/hooks/check-review-availability.sh
+        at: [pre-merge]
+        on_error: warn
 ```
+
+*(HATS-1545 replaced the flat `checks:` list with this shape. The application is
+a **key**, so ai-hats routes a row without knowing any application's namespaces:
+it owns exactly `run:` and `on_error:` and carries every other key verbatim.
+Depth below the app key belongs to the app — `rack` puts the backlog it gates
+there, `wt` has one namespace and puts rows directly under its own key, and
+ai-hats checks neither. `at:` rather than `on:` because YAML 1.1 resolves a bare
+`on` to `True`; the old channel remapped that for one known field, which is
+impossible under an opaque block. The old key is retired rather than translated:
+a config still carrying it gets the strip-unknown WARN naming `apps`.)*
 
 The script stays where scripts already live — in the skill directory, resolved
 skill-relative exactly like `git_hooks` / `runtime_hooks` / `worktree` entries.
@@ -367,6 +382,18 @@ The objection this raises — *an agent dodges a gate by switching roles* — do
 not apply: **role selection is out-of-band and supervisor-driven; an agent does
 not reassign its own role at runtime** (supervisor ruling, 2026-07-23). So no
 project-level tier, no `scope:` field, no cross-role lint is needed.
+
+*Re-confirmed at HATS-1545 (supervisor ruling, 2026-08-10), when the DSL was
+reshaped and `scope:` was reconsidered as a field. Two reasons beyond the
+2026-07-23 one. First, it would open a **second merge axis with no join**:
+`on_error` is strictest at `refuse` and a scope is strictest at `project`, and the
+two orders run opposite — "the strictest wins" is undefined over the pair. Second,
+no consumer wants a cross-project gate. What the reshape does buy is the narrower
+half for free: a row now names the backlog it gates (`apps.rack.<backlog>`), so an
+unqualified row is no longer writable. Whether a card belongs to **this project's**
+tracker at all stays the script's call (`done-gate.sh` compares
+`AI_HATS_TASKS_DIR`), because a scratch catalog can carry the same backlog name.
+A field arrives when a real consumer does.*
 
 Implementation consequence — see **D9**, which replaces the obvious-but-wrong
 answer (make `materialize_lifecycle_hooks()` role-aware and add a role-aware
