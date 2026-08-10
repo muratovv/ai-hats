@@ -145,7 +145,6 @@ def dry_run_automate(
     go around the port (see ``escapes``).
     """
     from .composition_seam import build_preview_payload
-    from .constants import PROVIDER_CLAUDE
     from .paths import session_cache_dir
 
     # The seam's read-only payload: same compose facade, no ``set_role`` write.
@@ -169,21 +168,23 @@ def dry_run_automate(
     checks, notes = describe_checks(
         prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
     )
-    if prov.name == PROVIDER_CLAUDE:
-        launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-    else:
-        role_ctx = artifacts.full_content or ""
-        meta_prompt = _meta_prompt(role_ctx, task, ticket_id)
-        flags = prov.model_flags(model) if model else []
-        cmd = prov.get_cli_command() + artifacts.cli_args + flags
-        launch = prov.get_run_command(cmd, meta_prompt)
+    described = prov.describe_automate_launch(
+        project_dir,
+        payload.result,
+        DRY_RUN_SESSION_ID,
+        artifacts,
+        task=task,
+        ticket_id=ticket_id,
+        model=model,
+        env=dict(artifacts.extra_env),
+    )
 
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
         run_mode=RunMode.AUTOMATE.value,
         policy=eff_policy,
-        launch=launch,
+        launch=described.launch,
         env=dict(artifacts.extra_env),
         prompt=next((p for p in artifacts.materialized if p.suffix == ".md"), None),
         plan=artifacts.port.plan,
@@ -191,13 +192,5 @@ def dry_run_automate(
         escapes=_detect_escapes(cache_dir, before),
         notes=notes,
         checks=checks,
+        prompt_text=described.prompt,
     )
-
-
-def _meta_prompt(role_context: str, task: str, ticket_id: str) -> str:
-    sections = []
-    if role_context:
-        sections.append(role_context)
-    if task:
-        sections.append(f"# TASK\n{task}")
-    return "\n\n".join(sections)

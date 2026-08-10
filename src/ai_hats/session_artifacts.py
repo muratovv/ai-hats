@@ -96,6 +96,61 @@ def assemble_launch_env(
     }
 
 
+@dataclass(frozen=True)
+class AutomateLaunch:
+    """What a sub-agent run consists of: the argv, and the prompt bytes inside it.
+
+    The two are returned together because for a CLI surface they are the same
+    thing — the whole prompt is one argv token — and deriving one separately
+    from the other is exactly how they drifted (HATS-1552).
+    """
+
+    launch: list[str]
+    prompt: str
+
+
+def assemble_meta_prompt(
+    project_dir: Path,
+    *,
+    role_context: str,
+    task: str,
+    ticket_id: str,
+) -> str:
+    """The prompt bytes a CLI sub-agent is launched with (HATS-1552).
+
+    Sibling of :func:`assemble_launch_command`. The dry-run held a second,
+    tidier version of this that dropped ``WORKING_DIRECTORY`` and both ticket
+    sections — and since agy and cline take the whole prompt as one argv token,
+    the reported command was not the command.
+    """
+    from .linked_context import ticket_sections
+    from .paths import tasks_dir
+
+    ticket_context, linked_context = ticket_sections(
+        tasks_root=tasks_dir(project_dir), ticket_id=ticket_id
+    )
+    sections = []
+    if role_context:
+        sections.append(role_context)
+    # HATS-1479: a surface whose tool picks its own cwd otherwise resolves the
+    # project to whatever absolute path the prompt happens to name.
+    sections.append(
+        "# WORKING_DIRECTORY\n"
+        f"{project_dir.resolve().as_posix()}\n\n"
+        "This is the project every path and CLI call below refers to. Run "
+        "each command with this directory as its working directory — `rack` "
+        "resolves its backlog by walking up from where it runs, so a command "
+        "started elsewhere reads and writes a different project."
+    )
+    if ticket_context:
+        sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
+    if linked_context:
+        sections.append(f"# LINKED_CONTEXT\n{linked_context}")
+    if task:
+        sections.append(f"# TASK\n{task}")
+    return "\n\n".join(sections)
+
+
 def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
     """The id this session may claim as its identity — ``""`` when unclaimed.
 

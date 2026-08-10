@@ -1,6 +1,6 @@
 """HATS-1479: the sub-agent meta-prompt names its project directory.
 
-`_build_meta_prompt` carried role + ticket + task and never said WHERE the
+`assemble_meta_prompt` carried role + ticket + task and never said WHERE the
 project is. Claude survived that because the CLI process cwd is the project
 dir; a surface whose tool picks its own cwd (agy) does not, and resolves the
 project to whatever absolute path the prompt happens to name — in a measured
@@ -11,34 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_hats.paths import runs_dir
-from ai_hats.runtime import SubAgentRunner
-from ai_hats_observe import SessionManager
-
-
-def _null_payload():
-    """Minimal CompositionPayload for helper-method seams (HATS-865)."""
-    from ai_hats.composition_payload import CompositionPayload
-    from ai_hats_core import CompositionResult
-
-    return CompositionPayload(
-        result=CompositionResult(name="t", priorities=[], rules=[], skills=[], injections=[]),
-        provider=None,
-        effective_role="t",
-    )
-
-
-def _runner(project_dir: Path) -> SubAgentRunner:
-    session_mgr = SessionManager(project_dir, runs_dir=runs_dir(project_dir))
-    return SubAgentRunner(project_dir, _null_payload(), session_mgr=session_mgr)
+from ai_hats.session_artifacts import assemble_meta_prompt
 
 
 def test_meta_prompt_names_the_project_directory(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
 
-    out = _runner(project_dir)._build_meta_prompt(
-        role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id=""
+    out = assemble_meta_prompt(
+        project_dir, role_context="# SYSTEM_ROLE\nstub", task="go", ticket_id=""
     )
 
     assert project_dir.resolve().as_posix() in out
@@ -49,8 +30,8 @@ def test_working_directory_precedes_the_task(tmp_path: Path) -> None:
     project_dir = tmp_path / "proj"
     project_dir.mkdir()
 
-    out = _runner(project_dir)._build_meta_prompt(
-        role_context="# SYSTEM_ROLE\nstub", task="run rack ls", ticket_id=""
+    out = assemble_meta_prompt(
+        project_dir, role_context="# SYSTEM_ROLE\nstub", task="run rack ls", ticket_id=""
     )
 
     assert out.index(project_dir.resolve().as_posix()) < out.index("# TASK")

@@ -199,22 +199,17 @@ class SubAgentRunner:
         )
 
         notes: list[str] = []
-        if provider_name == PROVIDER_CLAUDE:
-            meta_prompt = self._build_sdk_prompt_audit(
-                artifacts=artifacts,
-                task=task,
-                ticket_id=ticket_id,
-            )
-            launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-        else:
-            meta_prompt = self._build_meta_prompt(
-                role_context=artifacts.full_content or "",
-                task=task,
-                ticket_id=ticket_id,
-            )
-            flags = provider.model_flags(model) if model else []
-            cmd = provider.get_cli_command() + artifacts.cli_args + flags
-            launch = provider.get_run_command(cmd, meta_prompt)
+        described = provider.describe_automate_launch(
+            self.project_dir,
+            result,
+            session.session_id,
+            artifacts,
+            task=task,
+            ticket_id=ticket_id,
+            model=model,
+            env=dict(artifacts.extra_env),
+        )
+        meta_prompt = described.prompt
 
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
@@ -234,7 +229,7 @@ class SubAgentRunner:
             provider=provider.name,
             run_mode=RunMode.AUTOMATE.value,
             policy=self.payload.policy,
-            launch=launch,
+            launch=described.launch,
             env=dict(artifacts.extra_env),
             prompt=prompt_file,
             plan=artifacts.port.plan,
@@ -478,132 +473,3 @@ class SubAgentRunner:
             ownership.release_session_pid(registry, session.session_id, os.getpid())
         except Exception as exc:  # noqa: BLE001 — fail-open teardown
             session.log_sys(f"release-on-finish failed: {exc}")
-
-    # ----- HATS-474 helpers -----
-
-    def _run_via_sdk(
-        self,
-        *,
-        result,
-        work_dir: Path,
-        session_id: str,
-        task: str,
-        ticket_id: str,
-        env: dict[str, str],
-        model: str,
-        timeout_s: int,
-    ):
-        """Drive the SDK path for one sub-agent attempt.
-
-        Composes :class:`ClaudeAgentOptions` from the role result and runs
-        the SDK under a wall-clock cap. Never raises — returns an
-        :class:`SdkRunResult` for every terminal path (success, SDK error,
-        timeout) so the caller's finalize logic is uniform.
-        """
-        from .sdk_options import build_first_user_message, build_options
-        from ai_hats.surfaces.claude.sdk_runner import run_claude_sdk_blocking
-
-        ticket_context = self._load_ticket(ticket_id)
-        linked_context = self._load_linked_context(ticket_id)
-
-        options = build_options(
-            result,
-            provider=self.payload.provider,
-            project_dir=self.project_dir,
-            session_id=session_id,
-            work_dir=work_dir,
-            model=model or "",
-            extra_env=env or None,
-        )
-        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is no longer
-        # injected — it was unused dead weight in every sub-agent run.
-        # HATS-689: LINKED_CONTEXT carries the directly-linked cards (this is
-        # the live Claude channel for that section).
-        initial_message = build_first_user_message(
-            ticket_context=ticket_context,
-            linked_context=linked_context,
-            task=task,
-        )
-        return run_claude_sdk_blocking(
-            options=options,
-            initial_message=initial_message,
-            timeout_s=timeout_s,
-        )
-
-    def _build_sdk_prompt_audit(
-        self,
-        *,
-        artifacts: BuiltArtifacts,
-        task: str,
-        ticket_id: str,
-    ) -> str:
-        """Render a human-readable artifact of what the SDK was actually sent."""
-        from .surfaces.claude.sdk_options import build_first_user_message
-
-        sys_opt = artifacts.sdk_options.get("system_prompt")
-        if isinstance(sys_opt, dict):
-            system_text = sys_opt.get("append", "")
-        else:
-            system_text = sys_opt or ""
-
-        initial_message = build_first_user_message(
-            ticket_context=self._load_ticket(ticket_id),
-            linked_context=self._load_linked_context(ticket_id),
-            task=task,
-        )
-        return (
-            "==== SDK system_prompt (preset=claude_code, append) ====\n"
-            f"{system_text}\n"
-            "\n"
-            "==== SDK first user message ====\n"
-            f"{initial_message}\n"
-        )
-
-    def _build_meta_prompt(self, role_context: str, task: str, ticket_id: str) -> str:
-        """Build the meta-prompt for sub-agent execution."""
-        sections = []
-
-        if role_context:
-            sections.append(role_context)
-
-        # HATS-1479: a surface whose tool picks its own cwd otherwise resolves
-        # the project to whatever absolute path the prompt happens to name.
-        sections.append(
-            "# WORKING_DIRECTORY\n"
-            f"{self.project_dir.resolve().as_posix()}\n\n"
-            "This is the project every path and CLI call below refers to. Run "
-            "each command with this directory as its working directory — `rack` "
-            "resolves its backlog by walking up from where it runs, so a command "
-            "started elsewhere reads and writes a different project."
-        )
-
-        # TICKET_CONTEXT
-        if ticket_id:
-            ticket_context = self._load_ticket(ticket_id)
-            if ticket_context:
-                sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
-
-            # LINKED_CONTEXT (HATS-689)
-            linked_context = self._load_linked_context(ticket_id)
-            if linked_context:
-                sections.append(f"# LINKED_CONTEXT\n{linked_context}")
-
-        # TASK
-        if task:
-            sections.append(f"# TASK\n{task}")
-
-        return "\n\n".join(sections)
-
-    def _load_ticket(self, ticket_id: str) -> str:
-        """Load ticket context from task card (delegates to ``linked_context``)."""
-        from .linked_context import load_ticket
-        from .paths import tasks_dir
-
-        return load_ticket(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)
-
-    def _load_linked_context(self, ticket_id: str) -> str:
-        """Assemble the ``LINKED_CONTEXT`` body for a ticket's direct links."""
-        from .linked_context import load_linked_context
-        from .paths import tasks_dir
-
-        return load_linked_context(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)
