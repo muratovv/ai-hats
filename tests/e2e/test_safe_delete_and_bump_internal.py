@@ -1,12 +1,13 @@
 """e2e (HATS-470, HATS-582)
 
-flow:   a developer running internal bump with safe-delete protection enabled
+flow:   a developer running self update with safe-delete protection enabled
 cmds:
-    python -m ai_hats._bump_internal
-expect: safe-delete helper moves discarded files to session trash directory rather than
-        raw deletion
-why: without safe-delete protection, framework migrations perform unrecoverable file
-     deletions"""
+    # self update runs internal bump pipeline with safe-delete protection
+    ai-hats self update
+expect: safe-delete helper moves discarded files to session trash directory rather than raw
+        deletion
+why:    without safe-delete protection, framework migrations perform unrecoverable file deletions
+"""
 
 from __future__ import annotations
 

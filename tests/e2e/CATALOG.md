@@ -1813,11 +1813,12 @@ as a claim to check, not as evidence.
 
 *pins HATS-470, HATS-582*
 
-- **flow** — a developer running internal bump with safe-delete protection enabled
+- **flow** — a developer running self update with safe-delete protection enabled
 - **cmds**
 
   ```console
-  python -m ai_hats._bump_internal
+  # self update runs internal bump pipeline with safe-delete protection
+  ai-hats self update
   ```
 
 - **expect** — safe-delete helper moves discarded files to session trash directory rather than raw deletion
@@ -2276,15 +2277,15 @@ as a claim to check, not as evidence.
 
 *pins HATS-828, HATS-876*
 
-- **flow** — a test runner running e2e tests using shared launcher fixture
+- **flow** — a maintainer running e2e test suite gate using shared launcher fixture
 - **cmds**
 
   ```console
-  pytest tests/e2e
+  bash scripts/run-e2e-gate.sh
   ```
 
-- **expect** — shared launcher fixture isolates environment variables preventing state leak across tests
-- **why** — without launcher environment isolation, e2e tests pollute environment variables for sibling tests
+- **expect** — shared launcher fixture isolates environment variables preventing state leak across test runs
+- **why** — without launcher environment isolation, e2e tests pollute environment variables for sibling test runs
 
 ## `test_shared_state_guard.py`
 

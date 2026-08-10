@@ -1,12 +1,13 @@
 """e2e (HATS-828, HATS-876)
 
-flow:   a test runner running e2e tests using shared launcher fixture
+flow:   a maintainer running e2e test suite gate using shared launcher fixture
 cmds:
-    pytest tests/e2e
-expect: shared launcher fixture isolates environment variables preventing state leak
-        across tests
-why: without launcher environment isolation, e2e tests pollute environment variables for
-     sibling tests"""
+    bash scripts/run-e2e-gate.sh
+expect: shared launcher fixture isolates environment variables preventing state leak across
+        test runs
+why:    without launcher environment isolation, e2e tests pollute environment variables for
+        sibling test runs
+"""
 
 from __future__ import annotations
 
