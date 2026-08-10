@@ -1,8 +1,26 @@
-"""E2E tests for runtime role composition (HATS-1456).
+"""e2e (HATS-1456)
 
-Covers CLI surfaces with expressions in -r ("maintainer + trait", "maintainer - trait"),
-verifying prompt output, error handling (exit 2, no tracebacks), syntax equivalence,
-and persistence prevention.
+flow:   a user composes a role at runtime with `+` / `-` instead of editing
+        ai-hats.yaml, then inspects or runs the result
+cmds:
+    ai-hats self init -r assistant -p claude --no-update   # the precondition
+    ai-hats config show-prompt -r "assistant + ai-hats-framework"
+    ai-hats config show-prompt -r "assistant - trait-se-mindset"
+    ai-hats config show-prompt -r "assistant+ai-hats-framework"    # compact form
+    ai-hats agent "assistant + ai-hats-framework" --task hello --dry-run --json
+    ai-hats --dry-run-json -r "assistant + ai-hats-framework"
+    ai-hats config set -r "assistant + ai-hats-framework"          # must refuse
+    ai-hats -r assistant + ai-hats-framework                       # bare +, must refuse
+expect: an added trait's injection appears in the prompt, a removed one
+        disappears while its siblings stay, and compact and spaced spellings are
+        byte-identical; the composed prompt is measurably larger than the base
+        through both `agent --dry-run --json` and `--dry-run-json`; an unknown
+        component, a role in second position, and a bare unquoted `+` each exit 2
+        with a named error and no traceback; `config set` refuses to persist and
+        leaves ai-hats.yaml byte-identical
+why:    composition is the surface where a wrong answer is silent — a trait that
+        fails to attach still yields a working prompt, just not the one asked
+        for, so only comparing prompts catches it
 """
 
 from __future__ import annotations

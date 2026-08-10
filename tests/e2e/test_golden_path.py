@@ -1,57 +1,28 @@
-"""Golden-path smoke — the canonical ai-hats user journey, end to end.
+"""e2e (HATS-483)
 
-Two tests in this file, complementary surface:
+flow:   a new user installs the launcher, initialises a project, checks the
+        composed prompt, and runs one real batch turn — the canonical journey,
+        end to end against a live Claude SDK
+cmds:
+    bash scripts/install-launcher.sh        # via the tmp_venv_project fixture
+    ai-hats self init -r assistant -p claude --no-update
+    ai-hats config show-prompt
+    ai-hats execute --batch -r assistant -p claude --model claude-haiku-4-5 \
+        --prompt "Reply with exactly: OK. No other text." --json
+    ai-hats                                 # bare HITL, driven over a PTY
+expect: `self init` reports the role and provider and writes default_role into
+        ai-hats.yaml; `show-prompt` carries the composed role's markers; the
+        batch run exits 0 and emits one JSON envelope with exit_code 0, a
+        session_id and a session_dir, alongside audit.md and a trace.jsonl
+        naming every pipeline step; the turn's cost stays under the $0.10 cap;
+        and bare `ai-hats` surfaces its session-start and session-end banners in
+        the parent's stdout through the PTY proxy
+why:    every layer the product sells sits on this one path — launcher install,
+        yaml parsing, role and provider validation, composition, prompt
+        materialisation, the pipeline harness and both runners. Three of bare
+        `ai-hats`'s four steps are byte-identical to the batch pipeline's, so a
+        composition or provider regression that breaks the product breaks here.
 
-* ``test_golden_path_install_init_execute_batch`` — the stable smoke.
-  Walks the production ``PipelineHarness`` over the ``execute`` YAML
-  pipeline via ``ai-hats execute --batch``. Of the four steps in the
-  ``human`` pipeline (bare ``ai-hats``), THREE are byte-identical
-  to steps in ``execute`` (``check_update_async``, ``compose_role``,
-  ``render_update_banner``) and the fourth (``launch_provider``) is
-  the same step class with a different inner branch
-  (``SubAgentRunner`` vs ``WrapRunner``). Anything that breaks bare
-  ``ai-hats`` from a composition / library / provider regression
-  also breaks this test. Stable, deterministic, structured JSON +
-  ``trace.jsonl`` + ``audit.md`` + explicit cost cap assertions.
-
-* ``test_hitl_banners_via_bare_ai_hats`` — the HITL probe. Drives
-  bare ``ai-hats`` as a subprocess via :func:`_helpers.hitl.drive_bare_hitl`
-  and verifies that ``runtime._print_session_start`` /
-  ``runtime._print_session_end`` banners surface in parent stdout.
-  Both are plain ``print()`` calls in ``WrapRunner.run`` (before /
-  after the PTY proxy), NOT claude output — capturable via
-  subprocess. The driver helper (``_helpers/hitl.py``) encapsulates
-  the stdin-payload trick, ANSI stripping, env allowlist, and banner
-  assertion verbs so future tests can reuse the surface without
-  re-deriving the empirical workarounds.
-
-Layer-by-layer regression coverage from the smoke test:
-
-* launcher install → ``tmp_venv_project`` fixture
-* yaml parsing → ``self init`` step
-* role / provider validation → ``self init``
-* composition (Assembler / composer / library_paths) → ``self init``
-  + ``config show-prompt`` step
-* MaterializeSystemPrompt → ``config show-prompt`` step
-* PipelineHarness construction + namespace allocation → ``execute --batch``
-* All pipeline steps (``check_update_async``, ``compose_role``,
-  ``resolve_prompt``, ``launch_provider``, ``render_update_banner``) →
-  asserted via ``AI_HATS_PIPELINE_TRACE`` JSONL output
-* SubAgentRunner → ``execute --batch`` SDK call
-* observe.Session + audit.md writer → audit.md inspection
-* metrics aggregator → ``--json`` final output + cost cap assertion
-
-Layer coverage added by the HITL probe (bare ``ai-hats`` only):
-
-* ``WrapRunner.run`` outer envelope (before / after PTY)
-* ``_print_session_start`` / ``_print_session_end`` console banners
-* PTY proxy round-trip (stdin payload → child PTY → exit)
-
-Cost shape: ~60-90s wall-clock (amortised venv + ``self init`` + SDK turn);
-capped at $0.10, actual ~$0.02 on haiku-4-5, asserted post-run from the
-``--json`` envelope so a runaway turn fails loud.
-
-Deliberate long golden-path coverage contract — noqa: comment-length.
 """
 
 from __future__ import annotations

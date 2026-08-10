@@ -1,12 +1,24 @@
-"""e2e (HATS-788): a worktree-backed `rack transition <id> done` issued from
-INSIDE the task's own linked worktree must be refused BEFORE teardown.
+"""e2e (HATS-788)
 
-Otherwise `git worktree remove --force` deletes the operator's cwd and every
-later `rack` mis-resolves the tracker — a sibling task reads "not found"
-even though it is intact on disk.
-
-Fail-under-revert: without the guard the close merges, removes the cwd, and the
-sibling lookup from the dead cwd fails.
+flow:   a maintainer closes a worktree-backed task while cd'd INSIDE that
+        task's own linked worktree
+cmds:
+    # in an initialised ai-hats project (ai-hats.yaml + a git repo)
+    rack create A --id HATS-1
+    rack create B --id HATS-2
+    rack transition HATS-1 plan       # then execute -> document -> review
+    cd <HATS-1's worktree>
+    rack transition HATS-1 done       # must refuse
+    cd <main checkout>
+    rack transition HATS-1 done       # must succeed
+expect: the refusal exits non-zero and names "linked worktree"; the worktree
+        survives it; HATS-1 stays in state review; sibling HATS-2 still
+        resolves via `rack context`, both after the refusal and after the
+        close finally issued from main
+why:    without the guard the close merges and `git worktree remove --force`
+        deletes the operator's cwd — every later `rack` then mis-resolves the
+        tracker and a sibling task reads "not found" though it is intact on
+        disk
 """
 
 from __future__ import annotations
