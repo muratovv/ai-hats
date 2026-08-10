@@ -108,7 +108,7 @@ check_mode() {
         printf "'done-gate' stage to run and no marker could ever be earned. A gate that\n"
         printf 'cannot verify must not pass. Fix one of the two:\n\n'
         printf '  * add a done-gate stage to scripts/ci-local.sh (ai-hats composes it as\n'
-        printf '    lint -> unit -> integration -> merge-smoke), or\n'
+        printf '    e2e-catalog -> lint -> unit -> integration -> merge-smoke), or\n'
         printf '  * unbind the gate: drop the maintainer-quality-gate/hooks/done-gate.sh\n'
         printf "    row from 'composition.checks' in the role that composes this skill.\n"
         exit 2

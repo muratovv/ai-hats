@@ -146,7 +146,7 @@ EOF
     local dispatcher="$repo_root/scripts/ci-local.sh"
     if [[ -f "$dispatcher" ]]; then
         local stage
-        for stage in lint unit; do
+        for stage in lint unit e2e-catalog; do
             if ! bash "$dispatcher" "$stage"; then
                 cat >&2 <<EOF
 

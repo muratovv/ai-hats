@@ -370,7 +370,9 @@ def test_mixed_payload_requires_marker_for_master_line(tmp_path: Path):
 # ===========================================================================
 
 
-def _commit_dispatcher(repo: Path, *, lint_rc: int, unit_rc: int) -> Path:
+def _commit_dispatcher(
+    repo: Path, *, lint_rc: int = 0, unit_rc: int = 0, e2e_catalog_rc: int = 0
+) -> Path:
     """Commit a fake ``scripts/ci-local.sh`` with controlled per-stage exit codes.
 
     It must be committed, not merely written: the gate refuses to write a
@@ -387,6 +389,7 @@ def _commit_dispatcher(repo: Path, *, lint_rc: int, unit_rc: int) -> Path:
         'case "$1" in\n'
         f"  lint) exit {lint_rc} ;;\n"
         f"  unit) exit {unit_rc} ;;\n"
+        f"  e2e-catalog) exit {e2e_catalog_rc} ;;\n"
         "esac\n"
         "exit 0\n"
     )
@@ -443,17 +446,39 @@ def test_run_mode_unit_failure_blocks_and_names_the_stage(tmp_path: Path):
 
 
 @pytest.mark.integration
-def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
-    """Green lint + unit → both stages ran, the suite ran, the marker is written."""
+def test_run_mode_e2e_catalog_failure_blocks_and_names_the_stage(tmp_path: Path):
+    """HATS-1562: A red e2e-catalog stage in pre-push preamble aborts the gate.
+
+    Fail-under-revert: revert git_hooks/pre-push-e2e-master.sh preamble stage loop ->
+    e2e-catalog is not run in preamble, e2e tier runs and writes marker.
+    """
     repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=0, unit_rc=0)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=1)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 1, res.stderr
+    assert "'e2e-catalog' stage FAILED" in res.stderr
+    assert "no marker written" in res.stderr
+    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"]
+    assert not (bindir / "last_argv").exists(), "e2e tier ran despite a red e2e-catalog stage"
+    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
+
+
+@pytest.mark.integration
+def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
+    """Green lint + unit + e2e-catalog → all stages ran, the suite ran, the marker is written."""
+    repo = _git_repo(tmp_path)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=0)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert _stages_run(repo) == ["lint", "unit"]
+    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"]
     assert (bindir / "last_argv").exists(), "e2e tier did not run"
     assert (_marker_dir(repo) / _head(repo)).exists()
 
