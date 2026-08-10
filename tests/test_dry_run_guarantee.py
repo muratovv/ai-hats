@@ -129,3 +129,32 @@ def test_the_reported_env_names_what_ai_hats_adds_to_the_child(project: Path, su
     assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(report.env)
     assert report.to_dict()["env_keys"] == sorted(report.env)
     assert "PATH" not in report.env, "inherited os.environ is not what the launch adds"
+
+
+@pytest.mark.parametrize("surface", ["claude", "agy"])
+def test_full_render_shows_the_composed_body(project: Path, surface: str):
+    """The wiring, not the rendering: ``dry_run_hitl`` must hand the body over.
+
+    Its own render-level test builds the report by hand, so it stayed green with
+    the report field never populated — found by reverting the wiring (HATS-1548).
+
+    cline is excluded on purpose; see the sibling below.
+    """
+    report = dry_run_hitl(project, provider=surface)
+
+    assert report.prompt is not None, "this surface writes a prompt file"
+    assert "Role body." in report.render(full=True)
+    assert "(not written)" not in report.render(full=True)
+
+
+def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
+    """Why cline sits out the case above — and pinned so it cannot rot.
+
+    It materializes no ``.md``, so ``full=True`` renders no body section at all.
+    Parametrizing it in would have passed on the role text appearing in the
+    launch argv instead, which is a different claim entirely.
+    """
+    report = dry_run_hitl(project, provider="cline")
+
+    assert report.prompt is None
+    assert "Role body." in " ".join(report.launch), "it rides the argv instead"
