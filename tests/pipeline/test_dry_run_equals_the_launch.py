@@ -294,6 +294,63 @@ def test_the_reported_automate_env_is_the_environment_the_sub_agent_receives(
     )
 
 
+def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch):
+    """The record's ``launch`` is the argv, not a third derivation of it.
+
+    The runner used to re-assemble the command from ``materialize_runtime_skills``
+    at spawn time and agreed with its own record only by coincidence — for cline
+    because that call rebuilds the same args, for agy because it returns none.
+    Coincidence is not a property, so the decoy below makes the two derivations
+    disagree: without it, this test passes against the code it was written for.
+    """  # comment-length: allow — why the decoy exists is the point of the test
+    import subprocess
+
+    from ai_hats_cline import ClineProvider
+
+    monkeypatch.setattr(
+        ClineProvider,
+        "materialize_runtime_skills",
+        lambda *a, **k: ["--config", "/decoy-from-the-second-derivation"],
+    )
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ProjectConfig(
+        provider="cline",
+        library_paths=[str(LIBRARY_DIR)],
+        ai_hats_dir=".agent/ai-hats",
+        active_role="maintainer",
+        default_role="maintainer",
+    ).save(proj / PROJECT_CONFIG)
+    asm = Assembler(proj, library_paths=[LIBRARY_DIR])
+    asm.init()
+    asm.set_role("maintainer", provider_name="cline")
+    monkeypatch.chdir(proj)
+    monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
+
+    from ai_hats.composition_seam import build_composition_payload
+    from ai_hats.paths import runs_dir
+    from ai_hats.subagent_runner import SubAgentRunner
+    from ai_hats_observe import SessionManager
+
+    spawned: dict[str, Any] = {}
+
+    def _capture(cmd, **kwargs):
+        spawned["cmd"] = list(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("ai_hats.subagent_runner.subprocess.run", _capture)
+
+    payload = build_composition_payload(proj, role_override="maintainer")
+    session = SubAgentRunner(
+        proj, payload, session_mgr=SessionManager(proj, runs_dir=runs_dir(proj))
+    ).run(task=TASK_TEXT, isolation_mode="none")
+
+    record = json.loads(Path(session.role_materialization_path).read_text())
+    assert spawned["cmd"], "the surface never reached the spawn"
+    assert record["launch"] == spawned["cmd"]
+
+
 def test_the_reported_automate_launch_is_the_options_the_sdk_receives(
     project: Path, monkeypatch
 ):

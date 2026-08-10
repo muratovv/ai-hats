@@ -268,24 +268,8 @@ class SubAgentRunner:
         # secret-exposure surface off a long-lived, repr-able options object.
         env = {**os.environ, **launch_env}
 
-        # Legacy subprocess path still needs cmd / skill_args precomputed.
-        # The Claude SDK path materializes skills internally via
-        # ``build_options`` → ``_build_plugins``, so we skip the upfront
-        # ``materialize_runtime_skills`` call when provider is claude
-        # (the cache dir is produced inside the SDK builder instead).
-        cmd: list[str] = []
         if provider_name != PROVIDER_CLAUDE:
-            cmd = provider.get_cli_command()
-            # HATS-307: materialize spawned role's skills for the sub-agent.
-            # For Agy this is currently a no-op (HATS-367 follow-up).
-            # Cleaned by _cleanup_session_cache in the finally block.
-            skill_args = provider.materialize_runtime_skills(
-                self.project_dir,
-                result,
-                session.session_id,
-            )
-            cmd = cmd + skill_args
-            session.log_sub(f"Executing: {' '.join(cmd)}")
+            session.log_sub(f"Executing: {' '.join(described.launch)}")
 
         mode = IsolationMode(isolation_mode)
         session.log_sub(f"Isolation: {mode.value}")
@@ -358,14 +342,12 @@ class SubAgentRunner:
                     )
                 else:
                     # Legacy subprocess path (Agy and future non-SDK providers).
-                    flags = provider.model_flags(model) if model else []
-                    full_cmd = provider.get_run_command(
-                        cmd + flags,
-                        meta_prompt,
-                    )
+                    # The reported argv IS the executed one — this used to
+                    # re-derive it from materialize_runtime_skills, and matched
+                    # what was reported only by coincidence (HATS-1552).
                     with provider.execution_context(self.project_dir):
                         proc = subprocess.run(
-                            full_cmd,
+                            described.launch,
                             cwd=str(work_dir),
                             env=env,
                             capture_output=True,
