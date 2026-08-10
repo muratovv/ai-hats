@@ -94,6 +94,7 @@ def _child_env() -> dict[str, str]:
     return {
         **os.environ,
         "PYTHONPATH": os.pathsep.join([*roots, existing] if existing else roots),
+        "PYTHONDONTWRITEBYTECODE": "1",
     }
 
 

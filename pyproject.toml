@@ -36,7 +36,7 @@ dependencies = [
     # the index, and `ai-hats self init` hangs until it times out — measured, it
     # is what broke five self-update e2e tests. Raise to >=0.5.0 in the
     # follow-up, once the publish lands.
-    "ai-hats-wt>=0.4.3",
+    "ai-hats-wt>=0.5.0",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
