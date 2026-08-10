@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**224 of 224 files catalogued — 231 flows.**
+**225 of 225 files catalogued — 232 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -213,6 +213,20 @@ as a claim to check, not as evidence.
 
 - **expect** — gate prints manual repair command that successfully restores workspace dependencies
 - **why** — without accurate rescue commands, manual repair instructions fail to restore editable workspace packages
+
+## `test_broken_check_binding_friendly_error.py`
+
+*pins HATS-1541*
+
+- **flow** — a developer starting a session on a role whose check binding is broken
+- **cmds**
+
+  ```console
+  ai-hats --dry-run
+  ```
+
+- **expect** — a one-line typed refusal naming the binding, and no `Traceback` anywhere
+- **why** — without it the composition path dumps 63 lines of stack, and the reader cannot tell a mistyped binding from a crash in ai-hats itself
 
 ## `test_broken_hook_ref_startup_warn.py`
 

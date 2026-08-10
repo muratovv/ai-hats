@@ -1,20 +1,29 @@
-"""E2E: a broken ``checks:`` binding refuses typed, never with a traceback.
+"""e2e (HATS-1541)
 
-Measured before the fix (HATS-1541, 2026-08-09 repro): ``ai-hats --dry-run`` on
-a role whose binding cannot be installed printed **63 lines** of stack and
-exited 1. ``CheckBindingError`` was the one composition-path error missing from
-``cli/_helpers._friendly_error_handlers()``, so the single opt-out-proof
-rendering point (HATS-1228) never saw it.
+A broken ``checks:`` binding refuses typed, never with a traceback.
 
-The binding used here names a skill the role does not compose — the
-``_report_missing_skill`` arm of ``check_points``. Deliberately NOT a bad point
-name: that arm is what ADR-0019 D11 moves out of ai-hats, and this test must
-keep proving the renderer after it is gone.
+flow:   a developer starting a session on a role whose check binding is broken
+cmds:
+    ai-hats --dry-run
+expect: a one-line typed refusal naming the binding, and no `Traceback` anywhere
+why:    without it the composition path dumps 63 lines of stack, and the reader
+        cannot tell a mistyped binding from a crash in ai-hats itself
+"""
 
-Fail-under-revert: drop the ``CheckBindingError`` row from
-``_friendly_error_handlers()`` and both params fail on the ``Traceback``
-assertion.
-"""  # comment-length: allow — the measured baseline is the point of the test
+# Measured before the fix (HATS-1541, 2026-08-09 repro): `ai-hats --dry-run` on a
+# role whose binding cannot be installed printed 63 lines of stack and exited 1.
+# CheckBindingError was the one composition-path error missing from
+# cli/_helpers._friendly_error_handlers(), so the single opt-out-proof rendering
+# point (HATS-1228) never saw it.
+#
+# The binding used here names a skill the role does not compose — the
+# _report_missing_skill arm of check_points. Deliberately NOT a bad point name:
+# that arm is what ADR-0019 D11 moves out of ai-hats, and this test must keep
+# proving the renderer after it is gone.
+#
+# Fail-under-revert: drop the CheckBindingError row from
+# _friendly_error_handlers() and both params fail on the `Traceback` assertion.
+# comment-length: allow — the measured baseline is the point of the test
 
 from __future__ import annotations
 
