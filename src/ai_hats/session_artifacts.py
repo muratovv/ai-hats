@@ -63,6 +63,39 @@ def assemble_launch_command(
     return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
 
 
+def assemble_launch_env(
+    provider,
+    project_dir: Path,
+    session_dir: Path,
+    *,
+    session_id: str,
+    trace_path: str,
+    role: str,
+    root_pid: str,
+    extra_env: dict[str, str],
+) -> dict[str, str]:
+    """Everything ai-hats ADDS to the child's environment (HATS-1548).
+
+    Sibling of :func:`assemble_launch_command`, and for the same reason: the
+    launch merged six sources inline while the report merged two of them, so
+    ``--dry-run`` and ``role_materialization.json`` both under-reported the
+    session — including ``AI_HATS_SESSION_ID``, the variable that decides how a
+    bound check resolves. Inherited ``os.environ`` stays out: the child gets it
+    whatever ai-hats does, and listing it would bury what the launch contributes.
+    """  # comment-length: allow — the omission it fixes was invisible for a reason
+    from ai_hats_observe.session import session_env
+
+    from .constants import ENV_ROLE, ENV_ROOT_PID
+
+    return {
+        **session_env(session_id, trace_path),
+        **provider.get_env(session_dir, project_dir),
+        **extra_env,
+        ENV_ROLE: role,
+        ENV_ROOT_PID: root_pid,
+    }
+
+
 def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:
     """The id this session may claim as its identity — ``""`` when unclaimed.
 

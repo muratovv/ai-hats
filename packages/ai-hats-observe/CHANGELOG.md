@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0]
+
+`session_env(session_id, trace_path)` — the session-scoped environment variables
+without a live `Session`. `Session.get_env()` now returns it, so the keys have one
+spelling; `--dry-run` reports the child's environment before a session exists and
+must not carry a second copy of them (HATS-1548).
+
+Minor, not patch: a new public function, additive for every existing caller.
+
+Note: no `[0.5.0]` section exists — that release shipped without a changelog
+entry, and this one does not invent its contents in hindsight.
+
 ## [0.4.0]
 
 Cross-process unique session ids. Until now the id was a UTC second plus a

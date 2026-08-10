@@ -30,7 +30,7 @@ classifiers = [
 # `usage/v1` schema that `ClineParser` (HATS-960) subclasses/reuses.
 dependencies = [
     "ai-hats",
-    "ai-hats-observe>=0.5.0",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-observe>=0.6.0",  # floor tracks the workspace version (HATS-1399)
     "filelock>=3.0",  # HATS-963: concurrent-session guard for .cline/skills/ rebuild
 ]
 

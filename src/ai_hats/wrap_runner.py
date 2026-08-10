@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -26,11 +25,12 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
-from .check_snapshot import legacy_launch_notices, surface_skew_notice
+from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
     assemble_launch_command,
+    assemble_launch_env,
     consumed_session_id,
 )
 from .session_report import SessionReport
@@ -499,14 +499,30 @@ class WrapRunner:
         session.record_provider_session_id(claude_session_id)
 
         # HATS-1216: persist launch record as role_materialization.json
-        env_map = {
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-        }
+        env_map = assemble_launch_env(
+            provider,
+            self.project_dir,
+            session.session_dir,
+            session_id=session.session_id,
+            trace_path=str(session.trace_path),
+            role=active_role,
+            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            extra_env=session_env,
+        )
         prompt_file = next(
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
+        # HATS-1548: the same section --dry-run shows, on the launch record — one
+        # call site would be a report about a session nobody can compare against.
+        reported_checks, check_notes = describe_checks(
+            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+        )
+        builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
+        # The record carries the same notes the dry-run does. They are already on
+        # their way to the screen as StartupNotices; a launch record that omitted
+        # them would disagree with `--dry-run` about the same session.
+        report_notes = tuple(n.text for n in builder_notices)
         report = SessionReport(
             role=active_role,
             provider=provider_name,
@@ -517,6 +533,8 @@ class WrapRunner:
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
+            checks=reported_checks,
+            notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())
 
@@ -526,15 +544,9 @@ class WrapRunner:
         # restarts from provider stalls).
         self._log_restart_gap(session)
 
-        # Build environment
-        env = {
-            **os.environ,
-            **session.get_env(),
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-            ENV_ROLE: active_role,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
+        # The record above IS this environment minus the inherited part — one
+        # expression, so the report cannot under-state what the child receives.
+        env = {**os.environ, **env_map}
 
         # HATS-833: fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.

@@ -95,11 +95,11 @@ def _rooted(
     # refused before the mirror is even located, so the message names the tree
     # rather than whatever the surface lookup happens to say.
     for check in checks:
-        _reject_worktree_root(check.script_path, check)
+        reject_worktree_root(check.script_path, check)
     if not session_id:
         return checks
     mirror = _session_mirror(project_dir, session_id, result)
-    return tuple(_rebased(check, mirror) for check in checks)
+    return tuple(rebase_onto_mirror(check, mirror) for check in checks)
 
 
 @dataclass(frozen=True)
@@ -118,10 +118,19 @@ class _Mirror:
 
 
 def _session_mirror(project_dir: Path, session_id: str, result: CompositionResult) -> _Mirror:
+    return mirror_for(_provider_skills_root(project_dir, session_id), result)
+
+
+def mirror_for(root: Path, result: CompositionResult) -> _Mirror:
+    """The mirror at ``root``, with the leaf spelling this composition dictates.
+
+    Public because the launch report resolves the same way off a root it already
+    holds (HATS-1548) — it must not take a second surface lookup.
+    """
     from .libraries.models import resolve_namespace
 
     return _Mirror(
-        root=_provider_skills_root(project_dir, session_id),
+        root=root,
         leaf={resolve_namespace(skill.name): skill.name for skill in result.skills},
     )
 
@@ -154,7 +163,7 @@ def _provider_skills_root(project_dir: Path, session_id: str) -> Path:
     return root
 
 
-def _rebased(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
+def rebase_onto_mirror(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
     """The composition names ``{skill, script}``; this picks the root.
 
     In a session that is the mirror, and a mirror that is not there stays the
@@ -179,7 +188,7 @@ def _rebased(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
     return replace(check, script_path=script_path)
 
 
-def _reject_worktree_root(script_path: Path, check: ResolvedCheck) -> None:
+def reject_worktree_root(script_path: Path, check: ResolvedCheck) -> None:
     """D9 clause 4: a linked worktree is never a resolution root — a gate must
     not run the half-written copy of itself that lives on the branch it judges.
 
@@ -263,7 +272,7 @@ def _library_roots(project_dir: Path) -> list[Path]:
     real, and the probe then reports "nothing declared" (R3). Not re-pointing
     here would not keep a worktree from being a resolution root — the assembler
     re-points during the compose regardless; it would only blind the probe. D9
-    clause 4 is enforced where it can be, in ``_reject_worktree_root``.
+    clause 4 is enforced where it can be, in ``reject_worktree_root``.
     """  # comment-length: allow — this divergence was the HYP-078 hole, twice
     from .library_paths import build_library_paths, worktree_local_libraries
     from .models import ProjectConfig

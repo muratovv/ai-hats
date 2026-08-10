@@ -9,18 +9,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .check_snapshot import describe_checks
 from .materialization import PlanMaterializer
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
     SessionPolicy,
     assemble_launch_command,
+    assemble_launch_env,
 )
 from .session_report import SessionReport
 
 # A real sid is minted by the session manager, which a dry-run must not touch.
 # Fixed so reported paths are stable and diffable.
 DRY_RUN_SESSION_ID = "dry-run"
+
+#: Stands in for a value only the launch can produce (pid, uuid, trace path).
+AT_LAUNCH = "<assigned at launch>"
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -56,6 +61,7 @@ def dry_run_hitl(
     # The seam's read-only payload: same compose facade, no ``set_role`` write.
     payload = build_preview_payload(project_dir, role=role, provider=provider)
     prov = payload.provider
+    eff_policy = policy or SessionPolicy()
 
     cache_dir = session_cache_dir(project_dir, DRY_RUN_SESSION_ID)
     before = _files_under(cache_dir)
@@ -66,33 +72,60 @@ def dry_run_hitl(
             payload.result,
             DRY_RUN_SESSION_ID,
             run_mode=RunMode.HITL,
-            policy=policy or SessionPolicy(),
+            policy=eff_policy,
             artifacts=artifacts,
         )
 
-    env = {
-        **prov.get_env(cache_dir, project_dir),
-        **artifacts.extra_env,
-    }
+    env = assemble_launch_env(
+        prov,
+        project_dir,
+        cache_dir,
+        session_id=DRY_RUN_SESSION_ID,
+        trace_path=AT_LAUNCH,
+        role=payload.effective_role,
+        root_pid=AT_LAUNCH,
+        extra_env=artifacts.extra_env,
+    )
     launch = assemble_launch_command(
         prov,
         extra_args=extra_args,
         session_args=artifacts.cli_args,
-        provider_session_id="<assigned at launch>",
+        provider_session_id=AT_LAUNCH,
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
+    checks, check_notes = describe_checks(
+        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    )
+    notes = [*check_notes, *_launch_notices(prov, project_dir, payload.result, eff_policy)]
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
         run_mode=RunMode.HITL.value,
-        policy=policy or SessionPolicy(),
+        policy=eff_policy,
         launch=launch,
         env=env,
         prompt=prompt,
         plan=artifacts.port.plan,
         cwd=str(project_dir),
         escapes=_detect_escapes(cache_dir, before),
+        checks=checks,
+        notes=tuple(notes),
+        prompt_text=artifacts.full_content,
     )
+
+
+def _launch_notices(prov, project_dir: Path, result, policy: SessionPolicy) -> list[str]:
+    """What the runner would say at startup about THIS surface (HATS-1548).
+
+    A dry-run that stays quiet where the launch warns is the same silence the
+    notices exist to remove — the operator learns it one session too late.
+    """
+    from .check_snapshot import legacy_launch_notices, surface_skew_notice
+
+    if not prov.handles_artifact_categories():
+        return legacy_launch_notices(prov.name, result, policy)
+    skew = surface_skew_notice(prov.name, prov, project_dir, result)
+    return [skew] if skew else []
 
 
 def dry_run_automate(
@@ -133,7 +166,9 @@ def dry_run_automate(
             artifacts=artifacts,
         )
 
-    notes: list[str] = []
+    checks, notes = describe_checks(
+        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    )
     if prov.name == PROVIDER_CLAUDE:
         launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
     else:
@@ -154,7 +189,8 @@ def dry_run_automate(
         plan=artifacts.port.plan,
         cwd="<worktree, assigned at launch>",
         escapes=_detect_escapes(cache_dir, before),
-        notes=tuple(notes),
+        notes=notes,
+        checks=checks,
     )
 
 

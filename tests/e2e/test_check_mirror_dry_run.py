@@ -1,13 +1,13 @@
-"""e2e (HATS-1241, HATS-1540)
+"""e2e (HATS-1241, HATS-1540, HATS-1548)
 
-flow:   a developer inspecting dry-run plan for a role that binds check scripts
+flow:   a developer inspecting the dry-run of a role that binds a check script
 cmds:
-    ai-hats execute -r checked --dry-run-json
-expect: dry-run plan materializes bound skill script exactly once to session skills
-        mirror
-why:    without session skill mirrors, check scripts require duplicate materialization
-        trees per binding
-"""  # comment-length: allow — a retired subject must say what replaced it
+    ai-hats --dry-run-json -r checked
+    ai-hats --dry-run-json -r plain
+expect: the skill materialized once at the mirror; the checks section names the
+        binding the plan cannot show
+why:    the mirror is per SKILL, so no part of the plan depends on a checks row
+"""
 
 from __future__ import annotations
 
@@ -138,3 +138,38 @@ def test_binding_a_check_adds_nothing_to_the_plan(project_with_library):
 
     assert _plan_targets(bound) == _plan_targets(unbound)
     assert [t for _kind, t in _plan_targets(bound) if "/checks/" in t] == []
+
+
+def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library):
+    """HATS-1548, the inversion: what the plan lost, the report says outright.
+
+    The pair above is exactly why this one is needed — two roles that plan the
+    same targets must still be told apart, or an operator cannot see the gate
+    that will refuse their transition before they start the session.
+    """
+    bound = _dry_run(project_with_library, "checked")
+    unbound = _dry_run(project_with_library, "plain")
+
+    assert unbound["checks"] == []
+    assert [
+        (c["skill"], c["script"], c["point"], c["on_error"], c["declared_by"])
+        for c in bound["checks"]
+    ] == [("gate-skill", "check.sh", "wt:pre-merge", "refuse", "checked")]
+
+
+def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_covers_it(
+    project_with_library,
+):
+    """A list of bindings is the weak half — the binding is already in the role.
+
+    What an operator cannot read anywhere is whether the resolution SETTLES under
+    this surface: same mirror the plan writes, same leaf spelling. So the report
+    resolves it the way the session will and says whether the plan covers those
+    bytes. Cross-checked against the plan entry rather than asserted twice.
+    """
+    payload = _dry_run(project_with_library, "checked")
+
+    (check,) = payload["checks"]
+    assert check["runs_from"] == _skill_copies(payload)[0] + "/check.sh"
+    assert check["runs_from"].endswith(MIRROR_SUFFIX + "/check.sh")
+    assert check["planned"] is True
