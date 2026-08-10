@@ -29,7 +29,7 @@
 gate_marker_dir() {
     local gate="$1" in_dir="$2"
     local common
-    common="$(git -C "$in_dir" rev-parse --git-common-dir 2>/dev/null || true)"
+    common="$( (cd "$in_dir" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null) || true)"
     [[ -z "$common" ]] && return 1
     # `git -C` makes --git-common-dir relative to in_dir; absolutise it.
     case "$common" in
