@@ -2,11 +2,10 @@
 
 flow:   an agent attempting to enter or create a worktree directly via tool call
 cmds:
-    # agent triggering EnterWorktree tool call
-    python .agent/.../wt_entry_gate.py < /tmp/payload.json
-expect: direct worktree creation or entry tool calls are denied with actionable
-        instructions
-why:    agents must use ai-hats CLI commands rather than direct worktree navigation
+    # agent invoking EnterWorktree tool call directly
+    ai-hats wt create task/probe
+expect: direct worktree entry tool call is denied with instructions to use ai-hats CLI
+why:    worktree creation and entry must be routed through ai-hats CLI commands
 """
 
 from __future__ import annotations

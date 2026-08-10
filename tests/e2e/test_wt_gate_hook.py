@@ -1,9 +1,16 @@
 """e2e (HATS-857, HATS-889)
 
-flow:   an agent attempting git push or worktree creation under gate hook policies
+flow:   a developer creating a worktree under worktree gate hook policies
+cmds:   ai-hats wt create task/probe
+expect: worktree gate hook validates environment permissions before provisioning
+        worktree
+why:    worktree creation must execute gate hooks to enforce workspace security rules
+
+flow:   a developer pushing commits under git push gate hook policies
 cmds:   git push origin master
-expect: gate hook validates environment permissions and blocks unauthorized operations
-why:    gate hooks enforce permission boundaries during git and worktree operations
+expect: pre-push gate hook validates commit rules and permits push when checks pass
+why:    pre-push gate hooks must validate commit hygiene before pushing to remote
+        repository
 """
 
 from __future__ import annotations

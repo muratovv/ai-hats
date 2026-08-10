@@ -1,23 +1,12 @@
-"""e2e: the default backlog-manager flip + three-backlog bash resolution (HATS-1054).
+"""e2e (HATS-1054)
 
-Two real-binary checks against a session-shared launcher venv (built from THIS
-worktree source, so it carries the trait-agent flip under test):
-
-* **Composition flip (R1/R11).** A fresh ``self init -r assistant`` project's
-  composed component list (``ai-hats list tokens``) carries the ``hatrack`` skill
-  and NO LONGER carries the classic ``backlog-manager``.
-
-* **Three-backlog resolution (R12).** On a sandbox with a task + a migrated HYP
-  catalog + a migrated PROP catalog, the real ``rack`` binary resolves each prefix
-  to its card, lists the ``hyp`` / ``proposal`` groups in ``--help``, runs each
-  group's ``ls``, and fails an unknown prefix with a typed error naming the
-  configured prefixes.
-
-Fail-under-revert (per ``dev_rule_e2e_gate`` §4): reverting the
-``trait-agent`` skill swap (``hatrack`` → ``backlog-manager``) makes the flip
-assertions red — ``list tokens`` would drop ``hatrack`` and re-add
-``backlog-manager``. Proven by reverting the swap and re-composing (recorded on
-the task card); the same composition feeds this test's ``list tokens`` output.
+flow:   a developer initializing project configuration and managing multi-backlog task
+        cards
+cmds:   ai-hats self init -p claude -r assistant
+expect: composed role contains hatrack skill and rack command resolves task, hyp, and
+        proposal backlogs
+why:    default role composition must include hatrack skill and rack CLI must route
+        backlogs
 """
 
 from __future__ import annotations

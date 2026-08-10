@@ -1,32 +1,10 @@
-"""E2E: the batch surfaces honour ``-p``, and say so when it is wrong.
+"""e2e (HATS-1218)
 
-History (HATS-1218): ``build_composition_payload`` hard-read ``cfg.provider``
-whenever ``interactive=False``. ``ai-hats execute`` declared ``--provider`` and
-``--batch`` side by side, so ``execute -p X --batch`` accepted the flag and ran
-the configured surface in silence; ``ai-hats agent`` had no ``-p`` at all.
-
-Why a *bogus* provider name is the probe: it makes the assertion hermetic. The
-raise fires in ``build_composition_payload`` before any runner spawns, so the
-test needs no provider binary, no auth and no network — while still proving the
-flag reached provider resolution, which is the whole claim. A positive
-"``-p`` selects surface X" case needs a second real surface and lives at the
-pipeline-integration layer instead (``tests/pipeline/test_provider_override.py``,
-which registers a stub provider).
-
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``): ``tmp_project``
-bootstraps a project configured with ``provider: claude`` whose built-in library
-ships the ``maintainer`` role, so a VALID role is passed and the raise lands on
-the provider rather than the role.
-
-Fail-under-revert:
-
-- ``execute --batch``: pre-fix the flag is dropped, ``claude`` composes, and no
-  message ever names the bogus provider.
-- ``agent``: pre-fix Click rejects the unknown ``-p`` option, so stderr carries
-  Click's usage error instead of the provider list.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer specifying provider override flag -p on batch execution commands
+cmds:   ai-hats execute -r maintainer --batch -p definitely-not-a-real-provider
+expect: provider flag -p is respected in batch mode and produces clean error for invalid
+        providers
+why:    batch execution commands must honor explicit -p provider overrides
 """
 
 from __future__ import annotations

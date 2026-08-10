@@ -1,38 +1,11 @@
-"""E2E: ``ai-hats agent <role> --task ... --json`` orchestration envelope.
+"""e2e (HATS-498, HATS-545)
 
-User-scenario coverage (HATS-545 / S-CLI-04). ``ai-hats agent`` is
-documented in ``docs/how-to-orchestration.md`` as the user-facing
-orchestration surface — CI / ``parallel`` / ``xargs`` scripts pipe its
-``--json`` stdout through ``jq`` to chain sub-agent runs. This test
-pins that envelope contract so a stdout schema break is loud, not
-silent.
-
-What's asserted (the documented subset that orchestration scripts
-actually consume):
-
-- ``exit_code`` — for shell exit propagation through pipelines.
-- ``session_id`` — non-empty string; ``parallel`` pipes it onward.
-- ``session_dir`` — real directory on disk; downstream readers
-  consume artefacts from it.
-- ``total_cost_usd`` — present, float, below cost cap (cost-aware
-  orchestration scripts grep / sum it).
-
-Composition cross-check (free side-effect of having ``session_dir``):
-``metrics["role"] == "assistant"`` — proves the composer wired the
-role correctly through the ``ai-hats agent`` entry-point (distinct
-from ``execute --batch`` which HATS-498 already guards).
-
-We deliberately do NOT assert the FULL envelope shape: extra metrics
-fields may legitimately come and go across versions. Pinning the
-documented subset only.
-
-Fixture choice: ``tmp_project`` (dev-venv binary) not ``tmp_venv_project``,
-because the launcher build's ``self update`` refuses to install when the
-worktree branch is ahead of master; the dev binary inherits the real HOME's
-claude auth, exactly what S-CLI-04 needs. Cost cap $0.10 (~5× headroom over
-~$0.02/run on haiku).
-
-Deliberate long e2e envelope-contract scenario — noqa: comment-length.
+flow:   a developer running agent orchestration with json stdout formatting
+cmds:   ai-hats agent assistant --task "Reply with just: ok" --json
+expect: the process outputs a JSON envelope containing exit_code, session_id,
+        session_dir, and total_cost_usd
+why:    agent orchestration scripts depend on structured JSON envelopes to chain
+        sub-agent execution
 """
 
 from __future__ import annotations

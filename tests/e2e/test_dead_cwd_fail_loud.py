@@ -1,13 +1,13 @@
-"""e2e (HATS-788): running `ai-hats` from a REMOVED cwd fails loud instead of
-silently resurrecting a phantom `.agent/` tracker (Linux) or crashing with a
-raw traceback (macOS).
+"""e2e (HATS-788)
 
-A removed cwd is the aftermath of the headline bug: a worktree torn down out
-from under the operator's shell. `_project_dir` must raise `DeadCwdError` (a
-clean ClickException), never reach `ai_hats_dir()`'s unconditional `mkdir -p`.
-
-Fail-under-revert: without the dead-cwd guard, on Linux the run exits 0 with a
-phantom `.agent/` recreated under the dead path; on macOS it dumps a traceback.
+flow:   a developer running ai-hats commands from a current working directory that was
+        deleted
+cmds:
+    # from a directory that was deleted on disk
+    ai-hats wt list
+expect: CLI exits with clean DeadCwdError instructing user to navigate to project root
+why:    commands run from deleted directories must fail loud instead of resurrecting
+        folders
 """
 
 from __future__ import annotations

@@ -1,11 +1,12 @@
-"""Script-level behaviour of the comment-length-lint PostToolUse hook (HATS-842).
+"""e2e (HATS-837, HATS-842)
 
-Per ``dev_rule_e2e_gate``: feed Claude Code ``PostToolUse`` payloads on stdin and
-assert the NON-BLOCKING contract — oversized comment block / docstring -> emit
-``additionalContext``; else silent; never a ``permissionDecision``; fail-open on
-any error. RED baseline = the HATS-837 shape (4-line DI comment + essay docstring);
-the ≈9-line contract docstring review kept stays silent; ``# noqa: comment-length``
-suppresses.
+flow:   an agent editing python files with oversized comment blocks or docstrings
+cmds:
+    # when editing python file with long comment block
+    git commit -m "edit python file"
+expect: PostToolUse hook emits additionalContext warning on stdout without blocking file
+        edits
+why:    comment length lint hook must provide non-blocking feedback for doc standards
 """
 
 from __future__ import annotations

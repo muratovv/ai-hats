@@ -1,8 +1,11 @@
-"""E2E: a real cline session leaves the project root clean (HATS-1171).
+"""e2e (HATS-1171)
 
-Fail-under-revert: restore the old ``ClineProvider`` and a headless cline run
-materializes ``.cline/skills`` (+ ``.cline/plugins``) into the project root and
-appends ``.cline/*`` to ``.gitignore``; both assertions below then fail.
+flow:   a developer running a batch session under cline provider
+cmds:   ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+expect: cline artifacts are written to session cache without leaking .cline/ into
+        project root
+why:    cline provider must maintain project root cleanliness by storing artifacts in
+        cache
 """
 
 from __future__ import annotations

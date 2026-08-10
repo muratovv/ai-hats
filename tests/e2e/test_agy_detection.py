@@ -1,12 +1,12 @@
-"""E2E: Verification for agy detection via ~/.gemini and legacy gemini alias resolution (HATS-1174).
+"""e2e (HATS-1174)
 
-Value under test:
-- `_detected_providers()` detects `agy` when `~/.gemini` exists in $HOME.
-- `get_provider("gemini")` resolves to `AgyProvider`.
-
-Fail-under-revert:
-If `AgyProvider.detected_home_dirs()` or `PROVIDER_ALIASES` in `src/ai_hats/providers.py` is reverted,
-`_detected_providers()` returns empty for `~/.gemini` and `get_provider("gemini")` raises `UnknownProviderError`.
+flow:   a developer initializing project configuration when ~/.gemini directory is
+        present
+cmds:   ai-hats self init
+expect: agy provider is automatically detected from ~/.gemini directory and alias gemini
+        resolves to agy
+why:    provider detection must auto-discover agy when gemini config directory exists in
+        HOME
 """
 
 from __future__ import annotations

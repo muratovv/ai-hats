@@ -2,12 +2,12 @@
 
 flow:   an agent triggering tool execution with unparsable or malformed hook payloads
 cmds:
-    # agent invoking a PreToolUse hook with an unparsable payload
-    python .agent/ai-hats/hooks/safety_gate.py < /tmp/malformed.json
-expect: execution passes fail-open without blocking the call and the unparsable payload
-        event is recorded in the bypass journal or stderr
-why:    a hook that fails on unreadable payload must allow the call while leaving an
-        audit trace so dead or broken hooks do not silently mask failures
+    # agent triggering tool execution when hook receives unparsable payload
+    git push origin master
+expect: tool execution passes fail-open without blocking the call and records event on
+        stderr
+why:    unparsable hook payloads must fail open so broken hooks do not silently block
+        workflow
 """
 
 from __future__ import annotations

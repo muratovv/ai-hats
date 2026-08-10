@@ -1,7 +1,11 @@
-"""E2E: agy session → audit.md turn markers + usage.json (HATS-1391).
+"""e2e (HATS-1391)
 
-Fail-under-revert: drop ``AgyProvider.resolve_transcript`` → audit.md is
-the meta-only stub (no 👤/👾 turn markers), usage.json fallback.
+flow:   a developer running an agy provider session and inspecting session artifacts
+cmds:   ai-hats execute --batch -r assistant -p agy --prompt "Reply OK" --json
+expect: session records audit.md with turn markers and metrics.json with token usage
+        statistics
+why:    session observation must parse agy transcripts to record audit logs and token
+        telemetry
 """
 
 from __future__ import annotations

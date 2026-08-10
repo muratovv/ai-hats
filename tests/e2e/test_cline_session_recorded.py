@@ -1,7 +1,10 @@
-"""E2E: cline session → audit.md turn markers + usage.json tokens (HATS-1087).
+"""e2e (HATS-1087)
 
-Fail-under-revert: drop ``ClineProvider.resolve_transcript`` → audit.md is
-the meta-only stub (no 👤/👾), usage.json has zero tokens.
+flow:   a developer executing a batch session under cline provider and checking output
+        artifacts
+cmds:   ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+expect: session produces audit.md with turn markers and usage.json with token metrics
+why:    cline sessions must record transcript audit logs and token telemetry
 """
 
 from __future__ import annotations

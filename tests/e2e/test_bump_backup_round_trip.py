@@ -1,26 +1,12 @@
-"""E2E: pre-bump backup tarball round-trip (HATS-549 Phase 1).
+"""e2e (HATS-549, HATS-592)
 
-Validates the load-bearing safety net:
-
-  - Before any destructive migration step runs, ``ai-hats self update``
-    snapshots the project's ai-hats-managed surface to a ``.tar.gz``
-    under :env:`AI_HATS_BUMP_BACKUP_DIR`.
-  - The path is printed to stderr with a ``[ai-hats] migration backup``
-    banner and a ``Recovery: tar -xzf`` one-liner.
-  - The tarball's payload, when extracted over the post-bump tree,
-    restores byte-identical pre-bump state for the scoped paths.
-
-Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
-Fail-under-revert against commit ``fac79c0`` / ``0eab1c5`` (Phase 1).
-
-HATS-592 (gate-wall perf): the four checks below are all facets of the
-SAME pre-bump backup. Each used to rebuild the (proxmox seed →
-``self update``) cycle independently — 4× a ~13-21s bump dominated the
-file's wall (the binding floor under ``--dist=loadgroup``, where the
-whole file pins to one worker). They now share ONE module-scoped bump
-(:func:`bumped`); each test is a cheap assertion on its tarball /
-post-bump tree. The only mutating check extracts into a fresh dir, never
-the shared project, so the module fixture stays immutable across tests.
+flow:   a developer performing framework self update when pre-bump backups are
+        configured
+cmds:   ai-hats self update
+expect: pre-bump backup tarball is created before migration and tar extraction restores
+        state
+why:    self update must capture pre-bump tarballs to ensure safe rollback on migration
+        failure
 """
 
 from __future__ import annotations

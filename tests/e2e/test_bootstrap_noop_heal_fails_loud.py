@@ -1,35 +1,10 @@
-"""E2E: bootstrap_or_die() fails loud on a no-op heal instead of looping forever (HATS-1359).
+"""e2e (HATS-1262, HATS-1359, HATS-1368)
 
-Value under test: `uv pip install <dist>` can exit 0 without fixing anything —
-a bare/unconstrained requirement is satisfied by a dist-info whose importable
-files are gone (the ``~/dotfiles`` incident: HATS-1262 deleted
-``packages/ai-hats-tracker``, but that project's editable ``ai-hats`` metadata
-predated the deletion, so its ``.pth`` kept pointing at the now-gone source
-dir). Before the fix, ``bootstrap_or_die()`` trusted that exit code and
-``os.execv``'d unconditionally, reproducing the identical missing dep in the
-fresh interpreter forever — a real hang, escapable only via Ctrl-C.
-
-Setup (real launcher build + real `uv`, per ``dev_rule_e2e_gate`` — no
-stubs): build a real launcher venv via
-:func:`tests.e2e._helpers.venv.build_launcher_venv`, then reproduce the no-op
-heal generically (not tracker-specific): delete ``ptyprocess`` — a real,
-already-installed runtime dep — leaving its ``dist-info`` in place. Confirmed
-empirically (see task HATS-1359 plan) that ``uv pip install ptyprocess``
-against that state audits as already-satisfied and no-ops (exit 0) without
-touching the network.
-
-Assertion: `python -m ai_hats config status` exits 1 quickly (bounded by a
-subprocess timeout — the bug this guards against hangs, it doesn't merely
-slow down) with the still-missing dep and the rescue command on stderr.
-(A real subcommand was once required here, back when the gate sat inside
-``cli.main()``'s body and click's eager ``--version``/``--help`` short-circuited
-past it; since HATS-1368 the gate runs in ``__main__.main()`` and every
-invocation reaches it.)
-
-Fail-under-revert: drop the ``still_missing`` recheck in
-``bootstrap_or_die()`` (restore the old unconditional ``os.execv``) and this
-test times out (``subprocess.TimeoutExpired``) instead of observing a clean
-``exit(1)``.
+flow:   a developer running ai-hats when a missing package cannot be healed by package
+        manager
+cmds:   python -m ai_hats config status
+expect: bootstrap process exits cleanly with error status naming missing dependency
+why:    bootstrap gate must fail loud on no-op repair attempts to prevent re-exec loops
 """
 
 from __future__ import annotations

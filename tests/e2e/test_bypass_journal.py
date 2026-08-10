@@ -1,12 +1,12 @@
-"""HATS-1407 — a gate bypass must leave a durable trace, not just stderr.
+"""e2e (HATS-1407)
 
-Per ``dev_rule_e2e_gate``: the journal is pure bash sourced across a directory
-boundary, so the thing most likely to break is the relative path itself. These
-tests lay out the REAL install shape — helper at ``.githooks/bypass_journal.sh``,
-hook at ``.githooks/<event>.d/<skill>-<basename>`` — and run the hook as a real
-subprocess against a throwaway git repo. Running the hook from its source path
-instead would resolve ``../bypass_journal.sh`` somewhere else entirely and prove
-nothing about production.
+flow:   a developer committing code with gate bypass environment variables enabled
+cmds:
+    # with AI_HATS_PRIVACY_ACK=1 enabled
+    git commit -m "bypass commit"
+expect: git pre-commit hook logs bypass entry to journal and post-commit stamps
+        commit SHA
+why:    gate bypasses must leave audit records in bypass journal for compliance tracking
 """
 
 from __future__ import annotations

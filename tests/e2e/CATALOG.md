@@ -12,7 +12,21 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**95 of 224 files catalogued — 98 flows.**
+**125 of 224 files catalogued — 132 flows.**
+
+## `test_agent_orchestration.py`
+
+*pins HATS-498, HATS-545*
+
+- **flow** — a developer running agent orchestration with json stdout formatting
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Reply with just: ok" --json
+  ```
+
+- **expect** — the process outputs a JSON envelope containing exit_code, session_id, session_dir, and total_cost_usd
+- **why** — agent orchestration scripts depend on structured JSON envelopes to chain sub-agent execution
 
 ## `test_agy_bypass.py`
 
@@ -28,6 +42,360 @@ as a claim to check, not as evidence.
 
 - **expect** — the run exits 0 and nothing from GEMINI.md reaches stdout or stderr; the file is left byte-identical on disk and no `.GEMINI.md.ai_hats_bak` sidecar appears
 - **why** — left alone, the repo's root GEMINI.md becomes ambient instructions for every agy role — and a bypass built by moving the file aside would mutate the user's tree to get there, so both are forbidden
+
+## `test_agy_detection.py`
+
+*pins HATS-1174*
+
+- **flow** — a developer initializing project configuration when ~/.gemini directory is present
+- **cmds**
+
+  ```console
+  ai-hats self init
+  ```
+
+- **expect** — agy provider is automatically detected from ~/.gemini directory and alias gemini resolves to agy
+- **why** — provider detection must auto-discover agy when gemini config directory exists in HOME
+
+## `test_agy_dispatcher_out_of_tree.py`
+
+*pins HATS-1356, HATS-1398*
+
+- **flow** — an agent executing tool calls under an out-of-tree session cache location
+- **cmds**
+
+  ```console
+  # when AI_HATS_SESSION_CACHE_DIR points to an out-of-tree location
+  ai-hats agent assistant --task "Execute edit"
+  ```
+
+- **expect** — agy hook dispatcher resolves session hooks from out-of-tree cache and fires scripts
+- **why** — hook dispatcher must locate out-of-tree session caches to execute hooks correctly
+
+## `test_agy_headless_hook_execution.py`
+
+*pins HATS-1105*
+
+- **flow** — an agent running headless agy execution with registered runtime hooks
+- **cmds**
+
+  ```console
+  # when running agy in headless mode
+  ai-hats execute -p agy --prompt "Run command"
+  ```
+
+- **expect** — runtime hooks defined in settings.json execute during headless tool invocation
+- **why** — headless execution surfaces must fire PreToolUse hooks before tool execution
+
+## `test_agy_provider_discovery.py`
+
+*pins HATS-1093*
+
+- **flow** — a developer listing available providers after installing ai-hats-agy package
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  ```
+
+- **expect** — agy provider is discovered via python entry points and displayed alongside built-ins
+- **why** — provider discovery must dynamically resolve installed surface plugins via entry points
+
+## `test_agy_session_recorded.py`
+
+*pins HATS-1391*
+
+- **flow** — a developer running an agy provider session and inspecting session artifacts
+- **cmds**
+
+  ```console
+  ai-hats execute --batch -r assistant -p agy --prompt "Reply OK" --json
+  ```
+
+- **expect** — session records audit.md with turn markers and metrics.json with token usage statistics
+- **why** — session observation must parse agy transcripts to record audit logs and token telemetry
+
+## `test_agy_wt_gate.py`
+
+*pins HATS-1102*
+
+- **flow** — an agent executing write tools targeting code files in main checkout under agy
+- **cmds**
+
+  ```console
+  # when attempting to edit main checkout files in agy session
+  ai-hats execute -p agy --batch -r maintainer --prompt "Edit main"
+  ```
+
+- **expect** — worktree gate hook denies destructive writes in main checkout
+- **why** — worktree isolation gates must protect main checkout files across all provider surfaces
+
+## `test_bare_positional_prompt.py`
+
+*pins HATS-1202*
+
+- **flow** — a developer running ai-hats with a bare positional prompt argument
+- **cmds**
+
+  ```console
+  ai-hats -p nonexistent_provider_1202 "hello world"
+  ```
+
+- **expect** — CLI parses positional argument as prompt rather than complaining of unknown subcommand
+- **why** — bare positional arguments must be treated as execution prompts for convenience
+
+## `test_batch_provider_override.py`
+
+*pins HATS-1218*
+
+- **flow** — a developer specifying provider override flag -p on batch execution commands
+- **cmds**
+
+  ```console
+  ai-hats execute -r maintainer --batch -p definitely-not-a-real-provider
+  ```
+
+- **expect** — provider flag -p is respected in batch mode and produces clean error for invalid providers
+- **why** — batch execution commands must honor explicit -p provider overrides
+
+## `test_bootstrap_heals_underdeclared_editable.py`
+
+*pins HATS-1368*
+
+- **flow** — a developer running ai-hats when editable install metadata under-declares deps
+- **cmds**
+
+  ```console
+  python -m ai_hats --version
+  ```
+
+- **expect** — startup gate detects missing dependencies from pyproject.toml and heals editable install
+- **why** — bootstrap gate must inspect live pyproject.toml to heal stale editable package metadata
+
+## `test_bootstrap_noop_heal_fails_loud.py`
+
+*pins HATS-1262, HATS-1359, HATS-1368*
+
+- **flow** — a developer running ai-hats when a missing package cannot be healed by package manager
+- **cmds**
+
+  ```console
+  python -m ai_hats config status
+  ```
+
+- **expect** — bootstrap process exits cleanly with error status naming missing dependency
+- **why** — bootstrap gate must fail loud on no-op repair attempts to prevent re-exec loops
+
+## `test_bootstrap_recovery_after_broken_pkg.py`
+
+*pins HATS-791*
+
+- **flow** — a developer running bootstrap repair after managed virtual environment is broken
+- **cmds**
+
+  ```console
+  bash scripts/bootstrap.sh --repair
+  ```
+
+- **expect** — repair script rebuilds managed virtual environment using absolute launcher paths
+- **why** — out-of-band bootstrap repair must recover broken managed virtual environments
+
+## `test_bootstrap_rescue_command_works_editable.py`
+
+*pins HATS-1367, HATS-1368*
+
+- **flow** — a developer executing printed rescue command when automatic bootstrap heal fails
+- **cmds**
+
+  ```console
+  python -m ai_hats --version
+  ```
+
+- **expect** — gate prints manual repair command that successfully restores workspace dependencies
+- **why** — printed rescue commands must effectively repair broken virtual environments
+
+## `test_broken_hook_ref_startup_warn.py`
+
+*pins HATS-1509*
+
+- **flow** — a developer launching a session when settings.json references a missing hook
+- **cmds**
+
+  ```console
+  ai-hats execute -r hook-role
+  ```
+
+- **expect** — session start outputs a warning naming missing hook file and self init repair steps
+- **why** — broken hook references must produce clear startup warnings to alert developers
+
+## `test_broken_install_friendly_error.py`
+
+*pins HATS-1120, HATS-1263*
+
+- **flow** — a developer running ai-hats commands when package files are corrupted or mismatched
+- **cmds**
+
+  ```console
+  ai-hats list roles
+  ```
+
+- **expect** — CLI exits with friendly installation error detailing repair steps without tracebacks
+- **why** — package import failures at CLI boundary must display clean actionable repair instructions
+
+## `test_bump_backup_round_trip.py`
+
+*pins HATS-549, HATS-592*
+
+- **flow** — a developer performing framework self update when pre-bump backups are configured
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — pre-bump backup tarball is created before migration and tar extraction restores state
+- **why** — self update must capture pre-bump tarballs to ensure safe rollback on migration failure
+
+## `test_bump_fails_loud_on_broken_hook.py`
+
+*pins HATS-549*
+
+- **flow** — a developer performing framework self update when settings.json points at missing hook
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — update process fails at end-of-bump smoke assert and prints recovery tarball path
+- **why** — framework updates must assert runtime hook resolution before completing migration
+
+## `test_bypass_journal.py`
+
+*pins HATS-1407*
+
+- **flow** — a developer committing code with gate bypass environment variables enabled
+- **cmds**
+
+  ```console
+  # with AI_HATS_PRIVACY_ACK=1 enabled
+  git commit -m "bypass commit"
+  ```
+
+- **expect** — git pre-commit hook logs bypass entry to journal and post-commit stamps commit SHA
+- **why** — gate bypasses must leave audit records in bypass journal for compliance tracking
+
+## `test_cache_key_gc.py`
+
+*pins HATS-1473*
+
+- **flow** — a developer starting a session when stale sibling cache keys exist in cache dir
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — session initialization sweeps orphan cache keys older than TTL while preserving active keys
+- **why** — session startup must garbage-collect stale session cache directories
+
+## `test_check_mirror_dry_run.py`
+
+*pins HATS-1241, HATS-1540*
+
+- **flow** — a developer inspecting dry-run plan for a role that binds check scripts
+- **cmds**
+
+  ```console
+  ai-hats execute -r checked --dry-run-json
+  ```
+
+- **expect** — dry-run plan materializes bound skill script exactly once to session skills mirror
+- **why** — check scripts must resolve from session skill mirrors without duplicate tree copies
+
+## `test_claude_scaffold_drop.py`
+
+*pins HATS-582, HATS-1170, HATS-1201*
+
+- **flow** — a developer updating framework version on a project with orphan CLAUDE.md scaffolds
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — framework update removes orphan CLAUDE.md scaffold while preserving user content
+- **why** — migration steps must clean up obsolete root scaffold files automatically
+
+## `test_clean_root_sentinel.py`
+
+*pins HATS-1170, HATS-1336, HATS-1338*
+
+- **flow** — a developer running a session in a project workspace
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — project root remains clean with framework state kept strictly inside .agent/ai-hats/
+- **why** — framework operations must respect project root cleanliness
+
+## `test_clean_tmp_cruft.py`
+
+*pins HATS-570*
+
+- **flow** — a developer running temp cleanup script to remove leftover test worktree directories
+- **cmds**
+
+  ```console
+  bash scripts/clean-tmp-cruft.sh --force
+  ```
+
+- **expect** — script removes temporary worktree and pytest directories while preserving caller worktree
+- **why** — cleanup script must remove abandoned temporary directories without touching active worktrees
+
+## `test_cline_clean_root.py`
+
+*pins HATS-1171*
+
+- **flow** — a developer running a batch session under cline provider
+- **cmds**
+
+  ```console
+  ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+  ```
+
+- **expect** — cline artifacts are written to session cache without leaking .cline/ into project root
+- **why** — cline provider must maintain project root cleanliness by storing artifacts in cache
+
+## `test_cline_provider_discovery.py`
+
+*pins HATS-956*
+
+- **flow** — a developer listing providers when ai-hats-cline surface package is installed
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  ```
+
+- **expect** — cline provider is discovered via python entry points and displayed in provider listing
+- **why** — cline surface plugin must be discoverable via entry points when installed
+
+## `test_cline_session_recorded.py`
+
+*pins HATS-1087*
+
+- **flow** — a developer executing a batch session under cline provider and checking output artifacts
+- **cmds**
+
+  ```console
+  ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+  ```
+
+- **expect** — session produces audit.md with turn markers and usage.json with token metrics
+- **why** — cline sessions must record transcript audit logs and token telemetry
 
 ## `test_close_from_inside_worktree_refused.py`
 
@@ -49,6 +417,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
+
+## `test_comment_length_lint_hook.py`
+
+*pins HATS-837, HATS-842*
+
+- **flow** — an agent editing python files with oversized comment blocks or docstrings
+- **cmds**
+
+  ```console
+  # when editing python file with long comment block
+  git commit -m "edit python file"
+  ```
+
+- **expect** — PostToolUse hook emits additionalContext warning on stdout without blocking file edits
+- **why** — comment length lint hook must provide non-blocking feedback for doc standards
 
 ## `test_config_fail_loud_on_newer_schema.py`
 
@@ -150,6 +533,49 @@ as a claim to check, not as evidence.
 
 - **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
 - **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
+
+## `test_customize_parallel_writes.py`
+
+*pins HATS-526*
+
+- **flow** — multiple developer processes concurrently customizing role configurations
+- **cmds**
+
+  ```console
+  ai-hats config customize role-1 --add-trait trait-1
+  ```
+
+- **expect** — file lock serializes configuration updates so no concurrent customizations are lost
+- **why** — config customize must acquire file locks during read-modify-write
+
+## `test_dead_cwd_fail_loud.py`
+
+*pins HATS-788*
+
+- **flow** — a developer running ai-hats commands from a current working directory that was deleted
+- **cmds**
+
+  ```console
+  # from a directory that was deleted on disk
+  ai-hats wt list
+  ```
+
+- **expect** — CLI exits with clean DeadCwdError instructing user to navigate to project root
+- **why** — commands run from deleted directories must fail loud instead of resurrecting folders
+
+## `test_default_composition_flip.py`
+
+*pins HATS-1054*
+
+- **flow** — a developer initializing project configuration and managing multi-backlog task cards
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant
+  ```
+
+- **expect** — composed role contains hatrack skill and rack command resolves task, hyp, and proposal backlogs
+- **why** — default role composition must include hatrack skill and rack CLI must route backlogs
 
 ## `test_docs_index_guard.py`
 
@@ -282,12 +708,12 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  # agent invoking a PreToolUse hook with an unparsable payload
-  python .agent/ai-hats/hooks/safety_gate.py < /tmp/malformed.json
+  # agent triggering tool execution when hook receives unparsable payload
+  git push origin master
   ```
 
-- **expect** — execution passes fail-open without blocking the call and the unparsable payload event is recorded in the bypass journal or stderr
-- **why** — a hook that fails on unreadable payload must allow the call while leaving an audit trace so dead or broken hooks do not silently mask failures
+- **expect** — tool execution passes fail-open without blocking the call and records event on stderr
+- **why** — unparsable hook payloads must fail open so broken hooks do not silently block workflow
 
 ## `test_hook_chain_permissions.py`
 
@@ -954,15 +1380,46 @@ as a claim to check, not as evidence.
 
 *pins HATS-697, HATS-714, HATS-788, HATS-835*
 
-- **flow** — a developer creating, executing, and finalizing task worktrees across edge cases
+- **flow** — a developer finalizing an already-merged task whose worktree state file was removed
 - **cmds**
 
   ```console
   rack transition TST-001 done
   ```
 
-- **expect** — task worktree transitions enforce state lost cleanup, forced execute overrides, typed original_branch errors, and linked worktree close refusal
-- **why** — the worktree lifecycle must maintain state safety invariants across edge cases
+- **expect** — transition done short-circuits to done without false state lost errors and cleans up branch
+- **why** — already-merged branches with missing state metadata must finalize cleanly
+
+- **flow** — a developer forcing a task transition to execute with --force
+- **cmds**
+
+  ```console
+  rack transition TST-001 execute --force --reason "shipped on master"
+  ```
+
+- **expect** — task state moves to execute without spinning up a fresh git worktree
+- **why** — forced execute overrides worktree provisioning when work was shipped out-of-band
+
+- **flow** — a developer finalizing a task when worktree state metadata contains null original_branch
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition done is refused with a typed error naming missing original_branch field
+- **why** — incomplete worktree state metadata must produce a clean typed error without traceback
+
+- **flow** — a developer finalizing a task from inside its own linked worktree directory
+- **cmds**
+
+  ```console
+  # from inside the linked worktree directory
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition done is refused before teardown and worktree directory is preserved
+- **why** — transition done from inside a worktree must refuse to avoid removing caller cwd
 
 ## `test_wt_create_base_guard_e2e.py`
 
@@ -1001,12 +1458,12 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  # agent triggering EnterWorktree tool call
-  python .agent/.../wt_entry_gate.py < /tmp/payload.json
+  # agent invoking EnterWorktree tool call directly
+  ai-hats wt create task/probe
   ```
 
-- **expect** — direct worktree creation or entry tool calls are denied with actionable instructions
-- **why** — agents must use ai-hats CLI commands rather than direct worktree navigation
+- **expect** — direct worktree entry tool call is denied with instructions to use ai-hats CLI
+- **why** — worktree creation and entry must be routed through ai-hats CLI commands
 
 ## `test_wt_env_selector.py`
 
@@ -1173,15 +1630,25 @@ as a claim to check, not as evidence.
 
 *pins HATS-857, HATS-889*
 
-- **flow** — an agent attempting git push or worktree creation under gate hook policies
+- **flow** — a developer creating a worktree under worktree gate hook policies
+- **cmds**
+
+  ```console
+  ai-hats wt create task/probe
+  ```
+
+- **expect** — worktree gate hook validates environment permissions before provisioning worktree
+- **why** — worktree creation must execute gate hooks to enforce workspace security rules
+
+- **flow** — a developer pushing commits under git push gate hook policies
 - **cmds**
 
   ```console
   git push origin master
   ```
 
-- **expect** — gate hook validates environment permissions and blocks unauthorized operations
-- **why** — gate hooks enforce permission boundaries during git and worktree operations
+- **expect** — pre-push gate hook validates commit rules and permits push when checks pass
+- **why** — pre-push gate hooks must validate commit hygiene before pushing to remote repository
 
 ## `test_wt_hook_inplace.py`
 
@@ -1448,38 +1915,8 @@ as a claim to check, not as evidence.
 
 ## Not yet catalogued
 
-129 files carry no flow block yet:
+99 files carry no flow block yet:
 
-- `test_agent_orchestration.py`
-- `test_agy_detection.py`
-- `test_agy_dispatcher_out_of_tree.py`
-- `test_agy_headless_hook_execution.py`
-- `test_agy_provider_discovery.py`
-- `test_agy_session_recorded.py`
-- `test_agy_wt_gate.py`
-- `test_bare_positional_prompt.py`
-- `test_batch_provider_override.py`
-- `test_bootstrap_heals_underdeclared_editable.py`
-- `test_bootstrap_noop_heal_fails_loud.py`
-- `test_bootstrap_recovery_after_broken_pkg.py`
-- `test_bootstrap_rescue_command_works_editable.py`
-- `test_broken_hook_ref_startup_warn.py`
-- `test_broken_install_friendly_error.py`
-- `test_bump_backup_round_trip.py`
-- `test_bump_fails_loud_on_broken_hook.py`
-- `test_bypass_journal.py`
-- `test_cache_key_gc.py`
-- `test_check_mirror_dry_run.py`
-- `test_claude_scaffold_drop.py`
-- `test_clean_root_sentinel.py`
-- `test_clean_tmp_cruft.py`
-- `test_cline_clean_root.py`
-- `test_cline_provider_discovery.py`
-- `test_cline_session_recorded.py`
-- `test_comment_length_lint_hook.py`
-- `test_customize_parallel_writes.py`
-- `test_dead_cwd_fail_loud.py`
-- `test_default_composition_flip.py`
 - `test_done_gate.py`
 - `test_edge_check_gate.py`
 - `test_epic_auto_transition_e2e.py`

@@ -1,9 +1,10 @@
-"""HATS-1509 — e2e: session start warns on a hook ref whose script is gone.
+"""e2e (HATS-1509)
 
-Model: ``test_settings_lint_startup_warn.py`` (real composition + materializers;
-only the PTY spawn is stubbed). The proxmox class: an ``ai-hats:``-tagged entry
-survives in the project root pointing at a script materialization deleted, and
-the only signal the user gets is harness spam on every Bash call.
+flow:   a developer launching a session when settings.json references a missing hook
+cmds:   ai-hats execute -r hook-role
+expect: session start outputs a warning naming missing hook file and self init repair
+        steps
+why:    broken hook references must produce clear startup warnings to alert developers
 """
 
 from __future__ import annotations
