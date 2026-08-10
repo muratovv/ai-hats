@@ -205,3 +205,22 @@ def test_check_pins_refuses_unsupported_pin():
     assert mod.check_pins(rows, lambda f: {"HATS-788"}) == []
 
 
+def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
+    bad = WELL_FORMED.replace(
+        "rack transition HATS-1 done",
+        "python -m _helpers.env",
+    )
+    rows = mod.parse_rows(bad, "test_x.py")
+    errors = mod.check_plumbing(rows)
+    assert len(errors) == 1
+    assert "demonstrates test plumbing" in errors[0]
+
+    good = WELL_FORMED.replace(
+        "rack transition HATS-1 done",
+        "ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py",
+    )
+    rows_good = mod.parse_rows(good, "test_x.py")
+    assert mod.check_plumbing(rows_good) == []
+
+
+

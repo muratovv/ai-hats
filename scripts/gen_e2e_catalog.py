@@ -70,6 +70,36 @@ def check_pins(rows: list[Row], ids_known_for: Callable[[str], set[str]]) -> lis
     return errors
 
 
+def check_plumbing(rows: list[Row]) -> list[str]:
+    errors = []
+    for row in rows:
+        for ln in row.cmds:
+            ln_s = ln.strip()
+            if not ln_s or ln_s.startswith("#"):
+                continue
+            code = ln_s.split("#")[0].strip()
+            if not code:
+                continue
+            tokens = code.split()
+            leading = tokens[0] if tokens else ""
+            is_plumbing = False
+            if leading == "pytest":
+                is_plumbing = True
+            elif leading == "python" and len(tokens) >= 3 and tokens[1] == "-m":
+                mod_name = tokens[2]
+                if mod_name.startswith("_helpers") or mod_name.startswith("ai_hats._"):
+                    is_plumbing = True
+            elif leading in ("_helpers", "conftest"):
+                is_plumbing = True
+
+            if is_plumbing:
+                errors.append(
+                    f"{row.file}: cmds `{ln_s}` demonstrates test plumbing — show the user-facing command instead"
+                )
+    return errors
+
+
+
 @functools.lru_cache(maxsize=None)
 def _ids_known_for(file_name: str) -> set[str]:
     file_path = E2E_DIR / file_name
@@ -271,7 +301,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {err}", file=sys.stderr)
         return 1
 
-    soundness_errors = check_actor(rows) + check_pins(rows, _ids_known_for)
+    soundness_errors = (
+        check_actor(rows)
+        + check_pins(rows, _ids_known_for)
+        + check_plumbing(rows)
+    )
     if soundness_errors:
         print("[e2e-catalog] unsound row(s):", file=sys.stderr)
         for err in soundness_errors:
