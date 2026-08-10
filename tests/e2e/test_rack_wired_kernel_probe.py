@@ -1,12 +1,12 @@
-"""e2e: the shim tier reaches rack's WIRED kernel, not the bare one (HATS-1263).
+"""e2e (HATS-1263)
 
-``test_rack_cutover_flow`` pins this for the ``rack`` console script in a built
-venv; this probe pins it on the interpreter tier the re-pointed suite drives.
-The failure it guards is silent — an unresolvable ``ai_hats_rack.kernel_factory``
-entry point falls back to the BARE kernel (no worktree, no STATE.md, no gates),
-so a re-pointed worktree test would go green by not testing.
-
-Fail-under-revert: drop the entry point → no worktree on execute → RED.
+flow:   a developer running task lifecycle commands via the module invocation interface
+cmds:
+    rack create "wired probe" --role assistant
+expect: STATE.md is refreshed on card creation and a git worktree is provisioned when
+        transitioning to execute
+why:    module-level rack execution must bind the full kernel extensions rather than
+        falling back to a bare un-wired state
 """
 
 from __future__ import annotations

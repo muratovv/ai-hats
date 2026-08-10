@@ -1,11 +1,12 @@
-"""e2e: concurrent ``rack create`` never collide on a task id (HATS-936).
+"""e2e (HATS-936, HATS-1263)
 
-Re-pointed off the legacy ``ai-hats task`` CLI (HATS-1263): the allocator under
-test is ``ai_hats_rack.kernel.Kernel._next_id`` behind its alloc lock. N
-``create`` processes launch at once against one project; the lock must hand each
-a DISTINCT id with an intact card. Pre-HATS-936 read-max-then-write allocation
-makes the racers share an id and cross-write one card — RED against that revert.
-``python -m ai_hats_rack`` + an explicit PYTHONPATH pins the CURRENT checkout.
+flow:   multiple agent processes creating tasks concurrently in the same project
+cmds:
+    rack create "race task"
+expect: each concurrent creation command receives a unique task ID and creates
+        a complete card directory without file collisions
+why:    task ID allocation must be synchronized across processes to prevent duplicate
+        IDs and corrupted task cards
 """
 
 from __future__ import annotations

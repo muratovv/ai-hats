@@ -3,7 +3,7 @@
 flow:   a user with configuration directories for multiple providers runs interactive
         project setup
 cmds:
-    ai-hats self init --no-update --channel stable
+    ai-hats self init --channel stable
 expect: every configured provider directory is labeled "detected — found ~/.<name>" in
         the menu and the string "recommended" is absent
 why:    recommending only the first provider when multiple exist causes accidental

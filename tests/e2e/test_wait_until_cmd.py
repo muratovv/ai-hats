@@ -1,8 +1,12 @@
-"""e2e for ``ai-hats wait --until-cmd`` (HATS-986).
+"""e2e (HATS-986)
 
-The load-bearing case is the LAST one: a predicate that is broken (exit > 1)
-must not read as "not yet". A plain ``until`` shell loop cannot tell those
-apart and hangs forever; that indistinguishability is why this command exists.
+flow:   a background script waiting for a custom shell command predicate to pass
+cmds:
+    ai-hats wait --until-cmd "test -f marker" --poll 0.2
+expect: the process polls the shell command until it exits 0, timing out with
+        code 124 if unmet, or exiting code 2 if broken
+why:    command waiting allows processes to block until external conditions are met with
+        distinction between timeouts and errors
 """
 
 from __future__ import annotations

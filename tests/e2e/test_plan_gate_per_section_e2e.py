@@ -1,15 +1,13 @@
-"""HATS-635 — per-section plan gate at the real CLI boundary.
+"""e2e (HATS-635, HATS-1263)
 
-`rack transition <ID> execute` must BLOCK when a required plan section is empty
-and NAME the offending section(s) (re-pointed off the legacy CLI, HATS-1263).
-
-Fail-under-revert: under the pre-HATS-635 byte-equality `_is_empty_scaffold`, a
-plan with ANY content (here: Requirements filled, the rest empty) is "not the
-verbatim scaffold" → the gate PASSES → no `Empty required section(s)` message.
-The block path needs no git: the gate raises before worktree setup.
-
-`python -m ai_hats_rack` with an explicit PYTHONPATH so the test exercises the
-CURRENT checkout — an editable install resolves the main checkout, not a worktree.
+flow:   a developer attempting to transition a task to execute when required plan
+        sections are missing content
+cmds:
+    rack transition HATS-001 execute
+expect: transition to execute is blocked with exit code 1 and stderr lists the exact
+        required plan sections that are empty
+why:    incomplete task plans must be rejected before worktree creation to ensure design
+        requirements and verification steps are documented
 """
 
 from __future__ import annotations

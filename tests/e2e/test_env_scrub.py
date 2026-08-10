@@ -3,7 +3,7 @@
 flow:   a developer running sub-agent execution or worktree commands with ambient
         PYTHONPATH or GIT_* set expecting clean subprocess environment scrubbing
 cmds:
-    ai-hats wt exec -- task/hats-1
+    ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py
 expect: subprocess environment strips inherited PYTHONPATH and GIT_* variables while
         preserving PATH and HOME
 why:    ambient environment variable leakage redirects launcher imports to workspace

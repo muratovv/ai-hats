@@ -1,35 +1,13 @@
-"""End-to-end coverage for ``rack transition <ID> done`` when the
-task branch is ALREADY merged into its base but the worktree STATE is lost
-(HATS-697 — the retrospective shipped-on-master scenario from PROX-287).
+"""e2e (HATS-596, HATS-697, HATS-1263)
 
-Complement of ``test_task_transition_done_already_merged_head_wandered.py``
-(HATS-596): there the worktree state JSON still exists and the
-``Worktree.merge`` already-merged short-circuit fires. Here the state JSON is
-GONE (``WorktreeManager.load_for_task`` → ``None``) because the auto-worktree
-was removed by hand, so the short-circuit inside ``merge()`` is never reached.
-``_teardown_worktree`` used to refuse such a finalize with a FALSE
-``WorktreeStateLostError`` ("Branch preserved with un-merged commits") even
-though the branch was fully integrated. The state-lost ancestry check must
-finalize instead.
-
-This is the exact shape the supervisor hit in PROX-287: work shipped via a
-manual ``git merge --no-ff task/<id>`` into the base AND the auto-worktree
-removed, after which ``transition done`` refused and the only workaround was a
-manual ``git branch -d task/<id>`` before retrying.
-
-Driven through the ``rack`` CLI (HATS-1263); ``self init`` stays on the
-``ai-hats`` launcher.
-
-**Fail-under-revert**: drop the ``branch_merged_into_canonical_base`` check in
-``state.py:_teardown_worktree`` (raise ``WorktreeStateLostError`` whenever the
-branch exists) → ``transition done`` exits 1 with "worktree state lost", and
-the exit-0 / ``state: done`` assertions below fail.
-
-Per ``dev_rule_e2e_gate``: HATS-697 touches ``src/ai_hats/cli/`` +
-``src/ai_hats/state.py`` + ``packages/ai-hats-wt/src/ai_hats_wt/manager.py``, so a real-launcher +
-real-binary e2e is mandatory. CliRunner / pipeline tests do NOT satisfy the gate.
-
-Modelled on ``tests/e2e/test_task_transition_done_already_merged_head_wandered.py``.
+flow:   a developer finalizing a task whose branch was manually merged and worktree
+        state metadata was removed
+cmds:
+    rack transition TST-001 done
+expect: transition to done completes successfully and cleans up the merged branch
+        without raising state lost errors
+why:    tasks with merged branches must finalize cleanly even if worktree state tracking
+        files have been removed
 """
 
 from __future__ import annotations

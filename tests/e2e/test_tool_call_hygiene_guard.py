@@ -1,10 +1,12 @@
-"""HATS-632 — script-level behaviour of the tool-call-hygiene PreToolUse guard.
+"""e2e (HATS-632)
 
-Per ``dev_rule_e2e_gate`` the guard is a pure-bash surface the unit suite cannot
-meaningfully exercise. We invoke it as a real subprocess, feeding Claude Code
-``PreToolUse`` payloads on stdin and asserting the **non-blocking** contract:
-exit 0 + ``hookSpecificOutput.additionalContext`` on a covered command, and
-NEVER a ``permissionDecision`` (so the command is never blocked or auto-approved).
+flow:   an agent executing shell commands covered by dedicated tools
+cmds:
+    grep foo .
+expect: the PreToolUse hook emits additionalContext suggesting dedicated tools without
+        blocking or modifying command permissions
+why:    tool hygiene guidance encourages efficient tool choices while remaining
+        non-blocking to preserve execution flow
 """
 
 from __future__ import annotations

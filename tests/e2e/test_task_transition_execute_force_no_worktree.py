@@ -1,21 +1,11 @@
-"""End-to-end coverage for ``rack transition <ID> execute --force``
-NOT creating a fresh worktree (HATS-697 / PROX-287).
+"""e2e (HATS-697)
 
-A forced ``→ execute`` is a manual state correction (typically for
-retrospective shipped-on-master work), not the start of isolated work.
-Before HATS-697 it still spun a fresh worktree off HEAD, orphaning the
-retro work that already lived in the main tree. The forced path must now
-flip state only and leave the worktree decision to the operator.
-
-**Fail-under-revert**: restore the unconditional ``_setup_worktree`` on the
-execute branch of ``state.py:transition`` (drop the ``elif force`` skip) →
-``git worktree list`` gains a ``task/<id>`` worktree and the
-"no extra worktree" assertion below fails.
-
-Per ``dev_rule_e2e_gate``: HATS-697 touches ``src/ai_hats/cli/`` +
-``src/ai_hats/state.py``, so a real-launcher + real-binary e2e is mandatory.
-
-Modelled on ``tests/e2e/test_task_transition_done_already_merged_head_wandered.py``.
+flow:   a developer forcing a task transition to execute for retrospective recording
+cmds:
+    rack transition TST-001 execute --force --reason "shipped on master"
+expect: task state updates to execute without creating a git worktree or task branch
+why:    forced state transitions for retrospective tracking must update task metadata
+        without creating unwanted worktree directories
 """
 
 from __future__ import annotations

@@ -1,22 +1,13 @@
-"""E2E (HATS-467): PreToolUse hook scripts materialized to disk.
+"""e2e (HATS-437, HATS-467)
 
-Four contracts a reviewer can refute by reverting the relevant code:
-
-1. ``ai-hats self init`` writes ``<ai_hats_dir>/library/hooks/*.sh``
-   with mode ``0o755``, matching the package-data source bytes, plus
-   a ``.manifest`` listing them.
-2. A second ``self init`` is idempotent — bytes-identical files do
-   not get rewritten (no spurious mtime updates).
-3. After mutating a materialized hook by hand and re-running
-   ``self update``, the file is restored to package-data bytes
-   (refresh actually fires through ``Assembler.bump``).
-4. The materialized hook is functional: piping a classifier-matching
-   ``tool_input`` JSON to it (without a TTY, no
-   ``AI_HATS_SHARED_STATE_ACK``) yields exit 2 — proof that the
-   HATS-437 safety net is alive after this task lands.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
+flow:   a developer initializing project configuration and verifying PreToolUse hook
+        file generation
+cmds:
+    ai-hats self init -p claude -r assistant --no-wizard
+expect: hook scripts are written to disk with executable permissions and block
+        unacknowledged destructive tool commands
+why:    PreToolUse guards rely on materialized script files on disk to enforce state
+        safety rules during agent execution
 """
 
 from __future__ import annotations

@@ -1,12 +1,13 @@
-"""HATS-999 — e2e: ai-hats git hooks coexist with a repo's own hook manager.
+"""e2e (HATS-999)
 
-Real ``git commit``/``push`` through the live dispatcher + real ``self init``
-(``dev_rule_e2e_gate``). Managers are fabricated as the file artifacts they
-produce (simple-git-hooks → executable ``.git/hooks/<event>``; husky → own
-``core.hooksPath`` dir) — no node needed, same contract git sees.
-Fail-under-revert: without chaining the project marker never appears
-(dispatcher shadows ``.git/hooks``); without auto-takeover the guard marker
-never appears (``core.hooksPath`` stays ``.husky``).
+flow:   a developer setting up ai-hats in a repository that already uses another
+        git hook manager like husky or simple-git-hooks
+cmds:
+    ai-hats self init -p claude -r guard-role --no-wizard
+expect: core.hooksPath points to .githooks and both ai-hats guard hooks and the
+        repository's existing hooks execute on git commit and push
+why:    overwriting existing repository hook configurations without chaining breaks
+        the repository's pre-existing quality checks
 """
 
 from __future__ import annotations

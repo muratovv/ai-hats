@@ -1,22 +1,13 @@
-"""End-to-end coverage for ``rack transition <ID> done`` on a
-worktree state file whose ``original_branch`` is ``null`` (HATS-714).
+"""e2e (HATS-714)
 
-Sibling to ``test_wt_merge_null_original_branch.py`` covering the
-``task transition done`` surface specifically — ``transition done``
-auto-merges via the same ``WorktreeManager.merge`` that ``wt merge`` uses,
-so a state file missing ``original_branch`` would re-traceback here too.
-Per ``dev_rule_e2e_gate`` each ``cli/`` surface touched needs its own
-real-subprocess test.
-
-**Fail-under-revert**: remove either the ``WorktreeStateIncompleteError``
-guard at the top of ``WorktreeManager.merge`` OR the ``except
-WorktreeStateIncompleteError`` handler in ``cli/task.py task_transition``
-→ ``transition done`` reverts to dumping an opaque traceback (TypeError
-without the guard, unhandled WorktreeStateIncompleteError without the
-handler). The ``"incomplete worktree state"`` / ``"Traceback" not in
-stderr`` assertions then fail.
-
-Modelled on ``tests/e2e/test_task_transition_done_head_wandered.py``.
+flow:   a developer finalizing a task when worktree state metadata contains a null
+        original_branch field
+cmds:
+    rack transition TST-001 done
+expect: transition to done is refused with a clean error message identifying the missing
+        original_branch value without raising a Python exception
+why:    incomplete worktree state metadata must produce a clear actionable error
+        instead of an unhandled traceback
 """
 
 from __future__ import annotations

@@ -1,18 +1,13 @@
-"""HATS-637 — canonical plan home at the real CLI boundary.
+"""e2e (HATS-637, HATS-1263)
 
-A plan is ALWAYS a task and ALWAYS lives at the one canonical path
-`tasks/<ID>/plan.md` — re-pointed onto `rack` (HATS-1263).
-
-Fail-under-revert: a stray `.claude/plans/<NN>-*.md` present before
-`transition <ID> plan` must stay INERT — the canonical `plan.md` remains the
-empty scaffold. Re-import the stray and the scaffold comparison reds.
-
-The old `plan-sync is "No such command"` assertion was dropped: it described
-the shape of the legacy Click group, which rack never had. S3's
-`test_legacy_task_cli_removed.py` covers that the group is gone.
-
-`python -m ai_hats_rack` with an explicit PYTHONPATH so the test exercises the
-CURRENT checkout — an editable install resolves the main checkout, not a worktree.
+flow:   a developer transitioning a task to the plan state when stray plan files
+        exist in legacy directory locations
+cmds:
+    rack transition HATS-001 plan
+expect: the canonical plan file is created at tasks/<ID>/plan.md with standard
+        scaffold content while stray legacy plan files remain untouched
+why:    tasks must maintain a single predictable plan home without silently importing
+        untracked legacy artifacts
 """
 
 from __future__ import annotations

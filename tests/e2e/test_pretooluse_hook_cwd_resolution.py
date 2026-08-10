@@ -1,28 +1,12 @@
-"""E2E (HATS-615): managed PreToolUse hook command resolves from any cwd.
+"""e2e (HATS-437, HATS-615, HATS-1268)
 
-Claude Code resolves a relative PreToolUse ``command`` against the agent's
-**cwd**, not the project root. The HATS-437 guard was wired with a bare
-relative path (``.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh``),
-so a session / sub-agent starting in a subdirectory invoked a path that did
-not exist → ``/bin/sh`` exited 127 and the safety net was silently dead.
-
-HATS-615 made the emitted command cwd-independent. Since HATS-1268 it is
-absolute into the session skill mirror, which satisfies that the same way the
-earlier ``$CLAUDE_PROJECT_DIR/`` prefix did — the invariant under test is that
-the command resolves from any cwd, not the spelling that achieves it.
-
-Contract under test — exactly how Claude Code invokes a hook:
-``/bin/sh -c "<emitted command>"`` with ``cwd != project root`` and
-``$CLAUDE_PROJECT_DIR`` in the environment, fed an irreversible tool-input
-payload. A resolved + live guard denies with **exit 2**. Under the
-bare-relative revert the same invocation cannot find the script → **exit 127**,
-so this test is decisively fail-under-revert.
-
-Scope note: we verify ai-hats's *emitted command string* resolves the way
-Claude Code invokes it. We do NOT exercise Claude Code's own hook resolver.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
+flow:   an agent executing commands from a nested subdirectory inside a project
+cmds:
+    ai-hats self init -p claude -r assistant --no-wizard
+expect: PreToolUse hook scripts execute using absolute path resolution and block
+        destructive commands regardless of current working directory
+why:    relative hook paths fail when invoked from subdirectories, leaving safety
+        guards silently inoperative during nested directory operations
 """
 
 from __future__ import annotations

@@ -1,20 +1,13 @@
-"""HATS-593 → HATS-833 — e2e: managed-hook drift healing + dispatcher backstop.
+"""e2e (HATS-593, HATS-833)
 
-Per ``dev_rule_e2e_gate`` (this touches ``src/ai_hats/cli/`` — the removed
-``self sync-hooks`` command — composition, and ``scripts``-tier git hooks).
-
-Guarantees, each with a fail-under-revert property:
-
-1. **`self sync-hooks` is GONE** (HATS-833): the standalone command was removed
-   when healing was consolidated to session start. The REAL binary must reject
-   it. Reverting the removal re-adds the command → it exits 0 → test fails.
-2. **Session-start heal** (HATS-833): a drifted/unwired runtime hook is
-   re-materialized AND re-wired at launch, with an observable startup note.
-   Reverting the generalized ``sync_hooks`` / ``_resync_managed_hooks`` leaves
-   the drift in place → test fails.
-3. **Fail-closed backstop** (unchanged): delete an expected managed
-   ``pre-push.d/*`` script and run the dispatcher — it must BLOCK (exit 1,
-   "hooks corrupt"), never silently skip a degraded gate.
+flow:   a developer starting a session in a project with missing or drifted managed
+        git hook scripts
+cmds:
+    ai-hats self init -p claude -r gate-role --no-wizard
+expect: missing hook scripts fail open on execution without blocking git commands and
+        session start restores missing script files
+why:    corrupted or removed hook scripts must not block developer git workflow while
+        ensuring automated recovery on session launch
 """
 
 from __future__ import annotations

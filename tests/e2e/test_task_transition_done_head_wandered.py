@@ -1,19 +1,13 @@
-"""End-to-end coverage for the ``rack transition <ID> done`` HEAD-wandered
-recovery recipe (HATS-533 on the legacy CLI, ported to rack by HATS-1274).
+"""e2e (HATS-509, HATS-533, HATS-1274)
 
-Sibling to ``test_wt_merge_head_wandered.py``, covering the transition surface
-specifically — per ``dev_rule_e2e_gate`` each CLI surface needs its own
-real-subprocess test. This is the scenario that fired live in the HATS-509
-session: worktree created from master, peer agent moved main-repo HEAD to a
-different branch, the done-transition merged into the wrong branch.
-
-**Fail-under-revert**: remove the ``WorktreeBaseBranchMismatchError`` branch
-from ``rack_cli_provider._wt_error_shape`` → the refusal collapses to the
-generic ``Refused (worktree)`` shape with an empty recipe, and the
-``git checkout <base>`` assertions below fail.
-
-Driven through the ``rack`` CLI; ``self init`` stays on the ``ai-hats``
-launcher.
+flow:   a developer finalizing a task when main repository HEAD is checked out on a
+        different branch than base
+cmds:
+    rack transition TST-001 done
+expect: transition to done is refused with an error detailing the HEAD mismatch and
+        displaying the git checkout command to fix it
+why:    merging a task worktree when main repository HEAD has wandered risks merging
+        into the wrong target branch
 """
 # comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 

@@ -1,11 +1,12 @@
-"""e2e: ``python -m ai_hats_rack`` is a working rack entry point (HATS-1263).
+"""e2e (HATS-1263)
 
-The rack's only console script (``rack``) materialises inside a built venv, but
-the e2e shim tier drives interpreters directly — so it needs the same
-``python -m`` affordance ``ai_hats`` already has.
-
-Fail-under-revert: delete ``ai_hats_rack/__main__.py`` → exits non-zero with
-"No module named ai_hats_rack.__main__".
+flow:   a developer running the rack CLI via python module invocation
+cmds:
+    python -m ai_hats_rack --help
+expect: the command executes successfully with exit code 0 and displays all core rack
+        subcommands
+why:    python -m ai_hats_rack provides a direct execution entry point required when
+        console scripts are unavailable or isolated
 """
 
 from __future__ import annotations

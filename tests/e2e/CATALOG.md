@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**22 of 224 files catalogued — 23 flows.**
+**60 of 224 files catalogued — 61 flows.**
 
 ## `test_agy_bypass.py`
 
@@ -205,11 +205,53 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats wt exec -- task/hats-1
+  ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py
   ```
 
 - **expect** — subprocess environment strips inherited PYTHONPATH and GIT_* variables while preserving PATH and HOME
 - **why** — ambient environment variable leakage redirects launcher imports to workspace source or leaks git repository state; pure unit tests in this module also check helper functions and are candidates for relocation (HATS-1499)
+
+## `test_githooks_argv_contract.py`
+
+*pins HATS-1519*
+
+- **flow** — a developer executing a git commit in a project where installed git hooks and CLI versions differ
+- **cmds**
+
+  ```console
+  git commit -m "update"
+  ```
+
+- **expect** — the commit succeeds when argument separators match and skips with a fail-open warning when unknown flags are passed
+- **why** — installed hook stubs and venv CLI packages are versioned independently, so version skew must degrade to a skip rather than blocking commits
+
+## `test_githooks_coexistence.py`
+
+*pins HATS-999*
+
+- **flow** — a developer setting up ai-hats in a repository that already uses another git hook manager like husky or simple-git-hooks
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r guard-role --no-wizard
+  ```
+
+- **expect** — core.hooksPath points to .githooks and both ai-hats guard hooks and the repository's existing hooks execute on git commit and push
+- **why** — overwriting existing repository hook configurations without chaining breaks the repository's pre-existing quality checks
+
+## `test_githooks_orchestrator.py`
+
+*pins HATS-1337*
+
+- **flow** — a developer committing code across git worktrees or after framework updates when ai-hats environment variables may be missing
+- **cmds**
+
+  ```console
+  git commit -m "feature"
+  ```
+
+- **expect** — commits succeed gracefully when ai-hats binaries are unreachable and linked worktrees execute the same gate suite as the main checkout
+- **why** — git hooks must fail open to avoid wedging developer commits when tools are unreachable while ensuring linked worktrees enforce consistent quality gates
 
 ## `test_golden_path.py`
 
@@ -228,6 +270,48 @@ as a claim to check, not as evidence.
 
 - **expect** — `self init` reports the role and provider and writes default_role into ai-hats.yaml; `show-prompt` carries the composed role's markers; the batch run exits 0 and emits one JSON envelope with exit_code 0, a session_id and a session_dir, alongside audit.md and a trace.jsonl naming every pipeline step; the turn's cost stays under the $0.10 cap; and bare `ai-hats` surfaces its session-start and session-end banners in the parent's stdout through the PTY proxy
 - **why** — every layer the product sells sits on this one path — launcher install, yaml parsing, role and provider validation, composition, prompt materialisation, the pipeline harness and both runners. Three of bare `ai-hats`'s four steps are byte-identical to the batch pipeline's, so a composition or provider regression that breaks the product breaks here.
+
+## `test_hook_chain_fail_open_recorded.py`
+
+*pins HATS-1252, HATS-1373*
+
+- **flow** — an agent triggering tool execution with unparsable or malformed hook payloads
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant --no-wizard
+  ```
+
+- **expect** — execution passes fail-open without blocking the call and the unparsable payload event is recorded in the bypass journal or stderr
+- **why** — a hook that fails on unreadable payload must allow the call while leaving an audit trace so dead or broken hooks do not silently mask failures
+
+## `test_hook_chain_permissions.py`
+
+*pins HATS-1253*
+
+- **flow** — an agent executing git push or file cleanup commands under hook permission policies
+- **cmds**
+
+  ```console
+  git push origin master
+  ```
+
+- **expect** — unapproved pushes block and display consent flags while approved pushes and mandated resource cleanup commands execute cleanly
+- **why** — permission guards must provide actionable consent flags on denial without blocking non-destructive or rule-mandated cleanup operations
+
+## `test_hook_materialization_self_heals.py`
+
+*pins HATS-593, HATS-833*
+
+- **flow** — a developer starting a session in a project with missing or drifted managed git hook scripts
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r gate-role --no-wizard
+  ```
+
+- **expect** — missing hook scripts fail open on execution without blocking git commands and session start restores missing script files
+- **why** — corrupted or removed hook scripts must not block developer git workflow while ensuring automated recovery on session launch
 
 ## `test_init_leaves_venv_alone.py`
 
@@ -251,7 +335,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self init --no-update --channel stable
+  ai-hats self init --channel stable
   ```
 
 - **expect** — every configured provider directory is labeled "detected — found ~/.<name>" in the menu and the string "recommended" is absent
@@ -285,6 +369,48 @@ as a claim to check, not as evidence.
 - **expect** — the interactive Provider menu prompt is displayed despite an existing ai-hats.yaml file, and no network check or self-update output appears
 - **why** — re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 
+## `test_plan_canonical_home.py`
+
+*pins HATS-637, HATS-1263*
+
+- **flow** — a developer transitioning a task to the plan state when stray plan files exist in legacy directory locations
+- **cmds**
+
+  ```console
+  rack transition HATS-001 plan
+  ```
+
+- **expect** — the canonical plan file is created at tasks/<ID>/plan.md with standard scaffold content while stray legacy plan files remain untouched
+- **why** — tasks must maintain a single predictable plan home without silently importing untracked legacy artifacts
+
+## `test_plan_gate_approach_counter_e2e.py`
+
+*pins HATS-621, HATS-1263*
+
+- **flow** — a developer transitioning a task to execute with an empty optional Approach & counter plan section
+- **cmds**
+
+  ```console
+  rack transition HATS-621S plan
+  ```
+
+- **expect** — the plan scaffold includes the Approach & counter heading and transition to execute succeeds when required sections are filled even if Approach & counter is empty
+- **why** — the Approach & counter section provides structured design evaluation but must remain optional to avoid blocking straightforward task execution
+
+## `test_plan_gate_per_section_e2e.py`
+
+*pins HATS-635, HATS-1263*
+
+- **flow** — a developer attempting to transition a task to execute when required plan sections are missing content
+- **cmds**
+
+  ```console
+  rack transition HATS-001 execute
+  ```
+
+- **expect** — transition to execute is blocked with exit code 1 and stderr lists the exact required plan sections that are empty
+- **why** — incomplete task plans must be rejected before worktree creation to ensure design requirements and verification steps are documented
+
 ## `test_prepush_e2e_master_gate.py`
 
 *pins HATS-550, HATS-686*
@@ -309,6 +435,146 @@ as a claim to check, not as evidence.
 - **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep is dry-run unless opted into; and the wrapper errors when the hook is absent
 - **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
 
+## `test_pretooluse_hook_cwd_resolution.py`
+
+*pins HATS-437, HATS-615, HATS-1268*
+
+- **flow** — an agent executing commands from a nested subdirectory inside a project
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant --no-wizard
+  ```
+
+- **expect** — PreToolUse hook scripts execute using absolute path resolution and block destructive commands regardless of current working directory
+- **why** — relative hook paths fail when invoked from subdirectories, leaving safety guards silently inoperative during nested directory operations
+
+## `test_pretooluse_hook_materialization.py`
+
+*pins HATS-437, HATS-467*
+
+- **flow** — a developer initializing project configuration and verifying PreToolUse hook file generation
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant --no-wizard
+  ```
+
+- **expect** — hook scripts are written to disk with executable permissions and block unacknowledged destructive tool commands
+- **why** — PreToolUse guards rely on materialized script files on disk to enforce state safety rules during agent execution
+
+## `test_rack_append_payload_e2e.py`
+
+*pins HATS-1299*
+
+- **flow** — a developer appending JSON array payloads to task card fields using the CLI
+- **cmds**
+
+  ```console
+  rack transition HATS-9001 --append 'tags=["one","two"]'
+  ```
+
+- **expect** — array elements are appended to the field in task.yaml and the task card remains parseable and addressable by CLI commands
+- **why** — malformed array appending corrupts task YAML structure and makes task cards unreadable by tracker commands
+
+## `test_rack_console_script.py`
+
+*pins HATS-1329*
+
+- **flow** — a developer installing the ai-hats-rack package into a Python environment
+- **cmds**
+
+  ```console
+  rack --help
+  ```
+
+- **expect** — the rack executable is available on PATH and outputs help documentation with exit code 0
+- **why** — the rack package must expose a console script entry point for standard CLI invocation in virtual environments
+
+## `test_rack_cutover_flow.py`
+
+*pins HATS-1038*
+
+- **flow** — a developer executing a full task lifecycle through the rack CLI
+- **cmds**
+
+  ```console
+  rack create "wired flow" --role assistant
+  ```
+
+- **expect** — STATE.md is updated on creation, empty plans block execution, worktrees are provisioned on execute, and context resolves inside linked worktrees
+- **why** — rack must integrate state management, plan validation, and worktree isolation into a cohesive workflow
+
+## `test_rack_dunder_main.py`
+
+*pins HATS-1263*
+
+- **flow** — a developer running the rack CLI via python module invocation
+- **cmds**
+
+  ```console
+  python -m ai_hats_rack --help
+  ```
+
+- **expect** — the command executes successfully with exit code 0 and displays all core rack subcommands
+- **why** — python -m ai_hats_rack provides a direct execution entry point required when console scripts are unavailable or isolated
+
+## `test_rack_grep_field_e2e.py`
+
+*pins HATS-1324*
+
+- **flow** — a developer filtering task list output by specific card attributes
+- **cmds**
+
+  ```console
+  rack ls --grep id:HATS-926 --json
+  ```
+
+- **expect** — output contains only task cards matching the specified field prefix instead of matching general prose text
+- **why** — field-prefixed grep filtering must match targeted card attributes to avoid false positives from general text descriptions
+
+## `test_rack_honors_ai_hats_dir.py`
+
+*pins HATS-1471*
+
+- **flow** — a developer running rack commands with an explicit AI_HATS_DIR environment variable pointing to a sandbox
+- **cmds**
+
+  ```console
+  rack hyp create "sandbox hyp" --hypothesis "h" --expected-outcome "e" --json
+  ```
+
+- **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
+- **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
+
+## `test_rack_reparent_e2e.py`
+
+*pins HATS-1350*
+
+- **flow** — a developer modifying task parent relationships using link flags
+- **cmds**
+
+  ```console
+  rack transition HATS-101 --unlink parent_task:HATS-100 --link parent_task:HATS-102
+  ```
+
+- **expect** — direct field mutation of parent_task is rejected while atomic unlink and link flags update the parent reference in task.yaml
+- **why** — parent_task is a structural relationship field that must be updated through graph validation rather than direct field assignment
+
+## `test_rack_wired_kernel_probe.py`
+
+*pins HATS-1263*
+
+- **flow** — a developer running task lifecycle commands via the module invocation interface
+- **cmds**
+
+  ```console
+  rack create "wired probe" --role assistant
+  ```
+
+- **expect** — STATE.md is refreshed on card creation and a git worktree is provisioned when transitioning to execute
+- **why** — module-level rack execution must bind the full kernel extensions rather than falling back to a bare un-wired state
+
 ## `test_role_session_retro_vertical.py`
 
 *pins HATS-498*
@@ -324,6 +590,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the right role is composed into the child claude process, and entries from BOTH ~/.ai-hats/customizations.yaml and <project>/ai-hats.yaml reach the materialized prompt tagged with the correct provenance; the child echoes the magic word, proving the composed prompt actually arrived rather than merely being written to disk; the reviewer then runs under the correct role and emits draft HYP verdicts and PROP actions into the tracker; the two turns stay under the $0.20 cap
 - **why** — composition can be correct on disk and still never reach the child — HATS-452 and HATS-501 were exactly that, so only an echo from the model proves delivery. The true user-facing flow here is bare `ai-hats` HITL; this drives `execute --batch` as a standing workaround because HITL audit.md does not capture assistant responses (HATS-529) and auto-retro spawn lives only in WrapRunner finalize (HATS-530). Swap back when both land — the catalog row is the reminder that this one is not yet the flow it means to pin.
+
+## `test_rule_delivery_gate.py`
+
+*pins HATS-700*
+
+- **flow** — a developer committing trait configuration changes that reference rules
+- **cmds**
+
+  ```console
+  git commit -m "add rule"
+  ```
+
+- **expect** — the pre-commit hook verifies that all referenced rules exist and blocks the commit with an error if a rule reference is missing
+- **why** — trait configurations must not reference non-existent rules to prevent broken rule pointers in role injections
 
 ## `test_runtime_role_composition.py`
 
@@ -363,9 +643,261 @@ as a claim to check, not as evidence.
 - **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
 - **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
 
+## `test_skill_lint_gate.py`
+
+*pins HATS-617*
+
+- **flow** — a developer committing changes to skill markdown documentation
+- **cmds**
+
+  ```console
+  git commit -m "add skill"
+  ```
+
+- **expect** — the pre-commit hook runs agnix spec validation and license checks on staged SKILL.md files and blocks commits that violate standards
+- **why** — skill documentation must adhere to agnix specifications and include valid license metadata before being committed
+
+## `test_skill_source_entry_point_discovery.py`
+
+*pins HATS-871*
+
+- **flow** — a developer listing available skills when third-party skill packages are installed
+- **cmds**
+
+  ```console
+  ai-hats list skills
+  ```
+
+- **expect** — output lists skills declared in entry_points.txt of installed packages alongside built-in framework skills
+- **why** — out-of-tree skill packages must be discoverable via importlib entry points without modifying core framework code
+
+## `test_surface_cleanup.py`
+
+*pins HATS-337, HATS-339, HATS-407, HATS-790, HATS-1203*
+
+- **flow** — a developer initializing project configuration or updating settings
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r assistant --no-wizard
+  ```
+
+- **expect** — project configuration creates ai-hats.yaml and user-rules/ without copying role content files or creating legacy backup directories
+- **why** — project initialization must create clean minimal configuration files without materializing redundant framework copies
+
+## `test_task_create_concurrency.py`
+
+*pins HATS-936, HATS-1263*
+
+- **flow** — multiple agent processes creating tasks concurrently in the same project
+- **cmds**
+
+  ```console
+  rack create "race task"
+  ```
+
+- **expect** — each concurrent creation command receives a unique task ID and creates a complete card directory without file collisions
+- **why** — task ID allocation must be synchronized across processes to prevent duplicate IDs and corrupted task cards
+
+## `test_task_ownership_e2e.py`
+
+*pins HATS-955, HATS-1263*
+
+- **flow** — multiple agent processes executing tasks in parallel
+- **cmds**
+
+  ```console
+  rack transition HATS-1 execute
+  ```
+
+- **expect** — an active task lock prevents another live agent process from claiming the task while stale locks from terminated processes are reclaimed
+- **why** — task ownership locks ensure single-agent execution per task while recovering automatically from crashed processes
+
+## `test_task_transition_branch_exists.py`
+
+*pins HATS-517, HATS-518, HATS-1263*
+
+- **flow** — a developer transitioning a task to execute when its target git branch already exists
+- **cmds**
+
+  ```console
+  rack transition HATS-517A execute
+  ```
+
+- **expect** — the existing git branch is attached to a newly created worktree directory when not currently checked out in main
+- **why** — transition to execute must reuse existing task branches safely without failing on pre-existing git branch references
+
+## `test_task_transition_done_already_merged_head_wandered.py`
+
+*pins HATS-533, HATS-593, HATS-596, HATS-1263*
+
+- **flow** — a developer finalizing a task whose branch is already merged into base while main repository HEAD has moved to another branch
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition to done succeeds immediately via short-circuit without attempting to re-merge or complaining about main HEAD position
+- **why** — already-merged task branches must finalize cleanly even if the main checkout has moved to a different working branch
+
+## `test_task_transition_done_already_merged_state_lost.py`
+
+*pins HATS-596, HATS-697, HATS-1263*
+
+- **flow** — a developer finalizing a task whose branch was manually merged and worktree state metadata was removed
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition to done completes successfully and cleans up the merged branch without raising state lost errors
+- **why** — tasks with merged branches must finalize cleanly even if worktree state tracking files have been removed
+
+## `test_task_transition_done_head_wandered.py`
+
+*pins HATS-509, HATS-533, HATS-1274*
+
+- **flow** — a developer finalizing a task when main repository HEAD is checked out on a different branch than base
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition to done is refused with an error detailing the HEAD mismatch and displaying the git checkout command to fix it
+- **why** — merging a task worktree when main repository HEAD has wandered risks merging into the wrong target branch
+
+## `test_task_transition_done_null_original_branch.py`
+
+*pins HATS-714*
+
+- **flow** — a developer finalizing a task when worktree state metadata contains a null original_branch field
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition to done is refused with a clean error message identifying the missing original_branch value without raising a Python exception
+- **why** — incomplete worktree state metadata must produce a clear actionable error instead of an unhandled traceback
+
+## `test_task_transition_drift_message.py`
+
+*pins HATS-509, HATS-1274, HATS-1307*
+
+- **flow** — a developer finalizing a task when the base branch has advanced with new commits since the task worktree was created
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition to done is refused with detailed drift information and instructions to rebase or run ai-hats wt merge --accept-drift
+- **why** — branch drift must be reported with copy-pasteable resolution steps to prevent unintended merge overwrites
+
+## `test_task_transition_execute_force_no_worktree.py`
+
+*pins HATS-697*
+
+- **flow** — a developer forcing a task transition to execute for retrospective recording
+- **cmds**
+
+  ```console
+  rack transition TST-001 execute --force --reason "shipped on master"
+  ```
+
+- **expect** — task state updates to execute without creating a git worktree or task branch
+- **why** — forced state transitions for retrospective tracking must update task metadata without creating unwanted worktree directories
+
+## `test_task_transition_final_state_e2e.py`
+
+*pins HATS-698, HATS-723, HATS-1260, HATS-1263, HATS-1275*
+
+- **flow** — a developer setting final_state notes during task transition
+- **cmds**
+
+  ```console
+  rack transition TST-001 review --force --reason "review" --final-state "shipped"
+  ```
+
+- **expect** — --final-state is accepted on transition to review and saved to card metadata, and rejected with exit 1 on other target states
+- **why** — final state summary notes belong on the review transition and must be persisted in task card metadata
+
+## `test_task_worktree_e2e.py`
+
+*pins HATS-524, HATS-1263*
+
+- **flow** — a developer executing rack commands from inside a linked worktree directory
+- **cmds**
+
+  ```console
+  rack context HATS-1
+  ```
+
+- **expect** — rack resolves the main repository tracker directory and successfully reads or updates task card data
+- **why** — rack commands issued inside linked worktrees must locate the main repository tracker without requiring relative path navigation
+
+## `test_tool_call_hygiene_guard.py`
+
+*pins HATS-632*
+
+- **flow** — an agent executing shell commands covered by dedicated tools
+- **cmds**
+
+  ```console
+  grep foo .
+  ```
+
+- **expect** — the PreToolUse hook emits additionalContext suggesting dedicated tools without blocking or modifying command permissions
+- **why** — tool hygiene guidance encourages efficient tool choices while remaining non-blocking to preserve execution flow
+
+## `test_user_rules_delivery.py`
+
+*pins HATS-1170, HATS-1203*
+
+- **flow** — a developer displaying session prompt configuration when custom user rules are defined in user-rules/
+- **cmds**
+
+  ```console
+  ai-hats config show-prompt
+  ```
+
+- **expect** — output includes all markdown rules from user-rules/ formatted under the USER RULES section heading
+- **why** — user-defined rules in user-rules/ must be incorporated into system prompts across all composition interfaces
+
+## `test_wait_task_state.py`
+
+*pins HATS-986*
+
+- **flow** — a background sub-agent waiting for a task card to reach a target state
+- **cmds**
+
+  ```console
+  ai-hats wait --task HATS-1 --until review --until done --poll 0.2
+  ```
+
+- **expect** — the process polls until the task card transitions to any specified target state and exits with code 0
+- **why** — task state waiting enables non-blocking coordination between background sub-agents and parent processes
+
+## `test_wait_until_cmd.py`
+
+*pins HATS-986*
+
+- **flow** — a background script waiting for a custom shell command predicate to pass
+- **cmds**
+
+  ```console
+  ai-hats wait --until-cmd "test -f marker" --poll 0.2
+  ```
+
+- **expect** — the process polls the shell command until it exits 0, timing out with code 124 if unmet, or exiting code 2 if broken
+- **why** — command waiting allows processes to block until external conditions are met with distinction between timeouts and errors
+
 ## Not yet catalogued
 
-202 files carry no flow block yet:
+164 files carry no flow block yet:
 
 - `test_agent_orchestration.py`
 - `test_agy_detection.py`
@@ -401,13 +933,7 @@ as a claim to check, not as evidence.
 - `test_edge_check_gate.py`
 - `test_epic_auto_transition_e2e.py`
 - `test_execute_batch_requires_role.py`
-- `test_githooks_argv_contract.py`
-- `test_githooks_coexistence.py`
-- `test_githooks_orchestrator.py`
 - `test_hats541_silent_done_regression.py`
-- `test_hook_chain_fail_open_recorded.py`
-- `test_hook_chain_permissions.py`
-- `test_hook_materialization_self_heals.py`
 - `test_install.py`
 - `test_install_coherence_probe.py`
 - `test_install_heavy_sharding.py`
@@ -433,27 +959,14 @@ as a claim to check, not as evidence.
 - `test_missing_provider_friendly_error.py`
 - `test_no_console_script_shadow.py`
 - `test_no_raw_destructive_multiline_marker.py`
-- `test_plan_canonical_home.py`
-- `test_plan_gate_approach_counter_e2e.py`
-- `test_plan_gate_per_section_e2e.py`
 - `test_pre_commit_smoke_collection.py`
 - `test_prepush_dispatcher_stdin_fanout.py`
-- `test_pretooluse_hook_cwd_resolution.py`
-- `test_pretooluse_hook_materialization.py`
 - `test_privacy_hook.py`
 - `test_provider_entry_point_discovery.py`
 - `test_pty_escape_hatch.py`
 - `test_pty_shutdown_bounded.py`
 - `test_pty_tap_wiring.py`
 - `test_py_security_lint_hook.py`
-- `test_rack_append_payload_e2e.py`
-- `test_rack_console_script.py`
-- `test_rack_cutover_flow.py`
-- `test_rack_dunder_main.py`
-- `test_rack_grep_field_e2e.py`
-- `test_rack_honors_ai_hats_dir.py`
-- `test_rack_reparent_e2e.py`
-- `test_rack_wired_kernel_probe.py`
 - `test_reflect_friendly_errors.py`
 - `test_reflect_hypothesis_e2e.py`
 - `test_reflect_role_e2e.py`
@@ -465,7 +978,6 @@ as a claim to check, not as evidence.
 - `test_retired_hooks_dir_never_recreated.py`
 - `test_role_isolation.py`
 - `test_root_residue_swept.py`
-- `test_rule_delivery_gate.py`
 - `test_runtime_hook_fires.py`
 - `test_runtime_hook_propagation.py`
 - `test_runtime_hooks_execute_from_session_tree.py`
@@ -503,35 +1015,17 @@ as a claim to check, not as evidence.
 - `test_settings_lint_startup_warn.py`
 - `test_shadow_guard_refuses_foreign_venv.py`
 - `test_shared_launcher_env_isolation.py`
-- `test_skill_lint_gate.py`
-- `test_skill_source_entry_point_discovery.py`
 - `test_skills_mirror_self_heals.py`
 - `test_stable_channel_live.py`
 - `test_stray_shadow_detector.py`
 - `test_subagent_sdk_smoke.py`
-- `test_surface_cleanup.py`
-- `test_task_create_concurrency.py`
-- `test_task_ownership_e2e.py`
-- `test_task_transition_branch_exists.py`
-- `test_task_transition_done_already_merged_head_wandered.py`
-- `test_task_transition_done_already_merged_state_lost.py`
-- `test_task_transition_done_head_wandered.py`
-- `test_task_transition_done_null_original_branch.py`
-- `test_task_transition_drift_message.py`
-- `test_task_transition_execute_force_no_worktree.py`
-- `test_task_transition_final_state_e2e.py`
-- `test_task_worktree_e2e.py`
-- `test_tool_call_hygiene_guard.py`
 - `test_transition_execute_adopts_worktree.py`
 - `test_unknown_provider_friendly_error.py`
 - `test_unknown_role_friendly_error.py`
 - `test_update_banner_e2e.py`
 - `test_update_banner_non_editable_e2e.py`
 - `test_update_verifies_install_before_success.py`
-- `test_user_rules_delivery.py`
 - `test_venv_strict_mode.py`
-- `test_wait_task_state.py`
-- `test_wait_until_cmd.py`
 - `test_wave1_free_tier.py`
 - `test_wave1_venv_tier.py`
 - `test_worktree_lifecycle_robustness_matrix.py`

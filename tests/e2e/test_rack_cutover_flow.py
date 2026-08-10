@@ -1,12 +1,12 @@
-"""e2e: the wired `rack` binary cutover flow (HATS-1038 C1 + C2).
+"""e2e (HATS-1038)
 
-Drives the REAL `rack` console script from a freshly-built launcher venv (so
-entry-point discovery runs against real installed metadata) through a git
-sandbox: create → plan-gate → execute (worktree) → done (merge-consent), plus a
-`context` from INSIDE the task worktree. Fail-under-revert: dropping C1 (the
-`ai_hats_rack.kernel_factory` entry point / `rack_cli_provider`) falls `rack`
-back to the BARE kernel → no STATE.md refresh, no worktree; dropping C2 (the
-resolver gitlink hop) makes `context` from the worktree fail to resolve.
+flow:   a developer executing a full task lifecycle through the rack CLI
+cmds:
+    rack create "wired flow" --role assistant
+expect: STATE.md is updated on creation, empty plans block execution, worktrees are
+        provisioned on execute, and context resolves inside linked worktrees
+why:    rack must integrate state management, plan validation, and worktree isolation
+        into a cohesive workflow
 """
 
 from __future__ import annotations
