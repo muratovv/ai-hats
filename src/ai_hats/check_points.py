@@ -5,6 +5,12 @@ Loud by construction: every way a declared gate can fail to install raises
 ``CompositionResult.errors`` — that list is tolerated silently on the
 implicit-role path (``composition_seam``), which is the fail-open this channel
 exists to remove.
+
+**Scoped to the points ai-hats fires** since HATS-1541 (ADR-0019 D11). "Loud at
+composition" still covers everything structural — the skill composes, the script
+exists under it and can exec — but the NAME of a point in a foreign namespace is
+checked by the application that owns it, when it next runs. That trade is the
+named cost of D11; the compensating introspection is HATS-1546.
 """
 
 from __future__ import annotations
@@ -43,17 +49,22 @@ def _static_points() -> dict[str, PointSpec]:
 
 
 def known_points() -> dict[str, PointSpec]:
-    """The full catalog (ADR-0019 D3). ``edge:`` names come from the live rack
-    topology, so a forced non-topology transition is bindable too."""
-    # Deferred: the integrator may import the rack, never the reverse, and this
-    # keeps the cost off every compose that declares no binding.
-    from ai_hats_rack import all_edge_keys, load_backlog
+    """The points ai-hats fires itself — and therefore the only ones it judges.
 
-    points = {
-        key: PointSpec("edge", allow_warn=True) for key in all_edge_keys(load_backlog().topology)
-    }
-    points.update(_static_points())
-    return points
+    NOT the whole catalog (ADR-0019 D11). A name in any other namespace belongs
+    to the application that owns the call site: it is carried verbatim, and what
+    it means is that application's question. Until HATS-1541 the ``edge:`` half
+    was built here from the **packaged** tasks topology while the kernel ran the
+    resolved one — a divergence ``check_resolve._guard_topology`` could name but
+    never decide, because a point outside a topology and a point belonging to a
+    sibling backlog are the same fact from this side.
+    """  # comment-length: allow — what left the catalog, and why, is the decision
+    return _static_points()
+
+
+def owns_point(point: str) -> bool:
+    """Whether ai-hats itself fires ``point`` (and so validates and runs it)."""
+    return point in _static_points()
 
 
 def resolve_checks(
@@ -157,10 +168,17 @@ def _validate_point(
     label = f"checks: {declared_by!r} binds {row.skill}/{row.script}"
     spec = catalog.get(point)
     if spec is None:
-        raise CheckBindingError(
-            f"{label} to unknown point {point!r} — a typo here is a gate that "
-            f"never installs; known namespaces: card:, edge:, wt:"
-        )
+        # Not ours: carried verbatim to whoever owns the namespace (D11). Only
+        # the SHAPE is ours — a name with no namespace can reach no application
+        # at all, so that stays a composition-time refusal.
+        namespace, sep, rest = point.partition(":")
+        if not sep or not namespace or not rest:
+            raise CheckBindingError(
+                f"{label} to {point!r}, which names no point: a binding point is "
+                f"'<namespace>:<name>'. ai-hats owns {sorted(catalog)}; any other "
+                f"namespace is carried to the application that owns it"
+            )
+        return
     if row.on_error == "warn" and not spec.allow_warn:
         raise CheckBindingError(
             f"{label} to {point!r} with on_error: warn — that point protects data, "
@@ -212,5 +230,6 @@ __all__ = [
     "PointSpec",
     "check_log_token",
     "known_points",
+    "owns_point",
     "resolve_checks",
 ]

@@ -58,15 +58,17 @@ That is the only step invoked by hand. It runs the whole `done-gate` stage
 2. The rack kernel takes the **per-task file lock** — `<tasks_dir>/<ID>/.lock`,
    30s timeout (`ai_hats_rack.kernel.LOCK_TIMEOUT`).
 3. Still in the lock, it dispatches `edge:review--done` down the priority
-   ladder. The checks runner (`ai_hats.rack_consumers.CheckRunnerExtension`,
+   ladder. The checks subscriber (`ai_hats_rack.checks.CheckSubscriber`,
    subscriber name `checks`) sits at **priority 15**, `Phase.IN_LOCK`.
-4. The runner resolves what the **active role** composes for that point — in a
-   session from the surface's own skill mirror, outside one from the live
-   library (ADR-0019 D9) — and finds the `maintainer` role's single `checks:`
-   row, which binds this script to both points.
+4. It asks the integrator's port (`ai_hats.rack_consumers.AiHatsCheckPort`) for
+   what the **active role** composes — in a session resolved from the surface's
+   own skill mirror, outside one from the live library (ADR-0019 D9) — keeps the
+   rows whose point is an edge of the topology this kernel runs (ADR-0019 D11),
+   and finds the `maintainer` role's single `checks:` row, which binds this
+   script to both points.
 5. `hook_exec.run_hook` spawns the script with **no argv at all**, `stdin`
    `/dev/null`, `cwd` = the project dir, a 20s budget
-   (`EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
+   (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
    dispatch (`case "${1:---check}"`) therefore lands in `--check`.
 6. Exit 0 → the ladder continues. Exit 2 → `AbortOperation` carrying the
    script's stdout tail verbatim, and the kernel persists nothing at all.
@@ -184,7 +186,7 @@ runs under `set -uo pipefail` with **no** `-e`, and spells out every exit.
 ### Why two steps and not one
 
 The `done-gate` stage takes minutes. The rack task lock times out at 30s and
-the per-check budget is 20s (`EDGE_CHECK_TIMEOUT_S`, asserted `< LOCK_TIMEOUT`
+the per-check budget is 20s (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`, `< LOCK_TIMEOUT`
 at import time), so the heavy work cannot run in the lock at all: it would be
 killed at 20s, and a peer waiting on the lock would mis-blame a concurrent
 operation. Splitting it leaves the critical path as one file read — instant.

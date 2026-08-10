@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (HATS-1139, 2026-07-24; last revised at rev 8 — HATS-1540, 2026-08-09).
+Accepted (HATS-1139, 2026-07-24; last revised at rev 9 — HATS-1541, 2026-08-10).
 Governs epic **HATS-1138** — the declarative mechanism (HATS-1152 → 1140 → 1241
 → 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
 HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). The substrate
@@ -50,7 +50,11 @@ paragraph in *Consequences* that rev 5 had already superseded. **During the
 same review (2026-07-29, supervisor)** D10 — with its `detached` contract
 re-cut to a fail-open dispatcher — and the mechanics halves of D4/D5 were
 **split out to ADR-0020 [4]** before rev 7 merged, so this document carries
-the extension model only.
+the extension model only. **Rev 9 (HATS-1541, 2026-08-10) splits ownership of a
+point between the integrator and the application that owns the point** — see the
+new **D11**, and the paragraphs D3 and D9 lost to it. Nothing about the DSL
+changes at rev 9: the `checks:` mapping and every point name are exactly what
+rev 8 shipped.
 
 ## Context
 
@@ -173,12 +177,15 @@ silently.
 | `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146)     |
 | `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
 
-Every row except the last is **implemented (HATS-1140)** as a *catalog entry*:
-`check_points.known_points()` knows the name and a binding to it validates, so a
-typo is refused at composition. The `execution` column tracks something else —
+The catalog is **ai-hats's own namespaces only** since rev 9 (D11): `card:` and
+`wt:` rows above are catalog entries — `check_points.known_points()` knows the
+name and a binding to it validates, so a typo there is still refused at
+composition. The `edge:` row is **not** in that catalog and is not validated by
+ai-hats at all; its grammar, its topology and its subscriptions belong to the
+rack. The `execution` column tracks something else —
 the caller that actually fires the point — and there the rows part company.
-**`edge:` has one:** `rack_consumers.consumer_subscribers()` no longer returns
-`[]` but the check runner, which subscribes at `Phase.IN_LOCK` priority 15 to
+**`edge:` has one:** `ai_hats_rack.checks.CheckSubscriber`, which subscribes at
+`Phase.IN_LOCK` priority 15 to
 every edge key of the topology the kernel runs, so a binding declared there
 fires. **`wt:pre-merge` fires since HATS-1540** — in `merge()`, after the cheap
 local guards and before every mutation — and the `maintainer` role binds there.
@@ -208,21 +215,20 @@ about what is coming.
 builds its own extension list and takes no `extra_subscribers`, so the point
 needs its own call site rather than a subscription (owner: HATS-1404).
 
-`edge:` names validate against the live rack topology (full state product —
-forced transitions fire non-topology edges); the existing `_valid_event_names()`
-rule carries over unchanged. **Known gap:** the catalog resolves that topology
-from the *packaged* tasks backlog, while the kernel runs the catalog-local one
+`edge:` names validate against the topology **the kernel is running** (full state
+product — forced transitions fire non-topology edges); the existing
+`_valid_event_names()` rule carries over unchanged. *Rev 9 closed the gap that
+stood here from HATS-1140 to HATS-1540* — the catalog resolved that topology from
+the *packaged* tasks backlog while the kernel ran the catalog-local one
 (`resolve_definition`), so a binding to an edge of a sibling backlog — this
-repository ships two, for hypotheses and proposals — is refused as an unknown
-point. **HATS-1141 did not close this**; it made the other half of the same
-divergence loud. The runner is handed the topology the kernel actually runs, and
-a bound point that is no edge of it aborts the transition naming both topologies
-and both state sets (`check_resolve._guard_topology`) instead of sitting there
-never matching. So a name the packaged catalog accepted and the running topology
-has no edge for now fails out loud — but the catalog is still the packaged one,
-and the sibling-backlog binding is still rejected before it ever reaches the
-runner. Resolving the catalog's topology the way the kernel resolves its own is
-the successor work; **it is unfiled** — no card owns it.
+repository ships two, for hypotheses and proposals — was refused at composition
+as an unknown point, and a name the packaged catalog accepted that the running
+topology had no edge for aborted the transition (`check_resolve._guard_topology`).
+Both halves are gone: ai-hats no longer holds a topology at all, so the two can
+no longer diverge (D11). A point that is no edge of **this** instance's topology
+is now simply not this instance's business — it may be a sibling backlog's, and
+mistaking one for the other is what made a typo on `edge:reviw--done` abort an
+unrelated `edge:brainstorm--plan`.
 
 `wt:pre-merge` is a **precondition**, in the same class as the accepted
 `WorktreeDirtyError` / `WorktreeDriftError` / `WorktreeMergeConsentError`
@@ -369,7 +375,11 @@ drift detector). That approach was rejected in rev 5.
 ### D9 — Composition is the truth; the check root is ai-hats's own, never a provider's
 
 *Rewritten at rev 7 (HATS-1240). The principle below is rev 5's and survives
-unchanged; what changed is where a binding resolves.*
+unchanged; what changed is where a binding resolves.* **D9 answers one question
+only — from which bytes a bound script runs.** Who reads the name, who decides
+that a point fires here, and who spawns the process is **D11** (rev 9); until
+rev 9 both questions were answered by the same module, which is why the catalog
+and the running topology could disagree.
 
 **What rev 5–6 said, and why it was adopted.** Bindings are copied nowhere: the
 composed skill tree is *already* materialized per session at
@@ -496,6 +506,99 @@ would rest on undocumented symlink behaviour of three third-party scanners.
 Nothing is owed to it later: a binding names `{skill, script}`, not a path, so
 whoever adopts that shape moves only the resolution root.
 
+### D11 — ai-hats carries the declaration; the application that owns the point parses it
+
+*New at rev 9 (HATS-1541).* D9 fixed **which bytes** run. This fixes **who
+decides that they run at all**, and it moves a responsibility rather than adding
+one.
+
+**What was wrong.** ai-hats held the grammar of a point it does not own.
+`check_points.known_points()` built the `edge:` half of its catalog from the
+**packaged** tasks backlog while the kernel ran the resolved one, and
+`check_resolve._guard_topology` existed only to *name* that divergence — it could
+not tell a typo from a point addressed to a sibling backlog, because from
+ai-hats's side the two are the same fact: a name its catalog does not hold.
+Three silences shared that root, and all three were measured on 2026-08-09
+before this rev was written: a binding on `wt:`/`card:` validates and never
+fires; the catalog validates against a topology nobody runs; and one typo
+(`edge:reviw--done`) aborted an unrelated edge (`edge:brainstorm--plan`), which
+is the "every transition refused" symptom that made HATS-1538 withdraw the
+shipped row an hour after HATS-1137 landed it.
+
+**The split.**
+
+1. **ai-hats is the carrier.** It composes the role, tags every row with the
+   component that declared it, resolves `{skill, script}` to an absolute path and
+   proves that path can run (containment, exists, non-empty, shebang, exec bit —
+   D6), applies D9's root rule, and hands the row over. It validates the name
+   only for the namespaces **it owns** (`card:`, `wt:` — the ones whose call
+   sites are its own code). Every other namespace it carries verbatim: what the
+   name means is not its question.
+2. **The rack parses, filters and subscribes.** `edge:<from>--<to>` is the
+   rack's grammar; the topology it validates against is the one
+   `resolve_definition` gave the kernel, the same object the dispatcher runs.
+   A point that is not an edge of **this** instance's topology is not this
+   instance's business and is skipped — not aborted. That is the whole of the
+   third silence: a sibling backlog's row and a typo look identical to ai-hats
+   and are told apart by the only party that holds all the topologies.
+3. **The rack does not execute.** `subprocess` is forbidden in it by an
+   AST-level import pin (`packages/ai-hats-rack/tests/test_import_hygiene.py`),
+   not merely by a docstring. So the row travels as a declaration and the
+   *executor* travels as a port: the rack calls back through
+   `ai_hats_rack.checks.CheckPort`, whose implementation is ai-hats's
+   `run_hook` (ADR-0020 [4] D2). The rack owns the deadline — `LOCK_TIMEOUT` is
+   its constant — and passes the per-check budget across the port instead of the
+   two sides each keeping a copy that can drift.
+4. **"Subscribed, but no executor" is decided per row, not per process.**
+   Probing is `getattr` on the port, and a port that is absent or older than the
+   Protocol must not raise `AttributeError` inside the lock. A missing executor
+   refuses the rows that said `on_error: refuse` and warns past the rows that
+   said `on_error: warn`. Refusing everything would brick the bare rack; passing
+   everything is the exact silence this ADR exists to remove, so neither answer
+   is applied uniformly. The other half of the same skew — a port that cannot be
+   asked for the declarations at all — has no rows to consult, so it cannot be
+   decided per row; it writes the reason to the work log and lets the transition
+   through. Answering "nothing was declared" there would delete every gate with
+   nothing written anywhere, which is the same silence one level up.
+5. **A bare rack cannot see a declaration at all, and that is recorded, not
+   fixed.** Both delivery roads run through the integrator — the port is loaded
+   from an entry point the integrator registers, and the composition that
+   produces the rows is integrator-only (HATS-865). A project-level artifact
+   would change that and is forbidden by ADR-0021 [6] M5 (the content of a
+   project may not depend on which role was launched). For a bare rack the state
+   is therefore "nothing was declared", not "an executor is missing"; it is
+   indistinguishable from the truth in the only case that can arise, since with
+   no integrator there is nothing to declare with.
+
+**The trade this makes, named rather than masked.** `check_points.py` opened
+with "Loud by construction … **at composition**", and for `edge:` that is no
+longer true: a name the rack does not recognise surfaces the next time the rack
+runs, which for an unbound point may be never. Validation moved from
+**compose-time to consume-time**, and it bought the three silences above. The
+compensation is introspection — a command that reports what was picked up and in
+what state — which is **HATS-1546** and deliberately not this rev: it is a
+different risk (a name colliding with the existing `rack doctor`, recursion
+through a startup hook) and must not be proven in the same pass. Until then the
+honest statement is that a typo in an `edge:` point is silent, where before it
+was loud and took an unrelated transition down with it.
+
+**Rejected: teach `known_points()` to resolve the project's topology** (this was
+card HATS-1534, cancelled into this one). It closes one silence of three — the
+catalog would stop validating against a topology nobody runs — and leaves
+`_guard_topology` unresolvable, because a point outside the resolved topology
+still cannot be told from a sibling backlog's point without holding every
+mounted topology at once. It also keeps the grammar in the wrong package, so the
+next point namespace pays the same cost again.
+
+**Not moved, and deliberately.** The worktree-root guard stays where rev 8 put
+it, on the composition-resolved path before the root is picked (D9 clause 4):
+bound to the rebased path it would inspect the cache root, which is outside every
+checkout and therefore inside nothing, and would always pass. Dedup and
+provenance stay on the ai-hats side too — rows are tagged with their declaring
+component **at collection** (`composer.py`), before any merge, and the dedup key
+stays `(skill, script, point)` where `check_log_token` can still derive one log
+name per binding (HATS-1137). The rack sees rows that are already unique.
+
 ### D8 — Migration: contract *first*, then expand
 
 *Revised at rev 7 (HATS-1240). Rev 5–6 had the expansion lead and the retirement
@@ -558,7 +661,11 @@ concepts coexist during the deprecation window. Binding-site indirection means
 reading `SKILL.md` alone no longer shows where a script fires — mitigated by
 rendering the effective binding table, which nothing renders today. Resolution
 has two modes (D9), in-session and out-of-session, and both must be exercised:
-one of them being tested is how a gate ships half-armed.
+one of them being tested is how a gate ships half-armed. **Added at rev 9:** a
+typo in a point ai-hats does not own is no longer refused at composition — it
+surfaces when the owning application next runs, or never (D11). That is the
+price of the three silences D11 removes, and the compensation is owed by
+HATS-1546.
 
 **Risk.** *(Rewritten at rev 7. The former text named "role-aware materialization
 
@@ -604,6 +711,15 @@ control stays unexpressible. Rejected by supervisor review.
 Better encapsulation (bindings survive a script move), but the skill and the
 trait each author the same fact. Rejected as duplicate work for indirection with
 no current consumer.
+
+**G — Rev 9: widen the point catalog instead of moving it.** Teach
+`known_points()` to resolve the *project's* backlog topology the way the kernel
+does, so the catalog and the runner stop disagreeing. Was card HATS-1534,
+cancelled into HATS-1541. Rejected: it fixes the divergence and leaves
+`_guard_topology` in place with nothing it can decide — a point outside the
+resolved topology is still indistinguishable from a sibling backlog's point
+unless the validator holds every mounted topology at once, which only the rack
+does. See **D11**.
 
 ## Rev 4 — corrections from adversarial review
 

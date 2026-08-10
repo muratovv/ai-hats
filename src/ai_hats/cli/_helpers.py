@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ..composition_seam import MissingProviderError, RoleNotFoundError
+    from ..libraries.models import CheckBindingError
     from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
     from ..role_spec import RoleSpecError
@@ -111,6 +112,18 @@ def _handle_role_spec_error(exc: "RoleSpecError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_check_binding_error(exc: "CheckBindingError") -> NoReturn:
+    """A binding that cannot be installed refuses in words, not in a stack.
+
+    The message already carries every fact the composer had (declaring
+    component, skill/script, the reason) — what was missing was a renderer:
+    composing raises this from ``resolve_checks``, and HATS-1541 measured 63
+    lines of traceback and exit 1 on ``ai-hats --dry-run``.
+    """
+    click.echo(f"Error: {exc}", err=True)
+    sys.exit(2)
+
+
 def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., NoReturn]], ...]":
     """The typed errors the CLI renders instead of a traceback, most-specific first.
 
@@ -118,6 +131,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
     """
     with catch_broken_install():
         from ..composition_seam import MissingProviderError, RoleNotFoundError
+        from ..libraries.models import CheckBindingError
         from ..paths import NotAnAiHatsProjectError
         from ..providers import UnknownProviderError
         from ..role_spec import RoleSpecError
@@ -128,6 +142,7 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         (UnknownProviderError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
         (NotAnAiHatsProjectError, _handle_not_a_project),
+        (CheckBindingError, _handle_check_binding_error),
     )
 
 

@@ -1,12 +1,15 @@
-"""Consumer add-ons for the rack kernel: the ``checks:`` runner (HATS-1141).
+"""The carrier side of the ``checks:`` channel for the rack (HATS-1141).
 
 Successor of the ``lifecycle_hooks`` executor retired in HATS-1147 (ADR-0019
 D8): a binding declared by a trait or role fires on the FSM edge it names, in
 the lock, before the single persist.
 
-Resolution — which bytes a binding runs — lives in :mod:`ai_hats.check_resolve`.
-What stays here is the dispatcher-facing shape and the outcome policy (ADR-0019
-D4), which is per-binding, not the worktree channel's uniform fail-closed.
+HATS-1541 (ADR-0019 D11) moved the *decisions* out. What ``edge:`` means, which
+of the carried rows this instance's topology has an edge for, and what the
+subscriptions are is now ``ai_hats_rack.checks``; what stays here is what only
+the integrator can do — compose the role, resolve the script
+(:mod:`ai_hats.check_resolve`) and spawn the process, which the rack may not
+(``subprocess`` is forbidden in it by an AST import pin).
 """
 
 from __future__ import annotations
@@ -15,83 +18,75 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from ai_hats_core import ResolvedCheck
-from ai_hats_rack.dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
-from ai_hats_rack.fsm import Topology, all_edge_keys
-from ai_hats_rack.kernel import LOCK_TIMEOUT
+from ai_hats_rack.checks import (
+    CHECK_PRIORITY,
+    EDGE_CHECK_TIMEOUT_S,
+    CheckDeclaration,
+    CheckOutcome,
+    CheckRequest,
+    CheckSubscriber,
+)
+from ai_hats_rack.dispatch import AbortOperation
+from ai_hats_rack.fsm import Topology
 
 from .check_points import check_log_token
-from .check_resolve import CheckResolutionError, resolve_edge_checks, session_id
+from .check_resolve import CheckResolutionError, resolve_carried_checks, session_id
 from .hook_exec import HookRun, HookVerdict, run_hook
 from .libraries.models import CheckBindingError
 
-#: Reserved "hook" slot of the in-lock ladder (``rack_wiring.build_rack_kernel``)
-#: — after the plan-gate, before the ownership claim, so a refusal leaves neither
-#: ownership nor a worktree. Explicit: list position only breaks ties.
-CHECK_PRIORITY = 15
 
-#: Per-check wall-clock budget. Strictly below the rack's own lock timeout so a
-#: hung check is bounded by ITS timeout, not by the lock (ADR-0020 D2).
-EDGE_CHECK_TIMEOUT_S: float = 20.0
+class AiHatsCheckPort:
+    """``ai_hats_rack.checks.CheckPort``: where rows come from, and who runs one.
 
-if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise survives -O
-    raise RuntimeError(
-        f"EDGE_CHECK_TIMEOUT_S ({EDGE_CHECK_TIMEOUT_S}) must be < LOCK_TIMEOUT ({LOCK_TIMEOUT})"
-    )
-
-
-class CheckRunnerExtension:
-    """Runs every ``checks:`` binding declared for the edge being taken."""
-
-    name = "checks"
+    The rack holds the deadline (``LOCK_TIMEOUT`` is its constant) and ships the
+    budget in the request, so the two sides cannot keep constants that drift.
+    """
 
     def __init__(
         self,
         project_dir: Path,
         *,
         tasks_dir: Path,
-        topology: Topology,
-        priority: int = CHECK_PRIORITY,
-        timeout: float | None = None,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
     ) -> None:
         self.project_dir = project_dir
         self._tasks_dir = tasks_dir
-        self._topology = topology
-        self._priority = priority
-        self._timeout = EDGE_CHECK_TIMEOUT_S if timeout is None else timeout
-        self._resolve = resolve if resolve is not None else self._resolve_bound
+        self._resolve = resolve if resolve is not None else self._resolve_carried
+        self._worktrees: dict[str, Path | None] = {}
 
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in all_edge_keys(self._topology)
-        ]
+    def check_declarations(self) -> Sequence[CheckDeclaration]:
+        """Every carried row, already deduped, provenance-tagged and rooted.
 
-    def on_event(self, ctx: DispatchContext) -> Delta | None:
-        notes: list[str] = []
-        bound = self._bound_to(ctx.event.key)
-        if not bound:
-            return None
-        worktree_path = self._worktree_path(ctx.task.id)
-        for check in bound:
-            run = run_hook(
-                check.script_path,
-                point=check.point,
-                timeout=self._timeout,
-                project_dir=self.project_dir,
-                force=ctx.force,
-                task_id=ctx.task.id,
-                worktree_path=worktree_path,
-                tasks_dir=self._tasks_dir,
-                log_path=self._log_path(ctx.task.id, ctx.event.key, check),
-            )
-            if run.ok:
-                continue
-            if check.on_error == "warn" and run.downgradable:
-                notes.append(_downgraded(check, run))
-                continue
-            raise AbortOperation(_refusal(check, run))
-        return Delta(work_log=tuple(notes)) if notes else None
+        Resolution failures become this channel's own typed refusal — a
+        traceback out of an in-lock subscriber is a defect, not a message.
+        """
+        try:
+            resolved = self._resolve()
+        except (CheckBindingError, CheckResolutionError, OSError) as exc:
+            raise AbortOperation(f"checks: {exc}") from exc
+        return tuple(_declaration(check) for check in resolved)
+
+    def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
+        return resolve_carried_checks(self.project_dir, session_id=session_id())
+
+    def run_check(self, request: CheckRequest) -> CheckOutcome:
+        check: ResolvedCheck = request.declaration.handle
+        run = run_hook(
+            check.script_path,
+            point=check.point,
+            timeout=request.timeout,
+            project_dir=self.project_dir,
+            force=request.force,
+            task_id=request.task_id,
+            worktree_path=self._worktree_path(request.task_id),
+            tasks_dir=self._tasks_dir,
+            log_path=self._log_path(request.task_id, check),
+        )
+        return CheckOutcome(
+            ok=run.ok,
+            reason=_refusal(check, run),
+            downgradable=run.downgradable,
+        )
 
     def _worktree_path(self, task_id: str) -> Path | None:
         """The task's live worktree, resolved ONCE for every binding on the edge.
@@ -101,13 +96,20 @@ class CheckRunnerExtension:
         by hand — three spellings of one lookup, and a gate that got it wrong
         judged the wrong tree. A pure read (``peek_worktree_path``), because a
         refused transition must leave lifecycle state exactly as it found it.
-        """
+        The memo keeps that "once" now that the rack calls back per row.
+        """  # comment-length: allow — why it is cached is the HATS-1540 contract
+        if task_id not in self._worktrees:
+            self._worktrees[task_id] = self._lookup_worktree(task_id)
+        return self._worktrees[task_id]
+
+    def _lookup_worktree(self, task_id: str) -> Path | None:
+        """The read itself — memoized by the caller, so it takes its filelock once."""
         from ai_hats_wt import WorktreeManager
 
         from .paths import worktrees_dir
 
         try:
-            return WorktreeManager.peek_worktree_path(
+            path = WorktreeManager.peek_worktree_path(
                 self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
             )
         except (OSError, ValueError) as exc:
@@ -118,34 +120,36 @@ class CheckRunnerExtension:
                 f"checks: the worktree of {task_id} could not be resolved "
                 f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
             ) from exc
+        return path
 
-    def _resolve_bound(self) -> tuple[ResolvedCheck, ...]:
-        return resolve_edge_checks(
-            self.project_dir, topology=self._topology, session_id=session_id()
-        )
-
-    def _bound_to(self, event_key: str) -> tuple[ResolvedCheck, ...]:
-        """R8: resolution failures become this channel's own typed refusal —
-        a traceback out of an in-lock subscriber is a defect, not a message."""
-        try:
-            resolved = self._resolve()
-        except (CheckBindingError, CheckResolutionError, OSError) as exc:
-            raise AbortOperation(f"checks: {exc}") from exc
-        return tuple(check for check in resolved if check.point == event_key)
-
-    def _log_path(self, task_id: str, event_key: str, check: ResolvedCheck) -> Path:
+    def _log_path(self, task_id: str, check: ResolvedCheck) -> Path:
         """R3.4. The dot-component keeps the log out of the document registry, so
         a check's output never gets pinned into ``rack context``.
 
-        One file per (task, edge, binding). ``run_hook`` truncates the log it is
-        handed, so a name built from the edge alone let the second binding on an
+        One file per (task, point, binding). ``run_hook`` truncates the log it is
+        handed, so a name built from the point alone let the second binding on an
         edge wipe the first one's file — and ``_note_truncation`` went on
         pointing the first one's reason at it (HATS-1137). The discriminator is
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
-        """
-        name = f"{event_key.replace(':', '-')}~{check_log_token(check)}.log"
+        """  # comment-length: allow — the collision recurred once already
+        name = f"{check.point.replace(':', '-')}~{check_log_token(check)}.log"
         return self._tasks_dir / task_id / ".checks" / name
+
+
+def _declaration(check: ResolvedCheck) -> CheckDeclaration:
+    """One resolved row as the rack sees it: a point, a policy, a label, a handle.
+
+    ``handle`` is the ``ResolvedCheck`` itself and travels back untouched — the
+    rack never opens it, which is what keeps ``{skill, script, script_path}``
+    out of a package that must not know them.
+    """
+    return CheckDeclaration(
+        point=check.point,
+        on_error=check.on_error,
+        label=_binding(check),
+        handle=check,
+    )
 
 
 def _binding(check: ResolvedCheck) -> str:
@@ -155,17 +159,11 @@ def _binding(check: ResolvedCheck) -> str:
 def _refusal(check: ResolvedCheck, run: HookRun) -> str:
     """A refusal that spoke stands alone — R3.3 wants the child's tail verbatim
     in ``--json``. Everything else is the substrate failing, so it is named."""
+    if run.ok:
+        return ""
     if run.verdict is HookVerdict.REFUSE:
         return run.reason
     return f"checks: {_binding(check)} — {run.reason}"
-
-
-def _downgraded(check: ResolvedCheck, run: HookRun) -> str:
-    return f"checks: {_binding(check)} broke, downgraded by on_error: warn — {_oneline(run.reason)}"
-
-
-def _oneline(reason: str) -> str:
-    return " / ".join(line.strip() for line in reason.splitlines() if line.strip())
 
 
 def consumer_subscribers(
@@ -177,14 +175,20 @@ def consumer_subscribers(
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.
 
     ``topology`` is the one the kernel actually runs (``resolve_definition``),
-    never a re-opened default — that divergence is what R7 makes loud.
+    never a re-opened default — and since HATS-1541 it is also the ONLY topology
+    in play: nothing on this side holds a second one to diverge from.
     """
-    return [CheckRunnerExtension(project_dir, tasks_dir=tasks_dir, topology=topology)]
+    return [
+        CheckSubscriber(
+            AiHatsCheckPort(project_dir, tasks_dir=tasks_dir),
+            topology=topology,
+        )
+    ]
 
 
 __all__ = [
     "CHECK_PRIORITY",
     "EDGE_CHECK_TIMEOUT_S",
-    "CheckRunnerExtension",
+    "AiHatsCheckPort",
     "consumer_subscribers",
 ]
