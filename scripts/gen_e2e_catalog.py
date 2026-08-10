@@ -18,7 +18,9 @@ The docstring is the source of truth (it cannot drift from the file it sits
 in); this script renders the whole-tier view that answers "is this flow already
 covered?", and `--check` keeps that view current. What `--check` CANNOT catch
 is a docstring drifting from its own code — both go stale together. The claim
-is "this view is current", never "these rows are true".
+is "this view is current", never "these rows are true". Check B resolves the
+subcommand path only, not options — `ai-hats config status --verbose` passes
+although `config status` declares no options.
 
 comment-length: allow
 """
