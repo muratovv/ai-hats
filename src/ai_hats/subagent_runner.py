@@ -26,6 +26,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
+from .check_snapshot import describe_checks
 from .session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from .session_report import SessionReport
 from .runtime_common import (
@@ -198,7 +199,12 @@ class SubAgentRunner:
             artifacts=BuiltArtifacts(),
         )
 
-        notes: list[str] = []
+        # The gates this sub-agent runs under. Every AUTOMATE record ever written
+        # said `checks: []`, so the reflect loop could not see whether a
+        # sub-agent had its gates at all (HATS-1552).
+        reported_checks, notes = describe_checks(
+            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+        )
         # Everything ai-hats adds to the child's environment, expressed once
         # (HATS-1548) — the sub-agent path merged its own subset and reported a
         # different one: `extra_env` was reported and never delivered, while the
@@ -248,6 +254,7 @@ class SubAgentRunner:
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd="<worktree, assigned at launch>",
+            checks=reported_checks,
             notes=tuple(notes),
         )
         session.save_role_materialization(report.to_dict())
