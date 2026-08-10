@@ -215,15 +215,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--dir",
         type=Path,
-        default=None,
+        default=E2E_DIR,
         help="path to e2e directory (default: tests/e2e)",
     )
     args = ap.parse_args(argv)
 
     e2e_dir = args.dir
-    if e2e_dir is None:
-        env_dir = os.environ.get("AI_HATS_E2E_DIR")
-        e2e_dir = Path(env_dir) if env_dir else E2E_DIR
     catalog_file = e2e_dir / "CATALOG.md"
 
     rows, pending, errors = collect(e2e_dir)
