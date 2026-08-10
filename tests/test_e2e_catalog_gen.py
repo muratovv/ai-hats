@@ -182,3 +182,16 @@ def test_a_multi_flow_file_is_counted_once_but_renders_every_flow():
     assert "**1 of 1 files catalogued — 2 flows.**" in out
     assert out.count("## `test_x.py`") == 1
     assert out.count("- **flow** —") == 2
+
+
+def test_check_actor_refuses_non_human_actor():
+    bad = WELL_FORMED.replace(
+        "flow:   a maintainer closes a task from inside that task's own worktree",
+        "flow:   a test suite verifies that task close works",
+    )
+    rows = mod.parse_rows(bad, "test_x.py")
+    errors = mod.check_actor(rows)
+    assert len(errors) == 1
+    assert "test_x.py" in errors[0]
+    assert "non-human actor 'a test suite'" in errors[0]
+

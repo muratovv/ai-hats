@@ -40,6 +40,20 @@ FIELDS = ("flow", "cmds", "expect", "why")
 _HEADER = re.compile(r"^e2e\s*\(([^)]*)\)\s*$")
 _FIELD = re.compile(rf"^({'|'.join(FIELDS)}):\s?(.*)$")
 _ID = re.compile(r"HATS-\d+")
+_NON_HUMAN_ACTOR = re.compile(r"^(a test suite|a test runner|a test harness|pytest|ci)\b", re.IGNORECASE)
+
+
+def check_actor(rows: list[Row]) -> list[str]:
+    errors = []
+    for row in rows:
+        match = _NON_HUMAN_ACTOR.match(row.flow.strip())
+        if match:
+            actor = match.group(1)
+            errors.append(
+                f"{row.file}: flow opens with non-human actor {actor!r} — flow must describe what a person does"
+            )
+    return errors
+
 
 
 class CatalogError(Exception):
@@ -217,6 +231,13 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print("[e2e-catalog] malformed flow block(s):", file=sys.stderr)
         for err in errors:
+            print(f"  {err}", file=sys.stderr)
+        return 1
+
+    soundness_errors = check_actor(rows)
+    if soundness_errors:
+        print("[e2e-catalog] unsound row(s):", file=sys.stderr)
+        for err in soundness_errors:
             print(f"  {err}", file=sys.stderr)
         return 1
 
