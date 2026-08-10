@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**125 of 224 files catalogued — 132 flows.**
+**143 of 224 files catalogued — 150 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -26,7 +26,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — the process outputs a JSON envelope containing exit_code, session_id, session_dir, and total_cost_usd
-- **why** — agent orchestration scripts depend on structured JSON envelopes to chain sub-agent execution
+- **why** — without structured json output, orchestration pipelines cannot parse session metadata or propagate shell exit codes
 
 ## `test_agy_bypass.py`
 
@@ -55,7 +55,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — agy provider is automatically detected from ~/.gemini directory and alias gemini resolves to agy
-- **why** — provider detection must auto-discover agy when gemini config directory exists in HOME
+- **why** — without provider auto-detection, users with gemini config dirs cannot run agy sessions without explicit configuration
 
 ## `test_agy_dispatcher_out_of_tree.py`
 
@@ -70,7 +70,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — agy hook dispatcher resolves session hooks from out-of-tree cache and fires scripts
-- **why** — hook dispatcher must locate out-of-tree session caches to execute hooks correctly
+- **why** — without out-of-tree cache resolution, moving session cache out of workspace silently disables all registered runtime hooks
 
 ## `test_agy_headless_hook_execution.py`
 
@@ -85,7 +85,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — runtime hooks defined in settings.json execute during headless tool invocation
-- **why** — headless execution surfaces must fire PreToolUse hooks before tool execution
+- **why** — without headless hook execution, safety and quality gates fail to run in non-HITL batch runs
 
 ## `test_agy_provider_discovery.py`
 
@@ -99,7 +99,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — agy provider is discovered via python entry points and displayed alongside built-ins
-- **why** — provider discovery must dynamically resolve installed surface plugins via entry points
+- **why** — without entry-point discovery, installed surface packages cannot be resolved by the main binary
 
 ## `test_agy_session_recorded.py`
 
@@ -113,7 +113,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — session records audit.md with turn markers and metrics.json with token usage statistics
-- **why** — session observation must parse agy transcripts to record audit logs and token telemetry
+- **why** — without transcript resolution, session observation fails to produce audit logs or token telemetry
 
 ## `test_agy_wt_gate.py`
 
@@ -128,7 +128,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — worktree gate hook denies destructive writes in main checkout
-- **why** — worktree isolation gates must protect main checkout files across all provider surfaces
+- **why** — without worktree gate hooks materialized for agy, agents make unauthorized direct edits to main checkout
 
 ## `test_bare_positional_prompt.py`
 
@@ -142,7 +142,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — CLI parses positional argument as prompt rather than complaining of unknown subcommand
-- **why** — bare positional arguments must be treated as execution prompts for convenience
+- **why** — without positional prompt parsing, user prompts without explicit flags fail as unknown subcommands
 
 ## `test_batch_provider_override.py`
 
@@ -156,7 +156,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — provider flag -p is respected in batch mode and produces clean error for invalid providers
-- **why** — batch execution commands must honor explicit -p provider overrides
+- **why** — without batch provider overrides, batch commands ignore -p flags and default to configured provider
 
 ## `test_bootstrap_heals_underdeclared_editable.py`
 
@@ -170,7 +170,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — startup gate detects missing dependencies from pyproject.toml and heals editable install
-- **why** — bootstrap gate must inspect live pyproject.toml to heal stale editable package metadata
+- **why** — without live pyproject inspection, stale metadata causes module import crashes at runtime
 
 ## `test_bootstrap_noop_heal_fails_loud.py`
 
@@ -184,7 +184,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — bootstrap process exits cleanly with error status naming missing dependency
-- **why** — bootstrap gate must fail loud on no-op repair attempts to prevent re-exec loops
+- **why** — without missing dep rechecks, no-op package installs cause infinite re-exec loops
 
 ## `test_bootstrap_recovery_after_broken_pkg.py`
 
@@ -198,7 +198,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — repair script rebuilds managed virtual environment using absolute launcher paths
-- **why** — out-of-band bootstrap repair must recover broken managed virtual environments
+- **why** — without absolute-path launcher calls, out-of-band repair fails when in-band executable is broken
 
 ## `test_bootstrap_rescue_command_works_editable.py`
 
@@ -212,7 +212,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — gate prints manual repair command that successfully restores workspace dependencies
-- **why** — printed rescue commands must effectively repair broken virtual environments
+- **why** — without accurate rescue commands, manual repair instructions fail to restore editable workspace packages
 
 ## `test_broken_hook_ref_startup_warn.py`
 
@@ -226,7 +226,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — session start outputs a warning naming missing hook file and self init repair steps
-- **why** — broken hook references must produce clear startup warnings to alert developers
+- **why** — without startup warnings, stale hook references fail silently on tool calls with confusing harness errors
 
 ## `test_broken_install_friendly_error.py`
 
@@ -240,7 +240,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — CLI exits with friendly installation error detailing repair steps without tracebacks
-- **why** — package import failures at CLI boundary must display clean actionable repair instructions
+- **why** — without CLI exception catching, corrupted subpackages dump raw ImportErrors instead of repair guidance
 
 ## `test_bump_backup_round_trip.py`
 
@@ -254,7 +254,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — pre-bump backup tarball is created before migration and tar extraction restores state
-- **why** — self update must capture pre-bump tarballs to ensure safe rollback on migration failure
+- **why** — without pre-bump backups, failed migrations overwrite user configurations without a recovery path
 
 ## `test_bump_fails_loud_on_broken_hook.py`
 
@@ -268,7 +268,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — update process fails at end-of-bump smoke assert and prints recovery tarball path
-- **why** — framework updates must assert runtime hook resolution before completing migration
+- **why** — without post-migration smoke assertions, broken hook paths leave projects in an unusable state
 
 ## `test_bypass_journal.py`
 
@@ -283,7 +283,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — git pre-commit hook logs bypass entry to journal and post-commit stamps commit SHA
-- **why** — gate bypasses must leave audit records in bypass journal for compliance tracking
+- **why** — without bypass logging, gate overrides leave no audit records in repository history
 
 ## `test_cache_key_gc.py`
 
@@ -297,7 +297,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — session initialization sweeps orphan cache keys older than TTL while preserving active keys
-- **why** — session startup must garbage-collect stale session cache directories
+- **why** — without cache key garbage collection, accumulated session directories consume unbounded disk space
 
 ## `test_check_mirror_dry_run.py`
 
@@ -311,7 +311,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — dry-run plan materializes bound skill script exactly once to session skills mirror
-- **why** — check scripts must resolve from session skill mirrors without duplicate tree copies
+- **why** — without session skill mirrors, check scripts require duplicate materialization trees per binding
 
 ## `test_claude_scaffold_drop.py`
 
@@ -325,7 +325,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — framework update removes orphan CLAUDE.md scaffold while preserving user content
-- **why** — migration steps must clean up obsolete root scaffold files automatically
+- **why** — without migration step 7, legacy root CLAUDE.md scaffolds persist after being deprecated
 
 ## `test_clean_root_sentinel.py`
 
@@ -339,7 +339,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — project root remains clean with framework state kept strictly inside .agent/ai-hats/
-- **why** — framework operations must respect project root cleanliness
+- **why** — without root cleanliness guards, framework sessions pollute project roots with transient setting files
 
 ## `test_clean_tmp_cruft.py`
 
@@ -353,7 +353,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — script removes temporary worktree and pytest directories while preserving caller worktree
-- **why** — cleanup script must remove abandoned temporary directories without touching active worktrees
+- **why** — without tmp cleanup scripts, interrupted test runs leak temporary worktree directories in /tmp
 
 ## `test_cline_clean_root.py`
 
@@ -367,7 +367,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — cline artifacts are written to session cache without leaking .cline/ into project root
-- **why** — cline provider must maintain project root cleanliness by storing artifacts in cache
+- **why** — without isolated session caching, surface providers pollute project roots with ephemeral config folders
 
 ## `test_cline_provider_discovery.py`
 
@@ -381,7 +381,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — cline provider is discovered via python entry points and displayed in provider listing
-- **why** — cline surface plugin must be discoverable via entry points when installed
+- **why** — without entry-point discovery, third-party provider packages like cline are invisible to the CLI
 
 ## `test_cline_session_recorded.py`
 
@@ -395,7 +395,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — session produces audit.md with turn markers and usage.json with token metrics
-- **why** — cline sessions must record transcript audit logs and token telemetry
+- **why** — without cline transcript resolution, audit logs remain stubbed and token telemetry is lost
 
 ## `test_close_from_inside_worktree_refused.py`
 
@@ -431,7 +431,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — PostToolUse hook emits additionalContext warning on stdout without blocking file edits
-- **why** — comment length lint hook must provide non-blocking feedback for doc standards
+- **why** — without non-blocking comment length linting, bloated comments degrade context budget without warning
 
 ## `test_config_fail_loud_on_newer_schema.py`
 
@@ -546,7 +546,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — file lock serializes configuration updates so no concurrent customizations are lost
-- **why** — config customize must acquire file locks during read-modify-write
+- **why** — without file locking during config customize, concurrent processes overwrite each other's additions
 
 ## `test_dead_cwd_fail_loud.py`
 
@@ -561,7 +561,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — CLI exits with clean DeadCwdError instructing user to navigate to project root
-- **why** — commands run from deleted directories must fail loud instead of resurrecting folders
+- **why** — without dead-cwd checks, running from deleted directories recreates phantom .agent folders or crashes
 
 ## `test_default_composition_flip.py`
 
@@ -575,7 +575,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — composed role contains hatrack skill and rack command resolves task, hyp, and proposal backlogs
-- **why** — default role composition must include hatrack skill and rack CLI must route backlogs
+- **why** — without default composition flip, roles include legacy backlog-manager instead of multi-backlog hatrack
 
 ## `test_docs_index_guard.py`
 
@@ -800,6 +800,34 @@ as a claim to check, not as evidence.
 - **expect** — the interactive Provider menu prompt is displayed despite an existing ai-hats.yaml file, and no network check or self-update output appears
 - **why** — re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 
+## `test_no_console_script_shadow.py`
+
+*pins HATS-790*
+
+- **flow** — a developer installing ai-hats package via wheel into a virtual environment
+- **cmds**
+
+  ```console
+  python -m ai_hats --version
+  ```
+
+- **expect** — wheel installation produces no bin/ai-hats console script while module entry runs cleanly
+- **why** — without removing bin/ai-hats console script generation, direnv prepends stale venv binaries over host launcher
+
+## `test_no_raw_destructive_multiline_marker.py`
+
+*pins HATS-757*
+
+- **flow** — a developer committing python code with multi-line destructive call carrying safe-delete marker
+- **cmds**
+
+  ```console
+  git commit -m "marked multi-line cleanup"
+  ```
+
+- **expect** — pre-commit hook allows multi-line call with relocated safe-delete marker while blocking unmarked calls
+- **why** — without multi-line marker parsing, ruff formatting relocates markers and falsely blocks legitimate commits
+
 ## `test_plan_canonical_home.py`
 
 *pins HATS-637, HATS-1263*
@@ -895,6 +923,63 @@ as a claim to check, not as evidence.
 
 - **expect** — hook scripts are written to disk with executable permissions and block unacknowledged destructive tool commands
 - **why** — PreToolUse guards rely on materialized script files on disk to enforce state safety rules during agent execution
+
+## `test_provider_entry_point_discovery.py`
+
+*pins HATS-870*
+
+- **flow** — a developer listing providers when an out-of-tree provider plugin is installed
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  ```
+
+- **expect** — custom provider entry point is discovered dynamically and listed alongside built-in providers
+- **why** — without entry point discovery, custom out-of-tree provider plugins cannot be registered or used
+
+## `test_pty_escape_hatch.py`
+
+*pins HATS-675, HATS-679*
+
+- **flow** — a developer pressing triple Ctrl-C during a wedged PTY session
+- **cmds**
+
+  ```console
+  # during interactive PTY session when process hangs
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — triple Ctrl-C signals escape hatch, force-exiting wedged session with exit 130
+- **why** — without parent escape hatch, a process ignoring SIGINT locks up terminal session indefinitely
+
+## `test_pty_shutdown_bounded.py`
+
+*pins HATS-411*
+
+- **flow** — a developer terminating an interactive PTY session when child ignores SIGTERM
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — PTY runner escalates SIGTERM to SIGKILL within deadline and resets terminal modes
+- **why** — without bounded shutdown, macOS libuv handle leaks cause processes to hang indefinitely during exit
+
+## `test_pty_tap_wiring.py`
+
+*pins HATS-1192*
+
+- **flow** — an agent running an interactive PTY session with custom PTY tap extensions
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — PTY tap tees output, injects input, and invokes close handler upon session teardown
+- **why** — without PTY tap seam wiring, automated harnesses cannot inspect or inject PTY byte streams
 
 ## `test_rack_append_payload_e2e.py`
 
@@ -1022,6 +1107,62 @@ as a claim to check, not as evidence.
 - **expect** — STATE.md is refreshed on card creation and a git worktree is provisioned when transitioning to execute
 - **why** — module-level rack execution must bind the full kernel extensions rather than falling back to a bare un-wired state
 
+## `test_reflect_friendly_errors.py`
+
+*pins HATS-547, HATS-1228*
+
+- **flow** — a developer running reflect subcommands when project configuration has invalid provider
+- **cmds**
+
+  ```console
+  ai-hats reflect all
+  ```
+
+- **expect** — command exits cleanly with exit code 2 and friendly error message instead of raw traceback
+- **why** — without root Click error handling, reflect subcommands leak uncaught Python tracebacks on config errors
+
+## `test_reflect_hypothesis_e2e.py`
+
+*pins HATS-513*
+
+- **flow** — a developer inspecting dry-run handoff for hypothesis reflection
+- **cmds**
+
+  ```console
+  ai-hats reflect hypothesis --dry-run
+  ```
+
+- **expect** — command writes handoff document to disk and exits cleanly without launching interactive session
+- **why** — without dry-run support, developers cannot inspect hypothesis handoff documents without running sessions
+
+## `test_reflect_role_e2e.py`
+
+*pins HATS-498, HATS-544, HATS-546*
+
+- **flow** — a developer running role coherence audit command
+- **cmds**
+
+  ```console
+  ai-hats reflect role maintainer
+  ```
+
+- **expect** — pre-flight composes and serializes target role manifest and launches role-judge session
+- **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit
+
+## `test_role_isolation.py`
+
+*pins HATS-294, HATS-1170, HATS-1203*
+
+- **flow** — a developer running session with explicit role override flag
+- **cmds**
+
+  ```console
+  ai-hats execute --role judge
+  ```
+
+- **expect** — agent prompt carries only target role context with no default role priorities leaked
+- **why** — without session role isolation, active project defaults bleed into sub-agent role prompts
+
 ## `test_role_session_retro_vertical.py`
 
 *pins HATS-498*
@@ -1053,6 +1194,48 @@ as a claim to check, not as evidence.
 - **expect** — the pre-commit hook verifies that all referenced rules exist and blocks the commit with an error if a rule reference is missing
 - **why** — trait configurations must not reference non-existent rules to prevent broken rule pointers in role injections
 
+## `test_runtime_hook_fires.py`
+
+*pins HATS-601, HATS-607*
+
+- **flow** — an agent executing tool calls that trigger skill-declared runtime hooks
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r e2e-rthook-role --no-wizard
+  ```
+
+- **expect** — runtime hook script executes for both PreToolUse and PostToolUse events writing side-effects
+- **why** — without verifying hook body execution, dangling settings.json pointers fail silently without running logic
+
+## `test_runtime_hook_propagation.py`
+
+*pins HATS-601*
+
+- **flow** — a developer initializing a project with a role that declares skill runtime hooks
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r e2e-rthook-role --no-wizard
+  ```
+
+- **expect** — runtime hooks are wired into settings.json and materialized executable scripts return correct codes
+- **why** — without end-to-end hook propagation, skill runtime hooks are dropped during session initialization
+
+## `test_runtime_hooks_execute_from_session_tree.py`
+
+*pins HATS-1113, HATS-1268*
+
+- **flow** — an agent executing tools in a session with materialized runtime hooks
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r maintainer --no-wizard
+  ```
+
+- **expect** — hook scripts resolve inside session tree alongside sibling data files and write bypass records
+- **why** — without session-tree hook resolution, flattened hook scripts lose sibling data files and bypass logging
+
 ## `test_runtime_role_composition.py`
 
 *pins HATS-1456*
@@ -1073,6 +1256,34 @@ as a claim to check, not as evidence.
 
 - **expect** — an added trait's injection appears in the prompt, a removed one disappears while its siblings stay, and compact and spaced spellings are byte-identical; the composed prompt is measurably larger than the base through both `agent --dry-run --json` and `--dry-run-json`; an unknown component, a role in second position, and a bare unquoted `+` each exit 2 with a named error and no traceback; `config set` refuses to persist and leaves ai-hats.yaml byte-identical
 - **why** — composition is the surface where a wrong answer is silent — a trait that fails to attach still yields a working prompt, just not the one asked for, so only comparing prompts catches it
+
+## `test_session_cache_out_of_tree.py`
+
+*pins HATS-1398*
+
+- **flow** — a developer running interactive session in workspace
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — ephemeral session cache files are written out-of-tree without modifying workspace files
+- **why** — without out-of-tree session caching, background sessions trigger fseventsd and pollute git status
+
+## `test_session_wiring_survives_later_materialization.py`
+
+*pins HATS-1268, HATS-1439*
+
+- **flow** — a developer initializing a second role in a project while a session is active
+- **cmds**
+
+  ```console
+  ai-hats self init -r hypothesis-intake -p claude --no-update
+  ```
+
+- **expect** — active session's materialized hook scripts inside session tree remain intact
+- **why** — without per-session cache isolation, initializing a narrower role sweeps active session hook scripts
 
 ## `test_shared_state_guard.py`
 
@@ -1119,6 +1330,21 @@ as a claim to check, not as evidence.
 
 - **expect** — output lists skills declared in entry_points.txt of installed packages alongside built-in framework skills
 - **why** — out-of-tree skill packages must be discoverable via importlib entry points without modifying core framework code
+
+## `test_subagent_sdk_smoke.py`
+
+*pins HATS-474*
+
+- **flow** — an agent spawning sub-agent execution via SubAgentRunner SDK integration
+- **cmds**
+
+  ```console
+  # sub-agent execution via SubAgentRunner
+  ai-hats agent probe --task "Reply PONG"
+  ```
+
+- **expect** — sub-agent runs through Claude SDK, recording cost telemetry and session ID in metrics.json
+- **why** — without SDK integration, sub-agent execution relies on legacy subprocesses and loses cost telemetry
 
 ## `test_surface_cleanup.py`
 
@@ -1333,6 +1559,34 @@ as a claim to check, not as evidence.
 
 - **expect** — the existing worktree is adopted instead of provisioning a second worktree off main
 - **why** — transitioning to execute from inside a worktree must adopt the caller worktree to prevent duplicate worktree creation
+
+## `test_unknown_provider_friendly_error.py`
+
+*pins HATS-965, HATS-1218*
+
+- **flow** — a developer specifying an unknown provider name on CLI
+- **cmds**
+
+  ```console
+  ai-hats -p definitely-not-a-real-provider --role maintainer
+  ```
+
+- **expect** — CLI exits with code 2 listing available providers without printing raw Python traceback
+- **why** — without provider error handling, typos in provider flags leak unhandled ValueErrors to terminal
+
+## `test_unknown_role_friendly_error.py`
+
+*pins HATS-507, HATS-545, HATS-547*
+
+- **flow** — a developer specifying an unknown role name on CLI
+- **cmds**
+
+  ```console
+  ai-hats --role definitely-not-a-real-role
+  ```
+
+- **expect** — CLI exits with code 2 listing available roles without printing raw Python traceback
+- **why** — without role error handling, typos in role parameters dump raw RuntimeError tracebacks to user
 
 ## `test_user_rules_delivery.py`
 
@@ -1915,7 +2169,7 @@ as a claim to check, not as evidence.
 
 ## Not yet catalogued
 
-99 files carry no flow block yet:
+81 files carry no flow block yet:
 
 - `test_done_gate.py`
 - `test_edge_check_gate.py`
@@ -1945,30 +2199,17 @@ as a claim to check, not as evidence.
 - `test_migration_registry_gate.py`
 - `test_migration_user_hooks_preserved.py`
 - `test_missing_provider_friendly_error.py`
-- `test_no_console_script_shadow.py`
-- `test_no_raw_destructive_multiline_marker.py`
 - `test_pre_commit_smoke_collection.py`
 - `test_prepush_dispatcher_stdin_fanout.py`
 - `test_privacy_hook.py`
-- `test_provider_entry_point_discovery.py`
-- `test_pty_escape_hatch.py`
-- `test_pty_shutdown_bounded.py`
-- `test_pty_tap_wiring.py`
 - `test_py_security_lint_hook.py`
-- `test_reflect_friendly_errors.py`
-- `test_reflect_hypothesis_e2e.py`
-- `test_reflect_role_e2e.py`
 - `test_refresh_unification.py`
 - `test_relay_wiring.py`
 - `test_remedy_fixes_the_hook.py`
 - `test_remote_channel_install.py`
 - `test_retired_dist_prune_e2e.py`
 - `test_retired_hooks_dir_never_recreated.py`
-- `test_role_isolation.py`
 - `test_root_residue_swept.py`
-- `test_runtime_hook_fires.py`
-- `test_runtime_hook_propagation.py`
-- `test_runtime_hooks_execute_from_session_tree.py`
 - `test_safe_delete_and_bump_internal.py`
 - `test_safety_gate_hook.py`
 - `test_scaffolding_regression_guard.py`
@@ -1998,17 +2239,12 @@ as a claim to check, not as evidence.
 - `test_self_update_survives_missing_update_check.py`
 - `test_self_update_uv_cache.py`
 - `test_self_update_versioned_e2e.py`
-- `test_session_cache_out_of_tree.py`
-- `test_session_wiring_survives_later_materialization.py`
 - `test_settings_lint_startup_warn.py`
 - `test_shadow_guard_refuses_foreign_venv.py`
 - `test_shared_launcher_env_isolation.py`
 - `test_skills_mirror_self_heals.py`
 - `test_stable_channel_live.py`
 - `test_stray_shadow_detector.py`
-- `test_subagent_sdk_smoke.py`
-- `test_unknown_provider_friendly_error.py`
-- `test_unknown_role_friendly_error.py`
 - `test_update_banner_e2e.py`
 - `test_update_banner_non_editable_e2e.py`
 - `test_update_verifies_install_before_success.py`

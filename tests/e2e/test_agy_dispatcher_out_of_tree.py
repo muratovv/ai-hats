@@ -6,7 +6,8 @@ cmds:
     ai-hats agent assistant --task "Execute edit"
 expect: agy hook dispatcher resolves session hooks from out-of-tree cache and fires
         scripts
-why:    hook dispatcher must locate out-of-tree session caches to execute hooks
+why:    without out-of-tree cache resolution, moving session cache out of workspace
+        silently disables all registered runtime hooks
 """
 
 from __future__ import annotations

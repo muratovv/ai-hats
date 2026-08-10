@@ -1,11 +1,12 @@
 """e2e (HATS-1171)
 
 flow:   a developer running a batch session under cline provider
-cmds:   ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+cmds:
+    ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
 expect: cline artifacts are written to session cache without leaking .cline/ into
         project root
-why:    cline provider must maintain project root cleanliness by storing artifacts in
-        cache
+why:    without isolated session caching, surface providers pollute project roots with
+        ephemeral config folders
 """
 
 from __future__ import annotations

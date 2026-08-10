@@ -1,11 +1,12 @@
 """e2e (HATS-1241, HATS-1540)
 
 flow:   a developer inspecting dry-run plan for a role that binds check scripts
-cmds:   ai-hats execute -r checked --dry-run-json
+cmds:
+    ai-hats execute -r checked --dry-run-json
 expect: dry-run plan materializes bound skill script exactly once to session skills
         mirror
-why:    check scripts must resolve from session skill mirrors without duplicate tree
-        copies
+why:    without session skill mirrors, check scripts require duplicate materialization
+        trees per binding
 """  # comment-length: allow — a retired subject must say what replaced it
 
 from __future__ import annotations

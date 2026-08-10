@@ -1,51 +1,12 @@
-"""E2E: ``ai-hats reflect role <name>`` materializes + launches the judge.
+"""e2e (HATS-498, HATS-544, HATS-546)
 
-User-way (HATS-546 / S-CLI-29)
-------------------------------
-
-I want a coherence audit on the ``maintainer`` role — does its
-trait/rule/skill composition still make sense against my project's
-CLAUDE.md? I type:
-
+flow:   a developer running role coherence audit command
+cmds:
     ai-hats reflect role maintainer
-
-Pre-flight (Python) composes the target role and materializes its
-layered breakdown to a per-session namespace under
-``<ai_hats_dir>/sessions/runs/pipeline_runs/reflect-role/<sid>/composed/maintainer/``
-(``manifest.yaml`` + ``traits/``, ``rules/``, ``skills/`` subdirs +
-``role-injection.md`` if non-empty). Then the ``role-judge``
-role launches interactively; I chat with it about the role's
-coherence and it writes the audit report under
-``.agent/retrospectives/role-coherence/<UTC-ts>-maintainer.md`` via
-the Write tool.
-
-What this test pins (pre-flight + launch sanity)
-------------------------------------------------
-
-1. The invocation runs to PTY without crashing.
-2. The Python pre-flight (``_materialize_target_composition``)
-   produced the composed-role dir with at least ``manifest.yaml`` —
-   proves the role was resolved + composed + serialized to disk.
-3. The PTY session-start banner appears in stdout — proves the
-   ``role-judge`` runner spawned.
-4. The PTY session exits cleanly (``{0, 130}``).
-5. No Python ``Traceback`` leaks to user-facing output.
-
-What this test does NOT pin
----------------------------
-
-- The audit report contents. The report is LLM-written via the
-  ``Write`` tool during the chat; asserting its contents requires a
-  multi-turn HITL dialogue — HATS-544 territory.
-- The composed manifest's payload beyond "non-empty". The
-  composition correctness is HATS-498's territory; here we only
-  verify that the ``reflect role`` codepath ran the materialization
-  step successfully.
-
-Fixture choice: ``tmp_project`` (dev venv) + real HOME claude auth.
-Same rationale as ``test_reflect_issue_e2e.py``.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+expect: pre-flight composes and serializes target role manifest and launches role-judge
+        session
+why:    without composition materialization, role-judge auditor lacks structured role
+        breakdown to audit
 """
 
 from __future__ import annotations

@@ -1,10 +1,12 @@
 """e2e (HATS-1367, HATS-1368)
 
 flow:   a developer executing printed rescue command when automatic bootstrap heal fails
-cmds:   python -m ai_hats --version
+cmds:
+    python -m ai_hats --version
 expect: gate prints manual repair command that successfully restores workspace
         dependencies
-why:    printed rescue commands must effectively repair broken virtual environments
+why:    without accurate rescue commands, manual repair instructions fail to restore
+        editable workspace packages
 """
 
 from __future__ import annotations

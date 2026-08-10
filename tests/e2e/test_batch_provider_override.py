@@ -1,10 +1,12 @@
 """e2e (HATS-1218)
 
 flow:   a developer specifying provider override flag -p on batch execution commands
-cmds:   ai-hats execute -r maintainer --batch -p definitely-not-a-real-provider
+cmds:
+    ai-hats execute -r maintainer --batch -p definitely-not-a-real-provider
 expect: provider flag -p is respected in batch mode and produces clean error for invalid
         providers
-why:    batch execution commands must honor explicit -p provider overrides
+why:    without batch provider overrides, batch commands ignore -p flags and default to
+        configured provider
 """
 
 from __future__ import annotations

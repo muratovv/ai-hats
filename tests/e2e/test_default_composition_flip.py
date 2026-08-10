@@ -2,11 +2,12 @@
 
 flow:   a developer initializing project configuration and managing multi-backlog task
         cards
-cmds:   ai-hats self init -p claude -r assistant
+cmds:
+    ai-hats self init -p claude -r assistant
 expect: composed role contains hatrack skill and rack command resolves task, hyp, and
         proposal backlogs
-why:    default role composition must include hatrack skill and rack CLI must route
-        backlogs
+why:    without default composition flip, roles include legacy backlog-manager instead
+        of multi-backlog hatrack
 """
 
 from __future__ import annotations

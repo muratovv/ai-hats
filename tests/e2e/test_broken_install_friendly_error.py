@@ -2,11 +2,12 @@
 
 flow:   a developer running ai-hats commands when package files are corrupted or
         mismatched
-cmds:   ai-hats list roles
+cmds:
+    ai-hats list roles
 expect: CLI exits with friendly installation error detailing repair steps without
         tracebacks
-why:    package import failures at CLI boundary must display clean actionable repair
-        instructions
+why:    without CLI exception catching, corrupted subpackages dump raw ImportErrors
+        instead of repair guidance
 """  # comment-length: allow
 
 from __future__ import annotations

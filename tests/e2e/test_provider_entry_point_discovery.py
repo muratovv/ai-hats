@@ -1,11 +1,12 @@
-"""E2E: an out-of-tree provider on the ``ai_hats.providers`` entry-point group
-is discovered by the real ``ai-hats`` binary (HATS-870 / T10).
+"""e2e (HATS-870)
 
-Builds a synthetic installed distribution — a ``Provider`` subclass module plus
-a ``*.dist-info`` carrying ``entry_points.txt`` — on ``PYTHONPATH`` and drives
-``ai-hats list providers``. The plugin appears alongside the built-ins WITHOUT
-ai-hats importing its package (IoC via ``importlib.metadata``). Fail-under-revert:
-drop ``_load_provider_entry_points`` → ``acme`` never registers → assertion fails.
+flow:   a developer listing providers when an out-of-tree provider plugin is installed
+cmds:
+    ai-hats list providers
+expect: custom provider entry point is discovered dynamically and listed alongside
+        built-in providers
+why:    without entry point discovery, custom out-of-tree provider plugins cannot be
+        registered or used
 """
 
 from __future__ import annotations

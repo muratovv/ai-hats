@@ -5,7 +5,8 @@ cmds:
     # when running agy in headless mode
     ai-hats execute -p agy --prompt "Run command"
 expect: runtime hooks defined in settings.json execute during headless tool invocation
-why:    headless execution surfaces must fire PreToolUse hooks before tool execution
+why:    without headless hook execution, safety and quality gates fail to run in
+        non-HITL batch runs
 """
 
 from __future__ import annotations

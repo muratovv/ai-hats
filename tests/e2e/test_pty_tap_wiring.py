@@ -1,10 +1,12 @@
-"""Real-PTY wiring guard for the HATS-1192 PtyTap seam (marker: integration).
+"""e2e (HATS-1192)
 
-Drives the REAL ``WrapRunner._pty_spawn`` in a driver subprocess with a fake
-``pty_tap_factory`` + a plain python child, proving OUT tee (``on_output``), IN
-inject (``on_readable`` → ``inject``), ``close`` on teardown, and fail-open (a
-raising factory leaves the session running). Fail-under-revert: without the graft
-the factory is ignored → the injected ``quit`` never lands → driver hangs → RED.
+flow:   an agent running an interactive PTY session with custom PTY tap extensions
+cmds:
+    ai-hats execute -r assistant
+expect: PTY tap tees output, injects input, and invokes close handler upon session
+        teardown
+why:    without PTY tap seam wiring, automated harnesses cannot inspect or inject PTY
+        byte streams
 """
 
 from __future__ import annotations

@@ -1,10 +1,12 @@
 """e2e (HATS-1170, HATS-1336, HATS-1338)
 
 flow:   a developer running a session in a project workspace
-cmds:   ai-hats execute -r assistant
+cmds:
+    ai-hats execute -r assistant
 expect: project root remains clean with framework state kept strictly inside
         .agent/ai-hats/
-why:    framework operations must respect project root cleanliness
+why:    without root cleanliness guards, framework sessions pollute project roots with
+        transient setting files
 """
 
 from __future__ import annotations

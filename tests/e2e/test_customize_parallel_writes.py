@@ -1,10 +1,12 @@
 """e2e (HATS-526)
 
 flow:   multiple developer processes concurrently customizing role configurations
-cmds:   ai-hats config customize role-1 --add-trait trait-1
+cmds:
+    ai-hats config customize role-1 --add-trait trait-1
 expect: file lock serializes configuration updates so no concurrent customizations are
         lost
-why:    config customize must acquire file locks during read-modify-write
+why:    without file locking during config customize, concurrent processes overwrite
+        each other's additions
 """
 
 from __future__ import annotations

@@ -1,11 +1,12 @@
 """e2e (HATS-1093)
 
 flow:   a developer listing available providers after installing ai-hats-agy package
-cmds:   ai-hats list providers
+cmds:
+    ai-hats list providers
 expect: agy provider is discovered via python entry points and displayed alongside
         built-ins
-why:    provider discovery must dynamically resolve installed surface plugins via entry
-        points
+why:    without entry-point discovery, installed surface packages cannot be resolved by
+        the main binary
 """
 
 from __future__ import annotations

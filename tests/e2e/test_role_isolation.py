@@ -1,28 +1,12 @@
-"""E2E: HATS-294 role-isolation — F5/F6 fix verification (Phase 5).
+"""e2e (HATS-294, HATS-1170, HATS-1203)
 
-Validates the user-visible contract for HATS-294: under the unified
-per-session compose path, `claude --print` reads:
-
-- ``--system-prompt-file <cache>/prompt.md`` — the composed role's prompt,
-  carrying the ``## USER RULES`` section since HATS-1203
-
-Nothing ai-hats writes is auto-discovered any more: HATS-1170 dropped the root
-``CLAUDE.md`` scaffold and HATS-1203 the ``imports.md`` aggregator it imported,
-so the agent CANNOT double-load role content (Phase 0 evidence of F5+F6).
-
-Per ``dev_rule_e2e_gate``: real ``claude`` binary, real subprocess chain,
-``@pytest.mark.integration``. Cost-capped via ``--model claude-haiku-4-5``;
-expected ≤ ~$0.05 per call, ~$0.15 for the whole file.
-
-Skip conditions:
-- ``claude`` binary not in PATH
-- agent reports "Not logged in" — claude CLI is not authenticated
-
-Fail-under-revert (dev_rule_e2e_gate §4): the tests rely on
-``Provider.build_session_prompt`` + ``write_canonical`` shipped in
-Phase 1+2. Reverting either commit makes ``--role judge`` leak the
-default-role priorities/role into the probe output and the assertions
-fail.
+flow:   a developer running session with explicit role override flag
+cmds:
+    ai-hats execute --role judge
+expect: agent prompt carries only target role context with no default role priorities
+        leaked
+why:    without session role isolation, active project defaults bleed into sub-agent
+        role prompts
 """
 
 from __future__ import annotations

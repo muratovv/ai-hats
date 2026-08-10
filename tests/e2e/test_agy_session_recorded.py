@@ -1,11 +1,12 @@
 """e2e (HATS-1391)
 
 flow:   a developer running an agy provider session and inspecting session artifacts
-cmds:   ai-hats execute --batch -r assistant -p agy --prompt "Reply OK" --json
+cmds:
+    ai-hats execute --batch -r assistant -p agy --prompt "Reply OK" --json
 expect: session records audit.md with turn markers and metrics.json with token usage
         statistics
-why:    session observation must parse agy transcripts to record audit logs and token
-        telemetry
+why:    without transcript resolution, session observation fails to produce audit logs
+        or token telemetry
 """
 
 from __future__ import annotations

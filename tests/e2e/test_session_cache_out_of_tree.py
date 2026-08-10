@@ -1,18 +1,12 @@
-"""E2E: a real session writes no cache into the workspace (HATS-1398, epic R16).
+"""e2e (HATS-1398)
 
-This is the acceptance criterion for the move, and it replaces the one the card
-was filed with. The original read "an idle agy session no longer feeds
-fseventsd" — but a measurement on 2026-07-31 refuted the causal chain behind it
-(5 idle agy processes burned 5.4-7.1% CPU each on a workspace with zero writes
-for 34 minutes, while fseventsd averaged 2.2%), so that criterion could not fail
-for the right reason. What survives is the invariant: machine-only, regenerable
-state does not live in the tree that watchers, ``git status``, greps and
-indexers all pay for. That is falsifiable, and this test is where it is falsified.
-
-RED under revert: before the move the session materializes into
-``<project>/.agent/ai-hats/.cache/sessions/<sid>/``, and the per-sid cleanup at
-session end leaves the ``.cache/sessions/`` skeleton behind — so both the
-"nothing appeared" and the "workspace ends clean" assertions fail.
+flow:   a developer running interactive session in workspace
+cmds:
+    ai-hats execute -r assistant
+expect: ephemeral session cache files are written out-of-tree without modifying
+        workspace files
+why:    without out-of-tree session caching, background sessions trigger fseventsd and
+        pollute git status
 """
 
 from __future__ import annotations

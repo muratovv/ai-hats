@@ -2,11 +2,12 @@
 
 flow:   a developer running temp cleanup script to remove leftover test worktree
         directories
-cmds:   bash scripts/clean-tmp-cruft.sh --force
+cmds:
+    bash scripts/clean-tmp-cruft.sh --force
 expect: script removes temporary worktree and pytest directories while preserving caller
         worktree
-why:    cleanup script must remove abandoned temporary directories without touching
-        active worktrees
+why:    without tmp cleanup scripts, interrupted test runs leak temporary worktree
+        directories in /tmp
 """
 
 from __future__ import annotations

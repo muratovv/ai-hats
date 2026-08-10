@@ -2,11 +2,12 @@
 
 flow:   a developer performing framework self update when settings.json points at
         missing hook
-cmds:   ai-hats self update
+cmds:
+    ai-hats self update
 expect: update process fails at end-of-bump smoke assert and prints recovery tarball
         path
-why:    framework updates must assert runtime hook resolution before completing
-        migration
+why:    without post-migration smoke assertions, broken hook paths leave projects in an
+        unusable state
 """
 
 from __future__ import annotations

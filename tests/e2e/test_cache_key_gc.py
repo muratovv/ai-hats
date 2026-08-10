@@ -1,10 +1,12 @@
 """e2e (HATS-1473)
 
 flow:   a developer starting a session when stale sibling cache keys exist in cache dir
-cmds:   ai-hats execute -r assistant
+cmds:
+    ai-hats execute -r assistant
 expect: session initialization sweeps orphan cache keys older than TTL while preserving
         active keys
-why:    session startup must garbage-collect stale session cache directories
+why:    without cache key garbage collection, accumulated session directories consume
+        unbounded disk space
 """
 
 from __future__ import annotations

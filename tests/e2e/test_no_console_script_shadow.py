@@ -1,21 +1,12 @@
-"""E2E: a wheel install materialises NO ``bin/ai-hats`` shadow (HATS-790, Alt 5).
+"""e2e (HATS-790)
 
-Value under test: the ``[project.scripts] ai-hats = "ai_hats.cli:main_entry"``
-console-script generator was removed so that NO venv depending on ``ai-hats``
-materialises a ``bin/ai-hats`` that direnv could prepend ahead of the host
-launcher (``~/.local/bin/ai-hats``) and run stale code. The package is invoked
-exclusively via ``python -m ai_hats``.
-
-This builds the real wheel from the repo and installs it into a throwaway venv
-under ``tmp_path``, then asserts:
-
-  1. NO ``<venv>/bin/ai-hats`` exists (the shadow generator is gone), and
-  2. ``<venv>/bin/python -m ai_hats --version`` exits 0 (the module entry works).
-
-Fail-under-revert (per ``dev_rule_e2e_gate`` §4): re-adding the
-``[project.scripts] ai-hats = ...`` table to ``pyproject.toml`` makes the wheel
-install drop ``<venv>/bin/ai-hats`` again → assertion #1 fails. Real
-``uv build``/``python -m build`` + real ``uv``/``pip`` install — no stubs.
+flow:   a developer installing ai-hats package via wheel into a virtual environment
+cmds:
+    python -m ai_hats --version
+expect: wheel installation produces no bin/ai-hats console script while module entry
+        runs cleanly
+why:    without removing bin/ai-hats console script generation, direnv prepends stale
+        venv binaries over host launcher
 """
 
 from __future__ import annotations

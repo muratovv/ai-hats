@@ -1,9 +1,11 @@
 """e2e (HATS-791)
 
 flow:   a developer running bootstrap repair after managed virtual environment is broken
-cmds:   bash scripts/bootstrap.sh --repair
+cmds:
+    bash scripts/bootstrap.sh --repair
 expect: repair script rebuilds managed virtual environment using absolute launcher paths
-why:    out-of-band bootstrap repair must recover broken managed virtual environments
+why:    without absolute-path launcher calls, out-of-band repair fails when in-band
+        executable is broken
 """
 
 from __future__ import annotations

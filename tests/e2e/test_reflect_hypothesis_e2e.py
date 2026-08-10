@@ -1,27 +1,12 @@
-"""E2E: ``ai-hats reflect hypothesis --dry-run`` produces a handoff.
+"""e2e (HATS-513)
 
-E2E gate: HATS-513 touches ``src/ai_hats/cli/reflect.py`` (new
-``reflect hypothesis`` command). Per ``dev_rule_e2e_gate``, the CLI
-contract must be covered by a real subprocess + real ``ai-hats`` binary
-test — not an in-process ``CliRunner``.
-
-Setup contract:
-
-1. ``tmp_project`` fixture bootstraps a role-less project pointed at the
-   dev-venv ``ai-hats`` binary (which is editable-installed from
-   ``<repo_root>/src``, so the new ``reflect hypothesis`` command is
-   reachable).
-2. We invoke ``ai-hats reflect hypothesis --dry-run`` via
-   :class:`Project.run`.
-3. Assertions:
-   - exit code == 0
-   - stdout names the handoff path
-   - the handoff file exists on disk
-   - stdout does NOT report Phase 1 launch (dry-run short-circuit)
-
-Fail-under-revert: removing the new ``reflect hypothesis`` Click command
-from ``src/ai_hats/cli/reflect.py`` makes the subprocess exit non-zero
-(Click reports "no such command: hypothesis") and this test goes red.
+flow:   a developer inspecting dry-run handoff for hypothesis reflection
+cmds:
+    ai-hats reflect hypothesis --dry-run
+expect: command writes handoff document to disk and exits cleanly without launching
+        interactive session
+why:    without dry-run support, developers cannot inspect hypothesis handoff documents
+        without running sessions
 """
 
 from __future__ import annotations

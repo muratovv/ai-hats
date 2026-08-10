@@ -1,14 +1,11 @@
-"""E2E sentinel: live session wiring survives later materialization (ADR-0021 M2, M6).
+"""e2e (HATS-1268, HATS-1439)
 
-GREEN since HATS-1268. It was the HATS-1439 repro while claude's wiring pointed
-into the shared ``library/hooks/``: materializing a narrower role swept scripts
-an already-built session still pointed at, and the session ran with those gates
-silently off. The wiring resolves into the session's own tree now, which no
-later materialization reaches — so the runtime-hook half of 1439 is dissolved
-rather than patched.
-
-Fail-under-revert: point ``_desired_runtime_entries`` back at ``_lib_hooks_dir``
-and the second init sweeps the first role's scripts out from under this session.
+flow:   a developer initializing a second role in a project while a session is active
+cmds:
+    ai-hats self init -r hypothesis-intake -p claude --no-update
+expect: active session's materialized hook scripts inside session tree remain intact
+why:    without per-session cache isolation, initializing a narrower role sweeps active
+        session hook scripts
 """
 
 from __future__ import annotations

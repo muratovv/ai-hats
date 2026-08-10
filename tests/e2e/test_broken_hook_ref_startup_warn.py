@@ -1,10 +1,12 @@
 """e2e (HATS-1509)
 
 flow:   a developer launching a session when settings.json references a missing hook
-cmds:   ai-hats execute -r hook-role
+cmds:
+    ai-hats execute -r hook-role
 expect: session start outputs a warning naming missing hook file and self init repair
         steps
-why:    broken hook references must produce clear startup warnings to alert developers
+why:    without startup warnings, stale hook references fail silently on tool calls with
+        confusing harness errors
 """
 
 from __future__ import annotations

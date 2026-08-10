@@ -6,8 +6,8 @@ cmds:
     # from a directory that was deleted on disk
     ai-hats wt list
 expect: CLI exits with clean DeadCwdError instructing user to navigate to project root
-why:    commands run from deleted directories must fail loud instead of resurrecting
-        folders
+why:    without dead-cwd checks, running from deleted directories recreates phantom
+        .agent folders or crashes
 """
 
 from __future__ import annotations

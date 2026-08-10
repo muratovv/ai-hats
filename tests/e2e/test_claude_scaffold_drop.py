@@ -2,9 +2,11 @@
 
 flow:   a developer updating framework version on a project with orphan CLAUDE.md
         scaffolds
-cmds:   ai-hats self update
+cmds:
+    ai-hats self update
 expect: framework update removes orphan CLAUDE.md scaffold while preserving user content
-why:    migration steps must clean up obsolete root scaffold files automatically
+why:    without migration step 7, legacy root CLAUDE.md scaffolds persist after being
+        deprecated
 """
 
 from __future__ import annotations

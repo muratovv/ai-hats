@@ -2,9 +2,11 @@
 
 flow:   a developer executing a batch session under cline provider and checking output
         artifacts
-cmds:   ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
+cmds:
+    ai-hats execute --batch -r assistant -p cline --prompt "Reply OK" --json
 expect: session produces audit.md with turn markers and usage.json with token metrics
-why:    cline sessions must record transcript audit logs and token telemetry
+why:    without cline transcript resolution, audit logs remain stubbed and token
+        telemetry is lost
 """
 
 from __future__ import annotations

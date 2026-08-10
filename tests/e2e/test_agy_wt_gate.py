@@ -5,8 +5,8 @@ cmds:
     # when attempting to edit main checkout files in agy session
     ai-hats execute -p agy --batch -r maintainer --prompt "Edit main"
 expect: worktree gate hook denies destructive writes in main checkout
-why:    worktree isolation gates must protect main checkout files across all provider
-        surfaces
+why:    without worktree gate hooks materialized for agy, agents make unauthorized
+        direct edits to main checkout
 """
 
 from __future__ import annotations

@@ -1,10 +1,12 @@
 """e2e (HATS-956)
 
 flow:   a developer listing providers when ai-hats-cline surface package is installed
-cmds:   ai-hats list providers
+cmds:
+    ai-hats list providers
 expect: cline provider is discovered via python entry points and displayed in provider
         listing
-why:    cline surface plugin must be discoverable via entry points when installed
+why:    without entry-point discovery, third-party provider packages like cline are
+        invisible to the CLI
 """
 
 from __future__ import annotations

@@ -1,11 +1,12 @@
 """e2e (HATS-498, HATS-545)
 
 flow:   a developer running agent orchestration with json stdout formatting
-cmds:   ai-hats agent assistant --task "Reply with just: ok" --json
+cmds:
+    ai-hats agent assistant --task "Reply with just: ok" --json
 expect: the process outputs a JSON envelope containing exit_code, session_id,
         session_dir, and total_cost_usd
-why:    agent orchestration scripts depend on structured JSON envelopes to chain
-        sub-agent execution
+why:    without structured json output, orchestration pipelines cannot parse session
+        metadata or propagate shell exit codes
 """
 
 from __future__ import annotations

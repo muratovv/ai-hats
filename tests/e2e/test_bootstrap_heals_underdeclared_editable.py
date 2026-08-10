@@ -1,11 +1,12 @@
 """e2e (HATS-1368)
 
 flow:   a developer running ai-hats when editable install metadata under-declares deps
-cmds:   python -m ai_hats --version
+cmds:
+    python -m ai_hats --version
 expect: startup gate detects missing dependencies from pyproject.toml and heals editable
         install
-why:    bootstrap gate must inspect live pyproject.toml to heal stale editable package
-        metadata
+why:    without live pyproject inspection, stale metadata causes module import crashes
+        at runtime
 """
 
 from __future__ import annotations

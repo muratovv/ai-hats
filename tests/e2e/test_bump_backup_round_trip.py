@@ -2,11 +2,12 @@
 
 flow:   a developer performing framework self update when pre-bump backups are
         configured
-cmds:   ai-hats self update
+cmds:
+    ai-hats self update
 expect: pre-bump backup tarball is created before migration and tar extraction restores
         state
-why:    self update must capture pre-bump tarballs to ensure safe rollback on migration
-        failure
+why:    without pre-bump backups, failed migrations overwrite user configurations
+        without a recovery path
 """
 
 from __future__ import annotations

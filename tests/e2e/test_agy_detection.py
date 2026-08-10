@@ -2,11 +2,12 @@
 
 flow:   a developer initializing project configuration when ~/.gemini directory is
         present
-cmds:   ai-hats self init
+cmds:
+    ai-hats self init
 expect: agy provider is automatically detected from ~/.gemini directory and alias gemini
         resolves to agy
-why:    provider detection must auto-discover agy when gemini config directory exists in
-        HOME
+why:    without provider auto-detection, users with gemini config dirs cannot run agy
+        sessions without explicit configuration
 """
 
 from __future__ import annotations

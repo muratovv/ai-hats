@@ -1,20 +1,12 @@
-"""HATS-1268 — claude runtime hooks execute from the session skill mirror.
+"""e2e (HATS-1113, HATS-1268)
 
-Two properties the flat ``library/hooks/`` copy could not hold, asserted over a
-real composed session (``dev_rule_e2e_gate``; a per-channel test proves nothing
-about the composite — HATS-1113):
-
-1. every wired command resolves inside the session tree, with the data files
-   its skill ships still beside it;
-2. a hook that fires through the chain still WRITES to the bypass journal.
-
-(2) is the one that matters: the journal helper is reached as a sibling, and a
-missing sibling degrades to a stub that prints to stderr and returns cleanly —
-indistinguishable from success by exit code alone. Asserting "the hook ran"
-would pass with the journal dead.
-
-Both share one module-scoped project: ``self init`` costs ~1 min, and the two
-assertions are about the same materialized session.
+flow:   an agent executing tools in a session with materialized runtime hooks
+cmds:
+    ai-hats self init -p claude -r maintainer --no-wizard
+expect: hook scripts resolve inside session tree alongside sibling data files and write
+        bypass records
+why:    without session-tree hook resolution, flattened hook scripts lose sibling data
+        files and bypass logging
 """
 
 from __future__ import annotations

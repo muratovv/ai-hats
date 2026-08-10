@@ -6,7 +6,8 @@ cmds:
     git commit -m "edit python file"
 expect: PostToolUse hook emits additionalContext warning on stdout without blocking file
         edits
-why:    comment length lint hook must provide non-blocking feedback for doc standards
+why:    without non-blocking comment length linting, bloated comments degrade context
+        budget without warning
 """
 
 from __future__ import annotations

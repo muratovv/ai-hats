@@ -2,9 +2,11 @@
 
 flow:   a developer running ai-hats when a missing package cannot be healed by package
         manager
-cmds:   python -m ai_hats config status
+cmds:
+    python -m ai_hats config status
 expect: bootstrap process exits cleanly with error status naming missing dependency
-why:    bootstrap gate must fail loud on no-op repair attempts to prevent re-exec loops
+why:    without missing dep rechecks, no-op package installs cause infinite re-exec
+        loops
 """
 
 from __future__ import annotations

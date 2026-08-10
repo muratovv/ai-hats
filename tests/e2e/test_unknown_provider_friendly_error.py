@@ -1,38 +1,12 @@
-"""E2E: bare ``ai-hats -p <bogus>`` exits clean, not on a raw traceback.
+"""e2e (HATS-965, HATS-1218)
 
-History (HATS-965): the interactive bare-launch surface had friendly handling
-for an unknown ``--role`` (``RoleNotFoundError`` -> ``_handle_role_not_found``
--> exit 2) but NONE for an unknown ``--provider``. ``get_provider`` raised a
-bare ``ValueError`` that escaped ``_launch_session`` as an uncaught traceback.
-The fix mirrors the role pattern: a typed ``UnknownProviderError`` +
-``cli/_helpers._handle_unknown_provider``.
-
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``):
-
-1. ``tmp_project`` bootstraps a project whose built-in library ships the
-   ``maintainer`` role. We pass a VALID role so role validation/composition
-   (which runs BEFORE the provider check) passes and the raise fires on the
-   provider — not on the role.
-2. ``ai-hats -p <bogus> --role maintainer``. The raise fires in
-   ``build_composition_payload`` BEFORE ``WrapRunner`` PTY-attaches, so this
-   runs cleanly in a non-TTY subprocess (no provider binary is ever spawned).
-   This file covers the bare-launch surface only; ``execute`` / ``agent`` are
-   covered by ``test_batch_provider_override.py`` (HATS-1218 — until then they
-   declared ``-p`` and dropped or rejected it).
-3. Assertions:
-   - exit code == 2 (Click's UsageError convention; mirrors the role handler).
-   - stderr names the bogus provider.
-   - stderr contains the ``Available providers:`` header.
-   - stderr lists a known shipped provider (``claude``).
-   - stderr hints at ``ai-hats list providers``.
-   - combined stdout+stderr does NOT contain ``Traceback``.
-
-Fail-under-revert: removing the ``except UnknownProviderError`` arm in
-``cli/__init__.py:_launch_session`` re-leaks the bare ``ValueError`` traceback
-and fails this test.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer specifying an unknown provider name on CLI
+cmds:
+    ai-hats -p definitely-not-a-real-provider --role maintainer
+expect: CLI exits with code 2 listing available providers without printing raw Python
+        traceback
+why:    without provider error handling, typos in provider flags leak unhandled
+        ValueErrors to terminal
 """
 
 from __future__ import annotations

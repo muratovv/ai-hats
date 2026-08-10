@@ -6,7 +6,8 @@ cmds:
     git commit -m "bypass commit"
 expect: git pre-commit hook logs bypass entry to journal and post-commit stamps
         commit SHA
-why:    gate bypasses must leave audit records in bypass journal for compliance tracking
+why:    without bypass logging, gate overrides leave no audit records in repository
+        history
 """
 
 from __future__ import annotations
