@@ -8,6 +8,10 @@ from pathlib import Path
 
 from .materialization import ApplyMaterializer, Materializer
 
+#: Stands in for a value only the launch can produce (pid, uuid, trace path, a
+#: bound port). Lives here so a provider can spell it without importing dry_run.
+AT_LAUNCH = "<assigned at launch>"
+
 
 class ArtifactCategory(str, Enum):
     CONTEXT = "context"
@@ -73,6 +77,7 @@ def assemble_launch_env(
     role: str,
     root_pid: str,
     extra_env: dict[str, str],
+    claim: bool = True,
 ) -> dict[str, str]:
     """Everything ai-hats ADDS to the child's environment (HATS-1548).
 
@@ -87,9 +92,13 @@ def assemble_launch_env(
 
     from .constants import ENV_ROLE, ENV_ROOT_PID
 
+    # ``claim`` separates a report from a launch: only the launch may take a
+    # resource (cline binds a hub port). Same keys either way — a key set that
+    # depended on the mode would be the reporting defect, moved (HATS-1554).
     return {
         **session_env(session_id, trace_path),
         **provider.get_env(session_dir, project_dir),
+        **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),
         **extra_env,
         ENV_ROLE: role,
         ENV_ROOT_PID: root_pid,

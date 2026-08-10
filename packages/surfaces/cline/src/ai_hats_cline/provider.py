@@ -217,6 +217,18 @@ class ClineProvider(Provider):
         return [*kept, "--yolo", "--json", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Pure: the hub port reads as the launch's to pick (HATS-1554)."""
+        from ai_hats.session_artifacts import AT_LAUNCH
+
+        return self._env(project_dir, hub_port=AT_LAUNCH)
+
+    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Bind the hub port. Only a real launch may take one."""
+        del session_dir
+        return {"CLINE_HUB_PORT": str(self._allocate_hub_port())}
+
+    def _env(self, project_dir: Path, *, hub_port: str) -> dict[str, str]:
+        """One key list for both modes, so the report cannot name a different set."""
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
         from ai_hats.paths import ai_hats_dir, tool_home
 
@@ -224,7 +236,7 @@ class ClineProvider(Provider):
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
             # Per-session hub port — parallel sessions EADDRINUSE on the default (HATS-973).
-            "CLINE_HUB_PORT": str(self._allocate_hub_port()),
+            "CLINE_HUB_PORT": hub_port,
             # HATS-1171: --config relocates cline's base dir; pin data (auth /
             # sessions / db) back to the real cline home so auth survives and
             # resolve_transcript still finds the transcript.

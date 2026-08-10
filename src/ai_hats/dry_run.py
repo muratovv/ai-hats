@@ -12,6 +12,7 @@ from pathlib import Path
 from .check_snapshot import describe_checks
 from .materialization import PlanMaterializer
 from .session_artifacts import (
+    AT_LAUNCH,
     BuiltArtifacts,
     RunMode,
     SessionPolicy,
@@ -24,8 +25,7 @@ from .session_report import SessionReport
 # Fixed so reported paths are stable and diffable.
 DRY_RUN_SESSION_ID = "dry-run"
 
-#: Stands in for a value only the launch can produce (pid, uuid, trace path).
-AT_LAUNCH = "<assigned at launch>"
+__all__ = ["AT_LAUNCH", "DRY_RUN_SESSION_ID", "dry_run_automate", "dry_run_hitl"]
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -85,6 +85,7 @@ def dry_run_hitl(
         role=payload.effective_role,
         root_pid=AT_LAUNCH,
         extra_env=artifacts.extra_env,
+        claim=False,
     )
     launch = assemble_launch_command(
         prov,
@@ -177,6 +178,7 @@ def dry_run_automate(
         role=payload.effective_role,
         root_pid=AT_LAUNCH,
         extra_env=artifacts.extra_env,
+        claim=False,
     )
     described = prov.describe_automate_launch(
         project_dir,

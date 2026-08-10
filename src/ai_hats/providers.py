@@ -437,7 +437,21 @@ class Provider(abc.ABC):
 
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        """Get environment variables needed for the provider."""
+        """Environment variables this provider needs. Pure — claims nothing.
+
+        A value that only exists once something is taken for real (a bound port,
+        a lease) belongs in :meth:`claim_launch_env`, or ``--dry-run`` performs
+        the side effect while reporting a value the launch will not use.
+        """
+
+    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Env values a launch must claim for real — ``{}`` for most surfaces.
+
+        Called only on the launch path. Keys must be a subset of
+        :meth:`get_env`'s, so a report names them either way (HATS-1554).
+        """
+        del session_dir, project_dir
+        return {}
 
     def build_session_prompt(
         self,
