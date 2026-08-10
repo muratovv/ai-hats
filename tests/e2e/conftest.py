@@ -295,11 +295,7 @@ def requires_claude_auth() -> None:
 
 @pytest.fixture
 def requires_cline_auth() -> None:
-    """Skip if ``cline`` binary missing (HATS-1087).
-
-    Probe: ``cline --version`` exits 0. Mirrors ``requires_claude_auth``;
-    auth-gated paths surface their own detection inside the cline run envelope.
-    """
+    """Skip if ``cline`` binary missing or unauthenticated/unusable (HATS-1087, HATS-1550)."""
     if not shutil.which("cline"):
         pytest.skip("cline binary not found in PATH")
     try:
@@ -313,6 +309,25 @@ def requires_cline_auth() -> None:
         pytest.skip(f"cline --version probe failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"cline --version exit {cp.returncode}: {cp.stderr[:200]}")
+
+    try:
+        probe = subprocess.run(
+            ["cline", "--yolo", "--json", "-t", "5", "Reply OK"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.skip(f"cline execution probe failed: {exc}")
+    if (
+        probe.returncode != 0
+        or 'finishReason":"error"' in probe.stdout
+        or "Unauthorized" in probe.stdout
+        or "Insufficient balance" in probe.stdout
+        or "Please recharge" in probe.stdout
+    ):
+        output = (probe.stdout or probe.stderr or "").strip()
+        pytest.skip(f"cline auth/execution probe failed: {output[-300:]}")
 
 
 @pytest.fixture
