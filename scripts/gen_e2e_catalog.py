@@ -256,7 +256,7 @@ def _ids_known_for(file_name: str) -> set[str]:
             doc = ast.get_docstring(tree, clean=False)
             if doc and doc in text:
                 text = text.replace(doc, "", 1)
-        except Exception:
+        except Exception:  # noqa: S110 # silent-ok: docstring parsing is best-effort
             pass
         found.update(_ID.findall(text))
     try:
