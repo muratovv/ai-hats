@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import ast
 import functools
+import os
 import re
 import shlex
 import subprocess
@@ -172,7 +173,7 @@ def check_cmds(
                 errors.append(f"{row.file}: cmds `{ln}` uses literal `.../` ellipsis")
                 continue
 
-            marker_match = re.search(r"#\s*no-resolve:(.*)", ln)
+            marker_match = re.search(r"#\s*(?:no-resolve|retired):(.*)", ln)
             if marker_match:
                 reason = marker_match.group(1).strip()
                 if not reason:
@@ -246,8 +247,8 @@ def _get_cli_trees() -> tuple[click.Group, click.Group]:
 
 
 @functools.lru_cache(maxsize=None)
-def _ids_known_for(file_name: str) -> set[str]:
-    file_path = E2E_DIR / file_name
+def _ids_known_for(file_name: str, base_dir: Path = E2E_DIR) -> set[str]:
+    file_path = base_dir / file_name
     found = set()
     if file_path.exists():
         text = file_path.read_text(encoding="utf-8")
@@ -260,7 +261,9 @@ def _ids_known_for(file_name: str) -> set[str]:
             pass
         found.update(_ID.findall(text))
     try:
-        rel_path = file_path.relative_to(REPO_ROOT) if file_path.is_relative_to(REPO_ROOT) else file_path
+        rel_path = (
+            file_path.relative_to(REPO_ROOT) if file_path.is_relative_to(REPO_ROOT) else file_path
+        )
         res = subprocess.run(
             ["git", "log", "--", str(rel_path)],
             cwd=REPO_ROOT,
@@ -374,6 +377,85 @@ def _parse_block(lines: list[str], name: str, pins: list[str]) -> Row:
     )
 
 
+def validate_cmd_line(cmd_str: str) -> str | None:
+    """Verify that a `cmds:` line starting with `ai-hats` is valid Click CLI syntax.
+
+    Returns an error message if invalid, or None if valid/ignored.
+    Lines containing `# retired:` are ignored as declared opt-outs.
+    """
+    if "# retired:" in cmd_str or "# no-resolve:" in cmd_str:
+        return None
+
+    clean = cmd_str.split("#")[0].strip()
+    if not clean:
+        return None
+
+    if not (clean == "ai-hats" or clean.startswith("ai-hats ") or clean.startswith("ai-hats\t")):
+        return None
+
+    try:
+        tokens = shlex.split(clean)
+    except Exception as exc:
+        return f"cannot parse command line: {exc}"
+
+    args = tokens[1:]  # skip 'ai-hats'
+    from ai_hats.cli import main
+
+    curr_cmd: click.Command = main
+    ctx = click.Context(main, info_name="ai-hats")
+
+    i = 0
+    saw_dash_dash = False
+
+    while i < len(args):
+        arg = args[i]
+
+        if arg == "--":
+            saw_dash_dash = True
+            i += 1
+            continue
+
+        if not saw_dash_dash and arg.startswith("-"):
+            if arg in ("--help", "-h", "--version"):
+                i += 1
+                continue
+
+            param = next(
+                (p for p in curr_cmd.params if arg in p.opts or arg in p.secondary_opts),
+                None,
+            )
+            if param is None:
+                return f"unknown option {arg!r} for command {ctx.info_name!r}"
+
+            if param.is_flag or param.nargs == 0:
+                i += 1
+            else:
+                n = max(1, param.nargs) if param.nargs != -1 else 1
+                i += 1 + n
+            continue
+
+        if isinstance(curr_cmd, click.Group):
+            sub_cmd = curr_cmd.get_command(ctx, arg)
+            if sub_cmd is not None:
+                curr_cmd = sub_cmd
+                ctx = click.Context(curr_cmd, parent=ctx, info_name=arg)
+                i += 1
+                continue
+            if curr_cmd is main and getattr(curr_cmd, "allow_extra_args", False):
+                if " " in arg or (i > 0 and not arg.isalnum()):
+                    i += 1
+                    continue
+            return f"unknown subcommand {arg!r} for command {ctx.info_name!r}"
+
+        args_params = [p for p in curr_cmd.params if isinstance(p, click.Argument)]
+        if args_params:
+            i += 1
+            continue
+        return f"unexpected argument {arg!r} for command {ctx.info_name!r}"
+
+    return None
+
+
 def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
     """(rows, uncatalogued file names, errors) over every test file in `e2e_dir`."""
     rows: list[Row] = []
@@ -385,7 +467,15 @@ def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
         except CatalogError as exc:
             errors.append(str(exc))
             continue
-        (rows.extend(found) if found else pending.append(path.name))
+        if found:
+            rows.extend(found)
+            for row in found:
+                for cmd in row.cmds:
+                    err = validate_cmd_line(cmd)
+                    if err:
+                        errors.append(f"{path.name}: invalid `cmds:` line {cmd!r} — {err}")
+        else:
+            pending.append(path.name)
     return rows, pending, errors
 
 
@@ -444,14 +534,58 @@ def main(argv: list[str] | None = None) -> int:
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="regenerate the catalog")
     mode.add_argument("--check", action="store_true", help="fail if the catalog is stale")
+    ap.add_argument(
+        "--dir",
+        type=Path,
+        default=E2E_DIR,
+        help="path to e2e directory (default: tests/e2e)",
+    )
     args = ap.parse_args(argv)
 
-    rows, pending, errors = collect(E2E_DIR)
+    e2e_dir = args.dir
+    catalog_file = e2e_dir / "CATALOG.md"
+
+    rows, pending, errors = collect(e2e_dir)
     if errors:
         print("[e2e-catalog] malformed flow block(s):", file=sys.stderr)
         for err in errors:
             print(f"  {err}", file=sys.stderr)
         return 1
+
+    ack = os.environ.get("AI_HATS_E2E_CATALOG_ACK") == "1"
+
+    if pending:
+        if ack:
+            print(
+                f"[e2e-catalog] BYPASSED via AI_HATS_E2E_CATALOG_ACK=1 "
+                f"(uncatalogued files allowed: {', '.join(pending)})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[e2e-catalog] refusal — {len(pending)} uncatalogued file(s):",
+                file=sys.stderr,
+            )
+            for name in pending:
+                print(f"  - {name}", file=sys.stderr)
+            print(
+                "  Remedy: write the four-field block (`flow:`, `cmds:`, `expect:`, `why:`)\n"
+                "  in the module docstring (schema in `scripts/gen_e2e_catalog.py`;\n"
+                "  reference: `tests/e2e/test_agy_bypass.py`).",
+                file=sys.stderr,
+            )
+            if args.write:
+                rendered = render(rows, pending)
+                catalog_file.write_text(rendered, encoding="utf-8")
+                done = len({row.file for row in rows})
+                tally = f"{done}/{done + len(pending)} files, {len(rows)} flows"
+                rel = (
+                    catalog_file.relative_to(REPO_ROOT)
+                    if catalog_file.is_relative_to(REPO_ROOT)
+                    else catalog_file
+                )
+                print(f"[e2e-catalog] wrote {rel} ({tally})")
+            return 1
 
     ai_hats_cli, rack_cli = _get_cli_trees()
 
@@ -464,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
 
     soundness_errors = (
         check_actor(rows)
-        + check_pins(rows, _ids_known_for)
+        + check_pins(rows, lambda f: _ids_known_for(f, e2e_dir))
         + check_plumbing(rows)
         + check_cmds(rows, resolve_cmd, path_exists)
     )
@@ -479,19 +613,24 @@ def main(argv: list[str] | None = None) -> int:
     # more progress than there is).
     done = len({row.file for row in rows})
     tally = f"{done}/{done + len(pending)} files, {len(rows)} flows"
+    rel = (
+        catalog_file.relative_to(REPO_ROOT)
+        if catalog_file.is_relative_to(REPO_ROOT)
+        else catalog_file
+    )
+
     if args.write:
-        CATALOG.write_text(rendered, encoding="utf-8")
-        print(f"[e2e-catalog] wrote {CATALOG.relative_to(REPO_ROOT)} ({tally})")
+        catalog_file.write_text(rendered, encoding="utf-8")
+        print(f"[e2e-catalog] wrote {rel} ({tally})")
         return 0
 
-    current = CATALOG.read_text(encoding="utf-8") if CATALOG.exists() else None
+    current = catalog_file.read_text(encoding="utf-8") if catalog_file.exists() else None
     if current == rendered:
         print(f"[e2e-catalog] current ({tally})")
         return 0
     where = "missing" if current is None else "stale"
     print(
-        f"[e2e-catalog] {CATALOG.relative_to(REPO_ROOT)} is {where} — "
-        "run `python scripts/gen_e2e_catalog.py --write`",
+        f"[e2e-catalog] {rel} is {where} — run `python scripts/gen_e2e_catalog.py --write`",
         file=sys.stderr,
     )
     return 1

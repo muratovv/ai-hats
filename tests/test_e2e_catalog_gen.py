@@ -39,6 +39,7 @@ cmds:
 expect: the refusal exits non-zero and names "linked worktree"
 why:    otherwise the close deletes the operator's cwd
 """
+# HATS-788
 '''
 
 
@@ -306,3 +307,66 @@ def test_check_cmds_with_real_click_trees():
     src2 = WELL_FORMED.replace("rack create A --id HATS-1", "rack hyp create")
     rows2 = mod.parse_rows(src2, "test_x.py")
     assert mod.check_cmds(rows2, resolve_cmd, lambda p: True) == []
+
+
+# --- main() pending refusal and ACK bypass (HATS-1563) ---------------------
+
+
+def test_main_uncatalogued_file_refuses_in_check_mode(tmp_path: Path, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "refusal — 1 uncatalogued file(s):" in err
+    assert "- test_pending.py" in err
+    assert "Remedy: write the four-field block" in err
+    assert "run `python scripts/gen_e2e_catalog.py --write`" not in err
+
+
+def test_main_uncatalogued_file_refuses_and_writes_in_write_mode(tmp_path: Path, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    rc = mod.main(["--write", "--dir", str(tmp_path)])
+    assert rc == 1
+    assert (tmp_path / "CATALOG.md").exists()
+    err = capsys.readouterr().err
+    assert "refusal — 1 uncatalogued file(s):" in err
+    assert "- test_pending.py" in err
+
+
+def test_main_uncatalogued_file_bypassed_with_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+
+    # First write catalog with ACK
+    rc_write = mod.main(["--write", "--dir", str(tmp_path)])
+    assert rc_write == 0
+    err_write = capsys.readouterr().err
+    assert "BYPASSED via AI_HATS_E2E_CATALOG_ACK=1" in err_write
+
+    # Then check catalog with ACK
+    rc_check = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc_check == 0
+    err_check = capsys.readouterr().err
+    assert "BYPASSED via AI_HATS_E2E_CATALOG_ACK=1" in err_check
+
+
+def test_main_malformed_block_not_bypassed_by_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_bad.py").write_text('"""e2e (HATS-1)\nflow: only flow field\n"""\n')
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "malformed flow block(s):" in err
+
+
+def test_main_stale_catalog_not_bypassed_by_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "CATALOG.md").write_text("stale content\n")
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "is stale — run `python scripts/gen_e2e_catalog.py --write`" in err

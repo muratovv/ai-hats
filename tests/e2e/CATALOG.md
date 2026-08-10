@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**226 of 226 files catalogued — 233 flows.**
+**227 of 227 files catalogued — 234 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -652,6 +652,20 @@ as a claim to check, not as evidence.
 - **expect** — script exits non-zero and outputs an unsound row refusal naming file, command and reason
 - **why** — prevents mechanical catalog corruptions (invented pins, non-resolving commands, plumbing) from landing
 
+## `test_e2e_catalog_uncatalogued_refusal.py`
+
+*pins HATS-1563*
+
+- **flow** — the e2e catalog generator refuses an uncatalogued test file unless bypassed
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh e2e-catalog
+  ```
+
+- **expect** — gen_e2e_catalog.py exits non-zero naming uncatalogued files and remedy guidance
+- **why** — without uncatalogued file refusal, new tests added without docstrings bypass the catalog check silently
+
 ## `test_edge_check_gate.py`
 
 *pins HATS-1141*
@@ -660,7 +674,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self update --channel edge
+  ai-hats self update
   ```
 
 - **expect** — edge gate verifies edge repository HEAD against current commit before proceeding
@@ -1121,7 +1135,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats task list    # no-resolve: pins that legacy task CLI was removed
+  ai-hats task list  # retired: expected to fail
   ```
 
 - **expect** — CLI exits with error code explaining legacy task CLI is replaced by rack command
@@ -1918,7 +1932,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self clean    # no-resolve: pins that retired self clean CLI was removed
+  ai-hats self clean  # retired: expected to fail
   ```
 
 - **expect** — CLI exits with error code explaining self clean command is retired
@@ -2384,7 +2398,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self update --channel stable
+  ai-hats self update
   ```
 
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv

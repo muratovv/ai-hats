@@ -2,7 +2,7 @@
 
 flow:   a developer updating framework version on stable release channel
 cmds:
-    ai-hats self update --channel stable
+    ai-hats self update
 expect: self update resolves latest tagged stable release and installs versioned release
         venv
 why: without stable channel support, production users cannot pin update checks to
