@@ -168,6 +168,16 @@ def dry_run_automate(
     checks, notes = describe_checks(
         prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
     )
+    env = assemble_launch_env(
+        prov,
+        project_dir,
+        cache_dir,
+        session_id=DRY_RUN_SESSION_ID,
+        trace_path=AT_LAUNCH,
+        role=payload.effective_role,
+        root_pid=AT_LAUNCH,
+        extra_env=artifacts.extra_env,
+    )
     described = prov.describe_automate_launch(
         project_dir,
         payload.result,
@@ -176,7 +186,7 @@ def dry_run_automate(
         task=task,
         ticket_id=ticket_id,
         model=model,
-        env=dict(artifacts.extra_env),
+        env=env,
     )
 
     return SessionReport(
@@ -185,7 +195,7 @@ def dry_run_automate(
         run_mode=RunMode.AUTOMATE.value,
         policy=eff_policy,
         launch=described.launch,
-        env=dict(artifacts.extra_env),
+        env=env,
         prompt=next((p for p in artifacts.materialized if p.suffix == ".md"), None),
         plan=artifacts.port.plan,
         cwd="<worktree, assigned at launch>",

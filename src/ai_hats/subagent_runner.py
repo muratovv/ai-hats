@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID, PROVIDER_CLAUDE
+from .constants import PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -26,7 +26,7 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
-from .session_artifacts import BuiltArtifacts, RunMode
+from .session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from .session_report import SessionReport
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -199,6 +199,20 @@ class SubAgentRunner:
         )
 
         notes: list[str] = []
+        # Everything ai-hats adds to the child's environment, expressed once
+        # (HATS-1548) — the sub-agent path merged its own subset and reported a
+        # different one: `extra_env` was reported and never delivered, while the
+        # six keys it did deliver appeared in no record (HATS-1552).
+        launch_env = assemble_launch_env(
+            provider,
+            self.project_dir,
+            session.session_dir,
+            session_id=session.session_id,
+            trace_path=str(session.trace_path),
+            role=role_name,
+            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            extra_env=artifacts.extra_env,
+        )
         described = provider.describe_automate_launch(
             self.project_dir,
             result,
@@ -207,7 +221,7 @@ class SubAgentRunner:
             task=task,
             ticket_id=ticket_id,
             model=model,
-            env=dict(artifacts.extra_env),
+            env=launch_env,
         )
         meta_prompt = described.prompt
 
@@ -230,7 +244,7 @@ class SubAgentRunner:
             run_mode=RunMode.AUTOMATE.value,
             policy=self.payload.policy,
             launch=described.launch,
-            env=dict(artifacts.extra_env),
+            env=launch_env,
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd="<worktree, assigned at launch>",
@@ -240,31 +254,12 @@ class SubAgentRunner:
 
         session.log_sub(f"Sub-agent started: role={role_name}")
 
-        # HATS-474 review fix: keep the env we pass to a *subprocess* (Agy
-        # path) as the full inherited environment — subprocess.run replaces
-        # the child env wholesale when given. The SDK path uses an *overlay*
-        # via ClaudeAgentOptions.env, which the SDK merges on top of
-        # os.environ at spawn time, so we hand it only ai-hats-specific
-        # keys to avoid widening the secret-exposure surface (the SDK
-        # stores options on a long-lived object, repr-able).
-        provider_env = provider.get_env(session.session_dir, self.project_dir)
-        env = {
-            **os.environ,
-            **session.get_env(),
-            **provider_env,
-            ENV_ROLE: role_name,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
-        sdk_env_overlay = {
-            **session.get_env(),
-            **provider_env,
-            ENV_ROLE: role_name,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
-        from .skills_dir import inject_skill_paths_to_env
-
-        inject_skill_paths_to_env(env, result.skills)
-        inject_skill_paths_to_env(sdk_env_overlay, result.skills)
+        # HATS-474 review fix: a *subprocess* (Agy path) gets the full inherited
+        # environment — subprocess.run replaces the child env wholesale when
+        # given one. The SDK path takes `launch_env` as an *overlay* it merges
+        # on top of os.environ itself, so handing it only ai-hats keys keeps the
+        # secret-exposure surface off a long-lived, repr-able options object.
+        env = {**os.environ, **launch_env}
 
         # Legacy subprocess path still needs cmd / skill_args precomputed.
         # The Claude SDK path materializes skills internally via
@@ -325,7 +320,7 @@ class SubAgentRunner:
                         session_id=session.session_id,
                         task=task,
                         ticket_id=ticket_id,
-                        env=sdk_env_overlay,
+                        env=launch_env,
                         model=model,
                         timeout_s=timeout_s,
                         artifacts=artifacts,
