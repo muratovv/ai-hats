@@ -1,8 +1,8 @@
 """e2e (HATS-1006)
 
-flow:   a developer starting session when settings.json carries malformed JSON structure
+flow:   a developer running ai-hats config status when settings.json carries malformed JSON structure
 cmds:
-    ai-hats status
+    ai-hats config status
 expect: session startup warns user of settings.json lint errors without aborting
         execution
 why: without settings lint warnings, invalid settings.json entries cause silent hook

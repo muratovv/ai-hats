@@ -4,7 +4,7 @@ flow: a developer running ai-hats CLI commands via launcher on a venv without
       bin/ai-hats
         console script
 cmds:
-    ai-hats status --verbose
+    ai-hats config status --verbose
 expect: launcher verifies python importability and dispatches command via python -m
         ai_hats
 why: without python -m module dispatch, removing console script binaries breaks host

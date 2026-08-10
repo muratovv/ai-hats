@@ -1,8 +1,8 @@
 """e2e (HATS-294, HATS-469, HATS-906, HATS-907)
 
-flow:   a developer running session commands when skills mirror directory is out of date
+flow:   a developer running ai-hats config status when skills mirror directory is out of date
 cmds:
-    ai-hats status
+    ai-hats config status
 expect: session initialization detects stale skills mirror and self-heals mirror files
         from library
 why: without skills mirror self-healing, modified library skills fail to update in

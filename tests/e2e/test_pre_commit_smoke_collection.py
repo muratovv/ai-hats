@@ -1,8 +1,8 @@
 """e2e (HATS-1345, HATS-1352)
 
-flow:   a maintainer running pre-commit smoke test collection
+flow:   a maintainer committing changes to trigger the pre-commit smoke hook
 cmds:
-    bash scripts/pre-commit-smoke.sh
+    git commit
 expect: smoke script collects fast smoke test suite and runs verification within target
         deadline
 why: without fast smoke test collection, pre-commit git hooks slow down local commit

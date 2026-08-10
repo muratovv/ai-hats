@@ -2,7 +2,7 @@
 
 flow:   a developer running self clean on a project with retired framework files
 cmds:
-    ai-hats self clean
+    ai-hats self clean    # no-resolve: pins retired self clean CLI
 expect: clean command removes retired files from .agent/ai-hats/ and restores clean
         workspace
 why:    without self clean, deprecated framework artifacts persist in repository history"""

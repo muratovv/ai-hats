@@ -1,9 +1,9 @@
 """e2e (HATS-1118)
 
-flow:   a developer running launcher status when a first-party entry point attribute is
+flow:   a developer running ai-hats config status when a first-party entry point attribute is
         missing
 cmds:
-    ai-hats status
+    ai-hats config status
 expect: launcher probe detects missing entry point attribute and aborts execution with
         exit
         code 1

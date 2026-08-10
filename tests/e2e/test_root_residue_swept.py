@@ -2,7 +2,7 @@
 
 flow:   a developer running self clean to remove root residue files
 cmds:
-    ai-hats self clean
+    ai-hats self clean    # no-resolve: pins retired self clean CLI
 expect: clean command sweeps legacy root residue files and keeps framework state inside
         .agent/ai-hats/
 why: without root residue sweeps, legacy config files remain in project root corrupting

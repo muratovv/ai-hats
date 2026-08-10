@@ -4,7 +4,7 @@ flow: a developer running ai-hats commands from inside a linked git worktree or
       subfolder of
         an onboarded project
 cmds:
-    ai-hats status
+    ai-hats wt status
 expect: launcher resolves project root to main checkout and executes using main project
         managed
         venv
