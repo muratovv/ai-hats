@@ -567,3 +567,38 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
         "binding never installed proves nothing"
     )
     assert "not this project's backlog" in log.read_text(encoding="utf-8")
+
+
+def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog():
+    """HATS-1562: `ci-local.sh done-gate` runs `e2e-catalog` first.
+
+    A stale CATALOG.md makes done-gate exit non-zero immediately at the e2e-catalog
+    stage without reaching later expensive stages (lint, unit, integration).
+    """
+    catalog_path = REPO_ROOT / "tests/e2e/CATALOG.md"
+    original_bytes = catalog_path.read_bytes()
+    try:
+        catalog_path.write_bytes(original_bytes + b"\n")
+
+        proc = subprocess.run(
+            ["bash", "scripts/ci-local.sh", "done-gate"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert proc.returncode != 0, (
+            f"stale CATALOG.md must fail done-gate:\n{proc.stdout}\n{proc.stderr}"
+        )
+        combined = proc.stdout + proc.stderr
+        assert "[ci-local] e2e-catalog" in combined, (
+            f"done-gate output must announce e2e-catalog stage:\n{combined}"
+        )
+        assert "[ci-local] lint" not in combined, (
+            f"done-gate must fail at e2e-catalog stage BEFORE reaching lint:\n{combined}"
+        )
+    finally:
+        catalog_path.write_bytes(original_bytes)
+        assert catalog_path.read_bytes() == original_bytes, (
+            "CATALOG.md must be restored to original state"
+        )

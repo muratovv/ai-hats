@@ -131,7 +131,7 @@ cannot reach the script at `wt:pre-merge` and read as "not my backlog".
 
 ### `--run` — `make done-gate`, and where the marker lands
 
-Runs `scripts/ci-local.sh done-gate` (`lint → unit → integration →
+Runs `scripts/ci-local.sh done-gate` (`e2e-catalog → lint → unit → integration →
 merge-smoke`, stopping at the first red) from `git rev-parse --show-toplevel`.
 On green **and a clean tree** it writes
 

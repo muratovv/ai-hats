@@ -120,9 +120,9 @@ ci_e2e() {
 # Excluded from `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests without a marker filter.
 ci_done_gate() {
-    echo "[ci-local] done-gate (lint -> unit -> integration -> merge-smoke)" >&2
+    echo "[ci-local] done-gate (e2e-catalog -> lint -> unit -> integration -> merge-smoke)" >&2
     local stage rc
-    for stage in lint unit integration merge-smoke; do
+    for stage in e2e-catalog lint unit integration merge-smoke; do
         "ci_${stage//-/_}" || {
             rc=$?
             echo "[ci-local] done-gate: stage '$stage' FAILED (rc=$rc) — stopping here" >&2
