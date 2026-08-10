@@ -2,7 +2,7 @@
 
 flow:   a developer running session commands when skills mirror directory is out of date
 cmds:
-    ai-hats status
+    ai-hats
 expect: session initialization detects stale skills mirror and self-heals mirror files
         from library
 why: without skills mirror self-healing, modified library skills fail to update in

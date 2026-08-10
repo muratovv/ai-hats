@@ -660,7 +660,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self update --channel edge
+  ai-hats self update
   ```
 
 - **expect** — edge gate verifies edge repository HEAD against current commit before proceeding
@@ -920,11 +920,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-1118*
 
-- **flow** — a developer running launcher status when a first-party entry point attribute is missing
+- **flow** — a developer running launcher config status when a first-party entry point attribute is missing
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats config status
   ```
 
 - **expect** — launcher probe detects missing entry point attribute and aborts execution with exit code 1
@@ -1009,7 +1009,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats status --verbose
+  ai-hats config status
   ```
 
 - **expect** — launcher verifies python importability and dispatches command via python -m ai_hats
@@ -1093,7 +1093,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats config status
   ```
 
 - **expect** — launcher resolves project root to main checkout and executes using main project managed venv
@@ -1103,11 +1103,11 @@ as a claim to check, not as evidence.
 
 *pins HATS-815*
 
-- **flow** — a developer running session commands when leftover hook sidecar files exist
+- **flow** — a developer running self update when leftover hook sidecar files exist
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats self update
   ```
 
 - **expect** — CLI emits warning for leftover hook sidecar files without failing command execution
@@ -1121,7 +1121,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats task list
+  ai-hats task list  # retired: expected to fail
   ```
 
 - **expect** — CLI exits with error code explaining legacy task CLI is replaced by rack command
@@ -1750,14 +1750,14 @@ as a claim to check, not as evidence.
 
 *pins HATS-1170, HATS-1336*
 
-- **flow** — a developer running self clean to remove root residue files
+- **flow** — a developer running self update to sweep legacy root residue files
 - **cmds**
 
   ```console
-  ai-hats self clean
+  ai-hats self update
   ```
 
-- **expect** — clean command sweeps legacy root residue files and keeps framework state inside .agent/ai-hats/
+- **expect** — update sweeps legacy root residue files from settings.json while keeping user entries
 - **why** — without root residue sweeps, legacy config files remain in project root corrupting state resolution
 
 ## `test_rule_delivery_gate.py`
@@ -1832,7 +1832,7 @@ as a claim to check, not as evidence.
   ai-hats agent "assistant + ai-hats-framework" --task hello --dry-run --json
   ai-hats --dry-run-json -r "assistant + ai-hats-framework"
   ai-hats config set -r "assistant + ai-hats-framework"          # must refuse
-  ai-hats -r assistant + ai-hats-framework                       # bare +, must refuse
+  ai-hats -r assistant + ai-hats-framework                       # retired: bare +, must refuse
   ```
 
 - **expect** — an added trait's injection appears in the prompt, a removed one disappears while its siblings stay, and compact and spaced spellings are byte-identical; the composed prompt is measurably larger than the base through both `agent --dry-run --json` and `--dry-run-json`; an unknown component, a role in second position, and a bare unquoted `+` each exit 2 with a named error and no traceback; `config set` refuses to persist and leaves ai-hats.yaml byte-identical
@@ -1914,15 +1914,15 @@ as a claim to check, not as evidence.
 
 *pins HATS-294, HATS-709*
 
-- **flow** — a developer running self clean on a project with retired framework files
+- **flow** — a developer running retired self clean command
 - **cmds**
 
   ```console
-  ai-hats self clean
+  ai-hats self clean  # retired: expected to fail
   ```
 
-- **expect** — clean command removes retired files from .agent/ai-hats/ and restores clean workspace
-- **why** — without self clean, deprecated framework artifacts persist in repository history
+- **expect** — CLI rejects retired self clean subcommand with 'No such command' error
+- **why** — without command retirement guards, deprecated commands might be invoked silently
 
 ## `test_self_heal_broken_editable.py`
 
@@ -2282,7 +2282,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats
   ```
 
 - **expect** — session startup warns user of settings.json lint errors without aborting execution
@@ -2296,7 +2296,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats config status
   ```
 
 - **expect** — shadow guard detects foreign venv path, refuses foreign venv, and uses local project venv
@@ -2370,7 +2370,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats status
+  ai-hats
   ```
 
 - **expect** — session initialization detects stale skills mirror and self-heals mirror files from library
@@ -2384,7 +2384,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self update --channel stable
+  ai-hats self update
   ```
 
 - **expect** — self update resolves latest tagged stable release and installs versioned release venv

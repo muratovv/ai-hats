@@ -2,7 +2,7 @@
 
 flow:   a developer invoking legacy task CLI commands
 cmds:
-    ai-hats task list
+    ai-hats task list  # retired: expected to fail
 expect: CLI exits with error code explaining legacy task CLI is replaced by rack command
 why: without legacy CLI removal guards, deprecated task subcommands execute stale task
      logic"""

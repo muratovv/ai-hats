@@ -10,7 +10,7 @@ cmds:
     ai-hats agent "assistant + ai-hats-framework" --task hello --dry-run --json
     ai-hats --dry-run-json -r "assistant + ai-hats-framework"
     ai-hats config set -r "assistant + ai-hats-framework"          # must refuse
-    ai-hats -r assistant + ai-hats-framework                       # bare +, must refuse
+    ai-hats -r assistant + ai-hats-framework                       # retired: bare +, must refuse
 expect: an added trait's injection appears in the prompt, a removed one
         disappears while its siblings stay, and compact and spaced spellings are
         byte-identical; the composed prompt is measurably larger than the base

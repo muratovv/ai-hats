@@ -3,7 +3,7 @@
 flow: a developer running commands when AI_HATS_VENV points to a foreign venv outside
       project
 cmds:
-    ai-hats status
+    ai-hats config status
 expect: shadow guard detects foreign venv path, refuses foreign venv, and uses local
         project venv
 why: without shadow guards, leaked environment variables execute CLI commands inside
