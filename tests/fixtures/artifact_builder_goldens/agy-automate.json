@@ -1,4 +1,5 @@
 {
+  "checks": [],
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
   "env_keys": [
