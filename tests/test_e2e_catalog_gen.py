@@ -223,4 +223,71 @@ def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
     assert mod.check_plumbing(rows_good) == []
 
 
+def test_check_cmds_sub_cases():
+    def mock_resolve(cli_name: str, args: list[str]) -> tuple[bool, str | None]:
+        if cli_name == "ai-hats" and args == ["status"]:
+            return False, "unknown subcommand 'status' under main"
+        return True, None
+
+    def mock_path_exists(p: str) -> bool:
+        return p != "scripts/missing.sh"
+
+    # 1. Unknown subcommand
+    bad_cmd = WELL_FORMED.replace("rack create A --id HATS-1", "ai-hats status")
+    rows = mod.parse_rows(bad_cmd, "test_x.py")
+    errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
+    assert any("unknown subcommand 'status'" in e for e in errs)
+
+    # 2. Missing path
+    bad_path = WELL_FORMED.replace("rack create A --id HATS-1", "bash scripts/missing.sh")
+    rows = mod.parse_rows(bad_path, "test_x.py")
+    errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
+    assert any("references missing path `scripts/missing.sh`" in e for e in errs)
+
+    # 3. Ellipsis .../
+    bad_ellipsis = WELL_FORMED.replace("rack create A --id HATS-1", "cat .../foo.txt")
+    rows = mod.parse_rows(bad_ellipsis, "test_x.py")
+    errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
+    assert any("uses literal `.../` ellipsis" in e for e in errs)
+
+    # 4. Empty marker reason
+    bad_marker = WELL_FORMED.replace(
+        "rack transition HATS-1 done       # must refuse", "ai-hats status   # no-resolve:"
+    )
+    rows = mod.parse_rows(bad_marker, "test_x.py")
+    errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
+    assert any("has empty excuse reason after `# no-resolve:`" in e for e in errs)
+
+    # 5. Non-empty marker excuses unknown subcommand
+    good_marker = WELL_FORMED.replace(
+        "rack transition HATS-1 done       # must refuse",
+        "ai-hats status   # no-resolve: pins removed status CLI",
+    )
+    rows = mod.parse_rows(good_marker, "test_x.py")
+    errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
+    assert errs == []
+
+
+def test_check_cmds_with_real_click_trees():
+    ai_hats_cli, rack_cli = mod._get_cli_trees()
+
+    def resolve_cmd(cli_name: str, args: list[str]) -> tuple[bool, str | None]:
+        root = ai_hats_cli if cli_name == "ai-hats" else rack_cli
+        return mod._resolve_cli_cmd(root, args, cli_name)
+
+    # -p <bad-provider> stays green when marked or valid
+    src1 = WELL_FORMED.replace(
+        "rack create A --id HATS-1",
+        'ai-hats -p nonexistent_provider "hello world"  # no-resolve: positional prompt',
+    )
+    rows1 = mod.parse_rows(src1, "test_x.py")
+    assert mod.check_cmds(rows1, resolve_cmd, lambda p: True) == []
+
+    # rack hyp create stays green
+    src2 = WELL_FORMED.replace("rack create A --id HATS-1", "rack hyp create")
+    rows2 = mod.parse_rows(src2, "test_x.py")
+    assert mod.check_cmds(rows2, resolve_cmd, lambda p: True) == []
+
+
+
 

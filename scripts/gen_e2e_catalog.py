@@ -29,11 +29,14 @@ import argparse
 import ast
 import functools
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+import click
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
@@ -97,6 +100,145 @@ def check_plumbing(rows: list[Row]) -> list[str]:
                     f"{row.file}: cmds `{ln_s}` demonstrates test plumbing — show the user-facing command instead"
                 )
     return errors
+
+
+DYNAMIC_RACK_GROUPS = {"hyp", "proposal", "prop"}
+
+
+def _resolve_cli_cmd(root_group: click.Group, sub_args: list[str], cli_name: str = "") -> tuple[bool, str | None]:
+    if not sub_args:
+        return True, None
+    current: click.Command = root_group
+    idx = 0
+    while idx < len(sub_args):
+        arg = sub_args[idx]
+        if arg == "--":
+            break
+        if arg.startswith("-"):
+            matched = None
+            if hasattr(current, "params"):
+                for p in current.params:
+                    if isinstance(p, click.Option) and (arg in p.opts or arg in p.secondary_opts):
+                        matched = p
+                        break
+            if matched:
+                if matched.is_flag:
+                    idx += 1
+                elif matched.nargs != 0:
+                    n = matched.nargs if matched.nargs > 0 else 1
+                    idx += 1 + n
+                else:
+                    idx += 1
+            else:
+                if "=" in arg:
+                    idx += 1
+                else:
+                    idx += 1
+                    if idx < len(sub_args) and not sub_args[idx].startswith("-"):
+                        if isinstance(current, click.Group) and sub_args[idx] in current.commands:
+                            pass
+                        else:
+                            idx += 1
+            continue
+
+        if isinstance(current, click.Group):
+            if arg in current.commands:
+                current = current.commands[arg]
+                idx += 1
+            elif cli_name == "rack" and arg in DYNAMIC_RACK_GROUPS:
+                return True, None
+            else:
+                cmds_avail = ", ".join(sorted(current.commands.keys())) if hasattr(current, "commands") else ""
+                return False, f"unknown subcommand {arg!r} under {current.name} (available: {cmds_avail})"
+        else:
+            return True, None
+    return True, None
+
+
+def check_cmds(
+    rows: list[Row],
+    resolve_cmd: Callable[[str, list[str]], tuple[bool, str | None]],
+    path_exists: Callable[[str], bool],
+) -> list[str]:
+    errors = []
+    for row in rows:
+        for raw_ln in row.cmds:
+            ln = raw_ln.strip()
+            if not ln or ln.startswith("#"):
+                continue
+
+            if ".../" in ln:
+                errors.append(f"{row.file}: cmds `{ln}` uses literal `.../` ellipsis")
+                continue
+
+            marker_match = re.search(r"#\s*no-resolve:(.*)", ln)
+            if marker_match:
+                reason = marker_match.group(1).strip()
+                if not reason:
+                    errors.append(
+                        f"{row.file}: cmds `{ln}` has empty excuse reason after `# no-resolve:`"
+                    )
+                continue
+
+            code = ln.split("#")[0].strip()
+            if not code:
+                continue
+
+            try:
+                tokens = shlex.split(code)
+            except Exception:
+                tokens = code.split()
+
+            if not tokens:
+                continue
+
+            cmd_head = tokens[0]
+            if cmd_head in ("ai-hats", "rack") or (
+                cmd_head == "python"
+                and len(tokens) >= 3
+                and tokens[1] == "-m"
+                and tokens[2] in ("ai_hats", "ai_hats.cli", "ai_hats_rack")
+            ):
+                if cmd_head in ("ai-hats", "rack"):
+                    cli_name = cmd_head
+                    sub_args = tokens[1:]
+                else:
+                    cli_name = "ai-hats" if tokens[2].startswith("ai_hats") else "rack"
+                    sub_args = tokens[3:]
+
+                sub_args_clean = [a for a in sub_args if a not in ("--version", "--help", "-h")]
+                if sub_args_clean:
+                    ok, err = resolve_cmd(cli_name, sub_args_clean)
+                    if not ok:
+                        errors.append(f"{row.file}: cmds `{ln}` — {err}")
+
+            for token in tokens:
+                if token.startswith("-") or token.startswith("http://") or token.startswith("https://"):
+                    continue
+                if token.startswith("<") and token.endswith(">"):
+                    continue
+                if token.startswith(
+                    ("scripts/", "tests/", "docs/", "src/", "packages/", ".agent/", ".github/")
+                ) or token in ("pyproject.toml", "README.md", "CONTRIBUTING.md"):
+                    if not path_exists(token):
+                        errors.append(f"{row.file}: cmds `{ln}` references missing path `{token}`")
+    return errors
+
+
+def _get_cli_trees() -> tuple[click.Group, click.Group]:
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    try:
+        from ai_hats.cli import main as ai_hats_cli
+    except ImportError as exc:
+        raise RuntimeError(f"[e2e-catalog] cannot import ai_hats.cli: {exc}") from exc
+
+    try:
+        from ai_hats_rack.cli import main as rack_cli
+    except ImportError as exc:
+        raise RuntimeError(f"[e2e-catalog] cannot import ai_hats_rack.cli: {exc}") from exc
+
+    return ai_hats_cli, rack_cli
+
 
 
 
@@ -301,10 +443,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {err}", file=sys.stderr)
         return 1
 
+    ai_hats_cli, rack_cli = _get_cli_trees()
+
+    def resolve_cmd(cli_name: str, sub_args: list[str]) -> tuple[bool, str | None]:
+        root_group = ai_hats_cli if cli_name == "ai-hats" else rack_cli
+        return _resolve_cli_cmd(root_group, sub_args, cli_name)
+
+    def path_exists(rel_path: str) -> bool:
+        return (REPO_ROOT / rel_path).exists()
+
     soundness_errors = (
         check_actor(rows)
         + check_pins(rows, _ids_known_for)
         + check_plumbing(rows)
+        + check_cmds(rows, resolve_cmd, path_exists)
     )
     if soundness_errors:
         print("[e2e-catalog] unsound row(s):", file=sys.stderr)
