@@ -43,8 +43,15 @@ def _static_points() -> dict[str, PointSpec]:
 
 
 def known_points() -> dict[str, PointSpec]:
-    """The full catalog (ADR-0019 D3). ``edge:`` names come from the live rack
-    topology, so a forced non-topology transition is bindable too."""
+    """The full catalog (ADR-0019 D3).
+
+    ``edge:`` names come from the **packaged** tasks topology — ``load_backlog()``
+    with no project — while the kernel runs the one ``resolve_definition`` gives
+    it. The two can disagree, and ``check_resolve._guard_topology`` exists only
+    to name that when they do; this docstring claimed the live topology until
+    HATS-1541 found it was never true. ADR-0019 D11 removes the divergence by
+    removing this half of the catalog.
+    """
     # Deferred: the integrator may import the rack, never the reverse, and this
     # keeps the cost off every compose that declares no binding.
     from ai_hats_rack import all_edge_keys, load_backlog
