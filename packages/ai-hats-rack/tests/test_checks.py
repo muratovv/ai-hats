@@ -113,6 +113,22 @@ def test_a_point_of_another_topology_is_skipped_not_refused():
     assert port.ran == []
 
 
+def test_the_topology_filter_holds_even_when_the_event_key_matches():
+    """The filter is not a duplicate of "did we subscribe to this key".
+
+    Ordinarily the dispatcher only delivers keys ``subscriptions()`` asked for,
+    so matching the event key would be enough — until the subscriber is wired
+    against a topology the kernel is not running. That divergence is exactly
+    what ADR-0019 D11 exists to make impossible, so the subscriber decides from
+    its own topology rather than trusting whoever wired it.
+    """
+    port = _Port(_row("edge:plan--execute"))
+    subscriber = CheckSubscriber(port, topology=_topology())
+
+    assert subscriber.on_event(_ctx("edge:plan--execute")) is None
+    assert port.ran == []
+
+
 def test_a_point_of_this_topology_runs_and_carries_the_rack_owned_budget():
     """R12/D11 clause 3: the deadline is the rack's, shipped in the request, so
     the two sides cannot keep constants that drift apart."""
