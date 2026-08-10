@@ -43,8 +43,14 @@ def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
     )
 
 
-def _row(point: str, *, on_error: str = "refuse") -> CheckDeclaration:
-    return CheckDeclaration(point=point, on_error=on_error, label=f"row on {point}", handle=point)
+def _row(point: str, *, on_error: str = "refuse", backlog: str = "tasks") -> CheckDeclaration:
+    return CheckDeclaration(
+        path=(backlog,),
+        cargo={"at": [point]},
+        on_error=on_error,
+        label=f"row on {point}",
+        handle=point,
+    )
 
 
 class _Port:
@@ -60,7 +66,7 @@ class _Port:
         return self._rows
 
     def run_check(self, request):
-        self.ran.append(request.declaration.point)
+        self.ran.append(request.event or request.declaration.points()[0])
         self.budgets.append(request.timeout)
         return self._outcome
 
@@ -95,7 +101,7 @@ def test_subscriptions_cover_the_state_product_at_the_reserved_slot():
     """The full product, not just legal edges: a forced transition fires a real
     non-topology key, and the gate must not be the thing force bypasses."""
     topology = _topology()
-    subs = CheckSubscriber(_Port(), topology=topology).subscriptions()
+    subs = CheckSubscriber(_Port(), topology=topology, backlog="tasks").subscriptions()
 
     assert {s.event_key for s in subs} == set(all_edge_keys(topology))
     assert {s.phase for s in subs} == {Phase.IN_LOCK}
@@ -106,7 +112,7 @@ def test_a_point_of_another_topology_is_skipped_not_refused():
     """D11 clause 2. The carrier cannot tell a typo from a sibling backlog's
     point; this instance answers only for edges it actually has."""
     port = _Port(_row("edge:plan--execute"), _row("hyp:promoted"))
-    subscriber = CheckSubscriber(port, topology=_topology())
+    subscriber = CheckSubscriber(port, topology=_topology(), backlog="tasks")
 
     assert subscriber.on_event(_ctx("edge:open--review")) is None
     assert subscriber.on_event(_ctx("edge:review--done")) is None
@@ -123,7 +129,7 @@ def test_the_topology_filter_holds_even_when_the_event_key_matches():
     its own topology rather than trusting whoever wired it.
     """
     port = _Port(_row("edge:plan--execute"))
-    subscriber = CheckSubscriber(port, topology=_topology())
+    subscriber = CheckSubscriber(port, topology=_topology(), backlog="tasks")
 
     assert subscriber.on_event(_ctx("edge:plan--execute")) is None
     assert port.ran == []
@@ -134,7 +140,7 @@ def test_a_point_of_this_topology_runs_and_carries_the_rack_owned_budget():
     the two sides cannot keep constants that drift apart."""
     port = _Port(_row("edge:review--done"))
 
-    assert CheckSubscriber(port, topology=_topology()).on_event(_ctx()) is None
+    assert CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx()) is None
     assert port.ran == ["edge:review--done"]
     assert port.budgets == [EDGE_CHECK_TIMEOUT_S]
     assert EDGE_CHECK_TIMEOUT_S < LOCK_TIMEOUT
@@ -144,7 +150,7 @@ def test_a_refusing_check_aborts_with_the_childs_own_reason():
     port = _Port(_row("edge:review--done"), outcome=CheckOutcome(ok=False, reason="drain notes"))
 
     with pytest.raises(AbortOperation) as exc_info:
-        CheckSubscriber(port, topology=_topology()).on_event(_ctx())
+        CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
 
     assert exc_info.value.reason == "drain notes"
 
@@ -152,7 +158,9 @@ def test_a_refusing_check_aborts_with_the_childs_own_reason():
 def test_a_broken_check_is_downgraded_only_when_the_row_said_warn():
     broke = CheckOutcome(ok=False, reason="ruff exploded", downgradable=True)
     warned = CheckSubscriber(
-        _Port(_row("edge:review--done", on_error="warn"), outcome=broke), topology=_topology()
+        _Port(_row("edge:review--done", on_error="warn"), outcome=broke),
+        topology=_topology(),
+        backlog="tasks",
     )
 
     delta = warned.on_event(_ctx())
@@ -161,7 +169,9 @@ def test_a_broken_check_is_downgraded_only_when_the_row_said_warn():
 
     with pytest.raises(AbortOperation):
         CheckSubscriber(
-            _Port(_row("edge:review--done"), outcome=broke), topology=_topology()
+            _Port(_row("edge:review--done"), outcome=broke),
+            topology=_topology(),
+            backlog="tasks",
         ).on_event(_ctx())
 
 
@@ -174,6 +184,7 @@ def test_a_refusal_is_never_downgraded_by_warn():
         CheckSubscriber(
             _Port(_row("edge:review--done", on_error="warn"), outcome=verdict),
             topology=_topology(),
+            backlog="tasks",
         ).on_event(_ctx())
 
 
@@ -182,12 +193,16 @@ def test_no_executor_is_decided_per_row_not_per_process():
     passing everything is the silence the channel exists to remove."""
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(
-            _PortWithoutExecutor(_row("edge:review--done")), topology=_topology()
+            _PortWithoutExecutor(_row("edge:review--done")),
+            topology=_topology(),
+            backlog="tasks",
         ).on_event(_ctx())
     assert "no check executor" in exc_info.value.reason
 
     delta = CheckSubscriber(
-        _PortWithoutExecutor(_row("edge:review--done", on_error="warn")), topology=_topology()
+        _PortWithoutExecutor(_row("edge:review--done", on_error="warn")),
+        topology=_topology(),
+        backlog="tasks",
     ).on_event(_ctx())
     assert delta is not None
     assert "no check executor" in delta.work_log[0]
@@ -200,7 +215,7 @@ def test_a_port_older_than_the_protocol_does_not_raise_attributeerror_in_the_loc
     class _Ancient:
         pass
 
-    CheckSubscriber(_Ancient(), topology=_topology()).on_event(_ctx())
+    CheckSubscriber(_Ancient(), topology=_topology(), backlog="tasks").on_event(_ctx())
 
 
 def test_a_port_that_cannot_be_asked_for_declarations_says_so_instead_of_passing():
@@ -210,7 +225,7 @@ def test_a_port_that_cannot_be_asked_for_declarations_says_so_instead_of_passing
     class _Ancient:
         pass
 
-    delta = CheckSubscriber(_Ancient(), topology=_topology()).on_event(_ctx())
+    delta = CheckSubscriber(_Ancient(), topology=_topology(), backlog="tasks").on_event(_ctx())
 
     assert delta is not None, "a port with no check_declarations passed unremarked"
     assert "check_declarations" in delta.work_log[0]
@@ -223,6 +238,6 @@ def test_a_carrier_that_raises_becomes_a_typed_refusal():
             raise RuntimeError("the role could not be composed")
 
     with pytest.raises(AbortOperation) as exc_info:
-        CheckSubscriber(_Exploding(), topology=_topology()).on_event(_ctx())
+        CheckSubscriber(_Exploding(), topology=_topology(), backlog="tasks").on_event(_ctx())
 
     assert "the role could not be composed" in exc_info.value.reason

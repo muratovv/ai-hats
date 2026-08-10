@@ -42,9 +42,10 @@ def _skill(root: Path, name: str = "gate-skill", script: str = "check.sh") -> Re
 
 def _check(skill: ResolvedComponent, script: str = "check.sh", point: str = EDGE) -> ResolvedCheck:
     return ResolvedCheck(
-        skill=skill.name,
-        script=script,
-        point=point,
+        app="rack",
+        path=("tasks",),
+        run=f"{skill.name}/{script}",
+        cargo={"at": [point]},
         on_error="refuse",
         script_path=skill.source_path / script,
         declared_by="trait-x",
@@ -123,6 +124,7 @@ def _resolve(project: Path, skill: ResolvedComponent, sid: str = SID, **kw):
     result = _result(skills=[skill], checks=[_check(skill)])
     return resolve_carried_checks(
         project,
+        "rack",
         session_id=sid,
         compose=lambda _: result,
         **kw,
@@ -346,7 +348,7 @@ def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
     result = _result(skills=[skill], checks=[_check(skill, script="../../../etc/passwd")])
 
     with pytest.raises(CheckResolutionError, match="outside this session's mirror root"):
-        resolve_carried_checks(project, session_id=SID, compose=lambda _: result)
+        resolve_carried_checks(project, "rack", session_id=SID, compose=lambda _: result)
 
 
 def test_outside_a_session_the_library_copy_runs(tmp_path: Path):

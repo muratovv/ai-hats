@@ -39,6 +39,7 @@ from ai_hats_core import atomic_write_text, scrubbed_git_env
 atomic_write_text(Path("config.json"), '{"ok": true}\n')
 
 import subprocess
+
 subprocess.run(["git", "status"], cwd=Path("."), env=scrubbed_git_env())
 ```
 

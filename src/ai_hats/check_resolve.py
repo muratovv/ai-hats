@@ -29,7 +29,9 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 #: The ``checks`` mapping key in every spelling the YAML parser accepts, anchored
 #: to a line start so ``prechecks:`` is not one. A scan still, not a parse: a
 #: false positive costs one compose, a false negative disarms a gate.
-_CHECKS_KEY = re.compile(rb"""^[ \t]*(?:checks|"checks"|'checks')[ \t]*:""", re.MULTILINE)
+_CHECKS_KEY = re.compile(
+    rb"""^[ \t]*(?:apps|"apps"|'apps'|checks|"checks"|'checks')[ \t]*:""", re.MULTILINE
+)
 
 
 class CheckResolutionError(Exception):
@@ -43,23 +45,23 @@ def session_id() -> str:
 
 def resolve_carried_checks(
     project_dir: Path,
+    app: str,
     *,
     session_id: str = "",
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Every binding on a point ai-hats does NOT own, re-based onto its root.
+    """Every row declared under ``app``, re-based onto its root.
 
     The carrier half of ADR-0019 D11: which of these the caller subscribes to is
-    the caller's decision, made against the topology it runs. Rows on ai-hats's
-    own points (``card:``, ``wt:``) are excluded — they have their own call
-    sites, and a broken one of those must not abort a foreign point's event.
+    the caller's decision, made against the topology it runs. The integration
+    that owns ``app`` names it here, so a row written for another application is
+    never handed to this one — and a broken row of one app cannot abort
+    another's event (HATS-1545).
     """
     result = (compose or _compose_fail_closed)(project_dir)
     if result is None:
         return ()
-    from .check_points import owns_point
-
-    checks = tuple(check for check in result.checks if not owns_point(check.point))
+    checks = tuple(check for check in result.checks if check.app == app)
     if not checks:
         return ()
     return _rooted(project_dir, result, checks, session_id)
@@ -72,16 +74,22 @@ def resolve_checks_at(
     session_id: str = "",
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Every binding on one point ai-hats owns, re-based onto its root.
+    """Every ``wt`` row bound to one point, re-based onto its root.
 
-    The sibling of :func:`resolve_carried_checks` for the ``wt:`` namespace
-    (HATS-1540): one point, named by the call site that fires it, and that name
-    IS in ``known_points()`` — these are the points ai-hats validates itself.
+    The sibling of :func:`resolve_carried_checks` for ai-hats's own app
+    (HATS-1540): one point, named by the call site that fires it, and drawn from
+    the cargo ai-hats validates itself (``wt_points``).
     """
     result = (compose or _compose_fail_closed)(project_dir)
     if result is None:
         return ()
-    checks = tuple(check for check in result.checks if check.point == point)
+    from .check_points import WT_APP
+
+    checks = tuple(
+        check
+        for check in result.checks
+        if check.app == WT_APP and point in check.cargo.get("at", ())
+    )
     if not checks:
         return ()
     return _rooted(project_dir, result, checks, session_id)
@@ -272,7 +280,7 @@ def _library_roots(project_dir: Path) -> list[Path]:
 
 
 def declares_checks(project_dir: Path) -> bool:
-    """Whether any trait or role in reach declares ``composition.checks``.
+    """Whether any trait or role in reach declares ``composition.apps``.
 
     A byte scan, not a parse, so a project with no bindings does not compose on
     every transition (S3). Only traits and roles are read — the two the composer
@@ -288,7 +296,7 @@ def declares_checks(project_dir: Path) -> bool:
             for config in _component_configs(base):
                 data = config.read_bytes()
                 # memchr throws out the files with no `checks` at all before the regex
-                if b"checks" in data and _CHECKS_KEY.search(data):
+                if (b"apps" in data or b"checks" in data) and _CHECKS_KEY.search(data):
                     return True
     return False
 

@@ -94,16 +94,20 @@ def checks_library(library):
         "name: trait-checks\n"
         "composition:\n"
         "  skills: [test_skill]\n"
-        "  checks:\n"
-        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:plan--execute']}\n"
+        "  apps:\n"
+        "    rack:\n"
+        "      tasks:\n"
+        "        - {run: test_skill/hooks/gate.sh, at: ['edge:plan--execute']}\n"
     )
     (library / "roles" / "checks-role").mkdir(parents=True)
     (library / "roles" / "checks-role" / "config.yaml").write_text(
         "name: checks-role\n"
         "composition:\n"
         "  traits: [trait-checks]\n"
-        "  checks:\n"
-        "    - {skill: test_skill, script: hooks/gate.sh, on: ['edge:execute--review'],"
+        "  apps:\n"
+        "    rack:\n"
+        "      tasks:\n"
+        "        - {run: test_skill/hooks/gate.sh, at: ['edge:execute--review'],"
         " on_error: warn}\n"
     )
     return library
@@ -121,9 +125,9 @@ def test_compose_collects_checks_traits_before_role(checks_composer, checks_libr
     result = checks_composer.compose("checks-role")
 
     assert result.errors == []
-    assert [(c.declared_by, c.point, c.on_error) for c in result.checks] == [
-        ("trait-checks", "edge:plan--execute", "refuse"),
-        ("checks-role", "edge:execute--review", "warn"),
+    assert [(c.declared_by, c.cargo["at"], c.on_error) for c in result.checks] == [
+        ("trait-checks", ["edge:plan--execute"], "refuse"),
+        ("checks-role", ["edge:execute--review"], "warn"),
     ]
     script_path = checks_library / "skills" / "test_skill" / "hooks" / "gate.sh"
     assert all(c.script_path == script_path.resolve() for c in result.checks)
@@ -146,11 +150,12 @@ def test_broken_binding_raises_where_a_broken_rule_only_reports(checks_library):
     result = composer.compose("checks-role")
     assert result.errors == ["Rule 'ghost_rule' not found"]
 
-    # A point with no namespace: the one shape ai-hats still judges after
-    # ADR-0019 D11 moved foreign grammars to their owners.
+    # A `run:` naming no script inside a skill: the shape ai-hats still judges
+    # after HATS-1545 moved every foreign grammar under its own app key.
     (checks_library / "roles" / "checks-role" / "config.yaml").write_text(
-        "name: checks-role\ncomposition:\n  skills: [test_skill]\n  checks:\n"
-        "    - {skill: test_skill, script: hooks/gate.sh, on: ['bogus--state']}\n"
+        "name: checks-role\ncomposition:\n  skills: [test_skill]\n  apps:\n"
+        "    rack:\n      tasks:\n"
+        "        - {run: gate.sh, at: ['edge:plan--execute']}\n"
     )
     composer = Composer(LibraryResolver([checks_library]))
 

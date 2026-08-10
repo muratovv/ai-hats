@@ -277,7 +277,7 @@ def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert "did you mean" not in err
-    assert "known: checks, rules, skills, traits" in err
+    assert "known: apps, checks, rules, skills, traits" in err
 
 
 def test_composition_rejects_unknown_key_when_loader_bypassed():
@@ -1255,7 +1255,9 @@ def test_duplicate_backlog_key_under_an_app_is_refused(tmp_path):
 
 def test_duplicate_top_level_composition_key_is_refused(tmp_path):
     """A second `composition:` drops the whole first block — same class."""
-    path = _component(tmp_path, "name: x\ncomposition:\n  skills: [a]\ncomposition:\n  rules: [b]\n")
+    path = _component(
+        tmp_path, "name: x\ncomposition:\n  skills: [a]\ncomposition:\n  rules: [b]\n"
+    )
     with pytest.raises(ComponentKeyError) as exc:
         ComponentConfig.from_yaml(path)
     assert "'composition'" in str(exc.value)

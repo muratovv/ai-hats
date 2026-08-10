@@ -27,7 +27,7 @@ from ai_hats import check_resolve
 from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
 from ai_hats.hook_exec import run_hook
-from ai_hats.models import CheckBinding
+from ai_hats.models import AppBinding
 from ai_hats.paths import session_cache_dir
 from ai_hats_rack.checks import CheckSubscriber
 
@@ -43,6 +43,7 @@ def _extension(project_dir, *, tasks_dir, topology, resolve=None, **kwargs) -> C
     """The channel as production wires it: the rack\'s subscriber over ai-hats\'s
     port (ADR-0019 D11). ``resolve`` injects the carried rows, the seam the old
     ``CheckRunnerExtension`` exposed for the same reason."""
+    kwargs.setdefault("backlog", "tasks")
     return CheckSubscriber(
         AiHatsCheckPort(project_dir, tasks_dir=tasks_dir, resolve=resolve),
         topology=topology,
@@ -68,9 +69,10 @@ def _script(tmp_path: Path, body: str, *, name: str = "gate.sh", executable: boo
 
 def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "refuse"):
     return ResolvedCheck(
-        skill="quality::gates",
-        script=script.name,
-        point=point,
+        app="rack",
+        path=("tasks",),
+        run=f"quality::gates/{script.name}",
+        cargo={"at": [point]},
         on_error=on_error,
         script_path=script,
         declared_by="maintainer",
@@ -102,7 +104,9 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     """R2 + R7: the pack is no longer empty, it enumerates the topology handed
     through the seam (never a re-opened one), and it books slot 15 in-lock."""
     topology = _topology()
-    pack = consumer_subscribers(tmp_path, tasks_dir=tmp_path / "tasks", topology=topology)
+    pack = consumer_subscribers(
+        tmp_path, tasks_dir=tmp_path / "tasks", topology=topology, backlog="tasks"
+    )
 
     assert pack, "the consumer pack must carry the check runner"
     subs = [spec for sub in pack for spec in sub.subscriptions()]
@@ -358,7 +362,13 @@ def test_pass_leaves_no_delta_and_writes_the_log_beside_the_card(tmp_path):
 
     assert runner.on_event(_ctx()) is None
 
-    log = tmp_path / "tasks" / "T-1" / ".checks" / "edge-review--done~quality+gates~gate.sh.log"
+    log = (
+        tmp_path
+        / "tasks"
+        / "T-1"
+        / ".checks"
+        / "edge-review--done~rack~tasks~quality+gates~gate.sh.log"
+    )
     assert "all good" in log.read_text()
 
 
@@ -459,12 +469,12 @@ def test_two_bindings_on_one_edge_each_keep_their_own_log(tmp_path):
 
     logs = _logs(tmp_path)
     assert sorted(logs) == [
-        "edge-review--done~quality+gates~first.sh.log",
-        "edge-review--done~quality+gates~second.sh.log",
+        "edge-review--done~rack~tasks~quality+gates~first.sh.log",
+        "edge-review--done~rack~tasks~quality+gates~second.sh.log",
     ]
-    assert "first ran" in logs["edge-review--done~quality+gates~first.sh.log"]
-    assert "second ran" not in logs["edge-review--done~quality+gates~first.sh.log"]
-    assert "second ran" in logs["edge-review--done~quality+gates~second.sh.log"]
+    assert "first ran" in logs["edge-review--done~rack~tasks~quality+gates~first.sh.log"]
+    assert "second ran" not in logs["edge-review--done~rack~tasks~quality+gates~first.sh.log"]
+    assert "second ran" in logs["edge-review--done~rack~tasks~quality+gates~second.sh.log"]
 
 
 def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path):
@@ -474,9 +484,10 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     check = ResolvedCheck(
-        skill="dev::python",
-        script="hooks/done-gate.sh",
-        point="edge:review--done",
+        app="rack",
+        path=("tasks",),
+        run="dev::python/hooks/done-gate.sh",
+        cargo={"at": ["edge:review--done"]},
         on_error="refuse",
         script_path=_script(hooks, "echo 'nested ran'", name="done-gate.sh"),
         declared_by="maintainer",
@@ -485,8 +496,8 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
     assert _runner(tmp_path, check).on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert list(logs) == ["edge-review--done~dev+python~hooks+done-gate.sh.log"]
-    assert "nested ran" in logs["edge-review--done~dev+python~hooks+done-gate.sh.log"]
+    assert list(logs) == ["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh.log"]
+    assert "nested ran" in logs["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh.log"]
 
 
 def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
@@ -496,17 +507,20 @@ def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
     nested = tmp_path / "a"
     nested.mkdir()
     dashed = _check(_script(tmp_path, "echo 'dashed ran'", name="a-b.sh"))
-    slashed = replace(_check(_script(nested, "echo 'slashed ran'", name="b.sh")), script="a/b.sh")
+    slashed = replace(
+        _check(_script(nested, "echo 'slashed ran'", name="b.sh")),
+        run="quality::gates/a/b.sh",
+    )
 
     assert _runner(tmp_path, slashed, dashed).on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
     assert sorted(logs) == [
-        "edge-review--done~quality+gates~a+b.sh.log",
-        "edge-review--done~quality+gates~a-b.sh.log",
+        "edge-review--done~rack~tasks~quality+gates~a+b.sh.log",
+        "edge-review--done~rack~tasks~quality+gates~a-b.sh.log",
     ]
-    assert "slashed ran" in logs["edge-review--done~quality+gates~a+b.sh.log"]
-    assert "dashed ran" in logs["edge-review--done~quality+gates~a-b.sh.log"]
+    assert "slashed ran" in logs["edge-review--done~rack~tasks~quality+gates~a+b.sh.log"]
+    assert "dashed ran" in logs["edge-review--done~rack~tasks~quality+gates~a-b.sh.log"]
 
 
 def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
@@ -519,9 +533,9 @@ def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
     assert runner.on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert list(logs) == ["edge-review--done~quality+gates~gate.sh.log"]
-    assert "second attempt" in logs["edge-review--done~quality+gates~gate.sh.log"]
-    assert "first attempt" not in logs["edge-review--done~quality+gates~gate.sh.log"]
+    assert list(logs) == ["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
+    assert "second attempt" in logs["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
+    assert "first attempt" not in logs["edge-review--done~rack~tasks~quality+gates~gate.sh.log"]
 
 
 def test_bindings_run_in_composition_order_and_the_runner_never_re_sorts(tmp_path):
@@ -559,7 +573,7 @@ def test_the_first_refusal_stops_every_later_binding(tmp_path):
     assert exc_info.value.reason == "drain the review notes first"
     assert not (tmp_path / "ran-second").exists()
     assert not (tmp_path / "ran-third").exists()
-    assert list(_logs(tmp_path)) == ["edge-review--done~quality+gates~refuse.sh.log"]
+    assert list(_logs(tmp_path)) == ["edge-review--done~rack~tasks~quality+gates~refuse.sh.log"]
 
 
 def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
@@ -575,8 +589,8 @@ def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
     assert "downgraded by on_error: warn" in "\n".join(delta.work_log)
     assert (tmp_path / "ran-second").is_file()
     logs = _logs(tmp_path)
-    assert "ruff exploded" in logs["edge-review--done~quality+gates~broke.sh.log"]
-    assert "second ran" in logs["edge-review--done~quality+gates~second.sh.log"]
+    assert "ruff exploded" in logs["edge-review--done~rack~tasks~quality+gates~broke.sh.log"]
+    assert "second ran" in logs["edge-review--done~rack~tasks~quality+gates~second.sh.log"]
 
 
 def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_path):
@@ -595,16 +609,21 @@ def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_pat
     )
     point = "edge:review--done"  # an edge of _topology(): the rack subscribes by its own
 
-    def row(script: str, on_error: str) -> CheckBinding:
-        return CheckBinding.model_validate(
-            {"skill": "gate-skill", "script": script, "on": (point,), "on_error": on_error}
+    def row(script: str, on_error: str, declared_by: str) -> AppBinding:
+        return AppBinding(
+            declared_by=declared_by,
+            app="rack",
+            path=("tasks",),
+            run=f"gate-skill/{script}",
+            on_error=on_error,
+            cargo={"at": [point]},
         )
 
     resolved = resolve_checks(
         [
-            ("trait-x", row("a.sh", "warn")),
-            ("trait-y", row("b.sh", "refuse")),
-            ("role-z", row("a.sh", "refuse")),
+            row("a.sh", "warn", "trait-x"),
+            row("b.sh", "refuse", "trait-y"),
+            row("a.sh", "refuse", "role-z"),
         ],
         [composed],
     )
@@ -632,11 +651,12 @@ def _library(root: Path, *, declares: bool) -> Path:
     body = "name: maintainer\ncomposition:\n  skills:\n    - quality::gates\n"
     if declares:
         body += (
-            "  checks:\n"
-            "    - skill: quality::gates\n"
-            "      script: gate.sh\n"
-            "      on:\n"
-            "        - edge:review--done\n"
+            "  apps:\n"
+            "    rack:\n"
+            "      tasks:\n"
+            "        - run: quality::gates/gate.sh\n"
+            "          at:\n"
+            "            - edge:review--done\n"
         )
     (trait / "config.yaml").write_text(body)
     return root
@@ -701,7 +721,7 @@ def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
         lambda _p: pytest.fail("composed a project that declares no checks"),
     )
 
-    assert check_resolve.resolve_carried_checks(tmp_path) == ()
+    assert check_resolve.resolve_carried_checks(tmp_path, "rack") == ()
 
 
 def test_a_declared_binding_is_detected_by_the_byte_probe(tmp_path, monkeypatch):
@@ -727,7 +747,7 @@ def test_a_broken_composition_refuses_instead_of_passing_quietly(tmp_path, monke
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_carried_checks(tmp_path)
+        check_resolve.resolve_carried_checks(tmp_path, "rack")
 
     assert "library schema is newer" in str(exc_info.value)
 
@@ -743,7 +763,7 @@ def test_a_composition_error_list_is_a_refusal_not_a_warning(tmp_path, monkeypat
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
-        check_resolve.resolve_carried_checks(tmp_path)
+        check_resolve.resolve_carried_checks(tmp_path, "rack")
 
     assert "Role 'ghost' not found" in str(exc_info.value)
 
@@ -764,8 +784,8 @@ def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_pat
         check_resolve, "_compose_role", lambda _p: _composition(checks=(stray, live))
     )
 
-    carried = check_resolve.resolve_carried_checks(tmp_path)
-    assert [c.point for c in carried] == ["edge:plan--execute", "edge:review--done"]
+    carried = check_resolve.resolve_carried_checks(tmp_path, "rack")
+    assert [c.cargo["at"] for c in carried] == [["edge:plan--execute"], ["edge:review--done"]]
 
     runner = _extension(
         tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=lambda: carried
@@ -783,6 +803,7 @@ def test_out_of_session_a_binding_resolves_live(tmp_path):
 
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
+        "rack",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
@@ -804,6 +825,7 @@ def test_in_session_a_binding_resolves_from_the_session_mirror(tmp_path):
 
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
+        "rack",
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -818,6 +840,7 @@ def test_in_session_a_missing_mirror_never_falls_back_to_the_live_path(tmp_path)
 
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
+        "rack",
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -841,6 +864,7 @@ def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
     with pytest.raises(CheckResolutionError) as exc_info:
         check_resolve.resolve_carried_checks(
             tmp_path,
+            "rack",
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
 
@@ -875,6 +899,7 @@ def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeyp
 
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
+        "rack",
         session_id="sess-a",
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
@@ -943,6 +968,7 @@ def test_a_submodule_is_not_a_task_worktree(tmp_path):
 
     resolved = check_resolve.resolve_carried_checks(
         main,
+        "rack",
         compose=lambda _p: _composition(checks=(_check(vendored),)),
     )
 
@@ -960,6 +986,7 @@ def test_a_real_linked_worktree_is_still_refused(tmp_path):
     with pytest.raises(CheckResolutionError) as exc_info:
         check_resolve.resolve_carried_checks(
             main,
+            "rack",
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
 
@@ -983,6 +1010,7 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
     with pytest.raises(CheckResolutionError) as exc_info:
         check_resolve.resolve_carried_checks(
             main,
+            "rack",
             session_id="sess-a",
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
@@ -1052,7 +1080,7 @@ def test_an_unreadable_component_tree_is_loud_not_a_silent_false(tmp_path, monke
 
     try:
         with pytest.raises(CheckResolutionError) as exc_info:
-            check_resolve.resolve_carried_checks(tmp_path)
+            check_resolve.resolve_carried_checks(tmp_path, "rack")
     finally:
         (root / "traits").chmod(0o755)
 

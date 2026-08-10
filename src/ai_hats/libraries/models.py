@@ -6,7 +6,10 @@ rule/skill metadata, hook wiring. T18 (HATS-876) lifts this module into the
 from __future__ import annotations
 
 import difflib
+import json
 import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -63,6 +66,127 @@ class CheckBinding(_YamlModel):
         return value
 
 
+@dataclass(frozen=True)
+class AppBinding:
+    """One row of ``composition.apps``, with its declarer and its place in the tree.
+
+    ai-hats owns ``run`` and ``on_error``; ``cargo`` is every other key and is
+    never read here. ``path`` is the trail of keys from the app node down to the
+    row, so an application that nests (``apps.rack.<backlog>``) gets its level
+    back and one that does not (``apps.wt``) gets an empty trail.
+    """
+
+    declared_by: str
+    app: str
+    path: tuple[str, ...]
+    run: str
+    on_error: str
+    cargo: Mapping[str, Any]
+
+    @property
+    def skill(self) -> str:
+        """The skill ``run`` names — its first segment."""
+        return self.run.split("/", 1)[0]
+
+    @property
+    def script(self) -> str:
+        """The path inside that skill's directory — everything after it."""
+        return self.run.split("/", 1)[1] if "/" in self.run else ""
+
+    def identity(self) -> tuple[str, tuple[str, ...], str, str]:
+        """What makes two rows the same row (HATS-1545 R6).
+
+        ``on_error`` is excluded because it is the one field that MERGES —
+        two declarations of one row keep the stricter. Cargo is compared whole
+        and opaquely, so the same script at two different points is two rows.
+        """
+        return (self.app, self.path, self.run, json.dumps(self.cargo, sort_keys=True, default=str))
+
+
+def parse_app_bindings(
+    apps: Mapping[str, Any], *, declared_by: str, source: Path | None = None
+) -> tuple[AppBinding, ...]:
+    """Flatten one component's ``composition.apps`` into rows, in document order.
+
+    A row is recognised STRUCTURALLY — a mapping carrying ``run:`` — so the
+    grammar above it belongs to the application and ai-hats never checks its
+    depth (HATS-1545 R4). Flattening here is what makes provenance survive: the
+    declarer is stamped on each row before any two components' rows meet, so no
+    merge step can drop it (D4).
+    """
+    where = f"{source}: " if source is not None else ""
+    if not isinstance(apps, dict):
+        raise CheckBindingError(
+            f"{where}'composition.apps' must be a mapping of <app>: <block>, "
+            f"got {type(apps).__name__}"
+        )
+    rows: list[AppBinding] = []
+    for app, block in apps.items():
+        _walk_app_block(block, app=app, path=(), declared_by=declared_by, where=where, rows=rows)
+    return tuple(rows)
+
+
+def _walk_app_block(
+    node: Any,
+    *,
+    app: str,
+    path: tuple[str, ...],
+    declared_by: str,
+    where: str,
+    rows: list[AppBinding],
+) -> None:
+    label = f"{where}composition.apps.{'.'.join((app, *path))}"
+    if isinstance(node, list):
+        for index, item in enumerate(node):
+            if not isinstance(item, dict):
+                raise CheckBindingError(
+                    f"{label}[{index}]: a row must be a mapping carrying 'run:', "
+                    f"got {type(item).__name__}"
+                )
+            rows.append(_app_row(item, app=app, path=path, declared_by=declared_by, label=label))
+        return
+    if isinstance(node, dict):
+        if "run" in node:
+            rows.append(_app_row(node, app=app, path=path, declared_by=declared_by, label=label))
+            return
+        for key, child in node.items():
+            _walk_app_block(
+                child,
+                app=app,
+                path=(*path, str(key)),
+                declared_by=declared_by,
+                where=where,
+                rows=rows,
+            )
+        return
+    raise CheckBindingError(
+        f"{label}: expected a row, a list of rows, or a mapping of further keys, "
+        f"got {type(node).__name__} — a scalar here declares no gate and would fire nothing"
+    )
+
+
+def _app_row(
+    row: Mapping[str, Any], *, app: str, path: tuple[str, ...], declared_by: str, label: str
+) -> AppBinding:
+    run = row.get("run")
+    if not isinstance(run, str) or not run.strip():
+        raise CheckBindingError(f"{label}: 'run:' must be a non-empty '<skill>/<script>' string")
+    on_error = row.get("on_error", "refuse")
+    if on_error not in ("refuse", "warn"):
+        raise CheckBindingError(
+            f"{label}: 'on_error:' must be 'refuse' or 'warn', got {on_error!r}"
+        )
+    cargo = {key: value for key, value in row.items() if key not in ("run", "on_error")}
+    return AppBinding(
+        declared_by=declared_by,
+        app=app,
+        path=path,
+        run=run.strip(),
+        on_error=on_error,
+        cargo=cargo,
+    )
+
+
 class Composition(_YamlModel):
     # HATS-1152: guards construction paths that bypass ``from_yaml``; the
     # user-facing channel for a yaml typo is the pre-strip WARN below.
@@ -72,6 +196,10 @@ class Composition(_YamlModel):
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     checks: list[CheckBinding] = Field(default_factory=list)
+    #: Per-application declaration blocks, carried verbatim (HATS-1545 R1). The
+    #: value is opaque: ai-hats knows no app's grammar, only that a mapping with
+    #: ``run:`` inside it is a row.
+    apps: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComponentKeyError(ValueError):

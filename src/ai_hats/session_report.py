@@ -26,6 +26,12 @@ def _human_size(n: int) -> str:
     return f"{n / (1024 * 1024):.1f} MB"
 
 
+def _where(check: dict) -> str:
+    """The app and points a row binds, as one column of the launch report."""
+    at = ",".join(check.get("at") or []) or "-"
+    return f"{check['app']}:{at}"
+
+
 @dataclass(frozen=True)
 class SessionReport:
     role: str
@@ -81,7 +87,8 @@ class SessionReport:
                 {
                     "skill": c.binding.skill,
                     "script": c.binding.script,
-                    "point": c.binding.point,
+                    "app": c.binding.app,
+                    "at": list(c.binding.cargo.get("at", ())),
                     "on_error": c.binding.on_error,
                     "declared_by": c.binding.declared_by,
                     "runs_from": str(c.runs_from) if c.runs_from else None,
@@ -142,7 +149,7 @@ class SessionReport:
             lines.append("  (none bound)")
         for c in d["checks"]:
             lines.append(
-                f"  {c['point']:<20} {c['skill']}/{c['script']}"
+                f"  {_where(c):<20} {c['skill']}/{c['script']}"
                 f"  on_error={c['on_error']}  by {c['declared_by']}"
             )
             # An armed gate is the quiet case; anything else is what the operator

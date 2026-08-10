@@ -24,11 +24,15 @@ composition:
     # first commit clears the smoke gate without hand-provisioning. Pure
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
-  # HATS-1540 — the live consumer of the `checks:` channel, on BOTH roads into
-  # master. One script, one row: `edge:review--done` is the FSM automerge and
-  # `wt:pre-merge` is a direct `ai-hats wt merge`, and a gate that holds only
-  # one of them is the asymmetry that started this epic (HATS-1130). The check
-  # is a marker lookup; the suite runs out of band via `make done-gate`.
+  # HATS-1540 — the live consumer of the bindings channel, on BOTH roads into
+  # master. One script, two rows: `apps.rack.tasks` is the FSM automerge and
+  # `apps.wt` is a direct `ai-hats wt merge`, and a gate that holds only one of
+  # them is the asymmetry that started this epic (HATS-1130). The check is a
+  # marker lookup; the suite runs out of band via `make done-gate`.
+  #
+  # Two rows rather than one list of points since HATS-1545: the app owns the
+  # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
+  # names the backlog it gates, which is what keeps it off a sibling backlog.
   #
   # On the edge it fires in the per-task lock at priority 15, ahead of the
   # worktree teardown-merge (30) and the ownership release (40), so a refusal
@@ -44,11 +48,16 @@ composition:
   # Role-scoped on purpose (ADR-0019 D7): the gate demands a `done-gate` stage
   # in scripts/ci-local.sh and refuses a project that has none, so it belongs to
   # a role only this codebase wears — never to a base trait.
-  checks:
-    - skill: maintainer-quality-gate
-      script: hooks/done-gate.sh
-      on: [edge:review--done, wt:pre-merge]
-      on_error: refuse
+  apps:
+    rack:
+      tasks:
+        - run: maintainer-quality-gate/hooks/done-gate.sh
+          at: [edge:review--done]
+          on_error: refuse
+    wt:
+      - run: maintainer-quality-gate/hooks/done-gate.sh
+        at: [pre-merge]
+        on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).
 # What sets the `maintainer` role apart from the base `assistant` role:
 #   - Maintainer-specific gear via the `ai-hats-maintainer` trait: E2E gate,

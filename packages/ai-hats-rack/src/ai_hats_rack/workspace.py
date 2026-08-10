@@ -36,6 +36,24 @@ class WorkspaceError(RackConfigError):
     ``internal`` marker with the rest of the RackConfigError subtree."""
 
 
+class DuplicateBacklogNameError(WorkspaceError):
+    """Two backlogs in ONE root answer to the same selector — a load-time refusal.
+
+    ``instance_by_name`` used to take the FIRST match, so a role addressing a
+    backlog by name reached whichever one the walk happened to find (HATS-1545
+    D8). A silent first-match is a gate installed on the wrong backlog.
+    """
+
+    def __init__(self, name: str, count: int, root_id: str) -> None:
+        self.name = name
+        self.count = count
+        super().__init__(
+            f"root {root_id!r}: {count} backlogs answer to the selector {name!r} — "
+            f"a name must be unique within a root, since it is how a declaration "
+            f"addresses one (rename one backlog or give it a distinct cli_alias)"
+        )
+
+
 class DuplicatePrefixError(WorkspaceError):
     """Two backlogs in ONE root claim the same id prefix — a load-time refusal
     (set-level uniqueness, interview D). Across roots a duplicate is legal."""
@@ -431,6 +449,44 @@ def _check_prefix_uniqueness(instances: Sequence[BacklogInstance], root_id: Root
     for prefix, names in by_prefix.items():
         if len(names) > 1:
             raise DuplicatePrefixError(prefix, names, root_id)
+    _check_name_uniqueness(instances, root_id)
+
+
+def _check_name_uniqueness(instances: Sequence[BacklogInstance], root_id: RootId) -> None:
+    """A selector answered by two instances would route by first-match (D8).
+
+    A collision of two ``cli_alias`` values is deliberately NOT raised here: that
+    surface already has its own typed refusal (``DuplicateGroupNameError``, at the
+    CLI group site), and preempting it would change which error a caller catches
+    for a defect that was already loud.
+    """
+    counts: dict[str, int] = {}
+    named: set[str] = set()
+    for inst in instances:
+        named.add(inst.name)
+        for selector in {inst.name, inst.definition.cli_alias}:
+            if selector:
+                counts[selector] = counts.get(selector, 0) + 1
+    for selector, count in sorted(counts.items()):
+        if count > 1 and selector in named:
+            raise DuplicateBacklogNameError(selector, count, root_id)
+
+
+def backlog_selectors_in_root(root: RackRoot) -> tuple[str, ...]:
+    """Every selector a backlog of ``root`` answers to, tasks catalog included.
+
+    Public because the check channel needs to tell "addressed to a sibling
+    backlog" from "addressed to nothing at all" — the two are the same fact from
+    a single instance's side, and only the difference makes a typo loud
+    (HATS-1545 R10).
+    """
+    defn = resolve_definition(
+        root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+    )
+    selectors = {defn.name, defn.cli_alias or defn.name}
+    for _catalog, sibling in _scan_sibling_backlogs(root.tasks_dir):
+        selectors.update({sibling.name, sibling.cli_alias or sibling.name})
+    return tuple(sorted(s for s in selectors if s))
 
 
 def _split_qualifier(item_id: str) -> tuple[RootId | None, str]:
