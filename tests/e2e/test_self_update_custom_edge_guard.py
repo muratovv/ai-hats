@@ -1,13 +1,14 @@
 """e2e (HATS-441, HATS-766)
 
-flow: a developer running self update on edge channel when local commits are ahead of
-      remote
+flow:   a developer running self update on edge channel when local commits are ahead
+        of remote
 cmds:
     ai-hats self update
 expect: edge channel update guard prevents downgrading unpushed local edge commits to
         remote origin
-why: without custom edge guards, self update overwrites unpushed local feature commits
-     with remote origin"""
+why:    without custom edge guards, self update overwrites unpushed local feature commits
+        with remote origin
+"""
 
 from __future__ import annotations
 

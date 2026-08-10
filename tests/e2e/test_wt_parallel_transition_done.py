@@ -1,12 +1,13 @@
-"""e2e (HATS-1288)
+"""e2e (HATS-481)
 
-flow:   multiple parallel sub-agents transitioning separate worktree task cards to done
+flow:   two developer processes concurrently running transition done on tasks sharing
+        base branch
 cmds:
-    rack transition HATS-1288 review
-expect: task card state transitions operate concurrently without index locks or card
-        corruption
-why: without parallel transition locking, concurrent sub-agents corrupt shared backlog
-     state"""
+    rack transition TST-001 done
+expect: base branch lock serializes merges and both transitions succeed without data
+        loss
+why:    concurrent task finalization must synchronize base branch merges to prevent lock
+        contention"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

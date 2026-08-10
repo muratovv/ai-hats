@@ -1,12 +1,12 @@
-"""e2e (HATS-085, HATS-685, HATS-788, HATS-839, HATS-1263)
+"""e2e (HATS-685, HATS-788, HATS-839, HATS-1263)
 
-flow: a developer attempting write operations outside an onboarded ai-hats project root
+flow:   a developer issuing write operations outside an onboarded ai-hats project root
 cmds:
     ai-hats self init -r assistant -p claude
-expect: command refuses write operations when current directory lacks git or project
-        markers
-why: without project root write guards, running commands in random folders creates
-     phantom .agent dirs"""  # comment-length: allow
+expect: command refuses write operations when current directory lacks git or project markers
+why:    without project root write guards, running commands in random folders creates
+        phantom .agent dirs
+"""  # comment-length: allow
 
 from __future__ import annotations
 

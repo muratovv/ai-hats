@@ -1,12 +1,14 @@
 """e2e (HATS-397)
 
-flow: a developer running self update on project containing legacy file path references
+flow:   a developer running self update on project containing legacy file path
+        references
 cmds:
     ai-hats self update
 expect: migration step rewrites legacy file paths in settings.json to updated framework
         layout
-why: without legacy ref healing, upgrading projects leaves broken path references
-     pointing to deleted files"""
+why:    without legacy ref healing, upgrading projects leaves broken path references
+        pointing to deleted files
+"""
 
 from __future__ import annotations
 

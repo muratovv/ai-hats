@@ -1,12 +1,10 @@
-"""e2e (HATS-1102)
+"""e2e (HATS-1269)
 
-flow:   a developer running git hooks in place within a task worktree
+flow:   a developer committing code with in-place hook script modifications
 cmds:
-    git commit -m "worktree edit"
-expect: git hooks execute against worktree checkout without referencing main project
-        state
-why: without in-place worktree hook execution, git commits in worktrees trigger hooks on
-     main checkout"""
+    git commit -m "update"
+expect: hook scripts execute in-place without copying redundant files
+why:    hooks must execute from canonical paths without unnecessary file materialization"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

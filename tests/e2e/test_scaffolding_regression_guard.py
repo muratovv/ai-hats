@@ -3,10 +3,10 @@
 flow:   a maintainer running e2e test suite regression checks
 cmds:
     bash scripts/run-e2e-gate.sh
-expect: regression guard verifies all e2e test files use git helpers and conftest
-        fixtures
-why: without scaffolding regression guards, e2e tests introduce raw subprocess calls
-     that leak state"""
+expect: regression guard verifies all e2e test files use git helpers and conftest fixtures
+why:    without scaffolding regression guards, e2e tests introduce raw subprocess calls
+        that leak state
+"""
 
 from __future__ import annotations
 

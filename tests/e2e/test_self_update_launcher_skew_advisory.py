@@ -1,12 +1,13 @@
 """e2e (HATS-647, HATS-655)
 
-flow: a developer running self update when host launcher binary is older than installed
-      framework
+flow:   a developer running self update when host launcher binary is older than installed
+        framework
 cmds:
     ai-hats self update
 expect: self update displays advisory warning detailing launcher upgrade instructions
-why: without launcher skew advisories, outdated host launchers miss versioned venv
-     resolution features"""
+why:    without launcher skew advisories, outdated host launchers miss versioned venv
+        resolution features
+"""
 
 from __future__ import annotations
 from _helpers.git import git

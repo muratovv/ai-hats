@@ -1,11 +1,12 @@
-"""e2e (HATS-1200)
+"""e2e (HATS-479)
 
-flow:   multiple agents creating worktrees concurrently for distinct tasks
+flow:   two developer sessions concurrently creating a worktree for the same branch
 cmds:
-    ai-hats wt create --task HATS-1200
-expect: concurrent worktree creation requests are safely serialized via file locks
-why: without lock serialization, parallel worktree creation causes git index collisions
-     and corrupts trees"""
+    ai-hats wt create task/race
+expect: exactly one worktree creation succeeds while the loser exits with a friendly
+        error
+why:    concurrent worktree creation must lock branch allocation to prevent duplicate
+        worktrees"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

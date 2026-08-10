@@ -1,12 +1,10 @@
-"""e2e (HATS-1288)
+"""e2e (HATS-1019)
 
-flow:   a developer merging worktree changes back to main checkout
+flow:   a developer merging a worktree branch without authorization acknowledgment
 cmds:
-    ai-hats wt merge --task HATS-1288
-expect: merge command verifies task card status and prompts for consent before merging
-        git branch
-why: without consent gating, unreviewed worktree branches get merged to main branch
-     prematurely"""
+    ai-hats wt merge task/test-consent
+expect: merge is refused without AI_HATS_MERGE_ACK and succeeds when ack is provided
+why:    worktree merge is default-deny to ensure supervisor review before landing work"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

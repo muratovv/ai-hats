@@ -1,12 +1,11 @@
-"""e2e (HATS-1203)
+"""e2e (HATS-894)
 
-flow:   a developer running commands in a worktree with environment overrides
+flow:   a developer requesting environment variables for active worktrees
 cmds:
-    ai-hats wt exec --task HATS-1203 -- env
-expect: worktree execution environment isolates project variables and inherits caller
-        overrides
-why: without environment isolation, parent session environment leaks bleed across
-     worktree task boundaries"""
+    ai-hats wt env task/hats-1
+expect: the command exports WT path for the named worktree or refuses when selector
+        is omitted with multiple active worktrees
+why:    wt env requires explicit branch selection when multiple worktrees are active"""
 
 from __future__ import annotations
 

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**224 of 224 files catalogued — 227 flows.**
+**224 of 224 files catalogued — 231 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -2761,23 +2761,54 @@ as a claim to check, not as evidence.
 
 ## `test_worktree_lifecycle_robustness_matrix.py`
 
-*pins HATS-1288*
+*pins HATS-697, HATS-714, HATS-788, HATS-835*
 
-- **flow** — a developer exercising worktree creation, status, and transition across FSM states
+- **flow** — a developer finalizing an already-merged task whose worktree state file was removed
 - **cmds**
 
   ```console
-  ai-hats wt create --task HATS-1288
+  rack transition TST-001 done
   ```
 
-- **expect** — worktree isolates project state, transitions task states cleanly, and cleans up on completion
-- **why** — without robust worktree lifecycle checks, concurrent agent tasks corrupt main checkout state
+- **expect** — transition done short-circuits to done without false state lost errors and cleans up branch
+- **why** — already-merged branches with missing state metadata must finalize cleanly
+
+- **flow** — a developer forcing a task transition to execute with --force
+- **cmds**
+
+  ```console
+  rack transition TST-001 execute --force --reason "shipped on master"
+  ```
+
+- **expect** — task state moves to execute without spinning up a fresh git worktree
+- **why** — forced execute overrides worktree provisioning when work was shipped out-of-band
+
+- **flow** — a developer finalizing a task when worktree state metadata contains null original_branch
+- **cmds**
+
+  ```console
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition done is refused with a typed error naming missing original_branch field
+- **why** — incomplete worktree state metadata must produce a clean typed error without traceback
+
+- **flow** — a developer finalizing a task from inside its own linked worktree directory
+- **cmds**
+
+  ```console
+  # from inside the linked worktree directory
+  rack transition TST-001 done
+  ```
+
+- **expect** — transition done is refused before teardown and worktree directory is preserved
+- **why** — transition done from inside a worktree must refuse to avoid removing caller cwd
 
 ## `test_write_op_refused_at_non_project_root.py`
 
-*pins HATS-085, HATS-788, HATS-839, HATS-1263*
+*pins HATS-685, HATS-788, HATS-839, HATS-1263*
 
-- **flow** — a developer attempting write operations outside an onboarded ai-hats project root
+- **flow** — a developer issuing write operations outside an onboarded ai-hats project root
 - **cmds**
 
   ```console
@@ -2804,17 +2835,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_create_concurrent.py`
 
-*pins HATS-1200*
+*pins HATS-479*
 
-- **flow** — multiple agents creating worktrees concurrently for distinct tasks
+- **flow** — two developer sessions concurrently creating a worktree for the same branch
 - **cmds**
 
   ```console
-  ai-hats wt create --task HATS-1200
+  ai-hats wt create task/race
   ```
 
-- **expect** — concurrent worktree creation requests are safely serialized via file locks
-- **why** — without lock serialization, parallel worktree creation causes git index collisions and corrupts trees
+- **expect** — exactly one worktree creation succeeds while the loser exits with a friendly error
+- **why** — concurrent worktree creation must lock branch allocation to prevent duplicate worktrees
 
 ## `test_wt_entry_gate_hook.py`
 
@@ -2833,17 +2864,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_env_selector.py`
 
-*pins HATS-1203*
+*pins HATS-894*
 
-- **flow** — a developer running commands in a worktree with environment overrides
+- **flow** — a developer requesting environment variables for active worktrees
 - **cmds**
 
   ```console
-  ai-hats wt exec --task HATS-1203 -- env
+  ai-hats wt env task/hats-1
   ```
 
-- **expect** — worktree execution environment isolates project variables and inherits caller overrides
-- **why** — without environment isolation, parent session environment leaks bleed across worktree task boundaries
+- **expect** — the command exports WT path for the named worktree or refuses when selector is omitted with multiple active worktrees
+- **why** — wt env requires explicit branch selection when multiple worktrees are active
 
 ## `test_wt_exec_ambiguity_skips_dead_worktree.py`
 
@@ -2907,17 +2938,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_exec_selector.py`
 
-*pins HATS-1203*
+*pins HATS-685, HATS-826, HATS-859*
 
-- **flow** — a developer executing commands inside a task worktree via selector
+- **flow** — a developer executing commands in a specific worktree using a branch selector
 - **cmds**
 
   ```console
-  ai-hats wt exec --task HATS-1203 -- echo "hello"
+  ai-hats wt exec task/hats-1 -- git rev-parse --abbrev-ref HEAD
   ```
 
-- **expect** — target command executes within worktree context returning output and process exit code
-- **why** — without worktree command selection, executing commands inside worktrees requires manual directory hopping
+- **expect** — the command routes to the specified worktree branch when multiple worktrees exist
+- **why** — wt exec requires explicit branch selector to route commands when multiple worktrees are active
 
 ## `test_wt_exec_selector_beats_cwd.py`
 
@@ -2936,45 +2967,45 @@ as a claim to check, not as evidence.
 
 ## `test_wt_exec_subdir.py`
 
-*pins HATS-1203*
+*pins HATS-1205*
 
-- **flow** — a developer executing commands from a subdirectory inside a task worktree
+- **flow** — a developer executing commands in a worktree subdirectory from outside the worktree
 - **cmds**
 
   ```console
-  ai-hats wt exec --task HATS-1203 --pwd sub/dir -- pwd
+  ai-hats wt exec task/hats-1 -C sub -- git rev-parse --show-prefix
   ```
 
-- **expect** — command executes in specified worktree subdirectory and preserves relative path resolution
-- **why** — without worktree subdirectory support, relative path commands fail when run outside worktree root
+- **expect** — command executes within the specified relative subdirectory of the target worktree
+- **why** — -C flag in wt exec enables reaching into worktree subdirectories from main checkout
 
 ## `test_wt_exec_subdir_escape_refused.py`
 
-*pins HATS-1203*
+*pins HATS-1205*
 
-- **flow** — a developer attempting to pass a path traversing outside worktree root to wt exec
+- **flow** — a developer attempting to navigate outside worktree boundaries using wt exec -C
 - **cmds**
 
   ```console
-  ai-hats wt exec --task HATS-1203 --pwd ../../escape -- pwd
+  ai-hats wt exec task/hats-1 -C ../.. -- pwd
   ```
 
-- **expect** — wt exec refuses path traversal escaping worktree root with error exit code
-- **why** — without path traversal guards, malicious commands write files outside target worktree boundaries
+- **expect** — directory traversal outside worktree root is refused with an error
+- **why** — -C flag must enforce containment within the target worktree root
 
 ## `test_wt_exec_workspace_pythonpath.py`
 
-*pins HATS-1203*
+*pins HATS-913*
 
-- **flow** — a developer running python scripts in worktree with workspace pythonpath resolution
+- **flow** — a developer executing python commands in a worktree containing workspace packages
 - **cmds**
 
   ```console
-  ai-hats wt exec --task HATS-1203 -- python -c "import ai_hats"
+  ai-hats wt exec -- python -c "import mypkg"
   ```
 
-- **expect** — python interpreter resolves packages from worktree workspace src paths
-- **why** — without workspace PYTHONPATH injection, python processes in worktrees fail to import local packages
+- **expect** — packages/*/src directories within worktree are added to PYTHONPATH
+- **why** — wt exec must thread workspace packages into PYTHONPATH for isolated package resolution
 
 ## `test_wt_fork_base_merge_target_e2e.py`
 
@@ -2994,61 +3025,69 @@ as a claim to check, not as evidence.
 
 ## `test_wt_gate_hook.py`
 
-*pins HATS-1102*
+*pins HATS-857, HATS-889*
 
-- **flow** — an agent attempting direct edits to main checkout files when worktree gate is active
+- **flow** — a developer creating a worktree under worktree gate hook policies
 - **cmds**
 
   ```console
-  # inside agent tool call targeting main checkout file
-  git commit -m "edit main file"
+  ai-hats wt create task/probe
   ```
 
-- **expect** — worktree gate hook denies destructive write and instructs agent to use worktree isolation
-- **why** — without worktree write gates, sub-agents bypass worktree isolation and overwrite main branch files
+- **expect** — worktree gate hook validates environment permissions before provisioning worktree
+- **why** — worktree creation must execute gate hooks to enforce workspace security rules
+
+- **flow** — a developer pushing commits under git push gate hook policies
+- **cmds**
+
+  ```console
+  git push origin master
+  ```
+
+- **expect** — pre-push gate hook validates commit rules and permits push when checks pass
+- **why** — pre-push gate hooks must validate commit hygiene before pushing to remote repository
 
 ## `test_wt_hook_inplace.py`
 
-*pins HATS-1102*
+*pins HATS-1269*
 
-- **flow** — a developer running git hooks in place within a task worktree
+- **flow** — a developer committing code with in-place hook script modifications
 - **cmds**
 
   ```console
-  git commit -m "worktree edit"
+  git commit -m "update"
   ```
 
-- **expect** — git hooks execute against worktree checkout without referencing main project state
-- **why** — without in-place worktree hook execution, git commits in worktrees trigger hooks on main checkout
+- **expect** — hook scripts execute in-place without copying redundant files
+- **why** — hooks must execute from canonical paths without unnecessary file materialization
 
 ## `test_wt_hooks_fail_closed.py`
 
-*pins HATS-1102*
+*pins HATS-823*
 
-- **flow** — an agent executing write tools when worktree gate hook encounters internal errors
+- **flow** — a developer performing worktree operations when lifecycle hook scripts fail
 - **cmds**
 
   ```console
-  # inside agent session when gate script fails
-  git commit -m "test"
+  ai-hats wt create task/failing-hook
   ```
 
-- **expect** — worktree gate hook fails closed, denying file modification when gate status is ambiguous
-- **why** — without fail-closed worktree gates, script errors in gate hooks allow unvetted writes to main checkout
+- **expect** — worktree creation or deletion is refused when lifecycle hooks return non-zero
+- **why** — worktree lifecycle hooks must fail closed to prevent operating with broken setups
 
 ## `test_wt_in_runs.py`
 
-*pins HATS-1288*
+*pins HATS-823*
 
-- **flow** — an agent running worktree session stored under session runs directory
+- **flow** — a developer creating a worktree when wt_in lifecycle hooks are registered
 - **cmds**
 
   ```console
-  ai-hats wt create --task HATS-1288
+  ai-hats wt create task/probe
   ```
 
-- **expect** — ephemeral worktrees are created under runs directory and tracked in session manifests
-- **why** — without runs directory worktree storage, ephemeral task worktrees clutter main project directories
+- **expect** — wt_in lifecycle hook executes during worktree creation and populates initial files
+- **why** — wt_in hook must fire during worktree setup to provision required environment state
 
 ## `test_wt_inworktree_refused.py`
 
@@ -3112,31 +3151,31 @@ as a claim to check, not as evidence.
 
 ## `test_wt_merge_conflict_preserves_review.py`
 
-*pins HATS-1288*
+*pins HATS-481*
 
-- **flow** — a developer merging a worktree task card when git merge conflicts occur
+- **flow** — a developer finalizing a task when a git merge conflict occurs
 - **cmds**
 
   ```console
-  ai-hats wt merge --task HATS-1288
+  rack transition TST-001 done
   ```
 
-- **expect** — merge conflict leaves task card in review state and preserves unmerged worktree for resolution
-- **why** — without conflict state protection, failed merges transition task cards to done despite conflicts
+- **expect** — task state remains in review and worktree branch is preserved for resolution
+- **why** — tasks must not transition to done when git merge fails due to conflicts
 
 ## `test_wt_merge_consent_gate.py`
 
-*pins HATS-1288*
+*pins HATS-1019*
 
-- **flow** — a developer merging worktree changes back to main checkout
+- **flow** — a developer merging a worktree branch without authorization acknowledgment
 - **cmds**
 
   ```console
-  ai-hats wt merge --task HATS-1288
+  ai-hats wt merge task/test-consent
   ```
 
-- **expect** — merge command verifies task card status and prompts for consent before merging git branch
-- **why** — without consent gating, unreviewed worktree branches get merged to main branch prematurely
+- **expect** — merge is refused without AI_HATS_MERGE_ACK and succeeds when ack is provided
+- **why** — worktree merge is default-deny to ensure supervisor review before landing work
 
 ## `test_wt_merge_drift.py`
 
@@ -3215,17 +3254,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_parallel_transition_done.py`
 
-*pins HATS-1288*
+*pins HATS-481*
 
-- **flow** — multiple parallel sub-agents transitioning separate worktree task cards to done
+- **flow** — two developer processes concurrently running transition done on tasks sharing base branch
 - **cmds**
 
   ```console
-  rack transition HATS-1288 review
+  rack transition TST-001 done
   ```
 
-- **expect** — task card state transitions operate concurrently without index locks or card corruption
-- **why** — without parallel transition locking, concurrent sub-agents corrupt shared backlog state
+- **expect** — base branch lock serializes merges and both transitions succeed without data loss
+- **why** — concurrent task finalization must synchronize base branch merges to prevent lock contention
 
 ## `test_wt_rebased_branch_refusal.py`
 
@@ -3259,14 +3298,14 @@ as a claim to check, not as evidence.
 
 ## `test_wt_venv_provisioned.py`
 
-*pins HATS-1200*
+*pins HATS-1242, HATS-1291*
 
-- **flow** — a developer creating a new worktree for Python development
+- **flow** — a developer creating a worktree in a project requiring isolated python environments
 - **cmds**
 
   ```console
-  ai-hats wt create --task HATS-1200
+  ai-hats wt create task/probe
   ```
 
-- **expect** — worktree creation automatically provisions virtual environment in worktree root
-- **why** — without worktree venv provisioning, running python tools in worktrees resolves host environment
+- **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
+- **why** — worktrees must provision isolated venvs to prevent importing main repository packages
