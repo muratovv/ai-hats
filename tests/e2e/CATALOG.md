@@ -301,17 +301,18 @@ as a claim to check, not as evidence.
 
 ## `test_check_mirror_dry_run.py`
 
-*pins HATS-1241, HATS-1540*
+*pins HATS-1241, HATS-1540, HATS-1548*
 
-- **flow** — a developer inspecting dry-run plan for a role that binds check scripts
+- **flow** — a developer inspecting the dry-run of a role that binds a check script
 - **cmds**
 
   ```console
-  ai-hats execute -r checked --dry-run-json
+  ai-hats --dry-run-json -r checked
+  ai-hats --dry-run-json -r plain
   ```
 
-- **expect** — dry-run plan materializes bound skill script exactly once to session skills mirror
-- **why** — without session skill mirrors, check scripts require duplicate materialization trees per binding
+- **expect** — the skill materialized once at the mirror; the checks section names the binding the plan cannot show
+- **why** — the mirror is per SKILL, so no part of the plan depends on a checks row
 
 ## `test_claude_scaffold_drop.py`
 
