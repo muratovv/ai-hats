@@ -182,3 +182,66 @@ def test_a_multi_flow_file_is_counted_once_but_renders_every_flow():
     assert "**1 of 1 files catalogued — 2 flows.**" in out
     assert out.count("## `test_x.py`") == 1
     assert out.count("- **flow** —") == 2
+
+
+# --- main() pending refusal and ACK bypass (HATS-1563) ---------------------
+
+
+def test_main_uncatalogued_file_refuses_in_check_mode(tmp_path: Path, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "refusal — 1 uncatalogued file(s):" in err
+    assert "- test_pending.py" in err
+    assert "Remedy: write the four-field block" in err
+    assert "run `python scripts/gen_e2e_catalog.py --write`" not in err
+
+
+def test_main_uncatalogued_file_refuses_and_writes_in_write_mode(tmp_path: Path, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    rc = mod.main(["--write", "--dir", str(tmp_path)])
+    assert rc == 1
+    assert (tmp_path / "CATALOG.md").exists()
+    err = capsys.readouterr().err
+    assert "refusal — 1 uncatalogued file(s):" in err
+    assert "- test_pending.py" in err
+
+
+def test_main_uncatalogued_file_bypassed_with_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "test_pending.py").write_text('"""no block here"""\n')
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+
+    # First write catalog with ACK
+    rc_write = mod.main(["--write", "--dir", str(tmp_path)])
+    assert rc_write == 0
+    err_write = capsys.readouterr().err
+    assert "BYPASSED via AI_HATS_E2E_CATALOG_ACK=1" in err_write
+
+    # Then check catalog with ACK
+    rc_check = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc_check == 0
+    err_check = capsys.readouterr().err
+    assert "BYPASSED via AI_HATS_E2E_CATALOG_ACK=1" in err_check
+
+
+def test_main_malformed_block_not_bypassed_by_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_bad.py").write_text('"""e2e (HATS-1)\nflow: only flow field\n"""\n')
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "malformed flow block(s):" in err
+
+
+def test_main_stale_catalog_not_bypassed_by_env_ack(tmp_path: Path, monkeypatch, capsys):
+    (tmp_path / "test_a.py").write_text(WELL_FORMED)
+    (tmp_path / "CATALOG.md").write_text("stale content\n")
+    monkeypatch.setenv("AI_HATS_E2E_CATALOG_ACK", "1")
+    rc = mod.main(["--check", "--dir", str(tmp_path)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "is stale — run `python scripts/gen_e2e_catalog.py --write`" in err
