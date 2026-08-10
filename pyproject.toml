@@ -30,20 +30,14 @@ dependencies = [
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
     "ai-hats-core>=0.6.1",  # ResolvedCheck / ResolvedComponent Loud Validation (0.6.1, HATS-1140/1454)
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
-    # WorktreeMergeAborted). The floor stays at the PUBLISHED version by design:
-    # RELEASING.md's order is bump -> merge -> auto-publish -> THEN the
-    # integrator pins. Raising it here first makes the floor unsatisfiable from
-    # the index, and `ai-hats self init` hangs until it times out — measured, it
-    # is what broke five self-update e2e tests. Raise to >=0.5.0 in the
-    # follow-up, once the publish lands.
+    # WorktreeMergeAborted); pinned to it in 9feb462f.
     "ai-hats-wt>=0.5.0",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
-    # HATS-1541 grew this package to 0.2.0 (ai_hats_rack.checks). Same hold as
-    # ai-hats-wt above: the floor stays at the PUBLISHED version, or `self init`
-    # hangs on a floor the index cannot satisfy. Raise with it, after the publish.
-    "ai-hats-rack>=0.1.8",
+    # HATS-1541 grew this package to 0.2.0 (ai_hats_rack.checks — the FSM half
+    # of the checks channel, imported at module level by rack_consumers).
+    "ai-hats-rack>=0.2.0",
     "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
     "ai-hats-library>=0.5.1",  # floor tracks the workspace version (HATS-1399)
     "click>=8.1",
