@@ -184,6 +184,60 @@ def build_options(
     return ClaudeAgentOptions(**kwargs)
 
 
+def automate_options(
+    composition_result: "CompositionResult",
+    *,
+    provider: "Provider",
+    project_dir: Path,
+    session_id: str,
+    artifacts: "BuiltArtifacts",
+    work_dir: Path | None,
+    model: str,
+    env: dict[str, str],
+) -> "ClaudeAgentOptions":
+    """The options a sub-agent is launched with — engine and report share this.
+
+    ``system_prompt`` and ``plugins`` are taken from the artifacts the builder
+    already produced, so nothing here materializes anything: a report that wrote
+    to disk would not be a dry-run (HATS-1552).
+    """
+    return build_options(
+        composition_result,
+        provider=provider,
+        project_dir=project_dir,
+        session_id=session_id,
+        work_dir=work_dir,
+        model=model or "",
+        settings=artifacts.sdk_options.get("settings"),
+        setting_sources=artifacts.sdk_options.get("setting_sources"),
+        extra_env=env,
+        system_prompt=artifacts.sdk_options.get("system_prompt"),
+        plugins=artifacts.sdk_options.get("plugins"),
+    )
+
+
+def describe_options(options: "ClaudeAgentOptions") -> list[str]:
+    """``k=v`` for every option ai-hats set, measured against the SDK's defaults.
+
+    ``env`` is rendered as key names — the report hides env values everywhere
+    else, and naming them here would be the same leak by another route. ``cwd``
+    is omitted: it is the worktree, which does not exist when the record is
+    written, and ``SessionReport.cwd`` carries that sentinel already.
+    """  # comment-length: allow — both omissions are deliberate and easy to "fix" wrongly
+    import dataclasses
+
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    stock = ClaudeAgentOptions()
+    described = []
+    for field in dataclasses.fields(options):
+        value = getattr(options, field.name)
+        if field.name == "cwd" or value == getattr(stock, field.name):
+            continue
+        described.append(f"{field.name}={sorted(value) if field.name == 'env' else value}")
+    return sorted(described)
+
+
 def build_first_user_message(
     *,
     ticket_context: str = "",

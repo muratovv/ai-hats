@@ -16,7 +16,12 @@ from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
 from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
-from .sdk_options import assemble_first_user_message, build_options, render_sdk_prompt_audit
+from .sdk_options import (
+    assemble_first_user_message,
+    automate_options,
+    describe_options,
+    render_sdk_prompt_audit,
+)
 from . import sdk_runner
 
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
@@ -295,13 +300,26 @@ class ClaudeProvider(Provider):
         model: str,
         env: dict[str, str],
     ) -> AutomateLaunch:
-        """No argv here — the launch IS the option set handed to the SDK."""
-        del result, session_id, model, env
+        """No argv here — the launch IS the option set handed to the SDK.
+
+        Built by the same call the engine makes, so the record cannot name a
+        smaller set than the sub-agent receives. ``work_dir`` is the one input
+        a report cannot have (HATS-1552).
+        """
         return AutomateLaunch(
-            launch=[f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())],
-            prompt=render_sdk_prompt_audit(
-                artifacts, project_dir, task=task, ticket_id=ticket_id
+            launch=describe_options(
+                automate_options(
+                    result,
+                    provider=self,
+                    project_dir=project_dir,
+                    session_id=session_id,
+                    artifacts=artifacts,
+                    work_dir=None,
+                    model=model,
+                    env=env,
+                )
             ),
+            prompt=render_sdk_prompt_audit(artifacts, project_dir, task=task, ticket_id=ticket_id),
         )
 
     def supports_sdk_engine(self) -> bool:
@@ -600,20 +618,15 @@ class ClaudeSubagentEngine(SubagentEngine):
                 run_mode="automate",
                 artifacts=BuiltArtifacts(),
             )
-        sys_prompt = artifacts.sdk_options.get("system_prompt")
-        plugins = artifacts.sdk_options.get("plugins")
-        opts = build_options(
-            composition_result=result,
+        opts = automate_options(
+            result,
             provider=self._provider,
             project_dir=project_dir,
             session_id=session_id,
+            artifacts=artifacts,
             work_dir=work_dir,
             model=model or "",
-            settings=artifacts.sdk_options.get("settings"),
-            setting_sources=artifacts.sdk_options.get("setting_sources"),
-            extra_env=env,
-            system_prompt=sys_prompt,
-            plugins=plugins,
+            env=env,
         )
         msg = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
         run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
