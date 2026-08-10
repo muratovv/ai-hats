@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -31,6 +30,7 @@ from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
     assemble_launch_command,
+    assemble_launch_env,
     consumed_session_id,
 )
 from .session_report import SessionReport
@@ -499,10 +499,16 @@ class WrapRunner:
         session.record_provider_session_id(claude_session_id)
 
         # HATS-1216: persist launch record as role_materialization.json
-        env_map = {
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-        }
+        env_map = assemble_launch_env(
+            provider,
+            self.project_dir,
+            session.session_dir,
+            session_id=session.session_id,
+            trace_path=str(session.trace_path),
+            role=active_role,
+            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            extra_env=session_env,
+        )
         prompt_file = next(
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
@@ -533,15 +539,9 @@ class WrapRunner:
         # restarts from provider stalls).
         self._log_restart_gap(session)
 
-        # Build environment
-        env = {
-            **os.environ,
-            **session.get_env(),
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-            ENV_ROLE: active_role,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
+        # The record above IS this environment minus the inherited part — one
+        # expression, so the report cannot under-state what the child receives.
+        env = {**os.environ, **env_map}
 
         # HATS-833: fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.

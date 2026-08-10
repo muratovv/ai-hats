@@ -16,12 +16,16 @@ from .session_artifacts import (
     RunMode,
     SessionPolicy,
     assemble_launch_command,
+    assemble_launch_env,
 )
 from .session_report import SessionReport
 
 # A real sid is minted by the session manager, which a dry-run must not touch.
 # Fixed so reported paths are stable and diffable.
 DRY_RUN_SESSION_ID = "dry-run"
+
+#: Stands in for a value only the launch can produce (pid, uuid, trace path).
+AT_LAUNCH = "<assigned at launch>"
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -72,15 +76,21 @@ def dry_run_hitl(
             artifacts=artifacts,
         )
 
-    env = {
-        **prov.get_env(cache_dir, project_dir),
-        **artifacts.extra_env,
-    }
+    env = assemble_launch_env(
+        prov,
+        project_dir,
+        cache_dir,
+        session_id=DRY_RUN_SESSION_ID,
+        trace_path=AT_LAUNCH,
+        role=payload.effective_role,
+        root_pid=AT_LAUNCH,
+        extra_env=artifacts.extra_env,
+    )
     launch = assemble_launch_command(
         prov,
         extra_args=extra_args,
         session_args=artifacts.cli_args,
-        provider_session_id="<assigned at launch>",
+        provider_session_id=AT_LAUNCH,
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
     checks, check_notes = describe_checks(

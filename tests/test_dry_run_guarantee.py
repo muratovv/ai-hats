@@ -110,3 +110,22 @@ def test_claude_automate_delivers_the_builders_own_values(project: Path):
     assert not any("bypass 1" in n for n in report.notes)
     assert report.escapes == ()
     assert any(arg.startswith("system_prompt=") for arg in report.launch)
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_the_reported_env_names_what_ai_hats_adds_to_the_child(project: Path, surface: str):
+    """HATS-1548: the record listed two of the six sources the launch merges.
+
+    ``AI_HATS_SESSION_ID`` is the load-bearing one — it is what
+    ``check_resolve.session_id()`` reads to pick between resolving off the
+    session mirror and resolving live, so a report that omits it cannot be used
+    to reason about a gate at all.
+    """
+    from ai_hats.constants import ENV_ROLE, ENV_ROOT_PID
+    from ai_hats_observe.trace import ENV_SESSION_ID
+
+    report = dry_run_hitl(project, provider=surface)
+
+    assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(report.env)
+    assert report.to_dict()["env_keys"] == sorted(report.env)
+    assert "PATH" not in report.env, "inherited os.environ is not what the launch adds"
