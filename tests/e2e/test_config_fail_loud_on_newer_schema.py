@@ -1,10 +1,13 @@
 """e2e (HATS-792)
 
-flow:   a user whose ai-hats.yaml specifies a schema_version newer than the installed binary runs any ai-hats command
+flow:   a developer attempts to run commands on a project whose config file was
+        written by a future version of the tool
 cmds:
     ai-hats config status
-expect: the command fails with a nonzero exit code, displays a schema error and remediation update pointer, and leaves the configuration file un-rewritten on disk
-why:    silently parsing a future schema as a legacy version could misread fields or corrupt future config options on save
+expect: process exits nonzero, prints "schema_version 99 is newer" with "ai-hats self
+        update" remediation instructions, and leaves ai-hats.yaml byte-identical
+why:    parsing a future schema version as a legacy format risks misinterpreting
+        configuration fields or clobbering unrecognised options on save
 """
 
 from __future__ import annotations

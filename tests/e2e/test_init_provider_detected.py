@@ -1,10 +1,13 @@
-"""e2e (HATS-613, HATS-790)
+"""e2e (HATS-613)
 
-flow:   a user with multiple provider directories configured in home runs interactive self init
+flow:   a user with configuration directories for multiple providers runs interactive
+        project setup
 cmds:
     ai-hats self init --no-update --channel stable
-expect: the provider selection menu marks all detected provider configurations as detected without labeling any single provider as recommended
-why:    marking only one provider as recommended when multiple exist misleads users and causes unintended provider pre-selections
+expect: every configured provider directory is labeled "detected — found ~/.<name>" in
+        the menu and the string "recommended" is absent
+why:    recommending only the first provider when multiple exist causes accidental
+        provider selection on default selection
 """
 
 from __future__ import annotations

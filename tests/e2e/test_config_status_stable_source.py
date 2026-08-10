@@ -1,10 +1,13 @@
-"""e2e (HATS-779, HATS-497, HATS-678, HATS-771, HATS-790, HATS-898)
+"""e2e (HATS-779)
 
-flow:   a user with a stable release installed from PyPI inspects installation source diagnostics
+flow:   a user running a release package installed from PyPI inspects source
+        provenance in configuration status
 cmds:
     ai-hats config status
-expect: the Source line in config status reports stable @ PyPI instead of an unknown direct_url.json fallback
-why:    release installs from PyPI omit direct_url.json, and failing to detect PyPI metadata produces misleading unknown source status
+expect: the Source line in status output displays "stable @ PyPI" instead of the
+        "(unknown — direct_url.json missing)" fallback
+why:    standard PyPI package installations omit direct_url.json metadata, requiring
+        package distribution fallback to identify stable releases
 """
 
 from __future__ import annotations

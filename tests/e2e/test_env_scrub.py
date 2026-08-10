@@ -1,11 +1,14 @@
-"""e2e (HATS-685, HATS-876, HATS-887, HATS-1019, HATS-828, HATS-1129, HATS-1247)
+"""e2e (HATS-685, HATS-876)
 
-flow:   a developer or subprocess runner executes ai-hats commands with ambient environment variables
+flow:   a developer running sub-agent execution or worktree commands with ambient
+        PYTHONPATH or GIT_* set expecting clean subprocess environment scrubbing
 cmds:
-    # with ambient PYTHONPATH or GIT_DIR set
-    python -m _helpers.env
-expect: environment scrubbing strips redirect variables like PYTHONPATH and GIT_* while preserving user settings and essential system PATH/HOME variables
-why:    leaked environment variables cause subprocesses to import workspace source instead of installed packages or leak repository state
+    ai-hats wt exec -- task/hats-1
+expect: subprocess environment strips inherited PYTHONPATH and GIT_* variables while
+        preserving PATH and HOME
+why:    ambient environment variable leakage redirects launcher imports to workspace
+        source or leaks git repository state; pure unit tests in this module also check
+        helper functions and are candidates for relocation (HATS-1499)
 """
 
 from __future__ import annotations

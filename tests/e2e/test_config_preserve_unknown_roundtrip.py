@@ -1,10 +1,13 @@
 """e2e (HATS-792, HATS-581)
 
-flow:   a user with an unknown top-level field in ai-hats.yaml runs a config mutation command
+flow:   a developer mutates project options when the config file contains top-level
+        fields added by another tool version
 cmds:
     ai-hats config set --task-prefix ACME
-expect: the command updates task_prefix, emits a warning for the unknown field on stderr, and preserves the unknown top-level field intact in ai-hats.yaml
-why:    dropping unknown top-level config fields on save would silently lose options added by newer or alternative tool versions
+expect: task_prefix is updated to ACME in ai-hats.yaml, a warning naming the unknown
+        field appears on stderr, and the unrecognised field is retained on disk
+why:    stripping unrecognised top-level keys on configuration save silently destroys
+        settings written by newer or complementary tool versions
 """
 
 from __future__ import annotations

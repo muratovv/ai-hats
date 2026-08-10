@@ -1,12 +1,15 @@
 """e2e (HATS-764)
 
-flow:   a user configures the harness release channel and path options via config set
+flow:   a maintainer configures the engine release channel and local source path
+        for a project checkout
 cmds:
     ai-hats config set --channel edge
     ai-hats config set --channel local --path .
     ai-hats config status
-expect: config set persists the harness settings to ai-hats.yaml, config status displays the active Channel line, stable channel omits the harness block, and invalid flag combinations are rejected with a nonzero exit
-why:    invalid channel configuration or failure to persist channel settings breaks harness version resolution and status reporting
+expect: ai-hats.yaml persists harness settings, config status displays "Channel: edge",
+        and combining --repo with non-edge channels exits nonzero with an error
+why:    unpersisted channel options or invalid flag combinations cause the engine to
+        resolve from the wrong source tree
 """
 
 from __future__ import annotations

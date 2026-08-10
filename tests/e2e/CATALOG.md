@@ -54,35 +54,35 @@ as a claim to check, not as evidence.
 
 *pins HATS-792*
 
-- **flow** — a user whose ai-hats.yaml specifies a schema_version newer than the installed binary runs any ai-hats command
+- **flow** — a developer attempts to run commands on a project whose config file was written by a future version of the tool
 - **cmds**
 
   ```console
   ai-hats config status
   ```
 
-- **expect** — the command fails with a nonzero exit code, displays a schema error and remediation update pointer, and leaves the configuration file un-rewritten on disk
-- **why** — silently parsing a future schema as a legacy version could misread fields or corrupt future config options on save
+- **expect** — process exits nonzero, prints "schema_version 99 is newer" with "ai-hats self update" remediation instructions, and leaves ai-hats.yaml byte-identical
+- **why** — parsing a future schema version as a legacy format risks misinterpreting configuration fields or clobbering unrecognised options on save
 
 ## `test_config_preserve_unknown_roundtrip.py`
 
 *pins HATS-792, HATS-581*
 
-- **flow** — a user with an unknown top-level field in ai-hats.yaml runs a config mutation command
+- **flow** — a developer mutates project options when the config file contains top-level fields added by another tool version
 - **cmds**
 
   ```console
   ai-hats config set --task-prefix ACME
   ```
 
-- **expect** — the command updates task_prefix, emits a warning for the unknown field on stderr, and preserves the unknown top-level field intact in ai-hats.yaml
-- **why** — dropping unknown top-level config fields on save would silently lose options added by newer or alternative tool versions
+- **expect** — task_prefix is updated to ACME in ai-hats.yaml, a warning naming the unknown field appears on stderr, and the unrecognised field is retained on disk
+- **why** — stripping unrecognised top-level keys on configuration save silently destroys settings written by newer or complementary tool versions
 
 ## `test_config_set_channel.py`
 
 *pins HATS-764*
 
-- **flow** — a user configures the harness release channel and path options via config set
+- **flow** — a maintainer configures the engine release channel and local source path for a project checkout
 - **cmds**
 
   ```console
@@ -91,43 +91,42 @@ as a claim to check, not as evidence.
   ai-hats config status
   ```
 
-- **expect** — config set persists the harness settings to ai-hats.yaml, config status displays the active Channel line, stable channel omits the harness block, and invalid flag combinations are rejected with a nonzero exit
-- **why** — invalid channel configuration or failure to persist channel settings breaks harness version resolution and status reporting
+- **expect** — ai-hats.yaml persists harness settings, config status displays "Channel: edge", and combining --repo with non-edge channels exits nonzero with an error
+- **why** — unpersisted channel options or invalid flag combinations cause the engine to resolve from the wrong source tree
 
 ## `test_config_status_git_env_isolation.py`
 
 *pins HATS-890*
 
-- **flow** — a maintainer inside a git working directory with ambient GIT_DIR environment variables runs ai-hats config status
+- **flow** — a maintainer checks status diagnostics while running inside a shell environment that exports GIT_DIR pointing to a decoy repository
 - **cmds**
 
   ```console
-  # inside a project with GIT_DIR set to a decoy repo
   ai-hats config status
   ```
 
-- **expect** — config status resolves git repository state for the editable install without leaking or resolving the decoy repository branch from GIT_DIR
-- **why** — ambient GIT_DIR environment variables pollute subprocess git discovery and report false branch information in status diagnostics
+- **expect** — the repo-state line displays the branch of the active ai-hats checkout rather than the branch of the decoy repository named in GIT_DIR
+- **why** — unscrubbed GIT_DIR environment variables override git discovery, causing status diagnostics to report false branch information
 
 ## `test_config_status_install_info.py`
 
-*pins HATS-497, HATS-582, HATS-707, HATS-1238*
+*pins HATS-497, HATS-707*
 
-- **flow** — a user checks installation diagnostics using ai-hats config status in uninitialized and initialized projects
+- **flow** — a user inspects installation health diagnostics in both uninitialized and initialized project environments
 - **cmds**
 
   ```console
   ai-hats config status
   ```
 
-- **expect** — installation health fields (version, interpreter, venv, source, library, resolved path) are rendered in both role-less and initialized projects without dead hook branches
-- **why** — installation health diagnostics must be visible regardless of project initialization state so users can troubleshoot setup issues
+- **expect** — Version, Interpreter, Venv, Source, Library, and Resolved via lines appear in output for both fresh and role-active projects, with no task_complete branch
+- **why** — installation health diagnostics must remain accessible when no active role is set so users can verify tool setup before initializing
 
 ## `test_config_status_provenance_layers.py`
 
 *pins HATS-525*
 
-- **flow** — a user subscribes an active role to user-global traits or symlinked/custom library paths and views configuration status
+- **flow** — a user configures global traits for a role and inspects rule provenance in status output
 - **cmds**
 
   ```console
@@ -135,22 +134,22 @@ as a claim to check, not as evidence.
   ai-hats config status
   ```
 
-- **expect** — global traits and their bundled rules are accurately labeled with (global) provenance tags rather than (built-in)
-- **why** — mislabeling global or custom traits and rules as built-in misleads users about where prompt logic and rules originate
+- **expect** — both the trait name and its bundled rules display the (global) tag in status output rather than (built-in)
+- **why** — labeling global or custom rules as built-in misinforms users about which layer provides active prompt guidance
 
 ## `test_config_status_stable_source.py`
 
-*pins HATS-779, HATS-497, HATS-678, HATS-771, HATS-790, HATS-898*
+*pins HATS-779*
 
-- **flow** — a user with a stable release installed from PyPI inspects installation source diagnostics
+- **flow** — a user running a release package installed from PyPI inspects source provenance in configuration status
 - **cmds**
 
   ```console
   ai-hats config status
   ```
 
-- **expect** — the Source line in config status reports stable @ PyPI instead of an unknown direct_url.json fallback
-- **why** — release installs from PyPI omit direct_url.json, and failing to detect PyPI metadata produces misleading unknown source status
+- **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
+- **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
 
 ## `test_docs_index_guard.py`
 
@@ -188,30 +187,29 @@ as a claim to check, not as evidence.
 
 *pins HATS-1013*
 
-- **flow** — a user launches an agent session when their development environment is outdated relative to project dependencies
+- **flow** — a developer starts an interactive session when background tooling packages in their environment have fallen behind project declarations
 - **cmds**
 
   ```console
   ai-hats agent assistant --task "Say hi"
   ```
 
-- **expect** — startup warning notice for stale dev environment packages is displayed pre-launch when drift is detected, and suppressed when environment is up-to-date
-- **why** — silent environment drift leads to subtle execution failures caused by outdated background tooling versions
+- **expect** — a pre-launch warning naming stale environment packages appears on stdout when drift is detected, and is suppressed when packages match
+- **why** — unnoticed environment drift leads to subtle runtime failures when active CLI tools conflict with project specification
 
 ## `test_env_scrub.py`
 
-*pins HATS-685, HATS-876, HATS-887, HATS-1019, HATS-828, HATS-1129, HATS-1247*
+*pins HATS-685, HATS-876*
 
-- **flow** — a developer or subprocess runner executes ai-hats commands with ambient environment variables
+- **flow** — a developer running sub-agent execution or worktree commands with ambient PYTHONPATH or GIT_* set expecting clean subprocess environment scrubbing
 - **cmds**
 
   ```console
-  # with ambient PYTHONPATH or GIT_DIR set
-  python -m _helpers.env
+  ai-hats wt exec -- task/hats-1
   ```
 
-- **expect** — environment scrubbing strips redirect variables like PYTHONPATH and GIT_* while preserving user settings and essential system PATH/HOME variables
-- **why** — leaked environment variables cause subprocesses to import workspace source instead of installed packages or leak repository state
+- **expect** — subprocess environment strips inherited PYTHONPATH and GIT_* variables while preserving PATH and HOME
+- **why** — ambient environment variable leakage redirects launcher imports to workspace source or leaks git repository state; pure unit tests in this module also check helper functions and are candidates for relocation (HATS-1499)
 
 ## `test_golden_path.py`
 
@@ -233,58 +231,58 @@ as a claim to check, not as evidence.
 
 ## `test_init_leaves_venv_alone.py`
 
-*pins HATS-1215, HATS-1125, HATS-1250*
+*pins HATS-1125, HATS-1215, HATS-1250*
 
-- **flow** — a user runs ai-hats self init with flags on an already initialized project
+- **flow** — a developer reconfigures project settings using command flags on an already initialized project
 - **cmds**
 
   ```console
-  ai-hats self init -r assistant -p claude --channel local --harness-path /path/to/repo
+  ai-hats self init -r assistant -p claude --channel local --harness-path /path
   ```
 
-- **expect** — the project configuration is updated without reinstalling or mutating the existing project virtual environment
-- **why** — implicit network calls or package reinstallations during flag-only init violate offline and local execution guarantees
+- **expect** — ai-hats.yaml is updated with new role and channel settings while the existing project virtual environment remains byte-identical
+- **why** — flag-based reconfiguration must run offline without triggering package reinstallations or network update side-effects
 
 ## `test_init_provider_detected.py`
 
-*pins HATS-613, HATS-790*
+*pins HATS-613*
 
-- **flow** — a user with multiple provider directories configured in home runs interactive self init
+- **flow** — a user with configuration directories for multiple providers runs interactive project setup
 - **cmds**
 
   ```console
   ai-hats self init --no-update --channel stable
   ```
 
-- **expect** — the provider selection menu marks all detected provider configurations as detected without labeling any single provider as recommended
-- **why** — marking only one provider as recommended when multiple exist misleads users and causes unintended provider pre-selections
+- **expect** — every configured provider directory is labeled "detected — found ~/.<name>" in the menu and the string "recommended" is absent
+- **why** — recommending only the first provider when multiple exist causes accidental provider selection on default selection
 
 ## `test_init_survives_version_swap_mid_run.py`
 
-*pins HATS-1126, HATS-1115*
+*pins HATS-1115, HATS-1126*
 
-- **flow** — a user runs interactive self init which triggers an in-place package update to a different code tree
+- **flow** — a user runs interactive setup when an embedded update replaces the running package distribution with a newer version mid-run
 - **cmds**
 
   ```console
   ai-hats self init -p claude
   ```
 
-- **expect** — the initialization process completes cleanly via process re-execution without raising split-module import errors from old and new code mixes
-- **why** — updating the executing package mid-run leaves stale modules in sys.modules that break subsequent imports if not re-executed
+- **expect** — process re-executes cleanly into the updated installation and prints successful completion without raising module import errors
+- **why** — replacing an executing package mid-run leaves resident modules in sys.modules that raise ImportError when importing updated sibling modules
 
 ## `test_init_wizard_reinit.py`
 
 *pins HATS-1215*
 
-- **flow** — a user runs interactive ai-hats self init in a terminal on an already initialized project
+- **flow** — a user runs interactive setup in a terminal on a project that already has a valid configuration file
 - **cmds**
 
   ```console
   ai-hats self init
   ```
 
-- **expect** — the interactive wizard menu launches as expected and completes purely offline without attempting network update checks
+- **expect** — the interactive Provider menu prompt is displayed despite an existing ai-hats.yaml file, and no network check or self-update output appears
 - **why** — re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 
 ## `test_prepush_e2e_master_gate.py`

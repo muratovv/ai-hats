@@ -1,10 +1,13 @@
-"""e2e (HATS-1126, HATS-1115)
+"""e2e (HATS-1115, HATS-1126)
 
-flow:   a user runs interactive self init which triggers an in-place package update to a different code tree
+flow:   a user runs interactive setup when an embedded update replaces the running
+        package distribution with a newer version mid-run
 cmds:
     ai-hats self init -p claude
-expect: the initialization process completes cleanly via process re-execution without raising split-module import errors from old and new code mixes
-why:    updating the executing package mid-run leaves stale modules in sys.modules that break subsequent imports if not re-executed
+expect: process re-executes cleanly into the updated installation and prints successful
+        completion without raising module import errors
+why:    replacing an executing package mid-run leaves resident modules in sys.modules
+        that raise ImportError when importing updated sibling modules
 """
 
 from __future__ import annotations

@@ -1,11 +1,14 @@
 """e2e (HATS-525)
 
-flow:   a user subscribes an active role to user-global traits or symlinked/custom library paths and views configuration status
+flow:   a user configures global traits for a role and inspects rule provenance in
+        status output
 cmds:
     ai-hats config customize assistant --add-trait hats525-global-trait --global
     ai-hats config status
-expect: global traits and their bundled rules are accurately labeled with (global) provenance tags rather than (built-in)
-why:    mislabeling global or custom traits and rules as built-in misleads users about where prompt logic and rules originate
+expect: both the trait name and its bundled rules display the (global) tag in status
+        output rather than (built-in)
+why:    labeling global or custom rules as built-in misinforms users about which layer
+        provides active prompt guidance
 """
 
 from __future__ import annotations

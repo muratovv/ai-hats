@@ -1,10 +1,13 @@
 """e2e (HATS-1215)
 
-flow:   a user runs interactive ai-hats self init in a terminal on an already initialized project
+flow:   a user runs interactive setup in a terminal on a project that already has
+        a valid configuration file
 cmds:
     ai-hats self init
-expect: the interactive wizard menu launches as expected and completes purely offline without attempting network update checks
-why:    re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
+expect: the interactive Provider menu prompt is displayed despite an existing
+        ai-hats.yaml file, and no network check or self-update output appears
+why:    re-initialization must allow interactive reconfiguration while honoring offline
+        execution guarantees
 """
 
 from __future__ import annotations

@@ -1,10 +1,13 @@
-"""e2e (HATS-1215, HATS-1125, HATS-1250)
+"""e2e (HATS-1125, HATS-1215, HATS-1250)
 
-flow:   a user runs ai-hats self init with flags on an already initialized project
+flow:   a developer reconfigures project settings using command flags on an already
+        initialized project
 cmds:
-    ai-hats self init -r assistant -p claude --channel local --harness-path /path/to/repo
-expect: the project configuration is updated without reinstalling or mutating the existing project virtual environment
-why:    implicit network calls or package reinstallations during flag-only init violate offline and local execution guarantees
+    ai-hats self init -r assistant -p claude --channel local --harness-path /path
+expect: ai-hats.yaml is updated with new role and channel settings while the existing
+        project virtual environment remains byte-identical
+why:    flag-based reconfiguration must run offline without triggering package
+        reinstallations or network update side-effects
 """
 
 from __future__ import annotations

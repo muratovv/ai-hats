@@ -1,11 +1,13 @@
 """e2e (HATS-890)
 
-flow:   a maintainer inside a git working directory with ambient GIT_DIR environment variables runs ai-hats config status
+flow:   a maintainer checks status diagnostics while running inside a shell environment
+        that exports GIT_DIR pointing to a decoy repository
 cmds:
-    # inside a project with GIT_DIR set to a decoy repo
     ai-hats config status
-expect: config status resolves git repository state for the editable install without leaking or resolving the decoy repository branch from GIT_DIR
-why:    ambient GIT_DIR environment variables pollute subprocess git discovery and report false branch information in status diagnostics
+expect: the repo-state line displays the branch of the active ai-hats checkout rather
+        than the branch of the decoy repository named in GIT_DIR
+why:    unscrubbed GIT_DIR environment variables override git discovery, causing status
+        diagnostics to report false branch information
 """
 
 from __future__ import annotations

@@ -1,10 +1,13 @@
-"""e2e (HATS-497, HATS-582, HATS-707, HATS-1238)
+"""e2e (HATS-497, HATS-707)
 
-flow:   a user checks installation diagnostics using ai-hats config status in uninitialized and initialized projects
+flow:   a user inspects installation health diagnostics in both uninitialized and
+        initialized project environments
 cmds:
     ai-hats config status
-expect: installation health fields (version, interpreter, venv, source, library, resolved path) are rendered in both role-less and initialized projects without dead hook branches
-why:    installation health diagnostics must be visible regardless of project initialization state so users can troubleshoot setup issues
+expect: Version, Interpreter, Venv, Source, Library, and Resolved via lines appear in
+        output for both fresh and role-active projects, with no task_complete branch
+why:    installation health diagnostics must remain accessible when no active role
+        is set so users can verify tool setup before initializing
 """
 
 from __future__ import annotations
