@@ -1,4 +1,4 @@
-"""e2e (HATS-582, HATS-905, HATS-912)
+"""e2e (HATS-905)
 
 flow: a developer running self update when unclaimed legacy files exist in
       .agent/ai-hats/

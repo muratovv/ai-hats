@@ -1,4 +1,4 @@
-"""e2e (HATS-965, HATS-1218, HATS-1224)
+"""e2e (HATS-1224)
 
 flow:   a developer specifying a provider name whose package is not installed
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-1368)
+"""e2e (HATS-1556)
 
 flow:   a developer running ai-hats when editable install metadata under-declares deps
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-698, HATS-723, HATS-1260, HATS-1263, HATS-1275)
+"""e2e (HATS-723, HATS-1260, HATS-1263, HATS-1275)
 
 flow:   a developer setting final_state notes during task transition
 cmds:

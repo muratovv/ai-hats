@@ -1,4 +1,4 @@
-"""e2e (HATS-582, HATS-1170, HATS-1201)
+"""e2e (HATS-1170, HATS-1201)
 
 flow:   a developer updating framework version on a project with orphan CLAUDE.md
         scaffolds

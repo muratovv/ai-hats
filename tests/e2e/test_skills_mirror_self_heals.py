@@ -1,4 +1,4 @@
-"""e2e (HATS-294, HATS-469, HATS-906, HATS-907)
+"""e2e (HATS-469, HATS-907)
 
 flow:   a developer running any ai-hats command when skills mirror directory is out of date
 cmds:

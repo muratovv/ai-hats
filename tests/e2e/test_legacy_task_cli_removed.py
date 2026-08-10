@@ -1,4 +1,4 @@
-"""e2e (HATS-087, HATS-790, HATS-1260)
+"""e2e (HATS-1260)
 
 flow:   a developer invoking legacy task CLI commands
 cmds:

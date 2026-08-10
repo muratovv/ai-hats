@@ -1,4 +1,4 @@
-"""e2e (HATS-907, HATS-931)
+"""e2e (HATS-931)
 
 flow: an agent starting a session when project carries a stale marker-less skills mirror
         matching a composed skill

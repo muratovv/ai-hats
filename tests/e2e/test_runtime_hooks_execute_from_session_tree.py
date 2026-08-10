@@ -1,4 +1,4 @@
-"""e2e (HATS-1113, HATS-1268)
+"""e2e (HATS-1268)
 
 flow:   an agent executing tools in a session with materialized runtime hooks
 cmds:

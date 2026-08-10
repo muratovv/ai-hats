@@ -1,4 +1,4 @@
-"""e2e (HATS-1125, HATS-1215, HATS-1250)
+"""e2e (HATS-1215, HATS-1250)
 
 flow:   a developer reconfigures project settings using command flags on an already
         initialized project

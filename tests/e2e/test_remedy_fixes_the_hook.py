@@ -1,4 +1,4 @@
-"""e2e (HATS-1245, HATS-1291, HATS-1314)
+"""e2e (HATS-1245, HATS-1291)
 
 flow:   a developer running self init to remedy broken settings.json hook references
 cmds:

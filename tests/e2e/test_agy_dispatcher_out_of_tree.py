@@ -1,4 +1,4 @@
-"""e2e (HATS-1356, HATS-1398)
+"""e2e (HATS-1398)
 
 flow:   an agent executing tool calls under an out-of-tree session cache location
 cmds:

@@ -1,4 +1,4 @@
-"""e2e (HATS-1120, HATS-1263)
+"""e2e (HATS-1263)
 
 flow:   a developer running ai-hats commands when package files are corrupted or
         mismatched

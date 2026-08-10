@@ -1,4 +1,4 @@
-"""e2e (HATS-337, HATS-339, HATS-407, HATS-790, HATS-1203)
+"""e2e (HATS-337, HATS-407, HATS-790, HATS-1203)
 
 flow:   a developer initializing project configuration
 cmds:

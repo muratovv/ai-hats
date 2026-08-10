@@ -1,4 +1,4 @@
-"""e2e (HATS-685, HATS-826, HATS-859)
+"""e2e (HATS-859)
 
 flow:   a developer executing commands in a specific worktree using a branch selector
 cmds:
