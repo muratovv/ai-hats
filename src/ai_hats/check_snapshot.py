@@ -1,13 +1,15 @@
-"""What a legacy surface silently drops at launch (HATS-1207, HATS-1241).
+"""What a launch says about the gates it arms (HATS-1207, HATS-1241, HATS-1548).
 
-HATS-1540 retired ``snapshot_checks`` and the ``<sid>/checks/`` root it wrote:
-the SKILLS category already mirrors every composed skill unconditionally
-(``SessionPolicy`` has no skills field), with the same lifetime and one writer,
-so a second copy bought nothing and cost a session that predates a binding every
-transition until restart. What survives here is the launch notice: a surface
-below the artifact builder writes no mirror either, and that has to be said out
-loud rather than discovered when a gate does not fire.
-"""
+Two jobs, one subject. :func:`describe_checks` resolves every binding the way
+the session will and reports whether the launch writes the bytes it will run —
+the only observable there is, since HATS-1540 retired ``snapshot_checks`` and
+the ``<sid>/checks/`` root: the skill mirror is written per SKILL, so no part of
+the materialization plan depends on a binding existing. The notices below cover
+the surfaces that cannot root one at all, said at launch rather than discovered
+when a gate does not fire.
+
+The module keeps its name for now; the snapshot it was named for is gone.
+"""  # comment-length: allow — the retired subject must say what replaced it
 
 from __future__ import annotations
 
