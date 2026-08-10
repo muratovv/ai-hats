@@ -3,7 +3,7 @@
 flow:   a developer running ai-hats self update to sweep legacy root residue files
 cmds:
     ai-hats self update
-expect: clean command sweeps legacy root residue files and keeps framework state inside
+expect: self update command sweeps legacy root residue files and keeps framework state inside
         .agent/ai-hats/
 why: without root residue sweeps, legacy config files remain in project root corrupting
      state resolution"""

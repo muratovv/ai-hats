@@ -1,11 +1,10 @@
 """e2e (HATS-294, HATS-709)
 
-flow:   a developer running self clean on a project with retired framework files
+flow:   a developer invoking retired self clean CLI command
 cmds:
-    ai-hats self clean    # no-resolve: pins retired self clean CLI
-expect: clean command removes retired files from .agent/ai-hats/ and restores clean
-        workspace
-why:    without self clean, deprecated framework artifacts persist in repository history"""
+    ai-hats self clean    # no-resolve: pins that retired self clean CLI was removed
+expect: CLI exits with error code explaining self clean command is retired
+why:    without self clean removal guard, deprecated self clean subcommand might be re-introduced"""
 
 from __future__ import annotations
 

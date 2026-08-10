@@ -1,6 +1,6 @@
 """e2e (HATS-1006)
 
-flow:   a developer running ai-hats config status when settings.json carries malformed JSON structure
+flow:   a developer running any ai-hats command when settings.json carries malformed JSON structure
 cmds:
     ai-hats config status
 expect: session startup warns user of settings.json lint errors without aborting

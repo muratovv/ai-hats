@@ -1,6 +1,6 @@
 """e2e (HATS-1118)
 
-flow:   a developer running ai-hats config status when a first-party entry point attribute is
+flow:   a developer running any ai-hats command when a first-party entry point attribute is
         missing
 cmds:
     ai-hats config status

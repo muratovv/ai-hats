@@ -1,12 +1,11 @@
 """e2e (HATS-790)
 
-flow: a developer running ai-hats CLI commands via launcher on a venv without
-      bin/ai-hats
-        console script
+flow: a developer running any ai-hats command on a venv without a bin/ai-hats
+      console script
 cmds:
-    ai-hats status --verbose    # no-resolve: launcher test passes throwaway status --verbose to mock python stub
-expect: launcher verifies python importability and dispatches command via python -m
-        ai_hats
+    ai-hats config status
+expect: launcher verifies python importability and forwards verbatim argv through
+        python -m ai_hats
 why: without python -m module dispatch, removing console script binaries breaks host
      launcher
         command execution"""

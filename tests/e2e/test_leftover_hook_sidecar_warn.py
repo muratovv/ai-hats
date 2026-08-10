@@ -1,6 +1,6 @@
 """e2e (HATS-815)
 
-flow:   a developer running ai-hats config status when leftover hook sidecar files exist
+flow:   a developer running any ai-hats command when leftover hook sidecar files exist
 cmds:
     ai-hats config status
 expect: CLI emits warning for leftover hook sidecar files without failing command

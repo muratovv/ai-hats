@@ -920,7 +920,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-1118*
 
-- **flow** — a developer running ai-hats config status when a first-party entry point attribute is missing
+- **flow** — a developer running any ai-hats command when a first-party entry point attribute is missing
 - **cmds**
 
   ```console
@@ -1005,14 +1005,14 @@ as a claim to check, not as evidence.
 
 *pins HATS-790*
 
-- **flow** — a developer running ai-hats CLI commands via launcher on a venv without bin/ai-hats console script
+- **flow** — a developer running any ai-hats command on a venv without a bin/ai-hats console script
 - **cmds**
 
   ```console
-  ai-hats status --verbose    # no-resolve: launcher test passes throwaway status --verbose to mock python stub
+  ai-hats config status
   ```
 
-- **expect** — launcher verifies python importability and dispatches command via python -m ai_hats
+- **expect** — launcher verifies python importability and forwards verbatim argv through python -m ai_hats
 - **why** — without python -m module dispatch, removing console script binaries breaks host launcher command execution
 
 ## `test_launcher_heal_detects_missing_workspace_member.py`
@@ -1103,7 +1103,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-815*
 
-- **flow** — a developer running ai-hats config status when leftover hook sidecar files exist
+- **flow** — a developer running any ai-hats command when leftover hook sidecar files exist
 - **cmds**
 
   ```console
@@ -1757,7 +1757,7 @@ as a claim to check, not as evidence.
   ai-hats self update
   ```
 
-- **expect** — clean command sweeps legacy root residue files and keeps framework state inside .agent/ai-hats/
+- **expect** — self update command sweeps legacy root residue files and keeps framework state inside .agent/ai-hats/
 - **why** — without root residue sweeps, legacy config files remain in project root corrupting state resolution
 
 ## `test_rule_delivery_gate.py`
@@ -1914,15 +1914,15 @@ as a claim to check, not as evidence.
 
 *pins HATS-294, HATS-709*
 
-- **flow** — a developer running self clean on a project with retired framework files
+- **flow** — a developer invoking retired self clean CLI command
 - **cmds**
 
   ```console
-  ai-hats self clean    # no-resolve: pins retired self clean CLI
+  ai-hats self clean    # no-resolve: pins that retired self clean CLI was removed
   ```
 
-- **expect** — clean command removes retired files from .agent/ai-hats/ and restores clean workspace
-- **why** — without self clean, deprecated framework artifacts persist in repository history
+- **expect** — CLI exits with error code explaining self clean command is retired
+- **why** — without self clean removal guard, deprecated self clean subcommand might be re-introduced
 
 ## `test_self_heal_broken_editable.py`
 
@@ -2278,7 +2278,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-1006*
 
-- **flow** — a developer running ai-hats config status when settings.json carries malformed JSON structure
+- **flow** — a developer running any ai-hats command when settings.json carries malformed JSON structure
 - **cmds**
 
   ```console
@@ -2292,7 +2292,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-790, HATS-791*
 
-- **flow** — a developer running ai-hats config status when AI_HATS_VENV points to a foreign venv outside project
+- **flow** — a developer running any ai-hats command when AI_HATS_VENV points to a foreign venv outside project
 - **cmds**
 
   ```console
@@ -2366,7 +2366,7 @@ as a claim to check, not as evidence.
 
 *pins HATS-294, HATS-469, HATS-906, HATS-907*
 
-- **flow** — a developer running ai-hats config status when skills mirror directory is out of date
+- **flow** — a developer running any ai-hats command when skills mirror directory is out of date
 - **cmds**
 
   ```console

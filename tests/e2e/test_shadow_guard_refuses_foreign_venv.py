@@ -1,6 +1,6 @@
 """e2e (HATS-790, HATS-791)
 
-flow: a developer running ai-hats config status when AI_HATS_VENV points to a foreign venv outside
+flow: a developer running any ai-hats command when AI_HATS_VENV points to a foreign venv outside
       project
 cmds:
     ai-hats config status
