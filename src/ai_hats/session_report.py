@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .materialization import MaterializationPlan
 from .session_artifacts import SessionPolicy
+
+if TYPE_CHECKING:  # pragma: no cover — typing only
+    from ai_hats_core import ResolvedCheck
 
 
 def _human_size(n: int) -> str:
@@ -39,6 +43,9 @@ class SessionReport:
     # Known gaps between what this report can observe and what the surface
     # actually delivers — never leave such a gap silent.
     notes: tuple[str, ...] = ()
+    # HATS-1548: the gates this launch arms. Not derivable from the plan — the
+    # skill mirror a check runs from is written per SKILL, not per binding.
+    checks: tuple[ResolvedCheck, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +74,16 @@ class SessionReport:
                 for e in self.plan.entries
             ],
             "duplicates": [str(p) for p in self.plan.duplicates()],
+            "checks": [
+                {
+                    "skill": c.skill,
+                    "script": c.script,
+                    "point": c.point,
+                    "on_error": c.on_error,
+                    "declared_by": c.declared_by,
+                }
+                for c in self.checks
+            ],
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),
         }
@@ -110,6 +127,15 @@ class SessionReport:
 
         for dup in d["duplicates"]:
             lines.append(f"  ! {dup} materialized twice")
+
+        lines += ["", "checks"]
+        if not d["checks"]:
+            lines.append("  (none bound)")
+        for c in d["checks"]:
+            lines.append(
+                f"  {c['point']:<20} {c['skill']}/{c['script']}"
+                f"  on_error={c['on_error']}  by {c['declared_by']}"
+            )
 
         if d["notes"]:
             lines.append("")

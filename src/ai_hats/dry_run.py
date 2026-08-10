@@ -92,6 +92,7 @@ def dry_run_hitl(
         plan=artifacts.port.plan,
         cwd=str(project_dir),
         escapes=_detect_escapes(cache_dir, before),
+        checks=payload.result.checks,
     )
 
 
@@ -155,6 +156,7 @@ def dry_run_automate(
         cwd="<worktree, assigned at launch>",
         escapes=_detect_escapes(cache_dir, before),
         notes=tuple(notes),
+        checks=payload.result.checks,
     )
 
 

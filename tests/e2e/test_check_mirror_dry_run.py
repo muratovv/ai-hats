@@ -138,3 +138,20 @@ def test_binding_a_check_adds_nothing_to_the_plan(project_with_library):
 
     assert _plan_targets(bound) == _plan_targets(unbound)
     assert [t for _kind, t in _plan_targets(bound) if "/checks/" in t] == []
+
+
+def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library):
+    """HATS-1548, the inversion: what the plan lost, the report says outright.
+
+    The pair above is exactly why this one is needed — two roles that plan the
+    same targets must still be told apart, or an operator cannot see the gate
+    that will refuse their transition before they start the session.
+    """
+    bound = _dry_run(project_with_library, "checked")
+    unbound = _dry_run(project_with_library, "plain")
+
+    assert unbound["checks"] == []
+    assert [
+        (c["skill"], c["script"], c["point"], c["on_error"], c["declared_by"])
+        for c in bound["checks"]
+    ] == [("gate-skill", "check.sh", "wt:pre-merge", "refuse", "checked")]

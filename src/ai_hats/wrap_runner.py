@@ -517,6 +517,7 @@ class WrapRunner:
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
+            checks=result.checks,
         )
         session.save_role_materialization(report.to_dict())
 
