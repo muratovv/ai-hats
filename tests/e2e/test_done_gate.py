@@ -37,7 +37,9 @@ EDGE = "edge:review--done"
 SCRIPT = "hooks/done-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
-EDGE_LOG = f"edge-review--done~{SKILL}~hooks+done-gate.sh.log"
+#: One log per (task, point, row). The row identity carries the app and the
+#: backlog since HATS-1545, so two backlogs binding one script cannot collide.
+EDGE_LOG = f"edge-review--done~rack~tasks~{SKILL}~hooks+done-gate.sh.log"
 GATE_MARKER_DIR = Path(".git") / "ai-hats" / "done-gate"
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.
@@ -73,19 +75,18 @@ injection: |
 _CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
 
 
-def shipped_binding() -> dict:
-    """The ``checks:`` row the ``maintainer`` role actually ships.
+def shipped_apps() -> dict:
+    """The ``composition.apps`` block the ``maintainer`` role actually ships.
 
     Read from the library rather than restated here, so the sandbox exercises
-    the row under review — a hand-copied literal drifts from it in silence, and
-    HATS-1538 proved the drift is what survives. The bare ``on`` key resolves to
-    ``True`` under YAML 1.1, exactly as the library's own ``_parse_check_row``
-    finds it.
+    the rows under review — a hand-copied literal drifts from them in silence,
+    and HATS-1538 proved the drift is what survives. Since HATS-1545 the block
+    is carried whole: its shape below ``apps.<app>`` belongs to the app, so a
+    test that picked rows apart would be re-implementing a grammar it does not
+    own.
     """
     config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
-    rows = config["composition"]["checks"]
-    assert len(rows) == 1, f"expected exactly one checks row, got {rows}"
-    return {("on" if key is True else key): value for key, value in rows[0].items()}
+    return config["composition"]["apps"]
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ def _seed_library(project: Path, *, bind: bool) -> None:
         "injection": "# ROLE: GATED\n",
     }
     if bind:
-        gated["composition"]["checks"] = [shipped_binding()]
+        gated["composition"]["apps"] = shipped_apps()
     (lib / "roles" / "gated").mkdir(parents=True)
     (lib / "roles" / "gated" / "config.yaml").write_text(
         yaml.safe_dump(gated, sort_keys=False), encoding="utf-8"
@@ -268,11 +269,13 @@ def test_the_maintainer_role_binds_the_gate_to_both_roads_into_master():
     through the unheld one. HATS-1137's tombstone stood here until the two
     reasons it was withdrawn for were closed (HATS-1540 S1 and S5).
     """
-    row = shipped_binding()
-    assert row["skill"] == SKILL
-    assert row["script"] == SCRIPT
-    assert row["on"] == [EDGE, "wt:pre-merge"]
-    assert row["on_error"] == "refuse"
+    apps = shipped_apps()
+    assert apps["rack"]["tasks"] == [
+        {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse"}
+    ], "the FSM automerge road, qualified by the backlog it gates"
+    assert apps["wt"] == [
+        {"run": f"{SKILL}/{SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
+    ], "the direct `ai-hats wt merge` road"
 
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
@@ -419,7 +422,7 @@ def test_removing_the_checks_row_lets_the_red_card_through(gate_project, rack_bi
     task_id, _ = _to_review(rack_bin, project, env, worktree=True)
 
     role = project / "libraries" / "roles" / "gated" / "config.yaml"
-    assert "checks" not in role.read_text(encoding="utf-8"), "the row must really be gone"
+    assert "apps:" not in role.read_text(encoding="utf-8"), "the rows must really be gone"
 
     taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
 

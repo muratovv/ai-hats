@@ -241,3 +241,73 @@ def test_a_carrier_that_raises_becomes_a_typed_refusal():
         CheckSubscriber(_Exploding(), topology=_topology(), backlog="tasks").on_event(_ctx())
 
     assert "the role could not be composed" in exc_info.value.reason
+
+
+# --- HATS-1545 R10: addressing a backlog by name ---
+
+
+def test_a_row_for_a_sibling_backlog_is_skipped_not_refused():
+    """A workspace mounts several backlogs and each gets its own subscriber, so
+    a row addressed to `hyp` must not brick every `tasks` transition."""
+    port = _Port(_row("edge:review--done", backlog="hyp"))
+
+    delta = CheckSubscriber(
+        port, topology=_topology(), backlog="tasks", known_backlogs=("tasks", "hyp")
+    ).on_event(_ctx())
+
+    assert delta is None
+    assert port.ran == []
+
+
+def test_a_row_naming_no_mounted_backlog_is_a_loud_refusal():
+    """The other half of the same decision: a name nothing answers to is a typo,
+    and a typo that installs no gate silently is what the channel exists to
+    remove. `instance_by_name` took a first match before HATS-1545 (D8)."""
+    port = _Port(_row("edge:review--done", backlog="cards"))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        CheckSubscriber(
+            port, topology=_topology(), backlog="tasks", known_backlogs=("tasks", "hyp")
+        ).on_event(_ctx())
+
+    assert "cards" in exc_info.value.reason
+    assert "tasks" in exc_info.value.reason
+    assert port.ran == []
+
+
+def test_a_rack_row_that_names_no_backlog_at_all_is_a_loud_refusal():
+    """`apps.rack` with rows directly under it skips the level that says WHICH
+    backlog — the qualification the DSL makes unwritable-by-omission."""
+    port = _Port(
+        CheckDeclaration(
+            path=(),
+            cargo={"at": ["edge:review--done"]},
+            on_error="refuse",
+            label="row with no backlog",
+            handle="x",
+        )
+    )
+
+    with pytest.raises(AbortOperation) as exc_info:
+        CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
+
+    assert "apps.rack.<backlog>" in exc_info.value.reason
+
+
+def test_a_row_binding_several_points_fires_once_per_event():
+    """`at:` is a list, and the subscriber matches the event being fired — a row
+    on two edges is one row, not two gates on each."""
+    port = _Port(
+        CheckDeclaration(
+            path=("tasks",),
+            cargo={"at": ["edge:open--review", "edge:review--done"]},
+            on_error="refuse",
+            label="two-point row",
+            handle="x",
+        )
+    )
+    subscriber = CheckSubscriber(port, topology=_topology(), backlog="tasks")
+
+    assert subscriber.on_event(_ctx()) is None
+
+    assert port.ran == ["edge:review--done"]

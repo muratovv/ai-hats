@@ -41,31 +41,6 @@ class CheckBindingError(ValueError):
     """A declared check binding cannot install (HATS-1140, ADR-0019 D6)."""
 
 
-class CheckBinding(_YamlModel):
-    """One ``composition.checks`` row: a skill's script bound to lifecycle points.
-
-    Frozen + ``extra="forbid"`` follows :class:`RuntimeHook`; the forward-compat
-    WARN for an unknown row key lives in :func:`_parse_check_row`, so this stays
-    the guard for construction paths that never see it.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    skill: str
-    script: str
-    on: tuple[str, ...]
-    on_error: Literal["refuse", "warn"] = "refuse"
-
-    @field_validator("on")
-    @classmethod
-    def _reject_empty_on(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value:
-            # A binding to no point is a gate that never fires — the silence
-            # HATS-1140 exists to remove, not a degenerate-but-valid row.
-            raise ValueError("must name at least one point")
-        return value
-
-
 @dataclass(frozen=True)
 class AppBinding:
     """One row of ``composition.apps``, with its declarer and its place in the tree.
@@ -195,7 +170,6 @@ class Composition(_YamlModel):
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    checks: list[CheckBinding] = Field(default_factory=list)
     #: Per-application declaration blocks, carried verbatim (HATS-1545 R1). The
     #: value is opaque: ai-hats knows no app's grammar, only that a mapping with
     #: ``run:`` inside it is a row.
@@ -226,6 +200,7 @@ def load_component_yaml(path: Path) -> dict[str, Any]:
         if node is None:
             return {}
         _reject_duplicate_keys(node, path)
+        _reject_non_string_keys(_composition_node(node), path)
         return loader.construct_document(node) or {}
     finally:
         loader.dispose()
@@ -252,6 +227,45 @@ def _reject_duplicate_keys(node: yaml.Node, path: Path, trail: tuple[str, ...] =
         _reject_duplicate_keys(value_node, path, (*trail, key))
 
 
+def _composition_node(root: yaml.Node) -> yaml.Node | None:
+    """The ``composition:`` value node, if the document has one."""
+    if not isinstance(root, yaml.MappingNode):
+        return None
+    for key_node, value_node in root.value:
+        if getattr(key_node, "value", None) == "composition":
+            return value_node
+    return None
+
+
+def _reject_non_string_keys(
+    node: yaml.Node | None, path: Path, trail: tuple[str, ...] = ()
+) -> None:
+    """Refuse a key YAML resolves to something other than a string.
+
+    Scoped to ``composition:`` because that subtree is now an OPEN registry: an
+    app's block is carried verbatim, so no remap can fix a key after the fact.
+    ``on:`` is the live case — YAML 1.1 resolves it to ``True``, and ``on``/``yes``
+    then collapse into one cell (measured). The old channel patched that up for
+    one known field; under an opaque block ai-hats does not know which key is
+    significant, so the trap is removed by refusing the spelling instead.
+    """  # comment-length: allow — why a remap is impossible here is the decision
+    if isinstance(node, yaml.SequenceNode):
+        for index, item in enumerate(node.value):
+            _reject_non_string_keys(item, path, (*trail, str(index)))
+        return
+    if not isinstance(node, yaml.MappingNode):
+        return
+    for key_node, value_node in node.value:
+        if key_node.tag != "tag:yaml.org,2002:str":
+            where = ".".join(("composition", *trail)) or "composition"
+            raise ComponentKeyError(
+                f"{path}: under {where}, the key {key_node.value!r} is not a string — YAML 1.1 "
+                f"reads it as {key_node.tag.rpartition(':')[2]}, so it can never match the key a "
+                f"reader looks for; quote it (\"{key_node.value}\") or rename it (e.g. 'on' -> 'at')"
+            )
+        _reject_non_string_keys(value_node, path, (*trail, str(key_node.value)))
+
+
 class ComponentConfig(_YamlModel):
     """Parsed config.yaml for a trait or role."""
 
@@ -265,7 +279,6 @@ class ComponentConfig(_YamlModel):
     def from_yaml(cls, path: Path) -> ComponentConfig:
         data = load_component_yaml(path)
         cls._strip_unknown_composition_keys(data, path)
-        cls._normalize_check_rows(data, path)
         return cls.model_validate(
             {**data, "source_path": path, "name": data.get("name") or path.parent.name}
         )
@@ -295,65 +308,6 @@ class ComponentConfig(_YamlModel):
                 f"{suggestion} (known: {', '.join(known)})",
                 file=sys.stderr,
             )
-
-    @staticmethod
-    def _normalize_check_rows(data: dict[str, Any], path: Path) -> None:
-        """Turn raw ``composition.checks`` rows into validated bindings.
-
-        Runs before ``model_validate`` so a defect is reported against the file
-        and the row index rather than as a bare pydantic error (HATS-1140).
-        """
-        composition = data.get("composition")
-        if not isinstance(composition, dict):
-            return
-        rows = composition.get("checks")
-        if rows is None:
-            return
-        if not isinstance(rows, list):
-            raise CheckBindingError(
-                f"{path}: 'composition.checks' must be a list of "
-                f"{{skill, script, on}} rows, got {type(rows).__name__}"
-            )
-        composition["checks"] = [
-            _parse_check_row(row, index=i, path=path) for i, row in enumerate(rows)
-        ]
-
-
-def _parse_check_row(row: Any, *, index: int, path: Path) -> CheckBinding:
-    """Parse one ``checks:`` row; loud on structure, forgiving on vocabulary."""
-    label = f"{path}: composition.checks[{index}]"
-    if not isinstance(row, dict):
-        raise CheckBindingError(
-            f"{label}: must be a mapping of {{skill, script, on}}, got {type(row).__name__}"
-        )
-    if True in row and "on" not in row:
-        # YAML 1.1 resolves a bare ``on`` key to True (ai_hats_wt/carry.py).
-        row = {("on" if key is True else key): value for key, value in row.items()}
-    known = sorted(CheckBinding.model_fields)
-    unknown = [key for key in row if key not in known]
-    if unknown:
-        # Forward-compat (ADR-0019 D6 / ADR-0012 Revisions #3): a newer trait's
-        # optional field must not hard-fail composition on an older engine.
-        row = {key: value for key, value in row.items() if key in known}
-        print(
-            f"WARN: {label}: ignoring unknown row key(s) "
-            f"{', '.join(repr(key) for key in unknown)} (known: {', '.join(known)})",
-            file=sys.stderr,
-        )
-    try:
-        return CheckBinding.model_validate(row)
-    except ValidationError as exc:
-        raise CheckBindingError(f"{label}: {_describe_row_defect(exc)}") from exc
-
-
-def _describe_row_defect(exc: ValidationError) -> str:
-    defects = "; ".join(
-        f"{'.'.join(str(part) for part in err['loc']) or '<row>'}: {err['msg']}"
-        for err in exc.errors()
-    )
-    return (
-        f"{defects} — a row must be {{skill, script, on: [<ns>:<point>], on_error?: refuse|warn}}"
-    )
 
 
 class RuleMetadata(_YamlModel):

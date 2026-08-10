@@ -28,7 +28,6 @@ from .libraries.models import (  # noqa: F401
     GIT_HOOK_EVENTS,
     RUNTIME_HOOK_EVENTS,
     AppBinding,
-    CheckBinding,
     CheckBindingError,
     ComponentConfig,
     ComponentKeyError,

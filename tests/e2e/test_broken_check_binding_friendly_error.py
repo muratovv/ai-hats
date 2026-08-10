@@ -41,11 +41,11 @@ composition:
   traits: []
   rules: []
   skills: []
-  checks:
-    - skill: nowhere-skill
-      script: gate.sh
-      "on": [wt:create]
-      on_error: refuse
+  apps:
+    wt:
+      - run: nowhere-skill/gate.sh
+        at: [create]
+        on_error: refuse
 injection: |
   # ROLE: broken
 """
