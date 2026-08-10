@@ -248,9 +248,7 @@ def test_the_automate_dry_run_payload_equals_the_launch_record(project: Path, mo
     assert _comparable(planned, real["sid"]) == _comparable(real["record"], real["sid"])
 
 
-def test_the_automate_dry_run_reports_the_prompt_the_sub_agent_receives(
-    project: Path, monkeypatch
-):
+def test_the_automate_dry_run_reports_the_prompt_the_sub_agent_receives(project: Path, monkeypatch):
     """The meta-prompt is the sub-agent's whole world and lives outside ``to_dict``.
 
     Byte equality against ``meta_prompt.txt`` is the only assertion that can see
@@ -351,9 +349,7 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
     assert record["launch"] == spawned["cmd"]
 
 
-def test_the_reported_automate_launch_is_the_options_the_sdk_receives(
-    project: Path, monkeypatch
-):
+def test_the_reported_automate_launch_is_the_options_the_sdk_receives(project: Path, monkeypatch):
     """Every option ai-hats sets on the SDK is named in the report.
 
     Measured against the SDK's own defaults, so the set is what ai-hats CHANGED

@@ -24,8 +24,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY_DIR = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 
 
+SURFACES = ["claude", "agy", "cline"]
+
+
 @pytest.fixture
-def cline_project(tmp_path: Path, monkeypatch) -> Path:
+def project(tmp_path: Path, monkeypatch) -> Path:
     proj = tmp_path / "proj"
     proj.mkdir()
     ProjectConfig(
@@ -53,32 +56,39 @@ def no_sockets(monkeypatch):
     monkeypatch.setattr(socket, "socket", _refuse)
 
 
+@pytest.mark.parametrize("surface", SURFACES)
 @pytest.mark.parametrize("report_of", [dry_run_hitl, dry_run_automate])
-def test_a_dry_run_binds_no_socket(cline_project: Path, no_sockets, report_of):
-    report = report_of(cline_project)
+def test_a_dry_run_binds_no_socket(project: Path, no_sockets, report_of, surface: str):
+    """Every surface, both modes — the invariant belongs to reporting, not to cline."""
+    report_of(project, provider=surface)
+
+
+@pytest.mark.parametrize("report_of", [dry_run_hitl, dry_run_automate])
+def test_the_reported_hub_port_is_the_launchs_to_pick(project: Path, report_of):
+    report = report_of(project, provider="cline")
 
     assert report.env["CLINE_HUB_PORT"] == AT_LAUNCH, (
         "the report must say the port is the launch's to pick, not invent one"
     )
 
 
-def test_the_port_key_survives_into_the_report(cline_project: Path):
+def test_the_port_key_survives_into_the_report(project: Path):
     """Purity must not be bought by dropping the key — that hides it instead."""
-    assert "CLINE_HUB_PORT" in dry_run_hitl(cline_project).to_dict()["env_keys"]
+    env_keys = dry_run_hitl(project, provider="cline").to_dict()["env_keys"]
+
+    assert "CLINE_HUB_PORT" in env_keys
 
 
-def test_a_real_launch_claims_a_usable_port(cline_project: Path):
+def test_a_real_launch_claims_a_usable_port(project: Path):
     """The sentinel is a report value; a launch still gets a bound-and-free port."""
-    claimed = get_provider("cline").claim_launch_env(cline_project, cline_project)
+    claimed = get_provider("cline").claim_launch_env(project, project)
 
     assert set(claimed) == {"CLINE_HUB_PORT"}
     assert 1024 < int(claimed["CLINE_HUB_PORT"]) <= 65535
 
 
 @pytest.mark.parametrize("provider_name", sorted(provider_names()))
-def test_what_a_launch_claims_is_a_key_the_report_already_names(
-    provider_name: str, tmp_path: Path
-):
+def test_what_a_launch_claims_is_a_key_the_report_already_names(provider_name: str, tmp_path: Path):
     """Else ``env_keys`` would depend on the mode, which is the same defect moved.
 
     Every registered provider, not just cline: the invariant belongs to the hook,

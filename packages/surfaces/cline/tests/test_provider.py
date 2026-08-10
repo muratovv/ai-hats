@@ -124,9 +124,7 @@ def test_get_env_names_the_port_without_taking_one(tmp_path, monkeypatch) -> Non
     """HATS-1554: get_env is on the report path too, where binding is a side effect."""
     import socket
 
-    monkeypatch.setattr(
-        socket, "socket", lambda *a, **k: pytest.fail("get_env opened a socket")
-    )
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: pytest.fail("get_env opened a socket"))
     env = ClineProvider().get_env(tmp_path / "session", tmp_path)
 
     assert env["CLINE_HUB_PORT"] == "<assigned at launch>"
