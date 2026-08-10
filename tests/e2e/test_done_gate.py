@@ -1,14 +1,12 @@
-"""e2e: the done-gate refuses a real ``review → done`` transition (HATS-1137).
+"""e2e (HATS-1137)
 
-The REAL ``rack`` binary drives a git sandbox through the real FSM to ``review``
-with a real task worktree, against the REAL ``hooks/done-gate.sh`` bytes — copied
-into the sandbox's own ``libraries/``, which wins ``find_component_dir``'s
-last-wins search and keeps the composed script's nearest ``.git`` a directory
-(``check_resolve._reject_worktree_root`` refuses a linked worktree's ``.git``
-FILE).
-
-Fail-under-revert: :func:`test_removing_the_checks_row_lets_the_red_card_through`.
-"""
+flow:   an agent transitioning a task card to done state
+cmds:
+    rack transition HATS-1137 done
+expect: done gate verifies review approval and documentation completeness before
+        allowing transition
+why: without done gates, agents transition unreviewed or undocumented task cards
+     directly to done"""
 
 from __future__ import annotations
 

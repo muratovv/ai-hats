@@ -1,12 +1,12 @@
-"""e2e: ``rack ls --grep id:<pattern>`` narrows to the field at process level
-(HATS-1324).
+"""e2e (HATS-1324)
 
-The unit tests pin the predicate; only a real process proves the colon survives
-argv. A slip there falls back to the default haystack, which still returns rows —
-a green-looking wrong answer, so these assertions name the ids.
-
-Fail-under-revert: make ``_split_grep`` return ``(None, spec)`` unconditionally →
-the id-targeted call returns the mentioning card instead of the epic's own.
+flow:   a developer filtering task list output by specific card attributes
+cmds:
+    rack ls --grep id:HATS-926 --json
+expect: output contains only task cards matching the specified field prefix instead of
+        matching general prose text
+why:    field-prefixed grep filtering must match targeted card attributes to avoid false
+        positives from general text descriptions
 """
 
 from __future__ import annotations

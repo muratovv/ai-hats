@@ -1,39 +1,13 @@
-"""E2E: the edge ahead/diverged guard follows the EDGE repo, not upstream master (HATS-766).
+"""e2e (HATS-441, HATS-766)
 
-The bug it catches (caveat a):
-
-  Before HATS-766, the ahead/diverged guard (HATS-441) probed the literal
-  ``master`` ref of the resolved remote. The edge INSTALL, by contrast,
-  resolves the repo's default-branch ``HEAD`` (``fetch_edge_head_sha``). For a
-  custom edge repo whose default branch is NOT ``master`` (or that has no
-  ``master`` at all), the guard probed a ref the repo doesn't have →
-  ``fetch_latest_sha`` returns ``None`` → the guard goes silently inactive,
-  while the install happily proceeds. Install and guard checked different
-  things.
-
-After HATS-766 the guard threads the resolved edge repo + ``HEAD`` into the
-probe, so it fires against the SAME commit the install would land.
-
-Setup contract (real subprocess + real pip), mirrors test_self_update_downgrade_gate:
-
-  - ``src-repo``        — clone of REPO_ROOT + one empty commit (installed, 1 ahead).
-  - ``fake-remote.git`` — bare clone whose **default branch is ``trunk``, with
-                          ``master`` DELETED**. ``trunk`` is pinned one commit
-                          behind src-repo. This non-master default is the
-                          discriminator: under revert (hardwired ``master``)
-                          the probe finds no ``master`` ref → no refusal (exit 0);
-                          with the fix (``HEAD`` → ``trunk``) the guard fires (exit 3).
-  - editable install so the package dir carries a ``.git`` the probe can read.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fail-under-revert: revert the ``ref="HEAD"`` / bare-URL threading in
-``cli/maintenance.py`` (edge branch) + ``update_check/checker.py`` and the probe
-falls back to ``master``, which this remote lacks → exit 0, and the
-``expect_exit=3`` assertion fails.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer running self update on edge channel when local commits are ahead
+        of remote
+cmds:
+    ai-hats self update
+expect: edge channel update guard prevents downgrading unpushed local edge commits to
+        remote origin
+why:    without custom edge guards, self update overwrites unpushed local feature commits
+        with remote origin
 """
 
 from __future__ import annotations

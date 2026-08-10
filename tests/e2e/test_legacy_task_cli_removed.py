@@ -1,12 +1,11 @@
-"""HATS-1260 e2e gate — the legacy ``ai-hats task`` CLI is unmounted.
+"""e2e (HATS-087, HATS-790, HATS-1260)
 
-At the real subprocess boundary (module form per HATS-790 — no console
-script): the wired ``main`` has no ``task`` group and ``--help`` does not
-advertise one. No exit-code probe on ``task --help``: per HATS-087/1202 an
-unknown first token is a bare positional prompt (supervisor ruling
-2026-07-28 — no tombstone, R2 "no shim" holds), so it wrap-launches.
-Fail-under-revert: restore ``main.add_command(task.task)`` → both go red.
-"""
+flow:   a developer invoking legacy task CLI commands
+cmds:
+    ai-hats task list
+expect: CLI exits with error code explaining legacy task CLI is replaced by rack command
+why: without legacy CLI removal guards, deprecated task subcommands execute stale task
+     logic"""
 
 from __future__ import annotations
 

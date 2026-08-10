@@ -1,10 +1,12 @@
-"""E2E: the real ``ai-hats-cline`` surface plugin is discovered by the ``ai-hats``
-binary via the ``ai_hats.providers`` entry point (HATS-956).
+"""e2e (HATS-956)
 
-Mirrors ``test_provider_entry_point_discovery.py`` but drives the REAL
-``ai_hats_cline.ClineProvider`` and the REAL entry-point declaration read from the
-package's pyproject — so it fails under revert if the package drops its
-``[project.entry-points."ai_hats.providers"]`` line (uninstall → ``cline`` gone).
+flow:   a developer listing providers when ai-hats-cline surface package is installed
+cmds:
+    ai-hats list providers
+expect: cline provider is discovered via python entry points and displayed in provider
+        listing
+why:    without entry-point discovery, third-party provider packages like cline are
+        invisible to the CLI
 """
 
 from __future__ import annotations

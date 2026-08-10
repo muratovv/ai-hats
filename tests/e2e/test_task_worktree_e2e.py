@@ -1,19 +1,13 @@
-"""e2e: `rack` task ops from inside a linked git worktree route to the
-main checkout's tracker (HATS-524; re-pointed off `ai-hats task`, HATS-1263).
+"""e2e (HATS-524, HATS-1263)
 
-Repro of the original bug: the tracker (`.agent/`) is gitignored and
-`ai-hats.yaml` is untracked, so a linked worktree's checkout carries
-neither. The worktree also lives OUTSIDE the main tree, so walking up
-from the worktree's cwd never reaches the main checkout. Before the fix
-resolution stopped at the worktree's own `.git` *file* and resolved
-the tracker to a non-existent `<worktree>/.agent/` → "Task <ID> not found".
-
-The fix hops from a `.git`-file (linked worktree) to the main worktree
-root via git's commondir (`ai_hats_rack/resolver.py::_main_worktree_root`),
-so task ops issued from the worktree cwd act on the one live tracker.
-
-Fail-under-revert: without the hop, `rack context` from the worktree
-exits non-zero.
+flow:   a developer executing rack commands from inside a linked worktree directory
+cmds:
+    # from inside a linked worktree directory
+    rack context HATS-1
+expect: rack resolves the main repository tracker directory and successfully reads or
+        updates task card data
+why:    rack commands issued inside linked worktrees must locate the main repository
+        tracker without requiring relative path navigation
 """
 
 from __future__ import annotations

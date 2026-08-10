@@ -1,21 +1,13 @@
-"""E2E: end-of-bump smoke-assert raises on broken hook refs (HATS-549 Phase 3).
+"""e2e (HATS-549)
 
-Validates the loud-fail contract:
-
-  - If ``.claude/settings.json`` references a hook command path that
-    does NOT resolve to an existing file at the end of bump, the
-    process exits non-zero with the assert's diagnosis on stderr.
-  - The error carries the Phase 1 backup tarball path and a
-    ``tar -xzf`` recovery one-liner — so the user has a single
-    command to roll back to pre-bump state.
-
-This is the safety net that catches stuck states inherited from
-older ai-hats versions (the proxmox failure mode: silent
-"No such file or directory" on every Bash tool call). It also
-catches hand-edited settings.json with typos or stale paths.
-
-Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
-Fail-under-revert against commit ``eaa3294`` (Phase 3).
+flow:   a developer performing framework self update when settings.json points at
+        missing hook
+cmds:
+    ai-hats self update
+expect: update process fails at end-of-bump smoke assert and prints recovery tarball
+        path
+why:    without post-migration smoke assertions, broken hook paths leave projects in an
+        unusable state
 """
 
 from __future__ import annotations

@@ -1,12 +1,12 @@
-"""e2e (HATS-955): task ownership across real ``rack`` processes (HATS-1263 —
-was the legacy ``ai-hats task`` CLI; same registry, same env contract).
+"""e2e (HATS-955, HATS-1263)
 
-Two separate ``rack`` invocations with distinct ``AI_HATS_ROOT_PID`` model two
-agents. Exercises the real cross-process path a unit test cannot: the
-env-stamped liveness anchor + ``ps``-based reclaim-on-death + the fcntl-locked
-registry file written by short-lived CLI subprocesses. Fail-under-revert:
-without the ownership wiring a live owner is not protected (the second agent
-steals the task) and a dead owner is never detected.
+flow:   multiple agent processes executing tasks in parallel
+cmds:
+    rack transition HATS-1 execute
+expect: an active task lock prevents another live agent process from claiming the task
+        while stale locks from terminated processes are reclaimed
+why:    task ownership locks ensure single-agent execution per task while recovering
+        automatically from crashed processes
 """
 
 from __future__ import annotations

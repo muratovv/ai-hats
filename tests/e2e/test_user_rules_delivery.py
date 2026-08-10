@@ -1,21 +1,13 @@
-"""E2E regression: HATS-1203 — ``user-rules/*.md`` MUST reach the agent.
+"""e2e (HATS-1170, HATS-1203)
 
-Their only delivery channel was the ``@`` import in the root ``CLAUDE.md``
-scaffold; HATS-1170 stopped writing it and ``_compose_sections`` never carried
-them, so on greenfield projects the rules were listed in ``imports.md`` and
-read by nobody. Silently — health checked that ``imports.md`` existed, never
-that anything consumed it. See the task card for the full history.
-
-A sentinel must survive the composition funnel into both observable surfaces —
-``config show-prompt`` (real binary) and the ``--system-prompt-file`` handed to
-``claude`` — AND they must agree. That agreement is what pins the design:
-user-rules attach at the single ``compose_for_role`` funnel, so no consumer can
-be wired while another is missed.
-
-Fail-under-revert (``dev_rule_e2e_gate`` §4): revert either the ``## USER
-RULES`` render block (``providers.py::_compose_sections``) or the
-``with_user_rules`` attach (``materialize.py::compose_for_role``) and every
-test here fails.
+flow:   a developer displaying session prompt configuration when custom user rules are
+        defined in user-rules/
+cmds:
+    ai-hats config show-prompt
+expect: output includes all markdown rules from user-rules/ formatted under
+        the USER RULES section heading
+why:    user-defined rules in user-rules/ must be incorporated into system
+        prompts across all composition interfaces
 """
 # comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 

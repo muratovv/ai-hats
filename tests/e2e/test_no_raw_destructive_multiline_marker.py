@@ -1,15 +1,13 @@
-"""HATS-757 — e2e: the no-raw-destructive guard exercised via a REAL
-``git commit`` through git's hook machinery.
+"""e2e (HATS-757)
 
-The guard must honor a ``# safe-delete: ok`` marker that ``ruff format``
-relocated onto the closing-paren line of a multi-line call. The unit suite
-drives ``bash HOOK`` directly against a fixture; this file goes one layer out —
-the real hook is wired as the repo's ``.git/hooks/pre-commit`` and a real
-``git commit`` is run, so the whole commit path is covered.
-
-Fails-under-revert: with the pre-HATS-757 line-local hook, the marked
-multi-line call (case a) is wrongly flagged → the commit is blocked → the test
-goes RED. The unmarked case (b) guards against over-permissiveness.
+flow:   a developer committing python code with multi-line destructive call carrying
+        safe-delete marker
+cmds:
+    git commit -m "marked multi-line cleanup"
+expect: pre-commit hook allows multi-line call with relocated safe-delete marker while
+        blocking unmarked calls
+why:    without multi-line marker parsing, ruff formatting relocates markers and falsely
+        blocks legitimate commits
 """
 
 from __future__ import annotations

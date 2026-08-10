@@ -1,25 +1,11 @@
-"""E2E: the launcher auto-heals a stale surface-plugin editable before exec (HATS-966).
+"""e2e (HATS-966)
 
-Reproduces the real incident end-to-end with a real venv + real uv + the real
-bash launcher: the ``cline`` surface plugin is editable-installed, then its
-editable ``.pth`` is rewritten to a deleted path (the dangling-worktree state) —
-its canonical ``packages/surfaces/cline`` is left intact. A bare
-``ai-hats list providers`` (a non-``self`` command → the launcher fall-through)
-must: probe → flag the stale plugin on the side channel → re-point it via
-``self heal-editables`` → then ``exec`` the user's command, which now lists
-``cline`` again.
-
-Fail-under-revert: remove the launcher's ``PROBE_BROKEN_PLUGINS`` heal branch
-(``scripts/ai-hats-launcher``) → the stale ``.pth`` is never re-pointed → ``cline``
-stays unimportable and absent from ``list providers`` → this test fails. Reverting
-the ``self_heal`` module or the ``self heal-editables`` wiring fails it too (the
-launcher's heal call then errors / no-ops).
-
-Setup contract (real subprocess + real uv + real launcher), per
-``dev_rule_e2e_gate``. install_heavy: capped concurrency via conftest.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update when local editable installation link is broken
+cmds:
+    ai-hats self update
+expect: launcher heal re-links editable package dependencies to current repository path
+why: without broken editable healing, moved local repositories crash on missing editable
+     package paths"""
 
 from __future__ import annotations
 

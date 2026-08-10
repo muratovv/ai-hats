@@ -1,33 +1,12 @@
-"""E2E regression: a leaked absolute PYTHONPATH must not hide built-in roles
-in a raw ``shared_launcher`` consumer (HATS-828).
+"""e2e (HATS-828, HATS-876)
 
-Bug: the session-scoped ``shared_launcher`` fixture captured ``os.environ`` at
-SESSION setup — before the function-scoped autouse scrubs apply — so a suite
-launched with ``PYTHONPATH=<repo>/src`` exported (the worktree-dev workaround /
-what ``ai-hats wt exec`` sets) leaked that absolute path into every raw
-consumer's subprocess. Pre-HATS-876 a non-editable install nested the library as
-``ai_hats.library`` under ``site-packages/ai_hats/``; the leaked ``src`` shadowed
-``ai_hats`` → ``import ai_hats.library`` failed → ``_builtin_library_layers()``
-was empty → ``ai-hats self init -r assistant`` exited 1 with "Role 'assistant'
-not found". (Post-HATS-876 ``ai_hats_library`` is a separate top-level package,
-so a leak shifts the subprocess to the source workspace rather than emptying the
-library — the scrub still keeps the install under test.)
-CI never exports PYTHONPATH, so it stayed green and the bug was invisible there.
-
-This test reconstructs the leak deterministically (independent of how the suite
-itself is launched): it injects an **absolute** ``PYTHONPATH=<repo>/src`` into a
-copy of the fixture's base env, then rebuilds the subprocess env through the SAME
-``launcher_subprocess_env`` transform the fixture uses, and asserts the built-in
-``assistant`` role still resolves.
-
-Fail-under-revert: make ``launcher_subprocess_env`` a pass-through (or revert
-``shared_launcher`` to ``os.environ.copy()``) → the absolute PYTHONPATH survives
-→ ``self init -r assistant`` exits 1, "Role 'assistant' not found. Available
-roles: <dev's user-library roles>".
-
-A *relative* ``PYTHONPATH=src`` would NOT reproduce — it resolves against the
-launcher subprocess's cwd (the tmp project), not the repo — so the absolute path
-is load-bearing here.
+flow:   a maintainer running e2e test suite gate using shared launcher fixture
+cmds:
+    bash scripts/run-e2e-gate.sh
+expect: shared launcher fixture isolates environment variables preventing state leak across
+        test runs
+why:    without launcher environment isolation, e2e tests pollute environment variables for
+        sibling test runs
 """
 
 from __future__ import annotations

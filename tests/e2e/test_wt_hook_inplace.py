@@ -1,25 +1,10 @@
-"""E2E (HATS-1269): worktree hooks spawn in place, from the declaring skill.
+"""e2e (HATS-1269)
 
-Two halves, matching the two things the retired flatten copy cost.
-
-**Uncomposing a skill cannot disarm a live worktree's hook.** The copy lived
-under a manifest whose sweep fired whenever the declaring skill left the
-composition, so a project that re-inited to another role mid-flight lost the
-script from under a worktree that had already recorded it — and the fail-closed
-teardown then blocked the merge. In place there is nothing to sweep.
-
-**A file shipped beside the hook is on disk when it runs** (`bundle: dir`,
-ADR-0020 D1). The flatten reduced a script to ``<skill>-<basename>`` in a shared
-dir, silently losing every neighbouring data file.
-
-Fail-under-revert: restore ``materialize_worktree_hooks`` + its manifest sweep
-and ``test_hook_survives_its_skill_leaving_the_composition`` goes red on the
-blocked merge; restore the flatten copy and ``test_hook_reads_a_file_shipped
-_beside_it`` goes red because ``neighbour.txt`` is not next to the script.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ``ai-hats`` binary,
-@pytest.mark.integration.
-"""
+flow:   a developer committing code with in-place hook script modifications
+cmds:
+    git commit -m "update"
+expect: hook scripts execute in-place without copying redundant files
+why:    hooks must execute from canonical paths without unnecessary file materialization"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

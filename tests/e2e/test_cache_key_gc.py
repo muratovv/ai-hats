@@ -1,11 +1,12 @@
-"""E2E: a real session start reaps stale sibling cache keys (HATS-1473).
+"""e2e (HATS-1473)
 
-The sweep runs at the ``create_session`` chokepoint, which a session reaches
-inside the launcher subprocess — the in-process unit tests cover the TTL rule,
-this covers the wiring across the process boundary (``dev_rule_e2e_gate``).
-
-RED under revert: drop the ``_sweep_orphan_project_keys`` call from
-``EnvironmentRecovery.run`` and the stale key survives the session.
+flow:   a developer starting a session when stale sibling cache keys exist in cache dir
+cmds:
+    ai-hats execute -r assistant
+expect: session initialization sweeps orphan cache keys older than TTL while preserving
+        active keys
+why:    without cache key garbage collection, accumulated session directories consume
+        unbounded disk space
 """
 
 from __future__ import annotations

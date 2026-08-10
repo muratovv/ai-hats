@@ -1,30 +1,12 @@
-"""E2E: self update warns when a stale launcher leaves the versioned layout dormant (HATS-655).
+"""e2e (HATS-647, HATS-655)
 
-Value under test: when the host launcher predates ``versions/current`` resolution
-(HATS-647), every ``self update`` builds a ``versions/<sha>/`` the launcher never
-uses — the versioned layout is silently dormant. This advisory names what is off
-and points at the one-time host-level fix, WITHOUT ever touching the launcher.
-
-Exercised with a deliberately STALE launcher shim (always resolves ``.venv``,
-never reads ``versions/current``) + real pip + real ``ai-hats self update`` (per
-``dev_rule_e2e_gate``). Deterministic two-update flow, no race.
-
-Flow:
-  1. First ``self update`` (migration) — the shim bootstraps ``.venv`` and the
-     python self-update builds ``versions/<shaA>`` + flips ``current``. No
-     versioned install pre-existed → NO hint (first migration runs from .venv by
-     design).
-  2. Second ``self update`` (HEAD advanced → shaB) — a versioned install now
-     pre-exists, yet the stale shim still runs the updater from ``.venv`` → the
-     dormancy hint fires, naming ``versions/<shaB>``.
-
-Invariants asserted:
-  - the hint is ABSENT on update 1, PRESENT on update 2;
-  - the stale launcher file is BYTE-UNCHANGED across both updates (non-mutation).
-
-Fail-under-revert:
-  - removing the hint → update-2 'hint present' assertion fails;
-  - an accidental launcher write → the byte-unchanged assertion fails.
+flow:   a developer running self update when host launcher binary is older than installed
+        framework
+cmds:
+    ai-hats self update
+expect: self update displays advisory warning detailing launcher upgrade instructions
+why:    without launcher skew advisories, outdated host launchers miss versioned venv
+        resolution features
 """
 
 from __future__ import annotations

@@ -1,13 +1,13 @@
-"""E2E: ``self update`` heals an ai-hats-tagged hook ref whose script is gone.
+"""e2e (HATS-1509)
 
-The heal rests on ORDER — the sweep (``assembler.py:852``) runs before the
-end-of-bump refusal (``cli/maintenance.py:1873``); swap them and it becomes a
-hard failure with nothing red. Both sibling e2e files dodge this combination:
-``test_root_residue_swept.py`` seeds tagged refs that resolve,
-``test_bump_fails_loud_on_broken_hook.py`` seeds a broken one with no tag.
-
-Real binary, real subprocess (``dev_rule_e2e_gate``). Design: HATS-1509 plan.md.
-"""
+flow: a developer running self update when settings.json contains tagged broken hook
+      references
+cmds:
+    ai-hats self update
+expect: migration step repairs tagged broken hook references restoring valid execution
+        paths
+why: without tagged ref healing, broken hook references persist in settings.json
+     preventing hook execution"""
 
 from __future__ import annotations
 

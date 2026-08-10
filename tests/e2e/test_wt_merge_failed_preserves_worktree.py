@@ -1,28 +1,13 @@
-"""End-to-end coverage for ``ai-hats wt merge`` failure-teardown ordering
-(HATS-587 / F5).
+"""e2e (HATS-587)
 
-Pre-587 a failed merge tore down the worktree dir + cleared state.json in
-the ``except`` block, leaving an orphaned branch with no worktree — recovery
-required a manual ``git merge --no-ff``. F5 moves teardown to AFTER the merge
-commit succeeds: a failed merge now leaves the worktree dir + branch + state
-fully intact, so the next ``wt merge`` is a clean retry once the operator
-resolves the cause.
-
-Per ``dev_rule_e2e_gate``: change to ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` (+ CLI)
-requires a real-launcher + real-binary e2e. CliRunner / pipeline tests do
-NOT satisfy the gate.
-
-**Fail-under-revert**: restore the ``self._remove_worktree()`` +
-``self._clear_state()`` calls in ``WorktreeManager.merge``'s ``except``
-block → step (5) below finds the worktree dir gone and the assertion fails.
-
-The conflict is engineered via an UNTRACKED-file collision (not a base-side
-commit) so the drift guard does NOT pre-empt: the base branch HEAD never
-moves, so ``_check_drift`` passes and ``git merge --no-ff`` actually runs and
-fails on "untracked working tree files would be overwritten" — the exact
-shape that orphaned a branch in the originating session.
-
-Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
+flow:   a developer merging a worktree branch when git merge fails due to untracked file
+        collision
+cmds:
+    # when untracked file collision causes merge failure
+    ai-hats wt merge task/preserve-probe
+expect: worktree directory and branch are preserved intact for retry after resolving
+        failure
+why:    failed merges must not tear down worktree state to allow clean operator recovery
 """
 
 from __future__ import annotations

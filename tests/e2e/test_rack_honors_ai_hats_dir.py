@@ -1,6 +1,13 @@
-"""E2E (HATS-1471): rack CLI honors AI_HATS_DIR and refuses on foreign project pin.
+"""e2e (HATS-1471)
 
-Gate: dev_rule_e2e_gate.
+flow:   a developer running rack commands with an explicit AI_HATS_DIR environment
+        variable pointing to a sandbox
+cmds:
+    rack hyp create "sandbox hyp" --hypothesis "h" --expected-outcome "e" --json
+expect: card artifacts are created inside the directory specified by AI_HATS_DIR and
+        the current project directory remains unmodified
+why:    rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation
+        without polluting project repositories
 """
 
 from __future__ import annotations

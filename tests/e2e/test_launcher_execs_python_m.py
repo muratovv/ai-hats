@@ -1,22 +1,15 @@
-"""E2E: the host launcher dispatches via ``python -m ai_hats`` (HATS-790, Alt 5).
+"""e2e (HATS-790)
 
-Value under test: with the ``bin/ai-hats`` console script removed, the bash
-launcher (``scripts/ai-hats-launcher``) must run a managed venv via
-``<venv>/bin/python -m ai_hats "$@"`` and gate health on a ``python -c
-"import ai_hats"`` probe — NOT on the (now non-existent) ``bin/ai-hats`` binary.
-
-Drives the REAL launcher against a managed default ``.venv`` whose ``bin/python``
-is a stub that (a) exits 0 for ``-c "import ai_hats"`` (importable) and
-(b) echoes a sentinel for ``-m ai_hats <argv>`` — and which deliberately carries
-NO ``bin/ai-hats``. The launcher must resolve, pass the import probe, and exec
-``python -m ai_hats`` (observable via the sentinel echo).
-
-Fail-under-revert (per ``dev_rule_e2e_gate`` §4): restoring the old final exec
-``exec "$VENV/bin/ai-hats" "$@"`` (or the ``[[ ! -x "$VENV/bin/ai-hats" ]]``
-fall-through guard) makes the launcher try to exec the absent ``bin/ai-hats`` on
-this script-less venv → non-zero exit + "binary is missing" → the assertions
-below fail. Real subprocess + real bash launcher; no pip install (cheap).
-"""
+flow: a developer running ai-hats CLI commands via launcher on a venv without
+      bin/ai-hats
+        console script
+cmds:
+    ai-hats status --verbose
+expect: launcher verifies python importability and dispatches command via python -m
+        ai_hats
+why: without python -m module dispatch, removing console script binaries breaks host
+     launcher
+        command execution"""
 
 from __future__ import annotations
 

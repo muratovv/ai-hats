@@ -1,23 +1,13 @@
-"""E2E (PTY): `ai-hats self init` provider menu marks every detected provider.
+"""e2e (HATS-613)
 
-HATS-613. The provider menu used to mark only the dict-first provider whose
-``~/.<name>`` exists as ``(recommended)`` and pre-select it. A user with BOTH
-``~/.claude`` and ``~/.gemini`` saw gemini recommended and claude unmarked —
-looking undetected — and Enter silently picked gemini.
-
-This drives the REAL installed ``ai-hats`` binary (built into the shared
-launcher venv by the venv-tier fixture) through a REAL PTY so the wizard's
-``_stdin_is_tty()`` gate passes and the interactive provider menu renders.
-``HOME`` is faked to contain both provider config dirs; ``PATH`` deliberately
-omits ``ai-hats`` so ``_launch_wizard_session()``'s ``shutil.which("ai-hats")``
-returns None and the wizard hand-off exits gracefully right after the menu —
-no provider CLI is spawned.
-
-Assertion: BOTH providers are marked ``detected``; the word ``recommended``
-never appears. Fail-under-revert: the pre-HATS-613 build marks only gemini
-``recommended`` and leaves claude unmarked, so the claude assertion fails.
-
-Marker: ``integration`` (real PTY + real venv binary).
+flow:   a user with configuration directories for multiple providers runs interactive
+        project setup
+cmds:
+    ai-hats self init --channel stable
+expect: every configured provider directory is labeled "detected — found ~/.<name>" in
+        the menu and the string "recommended" is absent
+why:    recommending only the first provider when multiple exist causes accidental
+        provider selection on default selection
 """
 
 from __future__ import annotations

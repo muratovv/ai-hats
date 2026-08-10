@@ -1,46 +1,11 @@
-"""E2E: ``ai-hats self update --revision <REF>`` (HATS-496).
+"""e2e (HATS-496)
 
-Verifies three behaviours of the new ``--revision`` flag in one test to
-amortize the heavy setup (~3 min: clone + launcher install + pip
-bootstrap + pip --force-reinstall at a real tag):
-
-  1. **D2 editable protection.** ``--revision <TAG>`` against an editable
-     target venv refuses with exit 2 and a message that names
-     ``editable install`` + ``--force``. pip is not invoked.
-  2. **Pre-flight ref validation.** ``--revision <bogus> --force`` refuses
-     with exit 2 and ``not found on remote``, before pip runs. Install
-     state must remain editable (proves pip was skipped).
-  3. **Happy path.** ``--revision <TAG> --force`` installs the pinned ref,
-     replacing the editable install. ``direct_url.json`` reflects the
-     literal ref in ``vcs_info.requested_revision`` plus a resolved
-     ``commit_id`` (PEP 610).
-
-Setup contract (real subprocess + real pip):
-
-  - ``src-repo``  — clone of REPO_ROOT (carries all local tags so the
-                    file:// URL can serve refs via ``git ls-remote``).
-  - ``project``   — fresh project dir; launcher resolves venv to
-                    ``<project>/.agent/ai-hats/.venv`` per its default
-                    precedence (no ``AI_HATS_VENV`` exported).
-  - **editable conversion** — bootstrap.sh installs ai-hats *non-*editable
-                    from a ``file://`` URL (the default launcher flow). For
-                    D2 to mean anything we must convert to editable via
-                    ``pip uninstall && pip install -e <src-repo>``, mirroring
-                    the established pattern in
-                    ``test_self_update_downgrade_gate.py`` (which needed
-                    editable for a different reason — ``.git`` reachable
-                    from ``ai_hats.__file__``).
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fail-under-revert: if the ``--revision`` plumbing is removed from
-``cli/maintenance.py``, the assertion 1 invocation receives a click
-``unknown option`` error (exit 2 but stderr says "no such option"),
-which the substring assertion on ``editable install`` catches.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer checking framework revision details during self update
+cmds:
+    ai-hats self update
+expect: self update outputs commit revision SHA and build timestamp details
+why: without revision output, developers cannot verify exact commit SHAs installed by
+     self update"""
 
 from __future__ import annotations
 

@@ -1,20 +1,13 @@
-"""E2E: the agy hook dispatcher finds an out-of-tree session cache (HATS-1398).
+"""e2e (HATS-1356, HATS-1398)
 
-The dispatcher is the one place that never went through ``session_cache_dir()``
-— it rebuilt ``<project>/.agent/ai-hats/.cache/sessions/<sid>/hooks.json`` from
-string parts, and read neither ``AI_HATS_DIR`` nor the yaml, so it was already
-wrong for an out-of-tree ``AI_HATS_DIR`` before this card. Moving the root would
-have broken it silently: a dispatcher that finds no manifest exits 0, which is
-indistinguishable from "this session has no hooks".
-
-So the assertion is positive — the hook must actually FIRE (HATS-1356's lesson:
-absence of an error is not evidence of a gate running). The command under test is
-``global_hook.DISPATCHER_COMMAND`` verbatim, the exact string registered in
-``~/.gemini/antigravity-cli/settings.json``, run through a real shell in a real
-subprocess, with the env pinned by a real provider build.
-
-RED under revert: the dispatcher looks in the workspace, finds nothing, exits 0,
-and the marker file is never written.
+flow:   an agent executing tool calls under an out-of-tree session cache location
+cmds:
+    # when AI_HATS_SESSION_CACHE_DIR points to an out-of-tree location
+    ai-hats agent assistant --task "Execute edit"
+expect: agy hook dispatcher resolves session hooks from out-of-tree cache and fires
+        scripts
+why:    without out-of-tree cache resolution, moving session cache out of workspace
+        silently disables all registered runtime hooks
 """
 
 from __future__ import annotations

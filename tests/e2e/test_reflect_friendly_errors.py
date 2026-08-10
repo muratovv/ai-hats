@@ -1,31 +1,13 @@
-"""E2E: ``ai-hats reflect *`` renders a config error, not a traceback.
+"""e2e (HATS-547, HATS-1228)
 
-History (HATS-1228): friendly rendering of the compose-seam errors was per-site
-opt-in — each launch surface caught ``RoleNotFoundError`` /
-``UnknownProviderError`` / ``MissingProviderError`` and called its handler. Four
-surfaces did; ``cli/reflect.py`` composes in FIVE places and did not, so every
-``reflect`` subcommand exited 1 on a traceback. ``_handle_role_not_found``'s
-docstring had claimed ``ai-hats reflect *`` as a covered surface since HATS-547 —
-it never was. The fix moves dispatch to the root click group, so a surface cannot
-opt out by omission; ``reflect.py`` itself is not edited.
-
-Why an emptied ``provider:`` is the probe: it needs no role argument, no session
-data and no provider binary, and it fires inside ``build_composition_payload``
-before any runner spawns — so every ``reflect`` subcommand can be driven the same
-way in a non-TTY subprocess. The unknown-role and unknown-provider siblings ride
-the same dispatch and are pinned on the launch surfaces by
-``test_unknown_role_friendly_error.py`` / ``test_unknown_provider_friendly_error.py``.
-
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``): ``tmp_project``
-bootstraps with ``provider: claude``; this file rewrites ai-hats.yaml with an
-empty provider.
-
-Fail-under-revert: dropping the ``invoke`` override on the root group re-leaks
-the traceback on every parametrized subcommand — nothing in ``reflect.py``
-catches these errors.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer running reflect subcommands when project configuration has invalid
+        provider
+cmds:
+    ai-hats reflect all
+expect: command exits cleanly with exit code 2 and friendly error message instead of raw
+        traceback
+why:    without root Click error handling, reflect subcommands leak uncaught Python
+        tracebacks on config errors
 """
 
 from __future__ import annotations

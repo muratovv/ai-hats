@@ -1,29 +1,14 @@
-"""E2E: HATS-471 migration registry gate.
+"""e2e (HATS-471, HATS-582)
 
-Four contracts a reviewer can refute by reverting the relevant code:
-
-1. **First-bump replay.** A yaml with ``migration_step`` absent (existing
-   project upgrading to HATS-471) seeds the counter to 0, the registry
-   replay banner appears on stderr, and the yaml is rewritten with
-   ``migration_step = latest``.
-2. **Gating.** A second ``bump`` on the migrated yaml emits NO registry
-   banner — every entry is short-circuited by ``cfg.migration_step >=
-   m.step``. Failure-under-revert: dropping the ``continue`` short-circuit
-   in :func:`ai_hats.migrations.run_pending` re-fires every entry, the
-   banner appears, and this test fails.
-3. **Greenfield init seed.** ``ai-hats self init`` writes
-   ``migration_step = latest`` into the freshly-created yaml without
-   ever running the registry (no banner on init stderr either).
-4. **Partial-failure persistence is a unit contract** (see
-   ``tests/test_migrations.py``), not exercised here — the e2e gate
-   focuses on the user-observable subprocess boundary.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Cost amortization (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
-"""
+flow:   a developer running self update across framework upgrades
+cmds:
+    ai-hats self update
+expect: first bump replays pending migrations and persists migration_step, while second
+        bump
+        short-circuits
+why: without migration step tracking, every framework update re-executes historic
+     migration steps
+        on existing projects"""
 
 from __future__ import annotations
 

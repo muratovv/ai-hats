@@ -1,14 +1,13 @@
-"""HATS-700 — end-to-end behaviour of the rule-delivery pre-commit hook.
+"""e2e (HATS-700)
 
-``pre-commit-rule-delivery.sh`` is a pure-bash surface the unit suite cannot
-exercise. This file drives the script against a real ephemeral git repo. The
-wiring scenarios stub the checker through ``AI_HATS_RULE_DELIVERY_CMD`` (offline,
-deterministic — they verify changed-files scope, fail-open, override, and
-block-on-nonzero, not the checker itself, which the G2 unit test covers). One
-final scenario runs the REAL checker (``python -m ai_hats.rule_delivery``) to
-prove the module integrates with the hook end to end.
-
-Slow only because of git init + subprocess spin-up.
+flow:   a developer committing trait configuration changes that reference rules
+cmds:
+    # with staged trait configuration referencing a missing rule
+    git commit -m "add rule"
+expect: the pre-commit hook verifies that all referenced rules exist and blocks the
+        commit with an error if a rule reference is missing
+why:    trait configurations must not reference non-existent rules to prevent broken
+        rule pointers in role injections
 """
 
 from __future__ import annotations

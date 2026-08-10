@@ -1,12 +1,15 @@
-"""HATS-931 — e2e: session start heals a *marker-less* pre-marker skills mirror.
+"""e2e (HATS-907, HATS-931)
 
-Model: ``test_skills_mirror_self_heals.py`` (HATS-907) but the planted mirror has
-NO ``.ai-hats-managed`` marker — the real pre-marker export (field report:
-~/dotfiles). Fail-under-revert of the ``scope == "project"`` heal partition:
-(1) a mirror dir whose name matches a composed skill is swept without a marker
-(ownership = the name collision) and announced by a NOTE; (2) a non-composed dir
-never collides and survives; (3) the second launch is silent.
-"""
+flow: an agent starting a session when project carries a stale marker-less skills mirror
+        matching a composed skill
+cmds:
+    ai-hats execute -r mirror-role
+expect: session start removes stale skill mirror matching composed role skill while
+        preserving
+        unrelated user skills
+why: without marker-less mirror healing, pre-marker skill mirrors persist and override
+     active
+        library skills"""
 
 from __future__ import annotations
 from _helpers.git import git as _git_helper

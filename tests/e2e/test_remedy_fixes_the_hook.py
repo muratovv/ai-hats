@@ -1,34 +1,12 @@
-"""Acceptance: the printed remedy, followed verbatim, actually fixes the hook (HATS-1245).
+"""e2e (HATS-1245, HATS-1291, HATS-1314)
 
-``assert "PATH=" in msg`` is satisfied by any five characters — including a line
-that is subtly wrong, points at the wrong directory, or is not copy-pasteable.
-The defect this file guards is precisely *"the printed instructions do not work
-when followed"*, which no assertion on the string can catch. So the commands are
-not re-typed here: they are **extracted from the message itself** and executed
-against a real git worktree with the real smoke hook installed, and the test
-asserts which interpreter the hook ended up spawning.
-
-The remedy has **two** audiences, and HATS-1314 split the halves along them:
-
-  * the git hooks — since HATS-1291/1314 both interpreter-resolving gates take
-    ``<git-toplevel>/.venv``, so step 1 alone satisfies them;
-  * a ``pytest`` the operator types — ``check_checkout_integrity`` runs on any
-    pytest (``tests/conftest.py``), and for that audience the bare name still
-    resolves through PATH, so step 2 is what actually fixes it.
-
-The negative half is what proves the PATH line is load-bearing rather than
-decorative — drop it from ``remedy_message`` and this file goes red. Until
-HATS-1314 that half was aimed at the hook, which had meanwhile been fixed at the
-source: it asserted a bug that no longer existed.
-
-Fidelity vs cost: the repo under test is synthetic and its ``[dev]`` extra is
-just pytest, so the remedy's commands run verbatim in seconds instead of the
-minutes a full ai-hats dependency tree would take. What is under test — the
-literal printed commands, the real hook script, a real ``git commit`` — is
-unchanged.
-
-Deliberate long contract module docstring — noqa: comment-length.
-"""
+flow:   a developer running self init to remedy broken settings.json hook references
+cmds:
+    ai-hats self init -r assistant -p claude
+expect: self init detects broken hook entries in settings.json and restores valid
+        execution commands
+why: without auto-remedy on init, broken settings.json hook references persist and break
+     session starts"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

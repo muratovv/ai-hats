@@ -1,31 +1,13 @@
-"""End-to-end coverage for `transition done` under a failed merge —
-the HATS-481/541 silent-DONE protection PLUS the HATS-587/F5 clean-retry.
+"""e2e (HATS-481, HATS-541, HATS-587)
 
-HATS-481 fixed the first-attempt swallow: a merge failure must NOT
-silently stamp the task DONE. HATS-541 added a defensive guard for the
-orphan that a failed merge USED to leave behind (worktree dir + state
-cleared, branch preserved → second `transition done` silently no-oped).
-
-HATS-587 / F5 removed that orphan at the source: a failed merge now
-PRESERVES the worktree dir + branch + state, so the second
-`transition done` (after the operator resolves the cause) is a clean
-RETRY that succeeds — no manual `git merge --no-ff` recovery. The
-WorktreeStateLostError guard survives as defense-in-depth for residual
-orphan causes (manual deletion, crash on the success path); it is
-exercised at the unit level in
-`tests/test_state.py::test_teardown_worktree_raises_when_state_lost_but_branch_exists`.
-
-Per `dev_rule_e2e_gate`: HATS-587 touches `src/ai_hats/cli/` +
-`packages/ai-hats-wt/src/ai_hats_wt/manager.py`, so a real-launcher + real-binary e2e is
-mandatory. CliRunner / pipeline tests do NOT satisfy the gate.
-
-**Fail-under-revert** (HATS-587/F5): restore the
-`self._remove_worktree()` + `self._clear_state()` calls in
-`WorktreeManager.merge`'s `except` block. Attempt 2 then finds the state
-gone, the merge never re-runs, and step (7) observes the task stuck in
-`review` (WorktreeStateLostError) instead of advancing to `done` — the
-final assertion fails.
-"""
+flow: a developer running rack transition when transition log message contains special
+      characters
+cmds:
+    rack transition HATS-541 review --log "Fixed issue"
+expect: rack transition logs message cleanly without silent failure or truncated log
+        entries
+why: without log escaping, special characters in transition logs cause silent task
+     transition drops"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

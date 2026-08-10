@@ -1,11 +1,12 @@
-"""e2e (HATS-859): ``ai-hats wt exec <branch> -- <cmd…>`` routes to the named
-worktree when >1 active. Fail-under-revert: the ``_resolve_worktree()`` no-arg
-call swallows the selector into ``cmd_args`` → ambiguity ``UsageError``.
+"""e2e (HATS-685, HATS-826, HATS-859)
 
-Subprocess env targets the checkout under test (``repo_root``): PYTHONPATH +
-AI_HATS_LIBRARY_ROOT (HATS-826) exercises worktree code — plain PYTHONPATH=src
-alone hits the HATS-685 vanished-roles trap.
-"""
+flow:   a developer executing commands in a specific worktree using a branch selector
+cmds:
+    ai-hats wt exec task/hats-1 -- git rev-parse --abbrev-ref HEAD
+expect: the command routes to the specified worktree branch when multiple worktrees
+        exist
+why:    wt exec requires explicit branch selector to route commands when multiple
+        worktrees are active"""
 
 from __future__ import annotations
 

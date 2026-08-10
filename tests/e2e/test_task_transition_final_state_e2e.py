@@ -1,16 +1,12 @@
-"""End-to-end coverage for `rack transition --final-state` (HATS-723).
+"""e2e (HATS-698, HATS-723, HATS-1260, HATS-1263, HATS-1275)
 
-Audit finding 2b-F8 (HATS-698) fixed two coupled defects in the legacy click
-wiring; rack carries both contracts (guard restored in HATS-1275):
-
-- `--final-state` on a non-review target must refuse loudly (exit 1), not
-  parse-then-drop.
-- `--final-state` on the review target rides the transition's single lock
-  window and is visible in the `context` read-back.
-
-Re-pointed off the legacy `ai-hats task` CLI (HATS-1260; the wait-on-1275
-noted here since HATS-1263 is over). Real launcher + real pip install +
-real binaries, marked `integration`.
+flow:   a developer setting final_state notes during task transition
+cmds:
+    rack transition TST-001 review --force --reason "review" --final-state "shipped"
+expect: --final-state is accepted on transition to review and saved to card metadata,
+        and rejected with exit 1 on other target states
+why:    final state summary notes belong on the review transition and must be persisted
+        in task card metadata
 """
 
 from __future__ import annotations

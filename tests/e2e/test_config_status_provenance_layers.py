@@ -1,8 +1,14 @@
-"""E2E (HATS-525): ``ai-hats config status`` marks bundled rules of user-global traits as (global).
+"""e2e (HATS-525)
 
-Verifies that when a role subscribes to a user-global trait (~/.ai-hats/traits/...),
-both the trait itself AND any rules bundled inside that trait display with the ``(global)``
-provenance tag in ``ai-hats config status``, rather than mislabeling bundled rules as ``(built-in)``.
+flow:   a user configures global traits for a role and inspects rule provenance in
+        status output
+cmds:
+    ai-hats config customize assistant --add-trait hats525-global-trait --global
+    ai-hats config status
+expect: both the trait name and its bundled rules display the (global) tag in status
+        output rather than (built-in)
+why:    labeling global or custom rules as built-in misinforms users about which layer
+        provides active prompt guidance
 """
 
 from __future__ import annotations

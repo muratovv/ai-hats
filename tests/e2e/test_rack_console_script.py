@@ -1,12 +1,12 @@
-"""E2E: ``pip install ai-hats-rack`` puts ``rack`` on PATH (HATS-1329).
+"""e2e (HATS-1329)
 
-This builds the real ``ai-hats-rack`` wheel and installs it into a bare venv,
-then runs ``rack --help`` resolved on ``PATH`` and asserts exit code 0.
-
-Fail-under-revert (per ``dev_rule_e2e_gate``): drop the ``[project.scripts]``
-table from ``packages/ai-hats-rack/pyproject.toml`` -> the wheel install
-materialises no ``<venv>/bin/rack`` -> the console file is absent and bare probe
-fails. Real ``uv build`` + ``uv`` install.
+flow:   a developer installing the ai-hats-rack package into a Python environment
+cmds:
+    rack --help
+expect: the rack executable is available on PATH and outputs help documentation with
+        exit code 0
+why:    the rack package must expose a console script entry point for standard CLI
+        invocation in virtual environments
 """
 
 from __future__ import annotations

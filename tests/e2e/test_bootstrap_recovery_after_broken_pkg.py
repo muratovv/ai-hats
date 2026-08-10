@@ -1,31 +1,11 @@
-"""E2E: ``bootstrap.sh --repair`` re-establishes a broken managed install (HATS-791).
+"""e2e (HATS-791)
 
-Value under test: bootstrap.sh is the canonical OUT-OF-BAND recovery hatch.
-When the managed venv is broken badly enough that the in-band ``ai-hats self
-update`` can't fix itself (it runs FROM that venv), a fetched-fresh
-``bootstrap.sh --repair`` rebuilds it by driving the launcher via its ABSOLUTE
-path (``"$LAUNCHER_DEST" self update``) — paradox-immune.
-
-Setup (real launcher build + real ``self update`` rebuild, per
-``dev_rule_e2e_gate`` — no stubs):
-
-  - Build a real launcher venv via
-    :func:`tests.e2e._helpers.venv.build_launcher_venv` (launcher +
-    ``<bootstrap>/.agent/ai-hats/.venv``, installed from the local repo).
-  - Corrupt the install: delete ``<venv>/.../site-packages/ai_hats`` so
-    ``python -c "import ai_hats"`` fails (the venv interpreter survives but the
-    package is gone — exactly the un-self-healable state).
-  - Run ``bootstrap.sh --repair`` from the bootstrap dir, pointing the launcher
-    install at a ``file://`` URL (``AI_HATS_INSTALL_LAUNCHER_URL`` /
-    ``AI_HATS_LAUNCHER_URL``) and the ai-hats source at the local repo
-    (``AI_HATS_REPO_URL``) — no network.
-
-Assertion: after ``--repair`` the launcher exists and
-``<venv>/bin/python -m ai_hats --version`` runs (import works again).
-
-Fail-under-revert: break the ``"$LAUNCHER_DEST"`` absolute-path call in
-bootstrap.sh (e.g. invoke a bare ``ai-hats``) and the rebuild never runs from
-the freshly-installed launcher → the post-repair import assertion fails.
+flow:   a developer running bootstrap repair after managed virtual environment is broken
+cmds:
+    bash scripts/bootstrap.sh --repair
+expect: repair script rebuilds managed virtual environment using absolute launcher paths
+why:    without absolute-path launcher calls, out-of-band repair fails when in-band
+        executable is broken
 """
 
 from __future__ import annotations

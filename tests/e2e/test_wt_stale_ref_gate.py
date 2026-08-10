@@ -1,10 +1,12 @@
-"""End-to-end coverage for stale ref revalidation and tip containment (HATS-1346).
+"""e2e (HATS-1346)
 
-Per ``dev_rule_e2e_gate``: touches ``packages/ai-hats-wt/src/ai_hats_wt/manager.py``.
-Verifies that:
-1. Merging with a stale expected_tip fails closed with WorktreeStaleRefError naming both SHAs,
-   preserving both branch and worktree directory.
-2. Merging with the current tip SHA succeeds and cleans up worktree + branch.
+flow:   a developer merging a worktree branch with a stale expected tip SHA
+cmds:
+    # when expected_tip SHA does not match current branch tip
+    ai-hats wt merge task/stale-ref-e2e
+expect: merge is refused with WorktreeStaleRefError preserving worktree and branch
+why:    expected_tip validation prevents race conditions by verifying branch head before
+        merge
 """
 
 from __future__ import annotations

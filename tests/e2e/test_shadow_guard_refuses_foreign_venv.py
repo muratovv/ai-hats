@@ -1,31 +1,13 @@
-"""E2E: the self-location guard refuses a FOREIGN-venv invocation (HATS-791).
+"""e2e (HATS-790, HATS-791)
 
-Value under test: a stale ai-hats installed (non-editable, by wheel) into a
-*foreign* venv — the "shadow" of a project app-venv — must refuse-and-instruct
-rather than run mis-resolved, while a managed / sanctioned invocation runs
-normally. This is the runtime backstop after HATS-790 removed the
-``bin/ai-hats`` console-script shadow generator.
-
-Setup (real ``uv build`` + real non-editable wheel install + real
-``python -m ai_hats``, per ``dev_rule_e2e_gate`` — no stubs):
-
-  - Build the ai-hats wheel from the repo and install it into a throwaway
-    ``<tmp>/foreign/venv`` (NOT editable, NOT under any ``.agent/ai-hats/``
-    tree → a genuine foreign venv).
-  - Create a project dir whose resolved venv DIFFERS from the foreign venv
-    (default resolution → ``<project>/.agent/ai-hats/.venv``). Crucially do
-    NOT set ``AI_HATS_VENV`` (that would pin the resolved venv to the foreign
-    one and legitimately sanction it).
-  - Run ``<foreign>/bin/python -m ai_hats config status`` from the project.
-
-Assertions:
-  - refuse-and-instruct on stderr + nonzero exit;
-  - with ``AI_HATS_SKIP_SELF_LOCATION_GUARD=1`` it does NOT refuse.
-
-Fail-under-revert: remove the guard (``_guard_self_location`` no-op) and the
-foreign invocation silently proceeds (exit 0, no refusal text) → both the
-refusal-text and nonzero-exit assertions fail.
-"""
+flow: a developer running commands when AI_HATS_VENV points to a foreign venv outside
+      project
+cmds:
+    ai-hats status
+expect: shadow guard detects foreign venv path, refuses foreign venv, and uses local
+        project venv
+why: without shadow guards, leaked environment variables execute CLI commands inside
+     foreign venvs"""
 
 from __future__ import annotations
 

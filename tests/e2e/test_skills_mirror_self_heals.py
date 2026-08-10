@@ -1,16 +1,12 @@
-"""HATS-907 — e2e: session start auto-heals the marker-proven skills mirror.
+"""e2e (HATS-294, HATS-469, HATS-906, HATS-907)
 
-Model: ``test_hook_materialization_self_heals.py`` (real composition +
-materializers; only the PTY spawn is stubbed). Guarantees, each
-fail-under-revert:
-
-1. **Heal**: a planted pre-HATS-294 mirror (marker + listed dir) is swept at
-   launch, moved to the safe_delete trash, and announced via a startup NOTE —
-   no manual ``self init`` required (the HATS-906 principle).
-2. **User data**: a user-authored skill in the same dir, NOT marker-listed,
-   survives byte-for-byte.
-3. **One-shot** (HATS-469): the second launch is silent for this surface.
-"""
+flow:   a developer running session commands when skills mirror directory is out of date
+cmds:
+    ai-hats status
+expect: session initialization detects stale skills mirror and self-heals mirror files
+        from library
+why: without skills mirror self-healing, modified library skills fail to update in
+     session mirrors"""
 
 from __future__ import annotations
 from _helpers.git import git as _git_helper

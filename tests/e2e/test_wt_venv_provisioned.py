@@ -1,11 +1,13 @@
-"""E2E (HATS-1291): a new worktree arrives with its own provisioned venv.
+"""e2e (HATS-1242, HATS-1291)
 
-Proves not merely that `.venv` exists but that its interpreter imports the
-WORKTREE's source — importing MAIN's is what the HATS-1242 guard aborts on.
-
-fail-under-revert: drop `worktree-venv` from the maintainer role's `skills:`
-and no venv is minted → this test goes red.
-"""
+flow:   a developer creating a worktree in a project requiring isolated python
+        environments
+cmds:
+    ai-hats wt create task/probe
+expect: a virtual environment is provisioned inside worktree .venv and imports
+        worktree source
+why:    worktrees must provision isolated venvs to prevent importing main repository
+        packages"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

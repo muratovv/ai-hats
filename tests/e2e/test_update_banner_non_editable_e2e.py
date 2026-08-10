@@ -1,44 +1,14 @@
-"""E2E: Update banner fires for non-editable installs via probe-mirror (HATS-458).
+"""e2e (HATS-432, HATS-441, HATS-458)
 
-The gap closed:
-
-  HATS-432 added ahead/behind axes to ``CacheEntry`` so the banner only
-  fires when ``behind > 0 and ahead == 0``. HATS-441 then tightened the
-  probe to refuse foreign-``.git`` reads and fetches — required to stop a
-  silent ``self update`` downgrade and prevent polluting user-project
-  git histories. Side effect: non-editable installs (the typical
-  launcher-bootstrap layout — ``pip install`` extracts ai_hats into
-  ``site-packages/`` with no ``.git``) lost ahead/behind detection
-  entirely. ``_fetch_into_pkg`` returned False → axes stayed None →
-  banner silent even when a real update was available.
-
-After HATS-458, ``run_check`` falls back to a persistent probe-mirror
-at ``<ai_hats_dir>/.cache/probe-mirror/`` whenever the pkg-checkout
-fast path can't run. This test exercises that fallback end-to-end:
-
-  1. Bootstrap a real non-editable install (launcher pulls ai-hats from
-     a clone reset to ``REPO_ROOT~5`` — a deterministic older state).
-  2. Pin a fake remote's ``master`` to ``REPO_ROOT`` HEAD (5 commits
-     ahead of installed).
-  3. Confirm ``ai_hats.__file__`` lives in site-packages — the pkg-
-     checkout fast path is structurally unreachable.
-  4. Run the background probe entry-point ``python -m ai_hats.update_check``
-     against the project.
-  5. Assert the cache file records ``behind == 5, ahead == 0`` and a
-     probe-mirror directory was created with at least one fetched ref.
-  6. Render the banner via ``RenderUpdateBanner`` and assert it surfaces
-     ``+5 commits`` on stderr.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``python -m ai_hats.update_check`` against a real bare remote. Marked
-``@pytest.mark.integration``.
-
-Fail-under-revert: reverting the mirror fallback in ``run_check`` leaves
-``cache.behind = None``, which fails both the cache assertion and the
-banner assertion below.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   an agent running session execution on a non-editable package installation
+cmds:
+    ai-hats execute -r assistant
+expect: background checker uses probe-mirror fallback to fetch remote refs and
+        calculates behind
+        commit counts
+why: without probe-mirror fallback, non-editable site-packages installs without git
+     repos fail to
+        detect available updates"""
 
 from __future__ import annotations
 

@@ -1,12 +1,14 @@
-"""HATS-1337 e2e — the orchestrator's three promises, on real commits.
+"""e2e (HATS-1337)
 
-Real ``self init`` + real ``git commit``/``worktree`` (``dev_rule_e2e_gate``):
-
-* **fail-open** — ai-hats gone, a human commit still lands (R2);
-* **worktree parity** — a commit inside a linked worktree runs the SAME gates as
-  the main checkout (R1, the Z1 regression);
-* **survives update** — the next commit after a version flip runs the NEW
-  version's gates with no re-materialization step in between (R9 / M12).
+flow:   a developer committing code across git worktrees or after framework updates
+        when ai-hats environment variables may be missing
+cmds:
+    # in a project with missing ai-hats binary or inside a linked worktree
+    git commit -m "feature"
+expect: commits succeed gracefully when ai-hats binaries are unreachable and linked
+        worktrees execute the same gate suite as the main checkout
+why:    git hooks must fail open to avoid wedging developer commits when tools are
+        unreachable while ensuring linked worktrees enforce consistent quality gates
 """
 
 from __future__ import annotations

@@ -1,14 +1,12 @@
-"""E2E: ``--dry-run --json`` names the ONE copy a bound check runs from.
+"""e2e (HATS-1241, HATS-1540)
 
-Real ``ai-hats`` binary and real composition of a project-local role that binds
-a check: the plan is a CLI observable, so it is asserted on the CLI's payload.
-
-HATS-1241 asserted a second, checks-private ``<sid>/checks/<skill>`` here, which
-a role binding nothing did not get — same run, opposite answer. HATS-1540
-retired that step, so the opposite answer went with it. What survives is the
-pair below: the plan carries the surface mirror the binding will run from,
-through the port; and binding a check adds NOTHING to the plan — the CLI-side
-face of the tombstone ``tests/test_check_mirror.py`` keeps in-process.
+flow:   a developer inspecting dry-run plan for a role that binds check scripts
+cmds:
+    ai-hats execute -r checked --dry-run-json
+expect: dry-run plan materializes bound skill script exactly once to session skills
+        mirror
+why:    without session skill mirrors, check scripts require duplicate materialization
+        trees per binding
 """  # comment-length: allow — a retired subject must say what replaced it
 
 from __future__ import annotations

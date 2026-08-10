@@ -1,14 +1,13 @@
-"""E2E: ``ai-hats self bump`` heals stale legacy-path refs in user-managed files (HATS-397).
+"""e2e (HATS-397)
 
-Covers the production scenario from the proxmox regression: after the v4
-layout migration moves ``.agent/hooks/<file>`` → ``<ai_hats_dir>/library/hooks/<file>``,
-user-authored references to the old path in ``.claude/settings.json`` (and
-markdown docs) must be auto-updated, so the next Bash hook / runbook still
-works without manual intervention.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Pipeline-integration
-and in-process ``CliRunner`` tests do NOT satisfy the gate.
+flow:   a developer running self update on project containing legacy file path
+        references
+cmds:
+    ai-hats self update
+expect: migration step rewrites legacy file paths in settings.json to updated framework
+        layout
+why:    without legacy ref healing, upgrading projects leaves broken path references
+        pointing to deleted files
 """
 
 from __future__ import annotations

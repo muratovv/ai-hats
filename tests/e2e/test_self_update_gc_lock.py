@@ -1,27 +1,12 @@
-"""E2E: cleanup never deadlocks and never corrupts after a hard kill (HATS-650 / R3).
+"""e2e (HATS-650)
 
-Two crash-safety properties of the ``versions/.gc.lock`` advisory lock, both with
-a real launcher + real pip + real ``ai-hats self update`` (per ``dev_rule_e2e_gate``):
-
-- :func:`test_e2e_gc_lock_crash_safe_auto_release` — an install is frozen mid-
-  critical-section (``.complete`` written, ``current`` not yet flipped) **holding
-  the lock**, then ``SIGKILL``-ed. The kernel auto-releases the ``fcntl`` lock on
-  death, so the next ``self update`` re-acquires and converges. Fail-under-revert
-  anchor: while the install is paused the test asserts the lock is **held** (a
-  ``filelock`` probe times out); reverting the lock makes that probe succeed.
-
-- :func:`test_e2e_gc_lock_serializes_complete_flip_window` — while the install is
-  frozen between ``.complete`` and the flip, a concurrent GC pass (the real
-  ``EnvironmentRecovery`` collaborator every session runs) tries to reclaim the
-  just-completed, non-``current``, unreferenced target. The lock makes it skip;
-  the install then flips ``current`` onto a **live** dir. Fail-under-revert:
-  without the lock the concurrent GC reclaims the target out from under the flip,
-  so ``current`` ends up pointing at a deleted dir.
-
-The freeze point is the ``AI_HATS_TEST_PAUSE_AFTER_COMPLETE`` seam in
-``_run_managed_versioned_update`` — no flaky SIGKILL/timing race; the test drives
-the interleaving deterministically via the ``.ready`` sentinel.
-"""
+flow:   multiple developer processes concurrently executing self update version cleanup
+cmds:
+    ai-hats self update
+expect: garbage collection process acquires file lock before pruning old version
+        directories
+why: without GC file locks, concurrent update processes delete version directories in
+     active use by other sessions"""
 
 from __future__ import annotations
 from _helpers.git import git

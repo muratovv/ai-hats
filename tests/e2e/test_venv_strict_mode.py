@@ -1,20 +1,14 @@
-"""HATS-645: ``AI_HATS_E2E_REQUIRE_VENV`` converts a venv-tier skip into a fail.
+"""e2e (HATS-645)
 
-Two layers:
-
-* **Unit** (``test_*_skips`` / ``*_to_failure``) — the fail-closed *decision* in
-  :func:`tests.e2e._helpers.venv.venv_unavailable`, exercised directly. Fast, no
-  subprocess, deliberately NOT marked ``integration``.
-* **Seam** (``test_seam_*``) — the integration the unit layer can't reach: that
-  a REAL ``pytest`` run, driving the REAL ``_shared_launcher_venv`` fixture, exits
-  **non-zero under strict mode** (so the gate blocks) and **zero without it** (so
-  an offline dev still gets a green local suite). This is the contract the whole
-  task turns on — offline ⇒ gate blocks instead of false-greening — and it only
-  exists at the pytest-process boundary, so it is a real-subprocess
-  ``@pytest.mark.integration`` test. The venv is forced unbuildable
-  deterministically (empty ``PATH`` ⇒ ``network_available()`` False), so the
-  fixture short-circuits at its first branch — no actual build, ~instant.
-"""
+flow:   a maintainer running the e2e test suite gate under strict venv requirements mode
+cmds:
+    bash scripts/run-e2e-gate.sh
+expect: missing or unbuildable test venvs raise fatal failures under strict mode instead
+        of
+        skipping tests
+why: without strict venv mode in CI gates, environment setup failures silently skip e2e
+     test suites
+        and pass false green"""
 
 from __future__ import annotations
 

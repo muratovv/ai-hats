@@ -1,13 +1,13 @@
-"""E2E sentinel: the retired ``library/hooks/`` directory is never re-created (HATS-1480 AC-1).
+"""e2e (HATS-1480, HATS-1500)
 
-This does NOT guard ADR-0021 M5. It replaced the M5 sentinel
-``test_role_switch_does_not_narrow_hooks``, whose precondition (skill scripts
-inside ``library/hooks/``) became unsatisfiable once the directory went away.
-M5 must be asserted on the session-tree address instead — owed by HATS-1500.
-Do not rename this back: it asserts absence, not non-narrowing.
-
-Fail-under-revert: put ``_lib_hooks_dir`` back into ``init``'s mkdir tuple.
-"""
+flow:   a developer running self init or switching roles on an updated project
+cmds:
+    ai-hats self init -r hypothesis-intake -p claude --no-update
+expect: deprecated library/hooks/ directory is never re-created during project
+        initialization or role
+        switches
+why: without enforcing hook path retirement, role switches recreate deprecated flat hook
+     directories"""
 
 from __future__ import annotations
 

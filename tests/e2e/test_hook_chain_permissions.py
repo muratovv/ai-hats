@@ -1,10 +1,13 @@
-"""HATS-1253 — permission contracts over the COMPOSED PreToolUse chain.
+"""e2e (HATS-1253)
 
-``safety_gate.check_git`` blanket-denied any command whose tokens contained
-``push``, overriding the graduated consent ``pre_bash_shared_state_guard.sh``
-already implemented; a deny is binary, so the cruder gate won while a
-single-hook test asserting the opposite stayed green. Such tests structurally
-cannot catch this — these run the whole chain (``dev_rule_e2e_gate``).
+flow:   an agent executing git push or file cleanup commands under hook permission
+        policies
+cmds:
+    git push origin master
+expect: unapproved pushes block and display consent flags while approved pushes and
+        mandated resource cleanup commands execute cleanly
+why:    permission guards must provide actionable consent flags on denial without
+        blocking non-destructive or rule-mandated cleanup operations
 """
 
 from __future__ import annotations

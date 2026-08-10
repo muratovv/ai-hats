@@ -1,4 +1,13 @@
-"""E2E test for HATS-1202: Bare ai-hats positional prompt parsing in CLI."""
+"""e2e (HATS-1202)
+
+flow:   a developer running ai-hats with a bare positional prompt argument
+cmds:
+    ai-hats -p nonexistent_provider_1202 "hello world"
+expect: CLI parses positional argument as prompt rather than complaining of unknown
+        subcommand
+why:    without positional prompt parsing, user prompts without explicit flags fail as
+        unknown subcommands
+"""
 
 from __future__ import annotations
 

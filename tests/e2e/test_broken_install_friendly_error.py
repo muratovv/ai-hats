@@ -1,22 +1,13 @@
-"""E2E: broken install raises actionable Click error without raw traceback (HATS-1120).
+"""e2e (HATS-1120, HATS-1263)
 
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``):
-
-1. We inject a broken ``ai_hats_rack`` subpackage on ``PYTHONPATH`` (HATS-1263:
-   was ``ai_hats_tracker``) that raises on import. ``src/ai_hats/cli/reflect.py``
-   imports it through ``rack_workspace``, so the CLI boundary sees the failure.
-2. We run ``ai-hats list roles`` in a subprocess via ``tmp_project.run``.
-3. Assertions (normal mode):
-   - exit code == 1
-   - stderr contains "Inconsistent or broken ai-hats installation"
-   - stderr contains "Likely cause: package files are out of sync or corrupted."
-   - stderr contains "python -m ai_hats self update"
-   - stderr contains "Debug with: AI_HATS_DEBUG=1, AI_HATS_VERBOSE=1, --debug, --verbose, -v"
-   - combined stdout+stderr does NOT contain "Traceback"
-4. Assertions (debug mode with ``AI_HATS_DEBUG=1`` or ``--debug``):
-   - exit code != 0
-   - combined stdout+stderr DOES contain "Traceback"
+flow:   a developer running ai-hats commands when package files are corrupted or
+        mismatched
+cmds:
+    ai-hats list roles
+expect: CLI exits with friendly installation error detailing repair steps without
+        tracebacks
+why:    without CLI exception catching, corrupted subpackages dump raw ImportErrors
+        instead of repair guidance
 """  # comment-length: allow
 
 from __future__ import annotations

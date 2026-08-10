@@ -1,35 +1,12 @@
-"""Real-PTY revert-detection guard for the parent escape-hatch — HATS-679.
+"""e2e (HATS-675, HATS-679)
 
-Promoted from the task's ``repro/`` directory. Drives the REAL
-``WrapRunner._pty_spawn`` (via a small driver subprocess) against a fake
-provider that wedges exactly like the 2026-05-28 incident: it ignores SIGINT,
-never closes stdout, and never exits on its own. Only an external kill — or the
-new parent escape-hatch — can end it.
-
-Architecture (double-PTY, mirrors the original repro):
-
-    test ──outer PtyProcess──▶ driver.py ──_pty_spawn's inner PTY──▶ fake_provider
-
-The outer PTY makes the driver's stdin (fd 0) a terminal we can feed Ctrl-C
-into; ``_pty_spawn`` reads fd 0 and forwards/counts those bytes. We send a
-**batched** ``b"\\x03\\x03\\x03"`` so all three Ctrl-C land in one read — the
-assertion is timing-independent and immune to ``-n8`` scheduler jitter
-(HATS-675/676 are active fights with flaky e2e timing; this adds no
-timing-sensitive gate).
-
-Fail-under-revert: on ``master`` (no hatch) the three Ctrl-C are forwarded to
-the wedged child, which ignores them and never EOFs, so ``_pty_spawn`` loops
-forever and never prints ``__DRIVER_EXIT__`` → the read deadline lapses → RED.
-With the hatch, ``_pty_spawn`` returns 130 → ``__DRIVER_EXIT__ 130`` → GREEN.
-
-The dormancy (single/double Ctrl-C forwarded, no fire), per-byte counting, and
-window-expiry / reset rules are covered fast and deterministically by the unit
-suite (``tests/test_runtime_escape_hatch.py`` exercising the pure
-``_scan_escape``); this module guards only the real ``_pty_spawn`` wire.
-
-Marker: ``integration`` (real PTY, real signals, real subprocess).
-
-Deliberate long real-PTY revert-detection scenario contract — noqa: comment-length.
+flow:   a developer pressing triple Ctrl-C during a wedged PTY session
+cmds:
+    # during interactive PTY session when process hangs
+    ai-hats execute -r assistant
+expect: triple Ctrl-C signals escape hatch, force-exiting wedged session with exit 130
+why:    without parent escape hatch, a process ignoring SIGINT locks up terminal session
+        indefinitely
 """
 
 from __future__ import annotations

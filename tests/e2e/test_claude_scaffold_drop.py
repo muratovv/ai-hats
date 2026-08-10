@@ -1,14 +1,12 @@
-"""E2E: HATS-1201 migration step 7 — the real upgrade path drops the scaffold.
+"""e2e (HATS-582, HATS-1170, HATS-1201)
 
-HATS-1170 stopped writing root ``CLAUDE.md`` and removed the code that used to
-clean one up, so every project upgrading across that release carries an
-ai-hats-authored block nothing owns. Step 7 removes it on the next bump.
-
-Fails under revert of the step-7 registry entry: the file survives the bump.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Reuses the
-session-scoped shared venv (HATS-582).
+flow:   a developer updating framework version on a project with orphan CLAUDE.md
+        scaffolds
+cmds:
+    ai-hats self update
+expect: framework update removes orphan CLAUDE.md scaffold while preserving user content
+why:    without migration step 7, legacy root CLAUDE.md scaffolds persist after being
+        deprecated
 """
 
 from __future__ import annotations

@@ -1,17 +1,16 @@
-"""E2E (HATS-1123): the launcher drops a foreign ``AI_HATS_DIR`` when it
-re-pins ``AI_HATS_PROJECT_DIR``.
+"""e2e (HATS-1123)
 
-``dev_rule_e2e_gate`` artifact for ``scripts/ai-hats-launcher``. The pair must
-move together: the launcher sets ``PROJECT="$(pwd)"`` and exports
-``AI_HATS_PROJECT_DIR="$PROJECT"``, so an inherited ``AI_HATS_DIR`` aimed at the
-previous project would survive the re-pin and make THIS project's commands
-(migrations, hook materialization) read and write the OTHER project's
-``.agent/ai-hats``. That divergence is what let a sub-agent shell in a worktree
-partition the main checkout's hooks.
-
-Real bash + the real launcher (session-shared venv). Fail-under-revert: drop the
-``unset AI_HATS_DIR`` branch and ``config status`` reports the foreign dir.
-"""
+flow: a developer running self init in a new project directory while AI_HATS_DIR
+      environment
+        variable points to another project
+cmds:
+    ai-hats self init -p claude
+expect: launcher unsets foreign AI_HATS_DIR when repinning AI_HATS_PROJECT_DIR to
+        current
+        directory
+why: without unsetting foreign AI_HATS_DIR, commands in a new project overwrite
+     configuration
+        and hooks in the foreign project"""
 
 from __future__ import annotations
 

@@ -1,20 +1,11 @@
-"""E2E: ``ai-hats self update`` on the ``local`` channel is an editable
-in-place reinstall (HATS-764).
+"""e2e (HATS-764)
 
-Value under test: a project pinned ``harness.channel: local`` installs its
-working tree with ``uv pip install -e <path>`` IN PLACE — no ``versions/<sha>/``
-blue-green dir, and the resulting install is editable (PEP 610
-``dir_info.editable == true``). This is the ai-hats-dev dogfooding path: the
-launcher tracks the working tree instead of a frozen managed venv.
-
-Fail-under-revert: the pre-HATS-764 code has no channel model — it strips the
-unknown ``harness`` block and falls through to the managed/in-place git install,
-which (a) creates a ``versions/`` dir and/or (b) leaves a NON-editable install.
-Both assertions below then fail.
-
-Setup contract (real subprocess + real uv + real launcher), per
-``dev_rule_e2e_gate``.
-"""
+flow:   a developer running self update on a channel:local project
+cmds:
+    ai-hats self update
+expect: self update reinstalls local source as editable without pulling remote packages
+why: without local editable update handling, channel:local projects overwrite local
+     edits with remote packages"""
 
 from __future__ import annotations
 

@@ -1,19 +1,13 @@
-"""e2e (HATS-840): `task transition execute` issued from INSIDE a linked worktree
-adopts that worktree instead of spinning up a fresh one off main.
+"""e2e (HATS-060, HATS-524, HATS-840)
 
-The HATS-060 adopt short-circuit checked the main-hopped `self.project_dir`
-(`_project_dir()` hops a linked worktree to MAIN, HATS-524), so from inside a
-worktree it inspected MAIN → False → never fired → a second `task/<id>` worktree
-was created off main. The fix threads the operator's raw `Path.cwd()` from the
-CLI down through `transition(caller_cwd=...)` into `_setup_worktree`.
-
-Only the real `_project_dir()` hop exercises the bug, so this lives at the e2e
-tier — the unit test `test_state.py::test_execute_inside_linked_worktree_does_not_nest`
-injects `project_dir = wt_path` and cannot reproduce it.
-
-Fail-under-revert: without the cwd thread, `transition execute` from inside the
-worktree creates a second `task/hats-1` worktree (two linked worktrees) and the
-adoption hint never prints.
+flow:   a developer transitioning a task to execute from inside a linked worktree
+cmds:
+    # from inside a linked worktree directory
+    rack transition HATS-1 execute
+expect: the existing worktree is adopted instead of provisioning a second worktree off
+        main
+why:    transitioning to execute from inside a worktree must adopt the caller worktree
+        to prevent duplicate worktree creation
 """
 
 from __future__ import annotations

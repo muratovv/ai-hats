@@ -1,12 +1,13 @@
-"""E2E drift-net: HATS-905 unclaimed-marker sweep on a real ``self bump``.
+"""e2e (HATS-582, HATS-905, HATS-912)
 
-Synthetic dead-mechanism fixture (HATS-912): a marker with an unregistered
-``owner_key`` seeded at a known location (the location outlives its owner),
-then a REAL installed-binary bump. Covers the chain the unit suite only
-reaches through the ``_sweep_unclaimed_markers`` seam: ``_refresh`` 1b
-wiring → gates → adoption → content-proof → trash → console report.
-Real binary per ``dev_rule_e2e_gate``; shared session venv (HATS-582).
-"""
+flow: a developer running self update when unclaimed legacy files exist in
+      .agent/ai-hats/
+cmds:
+    ai-hats self update
+expect: migration sweep cleans unclaimed legacy files while preserving user
+        configurations
+why: without unclaimed legacy sweeps, obsolete framework state files accumulate in
+     project directories"""
 
 from __future__ import annotations
 

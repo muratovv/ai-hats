@@ -1,10 +1,12 @@
-"""The e2e interpreter guard's predicate (HATS-1218).
+"""e2e (HATS-1218)
 
-Unit surface for ``_helpers.interpreter`` — the same pattern ``test_env_scrub``
-uses for ``clean_env``. The guard itself fires in ``ai_hats_shim``; here we pin
-the classification it depends on, because a false positive blocks the whole e2e
-tier and a false negative restores the silent wrong-code run it exists to stop.
-"""
+flow: a developer running CLI commands using an incompatible Python interpreter version
+cmds:
+    python3.9 -m ai_hats --version
+expect: interpreter guard checks Python version and exits with error naming supported
+        Python version
+why: without interpreter guards, running on unsupported Python versions produces obscure
+     runtime errors"""
 
 from __future__ import annotations
 

@@ -1,13 +1,12 @@
-"""HATS-1006 — e2e: session start warns on deprecated Claude permission rules.
+"""e2e (HATS-1006)
 
-Model: ``test_skills_mirror_self_heals.py`` (real composition + materializers;
-only the PTY spawn is stubbed). Guarantees, each fail-under-revert:
-
-1. **Warn**: a deprecated ``Write(path)`` rule seeded into the project's
-   ``.claude/settings.json`` is announced pre-spawn with its replacement.
-2. **Clean**: after replacing it with the ``Edit(path)`` twin the second
-   launch is silent for this surface (no false positive on Edit rules).
-"""
+flow:   a developer starting session when settings.json carries malformed JSON structure
+cmds:
+    ai-hats status
+expect: session startup warns user of settings.json lint errors without aborting
+        execution
+why: without settings lint warnings, invalid settings.json entries cause silent hook
+     execution drops"""
 
 from __future__ import annotations
 from _helpers.git import git as _git_helper

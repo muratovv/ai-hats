@@ -1,36 +1,12 @@
-"""E2E: ``ai-hats self update`` exits non-zero when the install fails (HATS-718).
+"""e2e (HATS-549, HATS-718)
 
-The bug it catches:
-
-  In ``_run_managed_versioned_update`` the venv-create / pip-install / verify
-  failure branches printed ``[red]Update failed[/]`` then did a bare ``return``
-  — so click exited 0. A scripted chain (``ai-hats self update && ai-hats self
-  init``), CI, or an agent reading exit codes could not distinguish a broken
-  install from a successful one, and the ``&&`` chain proceeded to run ``init``
-  against a half-updated environment. HATS-549 already fixed this class for the
-  bump path (``sys.exit(1)``); this test pins the install-failure branches to
-  the same contract.
-
-Setup contract (real subprocess + real pip + real launcher), per
-``dev_rule_e2e_gate``:
-
-  - ``src-repo`` — a clone of REPO_ROOT used as the local (non-editable)
-    install source. First ``self update`` → ``versions/<shaA>/`` + ``current``.
-  - ``src-repo`` HEAD then advances to ``shaB`` whose working tree carries a
-    DELIBERATELY BROKEN ``pyproject.toml`` (invalid TOML). git resolves shaB
-    fine (it names the new version dir), but ``pip install <src-repo>`` fails
-    to build it → the managed update's pip-install branch fires.
-  - Second ``self update`` → exit 1, and ``versions/current`` is NOT flipped
-    (still shaA), so the tool keeps running on the old, working version.
-
-Fail-under-revert: with the ``462/474/485`` bare ``return``s restored, the
-second update prints the red failure text but exits 0 — the ``expect_exit=1``
-assertion below fails. (And because ``current`` is never flipped either way,
-the half-updated environment is what the pre-fix ``&&`` chain would have run
-``init`` against.)
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update when package installation command fails
+cmds:
+    ai-hats self update
+expect: self update exits with non-zero code, displays error log, and preserves existing
+        venv
+why: without install failure handling, failed uv pip installs corrupt current working
+     virtual environments"""
 
 from __future__ import annotations
 from _helpers.git import git

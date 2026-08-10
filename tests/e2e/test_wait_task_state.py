@@ -1,7 +1,12 @@
-"""e2e for ``ai-hats wait --task ... --until ...`` (HATS-986).
+"""e2e (HATS-986)
 
-``--until`` is repeatable and OR-combined: a ping-pong waiter that names only
-one target state hangs forever when the card leaves by the other edge.
+flow:   a background sub-agent waiting for a task card to reach a target state
+cmds:
+    ai-hats wait --task HATS-1 --until review --until done --poll 0.2
+expect: the process polls until the task card transitions to any specified target
+        state and exits with code 0
+why:    task state waiting enables non-blocking coordination between background
+        sub-agents and parent processes
 """
 
 from __future__ import annotations

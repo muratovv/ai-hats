@@ -1,24 +1,14 @@
-"""End-to-end coverage for the Update banner pipeline (HATS-401).
+"""e2e (HATS-401)
 
-Per ``dev_rule_e2e_gate`` — the trigger surface (new ``python -m
-ai_hats.update_check`` entry-point + two new pipeline steps wired into
-``execute.yaml`` / ``human.yaml`` / ``presets.py``) requires a real
-subprocess chain. This test runs the real launcher install + real pip
-install + real ai-hats binary, then exercises the installed package via
-the venv'd Python — the same chain users hit when they run
-``ai-hats execute``.
-
-Why this lives in ``tests/e2e/`` and not ``tests/pipeline/``: the wiring
-unit tests assert step IDs on the in-process pipeline; this test asserts
-the chain actually works inside a freshly installed venv — catching e.g.
-``__main__.py`` not being shipped by the wheel, or the YAML loader picking
-the wrong registration order.
-
-Revert-check: removing the ``render_update_banner`` registration from
-``pipeline/steps/__init__.py`` makes ``test_render_step_emits_banner``
-fail with an ``ImportError``; reverting the YAML edits makes
-``test_execute_yaml_carries_update_steps`` fail with the wrong step list.
-"""
+flow:   an agent running execute pipeline when an updated framework version is available
+cmds:
+    ai-hats execute -r assistant
+expect: pipeline step renders update advisory banner on stderr detailing available
+        commits and
+        update command
+why: without update banner notifications, users remain unaware of framework security
+     fixes and core
+        feature updates"""
 
 from __future__ import annotations
 

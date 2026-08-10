@@ -1,21 +1,13 @@
-"""HATS-617 — end-to-end behaviour of the skill-lint pre-commit hook.
+"""e2e (HATS-617)
 
-`pre-commit-skill-lint.sh` is a pure-bash surface; the unit suite cannot
-meaningfully exercise it. This file drives the script against a real ephemeral
-git repo, stubbing agnix through ``AI_HATS_SKILL_LINT_CMD`` so the test is
-offline and deterministic (it verifies the HOOK's wiring — changed-files scope,
-golang exclusion, fail-open, override, block-on-error — not agnix itself, which
-is third-party and upstream-tested).
-
-Covers:
-  * blocks the commit when a staged library SKILL.md fails agnix
-  * allows the commit when the staged skill passes
-  * golang-* skills are excluded from the gate
-  * non-skill / non-library changes are a no-op
-  * fail-open when the agnix binary is absent
-  * AI_HATS_SKILL_LINT_ACK=1 overrides the block
-
-Slow only because of git init + subprocess spin-up (~ms each).
+flow:   a developer committing changes to skill markdown documentation
+cmds:
+    # with staged SKILL.md missing license frontmatter
+    git commit -m "add skill"
+expect: the pre-commit hook runs agnix spec validation and license checks on staged
+        SKILL.md files and blocks commits that violate standards
+why:    skill documentation must adhere to agnix specifications and include valid
+        license metadata before being committed
 """
 
 from __future__ import annotations

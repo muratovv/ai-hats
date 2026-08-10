@@ -1,13 +1,13 @@
-"""HATS-1372 — the safety gate actually denies.
+"""e2e (HATS-1372)
 
-This is a `deny`-class PreToolUse hook, the highest-blast-radius kind, and until
-now only wiring tests existed: they proved the hook was materialized into the
-settings, never that it refuses anything. A gate with no test that fires is a
-gate nobody has checked.
-
-Per `dev_rule_e2e_gate` each case spawns the hook as a real subprocess and
-speaks the PreToolUse JSON protocol over stdin.
-"""
+flow:   an agent executing destructive bash commands during tool calls
+cmds:
+    # inside agent tool call running destructive command
+    git push origin master --force
+expect: safety gate hook intercepts destructive command and requires explicit user
+        confirmation
+why: without safety gate hooks, agents execute irreversible destructive shell commands
+     without review"""
 
 from __future__ import annotations
 

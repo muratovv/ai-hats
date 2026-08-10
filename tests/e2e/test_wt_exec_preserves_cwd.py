@@ -1,8 +1,12 @@
-"""e2e (HATS-1205): ``ai-hats wt exec`` runs the command WHERE YOU STAND — an
-environment wrapper, not a teleporter.
+"""e2e (HATS-1205)
 
-Fail-under-revert: restore the unconditional ``cwd=str(wt_path)`` in ``wt_exec``
-and ``git rev-parse --show-prefix`` reports ``""`` (the root), not ``sub/``.
+flow:   a developer executing commands via wt exec from inside a worktree subdirectory
+cmds:
+    # from a subdirectory inside a worktree
+    ai-hats wt exec -- git rev-parse --show-prefix
+expect: command executes in the relative subdirectory within the worktree rather than
+        teleporting to root
+why:    wt exec must preserve caller relative path inside worktree directories
 """
 
 from __future__ import annotations

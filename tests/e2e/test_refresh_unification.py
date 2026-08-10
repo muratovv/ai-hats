@@ -1,40 +1,12 @@
-"""E2E: HATS-469 — ``Assembler._refresh()`` unification.
+"""e2e (HATS-469, HATS-582)
 
-Five contracts a reviewer can refute by reverting the relevant code:
-
-1. **Greenfield init is silent.** A fresh ``ai-hats self init -p claude``
-   on an empty tmpdir seeds ``migration_step=latest`` BEFORE ``_refresh``
-   fires; the registry is a no-op (no ``[ai-hats] running migration``
-   banner). Static hooks (``.claude/settings.json`` + materialised hook
-   scripts) ARE installed. Diagnostics (orphan / empty-.agent note) are
-   silent — nothing to diagnose on a fresh project.
-2. **Re-init triggers registry on a stale project.** A project with
-   ``migration_step=0`` re-init'd via ``ai-hats self init`` replays the
-   registry exactly once: banner fires on the re-init, the second init
-   does NOT replay (gated). Diagnostics ARE surfaced (re-init = user-
-   initiated path).
-3. **First-session bootstrap is silent.** A project at
-   ``migration_step=latest`` with ``default_role`` set: running
-   ``ai-hats execute -r ROLE -p claude`` (which goes through
-   ``runtime.set_role`` → ``_refresh(install_time=False)``) MUST install
-   role git hooks + static hooks WITHOUT firing the migration banner or
-   any orphan diagnostic on stderr.
-4. **No residual ``.bump(`` call sites in production source.** A grep
-   against ``src/`` proves HATS-469 left no dangling callers of the
-   removed ``Assembler.bump`` method. Comments and docstrings that
-   mention ``Assembler.bump`` historically are allowed (filtered).
-5. **``Assembler.bump`` is gone, ``_refresh`` + ``_run_diagnostics`` are
-   public-via-private-API surfaces.** Import-time check on the installed
-   wheel — guards against a future merge that resurrects ``bump``
-   without breaking the rest of the suite.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Cost
-amortization (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update to refresh project composition
+cmds:
+    ai-hats self update
+expect: composition refresh unifies role, trait, and skill definitions under single
+        materialization step
+why: without unified composition refresh, updating framework files leaves active project
+     prompts stale"""
 
 from __future__ import annotations
 

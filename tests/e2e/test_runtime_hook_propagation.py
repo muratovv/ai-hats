@@ -1,27 +1,12 @@
-"""E2E (HATS-601): skill-declared runtime hooks propagate end-to-end.
+"""e2e (HATS-601)
 
-A composed skill declaring ``runtime_hooks:`` (PreToolUse + PostToolUse) is,
-after a real ``ai-hats self init``:
-
-A. wired into ``.claude/settings.json`` — one managed entry per
-   ``(event, skill, matcher)``, tagged ``ai-hats:<skill>:<event>:<matcher>``,
-   under the correct event, pointing at the materialized script;
-B. materialized to ``<sid>/plugin/skills/<skill>/hooks/<basename>.sh``,
-   executable;
-C. functional — piping the exact ``tool_input`` JSON shape Claude Code feeds a
-   hook into the materialized script yields the contracted exit code (2 on the
-   sentinel, 0 otherwise). This is the "пробрасывается как надо" guarantee up
-   to the Claude-Code contract boundary; we do NOT launch a real ``claude``.
-
-Fail-under-revert:
-  * drop the provider wiring (slice 2) → settings.json has no managed entry;
-  * drop the materialize call (slice 1) → script missing → piping into it
-    fails with exit 127 instead of the contracted 0/2.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. The fixture library
-lives under ``tests/fixtures/runtime_hook_lib`` and is copied into the
-project's auto-searched ``<project>/libraries/`` before init.
+flow:   a developer initializing a project with a role that declares skill runtime hooks
+cmds:
+    ai-hats self init -p claude -r e2e-rthook-role --no-wizard
+expect: runtime hooks are wired into settings.json and materialized executable scripts
+        return correct codes
+why:    without end-to-end hook propagation, skill runtime hooks are dropped during
+        session initialization
 """
 
 from __future__ import annotations

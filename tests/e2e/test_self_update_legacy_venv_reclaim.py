@@ -1,27 +1,11 @@
-"""E2E: the legacy .venv is reclaimed once versioned is healthy (HATS-653 / Phase B).
+"""e2e (HATS-653)
 
-Value under test: after lazy migration to the versioned layout, the orphaned
-pre-versioning ``<ai_hats_dir>/.venv`` is reclaimed — but only once a process
-actually runs from a complete versioned venv. Exercised with a real launcher +
-real pip + real ``ai-hats self update`` (per ``dev_rule_e2e_gate``), no flaky
-race: the two-step flow is deterministic.
-
-Flow:
-  1. Fresh project → first ``self update``. The launcher bootstraps the default
-     ``.venv`` (migration), then the python self-update builds ``versions/<shaA>``
-     and flips ``current``. This first updater runs **from** ``.venv``
-     (``current_run_sha`` is None) → the reclaim guard skips, ``.venv`` is kept.
-  2. Second ``self update`` (HEAD advanced → shaB). Now the launcher resolves
-     ``current → versions/<shaA>`` and runs the updater **from** the versioned
-     venv (``current_run_sha`` resolves) → the reclaim fires at self-update
-     start, discarding ``.venv``.
-
-Fail-under-revert:
-  - reverting the reclaim → step-2 ``not .venv.exists()`` fails (stale fallback
-    lingers);
-  - reverting the ``current_run_sha`` guard (always reclaim) → step-1
-    ``.venv.exists()`` fails (the first update deletes the venv it runs from).
-"""
+flow:   a developer running self update after migrating to versioned venv layout
+cmds:
+    ai-hats self update
+expect: self update reclaims unneeded legacy .venv directory freeing disk space
+why: without legacy venv reclamation, orphaned .venv directories consume unnecessary
+     disk space"""
 
 from __future__ import annotations
 from _helpers.git import git

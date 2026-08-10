@@ -1,12 +1,13 @@
-"""HATS-1519 e2e — the argv contract between the installed stub and the CLI.
+"""e2e (HATS-1519)
 
-Stub and `ai_hats.cli.githooks_hook` are versioned apart by design: the stub is
-frozen per project, the CLI ships with the venv. Real `self init` + real
-`git commit` (`dev_rule_e2e_gate`), on `commit-msg` — the one event git hands an
-argument, and the shape the field report carried:
-
-* the separator survives (R1/R2); * skew degrades to a skip (R3);
-* a gate's refusal still refuses (R4).
+flow:   a developer executing a git commit in a project where installed git hooks
+        and CLI versions differ
+cmds:
+    git commit -m "update"
+expect: the commit succeeds when argument separators match and skips with a fail-open
+        warning when unknown flags are passed
+why:    installed hook stubs and venv CLI packages are versioned independently, so
+        version skew must degrade to a skip rather than blocking commits
 """
 
 from __future__ import annotations

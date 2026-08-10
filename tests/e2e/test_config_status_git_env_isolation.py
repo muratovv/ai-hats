@@ -1,12 +1,13 @@
-"""E2E (HATS-890): ``ai-hats config status`` ignores an ambient GIT_DIR.
+"""e2e (HATS-890)
 
-``dev_rule_e2e_gate`` artifact for ``cli/maintenance.py``. The editable repo-state
-line (``_repo_head_for_editable``) shells ``git -C <checkout> rev-parse …``; since
-``GIT_DIR`` overrides git's ``-C`` discovery, an ambient ``GIT_DIR`` at a DECOY
-repo would surface the decoy's branch — the ``scrubbed_git_env()`` strip prevents
-it. Fail-under-revert: drop that strip and the decoy sentinel appears. Like
-``test_wt_exec_git_env_isolation``, the shim execs the dev-venv ``python -m
-ai_hats``, so GREEN only at the MAIN checkout whose editable src carries the fix.
+flow:   a maintainer checks status diagnostics while running inside a shell environment
+        that exports GIT_DIR pointing to a decoy repository
+cmds:
+    ai-hats config status
+expect: the repo-state line displays the branch of the active ai-hats checkout rather
+        than the branch of the decoy repository named in GIT_DIR
+why:    unscrubbed GIT_DIR environment variables override git discovery, causing status
+        diagnostics to report false branch information
 """
 
 from __future__ import annotations

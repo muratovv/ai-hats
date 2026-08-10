@@ -1,4 +1,13 @@
-"""E2E test verifying that headless agy (-p) actually executes .gemini/settings.json runtime hooks (HATS-1105)."""
+"""e2e (HATS-1105)
+
+flow:   an agent running headless agy execution with registered runtime hooks
+cmds:
+    # when running agy in headless mode
+    ai-hats execute -p agy --prompt "Run command"
+expect: runtime hooks defined in settings.json execute during headless tool invocation
+why:    without headless hook execution, safety and quality gates fail to run in
+        non-HITL batch runs
+"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

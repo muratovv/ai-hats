@@ -1,27 +1,13 @@
-"""E2E: the bash launcher heal is channel-aware — channel:local heals EDITABLE (HATS-766).
+"""e2e (HATS-766)
 
-Value under test (caveat b): when a ``channel: local`` project's managed
-``.venv`` is missing/broken, the launcher's ``heal_if_needed()`` must rebuild it
-as an EDITABLE install (``uv pip install -e <harness.path>``), mirroring
-``maintenance._run_editable_update`` — NOT a non-editable ``PIP_TARGET`` snapshot
-that clobbers the dev working-tree install.
-
-Why ``self init`` and not ``self update`` (review P1-4): the launcher heals on
-BOTH, but ``self update`` on channel:local then re-runs the PYTHON editable
-reinstall (``_run_editable_update``), which would MASK a non-editable launcher
-heal — the venv ends up editable regardless. ``self init -r <role> -p <provider>``
-with non-TTY stdin takes the no-wizard path (``use_wizard=False``) so the python
-side runs NO pip install: the launcher heal is the ONLY installer, and its
-editability is observable end-to-end.
-
-Discriminator: ``AI_HATS_REPO_URL`` and ``harness.path`` both point at the same
-local checkout, so the revert (non-editable ``PIP_TARGET`` rebuild) installs a
-NON-editable copy from ``AI_HATS_REPO_URL`` → ``dir_info.editable`` is false →
-the assertion fails. The fix installs ``-e <harness.path>`` → editable true.
-
-Setup contract (real subprocess + real uv + real launcher), per
-``dev_rule_e2e_gate``.
-"""
+flow:   a developer initializing a channel:local project when managed venv is missing
+cmds:
+    ai-hats self init -r assistant -p claude
+expect: launcher heal detects local channel and rebuilds managed venv as an editable
+        install
+why: without channel-aware launcher healing, local development venvs heal as
+     non-editable
+        snapshots that ignore working tree edits"""
 
 from __future__ import annotations
 
