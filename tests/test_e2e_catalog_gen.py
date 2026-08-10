@@ -195,3 +195,13 @@ def test_check_actor_refuses_non_human_actor():
     assert "test_x.py" in errors[0]
     assert "non-human actor 'a test suite'" in errors[0]
 
+
+def test_check_pins_refuses_unsupported_pin():
+    rows = mod.parse_rows(WELL_FORMED, "test_x.py")
+    errors = mod.check_pins(rows, lambda f: {"HATS-100"})
+    assert len(errors) == 1
+    assert "test_x.py" in errors[0]
+    assert "header pin HATS-788 has no basis" in errors[0]
+    assert mod.check_pins(rows, lambda f: {"HATS-788"}) == []
+
+

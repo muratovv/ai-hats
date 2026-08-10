@@ -27,10 +27,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
@@ -53,6 +56,40 @@ def check_actor(rows: list[Row]) -> list[str]:
                 f"{row.file}: flow opens with non-human actor {actor!r} — flow must describe what a person does"
             )
     return errors
+
+
+def check_pins(rows: list[Row], ids_known_for: Callable[[str], set[str]]) -> list[str]:
+    errors = []
+    for row in rows:
+        known = ids_known_for(row.file)
+        for pin in row.pins:
+            if pin not in known:
+                errors.append(
+                    f"{row.file}: header pin {pin} has no basis (absent from file text and git log)"
+                )
+    return errors
+
+
+@functools.lru_cache(maxsize=None)
+def _ids_known_for(file_name: str) -> set[str]:
+    file_path = E2E_DIR / file_name
+    found = set()
+    if file_path.exists():
+        found.update(_ID.findall(file_path.read_text(encoding="utf-8")))
+    try:
+        res = subprocess.run(
+            ["git", "log", "--", str(file_path)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            found.update(_ID.findall(res.stdout))
+    except Exception:
+        pass
+    return found
+
 
 
 
@@ -234,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {err}", file=sys.stderr)
         return 1
 
-    soundness_errors = check_actor(rows)
+    soundness_errors = check_actor(rows) + check_pins(rows, _ids_known_for)
     if soundness_errors:
         print("[e2e-catalog] unsound row(s):", file=sys.stderr)
         for err in soundness_errors:
