@@ -15,7 +15,7 @@ from .materialization import MaterializationPlan
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
-    from ai_hats_core import ResolvedCheck
+    from .check_snapshot import ReportedCheck
 
 
 def _human_size(n: int) -> str:
@@ -45,7 +45,7 @@ class SessionReport:
     notes: tuple[str, ...] = ()
     # HATS-1548: the gates this launch arms. Not derivable from the plan — the
     # skill mirror a check runs from is written per SKILL, not per binding.
-    checks: tuple[ResolvedCheck, ...] = ()
+    checks: tuple[ReportedCheck, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -76,11 +76,13 @@ class SessionReport:
             "duplicates": [str(p) for p in self.plan.duplicates()],
             "checks": [
                 {
-                    "skill": c.skill,
-                    "script": c.script,
-                    "point": c.point,
-                    "on_error": c.on_error,
-                    "declared_by": c.declared_by,
+                    "skill": c.binding.skill,
+                    "script": c.binding.script,
+                    "point": c.binding.point,
+                    "on_error": c.binding.on_error,
+                    "declared_by": c.binding.declared_by,
+                    "runs_from": str(c.runs_from) if c.runs_from else None,
+                    "planned": c.planned,
                 }
                 for c in self.checks
             ],
@@ -136,6 +138,12 @@ class SessionReport:
                 f"  {c['point']:<20} {c['skill']}/{c['script']}"
                 f"  on_error={c['on_error']}  by {c['declared_by']}"
             )
+            # An armed gate is the quiet case; anything else is what the operator
+            # came for, so only the unhappy branches get a second line.
+            if c["runs_from"] is None:
+                lines.append("    ! UNRESOLVED — this gate has no bytes to run (see notes)")
+            elif not c["planned"]:
+                lines.append(f"    ! {c['runs_from']} is NOT written by this launch")
 
         if d["notes"]:
             lines.append("")

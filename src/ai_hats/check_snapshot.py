@@ -11,12 +11,89 @@ loud rather than discovered when a gate does not fire.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
-    from ai_hats_core import CompositionResult
+    from pathlib import Path
 
+    from ai_hats_core import CompositionResult, ResolvedCheck
+
+    from .materialization import MaterializationPlan
     from .session_artifacts import SessionPolicy
+
+
+@dataclass(frozen=True)
+class ReportedCheck:
+    """One binding as the launch report sees it (HATS-1548).
+
+    ``runs_from`` is ``None`` when the binding cannot be resolved at all; the
+    reason then rides ``SessionReport.notes`` rather than raising, because a
+    report that dies on a broken gate tells the operator less than one that
+    names it.
+    """
+
+    binding: ResolvedCheck
+    runs_from: Path | None
+    planned: bool
+
+
+def describe_checks(
+    provider,
+    project_dir: Path,
+    result: CompositionResult,
+    session_id: str,
+    plan: MaterializationPlan,
+) -> tuple[tuple[ReportedCheck, ...], tuple[str, ...]]:
+    """Resolve every binding the way the session will, and cross-check the plan.
+
+    The binding list alone is the weak half — it is already readable in the role.
+    What no other surface answers is whether the resolution settles here: same
+    mirror the plan writes, same leaf spelling. Takes the provider the caller
+    already holds: a report about THIS launch must not consult a second surface
+    lookup that could answer differently.
+    """
+    from .check_resolve import (
+        CheckResolutionError,
+        mirror_for,
+        rebase_onto_mirror,
+        reject_worktree_root,
+    )
+
+    if not result.checks:
+        return (), ()
+
+    root = provider.session_skills_root(project_dir, session_id)
+    if root is None:
+        # Every binding is unresolvable for the same reason, and
+        # `surface_skew_notice` already says it once — do not repeat it per row.
+        return tuple(ReportedCheck(c, None, False) for c in result.checks), ()
+
+    mirror = mirror_for(root, result)
+    reported: list[ReportedCheck] = []
+    notes: list[str] = []
+    for binding in result.checks:
+        try:
+            # Same order the session uses: the worktree clause guards the path
+            # the COMPOSITION resolved, before a root is picked (ADR-0019 D9).
+            reject_worktree_root(binding.script_path, binding)
+            runs_from = rebase_onto_mirror(binding, mirror).script_path
+        except CheckResolutionError as exc:
+            reported.append(ReportedCheck(binding, None, False))
+            notes.append(str(exc))
+            continue
+        reported.append(ReportedCheck(binding, runs_from, _plan_covers(plan, runs_from)))
+    return tuple(reported), tuple(notes)
+
+
+def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
+    """Whether this launch writes the tree the script will be read out of."""
+    from .materialization import WriteKind
+
+    return any(
+        entry.kind is WriteKind.COPY_TREE and entry.target in runs_from.parents
+        for entry in plan.entries
+    )
 
 
 def surface_skew_notice(provider_name: str, provider, project_dir, result) -> str | None:

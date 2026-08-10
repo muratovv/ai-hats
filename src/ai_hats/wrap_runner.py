@@ -26,7 +26,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
-from .check_snapshot import legacy_launch_notices, surface_skew_notice
+from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
@@ -507,6 +507,12 @@ class WrapRunner:
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
+        # HATS-1548: the same section --dry-run shows, on the launch record — one
+        # call site would be a report about a session nobody can compare against.
+        reported_checks, check_notes = describe_checks(
+            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+        )
+        builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
         report = SessionReport(
             role=active_role,
             provider=provider_name,
@@ -517,7 +523,7 @@ class WrapRunner:
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
-            checks=result.checks,
+            checks=reported_checks,
         )
         session.save_role_materialization(report.to_dict())
 

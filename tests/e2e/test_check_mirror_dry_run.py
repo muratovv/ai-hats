@@ -155,3 +155,21 @@ def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library)
         (c["skill"], c["script"], c["point"], c["on_error"], c["declared_by"])
         for c in bound["checks"]
     ] == [("gate-skill", "check.sh", "wt:pre-merge", "refuse", "checked")]
+
+
+def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_covers_it(
+    project_with_library,
+):
+    """A list of bindings is the weak half — the binding is already in the role.
+
+    What an operator cannot read anywhere is whether the resolution SETTLES under
+    this surface: same mirror the plan writes, same leaf spelling. So the report
+    resolves it the way the session will and says whether the plan covers those
+    bytes. Cross-checked against the plan entry rather than asserted twice.
+    """
+    payload = _dry_run(project_with_library, "checked")
+
+    (check,) = payload["checks"]
+    assert check["runs_from"] == _skill_copies(payload)[0] + "/check.sh"
+    assert check["runs_from"].endswith(MIRROR_SUFFIX + "/check.sh")
+    assert check["planned"] is True

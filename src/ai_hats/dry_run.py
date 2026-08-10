@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .check_snapshot import describe_checks
 from .materialization import PlanMaterializer
 from .session_artifacts import (
     BuiltArtifacts,
@@ -81,6 +82,9 @@ def dry_run_hitl(
         provider_session_id="<assigned at launch>",
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
+    checks, check_notes = describe_checks(
+        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    )
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
@@ -92,7 +96,8 @@ def dry_run_hitl(
         plan=artifacts.port.plan,
         cwd=str(project_dir),
         escapes=_detect_escapes(cache_dir, before),
-        checks=payload.result.checks,
+        checks=checks,
+        notes=check_notes,
     )
 
 
@@ -134,7 +139,9 @@ def dry_run_automate(
             artifacts=artifacts,
         )
 
-    notes: list[str] = []
+    checks, notes = describe_checks(
+        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    )
     if prov.name == PROVIDER_CLAUDE:
         launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
     else:
@@ -155,8 +162,8 @@ def dry_run_automate(
         plan=artifacts.port.plan,
         cwd="<worktree, assigned at launch>",
         escapes=_detect_escapes(cache_dir, before),
-        notes=tuple(notes),
-        checks=payload.result.checks,
+        notes=notes,
+        checks=checks,
     )
 
 

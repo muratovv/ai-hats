@@ -20,6 +20,7 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 
 from ai_hats.check_resolve import CheckResolutionError, resolve_edge_checks
 from ai_hats.check_snapshot import legacy_launch_notices
+from ai_hats.materialization import PlanMaterializer
 from ai_hats.providers import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
@@ -394,6 +395,19 @@ class _StaleSurface(_MirrorSurface):
     def session_skills_root(self, project_dir: Path, session_id: str):
         return Provider.session_skills_root(self, project_dir, session_id)
 
+    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        # It DOES write a mirror — it just will not say where. That asymmetry IS
+        # the skew, so the fixture must not model it as "mirrors nothing".
+        from ai_hats.paths import session_cache_dir
+        from ai_hats.skills_dir import materialize_skills_dir
+
+        materialize_skills_dir(
+            session_cache_dir(project_dir, session_id) / "stub-skills",
+            result.skills,
+            project_dir,
+            artifacts.port,
+        )
+
 
 def test_a_surface_that_cannot_root_a_bound_check_says_so_at_launch(tmp_path: Path):
     """The notice `legacy_launch_notices` does NOT give, and the ADR claimed it did.
@@ -430,3 +444,94 @@ def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
     from ai_hats.check_snapshot import surface_skew_notice
 
     assert surface_skew_notice("agy", _StaleSurface(), tmp_path, _result()) is None
+
+
+# --- what the launch report says about the bindings (HATS-1548) ---
+
+
+class _SkilllessSurface(_MirrorSurface):
+    """Names a mirror root and delivers no skills into it — so a binding
+    resolves against a tree this launch never writes."""
+
+    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        return None
+
+
+def _described(project: Path, result, provider=None, sid: str = SID):
+    """Build this session's artifacts, then describe its checks off that plan."""
+    from ai_hats.check_snapshot import describe_checks
+
+    surface = provider or _MirrorSurface()
+    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    surface.build_session_artifacts(
+        project, result, sid, run_mode=RunMode.HITL, artifacts=artifacts
+    )
+    return describe_checks(surface, project, result, sid, artifacts.port.plan)
+
+
+def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
+    """The happy case, stated once: resolved into the mirror the launch writes."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    reported, notes = _described(project, result)
+
+    (check,) = reported
+    assert check.runs_from == _MirrorSurface().session_skills_root(project, SID) / skill.name / "check.sh"
+    assert check.planned is True
+    assert notes == ()
+
+
+def test_a_surface_that_mirrors_nothing_leaves_every_gate_unresolved(tmp_path: Path):
+    """``session_skills_root`` is None — no root, so no bytes, so no gate.
+
+    Silent by design: ``surface_skew_notice`` already says this once at launch,
+    and repeating it per binding would bury the rows it annotates.
+    """
+    project = _project(tmp_path)
+    skill = _skill(project)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    reported, notes = _described(project, result, provider=_StaleSurface())
+
+    (check,) = reported
+    assert check.runs_from is None
+    assert check.planned is False
+    assert notes == ()
+
+
+def test_a_binding_over_an_uncomposed_skill_is_named_not_raised(tmp_path: Path):
+    """A report that dies on a broken gate tells the operator less than one
+    that names it — so the resolution error becomes a note, not an exception."""
+    project = _project(tmp_path)
+    composed = _skill(project)
+    absent = _skill(project, name="ghost-skill")
+    result = _result(skills=[composed], checks=[_check(absent)])
+
+    reported, notes = _described(project, result)
+
+    (check,) = reported
+    assert check.runs_from is None
+    assert check.planned is False
+    assert len(notes) == 1
+    assert "ghost-skill" in notes[0]
+
+
+def test_a_gate_the_launch_does_not_write_is_reported_unplanned(tmp_path: Path):
+    """Resolution settling is not the same as the bytes being there.
+
+    The skill is composed, so it resolves — but this launch delivers no skills
+    (the surface has no SKILLS handler), so nothing writes the tree the script
+    would be read out of. That gap is exactly what ``planned`` exists to show.
+    """
+    project = _project(tmp_path)
+    skill = _skill(project)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    reported, notes = _described(project, result, provider=_SkilllessSurface())
+
+    (check,) = reported
+    assert check.runs_from is not None, "it resolves — the skill IS composed"
+    assert check.planned is False
+    assert notes == ()
