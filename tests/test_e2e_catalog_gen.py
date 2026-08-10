@@ -205,6 +205,25 @@ def test_check_pins_refuses_unsupported_pin():
     assert mod.check_pins(rows, lambda f: {"HATS-788"}) == []
 
 
+def test_ids_known_for_ignores_docstring_header_pins():
+    known = mod._ids_known_for("test_bare_positional_prompt.py")
+    assert "HATS-9999" not in known
+
+    fake_doc = """\"\"\"e2e (HATS-9999)
+
+flow:   a developer running test
+cmds:
+    ai-hats status
+expect: test
+why:    test
+\"\"\"
+"""
+    rows = mod.parse_rows(fake_doc, "test_bare_positional_prompt.py")
+    errs = mod.check_pins(rows, mod._ids_known_for)
+    assert len(errs) == 1
+    assert "header pin HATS-9999 has no basis" in errs[0]
+
+
 def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
     bad = WELL_FORMED.replace(
         "rack transition HATS-1 done",

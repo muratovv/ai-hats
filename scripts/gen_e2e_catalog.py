@@ -250,10 +250,19 @@ def _ids_known_for(file_name: str) -> set[str]:
     file_path = E2E_DIR / file_name
     found = set()
     if file_path.exists():
-        found.update(_ID.findall(file_path.read_text(encoding="utf-8")))
+        text = file_path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text)
+            doc = ast.get_docstring(tree, clean=False)
+            if doc and doc in text:
+                text = text.replace(doc, "", 1)
+        except Exception:
+            pass
+        found.update(_ID.findall(text))
     try:
+        rel_path = file_path.relative_to(REPO_ROOT) if file_path.is_relative_to(REPO_ROOT) else file_path
         res = subprocess.run(
-            ["git", "log", "--", str(file_path)],
+            ["git", "log", "--", str(rel_path)],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
