@@ -555,7 +555,11 @@ shipped row an hour after HATS-1137 landed it.
    refuses the rows that said `on_error: refuse` and warns past the rows that
    said `on_error: warn`. Refusing everything would brick the bare rack; passing
    everything is the exact silence this ADR exists to remove, so neither answer
-   is applied uniformly.
+   is applied uniformly. The other half of the same skew — a port that cannot be
+   asked for the declarations at all — has no rows to consult, so it cannot be
+   decided per row; it writes the reason to the work log and lets the transition
+   through. Answering "nothing was declared" there would delete every gate with
+   nothing written anywhere, which is the same silence one level up.
 5. **A bare rack cannot see a declaration at all, and that is recorded, not
    fixed.** Both delivery roads run through the integrator — the port is loaded
    from an entry point the integrator registers, and the composition that
