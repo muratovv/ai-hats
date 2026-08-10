@@ -3,10 +3,11 @@
 flow:   an agent transitioning a task card to done state
 cmds:
     rack transition HATS-1137 done
-expect: done gate verifies review approval and documentation completeness before
-        allowing transition
-why: without done gates, agents transition unreviewed or undocumented task cards
-     directly to done"""
+expect: done gate verifies review approval, documentation completeness, and e2e catalog
+        freshness before allowing transition
+why:    without done gates, agents transition unreviewed, undocumented, or catalog-stale
+        task cards directly to done
+"""
 
 from __future__ import annotations
 
