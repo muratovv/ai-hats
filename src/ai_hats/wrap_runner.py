@@ -519,6 +519,10 @@ class WrapRunner:
             provider, self.project_dir, result, session.session_id, artifacts.port.plan
         )
         builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
+        # The record carries the same notes the dry-run does. They are already on
+        # their way to the screen as StartupNotices; a launch record that omitted
+        # them would disagree with `--dry-run` about the same session.
+        report_notes = tuple(n.text for n in builder_notices)
         report = SessionReport(
             role=active_role,
             provider=provider_name,
@@ -530,6 +534,7 @@ class WrapRunner:
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
             checks=reported_checks,
+            notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())
 
