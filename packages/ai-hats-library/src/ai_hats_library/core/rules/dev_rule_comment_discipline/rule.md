@@ -8,19 +8,17 @@ below. (`TICKET-NNN` = whatever ticket prefix *this* repo uses, never the litera
 
 ```python
 # ✅ inline — one line, the non-obvious WHY:
-lock = FileLock(path)  # flock auto-releases on PID death — no stale cleanup
-
+lock = FileLock(path)        # flock auto-releases on PID death — no stale cleanup
 
 # ✅ function docstring — one line of intent; add args/returns ONLY when the
 #    signature doesn't already say them:
 def materialize_runtime_hooks(session):
     """Write the session's runtime hooks; return the paths written."""
 
-
 # ✅ module docstring — one line stating the contract, not its design history.
 
 # ✅ history — a pointer, never a retelling:
-("rule_composition_value_contract",)  # TICKET-452: always-on; see docs/adr/0005
+"rule_composition_value_contract",  # TICKET-452: always-on; see docs/adr/0005
 ```
 
 ## The foil to cut (the HATS-837 shape)

@@ -32,12 +32,12 @@ project = Path("/path/to/a/git/repo")
 # A manager for one linked worktree on its own branch.
 mgr = WorktreeManager(project, branch_name="feature/x")
 
-wt_path = mgr.create()  # linked worktree checked out on feature/x
-mgr.save_state()  # persist state under <project>/.wt
+wt_path = mgr.create()   # linked worktree checked out on feature/x
+mgr.save_state()         # persist state under <project>/.wt
 
 # ... make commits inside wt_path ...
 
-mgr.merge()  # land the branch on the base, remove the worktree
+mgr.merge()              # land the branch on the base, remove the worktree
 # or:
 # mgr.discard()          # throw the worktree + branch away, land nothing
 ```
@@ -77,16 +77,12 @@ behaviour at the create/merge/discard boundaries by passing its own
 ```python
 from ai_hats_wt import WorktreeManager, WorktreeLifecycle, LifecycleContext
 
-
 class MyLifecycle(WorktreeLifecycle):
-    def on_created(
-        self, ctx: LifecycleContext
-    ) -> None: ...  # e.g. seed files into ctx.worktree_path
+    def on_created(self, ctx: LifecycleContext) -> None:
+        ...  # e.g. seed files into ctx.worktree_path
 
-    def before_teardown(
-        self, event: str, ctx: LifecycleContext
-    ) -> None: ...  # event is "merge" / "discard" / "cleanup"
-
+    def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
+        ...  # event is "merge" / "discard" / "cleanup"
 
 mgr = WorktreeManager(project, branch_name="feature/x", lifecycle=MyLifecycle())
 ```

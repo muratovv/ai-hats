@@ -32,13 +32,10 @@ FileLock(task) → FSM-guard → in-memory mutation → in-lock subscribers → 
 ```python
 class MyExtension:
     name = "my-extension"
-
     def subscriptions(self) -> list[Subscription]:  # (event_key, phase, priority)
         return [Subscription("edge:plan--execute", Phase.IN_LOCK, priority=10)]
-
-    def on_event(
-        self, ctx: DispatchContext
-    ) -> Delta | None: ...  # return a Delta, None, or raise AbortOperation("actionable reason")
+    def on_event(self, ctx: DispatchContext) -> Delta | None:
+        ...  # return a Delta, None, or raise AbortOperation("actionable reason")
 ```
 
 - `DispatchContext` carries: `event`, `task` (deep copy), **`caller_cwd`** (mandatory;
