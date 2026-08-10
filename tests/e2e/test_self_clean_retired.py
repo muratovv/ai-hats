@@ -2,7 +2,7 @@
 
 flow:   a developer invoking retired self clean CLI command
 cmds:
-    ai-hats self clean  # retired: expected to fail
+    ai-hats self clean  # no-resolve: pins that this CLI was removed
 expect: CLI exits with error code explaining self clean command is retired
 why:    without self clean removal guard, deprecated self clean subcommand might be re-introduced"""
 

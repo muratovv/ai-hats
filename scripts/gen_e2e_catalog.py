@@ -20,7 +20,9 @@ covered?", and `--check` keeps that view current. What `--check` CANNOT catch
 is a docstring drifting from its own code — both go stale together. The claim
 is "this view is current", never "these rows are true". Check B resolves the
 subcommand path only, not options — `ai-hats config status --verbose` passes
-although `config status` declares no options.
+although `config status` declares no options. Check A accepts an id found
+anywhere in the file's git log, including the commit that wrote the flow block
+itself, so the cataloguing card's own id grounds a pin trivially (HATS-1567).
 
 comment-length: allow
 """
@@ -154,7 +156,6 @@ def _resolve_cli_cmd(
                 f"unknown subcommand {subcmd!r} under {group.name} (available: {cmds_avail})",
             )
     return True, None
-    return True, None
 
 
 def check_cmds(
@@ -173,7 +174,7 @@ def check_cmds(
                 errors.append(f"{row.file}: cmds `{ln}` uses literal `.../` ellipsis")
                 continue
 
-            marker_match = re.search(r"#\s*(?:no-resolve|retired):(.*)", ln)
+            marker_match = re.search(r"#\s*no-resolve:(.*)", ln)
             if marker_match:
                 reason = marker_match.group(1).strip()
                 if not reason:

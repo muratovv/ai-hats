@@ -1135,7 +1135,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats task list  # retired: expected to fail
+  ai-hats task list  # no-resolve: pins that this CLI was removed
   ```
 
 - **expect** — CLI exits with error code explaining legacy task CLI is replaced by rack command
@@ -1932,7 +1932,7 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats self clean  # retired: expected to fail
+  ai-hats self clean  # no-resolve: pins that this CLI was removed
   ```
 
 - **expect** — CLI exits with error code explaining self clean command is retired
