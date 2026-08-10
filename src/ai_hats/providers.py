@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import (
+    ArtifactCategory,
+    AutomateLaunch,
+    BuiltArtifacts,
+    RunMode,
+    SessionPolicy,
+    assemble_meta_prompt,
+)
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -399,9 +406,52 @@ class Provider(abc.ABC):
         """
         return cmd
 
+    def describe_automate_launch(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        artifacts: BuiltArtifacts,
+        *,
+        task: str,
+        ticket_id: str,
+        model: str,
+        env: dict[str, str],
+    ) -> AutomateLaunch:
+        """The sub-agent launch this surface performs — argv and prompt together.
+
+        One expression for ``SubAgentRunner`` and for ``--dry-run``: a report
+        assembled by a second function is a report about a different launch
+        (HATS-1552). Default covers every CLI surface; an SDK surface overrides.
+        """
+        del result, session_id, env
+        prompt = assemble_meta_prompt(
+            project_dir,
+            role_context=artifacts.full_content or "",
+            task=task,
+            ticket_id=ticket_id,
+        )
+        flags = self.model_flags(model) if model else []
+        cmd = self.get_cli_command() + artifacts.cli_args + flags
+        return AutomateLaunch(launch=self.get_run_command(cmd, prompt), prompt=prompt)
+
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        """Get environment variables needed for the provider."""
+        """Environment variables this provider needs. Pure — claims nothing.
+
+        A value that only exists once something is taken for real (a bound port,
+        a lease) belongs in :meth:`claim_launch_env`, or ``--dry-run`` performs
+        the side effect while reporting a value the launch will not use.
+        """
+
+    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Env values a launch must claim for real — ``{}`` for most surfaces.
+
+        Called only on the launch path. Keys must be a subset of
+        :meth:`get_env`'s, so a report names them either way (HATS-1554).
+        """
+        del session_dir, project_dir
+        return {}
 
     def build_session_prompt(
         self,

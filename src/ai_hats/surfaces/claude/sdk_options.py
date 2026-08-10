@@ -12,8 +12,8 @@ Reused by:
 - ``SubAgentRunner._run_attempt`` (one-shot SDK path)
 
 **Behaviour change** (documented in plan ``HATS-474``): the legacy
-sub-agent path built its prompt via ``_build_meta_prompt`` which omitted
-rule bodies. The new builder reuses
+sub-agent path built its prompt with a builder that omitted rule bodies. The
+new builder reuses
 :meth:`ClaudeProvider.build_system_prompt` so HITL (WrapRunner) and
 Automate (SubAgentRunner) paths get the same composition surface, and
 sub-agents now see safety rules they previously lacked.
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from ai_hats_core import CompositionResult
 
     from ai_hats.providers import Provider
+    from ai_hats.session_artifacts import BuiltArtifacts
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +184,60 @@ def build_options(
     return ClaudeAgentOptions(**kwargs)
 
 
+def automate_options(
+    composition_result: "CompositionResult",
+    *,
+    provider: "Provider",
+    project_dir: Path,
+    session_id: str,
+    artifacts: "BuiltArtifacts",
+    work_dir: Path | None,
+    model: str,
+    env: dict[str, str],
+) -> "ClaudeAgentOptions":
+    """The options a sub-agent is launched with — engine and report share this.
+
+    ``system_prompt`` and ``plugins`` are taken from the artifacts the builder
+    already produced, so nothing here materializes anything: a report that wrote
+    to disk would not be a dry-run (HATS-1552).
+    """
+    return build_options(
+        composition_result,
+        provider=provider,
+        project_dir=project_dir,
+        session_id=session_id,
+        work_dir=work_dir,
+        model=model or "",
+        settings=artifacts.sdk_options.get("settings"),
+        setting_sources=artifacts.sdk_options.get("setting_sources"),
+        extra_env=env,
+        system_prompt=artifacts.sdk_options.get("system_prompt"),
+        plugins=artifacts.sdk_options.get("plugins"),
+    )
+
+
+def describe_options(options: "ClaudeAgentOptions") -> list[str]:
+    """``k=v`` for every option ai-hats set, measured against the SDK's defaults.
+
+    ``env`` is rendered as key names — the report hides env values everywhere
+    else, and naming them here would be the same leak by another route. ``cwd``
+    is omitted: it is the worktree, which does not exist when the record is
+    written, and ``SessionReport.cwd`` carries that sentinel already.
+    """  # comment-length: allow — both omissions are deliberate and easy to "fix" wrongly
+    import dataclasses
+
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    stock = ClaudeAgentOptions()
+    described = []
+    for field in dataclasses.fields(options):
+        value = getattr(options, field.name)
+        if field.name == "cwd" or value == getattr(stock, field.name):
+            continue
+        described.append(f"{field.name}={sorted(value) if field.name == 'env' else value}")
+    return sorted(described)
+
+
 def build_first_user_message(
     *,
     ticket_context: str = "",
@@ -199,14 +254,13 @@ def build_first_user_message(
     callers decide whether to skip sending a first turn at all.
 
     ``LINKED_CONTEXT`` (HATS-689) carries the cards of the ticket's directly-
-    linked tasks (parent epic + plan.md, plus depends_on/related/see_also
-    cards), assembled by ``SubAgentRunner._load_linked_context``. This is the
-    live Claude channel for that section; the Agy path mirrors it in
-    ``SubAgentRunner._build_meta_prompt``.
+    linked tasks, assembled by ``linked_context.load_linked_context``. This is
+    the live Claude channel for that section; the CLI surfaces mirror it in
+    ``session_artifacts.assemble_meta_prompt``.
 
-    Used by ``SubAgentRunner._run_attempt``. Defined here so the structure is
-    auditable from the foundation phase and integration tests can pin
-    section ordering before the migration commit lands.
+    Callers reach this through :func:`assemble_first_user_message`, which is
+    what loads the sections — going direct is how the engine ended up sending
+    a one-line stand-in for the card (HATS-1552).
     """
     sections: list[str] = []
     if project_state:
@@ -218,3 +272,43 @@ def build_first_user_message(
     if task:
         sections.append(f"# TASK\n{task}")
     return "\n\n".join(sections)
+
+
+def assemble_first_user_message(project_dir: Path, *, task: str, ticket_id: str) -> str:
+    """The SDK's first user turn — one expression for the engine and the audit.
+
+    HATS-1552: the engine sent ``Ticket: <id>`` while the saved audit rendered
+    the whole card plus ``LINKED_CONTEXT``, so ``meta_prompt.txt`` named a
+    message the SDK had never received.
+    """
+    from ai_hats.linked_context import ticket_sections
+    from ai_hats.paths import tasks_dir
+
+    ticket_context, linked_context = ticket_sections(
+        tasks_root=tasks_dir(project_dir), ticket_id=ticket_id
+    )
+    return build_first_user_message(
+        ticket_context=ticket_context,
+        linked_context=linked_context,
+        task=task,
+    )
+
+
+def render_sdk_prompt_audit(
+    artifacts: "BuiltArtifacts",
+    project_dir: Path,
+    *,
+    task: str,
+    ticket_id: str,
+) -> str:
+    """Human-readable record of the two things the SDK is actually handed."""
+    sys_opt = artifacts.sdk_options.get("system_prompt")
+    system_text = sys_opt.get("append", "") if isinstance(sys_opt, dict) else (sys_opt or "")
+    initial_message = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
+    return (
+        "==== SDK system_prompt (preset=claude_code, append) ====\n"
+        f"{system_text}\n"
+        "\n"
+        "==== SDK first user message ====\n"
+        f"{initial_message}\n"
+    )

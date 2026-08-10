@@ -2,9 +2,17 @@
   "checks": [],
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
-  "env_keys": [],
+  "env_keys": [
+    "AI_HATS_DIR",
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_ROLE",
+    "AI_HATS_ROOT_PID",
+    "AI_HATS_SESSION_ID",
+    "TRACE_LOG_PATH"
+  ],
   "escapes": [],
   "launch": [
+    "env=['AI_HATS_DIR', 'AI_HATS_PROJECT_DIR', 'AI_HATS_ROLE', 'AI_HATS_ROOT_PID', 'AI_HATS_SESSION_ID', 'TRACE_LOG_PATH']",
     "plugins=[{'type': 'local', 'path': '<cache>/sessions/dry-run/plugin'}]",
     "setting_sources=[]",
     "settings=<cache>/sessions/dry-run/settings.json",

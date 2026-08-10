@@ -1309,10 +1309,27 @@ def _subagent_payload(result):
     )
 
 
+def _sdk_audit(provider, project, result, *, task: str) -> str:
+    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt``.
+
+    Built through ``build_session_artifacts`` in plan mode rather than a
+    test-only prompt builder — the point is to assert what ships (HATS-1552).
+    """
+    from ai_hats.materialization import PlanMaterializer
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.sdk_options import render_sdk_prompt_audit
+
+    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    provider.build_session_artifacts(
+        project, result, "audit-probe", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+    )
+    return render_sdk_prompt_audit(artifacts, project, task=task, ticket_id="")
+
+
 def test_subagent_meta_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """HATS-380 residual gap: SubAgentRunner._build_meta_prompt must expand
+    """HATS-380 residual gap: the sub-agent meta-prompt must expand
     `<ai_hats_dir>` in result.merged_injection. Roles like session-reviewer
     (auto-spawned by reflect-session) carry the literal in their injection."""
     from ai_hats.providers import get_provider
@@ -1323,13 +1340,7 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    meta_prompt = get_provider("claude").build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="",
-    )
+    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="")
 
     assert "<ai_hats_dir>" not in meta_prompt
     # Spot-check both trait + role injection landed expanded.
@@ -1357,13 +1368,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    meta_prompt = get_provider("claude").build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="do the real thing",
-    )
+    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="do the real thing")
 
     assert "# TASK" in meta_prompt  # the real task still lands
     assert "# PROJECT_STATE" not in meta_prompt
@@ -1394,13 +1399,7 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    audit = runner.payload.provider.build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="do the real thing",
-    )
+    audit = _sdk_audit(runner.payload.provider, project, result, task="do the real thing")
 
     assert "# TASK" in audit  # the real task still lands
     assert "# PROJECT_STATE" not in audit

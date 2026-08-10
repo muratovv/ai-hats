@@ -5,7 +5,11 @@ write that goes around it happens for real during a dry-run and shows up here.
 Run per (surface × run_mode). The AUTOMATE pairs used to be where HATS-1207's
 bypasses lived and were asserted to REPORT an escape; since HATS-1207 routed
 both run-paths through the builder they are asserted to be clean instead.
-"""
+
+Files only — read as "a dry-run does nothing" this file overstates itself, which
+is how a socket bind hid inside ``ClineProvider.get_env``. The non-file half is
+``tests/test_dry_run_claims_nothing.py`` (HATS-1554).
+"""  # comment-length: allow — what the guarantee does NOT cover is the point
 
 from __future__ import annotations
 

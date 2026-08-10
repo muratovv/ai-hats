@@ -15,8 +15,13 @@ if TYPE_CHECKING:
 from ai_hats_core import CompositionResult
 from ai_hats_observe.parsers.claude import ClaudeParser
 from ai_hats.providers import Provider, ProviderRunResult, SubagentEngine
-from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from .sdk_options import build_first_user_message, build_options
+from ai_hats.session_artifacts import AutomateLaunch, BuiltArtifacts, RunMode
+from .sdk_options import (
+    assemble_first_user_message,
+    automate_options,
+    describe_options,
+    render_sdk_prompt_audit,
+)
 from . import sdk_runner
 
 from ai_hats.hook_collection import collect_runtime_hooks, resolve_skill_script
@@ -283,6 +288,40 @@ class ClaudeProvider(Provider):
         )
         return (artifacts.cli_args, artifacts.extra_env, artifacts.full_content or "")
 
+    def describe_automate_launch(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        artifacts: BuiltArtifacts,
+        *,
+        task: str,
+        ticket_id: str,
+        model: str,
+        env: dict[str, str],
+    ) -> AutomateLaunch:
+        """No argv here — the launch IS the option set handed to the SDK.
+
+        Built by the same call the engine makes, so the record cannot name a
+        smaller set than the sub-agent receives. ``work_dir`` is the one input
+        a report cannot have (HATS-1552).
+        """
+        return AutomateLaunch(
+            launch=describe_options(
+                automate_options(
+                    result,
+                    provider=self,
+                    project_dir=project_dir,
+                    session_id=session_id,
+                    artifacts=artifacts,
+                    work_dir=None,
+                    model=model,
+                    env=env,
+                )
+            ),
+            prompt=render_sdk_prompt_audit(artifacts, project_dir, task=task, ticket_id=ticket_id),
+        )
+
     def supports_sdk_engine(self) -> bool:
         """Indicates this provider uses the Python SDK path."""
         return True
@@ -501,31 +540,6 @@ class ClaudeProvider(Provider):
         """Bool back-compat wrapper over :meth:`_sweep_stale_managed_tags`."""
         return bool(ClaudeProvider._sweep_stale_managed_tags(hooks_root, desired_tags))
 
-    def build_meta_prompt(
-        self,
-        result: "CompositionResult",
-        project_dir: "Path",
-        ticket_context: str,
-        linked_context: str,
-        task: str,
-    ) -> str:
-        from .sdk_options import _build_system_prompt, build_first_user_message
-
-        sp = _build_system_prompt(result, project_dir, self)
-        system_text = sp.get("append", "")
-        initial_message = build_first_user_message(
-            ticket_context=ticket_context,
-            linked_context=linked_context,
-            task=task,
-        )
-        return (
-            "==== SDK system_prompt (preset=claude_code, append) ====\n"
-            f"{system_text}\n"
-            "\n"
-            "==== SDK first user message ====\n"
-            f"{initial_message}\n"
-        )
-
     def leaked_user_global_project_hooks(self, home: "Path") -> list[str]:
         """ai-hats project-hook commands leaked into ``<home>/.claude/settings.json``.
 
@@ -604,25 +618,17 @@ class ClaudeSubagentEngine(SubagentEngine):
                 run_mode="automate",
                 artifacts=BuiltArtifacts(),
             )
-        sys_prompt = artifacts.sdk_options.get("system_prompt")
-        plugins = artifacts.sdk_options.get("plugins")
-        opts = build_options(
-            composition_result=result,
+        opts = automate_options(
+            result,
             provider=self._provider,
             project_dir=project_dir,
             session_id=session_id,
+            artifacts=artifacts,
             work_dir=work_dir,
             model=model or "",
-            settings=artifacts.sdk_options.get("settings"),
-            setting_sources=artifacts.sdk_options.get("setting_sources"),
-            extra_env=env,
-            system_prompt=sys_prompt,
-            plugins=plugins,
+            env=env,
         )
-        msg = build_first_user_message(
-            task=task,
-            ticket_context=f"Ticket: {ticket_id}" if ticket_id else "",
-        )
+        msg = assemble_first_user_message(project_dir, task=task, ticket_id=ticket_id)
         run_res = sdk_runner.run_claude_sdk_blocking(opts, msg, timeout_s=timeout_s)
 
         return ProviderRunResult(

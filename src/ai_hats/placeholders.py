@@ -13,7 +13,7 @@ prompt or path reaches the agent / filesystem):
   :meth:`ai_hats.providers.ClaudeProvider.build_session_prompt` (the
   per-session composed prompt) plus the plugin-dir materialization in
   :mod:`ai_hats.plugin_dir` (HATS-380 parity for SKILL.md content).
-- :meth:`ai_hats.runtime.SubAgentRunner._build_meta_prompt`.
+- :func:`ai_hats.session_artifacts.assemble_meta_prompt`.
 - The pipeline ``save_artifact`` step
   (:class:`ai_hats.pipeline.steps.save.SaveArtifact`, HATS-395) —
   the path template is expanded before ``.format(...)`` is applied

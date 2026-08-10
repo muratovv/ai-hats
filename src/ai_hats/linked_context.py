@@ -31,6 +31,20 @@ def load_ticket(*, tasks_root: Path, ticket_id: str) -> str:
     return ""
 
 
+def ticket_sections(*, tasks_root: Path, ticket_id: str) -> tuple[str, str]:
+    """``(ticket_context, linked_context)`` for a ticket — ``("", "")`` when absent.
+
+    The pair travels together into every prompt that carries either, so one call
+    site keeps a caller from taking the card and forgetting its links (HATS-1552).
+    """
+    if not ticket_id:
+        return "", ""
+    return (
+        load_ticket(tasks_root=tasks_root, ticket_id=ticket_id),
+        load_linked_context(tasks_root=tasks_root, ticket_id=ticket_id),
+    )
+
+
 def load_linked_context(*, tasks_root: Path, ticket_id: str) -> str:
     """Assemble the linked-context body for a ticket's direct links.
 

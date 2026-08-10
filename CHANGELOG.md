@@ -22,6 +22,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **`--dry-run` and the launch record describe the sub-agent launch that actually happens** (HATS-1552). `ai-hats agent --dry-run` built the meta-prompt with its own function, so the reported argv for cline and agy dropped `WORKING_DIRECTORY` and both ticket sections — and for a CLI surface the whole prompt is one argv token. `role_materialization.json` reported `env_keys: []` while the sub-agent received six variables (`AI_HATS_SESSION_ID` among them), reported `artifacts.extra_env`, which the child never received, and reported `checks: []` for every sub-agent ever launched, leaving `session-reviewer` blind to whether its gates were armed. The runner also re-derived its command at spawn time and matched its own record by coincidence, and the claude engine sent the SDK a one-line `Ticket: <id>` while the saved audit rendered the whole card. Prompt, argv, env and SDK options now each come from one expression shared by the runner and the report.
+
+- **`--dry-run` under cline no longer binds a socket** (HATS-1554). `ClineProvider.get_env` allocated the hub port by binding `127.0.0.1:0`, and it sits on the report path, so a dry-run performed a network side effect invisible to the materialization port and then named a port the launch would never use. `get_env` is pure; the bind moved to the new launch-only `Provider.claim_launch_env` hook (empty by default, so other surfaces are unaffected).
+
 - **Multi-root, hyphenated, and structural dangling rule pointer detection** (HATS-1514). Fix four gaps in `find_dangling_rule_pointers`: support hyphenated rule names in prose regex, scan all library roots (`build_library_paths()`), validate `composition.rules` in `config.yaml`, and recognize HATS-1511 `delivery: always_on` opt-ins.
 
 - **Silent drop of composed rules and empty rule bodies** (HATS-1511). Log explicit warnings when a rule in composition is not delivered to the prompt or when an always-on/opt-in rule has an empty body, closing previously silent drop paths.

@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from ai_hats.paths import session_cache_dir
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 from ai_hats_cline import ClineProvider
@@ -103,19 +105,29 @@ def test_get_env_pins_cline_data_dir(tmp_path, monkeypatch) -> None:
     assert "CLINE_HOOKS_DIR" not in env
 
 
-def test_get_env_sets_cline_hub_port(tmp_path) -> None:
+def test_claim_launch_env_sets_cline_hub_port(tmp_path) -> None:
     # HATS-973: per-session CLINE_HUB_PORT moves each ai-hats cline session off
     # the default hub port (25463) so parallel sessions don't collide.
-    env = ClineProvider().get_env(tmp_path / "session", tmp_path)
+    env = ClineProvider().claim_launch_env(tmp_path / "session", tmp_path)
     port = int(env["CLINE_HUB_PORT"])
     assert 1024 < port < 65536
 
 
-def test_get_env_distinct_sessions_distinct_ports(tmp_path) -> None:
+def test_claim_launch_env_distinct_sessions_distinct_ports(tmp_path) -> None:
     # Two sessions must own different hub ports (ephemeral allocation).
-    env_a = ClineProvider().get_env(tmp_path / "sess-a", tmp_path)
-    env_b = ClineProvider().get_env(tmp_path / "sess-b", tmp_path)
+    env_a = ClineProvider().claim_launch_env(tmp_path / "sess-a", tmp_path)
+    env_b = ClineProvider().claim_launch_env(tmp_path / "sess-b", tmp_path)
     assert env_a["CLINE_HUB_PORT"] != env_b["CLINE_HUB_PORT"]
+
+
+def test_get_env_names_the_port_without_taking_one(tmp_path, monkeypatch) -> None:
+    """HATS-1554: get_env is on the report path too, where binding is a side effect."""
+    import socket
+
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: pytest.fail("get_env opened a socket"))
+    env = ClineProvider().get_env(tmp_path / "session", tmp_path)
+
+    assert env["CLINE_HUB_PORT"] == "<assigned at launch>"
 
 
 def test_update_system_prompt_is_noop(tmp_path) -> None:
