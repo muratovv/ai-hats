@@ -485,7 +485,10 @@ def test_a_planned_gate_is_reported_as_armed(tmp_path: Path):
     reported, notes = _described(project, result)
 
     (check,) = reported
-    assert check.runs_from == _MirrorSurface().session_skills_root(project, SID) / skill.name / "check.sh"
+    assert (
+        check.runs_from
+        == _MirrorSurface().session_skills_root(project, SID) / skill.name / "check.sh"
+    )
     assert check.planned is True
     assert notes == ()
 
