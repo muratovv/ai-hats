@@ -798,3 +798,26 @@ def test_a_stray_row_does_not_disarm_the_gate_on_a_real_edge(gate_project, rack_
     assert refused.returncode == 1, refused.stdout + refused.stderr
     assert _reason(refused) == MIRROR_WORDS
     assert _card(project, task_id).read_bytes() == before
+
+
+def test_a_bound_project_still_reads_even_when_the_gate_would_refuse(gate_project, rack_bin):
+    """R8: the binding set is consulted on the MUTATING path only.
+
+    A declaration that refuses every transition must still leave ``rack ls`` and
+    ``rack context`` working — validating on discovery would put the refusal on
+    every read instead, which is the shape that bricked a project in HATS-1538.
+    """
+    project, env = gate_project("refusing")
+    task_id = _create(rack_bin, project, env)
+    _seed_mirror(project, env, script="refuse.sh", body=f'printf "{MIRROR_WORDS}\\n"\nexit 2\n')
+
+    listed = _rack(rack_bin, "ls", cwd=project, env=env)
+    assert listed.returncode == 0, listed.stderr
+    assert task_id in listed.stdout
+
+    context = _rack(rack_bin, "context", task_id, cwd=project, env=env)
+    assert context.returncode == 0, context.stderr
+    assert task_id in context.stdout
+
+    # Positive control: the gate IS armed — the read went through anyway.
+    assert _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env).returncode == 1
