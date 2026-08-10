@@ -1,9 +1,10 @@
-"""E2E (PTY): `ai-hats self init` launches interactive wizard even on initialized projects and runs offline.
+"""e2e (HATS-1215)
 
-HATS-1215:
-1. Verifies that running `ai-hats self init` under a real PTY on an ALREADY INITIALIZED project
-   still triggers the interactive wizard prompt.
-2. Verifies that `self init` does NOT attempt any network `self update` call.
+flow:   a user runs interactive ai-hats self init in a terminal on an already initialized project
+cmds:
+    ai-hats self init
+expect: the interactive wizard menu launches as expected and completes purely offline without attempting network update checks
+why:    re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 """
 
 from __future__ import annotations

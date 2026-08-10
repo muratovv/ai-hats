@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**9 of 224 files catalogued — 10 flows.**
+**22 of 224 files catalogued — 23 flows.**
 
 ## `test_agy_bypass.py`
 
@@ -50,6 +50,108 @@ as a claim to check, not as evidence.
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
 
+## `test_config_fail_loud_on_newer_schema.py`
+
+*pins HATS-792*
+
+- **flow** — a user whose ai-hats.yaml specifies a schema_version newer than the installed binary runs any ai-hats command
+- **cmds**
+
+  ```console
+  ai-hats config status
+  ```
+
+- **expect** — the command fails with a nonzero exit code, displays a schema error and remediation update pointer, and leaves the configuration file un-rewritten on disk
+- **why** — silently parsing a future schema as a legacy version could misread fields or corrupt future config options on save
+
+## `test_config_preserve_unknown_roundtrip.py`
+
+*pins HATS-792, HATS-581*
+
+- **flow** — a user with an unknown top-level field in ai-hats.yaml runs a config mutation command
+- **cmds**
+
+  ```console
+  ai-hats config set --task-prefix ACME
+  ```
+
+- **expect** — the command updates task_prefix, emits a warning for the unknown field on stderr, and preserves the unknown top-level field intact in ai-hats.yaml
+- **why** — dropping unknown top-level config fields on save would silently lose options added by newer or alternative tool versions
+
+## `test_config_set_channel.py`
+
+*pins HATS-764*
+
+- **flow** — a user configures the harness release channel and path options via config set
+- **cmds**
+
+  ```console
+  ai-hats config set --channel edge
+  ai-hats config set --channel local --path .
+  ai-hats config status
+  ```
+
+- **expect** — config set persists the harness settings to ai-hats.yaml, config status displays the active Channel line, stable channel omits the harness block, and invalid flag combinations are rejected with a nonzero exit
+- **why** — invalid channel configuration or failure to persist channel settings breaks harness version resolution and status reporting
+
+## `test_config_status_git_env_isolation.py`
+
+*pins HATS-890*
+
+- **flow** — a maintainer inside a git working directory with ambient GIT_DIR environment variables runs ai-hats config status
+- **cmds**
+
+  ```console
+  # inside a project with GIT_DIR set to a decoy repo
+  ai-hats config status
+  ```
+
+- **expect** — config status resolves git repository state for the editable install without leaking or resolving the decoy repository branch from GIT_DIR
+- **why** — ambient GIT_DIR environment variables pollute subprocess git discovery and report false branch information in status diagnostics
+
+## `test_config_status_install_info.py`
+
+*pins HATS-497, HATS-582, HATS-707, HATS-1238*
+
+- **flow** — a user checks installation diagnostics using ai-hats config status in uninitialized and initialized projects
+- **cmds**
+
+  ```console
+  ai-hats config status
+  ```
+
+- **expect** — installation health fields (version, interpreter, venv, source, library, resolved path) are rendered in both role-less and initialized projects without dead hook branches
+- **why** — installation health diagnostics must be visible regardless of project initialization state so users can troubleshoot setup issues
+
+## `test_config_status_provenance_layers.py`
+
+*pins HATS-525*
+
+- **flow** — a user subscribes an active role to user-global traits or symlinked/custom library paths and views configuration status
+- **cmds**
+
+  ```console
+  ai-hats config customize assistant --add-trait hats525-global-trait --global
+  ai-hats config status
+  ```
+
+- **expect** — global traits and their bundled rules are accurately labeled with (global) provenance tags rather than (built-in)
+- **why** — mislabeling global or custom traits and rules as built-in misleads users about where prompt logic and rules originate
+
+## `test_config_status_stable_source.py`
+
+*pins HATS-779, HATS-497, HATS-678, HATS-771, HATS-790, HATS-898*
+
+- **flow** — a user with a stable release installed from PyPI inspects installation source diagnostics
+- **cmds**
+
+  ```console
+  ai-hats config status
+  ```
+
+- **expect** — the Source line in config status reports stable @ PyPI instead of an unknown direct_url.json fallback
+- **why** — release installs from PyPI omit direct_url.json, and failing to detect PyPI metadata produces misleading unknown source status
+
 ## `test_docs_index_guard.py`
 
 *pins HATS-444*
@@ -82,6 +184,35 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
 
+## `test_env_drift_startup_warn.py`
+
+*pins HATS-1013*
+
+- **flow** — a user launches an agent session when their development environment is outdated relative to project dependencies
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Say hi"
+  ```
+
+- **expect** — startup warning notice for stale dev environment packages is displayed pre-launch when drift is detected, and suppressed when environment is up-to-date
+- **why** — silent environment drift leads to subtle execution failures caused by outdated background tooling versions
+
+## `test_env_scrub.py`
+
+*pins HATS-685, HATS-876, HATS-887, HATS-1019, HATS-828, HATS-1129, HATS-1247*
+
+- **flow** — a developer or subprocess runner executes ai-hats commands with ambient environment variables
+- **cmds**
+
+  ```console
+  # with ambient PYTHONPATH or GIT_DIR set
+  python -m _helpers.env
+  ```
+
+- **expect** — environment scrubbing strips redirect variables like PYTHONPATH and GIT_* while preserving user settings and essential system PATH/HOME variables
+- **why** — leaked environment variables cause subprocesses to import workspace source instead of installed packages or leak repository state
+
 ## `test_golden_path.py`
 
 *pins HATS-483*
@@ -99,6 +230,62 @@ as a claim to check, not as evidence.
 
 - **expect** — `self init` reports the role and provider and writes default_role into ai-hats.yaml; `show-prompt` carries the composed role's markers; the batch run exits 0 and emits one JSON envelope with exit_code 0, a session_id and a session_dir, alongside audit.md and a trace.jsonl naming every pipeline step; the turn's cost stays under the $0.10 cap; and bare `ai-hats` surfaces its session-start and session-end banners in the parent's stdout through the PTY proxy
 - **why** — every layer the product sells sits on this one path — launcher install, yaml parsing, role and provider validation, composition, prompt materialisation, the pipeline harness and both runners. Three of bare `ai-hats`'s four steps are byte-identical to the batch pipeline's, so a composition or provider regression that breaks the product breaks here.
+
+## `test_init_leaves_venv_alone.py`
+
+*pins HATS-1215, HATS-1125, HATS-1250*
+
+- **flow** — a user runs ai-hats self init with flags on an already initialized project
+- **cmds**
+
+  ```console
+  ai-hats self init -r assistant -p claude --channel local --harness-path /path/to/repo
+  ```
+
+- **expect** — the project configuration is updated without reinstalling or mutating the existing project virtual environment
+- **why** — implicit network calls or package reinstallations during flag-only init violate offline and local execution guarantees
+
+## `test_init_provider_detected.py`
+
+*pins HATS-613, HATS-790*
+
+- **flow** — a user with multiple provider directories configured in home runs interactive self init
+- **cmds**
+
+  ```console
+  ai-hats self init --no-update --channel stable
+  ```
+
+- **expect** — the provider selection menu marks all detected provider configurations as detected without labeling any single provider as recommended
+- **why** — marking only one provider as recommended when multiple exist misleads users and causes unintended provider pre-selections
+
+## `test_init_survives_version_swap_mid_run.py`
+
+*pins HATS-1126, HATS-1115*
+
+- **flow** — a user runs interactive self init which triggers an in-place package update to a different code tree
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude
+  ```
+
+- **expect** — the initialization process completes cleanly via process re-execution without raising split-module import errors from old and new code mixes
+- **why** — updating the executing package mid-run leaves stale modules in sys.modules that break subsequent imports if not re-executed
+
+## `test_init_wizard_reinit.py`
+
+*pins HATS-1215*
+
+- **flow** — a user runs interactive ai-hats self init in a terminal on an already initialized project
+- **cmds**
+
+  ```console
+  ai-hats self init
+  ```
+
+- **expect** — the interactive wizard menu launches as expected and completes purely offline without attempting network update checks
+- **why** — re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 
 ## `test_prepush_e2e_master_gate.py`
 
@@ -180,7 +367,7 @@ as a claim to check, not as evidence.
 
 ## Not yet catalogued
 
-215 files carry no flow block yet:
+202 files carry no flow block yet:
 
 - `test_agent_orchestration.py`
 - `test_agy_detection.py`
@@ -209,20 +396,11 @@ as a claim to check, not as evidence.
 - `test_cline_provider_discovery.py`
 - `test_cline_session_recorded.py`
 - `test_comment_length_lint_hook.py`
-- `test_config_fail_loud_on_newer_schema.py`
-- `test_config_preserve_unknown_roundtrip.py`
-- `test_config_set_channel.py`
-- `test_config_status_git_env_isolation.py`
-- `test_config_status_install_info.py`
-- `test_config_status_provenance_layers.py`
-- `test_config_status_stable_source.py`
 - `test_customize_parallel_writes.py`
 - `test_dead_cwd_fail_loud.py`
 - `test_default_composition_flip.py`
 - `test_done_gate.py`
 - `test_edge_check_gate.py`
-- `test_env_drift_startup_warn.py`
-- `test_env_scrub.py`
 - `test_epic_auto_transition_e2e.py`
 - `test_execute_batch_requires_role.py`
 - `test_githooks_argv_contract.py`
@@ -232,10 +410,6 @@ as a claim to check, not as evidence.
 - `test_hook_chain_fail_open_recorded.py`
 - `test_hook_chain_permissions.py`
 - `test_hook_materialization_self_heals.py`
-- `test_init_leaves_venv_alone.py`
-- `test_init_provider_detected.py`
-- `test_init_survives_version_swap_mid_run.py`
-- `test_init_wizard_reinit.py`
 - `test_install.py`
 - `test_install_coherence_probe.py`
 - `test_install_heavy_sharding.py`

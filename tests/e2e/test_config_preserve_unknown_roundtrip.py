@@ -1,19 +1,10 @@
-"""E2E (HATS-792): a same-version unknown TOP-LEVEL field in ai-hats.yaml
-survives a real CLI load→save (round-trip), and the HATS-581 WARN still fires.
+"""e2e (HATS-792, HATS-581)
 
-POLICY (locked with reviewer): same-version unknown top-level fields are
-PRESERVED, not dropped. Before HATS-792, ``_strip_unknown_fields`` popped the
-key with a WARN but ``to_dict`` re-emitted only known fields, so any command
-that re-saved the config (here ``config set``) silently lost the field.
-
-Per ``dev_rule_e2e_gate`` this is a real-binary test: real ``ai-hats`` process
-(the dev-venv binary via the ``tmp_project`` fixture, worktree-portable),
-marked ``integration``.
-
-Fail-under-revert: drop the ``_extra`` capture in ``from_yaml`` (or the merge in
-``to_dict``) and the ``future_field`` assertion after ``config set`` fails — the
-field is gone from the rewritten yaml. Drop the WARN and the stderr assertion
-fails.
+flow:   a user with an unknown top-level field in ai-hats.yaml runs a config mutation command
+cmds:
+    ai-hats config set --task-prefix ACME
+expect: the command updates task_prefix, emits a warning for the unknown field on stderr, and preserves the unknown top-level field intact in ai-hats.yaml
+why:    dropping unknown top-level config fields on save would silently lose options added by newer or alternative tool versions
 """
 
 from __future__ import annotations

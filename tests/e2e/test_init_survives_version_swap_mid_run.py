@@ -1,31 +1,10 @@
-"""E2E: ``self init`` survives updating itself to a different tree (HATS-1126).
+"""e2e (HATS-1126, HATS-1115)
 
-Value under test: init's embedded update reinstalls the very package the running
-interpreter executes from. Continuing in-process leaves modules already in
-``sys.modules`` on the OLD tree while anything imported later is read from the
-NEW one — a split module set. HATS-1115 hit it as
-``ImportError: cannot import name 'PROVIDER_GEMINI' from 'ai_hats.constants'``,
-raised from ``_assembler()``, naming neither the update nor the version change.
-
-Setup (real launcher + real uv install, per ``dev_rule_e2e_gate`` — no stubs):
-
-  - Own function-scoped launcher venv (NOT the session-shared one: this test
-    reinstalls ai-hats inside it), built from the repo as it stands = tree Y.
-  - Tree X: a copy of the repo where ``constants.py`` gains a probe symbol and
-    ``assembler.py`` imports it at module level. Both trees are internally
-    consistent; only the pair is incompatible — exactly the incident's shape,
-    where the resident module lacks what the later-imported sibling needs.
-  - ``AI_HATS_REPO_URL`` points at X, so init's embedded update swaps Y for X
-    mid-run. A PTY on stdin keeps init on the wizard path that runs the update
-    (same technique as test_init_verifies_install_before_success.py).
-  - A stub ``ai-hats`` earlier on PATH so the wizard hand-off at the end of init
-    exits instead of launching a provider session.
-
-Assertion: init finishes without the split-module ImportError.
-
-Fail-under-revert: drop the ``os.execv`` in ``cli/assembly.py`` and the run
-raises ``cannot import name 'PROBE_SYMBOL' from 'ai_hats.constants'`` — the
-HATS-1115 signature.
+flow:   a user runs interactive self init which triggers an in-place package update to a different code tree
+cmds:
+    ai-hats self init -p claude
+expect: the initialization process completes cleanly via process re-execution without raising split-module import errors from old and new code mixes
+why:    updating the executing package mid-run leaves stale modules in sys.modules that break subsequent imports if not re-executed
 """
 
 from __future__ import annotations

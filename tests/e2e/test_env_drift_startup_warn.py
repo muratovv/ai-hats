@@ -1,11 +1,10 @@
-"""HATS-1013 — e2e: session start surfaces the env-drift warning pre-spawn.
+"""e2e (HATS-1013)
 
-Model: ``test_settings_lint_startup_warn.py`` (real composition + materializers;
-only the PTY spawn is stubbed). The detector itself is unit-covered in
-``tests/test_env_drift.py``; here it is pinned to a sentinel so the run is
-deterministic regardless of the developer's real venv state — the guarantee is
-the WIRING: ``WrapRunner.run()`` calls the producer and renders its warning
-through the startup-notice channel.
+flow:   a user launches an agent session when their development environment is outdated relative to project dependencies
+cmds:
+    ai-hats agent assistant --task "Say hi"
+expect: startup warning notice for stale dev environment packages is displayed pre-launch when drift is detected, and suppressed when environment is up-to-date
+why:    silent environment drift leads to subtle execution failures caused by outdated background tooling versions
 """
 
 from __future__ import annotations

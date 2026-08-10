@@ -1,30 +1,10 @@
-"""E2E: ``ai-hats config status`` prints install diagnostics (HATS-497).
+"""e2e (HATS-497, HATS-582, HATS-707, HATS-1238)
 
-Verifies the new Health-section install fields appear in real launcher
-output. The fields are gathered by ``_gather_install_info`` in
-``src/ai_hats/cli/maintenance.py`` and rendered from
-``src/ai_hats/cli/assembly.py:status()``.
-
-Two sub-cases amortize the heavy bootstrap setup:
-
-  1. **Role-less project.** Fresh project dir with no ``ai-hats.yaml``.
-     ``config status`` prints ``No role active`` AND the install Health
-     fields (HATS-497 refactor — install info no longer gated on the
-     early role-check return).
-  2. **Role-initialized project.** After ``ai-hats self init -p claude
-     -r assistant``, ``config status`` prints role + composition tree
-     + install Health fields + the project-side check
-     (system_prompt with an OK/Missing icon).
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fail-under-revert: with the install-info block removed from
-``assembly.py:status()``, the ``Version:`` substring is absent from
-both sub-case outputs and the assertion fails. With the role-check
-return restored, sub-case 1 misses install fields too. HATS-707: with
-the dead lifecycle ``hooks:`` channel restored, sub-case 2's tree
-renders a ``task_complete`` branch again and the no-hooks assertion fails.
+flow:   a user checks installation diagnostics using ai-hats config status in uninitialized and initialized projects
+cmds:
+    ai-hats config status
+expect: installation health fields (version, interpreter, venv, source, library, resolved path) are rendered in both role-less and initialized projects without dead hook branches
+why:    installation health diagnostics must be visible regardless of project initialization state so users can troubleshoot setup issues
 """
 
 from __future__ import annotations

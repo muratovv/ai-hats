@@ -1,24 +1,10 @@
-"""E2E (HATS-1215): flag-only `self init` configures the project and leaves the venv alone.
+"""e2e (HATS-1215, HATS-1125, HATS-1250)
 
-This file used to assert the opposite — that `self init` reconciled the venv to an
-editable channel:local install (HATS-1125). Commit `5c15951a` deliberately removed
-that implicit `_run_self_update()` from `init`, per HATS-1215's requirement that
-`self init` be "pure local & offline… without network side-effects or package
-upgrades". The assertion outlived its subject and went red on the e2e gate
-(HATS-1250); this is its replacement, pinning the contract that is now true.
-
-Sibling coverage: `test_init_wizard_reinit.py` pins the same no-implicit-update
-contract on the PTY/wizard path. `5c15951a` removed **two** call sites; this file
-covers the other one, the non-wizard flag-only path.
-
-The assertion is deliberately *not* "the install is non-editable" — that would pin an
-incidental artefact of how the launcher happened to install ai-hats, and would break on
-an unrelated packaging change. What matters is that a second `init` does not mutate the
-venv, which stays true however the venv was provisioned.
-
-Per `dev_rule_e2e_gate`: real subprocess + real uv + real launcher.
-
-Deliberate long contract module docstring — noqa: comment-length.
+flow:   a user runs ai-hats self init with flags on an already initialized project
+cmds:
+    ai-hats self init -r assistant -p claude --channel local --harness-path /path/to/repo
+expect: the project configuration is updated without reinstalling or mutating the existing project virtual environment
+why:    implicit network calls or package reinstallations during flag-only init violate offline and local execution guarantees
 """
 
 from __future__ import annotations

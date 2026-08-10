@@ -1,24 +1,10 @@
-"""E2E: ``ai-hats config status`` Source line for a stable / released-wheel install (HATS-779).
+"""e2e (HATS-779, HATS-497, HATS-678, HATS-771, HATS-790, HATS-898)
 
-A stable-channel install is ``uv pip install ai-hats==<tag>`` BY NAME from an
-index. pip/uv write NO PEP 610 ``direct_url.json`` for index-by-name installs, so
-``_format_install_source`` (``src/ai_hats/cli/maintenance.py``) must report
-``stable @ PyPI`` from the dist metadata rather than the pre-779
-``(unknown — direct_url.json missing)`` fallback.
-
-This is the ``dev_rule_e2e_gate`` artifact for the ``cli/maintenance.py`` change:
-a REAL wheel build + REAL by-name ``uv pip install`` + REAL ``ai-hats config
-status``, asserting the Source line. The by-name ``--find-links`` install
-reproduces the no-``direct_url.json`` PyPI case hermetically — no live PyPI needed
-(the install is pinned to the locally-built dev version so the local wheel always
-wins over any future published release, and the SANITY check below confirms the
-absence of ``direct_url.json``).
-
-Per ``dev_rule_e2e_gate``: real ``uv build`` + real ``uv pip install`` + real
-``ai-hats`` binary, marked ``integration`` + ``install_heavy``.
-
-Fail-under-revert: pre-779 the ``data is None`` branch returns
-``(unknown — direct_url.json missing)``, so the ``stable @ PyPI`` assertion fails.
+flow:   a user with a stable release installed from PyPI inspects installation source diagnostics
+cmds:
+    ai-hats config status
+expect: the Source line in config status reports stable @ PyPI instead of an unknown direct_url.json fallback
+why:    release installs from PyPI omit direct_url.json, and failing to detect PyPI metadata produces misleading unknown source status
 """
 
 from __future__ import annotations

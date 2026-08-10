@@ -1,17 +1,11 @@
-"""Unit guard for the e2e subprocess env-scrub (HATS-685).
+"""e2e (HATS-685, HATS-876, HATS-887, HATS-1019, HATS-828, HATS-1129, HATS-1247)
 
-Pure-function test (no pip, no subprocess) — fast, runs in the normal suite.
-Guards the denylist that keeps redirect vars (chiefly ``PYTHONPATH``) from
-leaking into real-install e2e subprocesses. Fail-under-revert: with
-``clean_env`` / ``ENV_DENYLIST`` removed, the import + assertions fail.
-
-Why it matters: an inherited ``PYTHONPATH`` (the worktree workaround, and what
-``ai-hats wt exec`` sets) redirects a launcher subprocess's imports to the source
-tree instead of the real install. Post-HATS-876 the library is the separate
-``ai_hats_library`` package (also on that ``PYTHONPATH``), so a leak runs
-source-against-source; pre-HATS-876 it failed loud (``files("ai_hats.library")``
-→ ``ModuleNotFoundError`` → built-in roles vanish). The scrub removes that class
-of leak.
+flow:   a developer or subprocess runner executes ai-hats commands with ambient environment variables
+cmds:
+    # with ambient PYTHONPATH or GIT_DIR set
+    python -m _helpers.env
+expect: environment scrubbing strips redirect variables like PYTHONPATH and GIT_* while preserving user settings and essential system PATH/HOME variables
+why:    leaked environment variables cause subprocesses to import workspace source instead of installed packages or leak repository state
 """
 
 from __future__ import annotations
