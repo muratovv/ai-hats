@@ -99,3 +99,50 @@ def test_materialized_entries_carry_sha256_digests(tmp_path: Path):
     assert len(mat) == 1
     expected_digest = hashlib.sha256(b"hello world").hexdigest()
     assert mat[0]["digest"] == expected_digest
+
+
+def test_full_render_dumps_the_body_a_plan_mode_build_never_wrote(tmp_path: Path):
+    """HATS-1548: ``--dry-run-full`` promised the composed prompt and printed
+    ``(not written)`` — it read the path off disk, and a dry-run writes nothing.
+
+    The bytes were in ``BuiltArtifacts.full_content`` the whole time. Body stays
+    out of ``to_dict``: it never was in the payload, and putting ~50 KB of prompt
+    into ``--json`` (and into the goldens) to fix a human affordance is a trade
+    nobody asked for.
+    """  # comment-length: allow — the render/json asymmetry is deliberate
+    port = PlanMaterializer()
+    port.write_text(tmp_path / "cache" / "prompt.md", "role text")
+    report = SessionReport(
+        role="maintainer",
+        provider="agy",
+        run_mode="hitl",
+        policy=SessionPolicy(),
+        launch=["agy"],
+        env={},
+        prompt=tmp_path / "cache" / "prompt.md",
+        plan=port.plan,
+        prompt_text="# ROLE: MAINTAINER\nbody bytes",
+    )
+
+    assert not (tmp_path / "cache" / "prompt.md").exists(), "a dry-run writes nothing"
+    assert "# ROLE: MAINTAINER\nbody bytes" in report.render(full=True)
+    assert "(not written)" not in report.render(full=True)
+    assert "prompt_text" not in report.to_dict()
+
+
+def test_full_render_still_falls_back_to_the_file_on_a_real_record(tmp_path: Path):
+    """A launch record read back from disk carries no body — the file does."""
+    written = tmp_path / "prompt.md"
+    written.write_text("bytes on disk")
+    report = SessionReport(
+        role="maintainer",
+        provider="agy",
+        run_mode="hitl",
+        policy=SessionPolicy(),
+        launch=["agy"],
+        env={},
+        prompt=written,
+        plan=PlanMaterializer().plan,
+    )
+
+    assert "bytes on disk" in report.render(full=True)

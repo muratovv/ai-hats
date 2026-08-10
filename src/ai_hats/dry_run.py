@@ -98,6 +98,7 @@ def dry_run_hitl(
         escapes=_detect_escapes(cache_dir, before),
         checks=checks,
         notes=check_notes,
+        prompt_text=artifacts.full_content,
     )
 
 

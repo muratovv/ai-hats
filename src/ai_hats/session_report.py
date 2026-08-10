@@ -37,6 +37,9 @@ class SessionReport:
     prompt: Path | None
     plan: MaterializationPlan
     cwd: str = ""
+    # Render-only, and deliberately outside to_dict(): the body was never in the
+    # payload, and a plan-mode build has no file for --dry-run-full to read.
+    prompt_text: str | None = None
     # Paths that appeared on disk during a plan-mode build: a write that went
     # around the port. Empty is the invariant; non-empty names a live bypass.
     escapes: tuple[Path, ...] = ()
@@ -114,7 +117,11 @@ class SessionReport:
             lines += ["", f"prompt    {d['prompt']}"]
             if full:
                 body = Path(d["prompt"])
-                lines.append(body.read_text() if body.is_file() else "(not written)")
+                lines.append(
+                    self.prompt_text
+                    if self.prompt_text is not None
+                    else (body.read_text() if body.is_file() else "(not written)")
+                )
 
         lines += ["", "materialized"]
         if not d["materialized"]:
