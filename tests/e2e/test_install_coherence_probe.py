@@ -1,16 +1,14 @@
-"""E2E: Launcher probe_imports detects broken entry-point attributes (HATS-1118).
+"""e2e (HATS-1118)
 
-Value under test:
-If a first-party entry point (e.g. `gemini = ai_hats.providers:GeminiProvider`) points
-to an attribute that does not exist in `ai_hats.providers`, `probe_imports` in launcher
-must use `ep.load()`, detect the failure, write the error to stderr, and exit with code 1.
-`find_spec` on the top-level module previously passed this corrupt state as healthy.
-
-Fail-under-revert:
-If `probe_imports` in `scripts/ai-hats-launcher` is reverted to `find_spec` instead of
-`_ep.load()`, the `python -c` probe in `probe_imports` passes for `ai_hats`, and launcher
-execs into the main command instead of failing with exit code 1.
-"""
+flow:   a developer running launcher status when a first-party entry point attribute is
+        missing
+cmds:
+    ai-hats status
+expect: launcher probe detects missing entry point attribute and aborts execution with
+        exit
+        code 1
+why: without ep.load() entry-point probes, broken entry point attributes pass find_spec
+        checks and crash late during session dispatch"""
 
 from __future__ import annotations
 

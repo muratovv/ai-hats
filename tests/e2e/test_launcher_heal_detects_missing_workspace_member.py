@@ -1,16 +1,15 @@
-"""E2E: launcher heal detects an editable venv missing a workspace member (HATS-895).
+"""e2e (HATS-895)
 
-Incident replica: bare ``import ai_hats`` passes on a venv whose editable link
-moved ahead of its installed deps, so the old probe skipped the heal and even
-``self update`` crashed at import. Value under test: the deep probe makes
-``self update`` heal the mined venv, and the heal's ``uv pip install -e <root>``
-restores EVERY ``packages/*`` member editable (uv resolves ``[tool.uv.sources]``
-— the F2 contract, locked here, not re-implemented in the launcher).
-
-Fail-under-revert: with the bare probe the heal is skipped → the launcher execs
-the broken CLI → ``self update`` exits non-zero. Real subprocess + real uv +
-real launcher per ``dev_rule_e2e_gate``; incident details → task card HATS-895.
-"""
+flow: a developer running self update when an editable workspace member package has been
+        uninstalled from venv
+cmds:
+    ai-hats self update
+expect: launcher deep import probe detects missing workspace member and rebuilds all
+        members
+        editable
+why: without deep import probes, uninstalled workspace packages pass bare import checks
+     and
+        crash on sub-package imports"""
 # comment-length: allow — deliberate fail-under-revert contract docstring
 
 from __future__ import annotations

@@ -1,21 +1,15 @@
-"""E2E: user-owned hooks survive v4 migration into a dedicated namespace (HATS-549 Phase 4).
+"""e2e (HATS-549)
 
-Validates the partition + healer-disable behaviour:
-
-  - A user-authored hook script under ``.agent/hooks/`` (basename NOT
-    in the ai-hats-owned whitelist) ends up under
-    ``<ai_hats_dir>/user-hooks/<name>`` with content + mode preserved.
-  - The ``.claude/settings.json`` entry that referenced the legacy
-    path is REMOVED (not auto-rewritten). The Stage B inventory file
-    under ``<ai_hats_dir>/sessions/audits/`` contains a copy-paste
-    re-enable JSON snippet.
-  - ai-hats-owned ``.sh`` hooks land under
-    ``<ai_hats_dir>/library/hooks/`` and the framework's PreToolUse
-    entry resolves correctly (end-of-bump smoke-assert passes).
-
-Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess.
-Fail-under-revert against commit ``89e5eab`` (Phase 4).
-"""
+flow: a developer performing framework update on a project containing user-authored hook
+        scripts
+cmds:
+    ai-hats self update
+expect: user hooks relocate to user-hooks/ directory with file modes intact while
+        settings.json
+        refs are safely disabled
+why: without user hook isolation, framework updates overwrite or delete custom
+     user-authored git
+        and tool hooks"""
 
 from __future__ import annotations
 

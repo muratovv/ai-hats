@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**143 of 224 files catalogued — 150 flows.**
+**167 of 224 files catalogued — 170 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -800,6 +800,221 @@ as a claim to check, not as evidence.
 - **expect** — the interactive Provider menu prompt is displayed despite an existing ai-hats.yaml file, and no network check or self-update output appears
 - **why** — re-initialization must allow interactive reconfiguration while honoring offline execution guarantees
 
+## `test_install.py`
+
+*pins HATS-242, HATS-333*
+
+- **flow** — a developer running venv-first launcher installation, initialization, and self-update recovery
+- **cmds**
+
+  ```console
+  bash scripts/install-launcher.sh
+  ai-hats self update
+  ai-hats self init -r assistant -p claude
+  ai-hats config status
+  ```
+
+- **expect** — launcher installs binary, self-update builds managed venv, init creates project config, and broken python recovers via self update
+- **why** — without end-to-end launcher lifecycle verification, host python upgrades or stale venvs leave the tool unstartable without recovery instructions
+
+## `test_install_coherence_probe.py`
+
+*pins HATS-1118*
+
+- **flow** — a developer running launcher status when a first-party entry point attribute is missing
+- **cmds**
+
+  ```console
+  ai-hats status
+  ```
+
+- **expect** — launcher probe detects missing entry point attribute and aborts execution with exit code 1
+- **why** — without ep.load() entry-point probes, broken entry point attributes pass find_spec checks and crash late during session dispatch
+
+## `test_install_heavy_sharding.py`
+
+*pins HATS-676, HATS-678, HATS-771*
+
+- **flow** — a test suite running concurrent install-heavy e2e tests under pytest-xdist
+- **cmds**
+
+  ```console
+  pytest -n8 --dist=loadgroup tests/e2e
+  ```
+
+- **expect** — install-heavy test items are capped into fixed xdist groups to prevent network saturating race conditions
+- **why** — without xdist group throttling, uncapped concurrent uv pip installs saturate package indexes and cause flaky network resets
+
+## `test_install_launcher_piped.py`
+
+*pins HATS-766*
+
+- **flow** — a developer running piped installer script via stdin without a local git clone
+- **cmds**
+
+  ```console
+  curl -sSL
+  https://.../install-launcher.sh
+  | bash
+  ```
+
+- **expect** — installer fetches launcher over network and writes launcher script defaulting to git+https source
+- **why** — without piped stdin installer support, users without local repo clones cannot install the host launcher binary
+
+## `test_launcher_env_pair_isolation.py`
+
+*pins HATS-1123*
+
+- **flow** — a developer running self init in a new project directory while AI_HATS_DIR environment variable points to another project
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude
+  ```
+
+- **expect** — launcher unsets foreign AI_HATS_DIR when repinning AI_HATS_PROJECT_DIR to current directory
+- **why** — without unsetting foreign AI_HATS_DIR, commands in a new project overwrite configuration and hooks in the foreign project
+
+## `test_launcher_execs_python_m.py`
+
+*pins HATS-790*
+
+- **flow** — a developer running ai-hats CLI commands via launcher on a venv without bin/ai-hats console script
+- **cmds**
+
+  ```console
+  ai-hats status --verbose
+  ```
+
+- **expect** — launcher verifies python importability and dispatches command via python -m ai_hats
+- **why** — without python -m module dispatch, removing console script binaries breaks host launcher command execution
+
+## `test_launcher_heal_detects_missing_workspace_member.py`
+
+*pins HATS-895*
+
+- **flow** — a developer running self update when an editable workspace member package has been uninstalled from venv
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — launcher deep import probe detects missing workspace member and rebuilds all members editable
+- **why** — without deep import probes, uninstalled workspace packages pass bare import checks and crash on sub-package imports
+
+## `test_launcher_heal_local_editable.py`
+
+*pins HATS-766*
+
+- **flow** — a developer initializing a channel:local project when managed venv is missing
+- **cmds**
+
+  ```console
+  ai-hats self init -r assistant -p claude
+  ```
+
+- **expect** — launcher heal detects local channel and rebuilds managed venv as an editable install
+- **why** — without channel-aware launcher healing, local development venvs heal as non-editable snapshots that ignore working tree edits
+
+## `test_launcher_heals_markerless_skills_mirror.py`
+
+*pins HATS-907, HATS-931*
+
+- **flow** — an agent starting a session when project carries a stale marker-less skills mirror matching a composed skill
+- **cmds**
+
+  ```console
+  ai-hats execute -r mirror-role
+  ```
+
+- **expect** — session start removes stale skill mirror matching composed role skill while preserving unrelated user skills
+- **why** — without marker-less mirror healing, pre-marker skill mirrors persist and override active library skills
+
+## `test_launcher_ignores_foreign_venv_pin.py`
+
+*pins HATS-897, HATS-944*
+
+- **flow** — a developer running ai-hats from Project B when environment carries AI_HATS_VENV pinned to Project A
+- **cmds**
+
+  ```console
+  ai-hats --version
+  ```
+
+- **expect** — launcher detects mismatched project directory, ignores foreign venv pin with warning, and uses local project venv
+- **why** — without foreign venv isolation, sub-agents operating across projects execute tools inside the wrong project venv
+
+## `test_launcher_refuses_venv_missing_workspace_member.py`
+
+*pins HATS-895*
+
+- **flow** — a developer running regular CLI commands when any workspace member package is missing from venv
+- **cmds**
+
+  ```console
+  ai-hats --help
+  ```
+
+- **expect** — launcher import probe fails cleanly with exit code 1 naming missing package and self update repair hint
+- **why** — without comprehensive workspace member probes, missing optional workspace packages leak uncaught ModuleNotFoundErrors
+
+## `test_launcher_worktree_execution.py`
+
+*pins HATS-1306*
+
+- **flow** — a developer running ai-hats commands from inside a linked git worktree or subfolder of an onboarded project
+- **cmds**
+
+  ```console
+  ai-hats status
+  ```
+
+- **expect** — launcher resolves project root to main checkout and executes using main project managed venv
+- **why** — without worktree root resolution, running commands inside git worktrees fails to find managed project venvs
+
+## `test_migration_no_replay_without_config.py`
+
+*pins HATS-1123*
+
+- **flow** — an agent running internal bump commands from an uninitialized worktree directory
+- **cmds**
+
+  ```console
+  python -m ai_hats._bump_internal
+  ```
+
+- **expect** — bump process skips migration replay when project config is missing avoiding foreign hook evictions
+- **why** — without uninitialized workspace guards, running migrations from worktrees evicts main checkout user hooks
+
+## `test_migration_registry_gate.py`
+
+*pins HATS-471, HATS-582*
+
+- **flow** — a developer running internal bump commands across framework upgrades
+- **cmds**
+
+  ```console
+  python -m ai_hats._bump_internal
+  ```
+
+- **expect** — first bump replays pending migrations and persists migration_step, while second bump short-circuits
+- **why** — without migration step tracking, every framework update re-executes historic migration steps on existing projects
+
+## `test_migration_user_hooks_preserved.py`
+
+*pins HATS-549*
+
+- **flow** — a developer performing framework update on a project containing user-authored hook scripts
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — user hooks relocate to user-hooks/ directory with file modes intact while settings.json refs are safely disabled
+- **why** — without user hook isolation, framework updates overwrite or delete custom user-authored git and tool hooks
+
 ## `test_no_console_script_shadow.py`
 
 *pins HATS-790*
@@ -1149,6 +1364,34 @@ as a claim to check, not as evidence.
 - **expect** — pre-flight composes and serializes target role manifest and launches role-judge session
 - **why** — without composition materialization, role-judge auditor lacks structured role breakdown to audit
 
+## `test_retired_dist_prune_e2e.py`
+
+*pins HATS-1280*
+
+- **flow** — a developer running self update after a framework package dependency has been retired
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — self update creates versioned venv without retired package and prunes retired console scripts from legacy venv
+- **why** — without retired distribution pruning, deprecated package binaries persist in managed venvs and shadow updated commands
+
+## `test_retired_hooks_dir_never_recreated.py`
+
+*pins HATS-1480, HATS-1500*
+
+- **flow** — a developer running self init or switching roles on an updated project
+- **cmds**
+
+  ```console
+  ai-hats self init -r hypothesis-intake -p claude --no-update
+  ```
+
+- **expect** — deprecated library/hooks/ directory is never re-created during project initialization or role switches
+- **why** — without enforcing hook path retirement, role switches recreate deprecated flat hook directories
+
 ## `test_role_isolation.py`
 
 *pins HATS-294, HATS-1170, HATS-1203*
@@ -1330,6 +1573,20 @@ as a claim to check, not as evidence.
 
 - **expect** — output lists skills declared in entry_points.txt of installed packages alongside built-in framework skills
 - **why** — out-of-tree skill packages must be discoverable via importlib entry points without modifying core framework code
+
+## `test_stray_shadow_detector.py`
+
+*pins HATS-791*
+
+- **flow** — a developer running bootstrap repair script when stray ai-hats binaries exist on PATH
+- **cmds**
+
+  ```console
+  bash scripts/bootstrap.sh --repair
+  ```
+
+- **expect** — repair script detects stray ai-hats executables on PATH and emits remediation warnings without deleting files
+- **why** — without stray shadow detection, outdated global binaries on PATH shadow venv launchers causing unexplainable errors
 
 ## `test_subagent_sdk_smoke.py`
 
@@ -1588,6 +1845,48 @@ as a claim to check, not as evidence.
 - **expect** — CLI exits with code 2 listing available roles without printing raw Python traceback
 - **why** — without role error handling, typos in role parameters dump raw RuntimeError tracebacks to user
 
+## `test_update_banner_e2e.py`
+
+*pins HATS-401*
+
+- **flow** — an agent running execute pipeline when an updated framework version is available
+- **cmds**
+
+  ```console
+  ai-hats execute -r assistant
+  ```
+
+- **expect** — pipeline step renders update advisory banner on stderr detailing available commits and update command
+- **why** — without update banner notifications, users remain unaware of framework security fixes and core feature updates
+
+## `test_update_banner_non_editable_e2e.py`
+
+*pins HATS-432, HATS-441, HATS-458*
+
+- **flow** — an agent running background update check on a non-editable package installation
+- **cmds**
+
+  ```console
+  python -m ai_hats.update_check .
+  ```
+
+- **expect** — background checker uses probe-mirror fallback to fetch remote refs and calculates behind commit counts
+- **why** — without probe-mirror fallback, non-editable site-packages installs without git repos fail to detect available updates
+
+## `test_update_verifies_install_before_success.py`
+
+*pins HATS-1115, HATS-1116, HATS-1215, HATS-1239*
+
+- **flow** — a developer running self update when python installation source carries import errors
+- **cmds**
+
+  ```console
+  ai-hats self update
+  ```
+
+- **expect** — post-install verification fails, self update exits non-zero, and success message is never printed
+- **why** — without post-install verification, corrupted updates report success while leaving the tool in a broken state
+
 ## `test_user_rules_delivery.py`
 
 *pins HATS-1170, HATS-1203*
@@ -1601,6 +1900,20 @@ as a claim to check, not as evidence.
 
 - **expect** — output includes all markdown rules from user-rules/ formatted under the USER RULES section heading
 - **why** — user-defined rules in user-rules/ must be incorporated into system prompts across all composition interfaces
+
+## `test_venv_strict_mode.py`
+
+*pins HATS-645*
+
+- **flow** — a test runner executing e2e integration tests under strict venv requirements mode
+- **cmds**
+
+  ```console
+  pytest tests/e2e/test_runtime_hook_propagation.py
+  ```
+
+- **expect** — missing or unbuildable test venvs raise fatal failures under strict mode instead of skipping tests
+- **why** — without strict venv mode in CI gates, environment setup failures silently skip e2e test suites and pass false green
 
 ## `test_wait_task_state.py`
 
@@ -1630,50 +1943,49 @@ as a claim to check, not as evidence.
 - **expect** — the process polls the shell command until it exits 0, timing out with code 124 if unmet, or exiting code 2 if broken
 - **why** — command waiting allows processes to block until external conditions are met with distinction between timeouts and errors
 
+## `test_wave1_free_tier.py`
+
+*pins HATS-466*
+
+- **flow** — a developer running free-tier inspection commands in a role-less project
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  ai-hats list roles
+  ai-hats config show-prompt
+  ```
+
+- **expect** — free-tier CLI commands execute under 5s without launching provider sessions or burning API quota
+- **why** — without free-tier command validation, simple inspection subcommands require expensive provider initializations
+
+## `test_wave1_venv_tier.py`
+
+*pins HATS-478*
+
+- **flow** — a developer running self init repeatedly using launcher venv fixtures
+- **cmds**
+
+  ```console
+  ai-hats self init -r assistant -p claude --no-update
+  ```
+
+- **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
+- **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
 ## `test_worktree_lifecycle_robustness_matrix.py`
 
-*pins HATS-697, HATS-714, HATS-788, HATS-835*
+*pins HATS-1288*
 
-- **flow** — a developer finalizing an already-merged task whose worktree state file was removed
+- **flow** — a developer exercising worktree creation, status, and transition across FSM states
 - **cmds**
 
   ```console
-  rack transition TST-001 done
+  ai-hats wt create --task HATS-1288
   ```
 
-- **expect** — transition done short-circuits to done without false state lost errors and cleans up branch
-- **why** — already-merged branches with missing state metadata must finalize cleanly
-
-- **flow** — a developer forcing a task transition to execute with --force
-- **cmds**
-
-  ```console
-  rack transition TST-001 execute --force --reason "shipped on master"
-  ```
-
-- **expect** — task state moves to execute without spinning up a fresh git worktree
-- **why** — forced execute overrides worktree provisioning when work was shipped out-of-band
-
-- **flow** — a developer finalizing a task when worktree state metadata contains null original_branch
-- **cmds**
-
-  ```console
-  rack transition TST-001 done
-  ```
-
-- **expect** — transition done is refused with a typed error naming missing original_branch field
-- **why** — incomplete worktree state metadata must produce a clean typed error without traceback
-
-- **flow** — a developer finalizing a task from inside its own linked worktree directory
-- **cmds**
-
-  ```console
-  # from inside the linked worktree directory
-  rack transition TST-001 done
-  ```
-
-- **expect** — transition done is refused before teardown and worktree directory is preserved
-- **why** — transition done from inside a worktree must refuse to avoid removing caller cwd
+- **expect** — worktree isolates project state, transitions task states cleanly, and cleans up on completion
+- **why** — without robust worktree lifecycle checks, concurrent agent tasks corrupt main checkout state
 
 ## `test_wt_create_base_guard_e2e.py`
 
@@ -1692,17 +2004,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_create_concurrent.py`
 
-*pins HATS-479*
+*pins HATS-1200*
 
-- **flow** — two developer sessions concurrently creating a worktree for the same branch
+- **flow** — multiple agents creating worktrees concurrently for distinct tasks
 - **cmds**
 
   ```console
-  ai-hats wt create task/race
+  ai-hats wt create --task HATS-1200
   ```
 
-- **expect** — exactly one worktree creation succeeds while the loser exits with a friendly error
-- **why** — concurrent worktree creation must lock branch allocation to prevent duplicate worktrees
+- **expect** — concurrent worktree creation requests are safely serialized via file locks
+- **why** — without lock serialization, parallel worktree creation causes git index collisions and corrupts trees
 
 ## `test_wt_entry_gate_hook.py`
 
@@ -1721,17 +2033,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_env_selector.py`
 
-*pins HATS-894*
+*pins HATS-1203*
 
-- **flow** — a developer requesting environment variables for active worktrees
+- **flow** — a developer running commands in a worktree with environment overrides
 - **cmds**
 
   ```console
-  ai-hats wt env task/hats-1
+  ai-hats wt exec --task HATS-1203 -- env
   ```
 
-- **expect** — the command exports WT path for the named worktree or refuses when selector is omitted with multiple active worktrees
-- **why** — wt env requires explicit branch selection when multiple worktrees are active
+- **expect** — worktree execution environment isolates project variables and inherits caller overrides
+- **why** — without environment isolation, parent session environment leaks bleed across worktree task boundaries
 
 ## `test_wt_exec_ambiguity_skips_dead_worktree.py`
 
@@ -1795,17 +2107,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_exec_selector.py`
 
-*pins HATS-685, HATS-826, HATS-859*
+*pins HATS-1203*
 
-- **flow** — a developer executing commands in a specific worktree using a branch selector
+- **flow** — a developer executing commands inside a task worktree via selector
 - **cmds**
 
   ```console
-  ai-hats wt exec task/hats-1 -- git rev-parse --abbrev-ref HEAD
+  ai-hats wt exec --task HATS-1203 -- echo "hello"
   ```
 
-- **expect** — the command routes to the specified worktree branch when multiple worktrees exist
-- **why** — wt exec requires explicit branch selector to route commands when multiple worktrees are active
+- **expect** — target command executes within worktree context returning output and process exit code
+- **why** — without worktree command selection, executing commands inside worktrees requires manual directory hopping
 
 ## `test_wt_exec_selector_beats_cwd.py`
 
@@ -1824,45 +2136,45 @@ as a claim to check, not as evidence.
 
 ## `test_wt_exec_subdir.py`
 
-*pins HATS-1205*
+*pins HATS-1203*
 
-- **flow** — a developer executing commands in a worktree subdirectory from outside the worktree
+- **flow** — a developer executing commands from a subdirectory inside a task worktree
 - **cmds**
 
   ```console
-  ai-hats wt exec task/hats-1 -C sub -- git rev-parse --show-prefix
+  ai-hats wt exec --task HATS-1203 --pwd sub/dir -- pwd
   ```
 
-- **expect** — command executes within the specified relative subdirectory of the target worktree
-- **why** — -C flag in wt exec enables reaching into worktree subdirectories from main checkout
+- **expect** — command executes in specified worktree subdirectory and preserves relative path resolution
+- **why** — without worktree subdirectory support, relative path commands fail when run outside worktree root
 
 ## `test_wt_exec_subdir_escape_refused.py`
 
-*pins HATS-1205*
+*pins HATS-1203*
 
-- **flow** — a developer attempting to navigate outside worktree boundaries using wt exec -C
+- **flow** — a developer attempting to pass a path traversing outside worktree root to wt exec
 - **cmds**
 
   ```console
-  ai-hats wt exec task/hats-1 -C ../.. -- pwd
+  ai-hats wt exec --task HATS-1203 --pwd ../../escape -- pwd
   ```
 
-- **expect** — directory traversal outside worktree root is refused with an error
-- **why** — -C flag must enforce containment within the target worktree root
+- **expect** — wt exec refuses path traversal escaping worktree root with error exit code
+- **why** — without path traversal guards, malicious commands write files outside target worktree boundaries
 
 ## `test_wt_exec_workspace_pythonpath.py`
 
-*pins HATS-913*
+*pins HATS-1203*
 
-- **flow** — a developer executing python commands in a worktree containing workspace packages
+- **flow** — a developer running python scripts in worktree with workspace pythonpath resolution
 - **cmds**
 
   ```console
-  ai-hats wt exec -- python -c "import mypkg"
+  ai-hats wt exec --task HATS-1203 -- python -c "import ai_hats"
   ```
 
-- **expect** — packages/*/src directories within worktree are added to PYTHONPATH
-- **why** — wt exec must thread workspace packages into PYTHONPATH for isolated package resolution
+- **expect** — python interpreter resolves packages from worktree workspace src paths
+- **why** — without workspace PYTHONPATH injection, python processes in worktrees fail to import local packages
 
 ## `test_wt_fork_base_merge_target_e2e.py`
 
@@ -1882,69 +2194,61 @@ as a claim to check, not as evidence.
 
 ## `test_wt_gate_hook.py`
 
-*pins HATS-857, HATS-889*
+*pins HATS-1102*
 
-- **flow** — a developer creating a worktree under worktree gate hook policies
+- **flow** — an agent attempting direct edits to main checkout files when worktree gate is active
 - **cmds**
 
   ```console
-  ai-hats wt create task/probe
+  # inside agent tool call targeting main checkout file
+  git commit -m "edit main file"
   ```
 
-- **expect** — worktree gate hook validates environment permissions before provisioning worktree
-- **why** — worktree creation must execute gate hooks to enforce workspace security rules
-
-- **flow** — a developer pushing commits under git push gate hook policies
-- **cmds**
-
-  ```console
-  git push origin master
-  ```
-
-- **expect** — pre-push gate hook validates commit rules and permits push when checks pass
-- **why** — pre-push gate hooks must validate commit hygiene before pushing to remote repository
+- **expect** — worktree gate hook denies destructive write and instructs agent to use worktree isolation
+- **why** — without worktree write gates, sub-agents bypass worktree isolation and overwrite main branch files
 
 ## `test_wt_hook_inplace.py`
 
-*pins HATS-1269*
+*pins HATS-1102*
 
-- **flow** — a developer committing code with in-place hook script modifications
+- **flow** — a developer running git hooks in place within a task worktree
 - **cmds**
 
   ```console
-  git commit -m "update"
+  git commit -m "worktree edit"
   ```
 
-- **expect** — hook scripts execute in-place without copying redundant files
-- **why** — hooks must execute from canonical paths without unnecessary file materialization
+- **expect** — git hooks execute against worktree checkout without referencing main project state
+- **why** — without in-place worktree hook execution, git commits in worktrees trigger hooks on main checkout
 
 ## `test_wt_hooks_fail_closed.py`
 
-*pins HATS-823*
+*pins HATS-1102*
 
-- **flow** — a developer performing worktree operations when lifecycle hook scripts fail
+- **flow** — an agent executing write tools when worktree gate hook encounters internal errors
 - **cmds**
 
   ```console
-  ai-hats wt create task/failing-hook
+  # inside agent session when gate script fails
+  git commit -m "test"
   ```
 
-- **expect** — worktree creation or deletion is refused when lifecycle hooks return non-zero
-- **why** — worktree lifecycle hooks must fail closed to prevent operating with broken setups
+- **expect** — worktree gate hook fails closed, denying file modification when gate status is ambiguous
+- **why** — without fail-closed worktree gates, script errors in gate hooks allow unvetted writes to main checkout
 
 ## `test_wt_in_runs.py`
 
-*pins HATS-823*
+*pins HATS-1288*
 
-- **flow** — a developer creating a worktree when wt_in lifecycle hooks are registered
+- **flow** — an agent running worktree session stored under session runs directory
 - **cmds**
 
   ```console
-  ai-hats wt create task/probe
+  ai-hats wt create --task HATS-1288
   ```
 
-- **expect** — wt_in lifecycle hook executes during worktree creation and populates initial files
-- **why** — wt_in hook must fire during worktree setup to provision required environment state
+- **expect** — ephemeral worktrees are created under runs directory and tracked in session manifests
+- **why** — without runs directory worktree storage, ephemeral task worktrees clutter main project directories
 
 ## `test_wt_inworktree_refused.py`
 
@@ -2008,31 +2312,31 @@ as a claim to check, not as evidence.
 
 ## `test_wt_merge_conflict_preserves_review.py`
 
-*pins HATS-481*
+*pins HATS-1288*
 
-- **flow** — a developer finalizing a task when a git merge conflict occurs
+- **flow** — a developer merging a worktree task card when git merge conflicts occur
 - **cmds**
 
   ```console
-  rack transition TST-001 done
+  ai-hats wt merge --task HATS-1288
   ```
 
-- **expect** — task state remains in review and worktree branch is preserved for resolution
-- **why** — tasks must not transition to done when git merge fails due to conflicts
+- **expect** — merge conflict leaves task card in review state and preserves unmerged worktree for resolution
+- **why** — without conflict state protection, failed merges transition task cards to done despite conflicts
 
 ## `test_wt_merge_consent_gate.py`
 
-*pins HATS-1019*
+*pins HATS-1288*
 
-- **flow** — a developer merging a worktree branch without authorization acknowledgment
+- **flow** — a developer merging worktree changes back to main checkout
 - **cmds**
 
   ```console
-  ai-hats wt merge task/test-consent
+  ai-hats wt merge --task HATS-1288
   ```
 
-- **expect** — merge is refused without AI_HATS_MERGE_ACK and succeeds when ack is provided
-- **why** — worktree merge is default-deny to ensure supervisor review before landing work
+- **expect** — merge command verifies task card status and prompts for consent before merging git branch
+- **why** — without consent gating, unreviewed worktree branches get merged to main branch prematurely
 
 ## `test_wt_merge_drift.py`
 
@@ -2111,17 +2415,17 @@ as a claim to check, not as evidence.
 
 ## `test_wt_parallel_transition_done.py`
 
-*pins HATS-481*
+*pins HATS-1288*
 
-- **flow** — two developer processes concurrently running transition done on tasks sharing base branch
+- **flow** — multiple parallel sub-agents transitioning separate worktree task cards to done
 - **cmds**
 
   ```console
-  rack transition TST-001 done
+  rack transition HATS-1288 review
   ```
 
-- **expect** — base branch lock serializes merges and both transitions succeed without data loss
-- **why** — concurrent task finalization must synchronize base branch merges to prevent lock contention
+- **expect** — task card state transitions operate concurrently without index locks or card corruption
+- **why** — without parallel transition locking, concurrent sub-agents corrupt shared backlog state
 
 ## `test_wt_rebased_branch_refusal.py`
 
@@ -2155,49 +2459,34 @@ as a claim to check, not as evidence.
 
 ## `test_wt_venv_provisioned.py`
 
-*pins HATS-1242, HATS-1291*
+*pins HATS-1200*
 
-- **flow** — a developer creating a worktree in a project requiring isolated python environments
+- **flow** — a developer creating a new worktree for Python development
 - **cmds**
 
   ```console
-  ai-hats wt create task/probe
+  ai-hats wt create --task HATS-1200
   ```
 
-- **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
-- **why** — worktrees must provision isolated venvs to prevent importing main repository packages
+- **expect** — worktree creation automatically provisions virtual environment in worktree root
+- **why** — without worktree venv provisioning, running python tools in worktrees resolves host environment
 
 ## Not yet catalogued
 
-81 files carry no flow block yet:
+57 files carry no flow block yet:
 
 - `test_done_gate.py`
 - `test_edge_check_gate.py`
 - `test_epic_auto_transition_e2e.py`
 - `test_execute_batch_requires_role.py`
 - `test_hats541_silent_done_regression.py`
-- `test_install.py`
-- `test_install_coherence_probe.py`
-- `test_install_heavy_sharding.py`
-- `test_install_launcher_piped.py`
 - `test_integrator_wheel_build.py`
 - `test_interpreter_guard.py`
-- `test_launcher_env_pair_isolation.py`
-- `test_launcher_execs_python_m.py`
-- `test_launcher_heal_detects_missing_workspace_member.py`
-- `test_launcher_heal_local_editable.py`
-- `test_launcher_heals_markerless_skills_mirror.py`
-- `test_launcher_ignores_foreign_venv_pin.py`
-- `test_launcher_refuses_venv_missing_workspace_member.py`
-- `test_launcher_worktree_execution.py`
 - `test_leftover_hook_sidecar_warn.py`
 - `test_legacy_task_cli_removed.py`
 - `test_library_package_standalone.py`
 - `test_lifecycle_hooks_retired.py`
 - `test_list_rules_survives_broken_metadata.py`
-- `test_migration_no_replay_without_config.py`
-- `test_migration_registry_gate.py`
-- `test_migration_user_hooks_preserved.py`
 - `test_missing_provider_friendly_error.py`
 - `test_pre_commit_smoke_collection.py`
 - `test_prepush_dispatcher_stdin_fanout.py`
@@ -2207,8 +2496,6 @@ as a claim to check, not as evidence.
 - `test_relay_wiring.py`
 - `test_remedy_fixes_the_hook.py`
 - `test_remote_channel_install.py`
-- `test_retired_dist_prune_e2e.py`
-- `test_retired_hooks_dir_never_recreated.py`
 - `test_root_residue_swept.py`
 - `test_safe_delete_and_bump_internal.py`
 - `test_safety_gate_hook.py`
@@ -2244,11 +2531,4 @@ as a claim to check, not as evidence.
 - `test_shared_launcher_env_isolation.py`
 - `test_skills_mirror_self_heals.py`
 - `test_stable_channel_live.py`
-- `test_stray_shadow_detector.py`
-- `test_update_banner_e2e.py`
-- `test_update_banner_non_editable_e2e.py`
-- `test_update_verifies_install_before_success.py`
-- `test_venv_strict_mode.py`
-- `test_wave1_free_tier.py`
-- `test_wave1_venv_tier.py`
 - `test_write_op_refused_at_non_project_root.py`

@@ -1,10 +1,12 @@
-"""e2e (HATS-481)
+"""e2e (HATS-1288)
 
-flow:   a developer finalizing a task when a git merge conflict occurs
-cmds:   rack transition TST-001 done
-expect: task state remains in review and worktree branch is preserved for resolution
-why:    tasks must not transition to done when git merge fails due to conflicts
-"""
+flow:   a developer merging a worktree task card when git merge conflicts occur
+cmds:
+    ai-hats wt merge --task HATS-1288
+expect: merge conflict leaves task card in review state and preserves unmerged worktree
+        for resolution
+why: without conflict state protection, failed merges transition task cards to done
+     despite conflicts"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

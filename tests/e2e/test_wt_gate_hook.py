@@ -1,17 +1,14 @@
-"""e2e (HATS-857, HATS-889)
+"""e2e (HATS-1102)
 
-flow:   a developer creating a worktree under worktree gate hook policies
-cmds:   ai-hats wt create task/probe
-expect: worktree gate hook validates environment permissions before provisioning
-        worktree
-why:    worktree creation must execute gate hooks to enforce workspace security rules
-
-flow:   a developer pushing commits under git push gate hook policies
-cmds:   git push origin master
-expect: pre-push gate hook validates commit rules and permits push when checks pass
-why:    pre-push gate hooks must validate commit hygiene before pushing to remote
-        repository
-"""
+flow: an agent attempting direct edits to main checkout files when worktree gate is
+      active
+cmds:
+    # inside agent tool call targeting main checkout file
+    git commit -m "edit main file"
+expect: worktree gate hook denies destructive write and instructs agent to use worktree
+        isolation
+why: without worktree write gates, sub-agents bypass worktree isolation and overwrite
+     main branch files"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

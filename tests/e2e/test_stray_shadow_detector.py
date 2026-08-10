@@ -1,21 +1,15 @@
-"""E2E: ``bootstrap.sh --repair`` detects stray (shadow) ai-hats on PATH (HATS-791).
+"""e2e (HATS-791)
 
-Value under test: the stray-shadow detector scans ``$PATH`` for ``ai-hats``
-executables OUTSIDE the sanctioned host launcher (``AI_HATS_LAUNCHER_DEST`` /
-``~/.local/bin/ai-hats``) and WARNs with remediation. It NEVER deletes
-(destructive-actions rule) — warn + instruct only.
-
-This drives the real ``bootstrap.sh --repair`` path with the launcher /
-installer / ``self update`` stubbed (mirrors ``tests/test_bootstrap_sh.py``), so
-the test isolates the bash detector without a ~minute real venv build. A stray
-``ai-hats`` is planted on ``$PATH`` in a directory that is NOT the sanctioned
-launcher dest.
-
-Assertions: the stray is named in bootstrap's output AND it is NOT deleted.
-
-Fail-under-revert: drop the ``detect_stray_launchers`` call from bootstrap.sh and
-the stray is no longer flagged → the "shadow" assertion fails.
-"""
+flow: a developer running bootstrap repair script when stray ai-hats binaries exist on
+      PATH
+cmds:
+    bash scripts/bootstrap.sh --repair
+expect: repair script detects stray ai-hats executables on PATH and emits remediation
+        warnings
+        without deleting files
+why: without stray shadow detection, outdated global binaries on PATH shadow venv
+     launchers causing
+        unexplainable errors"""
 
 from __future__ import annotations
 

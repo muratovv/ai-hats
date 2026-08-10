@@ -1,13 +1,12 @@
-"""e2e (HATS-1205)
+"""e2e (HATS-1203)
 
-flow:   a developer executing commands in a worktree subdirectory from outside the
-        worktree
-cmds:   ai-hats wt exec task/hats-1 -C sub -- git rev-parse --show-prefix
-expect: command executes within the specified relative subdirectory of the target
-        worktree
-why:    -C flag in wt exec enables reaching into worktree subdirectories from main
-        checkout
-"""
+flow:   a developer executing commands from a subdirectory inside a task worktree
+cmds:
+    ai-hats wt exec --task HATS-1203 --pwd sub/dir -- pwd
+expect: command executes in specified worktree subdirectory and preserves relative path
+        resolution
+why: without worktree subdirectory support, relative path commands fail when run outside
+     worktree root"""
 
 from __future__ import annotations
 

@@ -1,26 +1,13 @@
-"""Wave 1 venv-tier pilots — prove ``tmp_venv_project`` module fixture.
+"""e2e (HATS-478)
 
-These tests exercise the launcher-tier path: a real ``ai-hats``
-launcher binary, its inner venv, and real ``ai-hats self <cmd>``
-invocations against a fresh project dir. Marked ``integration`` —
-opt out with ``pytest -m "not integration"`` while iterating.
-
-Maps to Core scenarios:
-
-* ``test_self_init_is_idempotent_on_repeat`` → S-CLI-36. Two
-  back-to-back ``self init`` calls; the second must succeed without
-  re-prompting and without trashing the existing yaml.
-* ``test_shared_venv_reused_across_tests`` → reuse proof. The
-  function-scoped fixture sits on top of a module-scoped venv
-  builder; this test confirms the second invocation in the module
-  points at the same already-built venv (cheap, sub-second), which
-  is the whole point of the layered scope. If the venv were rebuilt,
-  total wall-clock would roughly double.
-
-Skips the whole module when the launcher install or ``self update``
-can't run (no ``install-launcher.sh``, no network + no warm pip
-cache). Build budget: <120s for first test, <5s for the reuse check.
-"""
+flow:   a developer running self init repeatedly using launcher venv fixtures
+cmds:
+    ai-hats self init -r assistant -p claude --no-update
+expect: repeated init commands execute idempotently and reuse shared launcher venvs
+        across tests
+why: without venv fixture reuse across tests, e2e test suites spend excessive time
+     building duplicate
+        virtual environments"""
 
 from __future__ import annotations
 

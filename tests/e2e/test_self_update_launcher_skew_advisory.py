@@ -1,4 +1,5 @@
-"""E2E: self update warns when a stale launcher leaves the versioned layout dormant (HATS-655).
+"""E2E: self update warns when a stale launcher leaves the versioned layout dormant
+(HATS-655).
 
 Value under test: when the host launcher predates ``versions/current`` resolution
 (HATS-647), every ``self update`` builds a ``versions/<sha>/`` the launcher never
@@ -24,8 +25,7 @@ Invariants asserted:
 
 Fail-under-revert:
   - removing the hint → update-2 'hint present' assertion fails;
-  - an accidental launcher write → the byte-unchanged assertion fails.
-"""
+  - an accidental launcher write → the byte-unchanged assertion fails."""
 
 from __future__ import annotations
 from _helpers.git import git

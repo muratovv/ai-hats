@@ -1,11 +1,13 @@
-"""e2e (HATS-823)
+"""e2e (HATS-1102)
 
-flow:   a developer performing worktree operations when lifecycle hook scripts fail
-cmds:   ai-hats wt create task/failing-hook
-expect: worktree creation or deletion is refused when lifecycle hooks return non-zero
-why:    worktree lifecycle hooks must fail closed to prevent operating with broken
-        setups
-"""
+flow: an agent executing write tools when worktree gate hook encounters internal errors
+cmds:
+    # inside agent session when gate script fails
+    git commit -m "test"
+expect: worktree gate hook fails closed, denying file modification when gate status is
+        ambiguous
+why: without fail-closed worktree gates, script errors in gate hooks allow unvetted
+     writes to main checkout"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

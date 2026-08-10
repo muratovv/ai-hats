@@ -1,4 +1,5 @@
-"""E2E: the edge ahead/diverged guard follows the EDGE repo, not upstream master (HATS-766).
+"""E2E: the edge ahead/diverged guard follows the EDGE repo, not upstream master
+(HATS-766).
 
 The bug it catches (caveat a):
 
@@ -33,8 +34,7 @@ Fail-under-revert: revert the ``ref="HEAD"`` / bare-URL threading in
 falls back to ``master``, which this remote lacks → exit 0, and the
 ``expect_exit=3`` assertion fails.
 
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+Deliberate long e2e scenario contract — noqa: comment-length."""
 
 from __future__ import annotations
 

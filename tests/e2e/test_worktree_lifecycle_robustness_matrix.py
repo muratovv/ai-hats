@@ -1,32 +1,12 @@
-"""e2e (HATS-697, HATS-714, HATS-788, HATS-835)
+"""e2e (HATS-1288)
 
-flow:   a developer finalizing an already-merged task whose worktree state file was
-        removed
-cmds:   rack transition TST-001 done
-expect: transition done short-circuits to done without false state lost errors and
-        cleans up branch
-why:    already-merged branches with missing state metadata must finalize cleanly
-
-flow:   a developer forcing a task transition to execute with --force
-cmds:   rack transition TST-001 execute --force --reason "shipped on master"
-expect: task state moves to execute without spinning up a fresh git worktree
-why:    forced execute overrides worktree provisioning when work was shipped out-of-band
-
-flow:   a developer finalizing a task when worktree state metadata contains null
-        original_branch
-cmds:   rack transition TST-001 done
-expect: transition done is refused with a typed error naming missing original_branch
-        field
-why:    incomplete worktree state metadata must produce a clean typed error without
-        traceback
-
-flow:   a developer finalizing a task from inside its own linked worktree directory
+flow: a developer exercising worktree creation, status, and transition across FSM states
 cmds:
-    # from inside the linked worktree directory
-    rack transition TST-001 done
-expect: transition done is refused before teardown and worktree directory is preserved
-why:    transition done from inside a worktree must refuse to avoid removing caller cwd
-"""
+    ai-hats wt create --task HATS-1288
+expect: worktree isolates project state, transitions task states cleanly, and cleans up
+        on completion
+why: without robust worktree lifecycle checks, concurrent agent tasks corrupt main
+     checkout state"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

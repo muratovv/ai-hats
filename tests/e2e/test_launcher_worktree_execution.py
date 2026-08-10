@@ -1,18 +1,16 @@
-"""E2E (HATS-1306): ai-hats launcher worktree resolution & foreign pin isolation.
+"""e2e (HATS-1306)
 
-`dev_rule_e2e_gate` artifact for `scripts/ai-hats-launcher`. When invoked from inside a
-linked git worktree of an onboarded ai-hats project, the launcher must hop `PROJECT` to the
-main checkout root so `AI_HATS_PROJECT_DIR` and `AI_HATS_VENV` match the main project layout.
-
-Covers:
-1. Worktree execution — no false foreign pin warnings, resolves to main project venv.
-2. Deep subdirectory execution inside a worktree.
-3. Foreign pin isolation — leaked pin from Project A when running in Project B's worktree correctly drops Project A's pin.
-4. Non-ai-hats git worktree fallback — no hop when main checkout lacks `.agent/` and `ai-hats.yaml`.
-
-Fail-under-revert: revert `PROJECT` worktree hop in `scripts/ai-hats-launcher` to raw `$(pwd)`
-and case (1) fails with foreign pin warnings and 'venv missing' error.
-"""
+flow: a developer running ai-hats commands from inside a linked git worktree or
+      subfolder of
+        an onboarded project
+cmds:
+    ai-hats status
+expect: launcher resolves project root to main checkout and executes using main project
+        managed
+        venv
+why: without worktree root resolution, running commands inside git worktrees fails to
+     find
+        managed project venvs"""
 
 from __future__ import annotations
 

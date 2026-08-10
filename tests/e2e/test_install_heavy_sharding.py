@@ -1,25 +1,13 @@
-"""HATS-678 / HATS-771: deterministic guard for the install-heavy concurrency cap.
+"""e2e (HATS-676, HATS-678, HATS-771)
 
-The pre-push e2e gate runs ``-n8 --dist=loadgroup``. ~26 tests across 21 files
-do a real ``uv pip install`` at call time (``@pytest.mark.install_heavy``).
-Under the pip engine, uncapped concurrency let up to ``nworkers`` (≤8) hit the
-package index at once and intermittently reset (the flake class HATS-676
-quarantined); ``tests/e2e/conftest.py`` caps them by round-robining their FILES
-into ``INSTALL_HEAVY_GROUPS`` fixed xdist groups so ``loadgroup`` runs at most K
-concurrently. HATS-771 relaxed the default K to 8 (uv serves ``--reinstall``
-from its warm global cache, so the throttle is inert in the happy path) but
-KEPT the grouping as a cold-network safety valve — so this scheduling contract
-still matters.
-
-This file is a PURE unit test — no real install, no integration marker — so it runs
-in the normal fast suite and fails loudly if the cap regresses. The expensive
-proof (a green ``-n8`` gate) lives in the gate run itself; this locks the
-*scheduling contract* that makes the gate stable.
-
-Fail-under-revert: drop the install-heavy branch from ``pytest_collection_modifyitems``
-→ install-heavy items fall back to per-file groups (one group per file) →
-``test_hook_routes_install_heavy_within_cap`` sees >K distinct groups and fails.
-"""
+flow:   a test suite running concurrent install-heavy e2e tests under pytest-xdist
+cmds:
+    pytest -n8 --dist=loadgroup tests/e2e
+expect: install-heavy test items are capped into fixed xdist groups to prevent network
+        saturating race conditions
+why: without xdist group throttling, uncapped concurrent uv pip installs saturate
+     package
+        indexes and cause flaky network resets"""
 
 from __future__ import annotations
 

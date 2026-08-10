@@ -1,10 +1,11 @@
-"""e2e (HATS-1205)
+"""e2e (HATS-1203)
 
-flow:   a developer attempting to navigate outside worktree boundaries using wt exec -C
-cmds:   ai-hats wt exec task/hats-1 -C ../.. -- pwd
-expect: directory traversal outside worktree root is refused with an error
-why:    -C flag must enforce containment within the target worktree root
-"""
+flow: a developer attempting to pass a path traversing outside worktree root to wt exec
+cmds:
+    ai-hats wt exec --task HATS-1203 --pwd ../../escape -- pwd
+expect: wt exec refuses path traversal escaping worktree root with error exit code
+why: without path traversal guards, malicious commands write files outside target
+     worktree boundaries"""
 
 from __future__ import annotations
 

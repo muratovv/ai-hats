@@ -1,15 +1,16 @@
-"""E2E: launcher ignores an AI_HATS_VENV pinned to a foreign project (HATS-944).
+"""e2e (HATS-897, HATS-944)
 
-HATS-897 guards the paired ``AI_HATS_DIR`` leak in Python, but venv selection
-happens in the bash launcher *before* ``python -m ai_hats`` is exec'd, so the
-``AI_HATS_VENV`` half needs its own guard there. When an agent session pinned to
-project A (``AI_HATS_VENV`` + ``AI_HATS_PROJECT_DIR``) runs ``ai-hats`` from
-project B, the launcher must re-resolve B's venv, not honor A's.
-
-Fail-under-revert: without the guard the launcher execs the foreign (missing) A
-venv → "venv missing" exit 1 instead of running B's healthy venv (exit 0). Real
-subprocess + real uv + real launcher per ``dev_rule_e2e_gate``.
-"""
+flow: a developer running ai-hats from Project B when environment carries AI_HATS_VENV
+      pinned
+        to Project A
+cmds:
+    ai-hats --version
+expect: launcher detects mismatched project directory, ignores foreign venv pin with
+        warning,
+        and uses local project venv
+why: without foreign venv isolation, sub-agents operating across projects execute tools
+     inside
+        the wrong project venv"""
 # comment-length: allow — deliberate fail-under-revert contract docstring
 
 from __future__ import annotations

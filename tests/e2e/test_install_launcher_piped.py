@@ -1,21 +1,15 @@
-"""E2E: the PIPED install-launcher path (curl | bash) installs keyless (HATS-766).
+"""e2e (HATS-766)
 
-The public one-liner is ``curl -sSL .../install-launcher.sh | bash``. When piped
-(no local clone on disk) the installer fetches the launcher itself over the
-network. HATS-766 made the repo public, so this path:
-
-  - no longer needs the dead private-repo HTML-404 guard (removed), and
-  - the installed launcher carries the anonymous ``git+https`` default (R1).
-
-This test drives the piped branch WITHOUT network by pointing
-``AI_HATS_LAUNCHER_URL`` at a ``file://`` URL (curl supports it) and feeding the
-installer to ``bash`` over stdin so ``BASH_SOURCE`` is unset → the local-clone
-``SRC`` detection misses → the curl branch runs.
-
-Fail-under-revert: revert the launcher ``REPO_URL`` default to ``git+ssh`` and
-the installed-launcher assertion below fails. Per ``dev_rule_e2e_gate``: real
-``bash`` + real ``curl`` + real installed launcher file.
-"""
+flow:   a developer running piped installer script via stdin without a local git clone
+cmds:
+    curl -sSL
+    https://.../install-launcher.sh
+    | bash
+expect: installer fetches launcher over network and writes launcher script defaulting to
+        git+https source
+why: without piped stdin installer support, users without local repo clones cannot
+     install
+        the host launcher binary"""
 
 from __future__ import annotations
 

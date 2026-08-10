@@ -1,31 +1,15 @@
-"""E2E (HATS-1280): a managed ``self update`` leaves a retired distribution behind.
+"""e2e (HATS-1280)
 
-What this pins: 0.14.0 dropped the ``ai-hats-tracker`` dependency, but an update
-installs without synchronising — the retired distribution and its
-``[project.scripts] ai-hats-tracker`` console entry survive in the venv that
-still carries them. On the managed (blue-green) path the upgrade builds a
-*fresh* ``versions/<sha>/`` (nothing stale to find there), while the
-pre-versioning legacy ``<ai_hats_dir>/.venv`` keeps a working
-``bin/ai-hats-tracker``.
-
-Why the FIRST update is the load-bearing case: ``reclaim_legacy_venv``
-(``version_recovery.py``) returns early while the updater is itself running
-from ``.venv`` (``current_run_sha`` is None), so the first update keeps that
-directory verbatim — stale scripts and all. The SECOND update discards the
-whole directory, which would make a naive "``.venv`` is gone" assertion pass
-with no fix in place and prove nothing. Hence: exactly ONE update, and the
-assertion is "``.venv`` survives, its retired console script does not".
-
-Shape: bootstrap the pre-versioning install from the last ref that still ships
-``packages/ai-hats-tracker`` (``self init`` → the launcher's heal builds
-``.venv``; no ``versions/`` yet), advance the install source to the working
-tree (the version that retired the dist), then one managed ``self update``.
-
-Fail-under-revert: revert the prune and ``.venv/bin/ai-hats-tracker`` is still
-on disk after the update — the final assertion fails.
-
-Deliberate long contract module docstring — noqa: comment-length.
-"""
+flow: a developer running self update after a framework package dependency has been
+      retired
+cmds:
+    ai-hats self update
+expect: self update creates versioned venv without retired package and prunes retired
+        console
+        scripts from legacy venv
+why: without retired distribution pruning, deprecated package binaries persist in
+     managed venvs and
+        shadow updated commands"""
 
 from __future__ import annotations
 from _helpers.git import git

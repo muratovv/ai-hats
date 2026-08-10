@@ -1,12 +1,12 @@
-"""e2e (HATS-913)
+"""e2e (HATS-1203)
 
-flow:   a developer executing python commands in a worktree containing workspace
-        packages
-cmds:   ai-hats wt exec -- python -c "import mypkg"
-expect: packages/*/src directories within worktree are added to PYTHONPATH
-why:    wt exec must thread workspace packages into PYTHONPATH for isolated package
-        resolution
-"""
+flow: a developer running python scripts in worktree with workspace pythonpath
+      resolution
+cmds:
+    ai-hats wt exec --task HATS-1203 -- python -c "import ai_hats"
+expect: python interpreter resolves packages from worktree workspace src paths
+why: without workspace PYTHONPATH injection, python processes in worktrees fail to
+     import local packages"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

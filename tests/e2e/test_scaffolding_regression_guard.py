@@ -1,6 +1,6 @@
-"""Regression guard (HATS-1497 / R8): e2e files must use _helpers/git.py and conftest fixtures
-rather than re-implementing local _git or installed_launcher scaffolding.
-"""
+"""Regression guard (HATS-1497 / R8): e2e files must use _helpers/git.py and conftest
+fixtures
+rather than re-implementing local _git or installed_launcher scaffolding."""
 
 from __future__ import annotations
 

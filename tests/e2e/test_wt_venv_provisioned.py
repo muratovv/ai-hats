@@ -1,13 +1,11 @@
-"""e2e (HATS-1242, HATS-1291)
+"""e2e (HATS-1200)
 
-flow:   a developer creating a worktree in a project requiring isolated python
-        environments
-cmds:   ai-hats wt create task/probe
-expect: a virtual environment is provisioned inside worktree .venv and imports
-        worktree source
-why:    worktrees must provision isolated venvs to prevent importing main repository
-        packages
-"""
+flow:   a developer creating a new worktree for Python development
+cmds:
+    ai-hats wt create --task HATS-1200
+expect: worktree creation automatically provisions virtual environment in worktree root
+why: without worktree venv provisioning, running python tools in worktrees resolves host
+     environment"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

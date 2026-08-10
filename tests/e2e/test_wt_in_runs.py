@@ -1,12 +1,12 @@
-"""e2e (HATS-823)
+"""e2e (HATS-1288)
 
-flow:   a developer creating a worktree when wt_in lifecycle hooks are registered
-cmds:   ai-hats wt create task/probe
-expect: wt_in lifecycle hook executes during worktree creation and populates initial
-        files
-why:    wt_in hook must fire during worktree setup to provision required environment
-        state
-"""
+flow:   an agent running worktree session stored under session runs directory
+cmds:
+    ai-hats wt create --task HATS-1288
+expect: ephemeral worktrees are created under runs directory and tracked in session
+        manifests
+why: without runs directory worktree storage, ephemeral task worktrees clutter main
+     project directories"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

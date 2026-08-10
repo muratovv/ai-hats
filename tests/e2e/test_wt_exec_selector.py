@@ -1,12 +1,12 @@
-"""e2e (HATS-685, HATS-826, HATS-859)
+"""e2e (HATS-1203)
 
-flow:   a developer executing commands in a specific worktree using a branch selector
-cmds:   ai-hats wt exec task/hats-1 -- git rev-parse --abbrev-ref HEAD
-expect: the command routes to the specified worktree branch when multiple worktrees
-        exist
-why:    wt exec requires explicit branch selector to route commands when multiple
-        worktrees are active
-"""
+flow:   a developer executing commands inside a task worktree via selector
+cmds:
+    ai-hats wt exec --task HATS-1203 -- echo "hello"
+expect: target command executes within worktree context returning output and process
+        exit code
+why: without worktree command selection, executing commands inside worktrees requires
+     manual directory hopping"""
 
 from __future__ import annotations
 
