@@ -12,10 +12,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from ai_hats_core import YamlModel as _YamlModel
 
