@@ -449,6 +449,13 @@ def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
 # --- what the launch report says about the bindings (HATS-1548) ---
 
 
+def _preview(provider, result):
+    """The read-only payload ``dry_run_hitl`` composes through."""
+    from ai_hats.composition_seam import CompositionPayload
+
+    return CompositionPayload(result=result, provider=provider, effective_role="tester")
+
+
 class _SkilllessSurface(_MirrorSurface):
     """Names a mirror root and delivers no skills into it — so a binding
     resolves against a tree this launch never writes."""
@@ -535,3 +542,29 @@ def test_a_gate_the_launch_does_not_write_is_reported_unplanned(tmp_path: Path):
     assert check.runs_from is not None, "it resolves — the skill IS composed"
     assert check.planned is False
     assert notes == ()
+
+
+def test_a_dry_run_under_a_stale_surface_warns_before_the_session_starts(
+    tmp_path: Path, monkeypatch
+):
+    """The launch says the gate cannot root; the dry-run has to say it too.
+
+    Staying quiet here is the same silence the notice exists to remove — the
+    operator would learn it one session too late, which is the HATS-1538 shape.
+    """
+    from ai_hats import providers
+    from ai_hats.dry_run import dry_run_hitl
+
+    project = _project(tmp_path)
+    skill = _skill(project)
+    result = _result(skills=[skill], checks=[_check(skill)])
+    monkeypatch.setattr(providers, "get_provider", lambda name: _StaleSurface())
+    monkeypatch.setattr(
+        "ai_hats.composition_seam.build_preview_payload",
+        lambda *a, **kw: _preview(_StaleSurface(), result),
+    )
+
+    report = dry_run_hitl(project)
+
+    assert any("session_skills_root" in note for note in report.notes), report.notes
+    assert [c.runs_from for c in report.checks] == [None]
