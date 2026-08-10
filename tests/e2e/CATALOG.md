@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**9 of 220 files catalogued — 10 flows.**
+**9 of 224 files catalogued — 10 flows.**
 
 ## `test_agy_bypass.py`
 
@@ -180,7 +180,7 @@ as a claim to check, not as evidence.
 
 ## Not yet catalogued
 
-211 files carry no flow block yet:
+215 files carry no flow block yet:
 
 - `test_agent_orchestration.py`
 - `test_agy_detection.py`
@@ -201,6 +201,7 @@ as a claim to check, not as evidence.
 - `test_bump_fails_loud_on_broken_hook.py`
 - `test_bypass_journal.py`
 - `test_cache_key_gc.py`
+- `test_check_mirror_dry_run.py`
 - `test_claude_scaffold_drop.py`
 - `test_clean_root_sentinel.py`
 - `test_clean_tmp_cruft.py`
@@ -218,10 +219,13 @@ as a claim to check, not as evidence.
 - `test_customize_parallel_writes.py`
 - `test_dead_cwd_fail_loud.py`
 - `test_default_composition_flip.py`
+- `test_done_gate.py`
+- `test_edge_check_gate.py`
 - `test_env_drift_startup_warn.py`
 - `test_env_scrub.py`
 - `test_epic_auto_transition_e2e.py`
 - `test_execute_batch_requires_role.py`
+- `test_githooks_argv_contract.py`
 - `test_githooks_coexistence.py`
 - `test_githooks_orchestrator.py`
 - `test_hats541_silent_done_regression.py`
@@ -286,8 +290,8 @@ as a claim to check, not as evidence.
 - `test_remedy_fixes_the_hook.py`
 - `test_remote_channel_install.py`
 - `test_retired_dist_prune_e2e.py`
+- `test_retired_hooks_dir_never_recreated.py`
 - `test_role_isolation.py`
-- `test_role_switch_does_not_narrow_hooks.py`
 - `test_root_residue_swept.py`
 - `test_rule_delivery_gate.py`
 - `test_runtime_hook_fires.py`
