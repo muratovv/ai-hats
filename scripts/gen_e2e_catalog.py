@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -211,32 +212,85 @@ def main(argv: list[str] | None = None) -> int:
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="regenerate the catalog")
     mode.add_argument("--check", action="store_true", help="fail if the catalog is stale")
+    ap.add_argument(
+        "--dir",
+        type=Path,
+        default=None,
+        help="path to e2e directory (default: tests/e2e)",
+    )
     args = ap.parse_args(argv)
 
-    rows, pending, errors = collect(E2E_DIR)
+    e2e_dir = args.dir
+    if e2e_dir is None:
+        env_dir = os.environ.get("AI_HATS_E2E_DIR")
+        e2e_dir = Path(env_dir) if env_dir else E2E_DIR
+    catalog_file = e2e_dir / "CATALOG.md"
+
+    rows, pending, errors = collect(e2e_dir)
     if errors:
         print("[e2e-catalog] malformed flow block(s):", file=sys.stderr)
         for err in errors:
             print(f"  {err}", file=sys.stderr)
         return 1
 
+    ack = os.environ.get("AI_HATS_E2E_CATALOG_ACK") == "1"
+
+    if pending:
+        if ack:
+            print(
+                f"[e2e-catalog] BYPASSED via AI_HATS_E2E_CATALOG_ACK=1 "
+                f"(uncatalogued files allowed: {', '.join(pending)})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[e2e-catalog] refusal — {len(pending)} uncatalogued file(s):",
+                file=sys.stderr,
+            )
+            for name in pending:
+                print(f"  - {name}", file=sys.stderr)
+            print(
+                "  Remedy: write the four-field block (`flow:`, `cmds:`, `expect:`, `why:`)\n"
+                "  in the module docstring (schema in `scripts/gen_e2e_catalog.py`;\n"
+                "  reference: `tests/e2e/test_agy_bypass.py`).",
+                file=sys.stderr,
+            )
+            if args.write:
+                rendered = render(rows, pending)
+                catalog_file.write_text(rendered, encoding="utf-8")
+                done = len({row.file for row in rows})
+                tally = f"{done}/{done + len(pending)} files, {len(rows)} flows"
+                rel = (
+                    catalog_file.relative_to(REPO_ROOT)
+                    if catalog_file.is_relative_to(REPO_ROOT)
+                    else catalog_file
+                )
+                print(f"[e2e-catalog] wrote {rel} ({tally})")
+            return 1
+
     rendered = render(rows, pending)
     # Files, not rows — a multi-flow file is still one file (it would read as
     # more progress than there is).
     done = len({row.file for row in rows})
     tally = f"{done}/{done + len(pending)} files, {len(rows)} flows"
+    rel = (
+        catalog_file.relative_to(REPO_ROOT)
+        if catalog_file.is_relative_to(REPO_ROOT)
+        else catalog_file
+    )
+
     if args.write:
-        CATALOG.write_text(rendered, encoding="utf-8")
-        print(f"[e2e-catalog] wrote {CATALOG.relative_to(REPO_ROOT)} ({tally})")
+        catalog_file.write_text(rendered, encoding="utf-8")
+        print(f"[e2e-catalog] wrote {rel} ({tally})")
         return 0
 
-    current = CATALOG.read_text(encoding="utf-8") if CATALOG.exists() else None
+    current = catalog_file.read_text(encoding="utf-8") if catalog_file.exists() else None
     if current == rendered:
         print(f"[e2e-catalog] current ({tally})")
         return 0
     where = "missing" if current is None else "stale"
     print(
-        f"[e2e-catalog] {CATALOG.relative_to(REPO_ROOT)} is {where} — "
+        f"[e2e-catalog] {rel} is {where} — "
         "run `python scripts/gen_e2e_catalog.py --write`",
         file=sys.stderr,
     )

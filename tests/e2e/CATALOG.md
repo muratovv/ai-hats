@@ -638,6 +638,20 @@ as a claim to check, not as evidence.
 - **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
 
+## `test_e2e_catalog_uncatalogued_refusal.py`
+
+*pins HATS-1563*
+
+- **flow** — the e2e catalog generator refuses an uncatalogued test file unless bypassed
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh e2e-catalog
+  ```
+
+- **expect** — gen_e2e_catalog.py exits non-zero naming uncatalogued files and remedy guidance
+- **why** — without uncatalogued file refusal, new tests added without docstrings bypass the catalog check silently
+
 ## `test_edge_check_gate.py`
 
 *pins HATS-1141*
