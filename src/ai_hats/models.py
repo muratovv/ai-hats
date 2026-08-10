@@ -30,6 +30,7 @@ from .libraries.models import (  # noqa: F401
     CheckBinding,
     CheckBindingError,
     ComponentConfig,
+    ComponentKeyError,
     ComponentType,
     Composition,
     LeftoverSidecarHooksError,

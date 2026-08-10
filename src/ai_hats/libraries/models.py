@@ -74,6 +74,56 @@ class Composition(_YamlModel):
     checks: list[CheckBinding] = Field(default_factory=list)
 
 
+class ComponentKeyError(ValueError):
+    """A component config carries a key no reader can act on (HATS-1545 R2)."""
+
+
+def load_component_yaml(path: Path) -> dict[str, Any]:
+    """Parse a component config, refusing keys that would be lost in silence.
+
+    ``yaml.safe_load`` keeps the LAST of two identical keys and says nothing
+    (measured), so a second ``composition:`` — or a second app under it — erases
+    a declared gate with no diagnostic anywhere. That is the exact silence this
+    channel exists to remove, and unlike every other defect here it cannot be
+    warned about after the fact: the losing declaration is already gone from the
+    structure by the time any reader sees it. So it is the one class that
+    refuses rather than warns (HATS-1545 R2).
+
+    Composed, then constructed from the same node tree: the audit reads the
+    parse events, which is where a duplicate is still observable.
+    """  # comment-length: allow — why this class refuses where others warn
+    loader = yaml.SafeLoader(path.read_text())
+    try:
+        node = loader.get_single_node()
+        if node is None:
+            return {}
+        _reject_duplicate_keys(node, path)
+        return loader.construct_document(node) or {}
+    finally:
+        loader.dispose()
+
+
+def _reject_duplicate_keys(node: yaml.Node, path: Path, trail: tuple[str, ...] = ()) -> None:
+    """Refuse a repeated mapping key anywhere in the document, naming its trail."""
+    if not isinstance(node, yaml.MappingNode):
+        if isinstance(node, yaml.SequenceNode):
+            for index, item in enumerate(node.value):
+                _reject_duplicate_keys(item, path, (*trail, str(index)))
+        return
+    seen: set[str] = set()
+    for key_node, value_node in node.value:
+        key = str(getattr(key_node, "value", key_node))
+        where = ".".join((*trail, key)) or key
+        if key in seen:
+            raise ComponentKeyError(
+                f"{path}: duplicate key {key!r} under {'.'.join(trail) or '<document root>'} — "
+                f"YAML keeps only the last one, so the earlier {where!r} would be dropped "
+                f"with no diagnostic; give it a distinct key or merge the two blocks by hand"
+            )
+        seen.add(key)
+        _reject_duplicate_keys(value_node, path, (*trail, key))
+
+
 class ComponentConfig(_YamlModel):
     """Parsed config.yaml for a trait or role."""
 
@@ -85,7 +135,7 @@ class ComponentConfig(_YamlModel):
 
     @classmethod
     def from_yaml(cls, path: Path) -> ComponentConfig:
-        data = yaml.safe_load(path.read_text()) or {}
+        data = load_component_yaml(path)
         cls._strip_unknown_composition_keys(data, path)
         cls._normalize_check_rows(data, path)
         return cls.model_validate(

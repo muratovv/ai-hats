@@ -6,6 +6,7 @@ from ai_hats.models import (
     CheckBinding,
     CheckBindingError,
     ComponentConfig,
+    ComponentKeyError,
     Composition,
     FeedbackConfig,
     FeedbackPolicy,
@@ -1216,3 +1217,63 @@ def test_facade_surface_parity():
     }
     missing = sorted(n for n in expected if not hasattr(facade, n))
     assert not missing, f"facade lost re-exports: {missing}"
+
+
+# --- HATS-1545 S1: the loader that refuses a key YAML would drop silently ---
+
+
+def _component(tmp_path, body: str):
+    path = tmp_path / "config.yaml"
+    path.write_text(body)
+    return path
+
+
+def test_duplicate_composition_key_is_refused_by_name(tmp_path):
+    """`yaml.safe_load` keeps the last of two identical keys and says nothing,
+    so a second `apps:` erases the first block's gate (HATS-1545 R2, D1)."""
+    path = _component(
+        tmp_path,
+        "name: x\ncomposition:\n  apps:\n    rack:\n      tasks: [a]\n  apps:\n    wt: [b]\n",
+    )
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'apps'" in str(exc.value)
+    assert "composition" in str(exc.value)
+
+
+def test_duplicate_backlog_key_under_an_app_is_refused(tmp_path):
+    """The refusal reaches every depth: R1 shrinks the key surface to app and
+    backlog, it does not remove it."""
+    path = _component(
+        tmp_path,
+        "name: x\ncomposition:\n  apps:\n    rack:\n      tasks: [a]\n      tasks: [b]\n",
+    )
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'tasks'" in str(exc.value)
+
+
+def test_duplicate_top_level_composition_key_is_refused(tmp_path):
+    """A second `composition:` drops the whole first block — same class."""
+    path = _component(tmp_path, "name: x\ncomposition:\n  skills: [a]\ncomposition:\n  rules: [b]\n")
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'composition'" in str(exc.value)
+
+
+def test_a_config_with_no_duplicate_still_loads(tmp_path):
+    path = _component(tmp_path, "name: x\ncomposition:\n  skills: [a, b]\n  rules: []\n")
+    config = ComponentConfig.from_yaml(path)
+    assert config.composition.skills == ["a", "b"]
+
+
+def test_every_shipped_library_config_survives_the_strict_loader():
+    """Strictness that bricks the shipped library is a regression, not a gate."""
+    from pathlib import Path
+
+    import ai_hats_library
+
+    roots = sorted(Path(ai_hats_library.__file__).parent.rglob("config.yaml"))
+    assert roots, "no library configs found — the probe would prove nothing"
+    for path in roots:
+        ComponentConfig.from_yaml(path)
