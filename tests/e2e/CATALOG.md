@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**225 of 225 files catalogued — 232 flows.**
+**226 of 226 files catalogued — 233 flows.**
 
 ## `test_agent_orchestration.py`
 
