@@ -24,13 +24,10 @@ through composition.
 
 - **Scope:** fires only when a commit stages a `library/**/config.yaml` (a
   trait/role injection — where a dangling pointer is introduced). The check then
-  scans the whole working-tree `library/`, because a pointer's deliverability
-  depends on the global `ALWAYS_ON_RULES` + `SUMMARIZED_IN_INJECTION` + every
-  config, not a single diff.
-- **Invariant:** every `see rule X` must resolve to a rule that is either
-  always-on (`providers.ALWAYS_ON_RULES` — full body in the prompt) or registered
-  in `SUMMARIZED_IN_INJECTION` (`ai_hats/rule_delivery.py` — essence summarized
-  inline). A pointer to an undelivered, unregistered rule blocks the commit.
+  scans the whole working-tree `library/`, because a pointer's validity
+  depends on rule existence across the library, not a single diff.
+- **Invariant:** every `see rule X` must resolve to a rule that exists in the library.
+  A pointer to a non-existent rule blocks the commit.
 - **Effect:** the same pure function the G2 unit test uses
   (`python -m ai_hats.rule_delivery library`) returns non-zero → commit blocked
   with the offending `source: see rule X` lines.
@@ -46,8 +43,7 @@ counterpart is the G2 unit test, run by CI on every PR/push to master.
 
 ## How to bypass
 
-Fix the pointer — make the rule always-on, fold its essence into the injection
-and register it in `SUMMARIZED_IN_INJECTION`, or drop the pointer — or, after
+Fix the pointer — create the missing rule in the library or drop the pointer — or, after
 confirming the pointer is intentional, skip the gate for a single commit:
 
 ```bash

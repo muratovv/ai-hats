@@ -17,36 +17,6 @@ CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
 
-# HATS-700 / HATS-1511: rule-delivery channel — body delivered iff named here
-# or declared with 'delivery: always_on' in metadata.yaml;
-# adding/declaring one is a deliberate prompt-budget decision. HATS-865: leaf home.
-ALWAYS_ON_RULES = {
-    "global_rule_destructive_actions",
-    "global_rule_resource_hygiene",
-    "dev_rule_secure_coding",
-    "dev_rule_tool_call_hygiene",
-    # HATS-437: primary defense against autonomous shared-state writes.
-    # The PreToolUse / pre-push hooks are a safety net for this rule.
-    "rule_pause_before_shared_state_write",
-    # HATS-452: always-on architectural guard; rationale docs/adr/0005-*.md
-    "rule_composition_value_contract",
-    # HATS-842: promoted so the agent reads the exact few-shot guide at
-    # authoring time; dropped from SUMMARIZED_IN_INJECTION.
-    "dev_rule_comment_discipline",
-    # HATS-1373: the distinction it draws — breadth of the catch is fine,
-    # silence of the body is not — does not survive being summarized into a
-    # bullet, which reads as the opposite lesson ("never catch broadly").
-    "dev_rule_silent_fallback",
-    # HATS-1430: the invariant is whose status you read; a summarized bullet
-    # collapses back into a list of masking spellings, which is the enumeration
-    # that let `pytest …; echo "EXIT=$?"` through.
-    "dev_rule_exit_code_provenance",
-    # HATS-1430: the four kinds it names (name / glob / quantifier / count) are
-    # the rule; a summarized bullet collapses back to "check the names", which
-    # is the doc-protocol enumeration this replaced.
-    "rule_verify_authored_claims",
-}
-
 
 # Env-var names shared across modules (HATS-917); single-file knobs stay local.
 # (ENV_SESSION_ID lives in ai_hats_observe.trace — observe's schema, HATS-948.)
