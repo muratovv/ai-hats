@@ -319,14 +319,17 @@ def requires_cline_auth() -> None:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         pytest.skip(f"cline execution probe failed: {exc}")
+    probe_output = (probe.stdout or "") + "\n" + (probe.stderr or "")
     if (
         probe.returncode != 0
-        or 'finishReason":"error"' in probe.stdout
-        or "Unauthorized" in probe.stdout
-        or "Insufficient balance" in probe.stdout
-        or "Please recharge" in probe.stdout
+        or 'finishReason":"error"' in probe_output
+        or "Unauthorized" in probe_output
+        or "Insufficient balance" in probe_output
+        or "Please recharge" in probe_output
+        or "re-authenticate" in probe_output
+        or "Authentication failed" in probe_output
     ):
-        output = (probe.stdout or probe.stderr or "").strip()
+        output = probe_output.strip()
         pytest.skip(f"cline auth/execution probe failed: {output[-300:]}")
 
 

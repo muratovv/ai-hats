@@ -53,10 +53,8 @@ def build_src(repo_root: Path) -> Path:
     Serial → ``repo_root``. Under xdist → a per-worker ``git clone --shared``
     so concurrent ``pip install <src>`` builds never race ``<repo>/build/``.
     """
-    worker = os.environ.get("PYTEST_XDIST_WORKER")
-    if not worker:
-        return repo_root
-    cached = _CACHE.get("src")
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "serial")
+    cached = _CACHE.get(worker)
     if cached is not None:
         return cached
     dst = Path(tempfile.mkdtemp(prefix=f"hats-buildsrc-{worker}-"))
@@ -71,5 +69,5 @@ def build_src(repo_root: Path) -> Path:
         text=True,
         timeout=CLONE_TIMEOUT_S,
     )
-    _CACHE["src"] = src
+    _CACHE[worker] = src
     return src
