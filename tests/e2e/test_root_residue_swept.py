@@ -1,10 +1,12 @@
-"""E2E: pre-HATS-1170 root wiring residue is swept off the project root.
+"""e2e (HATS-1170, HATS-1336)
 
-Only the sweeper can reclaim these entries — ``ensure_runtime_hooks`` is a
-no-op and ``runtime_wiring_changes`` returns ``[]`` (HATS-1336). The sweep is
-``install_time`` only (``assembler.py:848-851``), so these drive a real
-``_bump_internal``, not ``set_role`` and not session start.
-"""
+flow:   a developer running self clean to remove root residue files
+cmds:
+    ai-hats self clean
+expect: clean command sweeps legacy root residue files and keeps framework state inside
+        .agent/ai-hats/
+why: without root residue sweeps, legacy config files remain in project root corrupting
+     state resolution"""
 
 from __future__ import annotations
 

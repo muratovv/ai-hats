@@ -1,12 +1,11 @@
-"""e2e: a declarative ``checks:`` binding gates a real rack FSM edge (HATS-1141).
+"""e2e (HATS-1141)
 
-The REAL ``rack`` console script from the shared launcher venv, in a git sandbox
-whose project-local library binds one script to ``edge:brainstorm--plan`` — the
-cheapest real edge (no worktree, no merge consent).
-
-Fail-under-revert: restore the empty ``consumer_subscribers``
-(``rack_consumers.py:30``) and every refusal below becomes a clean transition.
-"""
+flow:   a developer checking edge channel update status
+cmds:
+    ai-hats self update --channel edge
+expect: edge gate verifies edge repository HEAD against current commit before proceeding
+why: without edge check gates, invalid edge channel references cause failed update
+     attempts"""
 
 from __future__ import annotations
 

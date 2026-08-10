@@ -1,8 +1,8 @@
 """e2e (HATS-432, HATS-441, HATS-458)
 
-flow:   an agent running background update check on a non-editable package installation
+flow:   an agent running session execution on a non-editable package installation
 cmds:
-    python -m ai_hats.update_check .
+    ai-hats execute -r assistant
 expect: background checker uses probe-mirror fallback to fetch remote refs and
         calculates behind
         commit counts

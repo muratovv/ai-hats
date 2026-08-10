@@ -1,23 +1,11 @@
-"""E2E: a crashed session never leaks disk (HATS-649 / R2).
+"""e2e (HATS-649)
 
-Value under test: ``versions/<sha>/`` dirs orphaned by an ended/crashed run are
-reclaimed on the next ``ai-hats`` invocation, while a version a **live** run is
-pinned to is never touched. Exercised with a real launcher + real pip + real
-``ai-hats self update`` (per ``dev_rule_e2e_gate``) and real OS pids — no flaky
-SIGKILL race: liveness is decided deterministically by ``root_pid`` +
-``ps``-reported ``start_time``.
-
-Three planted complete, non-``current`` versions, each with a liveness ref:
-  1. **dead pid** — a spawned-then-reaped pid → reclaimed.
-  2. **pid reuse** — a *live* pid but a non-matching ``start_time`` → reclaimed
-     (precise reuse detection, no TTL).
-  3. **live pin** — a *live* pid with the correct ``start_time`` → kept.
-
-Fail-under-revert:
-  - reverting the reclaim → cases 1 & 2 ``not exists`` assertions fail (leak);
-  - reverting the liveness keep (treat all as dead) → case 3's ``is_dir``
-    assertion fails (a live run's env wrongly deleted).
-"""
+flow: a developer running self update when old version directories exist under versions/
+cmds:
+    ai-hats self update
+expect: garbage collection prunes version directories older than retention threshold
+why: without version garbage collection, accumulated version directories consume
+     unbounded disk space"""
 
 from __future__ import annotations
 from _helpers.git import git

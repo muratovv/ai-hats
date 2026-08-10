@@ -1,12 +1,13 @@
-"""HATS-660 — script-level behaviour of the py-security-lint PostToolUse hook.
+"""e2e (HATS-660)
 
-Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface. We feed it Claude
-Code ``PostToolUse`` payloads on stdin and assert the NON-BLOCKING contract: on a
-``.py`` file with a ruff ``S`` (flake8-bandit) finding it emits
-``hookSpecificOutput.additionalContext`` forwarding the finding; otherwise it is
-silent. It NEVER emits a ``permissionDecision`` and NEVER blocks. Fail-open on any
-error (ruff absent, non-.py, garbage payload).
-"""
+flow:   an agent editing python files with security vulnerabilities
+cmds:
+    # when editing python code containing security flaws
+    git commit -m "update code"
+expect: python security lint hook runs ruff security checks and outputs non-blocking
+        warnings
+why: without security lint hooks, vulnerable python coding patterns land in codebase
+     without warning"""
 
 from __future__ import annotations
 

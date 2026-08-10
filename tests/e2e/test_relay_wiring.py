@@ -1,4 +1,12 @@
-"""Real-PTY end-to-end integration test for ai-hats-relay FD tap (HATS-1197)."""
+"""e2e (HATS-1197)
+
+flow:   an agent running session with PTY relay stream active
+cmds:
+    ai-hats execute -r assistant
+expect: PTY relay wires input/output channels allowing external inspection during
+        execution
+why: without PTY relay wiring, interactive agent terminal sessions cannot be monitored
+     by external UI"""
 
 from __future__ import annotations
 

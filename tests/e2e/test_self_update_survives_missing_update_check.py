@@ -1,35 +1,12 @@
-"""E2E: ``ai-hats self update`` survives a missing ``ai_hats.update_check`` (HATS-987).
+"""e2e (HATS-987)
 
-Belt-and-suspenders hardening. The real-user harm this anchors: on a managed
-(blue-green) install the new version lands in a fresh ``versions/<sha>/`` dir
-while the post-install cache-drop (``_invalidate_update_cache``) runs in the
-**old** interpreter. If that interpreter's site-packages lack ``update_check``
-(a hypothetical packaging regression), the lazy ``from ..update_check.cache
-import cache_path`` raised ``ModuleNotFoundError`` AFTER the update had already
-succeeded — a traceback + non-zero exit on an otherwise-healthy update.
-
-Setup (real ``bash`` + real uv install + real launcher, per ``dev_rule_e2e_gate``
-— no stubs):
-
-  - ``install-launcher.sh`` → ``self update --force-downgrade`` (edge, local
-    source via ``build_src``) → ``self init`` builds a managed install.
-  - Remove ``ai_hats/update_check/`` from every managed venv's site-packages so
-    the running interpreter genuinely lacks the module.
-  - Re-run ``self update --force-downgrade`` (edge).
-
-Assert (patched): exit 0, no ``ModuleNotFoundError`` / traceback, and the update
-actually ran (a bump-backup tarball exists).
-
-Fail-under-revert (the exit code is the discriminator — the bump-backup is
-written BEFORE ``_invalidate``, so it exists either way):
-
-  - revert the cache-drop wrap → ``_invalidate`` crashes AFTER install → non-zero;
-  - revert the channel relocate → edge URL resolution imports the (removed)
-    ``update_check.checker`` BEFORE install → non-zero.
-
-Each test builds its own launcher venv because ``self update`` mutates the venv
-(the session-shared fixture is read-only by contract).
-"""
+flow:   a developer running self update when update_check module is unavailable
+cmds:
+    ai-hats self update
+expect: self update falls back safely and completes installation without update check
+        telemetry
+why: without update check fallback, missing telemetry modules break core self update
+     functionality"""
 
 from __future__ import annotations
 

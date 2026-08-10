@@ -1,12 +1,12 @@
-"""E2E acceptance tests for the pre-commit smoke hook's path scoping.
+"""e2e (HATS-1345, HATS-1352)
 
-HATS-1345 scoped the run to ``tests/e2e/``; HATS-1352 bounds that to projects
-which have the directory — pytest answers a missing path with rc=4, not the rc=5
-the hook treats as "nothing to run", so consumers without it had every commit
-blocked. The two tests pull in opposite directions on purpose: keep only the
-first and the hook may as well hardcode the path; keep only the second and
-dropping the scoping altogether still passes.
-"""
+flow:   a maintainer running pre-commit smoke test collection
+cmds:
+    bash scripts/pre-commit-smoke.sh
+expect: smoke script collects fast smoke test suite and runs verification within target
+        deadline
+why: without fast smoke test collection, pre-commit git hooks slow down local commit
+     workflows"""
 
 from __future__ import annotations
 from _helpers.git import git as _git

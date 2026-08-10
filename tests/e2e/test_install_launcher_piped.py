@@ -2,8 +2,7 @@
 
 flow:   a developer running piped installer script via stdin without a local git clone
 cmds:
-    curl -sSL
-    https://.../install-launcher.sh
+    curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh
     | bash
 expect: installer fetches launcher over network and writes launcher script defaulting to
         git+https source

@@ -1,8 +1,8 @@
 """e2e (HATS-471, HATS-582)
 
-flow:   a developer running internal bump commands across framework upgrades
+flow:   a developer running self update across framework upgrades
 cmds:
-    python -m ai_hats._bump_internal
+    ai-hats self update
 expect: first bump replays pending migrations and persists migration_step, while second
         bump
         short-circuits

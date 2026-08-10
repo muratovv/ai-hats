@@ -1,23 +1,12 @@
-"""E2E: ``ai-hats self update`` survives an ai-hats.yaml the installed code
-cannot fully validate (HATS-581).
+"""e2e (HATS-581)
 
-The forward-compat deadlock this anchors (reproduced live on a proxmox
-project): an OLDER installed binary chokes on a field a NEWER binary wrote
-into ai-hats.yaml (``migration_step``, added without a schema_version
-bump). ``ProjectConfig`` was ``extra="forbid"`` → hard crash at
-``_assembler(project_dir)`` BEFORE the package install — so ``self update``,
-the exact recovery command, was blocked by the thing it would have fixed.
-
-Two layers under test:
-  * Fix #2 — unknown keys are stripped with a WARN instead of crashing.
-  * Fix #1 — even a non-strippable error (wrong-type value) degrades the
-    update instead of dumping a traceback.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Each test builds
-its own launcher venv because ``self update`` mutates the venv (the
-session-shared fixture is read-only by contract).
-"""
+flow: a developer running self update on a project with partially corrupted config file
+cmds:
+    ai-hats self update
+expect: self update repairs corrupted config fields while preserving intact user
+        settings
+why: without resilient config parsing, malformed yaml keys crash self update preventing
+     project recovery"""
 
 from __future__ import annotations
 

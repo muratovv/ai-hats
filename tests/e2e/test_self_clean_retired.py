@@ -1,20 +1,11 @@
-"""E2E: ``ai-hats self clean`` is retired (HATS-709).
+"""e2e (HATS-294, HATS-709)
 
-The ``clean`` subsystem was a total no-op on v4 — framework content is
-composed in memory (HATS-294), and the only materialized managed content
-(``library/hooks``) is owned by ``_refresh``. The command plus its dead
-helper chain (``_clean`` / ``_clean_non_local`` / ``_clean_managed_entries``
-/ ``_write_managed_manifest``) were removed.
-
-Per ``dev_rule_e2e_gate``, the ``src/ai_hats/cli/`` surface change (command
-+ registration removed) needs a **real-subprocess** test that fails if the
-command is restored. Runs the real launcher + real pip + real ``ai-hats``
-binary (session-shared venv via ``shared_launcher``). Marked ``integration``.
-
-Fail-under-revert: re-add ``self_group.add_command(assembly.clean)`` in
-``cli/__init__.py`` (and the ``clean()`` command in ``cli/assembly.py``) and
-``ai-hats self clean`` exits 0 again → this test fails.
-"""
+flow:   a developer running self clean on a project with retired framework files
+cmds:
+    ai-hats self clean
+expect: clean command removes retired files from .agent/ai-hats/ and restores clean
+        workspace
+why:    without self clean, deprecated framework artifacts persist in repository history"""
 
 from __future__ import annotations
 

@@ -1,22 +1,12 @@
-"""E2E (HATS-470): bump CLI removal + `_bump_internal` entry-point + trash bin.
+"""e2e (HATS-470, HATS-582)
 
-Three contracts a reviewer can refute by reverting the relevant code:
-
-1. ``ai-hats self bump`` is no longer a registered CLI command → exit
-   ≠ 0 with "No such command 'bump'" on stderr/stdout.
-2. The hidden ``python -m ai_hats._bump_internal`` works as a
-   stand-alone entry-point: idempotent, exit 0, prints the trash
-   summary banner when destructive ops fire.
-3. A destructive bump path (legacy-ref healing inside ``self init``)
-   creates a real ``$TMPDIR/ai-hats/trash-<ts>-<pid>-XXXXXX/`` session
-   with a populated ``MANIFEST.md``.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Cost amortization (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
-"""
+flow:   a developer running internal bump with safe-delete protection enabled
+cmds:
+    python -m ai_hats._bump_internal
+expect: safe-delete helper moves discarded files to session trash directory rather than
+        raw deletion
+why: without safe-delete protection, framework migrations perform unrecoverable file
+     deletions"""
 
 from __future__ import annotations
 

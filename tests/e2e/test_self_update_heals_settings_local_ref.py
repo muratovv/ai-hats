@@ -1,11 +1,12 @@
-"""E2E: a tagged broken ref in ``.claude/settings.local.json`` no longer wedges bump.
+"""e2e (HATS-1513)
 
-Before HATS-1513 the two contours disagreed about that file: the end-of-bump
-assert read it (``SETTINGS_TARGETS``) while the sweeper's surfaces did not, so
-the entry refused every ``self update`` and no CLI path could clear it.
-
-Real binary, real subprocess (``dev_rule_e2e_gate``).
-"""
+flow:   a developer running self update on a project carrying local settings references
+cmds:
+    ai-hats self update
+expect: migration step heals local settings references to match current project
+        structure
+why: without local settings healing, invalid paths in settings.json cause hook
+     invocation failures"""
 
 from __future__ import annotations
 

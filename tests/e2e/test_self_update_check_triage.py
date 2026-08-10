@@ -1,19 +1,11 @@
-"""E2E: ``ai-hats self update --check`` triages the install layers (HATS-595).
+"""e2e (HATS-595)
 
-Value under test: recovering a partially-destroyed ``.agent/`` used to require
-source-diving to learn which pieces are DATA (hand-authored, snapshot-only),
-MANAGED (rebuilt by ``self init``), or RUNTIME (rebuilt by ``self update``).
-``--check`` answers that read-only, and its exit code makes the verdict
-machine-detectable: 0 when healthy or warn-only, 1 when a layer is broken.
-
-Fail-under-revert: drop the ``sys.exit(1 if ... BROKEN else 0)`` branch from
-``update()`` in ``cli/maintenance.py`` and the broken-layer run exits 0 — the
-``expect_exit=1`` assertion below fails.
-
-Setup contract (real subprocess + real uv + real launcher + real ``ai-hats``
-binary), per ``dev_rule_e2e_gate``. Uses the ``local`` channel so the run is
-offline and network-free.
-"""
+flow:   a developer inspecting background update check triage results
+cmds:
+    ai-hats config status
+expect: status display reports update check state without blocking command execution
+why: without background update check triage, failed update checks crash user status
+     subcommands"""
 
 from __future__ import annotations
 

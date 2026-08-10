@@ -1,8 +1,8 @@
 """e2e (HATS-645)
 
-flow: a test runner executing e2e integration tests under strict venv requirements mode
+flow:   a maintainer running the e2e test suite gate under strict venv requirements mode
 cmds:
-    pytest tests/e2e/test_runtime_hook_propagation.py
+    bash scripts/run-e2e-gate.sh
 expect: missing or unbuildable test venvs raise fatal failures under strict mode instead
         of
         skipping tests

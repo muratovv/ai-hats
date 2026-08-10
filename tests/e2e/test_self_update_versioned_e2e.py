@@ -1,31 +1,12 @@
-"""E2E: ``ai-hats self update`` is blue-green versioned (HATS-647 / R0).
+"""e2e (HATS-647)
 
-The value under test: an update never mutates the venv a live run is
-executing from. ``self update`` on a managed default venv installs the new
-version into ``versions/<sha>/`` and atomically flips ``versions/current``;
-the previous ``versions/<old-sha>/`` is left untouched, so a concurrently
-live run pinned to it keeps its frozen environment.
-
-Setup contract (real subprocess + real pip + real launcher), per
-``dev_rule_e2e_gate``:
-
-  - ``src-repo``  — a clone of REPO_ROOT used as the local (non-editable)
-    install source. Its HEAD sha names the installed version dir.
-  - First ``self update`` → ``versions/<shaA>/`` + ``current → shaA``.
-  - A trivial commit advances ``src-repo`` HEAD → ``shaB``.
-  - Second ``self update`` → ``versions/<shaB>/`` + ``current → shaB``,
-    while ``versions/<shaA>/`` survives unchanged.
-
-Fail-under-revert: the pre-HATS-647 code installs in place into the single
-``.venv`` and never creates ``versions/`` — so the ``versions/<sha>/`` +
-``current`` assertions below fail, and ``versions/<shaA>/`` is never
-preserved across the second update.
-
-Pin-at-spawn details (a process pinned via ``AI_HATS_VENV`` stays on its
-sha even after ``current`` flips; descendants inherit the pin) are covered
-by the launcher unit tests in ``tests/test_launcher.py`` — this e2e proves
-the real ``self update`` produces and advances the versioned layout.
-"""
+flow:   a developer executing self update under versioned venv layout
+cmds:
+    ai-hats self update
+expect: self update builds new versioned venv in versions/<sha>/ and atomically updates
+        current symlink
+why: without versioned venv builds, updates overwrite active venvs mid-session causing
+     tool crashes"""
 
 from __future__ import annotations
 from _helpers.git import git

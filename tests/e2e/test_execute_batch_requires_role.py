@@ -1,10 +1,12 @@
-"""E2E: ``ai-hats execute --batch`` without a role fails clean (HATS-827).
+"""e2e (HATS-827)
 
-The guard fails at the CLI boundary (redirect to ``ai-hats agent``) before any
-provider launch — no LLM call. Pins ``PYTHONPATH`` to this checkout's ``src`` so
-the shim subprocess runs the code under test; the guard runs before any library
-access, so a raw-``src`` import suffices.
-"""
+flow: a developer running execute in batch mode without specifying role or default_role
+cmds:
+    ai-hats execute --batch --prompt "hello"
+expect: command exits with code 2 explaining that explicit role specification is
+        required for batch
+why: without role validation in batch mode, execution runs under uninitialized default
+     roles"""
 
 from __future__ import annotations
 

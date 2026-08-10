@@ -1,8 +1,8 @@
 """e2e (HATS-676, HATS-678, HATS-771)
 
-flow:   a test suite running concurrent install-heavy e2e tests under pytest-xdist
+flow:   a maintainer running the e2e test suite gate with xdist sharding
 cmds:
-    pytest -n8 --dist=loadgroup tests/e2e
+    bash scripts/run-e2e-gate.sh
 expect: install-heavy test items are capped into fixed xdist groups to prevent network
         saturating race conditions
 why: without xdist group throttling, uncapped concurrent uv pip installs saturate

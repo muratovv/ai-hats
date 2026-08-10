@@ -1,18 +1,12 @@
-"""HATS-633 — end-to-end behaviour of the pre-commit-privacy hook.
+"""e2e (HATS-633)
 
-Per ``dev_rule_e2e_gate``: the hook is a pure-bash surface the unit suite cannot
-meaningfully exercise. This file stages real content into a throwaway git repo
-and runs the hook as a real subprocess to cover:
-
-  * the HATS-633 credential catalogue (private key, DB-URI-with-creds, GitHub
-    token family, AWS secret key, Slack webhook, Stripe, SendGrid, npm, JWT);
-  * the inline FP allow-marker (`# ai-hats: allow-secret`) — line-level bypass;
-  * the enriched blocked-commit guidance that advertises the marker;
-  * negative controls (credential-free URI, clean file) and a regression check
-    that a pre-existing pattern (AWS AKIA id) still blocks.
-
-The privacy hook had ZERO test coverage before this file.
-"""
+flow:   a developer committing files containing potential API keys or private tokens
+cmds:
+    git commit -m "add config"
+expect: privacy pre-commit hook scans staged diffs, blocks commits containing secrets,
+        and logs journal
+why: without privacy pre-commit hooks, sensitive tokens and API keys get accidentally
+     committed to git"""
 
 from __future__ import annotations
 

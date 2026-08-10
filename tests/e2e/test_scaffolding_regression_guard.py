@@ -1,6 +1,12 @@
-"""Regression guard (HATS-1497 / R8): e2e files must use _helpers/git.py and conftest
-fixtures
-rather than re-implementing local _git or installed_launcher scaffolding."""
+"""e2e (HATS-1497)
+
+flow:   a maintainer running e2e test suite regression checks
+cmds:
+    bash scripts/run-e2e-gate.sh
+expect: regression guard verifies all e2e test files use git helpers and conftest
+        fixtures
+why: without scaffolding regression guards, e2e tests introduce raw subprocess calls
+     that leak state"""
 
 from __future__ import annotations
 

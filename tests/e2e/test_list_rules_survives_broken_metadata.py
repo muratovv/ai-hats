@@ -1,4 +1,12 @@
-"""E2E test: `ai-hats list rules` survives a broken metadata.yaml file (HATS-1510)."""
+"""e2e (HATS-1510)
+
+flow:   a developer running list rules when a rule metadata.yaml file is malformed
+cmds:
+    ai-hats list rules
+expect: list rules skips malformed metadata gracefully, printing warning while listing
+        valid rules
+why: without resilient metadata loading, one corrupt rule file breaks list rules for the
+     whole project"""
 
 from __future__ import annotations
 

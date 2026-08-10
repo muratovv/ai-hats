@@ -1,8 +1,9 @@
 """e2e (HATS-1123)
 
-flow:   an agent running internal bump commands from an uninitialized worktree directory
+flow:   an agent running self update from an uninitialized worktree directory
 cmds:
-    python -m ai_hats._bump_internal
+    # running self update from worktree lacking project config
+    ai-hats self update
 expect: bump process skips migration replay when project config is missing avoiding
         foreign hook
         evictions
