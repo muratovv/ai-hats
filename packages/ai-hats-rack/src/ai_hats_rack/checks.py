@@ -1,4 +1,4 @@
-"""The FSM half of the ``checks:`` channel: the rack owns its own point names.
+"""The FSM half of the binding channel: the rack owns its own point names.
 
 ADR-0019 D11. An integrator composes a role and hands over already-resolved
 declarations; what ``edge:<from>--<to>`` *means*, whether this instance's

@@ -277,8 +277,9 @@ def _write_marker(project: Path, sha: str) -> Path:
 def test_the_maintainer_role_binds_the_gate_to_both_roads_into_master():
     """S4 / the epic's acceptance: a live consumer, bound and proven to refuse.
 
-    Both points in ONE row, deliberately. `edge:review--done` is the FSM
-    automerge and `wt:pre-merge` is a direct `ai-hats wt merge`; a gate holding
+    One script, TWO rows since HATS-1545 — the app owns the grammar above
+    `run:`, so a row belongs to exactly one app. `apps.rack.tasks` is the FSM
+    automerge and `apps.wt` is a direct `ai-hats wt merge`; a gate holding
     only one of them is the asymmetry that started the epic, and HATS-1538 left
     through the unheld one. HATS-1137's tombstone stood here until the two
     reasons it was withdrawn for were closed (HATS-1540 S1 and S5).

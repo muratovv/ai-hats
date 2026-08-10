@@ -312,3 +312,20 @@ def test_the_log_name_stays_readable_and_still_discriminates(skill):
     token = check_log_token(row)
     assert token.startswith("rack~tasks~gate-skill~hooks+gate.sh~")
     assert len(token.rsplit("~", 1)[1]) == 8
+
+
+def test_the_app_roster_matches_the_integrations_that_claim_the_keys():
+    """HATS-1545 F11. `KNOWN_APPS` exists only to NAME a block nobody collects,
+    so it has to agree with the integrations that actually collect one. Spelled
+    in two places (here and at each integration's call site); rename one and
+    `_warn_unclaimed_apps` goes quiet while every row of that app goes
+    uncollected — the silence R9 exists to prevent, inside R9's own guard."""
+    from ai_hats.check_points import WT_APP
+    from ai_hats.rack_consumers import AiHatsCheckPort
+
+    assert AiHatsCheckPort.APP in KNOWN_APPS, "the rack integration's key must be on the roster"
+    assert WT_APP in KNOWN_APPS, "ai-hats's own app must be too"
+    assert KNOWN_APPS == {AiHatsCheckPort.APP, WT_APP}, (
+        "the roster must list exactly the apps some integration claims — an extra "
+        "entry silences the warning for an app nobody collects"
+    )

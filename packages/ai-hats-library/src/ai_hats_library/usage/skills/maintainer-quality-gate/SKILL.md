@@ -75,7 +75,7 @@ That is the only step invoked by hand. It runs the whole `done-gate` stage
 
 Every run's full transcript lands beside the card at
 
-    <tasks_dir>/<ID>/.checks/edge-review--done~maintainer-quality-gate~hooks+done-gate.sh.log
+    <tasks_dir>/<ID>/.checks/edge-review--done~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
 
 — one file per (task, edge, binding). The leading-dot directory keeps it out of
 the document registry (`docstore._is_document`), so a gate never pins its own
@@ -229,13 +229,17 @@ What that means at run time:
   *broke* under `on_error: warn`: that one is downgraded to a work-log note and
   the loop continues.
 - **Each binding writes its own log**,
-  `.checks/<event>~<skill>~<script>.log`, with `/` escaped to `+`. Before
-  HATS-1137 the name carried the edge only, so binding #2 truncated #1's file.
-- `on:` is a list, so **one row may name several points**, and **several rows
-  may name the same point**. Only an exact `(skill, script, point)` triple
-  collapses: `check_points.resolve_checks` dedups on it, keeps the **first**
-  declaration's slot, and hardens `on_error` to the strictest of the two — a
-  later `warn` can never relax a gate an earlier row declared `refuse`.
+  `.checks/<event>~<app>[~<level>…]~<skill>~<script>~<digest>.log`, with `/`
+  escaped to `+`. Before HATS-1137 the name carried the edge only, so binding #2
+  truncated #1's file; the trailing digest (HATS-1545) covers `at:` and the rest
+  of the row's identity, so two rows differing only in the points they bind
+  cannot share a file either. Glob for the stem — do not hand-build the name.
+- `at:` is a list, so **one row may name several points**, and **several rows
+  may name the same point**. Only an exact `(app, path, run, at + cargo)`
+  identity collapses: `check_points.resolve_checks` dedups on it, keeps the
+  **first** declaration's slot, warns naming both declarers, and hardens
+  `on_error` to the strictest of the two — a later `warn` can never relax a gate
+  an earlier row declared `refuse`.
 - Binding to a skill the role does not compose is a loud composition error, not
   an implicit compose. `on_error: warn` is rejected outright at the
   data-protection points (`wt:pre-merge`, `wt:teardown[*]`), whose failure

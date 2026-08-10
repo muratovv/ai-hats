@@ -209,10 +209,12 @@ silently.
 | `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146)     |
 | `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
 
-The catalog is **ai-hats's own namespaces only** since rev 9 (D11): `card:` and
-`wt:` rows above are catalog entries — `check_points.wt_points()` knows the
-name and a binding to it validates, so a typo there is still refused at
-composition. The `edge:` row is **not** in that catalog and is not validated by
+The catalog is **ai-hats's own namespaces only** since rev 9 (D11), and since
+HATS-1545 that means the `wt:` rows alone: `check_points.wt_points()` knows those
+names and a typo there is refused at composition. `card:pre-create` left with the
+namespace prefix — cards are the rack's, so the name is rack cargo now, validated
+by nobody and fired by nobody (it never had a caller; HATS-1404 would give it
+both). The `edge:` row is **not** in that catalog and is not validated by
 ai-hats at all; its grammar, its topology and its subscriptions belong to the
 rack. The `execution` column tracks something else —
 the caller that actually fires the point — and there the rows part company.

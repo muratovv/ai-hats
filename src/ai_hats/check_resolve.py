@@ -26,7 +26,9 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import CompositionResult, ResolvedCheck
 
 
-#: The ``checks`` mapping key in every spelling the YAML parser accepts, anchored
+#: The binding-channel key in every spelling the YAML parser accepts — ``apps``
+#: and the retired ``checks`` alike, so a config left on the old one still
+#: composes far enough to hear why it is refused (HATS-1545 R11). Anchored
 #: to a line start so ``prechecks:`` is not one. A scan still, not a parse: a
 #: false positive costs one compose, a false negative disarms a gate.
 _CHECKS_KEY = re.compile(

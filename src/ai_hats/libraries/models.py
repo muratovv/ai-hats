@@ -296,7 +296,7 @@ def _reject_non_string_keys(
 ) -> None:
     """Refuse a key YAML resolves to something other than a string.
 
-    Scoped to ``composition:`` because that subtree is now an OPEN registry: an
+    Scoped to ``composition.apps`` because that subtree is the OPEN registry: an
     app's block is carried verbatim, so no remap can fix a key after the fact.
     ``on:`` is the live case — YAML 1.1 resolves it to ``True``, and ``on``/``yes``
     then collapse into one cell (measured). The old channel patched that up for
@@ -311,7 +311,7 @@ def _reject_non_string_keys(
         return
     for key_node, value_node in node.value:
         if key_node.tag != "tag:yaml.org,2002:str":
-            where = ".".join(("composition", *trail)) or "composition"
+            where = ".".join(("composition", "apps", *trail))
             raise ComponentKeyError(
                 f"{path}: under {where}, the key {key_node.value!r} is not a string — YAML 1.1 "
                 f"reads it as {key_node.tag.rpartition(':')[2]}, so it can never match the key a "

@@ -1,4 +1,4 @@
-"""The carrier side of the ``checks:`` channel for the rack (HATS-1141).
+"""The carrier side of the binding channel for the rack (``composition.apps.rack``).
 
 Successor of the ``lifecycle_hooks`` executor retired in HATS-1147 (ADR-0019
 D8): a binding declared by a trait or role fires on the FSM edge it names, in
