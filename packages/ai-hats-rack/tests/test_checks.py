@@ -200,7 +200,21 @@ def test_a_port_older_than_the_protocol_does_not_raise_attributeerror_in_the_loc
     class _Ancient:
         pass
 
-    assert CheckSubscriber(_Ancient(), topology=_topology()).on_event(_ctx()) is None
+    CheckSubscriber(_Ancient(), topology=_topology()).on_event(_ctx())
+
+
+def test_a_port_that_cannot_be_asked_for_declarations_says_so_instead_of_passing():
+    """The skew above must not ALSO be silent: answering "nothing declared" is
+    every declared gate vanishing with nothing written anywhere (review F1)."""
+
+    class _Ancient:
+        pass
+
+    delta = CheckSubscriber(_Ancient(), topology=_topology()).on_event(_ctx())
+
+    assert delta is not None, "a port with no check_declarations passed unremarked"
+    assert "check_declarations" in delta.work_log[0]
+    assert "ungated" in delta.work_log[0]
 
 
 def test_a_carrier_that_raises_becomes_a_typed_refusal():

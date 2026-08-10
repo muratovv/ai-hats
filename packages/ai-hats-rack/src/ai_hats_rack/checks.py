@@ -130,6 +130,8 @@ class CheckSubscriber:
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
+        if not callable(getattr(self._port, "check_declarations", None)):
+            return self._without_declarations()
         bound = self._bound_to(ctx.event.key)
         if not bound:
             return None
@@ -179,15 +181,31 @@ class CheckSubscriber:
     def _declarations(self) -> Sequence[CheckDeclaration]:
         """Ask the port, and turn any trouble into this channel's own refusal —
         a traceback out of an in-lock subscriber is a defect, not a message."""
-        source = getattr(self._port, "check_declarations", None)
-        if not callable(source):
-            return ()
         try:
-            return source()
+            return self._port.check_declarations()
         except AbortOperation:
             raise
         except Exception as exc:
             raise AbortOperation(f"checks: {exc}") from exc
+
+    def _without_declarations(self) -> Delta:
+        """A port that cannot even be ASKED, said out loud (HATS-1541 review F1).
+
+        Returning an empty set here instead is the fail-open this channel exists
+        to remove: every declared gate vanishes and the transition passes with
+        nothing written anywhere. It does not refuse, for the same reason
+        :meth:`_without_executor` decides per row — bricking every transition on
+        a skewed integrator is the HATS-1538 class. Unlike that case there are no
+        rows to consult, because the method that would list them is the missing
+        one, so the note is the whole verdict.
+        """  # comment-length: allow — why it speaks but does not refuse is the fix
+        return Delta(
+            work_log=(
+                "checks: the integrator supplying this backlog exposes no "
+                "ai_hats_rack.checks.CheckPort.check_declarations — no declared gate "
+                "can be read, so none ran; transitions stay ungated until it is wired",
+            )
+        )
 
     def _without_executor(self, bound: Sequence[CheckDeclaration]) -> Delta | None:
         """Decided per row (D11 clause 4): refusing everything bricks a rack
