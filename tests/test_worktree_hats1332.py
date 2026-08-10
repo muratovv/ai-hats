@@ -134,6 +134,9 @@ class _PruningLifecycle:
     def on_created(self, ctx) -> None:  # noqa: ANN001 — core Protocol, ctx unused
         return None
 
+    def before_merge(self, ctx) -> None:  # noqa: ANN001 — HATS-1540, nothing to gate here
+        return None
+
     def before_teardown(self, event: str, ctx) -> None:  # noqa: ANN001
         _prune_behind_manager(self.project, ctx.worktree_path)
 

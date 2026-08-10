@@ -29,7 +29,14 @@ dependencies = [
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
     "ai-hats-core>=0.6.1",  # ResolvedCheck / ResolvedComponent Loud Validation (0.6.1, HATS-1140/1454)
-    "ai-hats-wt>=0.4.3",    # WorktreeDriftError carries base_branch/worktree_path (0.4.2, HATS-1307)
+    # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
+    # WorktreeMergeAborted). The floor stays at the PUBLISHED version by design:
+    # RELEASING.md's order is bump -> merge -> auto-publish -> THEN the
+    # integrator pins. Raising it here first makes the floor unsatisfiable from
+    # the index, and `ai-hats self init` hangs until it times out — measured, it
+    # is what broke five self-update e2e tests. Raise to >=0.5.0 in the
+    # follow-up, once the publish lands.
+    "ai-hats-wt>=0.4.3",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.

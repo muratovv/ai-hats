@@ -7,8 +7,8 @@ deliberately does NOT share, since that channel is uniformly fail-closed.
 
 from __future__ import annotations
 
+import json
 import os
-import shutil
 import stat
 import subprocess
 from dataclasses import replace
@@ -26,8 +26,9 @@ from ai_hats_rack.models import TaskCard
 from ai_hats import check_resolve
 from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
+from ai_hats.hook_exec import run_hook
 from ai_hats.models import CheckBinding
-from ai_hats.paths import session_cache_dir, session_checks_dir
+from ai_hats.paths import session_cache_dir
 from ai_hats.rack_consumers import (
     CHECK_PRIORITY,
     EDGE_CHECK_TIMEOUT_S,
@@ -96,6 +97,201 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15
+
+
+def _wt_state(project_dir: Path, task_id: str, worktree: Path) -> Path:
+    """The worktree-state record rack writes at execute, as the runner reads it."""
+    from ai_hats.paths import worktrees_dir
+
+    state_dir = worktrees_dir(project_dir)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"task-{task_id.lower()}.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "branch": f"task/{task_id.lower()}",
+                "worktree_path": str(worktree),
+                "original_branch": "master",
+            },
+            indent=2,
+        )
+    )
+    return state_path
+
+
+def test_the_runner_hands_every_check_the_tasks_dir_of_this_transition(tmp_path):
+    """R4 / HATS-1540: role scope is not backlog scope.
+
+    One role fires on EVERY backlog the rack CLI touches, scratch ``--tasks-dir``
+    included — that is what turned master red in HATS-1538. Without the dir a
+    script cannot tell "this card is not mine" from "``AI_HATS_DIR`` leaked", so
+    the runner states which backlog the transition runs against. Asserted by
+    dumping the child's environment, never by reading the source.
+    """
+    scratch = tmp_path / "elsewhere" / "tasks"
+    scratch.mkdir(parents=True)
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+    runner = CheckRunnerExtension(
+        tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
+    )
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert exc_info.value.reason == str(scratch)
+
+
+def test_the_runner_resolves_the_worktree_so_no_gate_parses_the_state_json(tmp_path):
+    """R2 / HATS-1540: one resolution, not one per gate.
+
+    Every FSM gate used to re-derive
+    ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and ``jq`` the path out.
+    The primitive has taken ``worktree_path`` since HATS-1151 and no edge point
+    computed it — so the same lookup was open-coded in shell, three spellings of
+    it, each able to judge the wrong tree on its own.
+    """
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    _wt_state(tmp_path, "T-1", worktree)
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == str(worktree)
+
+
+def test_an_ambient_tasks_dir_never_reaches_a_check(tmp_path, monkeypatch):
+    """HATS-1540 review: the primitive OWNS this variable, so a point that does
+    not resolve a backlog removes it instead of inheriting it.
+
+    Left to ``extra_env`` — which can only add — a stale ``AI_HATS_TASKS_DIR``
+    from the ambient environment reached the gate at ``wt:pre-merge``, the script
+    compared it to its own tracker, read "not my backlog" and waved an unmarked
+    branch into master. Measured on the real script, not feared.
+    """
+    monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+
+    run = run_hook(script, point="wt:pre-merge", timeout=10, project_dir=tmp_path)
+
+    assert run.reason == "unset"
+
+
+def test_the_edge_runner_overwrites_an_ambient_tasks_dir(tmp_path, monkeypatch):
+    """The other half: where a backlog IS resolved, its value wins over the
+    ambient one rather than being merged with it."""
+    monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
+    scratch = tmp_path / "real" / "tasks"
+    scratch.mkdir(parents=True)
+    script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
+    runner = CheckRunnerExtension(
+        tmp_path, tasks_dir=scratch, topology=_topology(), resolve=lambda: (_check(script),)
+    )
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx())
+
+    assert exc_info.value.reason == str(scratch)
+
+
+def test_a_card_with_no_worktree_gets_no_stale_path(tmp_path, monkeypatch):
+    """ADR-0019 D5/D7: a wrong-tree pass is worse than an absent variable.
+
+    The ambient environment of whoever launched the session may carry another
+    worktree's path — an epic, a forced execute and a card whose tree was
+    discarded all reach a gate with no tree of their own.
+    """
+    monkeypatch.setenv("AI_HATS_WORKTREE_PATH", "/stale/from/another/worktree")
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == "unset"
+
+
+def test_a_record_whose_worktree_is_gone_reads_as_no_worktree(tmp_path, monkeypatch):
+    """A swept ``$TMPDIR`` leaves the record behind; the tree is what matters.
+
+    And the read is PURE: ``load_for_task`` unlinks such a record, which would
+    make a refused transition mutate lifecycle state on its way out.
+    """
+    monkeypatch.setenv("AI_HATS_WORKTREE_PATH", "/stale/from/another/worktree")
+    state_path = _wt_state(tmp_path, "T-1", tmp_path / "swept-away")
+    script = _script(tmp_path, 'echo "${AI_HATS_WORKTREE_PATH-unset}"\nexit 2')
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert exc_info.value.reason == "unset"
+    assert state_path.is_file(), "a refused transition must not delete worktree state"
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        pytest.param(lambda p: p.write_text("{not json"), id="malformed-json"),
+        pytest.param(lambda p: p.write_text(""), id="empty-file"),
+        pytest.param(lambda p: (p.unlink(), p.mkdir()), id="directory-not-file"),
+    ],
+)
+def test_a_state_file_that_cannot_be_READ_refuses_rather_than_gating_no_tree(tmp_path, corrupt):
+    """ "Cannot tell" is not "no worktree" — and nothing asserted it until now.
+
+    A gate handed no ``AI_HATS_WORKTREE_PATH`` reads it as "this card brings no
+    commits, nothing to gate" and passes (``done-gate.sh`` F-11). So an
+    unreadable record must abort, not answer None. The behaviour shipped with
+    HATS-1540 and its review found that mutating the refusal back to
+    ``return None`` broke ZERO of 3358 tests — this is that hole closed.
+    """
+    state_path = _wt_state(tmp_path, "T-1", tmp_path / "wt")
+    corrupt(state_path)
+    runner = _runner(tmp_path, _check(_script(tmp_path, "exit 0")))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(task_id="T-1"))
+
+    assert "could not be resolved" in exc_info.value.reason
+    assert "T-1" in exc_info.value.reason
+
+
+def test_one_worktree_lookup_serves_every_binding_on_the_edge(tmp_path):
+    """Two bindings on one edge resolve the tree once — it cannot change between
+    them, and the lookup takes a lock."""
+    calls: list[str] = []
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    _wt_state(tmp_path, "T-1", worktree)
+    runner = _runner(
+        tmp_path,
+        _check(_script(tmp_path, "exit 0", name="a.sh")),
+        _check(_script(tmp_path, "exit 0", name="b.sh")),
+    )
+    original = runner._worktree_path
+
+    def counting(task_id):
+        calls.append(task_id)
+        return original(task_id)
+
+    runner._worktree_path = counting
+    runner.on_event(_ctx(task_id="T-1"))
+
+    assert calls == ["T-1"]
+
+
+def test_no_binding_on_the_edge_resolves_no_worktree(tmp_path):
+    """The lookup takes a filelock, so an edge with nothing bound must not pay
+    for it — the overwhelmingly common case on every transition."""
+    runner = _runner(tmp_path)  # nothing bound
+    called = []
+    runner._worktree_path = lambda task_id: called.append(task_id)
+
+    assert runner.on_event(_ctx()) is None
+    assert called == []
 
 
 def test_refuse_aborts_the_transition_with_the_verbatim_reason(tmp_path):
@@ -433,16 +629,51 @@ def _library(root: Path, *, declares: bool) -> Path:
     return root
 
 
+#: The skill every ``_check`` above declares. Composed, because a binding never
+#: pulls its skill in (ADR-0019 D2) — and since HATS-1540 the mirror's leaf name
+#: comes from the COMPOSED skill, so a composition without it resolves to nothing.
+_GATE_SKILL = ResolvedComponent(
+    name="quality::gates",
+    component_type=ComponentKind.SKILL,
+    source_path=Path("/nonexistent/quality-gates"),
+)
+
+
 def _composition(*, checks: tuple[ResolvedCheck, ...] = (), errors: list[str] | None = None):
     return CompositionResult(
         name="maintainer",
         priorities=[],
         rules=[],
-        skills=[],
+        skills=[_GATE_SKILL],
         injections=[],
         errors=errors or [],
         checks=checks,
     )
+
+
+def _mirror_root(project_dir: Path, session_id: str) -> Path:
+    """Where the stub surface below mirrors this session's composed skills."""
+    from ai_hats.paths import session_cache_dir
+
+    return session_cache_dir(project_dir, session_id) / "mirror"
+
+
+@pytest.fixture(autouse=True)
+def _mirroring_surface(monkeypatch):
+    """A surface whose skill mirror is one named dir — HATS-1540 resolves there.
+
+    Autouse so every in-session case in this module reads one root; the real
+    surfaces each scan a different relative path, which is exactly why the root
+    is asked of the provider rather than guessed here.
+    """
+    from ai_hats import providers
+
+    class _Mirroring:
+        def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+            return _mirror_root(project_dir, session_id)
+
+    monkeypatch.setattr(providers, "get_provider", lambda _name: _Mirroring())
+    yield
 
 
 def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
@@ -537,13 +768,18 @@ def test_out_of_session_a_binding_resolves_live(tmp_path):
     assert [c.script_path for c in resolved] == [live]
 
 
-def test_in_session_a_binding_resolves_from_the_session_snapshot(tmp_path):
-    """R5 / D9 clause 2: a session runs the same bytes start to finish, isolated
-    from the library it may be editing — so the root is ai-hats's own snapshot."""
+def test_in_session_a_binding_resolves_from_the_session_mirror(tmp_path):
+    """R5 / D9 clause 2: a session runs from the copy it was launched with,
+    isolated from the library it may be editing — the surface's skill mirror.
+
+    The leaf is the composed skill's raw ``name`` (``quality::gates``), which is
+    what every surface writes; HATS-1540 dropped the ``resolve_namespace``
+    re-derivation that looked for ``quality/gates`` instead.
+    """
     live = _script(tmp_path, "exit 0")
-    snapshot_dir = session_checks_dir(tmp_path, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    frozen = _script(snapshot_dir, "exit 0")
+    mirrored_dir = _mirror_root(tmp_path, "sess-a") / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    mirrored = _script(mirrored_dir, "exit 0")
 
     resolved = check_resolve.resolve_edge_checks(
         tmp_path,
@@ -552,11 +788,11 @@ def test_in_session_a_binding_resolves_from_the_session_snapshot(tmp_path):
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
-    assert [c.script_path for c in resolved] == [frozen]
+    assert [c.script_path for c in resolved] == [mirrored]
 
 
-def test_in_session_a_missing_snapshot_never_falls_back_to_the_live_path(tmp_path):
-    """R10: silently re-resolving live would disarm the isolation the snapshot
+def test_in_session_a_missing_mirror_never_falls_back_to_the_live_path(tmp_path):
+    """R10: silently re-resolving live would disarm the isolation the mirror
     exists for. The absent path stands, and ``run_hook`` calls it corruption."""
     live = _script(tmp_path, "exit 0")
 
@@ -569,7 +805,7 @@ def test_in_session_a_missing_snapshot_never_falls_back_to_the_live_path(tmp_pat
 
     assert resolved[0].script_path != live
     assert not resolved[0].script_path.exists()
-    assert session_checks_dir(tmp_path, "sess-a") in resolved[0].script_path.parents
+    assert _mirror_root(tmp_path, "sess-a") in resolved[0].script_path.parents
 
 
 def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
@@ -593,34 +829,40 @@ def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
     assert str(worktree) in str(exc_info.value)
 
 
-def test_resolution_reads_no_provider_specific_path(tmp_path):
+@pytest.mark.parametrize(
+    "layout", ["plugin/skills", "rules/.agents/skills", "skills", "somewhere/else"]
+)
+def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeypatch, layout):
     """R3.1 / D9: each surface materializes skills where its own binary scans —
-    ``<sid>/plugin/skills``, ``<sid>/rules/.agents/skills``, ``<sid>/skills``. A
-    resolver keyed on any of them does nothing under the other two."""
+    ``<sid>/plugin/skills``, ``<sid>/rules/.agents/skills``, ``<sid>/skills``.
+
+    HATS-1540 made that difference the ONLY thing the resolver asks a provider
+    for, so the answer must follow whatever root the surface declares — a
+    resolver keyed on one layout does nothing under the other two. The fourth
+    case is a layout no shipped surface uses: an out-of-tree one is served too.
+    """
+    from ai_hats import providers
+
+    root = session_cache_dir(tmp_path, "sess-a") / layout
+
+    class _Elsewhere:
+        def session_skills_root(self, project_dir, session_id):
+            return root
+
+    monkeypatch.setattr(providers, "get_provider", lambda _n: _Elsewhere())
     live = _script(tmp_path, "exit 0")
-    snapshot_dir = session_checks_dir(tmp_path, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    frozen = _script(snapshot_dir, "exit 0")
-    decoys = []
-    for surface in ("plugin/skills", "rules/.agents/skills", "skills"):
-        tree = session_cache_dir(tmp_path, "sess-a").joinpath(surface, "quality", "gates")
-        tree.mkdir(parents=True)
-        decoys.append(_script(tree, "exit 2"))
+    mirrored_dir = root / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    mirrored = _script(mirrored_dir, "exit 0")
 
-    def resolve():
-        return check_resolve.resolve_edge_checks(
-            tmp_path,
-            topology=_topology(),
-            session_id="sess-a",
-            compose=lambda _p: _composition(checks=(_check(live),)),
-        )
+    resolved = check_resolve.resolve_edge_checks(
+        tmp_path,
+        topology=_topology(),
+        session_id="sess-a",
+        compose=lambda _p: _composition(checks=(_check(live),)),
+    )
 
-    assert [c.script_path for c in resolve()] == [frozen]
-
-    for decoy in decoys:  # and the answer does not change when no surface tree exists
-        shutil.rmtree(decoy.parent.parent.parent, ignore_errors=True)
-    assert [c.script_path for c in resolve()] == [frozen]
-
+    assert [c.script_path for c in resolved] == [mirrored]
     source = Path(check_resolve.__file__).read_text()
     assert "plugin" not in source and ".agents" not in source
 
@@ -719,9 +961,9 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
     worktree = tmp_path / "ai-hats-wt-task-1"
     _git(main, "worktree", "add", "-b", "task/1", str(worktree))
     branch_copy = _script(worktree, "exit 0")
-    snapshot_dir = session_checks_dir(main, "sess-a") / "quality" / "gates"
-    snapshot_dir.mkdir(parents=True)
-    _script(snapshot_dir, "exit 0")
+    mirrored_dir = _mirror_root(main, "sess-a") / "quality::gates"
+    mirrored_dir.mkdir(parents=True)
+    _script(mirrored_dir, "exit 0")
 
     with pytest.raises(CheckResolutionError) as exc_info:
         check_resolve.resolve_edge_checks(

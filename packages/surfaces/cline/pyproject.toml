@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-cline"
-version = "0.3.0"
+version = "0.4.0"
 description = "Cline surface plugin for the ai-hats framework — registers the `cline` CLI as an ai-hats provider via the `ai_hats.providers` entry point."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -26,7 +26,7 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
-from .check_snapshot import legacy_launch_notices
+from .check_snapshot import legacy_launch_notices, surface_skew_notice
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
@@ -456,6 +456,12 @@ class WrapRunner:
                 session_args = artifacts.cli_args
                 session_env = artifacts.extra_env
                 meta_prompt = artifacts.full_content or ""
+                # HATS-1540: a surface older than `session_skills_root` handles
+                # this seam fine and still cannot root a bound check. Said here,
+                # at launch, not at the first refused transition.
+                skew = surface_skew_notice(provider_name, provider, self.project_dir, result)
+                if skew:
+                    builder_notices.append(StartupNotice("warn", skew))
             else:
                 # HATS-1207 R4 / HATS-1241: the legacy entry point predates both
                 # SessionPolicy and the check snapshot — loudly, not in silence.

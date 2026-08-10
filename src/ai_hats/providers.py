@@ -18,7 +18,6 @@ from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode,
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
 
-from .check_snapshot import snapshot_checks
 from .frontmatter import FrontmatterError, read_frontmatter
 from .provider_entry_points import (
     _is_first_party_entry_point,
@@ -156,6 +155,19 @@ class Provider(abc.ABC):
     def rules_dir(self, session_dir: Path) -> Path:
         """Directory where rules files should be placed."""
 
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path | None:
+        """Where this surface mirrors the session's composed skills (HATS-1540).
+
+        The root a bound check resolves its script from in-session, one level
+        above the per-skill directory. ``None`` means this surface mirrors no
+        skills, so a binding has nothing to resolve against and refuses —
+        ``legacy_launch_notices`` announces that at launch rather than leaving it
+        to be discovered when a gate does not fire. Concrete, not abstract: an
+        out-of-tree provider behind ``ai_hats.providers`` predates this accessor
+        and must keep importing (ADR-0019 D9).
+        """  # comment-length: allow — the None branch IS the contract
+        return None
+
     @contextlib.contextmanager
     def execution_context(self, project_dir: Path) -> contextlib.AbstractContextManager[None]:
         """Context manager active around provider CLI execution.
@@ -223,9 +235,9 @@ class Provider(abc.ABC):
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
         artifacts.policy = policy
-        # HATS-1241: above the loop and outside the policy gate — no surface may
-        # override a check away, no policy may switch a declared gate off.
-        snapshot_checks(project_dir, result, session_id, port=artifacts.port)
+        # HATS-1540: no second copy here. The SKILLS category already writes an
+        # unconditional mirror of every composed skill (SessionPolicy has no
+        # skills field), and `session_skills_root` is what a check resolves off.
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(

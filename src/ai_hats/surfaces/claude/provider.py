@@ -208,15 +208,24 @@ class ClaudeProvider(Provider):
 
     # -- skills ----------------------------------------------------------------
 
+    def _plugin_dir(self, project_dir: Path, session_id: str) -> Path:
+        return session_cache_dir(project_dir, session_id) / "plugin"
+
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        """HATS-1540: writer and reader share this, so the two cannot drift."""
+        return claude_plugin_skills_dir(self._plugin_dir(project_dir, session_id))
+
     def _materialize_plugin(self, project_dir: Path, session_id: str, result, artifacts) -> Path:
         # Not via materialize_runtime_skills: that is a published extension point
         # and cannot take the port (HATS-1211 / HATS-1207 R4).
         from .plugin_dir import materialize_plugin_dir
 
-        cache_dir = self._cache_dir(project_dir, session_id, artifacts)
-        plugin_dir = cache_dir / "plugin"
+        self._cache_dir(project_dir, session_id, artifacts)
+        plugin_dir = self._plugin_dir(project_dir, session_id)
         materialize_plugin_dir(result.name, result.skills, project_dir, plugin_dir, artifacts.port)
-        inject_skill_paths_to_env(artifacts.extra_env, result.skills, plugin_dir / "skills")
+        inject_skill_paths_to_env(
+            artifacts.extra_env, result.skills, self.session_skills_root(project_dir, session_id)
+        )
         artifacts.materialized.append(plugin_dir)
         return plugin_dir
 
@@ -305,7 +314,7 @@ class ClaudeProvider(Provider):
 
         # A published extension point cannot carry the port, so this path always
         # writes — it is one of the builder bypasses HATS-1207 removes.
-        plugin_dir = session_cache_dir(project_dir, session_id) / "plugin"
+        plugin_dir = self._plugin_dir(project_dir, session_id)
         materialize_plugin_dir(
             result.name, result.skills, project_dir, plugin_dir, ApplyMaterializer()
         )

@@ -27,11 +27,21 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
-from .worktree_hooks import run_worktree_hook
-from ai_hats_wt import WT_TEARDOWN_EVENTS, LifecycleContext, WorktreeTeardownAborted
+from .check_points import check_log_token
+from .hook_exec import HookRun, HookVerdict, run_hook
+from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
+from ai_hats_wt import (
+    WT_TEARDOWN_EVENTS,
+    LifecycleContext,
+    WorktreeMergeAborted,
+    WorktreeTeardownAborted,
+)
 from ai_hats_wt.locks import _state_key
 
 logger = logging.getLogger(__name__)
+
+#: The catalog name of the point ``merge()`` fires (``check_points`` owns it).
+WT_PRE_MERGE = "wt:pre-merge"
 
 
 class WorktreeHookError(Exception):
@@ -162,6 +172,45 @@ class HookRunningLifecycle:
             if not outcome.ok:
                 _warn_wt_in_failed(row, outcome.reason)
 
+    def before_merge(self, ctx: LifecycleContext) -> None:
+        """Run every ``wt:pre-merge`` check before the merge mutates anything.
+
+        Resolved LIVE from the composition, not from the create-time carry: a
+        gate must judge by the rule in force at merge time, and the carry is the
+        record of what a worktree holds (ADR-0013 D5), not of what may guard it.
+        The catalog fixes this point's policy at ``refuse`` (ADR-0019 D4), so
+        every non-pass outcome — refusal, broken script, missing script alike —
+        aborts. ``skip_hooks`` does NOT apply: it exists so a teardown can drop
+        data harvesting, never so a merge can drop its gate.
+        """  # comment-length: allow — the three deliberate non-symmetries with wt_out
+        if ctx.worktree_path is None:
+            return
+        from .check_resolve import CheckResolutionError, resolve_checks_at, session_id
+
+        try:
+            checks = resolve_checks_at(ctx.project_dir, WT_PRE_MERGE, session_id=session_id())
+        except CheckResolutionError as exc:
+            _raise_merge_aborted(ctx.branch_name, f"checks: {exc}")
+        if not checks:
+            return
+        log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
+        for check in checks:
+            run = run_hook(
+                check.script_path,
+                point=check.point,
+                timeout=resolve_hook_timeout(),
+                project_dir=ctx.project_dir,
+                worktree_path=ctx.worktree_path,
+                extra_env={"AI_HATS_BRANCH_NAME": ctx.branch_name},
+                # The dedup identity, not the basename: two rows whose scripts
+                # share a basename would otherwise truncate each other's log
+                # while the first one's reason still points at it — the HATS-1137
+                # defect `rack_consumers._escaped` exists to prevent.
+                log_path=log_dir / f"pre-merge~{check_log_token(check)}.log",
+            )
+            if not run.ok:
+                _raise_merge_aborted(ctx.branch_name, _check_refusal(check, run))
+
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Run ``wt_out`` hooks bound to ``event`` before the core removes the dir.
 
@@ -256,6 +305,32 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     else:
         message = detail
     raise WorktreeTeardownAborted(message) from cause
+
+
+def _check_refusal(check, run: HookRun) -> str:
+    """A refusal that spoke stands alone; anything else names the binding.
+
+    Same shape as ``rack_consumers._refusal`` on the edge road, deliberately —
+    one script bound to both points must read the same on either, and HATS-1538
+    cost a session to a symptom that named the wrong subsystem.
+    """
+    binding = f"{check.declared_by!r} binds {check.skill}/{check.script} on {check.point}"
+    if run.verdict is HookVerdict.REFUSE:
+        return run.reason
+    return f"checks: {binding} — {run.reason}"
+
+
+def _raise_merge_aborted(branch_name: str, reason: str) -> NoReturn:
+    """Refuse the merge with the tree intact (HATS-1540).
+
+    No ``--skip-hooks`` recipe, unlike its teardown sibling: that escape exists
+    to accept losing harvested data, and there is no equivalent thing to accept
+    here — the way past this gate is to satisfy it.
+    """
+    raise WorktreeMergeAborted(
+        f"checks refused the merge of worktree '{branch_name}' at {WT_PRE_MERGE} — "
+        f"nothing was merged and the worktree is intact.\n{reason}"
+    )
 
 
 #: The bundle ai-hats injects at every WorktreeManager construction / load.

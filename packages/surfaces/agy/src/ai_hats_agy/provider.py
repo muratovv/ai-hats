@@ -122,6 +122,10 @@ class AgyProvider(Provider):
     def _session_skills_dir(self, project_dir: Path, session_id: str) -> Path:
         return session_cache_dir(project_dir, session_id) / "rules" / ".agents" / "skills"
 
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        """HATS-1540: what a bound check resolves its script from in-session."""
+        return self._session_skills_dir(project_dir, session_id)
+
     def _cache_dir(self, project_dir: Path, session_id: str, artifacts: BuiltArtifacts) -> Path:
         cache_dir = session_cache_dir(project_dir, session_id)
         artifacts.port.mkdir(cache_dir)

@@ -344,6 +344,22 @@ def compose_for_checks(project_dir: Path) -> CompositionResult | None:
     return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
 
 
+def session_skills_root_for_checks(project_dir: Path, session_id: str) -> Path | None:
+    """Where this project's surface mirrored ``session_id``'s skills (HATS-1540).
+
+    At the seam because provider resolution is the seam's job (HATS-865): the
+    check channel is a brick and may not reach the registry itself. ``None`` iff
+    the surface mirrors no skills — the caller turns that into a refusal, since a
+    binding with no bytes must not wave a transition through.
+    """
+    from .models import ProjectConfig
+    from .paths.constants import PROJECT_CONFIG
+    from .providers import get_provider
+
+    provider = get_provider(ProjectConfig.from_yaml(project_dir / PROJECT_CONFIG).provider)
+    return provider.session_skills_root(project_dir, session_id)
+
+
 def compose_for_carry(project_dir: Path, role: str | None = None):
     """Fail-open compose for worktree-carry collection; a ``CompositionResult``
     or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts

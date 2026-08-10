@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Added
+
+- **`session_skills_root`** (HATS-1540) — where this surface mirrors a session's
+  composed skills (`<session_cache_dir>/skills/`). A bound `checks:` gate now
+  resolves its script from that root in-session, so a surface WITHOUT the
+  accessor inherits the `Provider` default of `None` and **every bound
+  transition in its sessions is refused**. Upgrade this package together with
+  the `ai-hats` release that carries the accessor.
+
 ### Changed
 
 - Cline now runs through the unified artifact-builder (ADR-0018,

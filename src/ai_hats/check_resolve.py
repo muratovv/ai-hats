@@ -1,16 +1,22 @@
 """Which bytes a bound check runs, and from which root (HATS-1141, ADR-0019 D9).
 
-Two modes, one composition. In a session the root is ai-hats's own snapshot
-(``<sid>/checks/<skill>/``); outside one it is the live composed skill. The
-snapshot freezes bytes, not the binding list, so both modes compose — what
-differs is only the root each ``ResolvedCheck.script`` is re-based against.
+Two modes, one composition. In a session the root is the surface's own mirror of
+the composed skills (``Provider.session_skills_root``); outside one it is the
+live composed skill. The mirror freezes bytes, not the binding list, so both
+modes compose — what differs is only the root each ``ResolvedCheck.script`` is
+re-based against.
+
+HATS-1540 retired the channel's private ``<sid>/checks/`` copy: the mirror has
+the same lifetime, one writer and the same TTL, and it holds EVERY composed
+skill rather than only the bound ones — so a session that predates a binding
+resolves instead of returning CORRUPT until restart.
 """
 
 from __future__ import annotations
 
 import os
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
@@ -53,28 +59,122 @@ def resolve_edge_checks(
     if not checks:
         return ()
     _guard_topology(checks, topology)
-    return tuple(_rebased(project_dir, check, session_id) for check in checks)
+    return _rooted(project_dir, result, checks, session_id)
 
 
-def _rebased(project_dir: Path, check: ResolvedCheck, session_id: str) -> ResolvedCheck:
+def resolve_checks_at(
+    project_dir: Path,
+    point: str,
+    *,
+    session_id: str = "",
+    compose: Callable[[Path], CompositionResult | None] | None = None,
+) -> tuple[ResolvedCheck, ...]:
+    """Every binding on one non-``edge:`` point, re-based onto its root.
+
+    The sibling of :func:`resolve_edge_checks` for the ``wt:`` namespace
+    (HATS-1540): one point, named by the caller that fires it, so there is no
+    topology to guard — the catalog validated the name at composition.
+    """
+    result = (compose or _compose_fail_closed)(project_dir)
+    if result is None:
+        return ()
+    checks = tuple(check for check in result.checks if check.point == point)
+    if not checks:
+        return ()
+    return _rooted(project_dir, result, checks, session_id)
+
+
+def _rooted(
+    project_dir: Path,
+    result: CompositionResult,
+    checks: tuple[ResolvedCheck, ...],
+    session_id: str,
+) -> tuple[ResolvedCheck, ...]:
+    """Pick the root every one of ``checks`` runs from — the mode split."""
+    # D9 clause 4 first, over every binding: a source inside a linked worktree is
+    # refused before the mirror is even located, so the message names the tree
+    # rather than whatever the surface lookup happens to say.
+    for check in checks:
+        _reject_worktree_root(check.script_path, check)
+    if not session_id:
+        return checks
+    mirror = _session_mirror(project_dir, session_id, result)
+    return tuple(_rebased(check, mirror) for check in checks)
+
+
+@dataclass(frozen=True)
+class _Mirror:
+    """The session's skill mirror: its root, and how it names each leaf.
+
+    Two conventions met here before HATS-1540 — every surface writes the leaf as
+    the composed skill's raw ``name`` while this module re-derived it with
+    ``resolve_namespace``, so a namespaced skill (``dev::python`` against
+    ``dev/python``) resolved to a directory no surface had written. ``leaf`` maps
+    the binding's spelling onto the mirror's, making the mirror the authority.
+    """  # comment-length: allow — the divergence is why this type exists
+
+    root: Path
+    leaf: dict[str, str]
+
+
+def _session_mirror(project_dir: Path, session_id: str, result: CompositionResult) -> _Mirror:
+    from .libraries.models import resolve_namespace
+
+    return _Mirror(
+        root=_provider_skills_root(project_dir, session_id),
+        leaf={resolve_namespace(skill.name): skill.name for skill in result.skills},
+    )
+
+
+def _provider_skills_root(project_dir: Path, session_id: str) -> Path:
+    """Where the session's surface mirrored its composed skills.
+
+    Through the seam: the composition layer is integrator-only (HATS-865), so a
+    brick asks it for the provider rather than reaching the registry. Fail-closed
+    on every branch — a surface that mirrors nothing leaves a binding with no
+    bytes to run, and passing the transition through would be the silent absence
+    this channel exists to remove.
+    """
+    from .composition_seam import session_skills_root_for_checks
+
+    try:
+        root = session_skills_root_for_checks(project_dir, session_id)
+    except Exception as exc:
+        raise CheckResolutionError(
+            f"checks: the surface running session {session_id!r} could not be resolved "
+            f"({type(exc).__name__}): {exc} — so the skill mirror a binding runs from "
+            f"cannot be located"
+        ) from exc
+    if root is None:
+        raise CheckResolutionError(
+            f"checks: this project's surface mirrors no skills for a session, so a binding "
+            f"has no bytes to run in session {session_id!r} — run outside a session "
+            f"(no {ENV_SESSION_ID}) or use a surface that materializes skills"
+        )
+    return root
+
+
+def _rebased(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
     """The composition names ``{skill, script}``; this picks the root.
 
-    In a session that is the snapshot, and a snapshot that is not there stays
-    the answer — re-resolving live would disarm the isolation (R10).
+    In a session that is the mirror, and a mirror that is not there stays the
+    answer — re-resolving live would disarm the isolation (R10).
     """
-    _reject_worktree_root(check.script_path, check)
-    if not session_id:
-        return check
-
     from .libraries.models import resolve_namespace
-    from .paths import session_checks_dir
 
-    root = (session_checks_dir(project_dir, session_id) / resolve_namespace(check.skill)).resolve()
+    leaf = mirror.leaf.get(resolve_namespace(check.skill))
+    if leaf is None:
+        raise CheckResolutionError(
+            f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, but no "
+            f"composed skill answers to {check.skill!r} — the mirror under {mirror.root} "
+            f"can hold no directory for it"
+        )
+    root = (mirror.root / leaf).resolve()
     script_path = (root / check.script).resolve()
     if not script_path.is_relative_to(root):
         raise CheckResolutionError(
             f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, which "
-            f"resolves to {script_path} — outside this session's snapshot root {root}"
+            f"resolves to {script_path} — outside this session's mirror root {root}"
         )
     return replace(check, script_path=script_path)
 
@@ -283,4 +383,10 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
     return result
 
 
-__all__ = ["CheckResolutionError", "declares_checks", "resolve_edge_checks", "session_id"]
+__all__ = [
+    "CheckResolutionError",
+    "declares_checks",
+    "resolve_checks_at",
+    "resolve_edge_checks",
+    "session_id",
+]

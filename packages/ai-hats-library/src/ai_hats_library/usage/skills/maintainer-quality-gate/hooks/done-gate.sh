@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# HATS-1137 — the quality gate on `edge:review--done`.
+# HATS-1137 / HATS-1540 — the quality gate, bound to BOTH roads into master:
+# `edge:review--done` (the FSM automerge) and `wt:pre-merge` (a direct
+# `ai-hats wt merge`). One file, no branch between them: the tree under
+# judgement arrives as AI_HATS_WORKTREE_PATH at either point.
 #
 # Two modes:
 #
-#   --check (DEFAULT — what the `composition.checks` binding runs). Resolve the
-#     task's worktree, take its branch tip, and require a green marker for that
-#     exact commit. Instant: a few `git rev-parse` and one file read, because it
-#     runs INSIDE the per-task rack lock (priority 15, budget 20s vs a 30s lock).
+#   --check (DEFAULT — what the `composition.checks` binding runs). Take the
+#     given worktree's branch tip and require a green marker for that exact
+#     commit. Instant: a few `git rev-parse` and one file read, because it runs
+#     INSIDE the per-task rack lock (priority 15, budget 20s vs a 30s lock).
 #     The suite itself can never run here — it takes minutes.
 #
 #   --run (`make done-gate`). Run `scripts/ci-local.sh done-gate` and, on green
@@ -41,49 +44,58 @@ fi
 
 # --- resolving the project's own layout ------------------------------------
 
-# The tracker base: AI_HATS_DIR env > ai-hats.yaml `ai_hats_dir:` > .agent/ai-hats
-# (paths/_dirs.py `_resolve_ai_hats_base`). A candidate counts only if it holds
-# THIS task's card, which is the one anchor that cannot point at the wrong
-# project: a leaked AI_HATS_DIR from another checkout has a tracker of its own,
-# so anchoring on a bare `tracker/` picks it up and reads a foreign, empty
-# worktrees dir — which looks exactly like "this card has no worktree" and waves
-# through the cards the gate exists to stop. Measured, not hypothesised.
-ai_hats_base() {
-    local project_dir="$1" task_id="$2" candidate configured
+# This project's OWN tasks dir, from `ai-hats.yaml` and the documented default —
+# deliberately NOT from AI_HATS_DIR. That variable is the leaky one: a value
+# inherited from another checkout points at a tracker of its own, and the whole
+# question below is which tracker this transition belongs to.
+own_tasks_dir() {
+    local project_dir="$1" configured
     configured="$(sed -n "s/^ai_hats_dir:[[:space:]]*[\"']\{0,1\}\([^\"'[:space:]]*\).*/\1/p" \
                       "$project_dir/ai-hats.yaml" 2>/dev/null | head -1)"
-    for candidate in "${AI_HATS_DIR:-}" "$configured" '.agent/ai-hats'; do
-        [[ -z "$candidate" ]] && continue
-        case "$candidate" in
-            /*) : ;;
-            *) candidate="$project_dir/$candidate" ;;
-        esac
-        if [[ -d "$candidate/tracker/backlog/tasks/$task_id" ]]; then
-            printf '%s' "$candidate"
-            return 0
-        fi
-    done
-    return 1
+    [[ -z "$configured" ]] && configured='.agent/ai-hats'
+    case "$configured" in
+        /*) : ;;
+        *) configured="$project_dir/$configured" ;;
+    esac
+    printf '%s/tracker/backlog/tasks' "$configured"
 }
 
-# One field out of the worktree state JSON, without a JSON parser: the file is
-# written pretty-printed by `WorktreeManager.save_state`, one field per line.
-state_field() {
-    sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1
+# A path with symlinks resolved, so /tmp and /private/tmp compare equal on macOS.
+# A dir that does not exist answers with itself — it cannot be this project's own
+# tasks dir either way, and the comparison below is what decides.
+realdir() {
+    if [[ -d "$1" ]]; then (cd -- "$1" && pwd -P); else printf '%s' "$1"; fi
 }
-
-lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 # --- check mode (default) --------------------------------------------------
 
 check_mode() {
     local project_dir="${AI_HATS_PROJECT_DIR:-$PWD}"
-    local task_id="${AI_HATS_TASK_ID:-}"
+    local task_id="${AI_HATS_TASK_ID:-<unnamed>}"
 
-    if [[ -z "$task_id" ]]; then
-        printf 'done-gate: no AI_HATS_TASK_ID in the environment, so the gate cannot tell\n'
-        printf 'which branch to judge. Refusing rather than guessing.\n'
-        exit 2
+    # --- whose backlog is this? (HATS-1540 R5) -----------------------------
+    #
+    # DECLARED FAIL-OPEN, and the price is named out loud: a card outside this
+    # project's own tracker is not this gate's business, so it passes.
+    #
+    # Role scope is not backlog scope. A role-scoped binding fires on EVERY
+    # backlog the rack CLI touches — including the scratch --tasks-dir that this
+    # repo's own rack tests build — and HATS-1538 withdrew the shipped row
+    # because the gate refused exactly those. The engine deliberately does not
+    # decide this (supervisor ruling 2026-08-08 P1): it fires on the declaration
+    # and states the context, and the policy lives here, in the file the role
+    # author owns, where it is visible and testable.
+    #
+    # AI_HATS_TASKS_DIR is absent at `wt:pre-merge`, which is not a backlog
+    # operation at all — there is nothing to scope, so the question is skipped.
+    local tasks_dir="${AI_HATS_TASKS_DIR:-}"
+    if [[ -n "$tasks_dir" ]] && [[ "$(realdir "$tasks_dir")" != "$(realdir "$(own_tasks_dir "$project_dir")")" ]]; then
+        printf 'done-gate: %s lives in %s, which is not this project'"'"'s backlog\n' \
+               "$task_id" "$tasks_dir"
+        printf '(%s). This gate guards what enters THIS repo, so it has no\n' \
+               "$(own_tasks_dir "$project_dir")"
+        printf 'opinion here. Passing.\n'
+        exit 0
     fi
 
     # A gate that cannot verify must not pass. No dispatcher here means this
@@ -102,31 +114,30 @@ check_mode() {
         exit 2
     fi
 
-    local base
-    base="$(ai_hats_base "$project_dir" "$task_id")" || {
-        printf "done-gate: no tracker under %s holds card %s (looked at AI_HATS_DIR, the\n" \
-               "$project_dir" "$task_id"
-        printf "ai-hats.yaml 'ai_hats_dir:' key and .agent/ai-hats), so the gate cannot find\n"
-        printf "its worktree record. Refusing rather than reading that as 'no worktree'.\n"
-        exit 2
-    }
+    # HATS-1540 R2/H: the tree under judgement arrives in the environment, at
+    # BOTH bound points. This used to re-derive the state path from the task id
+    # and sed the JSON open — the same lookup ai-hats already owns, open-coded in
+    # shell, and the one place a gate can silently end up judging another
+    # worktree. The absence of that block is what makes one script serve
+    # `edge:review--done` and `wt:pre-merge` without a branch between them.
+    local wt branch sha
+    wt="${AI_HATS_WORKTREE_PATH:-}"
+    # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
+    # FSM edge the branch is rack's own convention. For messages only.
+    branch="${AI_HATS_BRANCH_NAME:-task/$(printf '%s' "$task_id" | tr '[:upper:]' '[:lower:]')}"
 
-    local state="$base/sessions/worktrees/task-$(lower "$task_id").json"
-    if [[ ! -f "$state" ]]; then
+    if [[ -z "$wt" ]]; then
         # F-11: the subject of this gate is the code entering master through this
-        # card. A card with no worktree brings none, so there is nothing to gate.
-        printf 'done-gate: %s has no worktree (%s absent) — it contributes no commits, so\n' \
-               "$task_id" "$state"
-        printf 'there is nothing to gate. Passing.\n'
+        # card. No worktree means no commits of its own, so there is nothing to
+        # gate. The runner refuses on its own if it could not TELL (HATS-1540),
+        # so an absent variable here means absent, never unknown.
+        printf 'done-gate: %s has no worktree — it contributes no commits, so there is\n' \
+               "$task_id"
+        printf 'nothing to gate. Passing.\n'
         exit 0
     fi
 
-    local wt branch sha
-    wt="$(state_field "$state" worktree_path)"
-    branch="$(state_field "$state" branch)"
-    [[ -z "$branch" ]] && branch="task/$(lower "$task_id")"
-
-    if [[ -z "$wt" || ! -d "$wt" ]]; then
+    if [[ ! -d "$wt" ]]; then
         # The record survived its worktree (TMPDIR swept, discarded by hand). Not
         # a hole: rack's own teardown resolves this task to no active worktree and
         # then either finalizes an already-merged branch — nothing new enters

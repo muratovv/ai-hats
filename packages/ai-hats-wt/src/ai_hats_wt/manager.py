@@ -545,6 +545,17 @@ class WorktreeTeardownAborted(Exception):
     """
 
 
+class WorktreeMergeAborted(Exception):
+    """A ``before_merge`` extension-point vetoed the merge (HATS-1540 / ADR-0019).
+
+    The sibling of :class:`WorktreeTeardownAborted`, and hook-agnostic the same
+    way: the core knows a merge was refused, never by what. Deliberately NOT the
+    teardown veto reused — that one fires after the merge commit exists and can
+    only strand a worktree (ADR-0012 / HATS-775 rejected it as a gate), while
+    this one fires before any mutation and leaves the tree exactly as it was.
+    """
+
+
 @dataclass(frozen=True)
 class LifecycleContext:
     """What a lifecycle extension-point needs — and nothing hook-policy (D2).
@@ -570,12 +581,17 @@ class WorktreeLifecycle(Protocol):
     """Core lifecycle extension-points (ADR-0013 D2). Default impl is no-op.
 
     ``on_created`` fires once after ``git worktree add`` (warn-continue — it
-    must never raise). ``before_teardown`` fires at every teardown route just
-    before ``_remove_worktree``; raising :class:`WorktreeTeardownAborted`
-    aborts the route fail-closed.
+    must never raise). ``before_merge`` fires in ``merge()`` after the cheap
+    local guards and before any mutation; raising
+    :class:`WorktreeMergeAborted` refuses the merge with the tree untouched.
+    ``before_teardown`` fires at every teardown route just before
+    ``_remove_worktree``; raising :class:`WorktreeTeardownAborted` aborts the
+    route fail-closed.
     """
 
     def on_created(self, ctx: LifecycleContext) -> None: ...
+
+    def before_merge(self, ctx: LifecycleContext) -> None: ...
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None: ...
 
@@ -584,6 +600,9 @@ class _NoopLifecycle:
     """Hook-agnostic default: a bare core runs no hooks (ADR-0013 D2)."""
 
     def on_created(self, ctx: LifecycleContext) -> None:
+        return None
+
+    def before_merge(self, ctx: LifecycleContext) -> None:
         return None
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
@@ -1034,6 +1053,16 @@ class WorktreeManager:
                 self._check_clean()
             if not accept_drift:
                 self._check_drift()
+
+            # HATS-1540 / ADR-0019: the `wt:pre-merge` extension-point. AFTER the
+            # cheap local guards so a broken check cannot mask a dirty tree or a
+            # drifted base, and BEFORE every mutation below — a refusal leaves
+            # the worktree, the branch and the base exactly as they were. Fires
+            # regardless of the caller: suppressing it for the FSM automerge
+            # would be caller-aware coupling, and the FSM path is one of the two
+            # roads into master this point exists to hold.
+            self._fire_before_merge(skip_hooks=skip_hooks)
+
             if self._original_branch and not self._branch_exists(self._original_branch):
                 self._fire_before_teardown("merge", skip_hooks=skip_hooks)
                 self._remove_worktree()
@@ -1209,6 +1238,18 @@ class WorktreeManager:
 
             mode = IsolationMode.DISCARD if force_discard else self.isolation_mode
 
+            # HATS-1540, recorded decision (supervisor ruling 2026-08-09): this
+            # squash publishes to the base branch and DOES NOT fire
+            # `wt:pre-merge`. ADR-0019 asks every path reaching a point to carry
+            # either a test that the check fires or a recorded decision that it
+            # must not; this is the latter, pinned by
+            # `test_the_squash_cleanup_path_does_not_fire_the_point`.
+            # Firing here would be worse than not firing: `cleanup` SUPPRESSES a
+            # lifecycle veto by design (ADR-0013 D8 — a sub-agent's own error
+            # must not be masked), so a refusal would be swallowed and the gate
+            # would look armed while passing everything. Making it
+            # non-suppressible is a change to D8's contract, not to this call
+            # site. Revisit together: behaviour and ADR in one change.
             try:
                 if mode == IsolationMode.SQUASH:
                     self._squash_merge()
@@ -1274,6 +1315,16 @@ class WorktreeManager:
         runs nothing.
         """
         self._lifecycle.on_created(self._lifecycle_ctx())
+
+    def _fire_before_merge(self, *, skip_hooks: bool = False) -> None:
+        """Fire the pre-merge extension-point (HATS-1540).
+
+        A raised :class:`WorktreeMergeAborted` propagates: nothing below it has
+        run, so the caller's refusal is total. Only ``merge()`` fires it —
+        ``discard`` publishes nothing to a base branch and deliberately has no
+        pre-operation point of its own.
+        """
+        self._lifecycle.before_merge(self._lifecycle_ctx(skip_hooks=skip_hooks))
 
     def _fire_before_teardown(self, event: str, *, skip_hooks: bool = False) -> None:
         """Fire a teardown extension-point before ``_remove_worktree`` (D3).
@@ -1345,6 +1396,39 @@ class WorktreeManager:
         return cls._load_by_key(
             project_dir, key, lifecycle=lifecycle, state_dir=state_dir, git_timeout=git_timeout
         )
+
+    @classmethod
+    def peek_worktree_path(
+        cls,
+        project_dir: Path,
+        task_id: str,
+        *,
+        state_dir: Path | None = None,
+    ) -> Path | None:
+        """The live worktree recorded for ``task_id``, or ``None`` — a pure read.
+
+        ``load_for_task`` unlinks a state file whose worktree is gone; a caller
+        that only wants to NAME the tree must not mutate lifecycle state as a
+        side effect of looking. HATS-1540 wants it so the check runner can hand
+        every gate ``AI_HATS_WORKTREE_PATH`` instead of each one re-deriving the
+        state path and parsing the JSON by hand.
+        """
+        state_path = _resolve_state_dir(project_dir, state_dir, NOOP_LIFECYCLE) / (
+            f"{_state_key(f'task/{task_id.lower()}')}.json"
+        )
+        try:
+            raw = state_path.read_text()
+        except FileNotFoundError:
+            return None  # no record is an ANSWER: this task has no worktree
+        # Every other failure is "cannot tell", which a caller must not read as
+        # "no worktree" — that is how a gate waves through the tree it exists to
+        # judge. OSError and JSONDecodeError both propagate.
+        data = json.loads(raw)
+        recorded = data.get("worktree_path")
+        if not recorded:
+            return None
+        path = Path(recorded)
+        return path if path.exists() else None
 
     @classmethod
     def load_for_branch(

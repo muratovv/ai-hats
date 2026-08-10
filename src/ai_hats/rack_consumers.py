@@ -11,7 +11,6 @@ D4), which is per-binding, not the worktree channel's uniform fail-closed.
 
 from __future__ import annotations
 
-import string
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -20,9 +19,10 @@ from ai_hats_rack.dispatch import AbortOperation, Delta, DispatchContext, Phase,
 from ai_hats_rack.fsm import Topology, all_edge_keys
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 
+from .check_points import check_log_token
 from .check_resolve import CheckResolutionError, resolve_edge_checks, session_id
 from .hook_exec import HookRun, HookVerdict, run_hook
-from .libraries.models import CheckBindingError, resolve_namespace
+from .libraries.models import CheckBindingError
 
 #: Reserved "hook" slot of the in-lock ladder (``rack_wiring.build_rack_kernel``)
 #: — after the plan-gate, before the ownership claim, so a refusal leaves neither
@@ -69,7 +69,11 @@ class CheckRunnerExtension:
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         notes: list[str] = []
-        for check in self._bound_to(ctx.event.key):
+        bound = self._bound_to(ctx.event.key)
+        if not bound:
+            return None
+        worktree_path = self._worktree_path(ctx.task.id)
+        for check in bound:
             run = run_hook(
                 check.script_path,
                 point=check.point,
@@ -77,6 +81,8 @@ class CheckRunnerExtension:
                 project_dir=self.project_dir,
                 force=ctx.force,
                 task_id=ctx.task.id,
+                worktree_path=worktree_path,
+                tasks_dir=self._tasks_dir,
                 log_path=self._log_path(ctx.task.id, ctx.event.key, check),
             )
             if run.ok:
@@ -86,6 +92,32 @@ class CheckRunnerExtension:
                 continue
             raise AbortOperation(_refusal(check, run))
         return Delta(work_log=tuple(notes)) if notes else None
+
+    def _worktree_path(self, task_id: str) -> Path | None:
+        """The task's live worktree, resolved ONCE for every binding on the edge.
+
+        HATS-1540 R2: before this, each gate re-derived
+        ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and parsed the JSON
+        by hand — three spellings of one lookup, and a gate that got it wrong
+        judged the wrong tree. A pure read (``peek_worktree_path``), because a
+        refused transition must leave lifecycle state exactly as it found it.
+        """
+        from ai_hats_wt import WorktreeManager
+
+        from .paths import worktrees_dir
+
+        try:
+            return WorktreeManager.peek_worktree_path(
+                self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
+            )
+        except (OSError, ValueError) as exc:
+            # "Cannot tell" is not "no worktree". Handing a gate an absent
+            # variable here reads to it as "this card brings no commits, nothing
+            # to gate" — the wave-through the channel exists to remove.
+            raise AbortOperation(
+                f"checks: the worktree of {task_id} could not be resolved "
+                f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
+            ) from exc
 
     def _resolve_bound(self) -> tuple[ResolvedCheck, ...]:
         return resolve_edge_checks(
@@ -112,35 +144,8 @@ class CheckRunnerExtension:
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
         """
-        binding = f"{_escaped(resolve_namespace(check.skill))}~{_escaped(check.script)}"
-        name = f"{event_key.replace(':', '-')}~{binding}.log"
+        name = f"{event_key.replace(':', '-')}~{check_log_token(check)}.log"
         return self._tasks_dir / task_id / ".checks" / name
-
-
-#: Characters a binding component keeps verbatim in a log name.
-_LITERAL = frozenset(string.ascii_letters + string.digits + "._-")
-
-
-def _escaped(part: str) -> str:
-    """One binding component as a filename-safe token, REVERSIBLY.
-
-    A skill name carries a namespace separator and a script is a relative path,
-    so both must lose their slashes; replacing them would collapse ``a/b.sh``
-    and ``a-b.sh`` onto one name, which is the truncation defect again. ``/``
-    therefore becomes ``+`` (readable) and every other non-literal byte becomes
-    ``%XX`` — including ``+`` and ``%`` themselves, so the mapping decodes and
-    two different components can never produce the same token. ``~`` is
-    non-literal too, which is what makes it a safe joiner.
-    """  # comment-length: allow — why it escapes rather than replaces is the fix
-    out = []
-    for char in part:
-        if char in _LITERAL:
-            out.append(char)
-        elif char == "/":
-            out.append("+")
-        else:
-            out.extend(f"%{byte:02X}" for byte in char.encode())
-    return "".join(out)
 
 
 def _binding(check: ResolvedCheck) -> str:

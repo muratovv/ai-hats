@@ -381,14 +381,9 @@ def session_cache_dir(project_dir: Path, session_id: str) -> Path:
     return session_cache_root(project_dir) / session_id
 
 
-def session_checks_dir(project_dir: Path, session_id: str) -> Path:
-    """Root a bound check runs from: ``<session_cache_dir>/checks/`` (HATS-1241).
-
-    ai-hats owns it, so a binding resolves identically under every surface —
-    each provider's own skill tree sits at a different relative path (ADR-0019
-    D-a/D-b). Writer and reader share this function so the two cannot drift.
-    """
-    return session_cache_dir(project_dir, session_id) / "checks"
+# HATS-1540: `session_checks_dir` is gone. A bound check resolves from the
+# surface's own skill mirror (`Provider.session_skills_root`) — the channel keeps
+# no private copy, so there is no second root to name here.
 
 
 # ---------- Library class (materialized mirror) ----------
@@ -728,7 +723,6 @@ __all__ = [
     "cache_root",
     "session_cache_root",
     "session_cache_dir",
-    "session_checks_dir",
     "library_dir",
     "rules_dir",
     "skills_dir",

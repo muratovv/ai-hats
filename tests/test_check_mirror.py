@@ -1,0 +1,432 @@
+"""A bound check resolves from the surface's skill mirror (HATS-1540).
+
+Successor of ``test_check_snapshot.py``. ADR-0019 D9 gave the channel a private
+``<sid>/checks/`` copy so a binding had a session-consistent, surface-independent
+root. That argument expired: every surface now writes an unconditional mirror of
+EVERY composed skill, with the same lifetime, one writer and the same TTL — and
+the private copy held only the BOUND skills, so a session started before a
+binding existed had no root at all and refused every transition until restart.
+
+What is asserted here: the second materialization is gone, the mirror is what a
+check resolves against, and the two leaf-naming conventions are now one.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+
+from ai_hats.check_resolve import CheckResolutionError, resolve_edge_checks
+from ai_hats.check_snapshot import legacy_launch_notices
+from ai_hats.providers import Provider
+from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
+
+SID = "20260801-000000-1-42"
+EDGE = "edge:review--done"
+
+
+def _skill(root: Path, name: str = "gate-skill", script: str = "check.sh") -> ResolvedComponent:
+    """A skill dir on disk: an executable script plus a sibling data file."""
+    skill_dir = root / "library" / "skills" / name.replace("::", "-")
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# gate\n")
+    (skill_dir / "data.json").write_text('{"threshold": 3}\n')
+    script_path = skill_dir / script
+    script_path.write_text("#!/usr/bin/env bash\nexit 0\n")
+    script_path.chmod(0o755)
+    return ResolvedComponent(name=name, component_type=ComponentKind.SKILL, source_path=skill_dir)
+
+
+def _check(skill: ResolvedComponent, script: str = "check.sh", point: str = EDGE) -> ResolvedCheck:
+    return ResolvedCheck(
+        skill=skill.name,
+        script=script,
+        point=point,
+        on_error="refuse",
+        script_path=skill.source_path / script,
+        declared_by="trait-x",
+    )
+
+
+def _result(*, skills=(), checks=()) -> CompositionResult:
+    return CompositionResult(
+        name="tester",
+        priorities=["Reliability"],
+        rules=[],
+        skills=list(skills),
+        injections=["body"],
+        checks=tuple(checks),
+    )
+
+
+def _topology():
+    from ai_hats_rack.fsm import Topology
+
+    return Topology(
+        initial="review",
+        states=("review", "done"),
+        edges={"review": ("done",), "done": ()},
+    )
+
+
+class _MirrorSurface(Provider):
+    """A category-aware surface whose skill mirror is a plain named dir."""
+
+    name = "stub"
+
+    def get_cli_command(self, args: list[str] | None = None) -> list[str]:
+        return ["stub-cli"]
+
+    def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        return {}
+
+    def rules_dir(self, project_dir: Path) -> Path:
+        return project_dir / ".stub" / "rules"
+
+    def system_prompt_path(self, project_dir: Path) -> Path:
+        return project_dir / "STUB.md"
+
+    def build_system_prompt(self, result) -> str:
+        return "stub prompt"
+
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        from ai_hats.paths import session_cache_dir
+
+        return session_cache_dir(project_dir, session_id) / "stub-skills"
+
+    def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        from ai_hats.skills_dir import materialize_skills_dir
+
+        materialize_skills_dir(
+            self.session_skills_root(project_dir, session_id),
+            result.skills,
+            project_dir,
+            artifacts.port,
+        )
+
+    def _build_context_hitl(self, project_dir, result, session_id, artifacts) -> None:
+        artifacts.full_content = self.build_system_prompt(result)
+
+
+def _mirrored(project: Path, skill: ResolvedComponent, sid: str = SID) -> Path:
+    """Build the session's artifacts and return the mirror's copy of ``skill``."""
+    _MirrorSurface().build_session_artifacts(
+        project, _result(skills=[skill]), sid, run_mode=RunMode.HITL, artifacts=BuiltArtifacts()
+    )
+    return _MirrorSurface().session_skills_root(project, sid) / skill.name
+
+
+def _resolve(project: Path, skill: ResolvedComponent, sid: str = SID, **kw):
+    result = _result(skills=[skill], checks=[_check(skill)])
+    return resolve_edge_checks(
+        project,
+        topology=_topology(),
+        session_id=sid,
+        compose=lambda _: result,
+        **kw,
+    )
+
+
+def _project(tmp_path: Path) -> Path:
+    (tmp_path / "ai-hats.yaml").write_text(
+        "schema_version: 4\nprovider: stub\nai_hats_dir: .agent/ai-hats\n"
+    )
+    return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _stub_provider(monkeypatch):
+    """Register the stub surface under the name the project config names."""
+    from ai_hats import providers
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: _MirrorSurface())
+    yield
+
+
+# ---------------------------------------------------------------------------
+# Tombstone: the second materialization is gone
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("run_mode", [RunMode.HITL, RunMode.AUTOMATE])
+def test_no_session_ever_gets_a_checks_dir(tmp_path: Path, run_mode: RunMode):
+    """F: ``<sid>/checks/`` is not created under any condition — the tombstone.
+
+    Asserted with a binding present and through both run modes, because that is
+    where the retired step used to fire: above the category loop, outside the
+    policy gate. A literal path, not a helper: the helper is gone, and a test
+    that imported one could not fail if the step came back under a new name.
+    """
+    from ai_hats.paths import session_cache_dir
+
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    _MirrorSurface().build_session_artifacts(
+        tmp_path, result, SID, run_mode=run_mode, artifacts=BuiltArtifacts()
+    )
+
+    assert not (session_cache_dir(tmp_path, SID) / "checks").exists()
+
+
+def test_the_snapshot_writer_is_gone_from_the_module(tmp_path: Path):
+    """The step is removed, not merely unwired — an unwired writer re-lands."""
+    import ai_hats.check_snapshot as module
+
+    assert not hasattr(module, "snapshot_checks")
+
+    from ai_hats import paths
+
+    assert not hasattr(paths, "session_checks_dir")
+
+
+# ---------------------------------------------------------------------------
+# Resolution against the mirror
+# ---------------------------------------------------------------------------
+
+
+def test_a_bound_check_resolves_to_the_mirrors_copy(tmp_path: Path):
+    """In a session the script that runs is the mirror's, not the library's."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+    mirrored = _mirrored(project, skill)
+
+    resolved = _resolve(project, skill)
+
+    assert resolved[0].script_path == (mirrored / "check.sh").resolve()
+    assert resolved[0].script_path.is_file()
+    assert resolved[0].script_path.stat().st_mode & 0o111, "exec bit lost in the mirror"
+
+
+def test_the_whole_skill_dir_is_there_not_just_the_script(tmp_path: Path):
+    """ADR-0019 D-h ``bundle: dir``: a script that reads a sibling still can."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+
+    mirrored = _mirrored(project, skill)
+
+    assert (mirrored / "data.json").read_text() == '{"threshold": 3}\n'
+
+
+def test_a_session_that_predates_the_binding_still_resolves(tmp_path: Path):
+    """E: the regression HATS-1538 withdrew the shipped row for.
+
+    The mirror copies EVERY composed skill, so a session built before any
+    ``checks:`` row existed already holds the bytes a binding added later names.
+    Modelled exactly that way: the session's artifacts are built from a
+    composition with NO checks, and the binding appears only afterwards.
+    """
+    project = _project(tmp_path)
+    skill = _skill(project)
+    _MirrorSurface().build_session_artifacts(
+        project,
+        _result(skills=[skill]),  # no checks at session build time
+        SID,
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    resolved = _resolve(project, skill)
+
+    assert resolved[0].script_path.is_file(), (
+        "a session older than the binding must resolve, not report CORRUPT"
+    )
+
+
+def test_a_namespaced_skill_resolves_to_the_leaf_the_mirror_wrote(tmp_path: Path):
+    """The two conventions become one, and the mirror is the authority.
+
+    Every surface writes the leaf as the composed skill's raw ``name``; this
+    module used to re-derive it with ``resolve_namespace``, so ``dev::python``
+    was looked up as ``dev/python`` — a directory no surface had ever written.
+    """
+    project = _project(tmp_path)
+    skill = _skill(project, name="dev::python")
+    mirrored = _mirrored(project, skill)
+
+    resolved = _resolve(project, skill)
+
+    assert resolved[0].script_path == (mirrored / "check.sh").resolve()
+    assert resolved[0].script_path.is_file()
+
+
+def test_each_session_resolves_under_its_own_sid(tmp_path: Path):
+    """A sub-agent mints its own session, so it reads its own mirror."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+    child_sid = "20260801-000000-2-43"
+    _mirrored(project, skill, SID)
+    (skill.source_path / "check.sh").write_text("#!/usr/bin/env bash\nexit 2\n")
+    _mirrored(project, skill, child_sid)
+
+    parent = _resolve(project, skill, SID)[0].script_path
+    child = _resolve(project, skill, child_sid)[0].script_path
+
+    assert parent.read_text() == "#!/usr/bin/env bash\nexit 0\n"
+    assert child.read_text() == "#!/usr/bin/env bash\nexit 2\n"
+
+
+def test_a_rebuild_within_one_session_re_copies_the_source(tmp_path: Path):
+    """Stated consequence of retiring the private copy — not an accident.
+
+    The retired snapshot was first-writer-wins, so its bytes were frozen for the
+    session's lifetime. Every surface's mirror is wipe-and-rebuild (HATS-1248),
+    and a rebuild for a live sid is reachable — the claude SDK engine builds
+    artifacts itself when handed none. So a check now runs exactly the bytes the
+    session's OWN runtime hooks run: one mirror, one rebuild, everything moves
+    together. Asserted rather than assumed, because it is the one property the
+    move away from ``<sid>/checks/`` did not preserve.
+    """  # comment-length: allow — a deliberately weakened property must say so
+    project = _project(tmp_path)
+    skill = _skill(project)
+    _mirrored(project, skill)
+
+    (skill.source_path / "check.sh").write_text("#!/usr/bin/env bash\nexit 2\n")
+    _mirrored(project, skill)
+
+    assert _resolve(project, skill)[0].script_path.read_text() == "#!/usr/bin/env bash\nexit 2\n"
+
+
+def test_the_mirror_lives_inside_what_session_teardown_drops(tmp_path: Path):
+    """No cleanup of its own: teardown removes ``<sid>/`` wholesale."""
+    from ai_hats.runtime_common import _cleanup_session_cache
+
+    project = _project(tmp_path)
+    skill = _skill(project)
+    assert _mirrored(project, skill).is_dir()
+
+    _cleanup_session_cache(project, SID)
+
+    assert not _MirrorSurface().session_skills_root(project, SID).exists()
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed branches
+# ---------------------------------------------------------------------------
+
+
+def test_a_surface_that_mirrors_nothing_refuses(tmp_path: Path, monkeypatch):
+    """The ABC default is ``None``, and a gate with no bytes must not pass."""
+    from ai_hats import providers
+
+    class _Bare(_MirrorSurface):
+        def session_skills_root(self, project_dir: Path, session_id: str):
+            return None
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: _Bare())
+    project = _project(tmp_path)
+    skill = _skill(project)
+
+    with pytest.raises(CheckResolutionError, match="mirrors no skills"):
+        _resolve(project, skill)
+
+
+def test_an_unloadable_provider_refuses(tmp_path: Path, monkeypatch):
+    """A surface that cannot be loaded is not a reason to wave a gate through."""
+    from ai_hats import providers
+
+    def _boom(name):
+        raise RuntimeError("no such surface")
+
+    monkeypatch.setattr(providers, "get_provider", _boom)
+    project = _project(tmp_path)
+    skill = _skill(project)
+
+    with pytest.raises(CheckResolutionError, match="could not be resolved"):
+        _resolve(project, skill)
+
+
+def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
+    """The rebase joins a declared relative path, so prove it stays contained."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+    _mirrored(project, skill)
+    result = _result(skills=[skill], checks=[_check(skill, script="../../../etc/passwd")])
+
+    with pytest.raises(CheckResolutionError, match="outside this session's mirror root"):
+        resolve_edge_checks(project, topology=_topology(), session_id=SID, compose=lambda _: result)
+
+
+def test_outside_a_session_the_library_copy_runs(tmp_path: Path):
+    """D: the live-resolution mode is unchanged — no mirror, no rebase."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+
+    resolved = _resolve(project, skill, sid="")
+
+    assert resolved[0].script_path == skill.source_path / "check.sh"
+
+
+# ---------------------------------------------------------------------------
+# Launch-time notice for a surface below the builder
+# ---------------------------------------------------------------------------
+
+
+def test_a_surface_below_the_builder_says_it_mirrors_nothing(tmp_path: Path):
+    """``WrapRunner`` degrades such a provider to ``build_session_prompt``, which
+    is below the wiring — the loss is announced instead of discovered."""
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    notices = legacy_launch_notices("legacy", result, SessionPolicy())
+
+    assert len(notices) == 1
+    assert "gate-skill" in notices[0]
+    assert "NOT mirrored" in notices[0]
+
+
+def test_a_legacy_surface_with_no_bindings_is_quiet(tmp_path: Path):
+    """Nothing bound, nothing lost — a warning here would be noise."""
+    assert legacy_launch_notices("legacy", _result(), SessionPolicy()) == []
+
+
+# ---------------------------------------------------------------------------
+# The launch-time skew notice (HATS-1540 review)
+# ---------------------------------------------------------------------------
+
+
+class _StaleSurface(_MirrorSurface):
+    """A surface package older than the accessor: implements the ADR-0018 seam
+    perfectly well, inherits the `Provider` default of ``None`` for the root."""
+
+    def session_skills_root(self, project_dir: Path, session_id: str):
+        return Provider.session_skills_root(self, project_dir, session_id)
+
+
+def test_a_surface_that_cannot_root_a_bound_check_says_so_at_launch(tmp_path: Path):
+    """The notice `legacy_launch_notices` does NOT give, and the ADR claimed it did.
+
+    An out-of-date agy/cline handles the artifact-builder seam, so it never
+    reaches the legacy notice — and then EVERY transition in its sessions is
+    refused with a message about a missing file. Measured: the real e2e tier
+    caught exactly this against a published surface package.
+    """
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    notice = surface_skew_notice("agy", _StaleSurface(), tmp_path, result)
+
+    assert notice is not None
+    assert "gate-skill" in notice
+    assert "session_skills_root" in notice, "the notice must name the fix"
+
+
+def test_a_surface_that_roots_checks_is_quiet(tmp_path: Path):
+    """No skew, no noise — the notice must not fire on every ordinary launch."""
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    skill = _skill(tmp_path)
+    result = _result(skills=[skill], checks=[_check(skill)])
+
+    assert surface_skew_notice("stub", _MirrorSurface(), tmp_path, result) is None
+
+
+def test_a_stale_surface_with_no_bindings_is_quiet(tmp_path: Path):
+    """Nothing bound, nothing to root — the skew is harmless and stays silent."""
+    from ai_hats.check_snapshot import surface_skew_notice
+
+    assert surface_skew_notice("agy", _StaleSurface(), tmp_path, _result()) is None

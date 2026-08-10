@@ -104,12 +104,18 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
     from ai_hats_wt import (
         WorktreeBaseBranchMismatchError,
         WorktreeDriftError,
+        WorktreeMergeAborted,
         WorktreeMergeConsentError,
         WorktreeStateLostError,
     )
 
     tid = task_id or getattr(exc, "task_id", "") or "<id>"
     branch = getattr(exc, "branch_name", "") or f"task/{tid.lower()}"
+    if isinstance(exc, WorktreeMergeAborted):
+        # HATS-1540: name the subsystem that refused. HATS-1538 cost a session
+        # to a symptom that pointed at plan-gate, so `checks` says so here and
+        # the check's own words carry the recipe.
+        return ("checks_refused", f"Refused (checks) — cannot merge for {tid}.", [str(exc)])
     if isinstance(exc, WorktreeMergeConsentError):
         return (
             "worktree_merge_consent",
