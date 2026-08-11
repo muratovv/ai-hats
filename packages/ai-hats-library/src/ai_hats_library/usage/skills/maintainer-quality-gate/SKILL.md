@@ -18,7 +18,7 @@ license: MIT
 # maintainer-quality-gate
 
 Maintainer-only quality gates for the ai-hats codebase, delivered as
-infrastructure (a git hook and a `checks:` binding) rather than agent-side
+infrastructure (a git hook and a `composition.apps` binding) rather than agent-side
 decision logic.
 
 ## What it ships
@@ -29,9 +29,10 @@ Two gates and the mechanism they share:
   pushes to master (HATS-550 / HATS-686), plus its wrapper
   `scripts/run-e2e-gate.sh`.
 - `hooks/done-gate.sh` — the dual-mode gate bound to **both roads into
-  master**: `edge:review--done` (the FSM automerge) and `wt:pre-merge` (a direct
-  `ai-hats wt merge`) — HATS-1137, both points since HATS-1540. Its `--check`
-  mode is what the `composition.checks` binding runs; its `--run` mode is what
+  master**: `edge:review--done` under `apps.rack.tasks` (the FSM automerge) and
+  `pre-merge` under `apps.wt` (a direct `ai-hats wt merge`) — HATS-1137, both
+  points since HATS-1540. Its `--check`
+  mode is what the binding runs; its `--run` mode is what
   `make done-gate` invokes.
 - `lib/gate-marker.sh` — the SHA pass-marker store both read and write,
   parameterised by gate name.
@@ -64,8 +65,8 @@ That is the only step invoked by hand. It runs the whole `done-gate` stage
    what the **active role** composes — in a session resolved from the surface's
    own skill mirror, outside one from the live library (ADR-0019 D9) — keeps the
    rows whose point is an edge of the topology this kernel runs (ADR-0019 D11),
-   and finds the `maintainer` role's single `checks:` row, which binds this
-   script to both points.
+   and finds the `maintainer` role's rows — two since HATS-1545, one per app,
+   binding this script to both points.
 5. `hook_exec.run_hook` spawns the script with **no argv at all**, `stdin`
    `/dev/null`, `cwd` = the project dir, a 20s budget
    (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
@@ -105,11 +106,11 @@ In the script's real order; every branch below is an explicit `exit`:
    states the context and the policy lives here (supervisor ruling 2026-08-08).
    The comparison reads `ai-hats.yaml` and the documented default, never
    `AI_HATS_DIR`: that variable is the leaky one, and whose tracker this is is
-   the whole question. Absent at `wt:pre-merge`, which resolves no backlog.
+   the whole question. Absent at `pre-merge`, which resolves no backlog.
 2. No `<project>/scripts/ci-local.sh` → **refuse (2)**. No dispatcher means no
    `done-gate` stage, so no marker could ever be earned honestly. A gate that
    cannot verify must not pass; the message names both fixes (add the stage, or
-   drop the `checks:` row).
+   drop the binding row).
 3. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
    code entering master through this card; a doc/research card brings none. The
    runner refuses on its own when it could not TELL, so absent means absent here,
@@ -129,7 +130,7 @@ arrives as `AI_HATS_WORKTREE_PATH` at *both*, resolved once by the runner
 `sessions/worktrees/task-<id>.json` and parsing the JSON by hand. The primitive
 *removes* an unresolved value from the inherited environment rather than letting
 an ambient one through — that applies to `AI_HATS_TASKS_DIR` too, so a stale one
-cannot reach the script at `wt:pre-merge` and read as "not my backlog".
+cannot reach the script at `pre-merge` and read as "not my backlog".
 
 ### `--run` — `make done-gate`, and where the marker lands
 
@@ -200,23 +201,32 @@ produced a gate that is silently always green.
 
 ## Binding several scripts to one point
 
-`composition.checks` takes **one script per row**, so two scripts on one point
-is two rows. Nothing else changes — same point, same edge, same lock:
+`composition.apps` takes **one script per row**, so two scripts on one point is
+two rows. Nothing else changes — same point, same edge, same lock:
 
 ```yaml
 composition:
   skills:
     - maintainer-quality-gate # a binding never pulls its skill in (ADR-0019 D2)
-  checks:
-    - skill: maintainer-quality-gate
-      script: hooks/done-gate.sh
-      on: [edge:review--done]
-      on_error: refuse
-    - skill: maintainer-quality-gate
-      script: hooks/changelog-entry.sh
-      on: [edge:review--done, edge:execute--review]
-      on_error: warn
+  apps:
+    rack: # the application; below it, rack's own grammar
+      tasks: # the backlog this row gates (name or cli_alias)
+        - run: maintainer-quality-gate/hooks/done-gate.sh
+          at: [edge:review--done]
+          on_error: refuse
+        - run: maintainer-quality-gate/hooks/changelog-entry.sh
+          at: [edge:review--done, edge:execute--review]
+          on_error: warn
+    wt: # ai-hats's own app: rows sit directly under the key
+      - run: maintainer-quality-gate/hooks/done-gate.sh
+        at: [pre-merge]
+        on_error: refuse
 ```
+
+`run:` is `<skill>/<path-inside-it>`, replacing the `skill:` / `script:` pair.
+ai-hats owns three keys of a row — `run:`, `at:`, `on_error:` — and carries
+everything else to whoever owns `<app>`; the depth between the app key and the
+row is that app's grammar too (HATS-1545, ADR-0017 §3).
 
 What that means at run time:
 
@@ -242,10 +252,14 @@ What that means at run time:
   an earlier row declared `refuse`.
 - Binding to a skill the role does not compose is a loud composition error, not
   an implicit compose. `on_error: warn` is rejected outright at the
-  data-protection points (`wt:pre-merge`, `wt:teardown[*]`), whose failure
-  policy the catalog fixes (ADR-0019 D4).
-- YAML 1.1 resolves a bare `on:` key to the boolean `True`; the row parser
-  normalizes it, so both `on:` and `"on":` are accepted.
+  data-protection points (`apps.wt` at `pre-merge` and `teardown[*]`), whose
+  failure policy `check_points.wt_points()` fixes (ADR-0019 D4).
+- The field is `at:`, not `on:`. YAML 1.1 resolves a bare `on` key to the boolean
+  `True`, and under an opaque cargo block no parser can remap it back — ai-hats
+  does not know the key is significant. HATS-1545 removed the trap by choosing a
+  word outside YAML 1.1's truthy set and deleted the old remap; a config still
+  carrying the retired `checks:` key gets a **typed refusal** naming where the
+  rows moved.
 
 ## The master pre-push gate — why two modes (HATS-686)
 
