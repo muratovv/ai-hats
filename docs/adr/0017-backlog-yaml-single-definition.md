@@ -320,7 +320,8 @@ An integrator may hand the rack rows declared on a trait or role
 row — `run:`, `at:` and `on_error:` — and interprets two of them: `at:` is owned
 but never read, ai-hats guaranteeing only that a row names at least one point.
 Everything else, `at:`'s vocabulary included, is **this** package's grammar and is
-specified here (HATS-1545):
+specified here (HATS-1545); the package restates it for its own consumers, who do
+not read this repo's ADRs, in `packages/ai-hats-rack/README.md` [17]:
 
 - **`apps.rack.<backlog>`** — the level below the app key names the backlog the
   row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`
@@ -330,12 +331,14 @@ specified here (HATS-1545):
   skipped, so one misdirected row cannot brick the backlog that is transitioning.
   All three of these are decided **in-lock, at the first transition** of a
   mounted backlog — not at composition, which never sees this grammar.
-  > **As of 2026-08-11 the sibling skip leads nowhere.** The subscriber that
-  > reads these rows is attached by the integrator to the **tasks** instance
-  > only; a sibling backlog runs the portable kit, which has no such subscriber.
-  > So a row addressed to a sibling is skipped here *and* unread there — it can
-  > never fire, on either road. **HATS-1575** owns this; until it lands, read the
-  > clause above as the intended design, not as behaviour.
+  The skip leads somewhere since **HATS-1575**: `Workspace` takes a `check_port`
+  and gives every instance it composes its own subscriber, so the sibling reads
+  what the transitioning backlog skipped, and the rack — not the integrator —
+  holds that invariant. Until then the subscriber was attached by the integrator
+  to the **tasks** instance alone (a sibling ran the portable kit, which had
+  none), so such a row was skipped here *and* unread there: it could never fire,
+  on either road. The reflect/judge workspace mounted no integrator kernel at
+  all, which left even the tasks instance ungated on that road.
 - **`at: [<point>, …]`** — the points the row fires on, in this package's own
   vocabulary (`edge:<from>--<to>` today). A point naming an edge this topology
   lacks is skipped rather than refused: from the carrier's side a typo and a point
@@ -508,6 +511,12 @@ inode → two holders) — the current `LockTimeoutError` hint [4] is amended.
 # per backlog (replaces today's cli._kernel() [8]):
 defn = load_backlog(catalog / "backlog.yaml")     # or packaged default
 subs = build_extensions(defn, catalog, factories) # §4: registry + closures
+if check_port is not None:                        # §3 rows, HATS-1575. NOT an
+    subs.append(check_subscriber(                 # `extensions:` entry: a channel
+        defn,                                     # a backlog can forget to opt
+        port=check_port(catalog),                 # into is a gate that is
+        known_backlogs=selectors_in_root,         # silently absent
+    ))
 kernel = Kernel(
     catalog,
     prefix=defn.prefix,
@@ -520,9 +529,10 @@ for sub in subs:                                  # §4 bind lifecycle —
     if hasattr(sub, "bind"):                      # post-lock kernel API
         sub.bind(kernel)                          # (epic-automation, worktree)
 
-# per workspace (the CLI chokepoint):
+# per workspace — EVERY chokepoint, not the CLI's alone: the reflect/judge
+# facade mounts one too, and it walks PROP along named edges (HATS-1575).
 root = resolve_root(caller_cwd)                   # unchanged [9]
-ws = Workspace.discover([root])                   # N definitions -> N kernels
+ws = Workspace.discover([root], check_port=…)     # N definitions -> N kernels
 ws.kernel_for("PROP-052").transition(...)
 ```
 
@@ -756,3 +766,4 @@ rule; the post-lock mirror event is the safe form).
 - [14] `packages/ai-hats-tracker/src/ai_hats_tracker/hypothesis/quorum.py` (independent-session quorum, auto sentinel) + `docs/adr/0009-quorum-autoclose-safe-direction.md` (safe closure direction)
 - [15] `packages/ai-hats-rack/src/ai_hats_rack/models.py` (`_capture_extras` passthrough)
 - [16] `packages/ai-hats-rack/src/ai_hats_rack/extensions/epic.py` (`decide`, `RESOLVED_STATES`/`ACTIVE_STATES`, advance chain, `bind`)
+- [17] `packages/ai-hats-rack/README.md` § "Carried check rows" (the same grammar, for consumers of the package) + `checks.py` (`check_subscriber`, `CheckPortFactory`)

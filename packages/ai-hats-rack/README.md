@@ -121,6 +121,53 @@ scaffold 30 — so migration is zero behaviour change. Optional contract hooks a
 handler may expose: `bind(kernel)` (post-lock kernel handle) and
 `requires_states()` (its state vocabulary, validated fail-closed at composition).
 
+## Carried check rows — the `apps.rack` grammar (ADR-0019 D11, HATS-1545/1575)
+
+An integrator may hand the rack rows declared on a trait or role
+(`composition.apps.rack`). It owns three keys of such a row — `run:`, `at:`,
+`on_error:` — and interprets two: `at:` is owned but never read, the carrier
+guaranteeing only that a row names at least one point. Everything else, `at:`'s
+vocabulary included, is **this package's** grammar, so a consumer of the package
+reads it here. (The decision record, and how this meets the multi-backlog model,
+is ADR-0017 §3 in the ai-hats repo — keep the two in step.)
+
+- **`apps.rack.<backlog>`** — the level below the app key names the backlog the
+  row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`.
+  The level is not optional: a row sitting directly under `apps.rack` refuses.
+- **`at: [<point>, …]`** — the points the row fires on, in this package's own
+  vocabulary (`edge:<from>--<to>` today).
+- Any other key rides along in `CheckDeclaration.cargo` and is read by nobody:
+  an extra key is a no-op, not a setting.
+
+Which miss is loud and which is quiet is the contract:
+
+| the row names…                          | verdict | why                                                           |
+| --------------------------------------- | ------- | ------------------------------------------------------------- |
+| a backlog no mounted catalog answers to | refuse  | a gate on a backlog that does not exist would never fire      |
+| a **sibling** backlog of this root      | skip    | that backlog runs its own subscriber and will fire it there   |
+| an edge this topology lacks             | skip    | from the carrier's side a typo and a foreign topology are one |
+
+The refusal lands in the lock, on the first transition of the addressed backlog
+— not at composition: rows resolve lazily, because a fail-closed discovery on
+the read path bricked reads once already (HATS-1538).
+
+**Every mounted backlog runs its own subscriber**, and the rack holds that
+invariant rather than the integrator: `Workspace` takes a `check_port`
+(`(catalog) -> CheckPort`) and appends `check_subscriber(defn, …)` to each
+instance it composes. The integrator supplies only what this package cannot —
+where rows come from and who runs one; `subprocess` is forbidden here by an
+AST-level import pin. Uniqueness follows, in the shape the code actually has: a
+selector collision is a load-time refusal (`DuplicateBacklogNameError`) when the
+colliding selector is some backlog's `name` — a first-match would install the
+gate on whichever one the walk found first. Two `cli_alias` values colliding is
+deliberately left to the CLI group's own typed refusal
+(`DuplicateGroupNameError`), so a defect that was already loud keeps the error
+its callers catch.
+
+Execution order is the single in-lock priority ladder — a carried row sits at
+15, after the plan-gate and before the ownership claim, so a refusal leaves
+neither ownership nor a worktree behind.
+
 ## Lock model (deadlock excluded structurally)
 
 | Lock                      | Scope                                         | Holder    |
@@ -187,6 +234,7 @@ Command-level flags: `--force` (+ mandatory `--reason`) relaxes the FSM arrow on
 frozen hatch shared by `--rm` and `--freeze`.
 
 The backlog root is resolved by `resolve_root` (in `resolver.py`):
+
 1. Explicit `--tasks-dir` / `RACK_TASKS_DIR` override.
 2. `AI_HATS_DIR` environment override (points to `<ai_hats_dir>`, cards under `<ai_hats_dir>/tracker/backlog/tasks`). If `AI_HATS_PROJECT_DIR` is set and does not match the project directory resolved for the current invocation (walk-up from cwd), `resolve_root` raises `ForeignProjectPinError` (exit code 1, `foreign_project_pin`) detailing both paths and `ai_hats_dir`.
 3. Walk-up from CWD to the nearest ancestor holding `.agent/` (directory) or `ai-hats.yaml` (file in project root) (K2, HATS-197 heir); from inside a linked task worktree (neither marker present) a pure-filesystem gitlink hop resolves the main checkout instead (HATS-1038 C2).
