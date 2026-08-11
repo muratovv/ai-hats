@@ -170,6 +170,12 @@ def test_exit_code_masking_nudges(command):
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
         "pytest tests/",
         "python -m pytest tests/",
+        # The rule's own "✅ intra-command" form: the status is CAPTURED to a
+        # file the agent then reads, so nothing is masked — nudging here taught
+        # the agent to distrust the one shape the rule prescribes.
+        "pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        "python -m pytest tests/ -q > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        "ruff check src/ > /tmp/lint.log 2>&1; echo $?>/tmp/lint.rc",
     ],
 )
 def test_exit_code_preservation_gets_no_nudge(command):
