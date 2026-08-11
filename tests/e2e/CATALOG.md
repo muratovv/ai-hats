@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**228 of 228 files catalogued — 235 flows.**
+**229 of 229 files catalogued — 236 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -622,6 +622,22 @@ as a claim to check, not as evidence.
 
 - **expect** — done gate verifies review approval, documentation completeness, and e2e catalog freshness before allowing transition
 - **why** — without done gates, agents transition unreviewed, undocumented, or catalog-stale task cards directly to done
+
+## `test_dry_run_materialize.py`
+
+*pins HATS-1551*
+
+- **flow** — an operator inspecting the session tree a role would get, on disk, without spawning
+- **cmds**
+
+  ```console
+  ai-hats --dry-run-json -r test-role
+  ai-hats --dry-run-json --materialize -r test-role
+  ai-hats agent test-role --task "e2e task" --json --dry-run --materialize
+  ```
+
+- **expect** — a plain dry-run leaves both sid dirs absent; --materialize writes the tree under the fixed `dry-run-materialize` sid, reports its path in `notes`, and still shows no escapes; the AUTOMATE path writes the same tree.
+- **why** — the flag can regress in either direction — --materialize silently writing nothing, leaving the operator inspecting an empty tree, or a plain --dry-run starting to write, so a read-only inspection mutates the cache a real launch then reads.
 
 ## `test_e2e_catalog_gate.py`
 

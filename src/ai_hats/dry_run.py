@@ -242,4 +242,3 @@ def dry_run_automate(
         checks=checks,
         prompt_text=described.prompt,
     )
-

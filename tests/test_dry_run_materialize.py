@@ -57,7 +57,9 @@ def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
 
     # S3 / R6 & R7: Report includes notes stating tree location and synthetic sid
     assert any("materialized session tree written to disk at" in n for n in report.notes)
-    assert any(f"synthetic session_id '{DRY_RUN_MATERIALIZE_SESSION_ID}'" in n for n in report.notes)
+    assert any(
+        f"synthetic session_id '{DRY_RUN_MATERIALIZE_SESSION_ID}'" in n for n in report.notes
+    )
 
 
 def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
@@ -104,13 +106,17 @@ def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
 def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
     """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
     report_clean = dry_run_hitl(project, provider="claude", materialize=False)
-    entries_clean = [(e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.plan.entries]
+    entries_clean = [
+        (e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.plan.entries
+    ]
 
     # Run --materialize
     dry_run_hitl(project, provider="claude", materialize=True)
 
     # Run default dry-run again
     report_after = dry_run_hitl(project, provider="claude", materialize=False)
-    entries_after = [(e.kind.value, str(e.target), e.size, e.digest) for e in report_after.plan.entries]
+    entries_after = [
+        (e.kind.value, str(e.target), e.size, e.digest) for e in report_after.plan.entries
+    ]
 
     assert entries_clean == entries_after
