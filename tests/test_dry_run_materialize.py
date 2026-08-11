@@ -55,6 +55,24 @@ def test_dry_run_materialize_leaves_tree_on_disk(project: Path):
     assert len(files) > 0
     assert report.plan.entries
 
+    # S3 / R6 & R7: Report includes notes stating tree location and synthetic sid
+    assert any("materialized session tree written to disk at" in n for n in report.notes)
+    assert any(f"synthetic session_id '{DRY_RUN_MATERIALIZE_SESSION_ID}'" in n for n in report.notes)
+
+
+def test_dry_run_automate_materialize_leaves_tree_on_disk(project: Path):
+    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    assert not cache_mat.exists()
+
+    report = dry_run_automate(project, provider="claude", task="test task", materialize=True)
+
+    assert report.escapes == ()
+    assert cache_mat.is_dir()
+    files = [p for p in cache_mat.rglob("*") if p.is_file()]
+    assert len(files) > 0
+    assert report.plan.entries
+    assert any("materialized session tree written to disk at" in n for n in report.notes)
+
 
 def test_dry_run_default_leaves_nothing_on_disk(project: Path):
     cache_std = session_cache_dir(project, DRY_RUN_SESSION_ID)

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .check_snapshot import describe_checks
-from .materialization import PlanMaterializer
+from .materialization import ApplyMaterializer, PlanMaterializer
 from .session_artifacts import (
     AT_LAUNCH,
     BuiltArtifacts,
@@ -24,8 +24,15 @@ from .session_report import SessionReport
 # A real sid is minted by the session manager, which a dry-run must not touch.
 # Fixed so reported paths are stable and diffable.
 DRY_RUN_SESSION_ID = "dry-run"
+DRY_RUN_MATERIALIZE_SESSION_ID = "dry-run-materialize"
 
-__all__ = ["AT_LAUNCH", "DRY_RUN_SESSION_ID", "dry_run_automate", "dry_run_hitl"]
+__all__ = [
+    "AT_LAUNCH",
+    "DRY_RUN_MATERIALIZE_SESSION_ID",
+    "DRY_RUN_SESSION_ID",
+    "dry_run_automate",
+    "dry_run_hitl",
+]
 
 
 def _files_under(root: Path) -> set[Path]:
@@ -53,8 +60,11 @@ def dry_run_hitl(
     provider: str | None = None,
     extra_args: list[str] | None = None,
     policy: SessionPolicy | None = None,
+    materialize: bool = False,
 ) -> SessionReport:
     """Build the HITL session in plan mode and report it."""
+    import shutil
+
     from .composition_seam import build_preview_payload
     from .paths import session_cache_dir
 
@@ -63,14 +73,19 @@ def dry_run_hitl(
     prov = payload.provider
     eff_policy = policy or SessionPolicy()
 
-    cache_dir = session_cache_dir(project_dir, DRY_RUN_SESSION_ID)
+    sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
+    cache_dir = session_cache_dir(project_dir, sid)
+    if materialize and cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok session-cache
+
     before = _files_under(cache_dir)
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    port = ApplyMaterializer() if materialize else PlanMaterializer()
+    artifacts = BuiltArtifacts(port=port)
     with prov.execution_context(project_dir):
         prov.build_session_artifacts(
             project_dir,
             payload.result,
-            DRY_RUN_SESSION_ID,
+            sid,
             run_mode=RunMode.HITL,
             policy=eff_policy,
             artifacts=artifacts,
@@ -80,7 +95,7 @@ def dry_run_hitl(
         prov,
         project_dir,
         cache_dir,
-        session_id=DRY_RUN_SESSION_ID,
+        session_id=sid,
         trace_path=AT_LAUNCH,
         role=payload.effective_role,
         root_pid=AT_LAUNCH,
@@ -95,9 +110,15 @@ def dry_run_hitl(
     )
     prompt = next((p for p in artifacts.materialized if p.suffix in (".md", ".MD")), None)
     checks, check_notes = describe_checks(
-        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+        prov, project_dir, payload.result, sid, artifacts.port.plan
     )
     notes = [*check_notes, *_launch_notices(prov, project_dir, payload.result, eff_policy)]
+    if materialize:
+        notes.append(f"materialized session tree written to disk at {cache_dir}")
+        notes.append(
+            f"session tree uses synthetic session_id '{sid}'; real sessions mint their own sid"
+        )
+    escapes = () if materialize else _detect_escapes(cache_dir, before)
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
@@ -108,7 +129,7 @@ def dry_run_hitl(
         prompt=prompt,
         plan=artifacts.port.plan,
         cwd=str(project_dir),
-        escapes=_detect_escapes(cache_dir, before),
+        escapes=escapes,
         checks=checks,
         notes=tuple(notes),
         prompt_text=artifacts.full_content,
@@ -138,6 +159,7 @@ def dry_run_automate(
     ticket_id: str = "",
     model: str = "",
     policy: SessionPolicy | None = None,
+    materialize: bool = False,
 ) -> SessionReport:
     """Build the sub-agent session in plan mode and report it.
 
@@ -145,6 +167,8 @@ def dry_run_automate(
     report shows what a sub-agent really gets — including, today, the paths that
     go around the port (see ``escapes``).
     """
+    import shutil
+
     from .composition_seam import build_preview_payload
     from .paths import session_cache_dir
 
@@ -153,27 +177,32 @@ def dry_run_automate(
     prov = payload.provider
     eff_policy = policy or SessionPolicy()
 
-    cache_dir = session_cache_dir(project_dir, DRY_RUN_SESSION_ID)
+    sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
+    cache_dir = session_cache_dir(project_dir, sid)
+    if materialize and cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok session-cache
+
     before = _files_under(cache_dir)
-    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    port = ApplyMaterializer() if materialize else PlanMaterializer()
+    artifacts = BuiltArtifacts(port=port)
     with prov.execution_context(project_dir):
         prov.build_session_artifacts(
             project_dir,
             payload.result,
-            DRY_RUN_SESSION_ID,
+            sid,
             run_mode=RunMode.AUTOMATE,
             policy=eff_policy,
             artifacts=artifacts,
         )
 
-    checks, notes = describe_checks(
-        prov, project_dir, payload.result, DRY_RUN_SESSION_ID, artifacts.port.plan
+    checks, check_notes = describe_checks(
+        prov, project_dir, payload.result, sid, artifacts.port.plan
     )
     env = assemble_launch_env(
         prov,
         project_dir,
         cache_dir,
-        session_id=DRY_RUN_SESSION_ID,
+        session_id=sid,
         trace_path=AT_LAUNCH,
         role=payload.effective_role,
         root_pid=AT_LAUNCH,
@@ -183,7 +212,7 @@ def dry_run_automate(
     described = prov.describe_automate_launch(
         project_dir,
         payload.result,
-        DRY_RUN_SESSION_ID,
+        sid,
         artifacts,
         task=task,
         ticket_id=ticket_id,
@@ -191,6 +220,13 @@ def dry_run_automate(
         env=env,
     )
 
+    notes = list(check_notes)
+    if materialize:
+        notes.append(f"materialized session tree written to disk at {cache_dir}")
+        notes.append(
+            f"session tree uses synthetic session_id '{sid}'; real sessions mint their own sid"
+        )
+    escapes = () if materialize else _detect_escapes(cache_dir, before)
     return SessionReport(
         role=payload.effective_role,
         provider=prov.name,
@@ -201,8 +237,9 @@ def dry_run_automate(
         prompt=next((p for p in artifacts.materialized if p.suffix == ".md"), None),
         plan=artifacts.port.plan,
         cwd="<worktree, assigned at launch>",
-        escapes=_detect_escapes(cache_dir, before),
-        notes=notes,
+        escapes=escapes,
+        notes=tuple(notes),
         checks=checks,
         prompt_text=described.prompt,
     )
+
