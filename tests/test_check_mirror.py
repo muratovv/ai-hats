@@ -600,3 +600,32 @@ def test_a_gate_under_a_symlinked_root_is_still_reported_as_armed(tmp_path: Path
     runs_from = (real / "skills" / "gate-skill" / "check.sh").resolve()
 
     assert _plan_covers(plan, runs_from) is True
+
+
+def test_resolve_checks_at_filters_by_app_as_well_as_point(tmp_path):
+    """HATS-1581: the query is (app, point), not point alone.
+
+    Both rows below name the SAME point on purpose. Nothing stops two apps from
+    spelling a point identically — the app key exists precisely so they may — so
+    a filter that looked only at ``at`` would hand the wt caller the session-start
+    row, and the gate would run against the wrong lifecycle.
+    """
+    from dataclasses import replace
+
+    from ai_hats.check_points import AI_HATS_APP, WT_APP
+    from ai_hats.check_resolve import resolve_checks_at
+
+    skill = _skill(tmp_path)
+    base = _check(skill, point="shared")
+    result = _result(
+        skills=[skill],
+        checks=(
+            replace(base, app=WT_APP, path=()),
+            replace(base, app=AI_HATS_APP, path=()),
+        ),
+    )
+
+    for app in (WT_APP, AI_HATS_APP):
+        got = resolve_checks_at(tmp_path, app, "shared", compose=lambda _p: result)
+
+        assert [c.app for c in got] == [app], f"{app!r} must see only its own row"

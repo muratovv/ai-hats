@@ -71,23 +71,26 @@ def resolve_carried_checks(
 
 def resolve_checks_at(
     project_dir: Path,
+    app: str,
     point: str,
     *,
     session_id: str = "",
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
-    """Every ``wt`` row bound to one point, re-based onto its root.
+    """Every row of ``app`` bound to one point, re-based onto its root.
 
-    The sibling of :func:`resolve_carried_checks` for ai-hats's own app
-    (HATS-1540): one point, named by the call site that fires it, and drawn from
-    the cargo ai-hats validates itself (``wt_points``).
+    The sibling of :func:`resolve_carried_checks` for the apps ai-hats fires
+    itself (HATS-1540): one point, named by the call site that fires it, and
+    drawn from the cargo ai-hats validates itself (``_OWNED_POINTS``).
+
+    ``app`` is a parameter rather than the hardcoded ``wt`` it was through
+    HATS-1581, because ai-hats now fires two apps and nothing stops them from
+    spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
     result = (compose or _compose_fail_closed)(project_dir)
     if result is None:
         return ()
-    from .check_points import WT_APP
-
-    checks = tuple(check for check in result.checks if check.app == WT_APP and point in check.at)
+    checks = tuple(check for check in result.checks if check.app == app and point in check.at)
     if not checks:
         return ()
     return _rooted(project_dir, result, checks, session_id)
