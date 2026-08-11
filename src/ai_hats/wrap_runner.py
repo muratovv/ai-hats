@@ -34,6 +34,7 @@ from .session_artifacts import (
     consumed_session_id,
 )
 from .session_report import SessionReport
+from .startup_checks import run_startup_checks
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
@@ -559,6 +560,17 @@ class WrapRunner:
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
+        # HATS-1581. LAST here on purpose: unlike its fail-open neighbours a
+        # refusal does not return, so everything above must speak first. And
+        # after the launch record, which is what the gate reads.
+        startup_notices.extend(
+            run_startup_checks(
+                self.project_dir,
+                session_dir=session.session_dir,
+                session_id=session.session_id,
+                extra_env=env_map,
+            )
+        )
 
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")

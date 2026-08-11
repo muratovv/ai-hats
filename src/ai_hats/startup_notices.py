@@ -95,9 +95,15 @@ class StartupNotice:
         ``"warn"`` — a fail-open startup step degraded (resync raised, finalize
             preload failed, drift left unhealed under version-skew). Rendered
             bold-yellow.
-    Both levels trigger the hold so the human can read them; a clean start emits
-    neither and holds for nothing.
-    """
+        ``"fatal"`` (``"error"``) — the launch does not proceed. Rendered red on
+            stderr by ``_print_startup_notices`` and normally reached through
+            :func:`show_fatal_notice_and_exit`, which also records it. Listed
+            here since HATS-1581: it was already handled and already used at
+            three call sites while this docstring still named only two levels,
+            so a reader concluded the channel could not refuse.
+    ``note`` and ``warn`` trigger the hold so the human can read them; a clean
+    start emits neither and holds for nothing.
+    """  # comment-length: allow — the omitted level cost a wrong plan once
 
     level: str
     text: str

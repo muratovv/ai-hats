@@ -27,7 +27,7 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
-from .check_points import check_log_token
+from .check_points import WT_APP, check_log_token
 from .hook_exec import HookRun, HookVerdict, run_hook
 from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
 from ai_hats_wt import (
@@ -188,7 +188,9 @@ class HookRunningLifecycle:
         from .check_resolve import CheckResolutionError, resolve_checks_at, session_id
 
         try:
-            checks = resolve_checks_at(ctx.project_dir, WT_PRE_MERGE, session_id=session_id())
+            checks = resolve_checks_at(
+                ctx.project_dir, WT_APP, WT_PRE_MERGE, session_id=session_id()
+            )
         except CheckResolutionError as exc:
             _raise_merge_aborted(ctx.branch_name, f"checks: {exc}")
         if not checks:
