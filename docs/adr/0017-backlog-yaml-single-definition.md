@@ -52,6 +52,13 @@ A backlog is a **catalog directory + one `backlog.yaml`** at its root. The
 file fully defines the backlog; the loader produces one immutable
 `BacklogDefinition` value that every module is constructed from.
 
+Its top-level keys are `name`, `prefix`, `cli_alias`, `fsm`, `links`,
+`extensions`, `fields` and `extras`. **`cli_alias`** (default: `name`) is the
+word the CLI mounts the backlog's verb group under — `rack hyp …` for a backlog
+named `hypotheses` — and since HATS-1545 it is also a second address a carried
+row may use (§3). It is the reason a backlog can be renamed without breaking the
+rows that address it.
+
 The packaged default `backlog.yaml` replaces `fsm.yaml` + `links.yaml` +
 `DEFAULT_PLAN_SECTIONS` **losslessly** (mapping table in §6) and *is* the
 tasks-backlog contract:
@@ -179,6 +186,14 @@ backlog on the packaged default — today's zero-config behavior, unchanged.
 The project-root `links.yaml` override (`load_registry_for` [2]) is subsumed
 and retired by `backlog.yaml`.
 
+**One consequence of "whole" worth stating, since HATS-1545 made `name` an
+address.** A project that supplies its own tasks `backlog.yaml` also supplies its
+`name`, and every shipped role addresses this backlog literally as
+`apps.rack.tasks` (§3). Renaming it therefore un-addresses those rows, and the
+in-lock refusal for an unmounted name then fires on *every* transition. Keep
+`cli_alias: tasks` when renaming — both selectors address a backlog. **HATS-1576**
+owns making that refusal name the remedy.
+
 ### 2. Multi-backlog: N kernels under one workspace
 
 Per interview A: **one kernel per backlog** — `Kernel` already takes every
@@ -197,7 +212,11 @@ class Workspace:
         """Per root: scan <ai_hats_dir>/tracker/** for backlog.yaml files;
         the default tasks catalog (root.tasks_dir) is always an instance,
         packaged definition if no file. Prefix uniqueness is validated
-        WITHIN a root (duplicate -> typed load error). ACROSS roots a
+        WITHIN a root (duplicate -> typed load error), and since HATS-1545
+        so is NAME uniqueness, because a name is how a carried row
+        addresses a backlog (§3). A cli_alias colliding with another
+        instance's name refuses too; two colliding aliases do not (that
+        surface guards itself at CLI group mount). ACROSS roots a
         duplicate prefix is legal — id routing then requires the qualified
         form (see kernel_for)."""
 
@@ -297,24 +316,44 @@ today's special-casing [3][13].
 
 **Rows carried in from a composition — the `apps.rack` cargo grammar.**
 An integrator may hand the rack rows declared on a trait or role
-(`composition.apps.rack`, ADR-0019 D2/D11). ai-hats owns two keys of such a row
-and nothing else, so the shape of the remainder is **this** package's grammar and
-is specified here (HATS-1545):
+(`composition.apps.rack`, ADR-0019 D2/D11). ai-hats owns **three** keys of such a
+row — `run:`, `at:` and `on_error:` — and interprets two of them: `at:` is owned
+but never read, ai-hats guaranteeing only that a row names at least one point.
+Everything else, `at:`'s vocabulary included, is **this** package's grammar and is
+specified here (HATS-1545):
 
 - **`apps.rack.<backlog>`** — the level below the app key names the backlog the
-  row gates, matched against `BacklogDefinition.name` (or its `cli_alias`). The
-  level is not optional: a row sitting directly under `apps.rack` refuses. A name
-  no mounted backlog answers to refuses as well, naming what is mounted; a name
-  belonging to a **sibling** backlog is skipped, because each mounted backlog runs
-  its own subscriber and one misdirected row must not brick the others.
+  row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`
+  (§1). The level is not optional: a row sitting directly under `apps.rack`, or
+  one nested deeper, refuses. A name no mounted backlog answers to refuses as
+  well, naming what is mounted. A name belonging to a **sibling** backlog is
+  skipped, so one misdirected row cannot brick the backlog that is transitioning.
+  All three of these are decided **in-lock, at the first transition** of a
+  mounted backlog — not at composition, which never sees this grammar.
+  > **As of 2026-08-11 the sibling skip leads nowhere.** The subscriber that
+  > reads these rows is attached by the integrator to the **tasks** instance
+  > only; a sibling backlog runs the portable kit, which has no such subscriber.
+  > So a row addressed to a sibling is skipped here *and* unread there — it can
+  > never fire, on either road. **HATS-1575** owns this; until it lands, read the
+  > clause above as the intended design, not as behaviour.
 - **`at: [<point>, …]`** — the points the row fires on, in this package's own
   vocabulary (`edge:<from>--<to>` today). A point naming an edge this topology
   lacks is skipped rather than refused: from the carrier's side a typo and a point
-  aimed at another topology are the same fact.
+  aimed at another topology are the same fact. *That skip is currently wider than
+  its rationale: a name this grammar cannot parse at all — `card:pre-create`, say
+  — takes the same quiet branch, though no sibling topology could claim it.
+  **HATS-1578**.*
+- **Cargo beyond `at:` is accepted and ignored.** The row's remaining keys are
+  carried and stored, and nothing in this package reads them. An extra key is
+  therefore a no-op, not a setting, and is not refused.
 - Uniqueness follows from the above: two backlogs of one root answering to one
-  selector is a load-time refusal (`DuplicateBacklogNameError`), since a name is
-  now how a declaration addresses a backlog and a first-match would install the
-  gate on whichever one the walk found first.
+  **name** is a load-time refusal (`DuplicateBacklogNameError`, validated at
+  discovery — see §2), since a name is now how a declaration addresses a backlog
+  and a first-match would install the gate on whichever one the walk found first.
+  A collision of two `cli_alias` values is deliberately *not* refused there: that
+  surface has its own guard at CLI group mount. Note the gap this leaves — the
+  group guard is not on the transition path, so two aliased siblings do not
+  refuse when a row is routed.
 
 **Execution order is one total order per event: the numeric subscription
 priority** (lower first [6]) — declaration-bound and ambient subscribers
@@ -497,6 +536,7 @@ exactly as unknown keys do on task cards today, matching the model's
 # tracker/hypotheses/backlog.yaml
 name: hypotheses
 prefix: HYP
+cli_alias: hyp # the verb group is `rack hyp`; also a valid row address (§3)
 fsm:
   initial: active
   states:
@@ -544,6 +584,7 @@ extensions:
 # tracker/backlog/proposals/backlog.yaml
 name: proposals
 prefix: PROP
+cli_alias: proposal
 extras: forbid # Proposal is extra="forbid" today [12] — kept declaratively
 fsm:
   initial: open
