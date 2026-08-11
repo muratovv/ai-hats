@@ -35,6 +35,9 @@ WT_APP = "wt"
 #: the launch is its own lifecycle, owned by no other application.
 AI_HATS_APP = "ai-hats"
 
+#: The one point of that app: fired once per session, before the launch.
+STARTUP_POINT = "startup"
+
 #: The roster, not the authority: used ONLY to name a block nobody collects
 #: (R9). Each integration names its own key at its own call site.
 KNOWN_APPS: frozenset[str] = frozenset({"rack", WT_APP, AI_HATS_APP})
@@ -61,7 +64,7 @@ def ai_hats_points() -> dict[str, bool]:
     wt teardown points D4 fixes at ``refuse``, so whether a stale gate blocks the
     session is the declaring role's call.
     """
-    return {"startup": True}
+    return {STARTUP_POINT: True}
 
 
 #: Every app ai-hats fires itself, mapped to the points it fires for that app.
@@ -283,6 +286,7 @@ def _cargo_tag(check: ResolvedCheck) -> str:
 __all__ = [
     "AI_HATS_APP",
     "KNOWN_APPS",
+    "STARTUP_POINT",
     "WT_APP",
     "CheckBindingError",
     "ai_hats_points",
