@@ -23,11 +23,12 @@ from ai_hats_rack.checks import (
     EDGE_CHECK_TIMEOUT_S,
     CheckDeclaration,
     CheckOutcome,
+    CheckPortFactory,
     CheckRequest,
-    CheckSubscriber,
+    check_subscriber,
 )
+from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
-from ai_hats_rack.fsm import Topology
 
 from .check_points import check_log_token
 from .check_resolve import CheckResolutionError, resolve_carried_checks, session_id
@@ -50,11 +51,14 @@ class AiHatsCheckPort:
         self,
         project_dir: Path,
         *,
-        tasks_dir: Path,
+        catalog: Path,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
     ) -> None:
         self.project_dir = project_dir
-        self._tasks_dir = tasks_dir
+        # The catalog of the backlog being gated, not the project's tasks dir:
+        # a sibling's check log belongs under the sibling, and the gate reads
+        # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
+        self._catalog = catalog
         self._resolve = resolve if resolve is not None else self._resolve_carried
         self._worktrees: dict[str, Path | None] = {}
 
@@ -83,7 +87,7 @@ class AiHatsCheckPort:
             force=request.force,
             task_id=request.task_id,
             worktree_path=self._worktree_path(request.task_id),
-            tasks_dir=self._tasks_dir,
+            tasks_dir=self._catalog,
             log_path=self._log_path(request.task_id, check, request.event),
         )
         return CheckOutcome(
@@ -138,7 +142,7 @@ class AiHatsCheckPort:
         of the same edge still lands on that binding's own previous log.
         """  # comment-length: allow — the collision recurred once already
         name = f"{event.replace(':', '-') or 'event'}~{check_log_token(check)}.log"
-        return self._tasks_dir / task_id / ".checks" / name
+        return self._catalog / task_id / ".checks" / name
 
 
 def _declaration(check: ResolvedCheck) -> CheckDeclaration:
@@ -172,25 +176,36 @@ def _refusal(check: ResolvedCheck, run: HookRun) -> str:
     return f"checks: {_binding(check)} — {run.reason}"
 
 
+def check_port_factory(project_dir: Path) -> CheckPortFactory:
+    """This integrator's ``CheckPortFactory``: one executor per gated catalog.
+
+    The whole of what ai-hats contributes to the channel since HATS-1575. Which
+    topology a row is matched against, which selectors a backlog answers to and
+    which instances get a subscriber at all are the rack's to decide, and it
+    decides them from the definition it runs (``ai_hats_rack.checks``); deriving
+    them here meant every road that did not repeat the derivation — the sibling
+    backlogs, the workspace the reflect consumers mount — silently had no gate.
+    """  # comment-length: allow — the boundary this draws IS the fix
+    return lambda catalog: AiHatsCheckPort(project_dir, catalog=catalog)
+
+
 def consumer_subscribers(
     project_dir: Path,
     *,
-    tasks_dir: Path,
-    topology: Topology,
-    backlog: str | Sequence[str],
+    definition: BacklogDefinition,
+    catalog: Path,
     known_backlogs: Sequence[str] = (),
 ) -> list:
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.
 
-    ``topology`` is the one the kernel actually runs (``resolve_definition``),
-    never a re-opened default — and since HATS-1541 it is also the ONLY topology
-    in play: nothing on this side holds a second one to diverge from.
+    The tasks kernel is assembled outside :class:`Workspace`, so its subscriber
+    is appended here — through the rack's own constructor, so the two roads
+    cannot wire the same channel two ways.
     """
     return [
-        CheckSubscriber(
-            AiHatsCheckPort(project_dir, tasks_dir=tasks_dir),
-            topology=topology,
-            backlog=backlog,
+        check_subscriber(
+            definition,
+            port=check_port_factory(project_dir)(catalog),
             known_backlogs=known_backlogs,
         )
     ]
@@ -200,5 +215,6 @@ __all__ = [
     "CHECK_PRIORITY",
     "EDGE_CHECK_TIMEOUT_S",
     "AiHatsCheckPort",
+    "check_port_factory",
     "consumer_subscribers",
 ]
