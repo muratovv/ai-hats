@@ -327,10 +327,16 @@ not read this repo's ADRs, in `packages/ai-hats-rack/README.md` [17]:
   row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`
   (§1). The level is not optional: a row sitting directly under `apps.rack`, or
   one nested deeper, refuses. A name no mounted backlog answers to refuses as
-  well, naming what is mounted. A name belonging to a **sibling** backlog is
-  skipped, so one misdirected row cannot brick the backlog that is transitioning.
-  All three of these are decided **in-lock, at the first transition** of a
-  mounted backlog — not at composition, which never sees this grammar.
+  well, naming what is mounted **and the way out** — `cli_alias`, which is the
+  fix when the row ships with a role the project does not own (HATS-1576). A name
+  belonging to a **sibling** backlog is skipped, so one misdirected row cannot
+  brick the backlog that is transitioning. All three of these are decided
+  **in-lock, at the first transition the row names a point of** — not at every
+  transition of a mounted backlog, and not at composition, which never sees this
+  grammar. That qualification is HATS-1576: addressing used to be checked ahead
+  of the point filter, so a project whose backlog is `blog` (named that from
+  birth — `tasks` describes nothing there) mounted no `tasks`, every shipped row
+  became unaddressable, and *every* edge refused, `--force` included.
   The skip leads somewhere since **HATS-1575**: `Workspace` takes a `check_port`
   and gives every instance it composes its own subscriber, so the sibling reads
   what the transitioning backlog skipped, and the rack — not the integrator —

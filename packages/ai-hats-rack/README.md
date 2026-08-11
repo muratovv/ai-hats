@@ -141,15 +141,19 @@ is ADR-0017 §3 in the ai-hats repo — keep the two in step.)
 
 Which miss is loud and which is quiet is the contract:
 
-| the row names…                          | verdict | why                                                           |
-| --------------------------------------- | ------- | ------------------------------------------------------------- |
-| a backlog no mounted catalog answers to | refuse  | a gate on a backlog that does not exist would never fire      |
-| a **sibling** backlog of this root      | skip    | that backlog runs its own subscriber and will fire it there   |
-| an edge this topology lacks             | skip    | from the carrier's side a typo and a foreign topology are one |
+| the row names…                          |              verdict              | why                                                           |
+| --------------------------------------- | :-------------------------------: | ------------------------------------------------------------- |
+| a backlog no mounted catalog answers to | refuse, **on the row's own edge** | a gate on a backlog that does not exist would never fire      |
+| a **sibling** backlog of this root      |               skip                | that backlog runs its own subscriber and will fire it there   |
+| an edge this topology lacks             |               skip                | from the carrier's side a typo and a foreign topology are one |
 
-The refusal lands in the lock, on the first transition of the addressed backlog
-— not at composition: rows resolve lazily, because a fail-closed discovery on
-the read path bricked reads once already (HATS-1538).
+The refusal lands in the lock, at the first transition **the row names a point
+of** — not at every transition of the backlog (HATS-1576: a project whose
+backlog is `blog` mounts no `tasks`, so every shipped row was unaddressable and
+the tracker stopped whole), and not at composition either: rows resolve lazily,
+because a fail-closed discovery on the read path bricked reads once already
+(HATS-1538). Note what that leaves: an unaddressable row whose point no topology
+claims is silent everywhere — HATS-1578 owns that.
 
 **Every mounted backlog runs its own subscriber**, and the rack holds that
 invariant rather than the integrator: `Workspace` takes a `check_port`

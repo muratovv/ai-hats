@@ -663,10 +663,14 @@ shipped row an hour after HATS-1137 landed it.
    rack's grammar; the topology it validates against is the one
    `resolve_definition` gave the kernel, the same object the dispatcher runs.
    Two different misses, two different answers, and rev 10 added the loud half:
-   - **The backlog address is loud.** A row at the wrong depth under `apps.rack`,
-     or naming a backlog no mounted instance answers to, is a typed refusal that
-     names what *is* mounted. A backlog is addressed by its `name` **or** its
-     `cli_alias` (ADR-0017 §3).
+   - **The backlog address is loud — on the edge the row names** (HATS-1576). A
+     row at the wrong depth under `apps.rack`, or naming a backlog no mounted
+     instance answers to, is a typed refusal that names what *is* mounted and how
+     to fix it (`cli_alias`). Asked ahead of the point filter, as rev 10 did, that
+     refusal fired on *every* edge: a project whose backlog is `blog` mounts no
+     `tasks`, every shipped row is unaddressable, and the tracker stops whole —
+     `--force` included, since it travels inside the request built afterwards. A
+     backlog is addressed by its `name` **or** its `cli_alias` (ADR-0017 §3).
    - **The point name is quiet.** A point that is not an edge of **this**
      instance's topology is skipped, not aborted, because from the carrier's side
      a sibling backlog's row and a typo are the same fact. That was the whole of
