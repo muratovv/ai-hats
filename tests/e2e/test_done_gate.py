@@ -542,15 +542,15 @@ def test_removing_the_checks_row_lets_the_direct_merge_through(
 def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
     gate_project, rack_bin, tmp_path: Path
 ):
-    """G: the measured leak, inverted.
+    """G: the measured leak, closed at its source.
 
-    Role scope is not backlog scope. The shipped row fired on EVERY backlog the
-    rack CLI touched — including the scratch ``--tasks-dir`` this repo's own rack
-    tests build — and refused them by its own contract, which is what turned
-    master red. The engine still fires (the binding is role-scoped, deliberately:
-    supervisor ruling 2026-08-08 P1); what changed is that the SCRIPT now gets
-    the backlog context and declares the answer. Fail-open, and the price is
-    stated in ``done-gate.sh`` where the role author can see it.
+    The shipped row fired on EVERY backlog the rack CLI touched — including the
+    scratch ``--tasks-dir`` this repo's own rack tests build — and refused them
+    by its own contract, which is what turned master red. Ruling 2026-08-08 P1
+    answered that by keeping the binding role-scoped and making the SCRIPT
+    declare "not mine", because the engine had no notion of whose backlog it
+    was. HATS-1573 gave it one, and the ruling of 2026-08-11 moved the scope to
+    the backlog: a backlog nobody owns has no gates, so nothing fires at all.
     """
     project, env = gate_project("gated")
     scratch = tmp_path / "scratch-backlog" / "tasks"
@@ -580,12 +580,12 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
         f"project's gate — that is the HATS-1538 regression\n{taken.stdout}{taken.stderr}"
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    log = _sole_log(scratch / task_id / ".checks")
-    assert log.is_file(), (
-        "the gate must actually FIRE and decide — a test that passes because the "
-        "binding never installed proves nothing"
-    )
-    assert "not this project's backlog" in log.read_text(encoding="utf-8")
+    # Nothing ran, so there is no log to read: the scratch backlog belongs to no
+    # project, and only a backlog's own project can bind a check to it.
+    assert not (scratch / task_id / ".checks").exists()
+    # And the absence is announced — a gate that is not there must not be
+    # mistaken for a gate that passed.
+    assert "no project owns" in taken.stderr, taken.stderr
 
 
 def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog():

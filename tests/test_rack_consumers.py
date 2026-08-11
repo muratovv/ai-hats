@@ -48,7 +48,7 @@ def _extension(project_dir, *, tasks_dir, topology, resolve=None, **kwargs) -> C
     ``CheckRunnerExtension`` exposed for the same reason."""
     kwargs.setdefault("backlog", "tasks")
     return CheckSubscriber(
-        AiHatsCheckPort(project_dir, catalog=tasks_dir, backlog_owner=project_dir, resolve=resolve),
+        AiHatsCheckPort(project_dir, catalog=tasks_dir, resolve=resolve),
         topology=topology,
         **kwargs,
     )
@@ -119,7 +119,6 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
         tmp_path,
         definition=_definition(topology, tmp_path=tmp_path),
         catalog=tmp_path / "tasks",
-        backlog_owner=tmp_path,
     )
 
     assert pack, "the consumer pack must carry the check runner"
@@ -130,12 +129,11 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     assert CHECK_PRIORITY == 15
 
 
-def test_an_anchorless_backlog_composes_nothing_and_says_so(tmp_path, capsys):
-    """No project owns a scratch backlog, so no role composes onto it — but a
-    gate that vanishes must be audible, or we trade one silent failure for
-    another (dev_rule_silent_fallback)."""
+def test_an_unowned_backlog_composes_nothing_and_says_so(tmp_path, capsys):
+    """A backlog nobody owns declares nothing, so nothing fires — said out loud,
+    or a gate that is not there reads as a gate that passed."""
     tasks_dir = tmp_path / "scratch" / "tasks"
-    port = AiHatsCheckPort(tmp_path / "anchor", catalog=tasks_dir, backlog_owner=None)
+    port = AiHatsCheckPort(None, catalog=tasks_dir)
 
     assert port.check_declarations() == ()
 

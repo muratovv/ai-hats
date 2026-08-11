@@ -64,10 +64,9 @@ class CliKernelProvider:
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
-                root.project_dir,
+                root.backlog_owner,
                 definition=defn,
                 catalog=root.tasks_dir,
-                backlog_owner=root.backlog_owner,
                 known_backlogs=backlog_selectors_in_root(root),
             ),
         )
@@ -80,7 +79,7 @@ class CliKernelProvider:
         pin). Everything else about the channel — topology, selectors, which
         instances get a subscriber — the rack decides from its own definitions.
         """
-        return check_port_factory(root.project_dir, root.backlog_owner)(catalog)
+        return check_port_factory(root.backlog_owner)(catalog)
 
     def after_create(self, root: Any, result: Any) -> None:
         """Refresh STATE.md after a create (fork K3 #7): create takes no FSM

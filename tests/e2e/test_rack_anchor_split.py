@@ -70,6 +70,7 @@ def split(shared_launcher, tmp_path):
 
 
 def test_an_explicit_tasks_dir_anchors_the_backlog_at_its_own_project(split, tmp_path):
+    """HATS-1573: composition, prefix and STATE.md follow the backlog's project."""
     rack, main, worktree, env = split
     sandbox = tmp_path / "sbx"
     (sandbox / TASKS_SUB).mkdir(parents=True)

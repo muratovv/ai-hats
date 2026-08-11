@@ -55,9 +55,7 @@ def rack_workspace(project_dir: Path) -> Workspace:
     root = RackRoot(
         project_dir=project_dir, tasks_dir=tasks_dir(project_dir), backlog_owner=project_dir
     )
-    return Workspace.discover(
-        [root], check_port=check_port_factory(project_dir, project_dir)
-    )
+    return Workspace.discover([root], check_port=check_port_factory(project_dir))
 
 
 def ensure_backlog(project_dir: Path, definition_name: str) -> None:
