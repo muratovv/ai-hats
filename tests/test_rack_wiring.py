@@ -49,6 +49,7 @@ def project(tmp_path):
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
         project,
+        backlog_owner=project,
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",
@@ -83,7 +84,9 @@ def _check_pack(project: Path, script: Path | None = None):
     tasks_dir = project / ".agent" / "tasks"
     return [
         CheckSubscriber(
-            AiHatsCheckPort(project, catalog=tasks_dir, resolve=lambda: checks),
+            AiHatsCheckPort(
+                project, catalog=tasks_dir, backlog_owner=project, resolve=lambda: checks
+            ),
             topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
             backlog=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).name,
         )
@@ -128,6 +131,35 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     outcomes = {o.subscriber: o.outcome for o in refusal.outcomes}
     assert outcomes["plan-gate"] == "abort"
     assert "ownership" not in outcomes, "claim must not have run after the gate abort"
+
+
+def test_ownership_follows_the_backlog_while_worktrees_follow_the_anchor(tmp_path):
+    """HATS-1573: the asymmetry is deliberate, and pinned so it stays deliberate.
+
+    Who owns a card is a fact about the BACKLOG; where its code is checked out
+    is a fact about the CHECKOUT. An explicit --tasks-dir puts those in two
+    different projects, and each side must stay where it belongs.
+    """
+    anchor = tmp_path / "anchor"
+    (anchor / ".agent").mkdir(parents=True)
+    backlog = tmp_path / "sbx"
+    tasks_dir = backlog / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks_dir.mkdir(parents=True)
+
+    kernel = build_rack_kernel(
+        anchor,
+        backlog_owner=backlog,
+        tasks_dir=tasks_dir,
+        state_md_path=backlog / "STATE.md",
+        prefix="T",
+    )
+    on_execute = kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+    claim = next(s for s in on_execute if s.name == "ownership")
+    worktree = next(s for s in on_execute if s.name == "worktree")
+
+    assert claim.registry_path == tasks_dir.parent / "ownership.json"  # backlog side
+    assert worktree.project_dir == anchor  # checkout side
+    assert worktrees_dir(anchor).is_relative_to(anchor)
 
 
 def test_in_lock_order_reproduces_the_tracker_sequence(project):

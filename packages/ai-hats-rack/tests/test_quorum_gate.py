@@ -246,7 +246,9 @@ def test_autoclose_reached_through_workspace_extension(tmp_path):
     hyp.mkdir(parents=True)
     (hyp / "backlog.yaml").write_text(packaged_definition_source("hypotheses"), encoding="utf-8")
     _seed(hyp, "HYP-001", log=[_refuted("s1"), _refuted("s2"), _refuted("s3")])
-    ws = Workspace.discover([RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")])
+    ws = Workspace.discover(
+        [RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix="HATS")]
+    )
 
     closed = ws.extension("hyp-verdicts").autoclose(caller_cwd=project, now=NOW)
     assert [c.hyp_id for c in closed] == ["HYP-001"]

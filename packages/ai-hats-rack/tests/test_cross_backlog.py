@@ -51,7 +51,7 @@ def workspace(tmp_path) -> tuple[Workspace, RackRoot]:
     _seed(tasks, "HATS-1", state="brainstorm")
     _seed(hyp, "HYP-1")
     _seed(hyp, "HYP-2")
-    root = RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")
+    root = RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix="HATS")
     return Workspace.discover([root]), root
 
 
@@ -108,7 +108,7 @@ def test_packaged_proposals_link_to_a_task(tmp_path):
     (props / "backlog.yaml").write_text(packaged_definition_source("proposals"), encoding="utf-8")
     _seed(tasks, "HATS-1", state="brainstorm")
     _seed(props, "PROP-1", state="open")
-    root = RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")
+    root = RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix="HATS")
     kernel = Workspace.discover([root]).kernel_for("PROP-1")
 
     res = _link(kernel, "PROP-1", "related_tasks:HATS-1", project)

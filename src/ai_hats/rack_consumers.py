@@ -14,6 +14,7 @@ the integrator can do — compose the role, resolve the script
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -53,9 +54,13 @@ class AiHatsCheckPort:
         project_dir: Path,
         *,
         catalog: Path,
+        backlog_owner: Path | None,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
     ) -> None:
+        #: ANCHOR — where the operator stands: the gate's cwd and worktree lookups.
         self.project_dir = project_dir
+        #: OWNER — whose role composes onto this backlog; ``None`` when nothing does.
+        self.backlog_owner = backlog_owner
         # The catalog of the backlog being gated, not the project's tasks dir:
         # a sibling's check log belongs under the sibling, and the gate reads
         # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
@@ -76,7 +81,16 @@ class AiHatsCheckPort:
         return tuple(_declaration(check) for check in resolved)
 
     def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
-        return resolve_carried_checks(self.project_dir, self.APP)
+        if self.backlog_owner is None:
+            # Composing the anchor's role here is the HATS-1573 defect; composing
+            # nothing is right, but a gate that disappears has to be audible.
+            print(
+                f"checks: no project owns the backlog at {self._catalog} — no role "
+                f"composes onto it, so no bound check runs on this transition",
+                file=sys.stderr,
+            )
+            return ()
+        return resolve_carried_checks(self.backlog_owner, self.APP)
 
     def run_check(self, request: CheckRequest) -> CheckOutcome:
         check: ResolvedCheck = request.declaration.handle
@@ -181,7 +195,7 @@ def _refusal(check: ResolvedCheck, run: HookRun) -> str:
     return f"checks: {_binding(check)} — {run.reason}"
 
 
-def check_port_factory(project_dir: Path) -> CheckPortFactory:
+def check_port_factory(project_dir: Path, backlog_owner: Path | None) -> CheckPortFactory:
     """This integrator's ``CheckPortFactory``: one executor per gated catalog.
 
     The whole of what ai-hats contributes to the channel since HATS-1575. Which
@@ -191,7 +205,9 @@ def check_port_factory(project_dir: Path) -> CheckPortFactory:
     them here meant every road that did not repeat the derivation — the sibling
     backlogs, the workspace the reflect consumers mount — silently had no gate.
     """  # comment-length: allow — the boundary this draws IS the fix
-    return lambda catalog: AiHatsCheckPort(project_dir, catalog=catalog)
+    return lambda catalog: AiHatsCheckPort(
+        project_dir, catalog=catalog, backlog_owner=backlog_owner
+    )
 
 
 def consumer_subscribers(
@@ -199,6 +215,7 @@ def consumer_subscribers(
     *,
     definition: BacklogDefinition,
     catalog: Path,
+    backlog_owner: Path | None,
     known_backlogs: Sequence[str] = (),
 ) -> list:
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.
@@ -210,7 +227,7 @@ def consumer_subscribers(
     return [
         check_subscriber(
             definition,
-            port=check_port_factory(project_dir)(catalog),
+            port=check_port_factory(project_dir, backlog_owner)(catalog),
             known_backlogs=known_backlogs,
         )
     ]

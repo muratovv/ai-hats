@@ -9,7 +9,7 @@ Callers pass ``caller_cwd`` explicitly — no function here reads ``Path.cwd()``
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -43,10 +43,20 @@ class NoProjectRootError(RackError):
 
 @dataclass(frozen=True)
 class RackRoot:
-    """Resolved project anchor: where the backlog lives and how ids look."""
+    """Where the operator stands, where the backlog lives, and how ids look.
+
+    ``project_dir`` is the ANCHOR — the caller's project (gate subprocess cwd,
+    worktrees, the linked-worktree hop of HATS-1038 C2). ``backlog_owner`` is
+    the project that OWNS ``tasks_dir`` — composition, prefix, STATE.md — and is
+    ``None`` when no marker stands above the backlog. An explicit ``--tasks-dir``
+    moves the backlog without moving the operator, so the two diverge and one
+    field cannot serve both (HATS-1573). No default: a forgotten owner would
+    compose nothing and drop a gate in silence.
+    """  # comment-length: allow — the split between the two roles IS the contract
 
     project_dir: Path
     tasks_dir: Path
+    backlog_owner: Path | None = field(kw_only=True)
     prefix: str = DEFAULT_PREFIX
 
 
@@ -99,6 +109,16 @@ def find_project_root(start: Path) -> Path | None:
     hop = _main_worktree_root(start)
     if hop is not None and ((hop / ".agent").is_dir() or (hop / CONFIG_NAME).is_file()):
         return hop
+    return find_marker_root(start)
+
+
+def find_marker_root(start: Path) -> Path | None:
+    """Nearest ancestor holding ``.agent/`` or ai-hats.yaml — markers only.
+
+    No gitlink hop, deliberately: the hop is cwd semantics (HATS-1038 C2), and a
+    backlog path is not a cwd. Applied to a sandbox under a linked worktree it
+    would answer with the enclosing checkout — the HATS-1573 defect itself.
+    """
     for candidate in (start, *start.parents):
         if (candidate / ".agent").is_dir() or (candidate / CONFIG_NAME).is_file():
             return candidate
@@ -126,6 +146,7 @@ def load_root(project_dir: Path) -> RackRoot:
     return RackRoot(
         project_dir=project_dir,
         tasks_dir=project_dir / ai_hats_dir / TASKS_SUBPATH,
+        backlog_owner=project_dir,  # derived FROM project_dir — they agree by construction
         prefix=prefix,
     )
 
@@ -168,14 +189,18 @@ def resolve_root(
     a start without project markers or env override raises :class:`NoProjectRootError`.
     Raises :class:`ForeignProjectPinError` if ``AI_HATS_PROJECT_DIR`` pin does not
     match the resolved project root.
-    """
+
+    Every branch also answers ``backlog_owner`` — the project owning the resolved
+    backlog, walked up from ``tasks_dir`` without the gitlink hop (HATS-1573).
+    """  # comment-length: allow — the precedence order IS the contract
     if tasks_dir_override is not None:
-        project_dir = find_project_root(caller_cwd)
-        if project_dir is None:
-            return RackRoot(project_dir=caller_cwd, tasks_dir=tasks_dir_override)
-        base = load_root(project_dir)
+        owner = find_marker_root(tasks_dir_override)
         return RackRoot(
-            project_dir=base.project_dir, tasks_dir=tasks_dir_override, prefix=base.prefix
+            project_dir=find_project_root(caller_cwd) or caller_cwd,
+            tasks_dir=tasks_dir_override,
+            backlog_owner=owner,
+            # Ids name the backlog's project, never wherever the operator stands.
+            prefix=load_root(owner).prefix if owner is not None else DEFAULT_PREFIX,
         )
 
     project_dir = find_project_root(caller_cwd)
@@ -185,9 +210,11 @@ def resolve_root(
         if env_dir is not None:
             anchor = project_dir or caller_cwd
             base = load_root(anchor)
+            env_tasks_dir = env_dir / TASKS_SUBPATH
             return RackRoot(
                 project_dir=base.project_dir,
-                tasks_dir=env_dir / TASKS_SUBPATH,
+                tasks_dir=env_tasks_dir,
+                backlog_owner=find_marker_root(env_tasks_dir),
                 prefix=base.prefix,
             )
 

@@ -127,6 +127,72 @@ def test_override_anchors_project_dir_at_real_root(tmp_path):
     assert root.prefix == "SBX"  # read from the found root's config
 
 
+# ----- HATS-1573: the anchor and the backlog's owner are two different roles --
+
+
+def test_without_an_override_the_owner_is_the_anchor(tmp_path):
+    # They agree by construction: load_root derives tasks_dir FROM project_dir.
+    main, wt = _make_linked_worktree(tmp_path)
+    root = resolve_root(wt)
+    assert root.project_dir == main
+    assert root.backlog_owner == main
+
+
+def test_an_explicit_override_names_the_backlogs_own_project(tmp_path):
+    main, wt = _make_linked_worktree(tmp_path)
+    sandbox = tmp_path / "sbx"
+    sandbox.mkdir()
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    override = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main  # C2: the anchor still hops to the main checkout
+    assert root.backlog_owner == sandbox  # the composition follows the backlog
+
+
+def test_the_owner_walk_up_never_hops_the_gitlink(tmp_path):
+    # The sharpest shape: one input, the two roles answer differently. The hop is
+    # cwd semantics; applied to a backlog path it would hand the sandbox's gates
+    # to the enclosing checkout — the HATS-1573 defect itself.
+    main, wt = _make_linked_worktree(tmp_path)
+    (wt / "ai-hats.yaml").write_text("task_prefix: STRAY\n")
+    override = wt / "custom" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main
+    assert root.backlog_owner == wt
+
+
+def test_an_anchorless_backlog_has_no_owner(tmp_path):
+    # No marker above the scratch backlog: nothing owns it, and we do not guess
+    # (HATS-197 / HATS-839 — a mis-resolved root is how stray trackers are born).
+    main, wt = _make_linked_worktree(tmp_path)
+    override = tmp_path / "scratch" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main
+    assert root.backlog_owner is None
+
+
+def test_the_prefix_comes_from_the_backlogs_own_project(tmp_path):
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    sandbox = tmp_path / "sbx"
+    sandbox.mkdir()
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    override = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    assert resolve_root(caller, override).prefix == "SBX"
+
+
+def test_an_anchorless_backlog_does_not_inherit_the_callers_prefix(tmp_path):
+    # Ids in a throwaway backlog must not be stamped with the caller project's
+    # prefix — the backlog is not that project's, and nothing owns it.
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    root = resolve_root(caller, tmp_path / "scratch" / "tasks")
+    assert root.backlog_owner is None
+    assert root.prefix == DEFAULT_PREFIX
+
+
 def test_foreign_root_is_typed_error_and_never_mkdirs(tmp_path):
     # HATS-839: a start with no project marker must NOT bootstrap a phantom
     # tracker — typed refusal, filesystem byte-identical before and after.

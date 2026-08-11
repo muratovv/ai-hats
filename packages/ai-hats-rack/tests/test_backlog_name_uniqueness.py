@@ -40,7 +40,11 @@ def _root(tmp_path, siblings: dict[str, str]) -> RackRoot:
         d = tracker / dirname
         d.mkdir(parents=True)
         (d / "backlog.yaml").write_text(text, encoding="utf-8")
-    return RackRoot(project_dir=tmp_path / "proj", tasks_dir=tracker / "backlog" / "tasks")
+    return RackRoot(
+        project_dir=tmp_path / "proj",
+        tasks_dir=tracker / "backlog" / "tasks",
+        backlog_owner=tmp_path / "proj",
+    )
 
 
 def test_two_backlogs_answering_to_one_name_refuse_at_load(tmp_path):

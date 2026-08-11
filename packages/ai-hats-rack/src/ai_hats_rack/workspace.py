@@ -186,9 +186,14 @@ class Workspace:
         files. Prefix uniqueness is validated WITHIN each root (fail-closed)."""
         instances: list[BacklogInstance] = []
         for root in roots:
-            root_id = root.project_dir.name or str(root.project_dir)
+            # The routing label names the backlog's project, not the caller's
+            # checkout; an unowned backlog keeps the caller as its only name.
+            named_by = root.backlog_owner or root.project_dir
+            root_id = named_by.name or str(named_by)
             tasks_defn = resolve_definition(
-                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+                root.tasks_dir,
+                prefix_alias=root.prefix,
+                project_dir=root.backlog_owner or root.project_dir,
             )
             here = [
                 BacklogInstance(
@@ -541,7 +546,9 @@ def backlog_selectors_in_root(root: RackRoot) -> tuple[str, ...]:
     second walk.
     """
     defn = resolve_definition(
-        root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+        root.tasks_dir,
+        prefix_alias=root.prefix,
+        project_dir=root.backlog_owner or root.project_dir,
     )
     siblings = [sibling for _catalog, sibling in _scan_sibling_backlogs(root.tasks_dir)]
     return _selectors_of([defn, *siblings])

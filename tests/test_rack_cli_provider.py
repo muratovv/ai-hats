@@ -160,7 +160,9 @@ def test_build_kernel_wires_the_consumer_check_runner(tmp_path):
 
     tasks_dir = tmp_path / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
     tasks_dir.mkdir(parents=True)
-    root = RackRoot(project_dir=tmp_path, tasks_dir=tasks_dir, prefix="HATS")
+    root = RackRoot(
+        project_dir=tmp_path, tasks_dir=tasks_dir, backlog_owner=tmp_path, prefix="HATS"
+    )
 
     kernel = CliKernelProvider().build_kernel(root, tmp_path)
 
@@ -171,7 +173,51 @@ def test_build_kernel_wires_the_consumer_check_runner(tmp_path):
     assert on_done.index("checks") < on_done.index("worktree")
 
 
+def test_the_check_port_composes_the_backlogs_owner_not_the_anchor(tmp_path):
+    """HATS-1573: composition follows the backlog, not the caller's checkout.
+
+    Under an explicit ``--tasks-dir`` the anchor is a different project
+    entirely, and composing ITS role is how a checkout's gates reached a backlog
+    it never declared (the HATS-1538 class, from the other side).
+    """
+    sandbox = tmp_path / "sbx"
+    tasks_dir = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    root = RackRoot(
+        project_dir=tmp_path / "foreign",
+        tasks_dir=tasks_dir,
+        backlog_owner=sandbox,
+        prefix="HATS",
+    )
+
+    port = CliKernelProvider().check_port(root, tasks_dir)
+
+    assert port.backlog_owner == sandbox
+
+
 # ----- post-create STATE.md refresh ------------------------------------------
+
+
+def test_after_create_never_writes_into_a_foreign_checkout(tmp_path):
+    """HATS-1573: STATE.md follows the backlog, not wherever the operator stands.
+
+    With an explicit --tasks-dir the anchor is another project entirely, and
+    indexing into ITS tracker is a write the operation never asked for.
+    """
+    from ai_hats_rack.kernel import Kernel
+
+    foreign = tmp_path / "foreign"
+    (foreign / ".agent" / "ai-hats").mkdir(parents=True)
+    sandbox = tmp_path / "sbx"
+    tasks_dir = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks_dir.mkdir(parents=True)
+    kernel = Kernel(tasks_dir, prefix="HATS")
+    result = kernel.create(actor="test", caller_cwd=sandbox, title="demo")
+    root = RackRoot(project_dir=foreign, tasks_dir=tasks_dir, backlog_owner=sandbox, prefix="HATS")
+
+    CliKernelProvider().after_create(root, result)
+
+    assert (sandbox / ".agent" / "ai-hats" / "STATE.md").is_file()
+    assert not (foreign / ".agent" / "ai-hats" / "STATE.md").exists()
 
 
 def test_after_create_indexes_new_card(tmp_path):
@@ -183,7 +229,9 @@ def test_after_create_indexes_new_card(tmp_path):
     kernel = Kernel(tasks_dir, prefix="HATS")
     result = kernel.create(actor="test", caller_cwd=tmp_path, title="demo")
 
-    root = RackRoot(project_dir=tmp_path, tasks_dir=tasks_dir, prefix="HATS")
+    root = RackRoot(
+        project_dir=tmp_path, tasks_dir=tasks_dir, backlog_owner=tmp_path, prefix="HATS"
+    )
     state_md = tracker_paths(tmp_path).state_md_path
     assert not state_md.exists()  # create takes no FSM edge → views never fired
 
