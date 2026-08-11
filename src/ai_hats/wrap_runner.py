@@ -568,6 +568,7 @@ class WrapRunner:
                 self.project_dir,
                 session_dir=session.session_dir,
                 session_id=session.session_id,
+                extra_env=env_map,
             )
         )
 

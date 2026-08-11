@@ -14,6 +14,7 @@ whose script is missing or unexecutable (``HookRun.downgradable``).
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Callable
 
 from .check_points import AI_HATS_APP, STARTUP_POINT, check_log_token
@@ -34,6 +35,7 @@ def run_startup_checks(
     *,
     session_dir: Path,
     session_id: str = "",
+    extra_env: Mapping[str, str] | None = None,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> list[StartupNotice]:
     """Run every row bound to ``ai-hats:startup``; return the notices to surface.
@@ -41,6 +43,11 @@ def run_startup_checks(
     Never returns on a refusal — it terminates through
     :func:`~ai_hats.startup_notices.show_fatal_notice_and_exit`, so the caller
     cannot accidentally launch past one.
+
+    ``extra_env`` is the session's own environment delta, and passing it is not
+    optional dressing: a gate judging a DIFFERENT environment than the session
+    will get is the "green at startup, red at the first transition" split this
+    point exists to close.
     """
     from .check_resolve import CheckResolutionError, resolve_checks_at
 
@@ -55,7 +62,7 @@ def run_startup_checks(
 
     notices: list[StartupNotice] = []
     for check in checks:
-        run = _run_one(check, project_dir, session_dir)
+        run = _run_one(check, project_dir, session_dir, extra_env)
         if run.ok:
             continue
         reason = _reason(check, run)
@@ -66,7 +73,12 @@ def run_startup_checks(
     return notices
 
 
-def _run_one(check: ResolvedCheck, project_dir: Path, session_dir: Path):
+def _run_one(
+    check: ResolvedCheck,
+    project_dir: Path,
+    session_dir: Path,
+    extra_env: Mapping[str, str] | None,
+):
     from .hook_exec import run_hook
     from .worktree_hooks import resolve_hook_timeout
 
@@ -75,6 +87,7 @@ def _run_one(check: ResolvedCheck, project_dir: Path, session_dir: Path):
         point=STARTUP_POINT,
         timeout=resolve_hook_timeout(),
         project_dir=project_dir,
+        extra_env=dict(extra_env or {}),
         # The dedup identity, not the basename: run_hook truncates the log it is
         # handed, so a coarser name lets one row wipe another's (HATS-1137).
         log_path=session_dir / "checks" / f"{STARTUP_POINT}~{check_log_token(check)}.log",
