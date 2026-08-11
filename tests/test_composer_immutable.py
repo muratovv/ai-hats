@@ -58,9 +58,11 @@ def test_resolved_check_is_frozen_and_defaults_empty(tmp_path):
     assert _make_minimal_result().checks == ()
 
     check = ResolvedCheck(
-        skill="hunk-review-comments",
-        script="hooks/check.sh",
-        point="edge:review--done",
+        app="rack",
+        path=("tasks",),
+        run="hunk-review-comments/hooks/check.sh",
+        at=("edge:review--done",),
+        cargo={},
         on_error="warn",
         script_path=tmp_path / "check.sh",
         declared_by="hunk-review-trait",

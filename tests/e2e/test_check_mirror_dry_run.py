@@ -27,11 +27,11 @@ composition:
   rules: []
   skills:
     - gate-skill
-  checks:
-    - skill: gate-skill
-      script: check.sh
-      "on": [wt:pre-merge]
-      on_error: refuse
+  apps:
+    wt:
+      - run: gate-skill/check.sh
+        at: [pre-merge]
+        on_error: refuse
 injection: |
   # ROLE: CHECKED
   A role that binds one check.
@@ -152,9 +152,9 @@ def test_the_report_names_the_binding_the_plan_cannot_show(project_with_library)
 
     assert unbound["checks"] == []
     assert [
-        (c["skill"], c["script"], c["point"], c["on_error"], c["declared_by"])
+        (c["skill"], c["script"], c["app"], tuple(c["at"]), c["on_error"], c["declared_by"])
         for c in bound["checks"]
-    ] == [("gate-skill", "check.sh", "wt:pre-merge", "refuse", "checked")]
+    ] == [("gate-skill", "check.sh", "wt", ("pre-merge",), "refuse", "checked")]
 
 
 def test_the_report_says_where_the_gate_runs_from_and_that_the_plan_covers_it(

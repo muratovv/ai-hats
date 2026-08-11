@@ -7,9 +7,10 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 from .check_points import resolve_checks
 from .resolver import LibraryResolver
 from .models import (
-    CheckBinding,
+    AppBinding,
     ComponentConfig,
     OverlayConfig,
+    parse_app_bindings,
 )
 
 
@@ -95,7 +96,7 @@ class Composer:
 
         # Traits are single-level (sub-traits are rejected in _resolve_traits),
         # so bindings accumulate in declaration order: traits, then the role.
-        declared_checks: list[tuple[str, CheckBinding]] = []
+        declared_checks: list[AppBinding] = []
 
         self._resolve_traits(
             config.composition.traits,
@@ -144,7 +145,11 @@ class Composer:
             errors=errors,
         )
 
-        declared_checks.extend((config.name, row) for row in config.composition.checks)
+        declared_checks.extend(
+            parse_app_bindings(
+                config.composition.apps, declared_by=config.name, source=config.source_path
+            )
+        )
 
         # HATS-1046: resolve deferred removals against the composed set so an
         # overlay can drop a TRAIT-brought skill. A skill re-added to the role's
@@ -250,7 +255,7 @@ class Composer:
         trait_injections: dict[str, str],
         errors: list[str],
         visited: set[str],
-        declared_checks: list[tuple[str, CheckBinding]],
+        declared_checks: list[AppBinding],
     ) -> None:
         for trait_name in trait_names:
             if trait_name in visited:
@@ -286,7 +291,11 @@ class Composer:
                 errors=errors,
             )
 
-            declared_checks.extend((trait_name, row) for row in config.composition.checks)
+            declared_checks.extend(
+                parse_app_bindings(
+                    config.composition.apps, declared_by=trait_name, source=config.source_path
+                )
+            )
 
             # Add trait injection (deduped by text).
             # trait_injections mirrors the dedup: a trait whose text is empty

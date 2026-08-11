@@ -20,6 +20,7 @@ from ai_hats_rack.cli_common import emit_json
 from ai_hats_rack.definition import resolve_definition
 from ai_hats_rack.extensions import DerivedViewsExtension
 from ai_hats_rack.journal import JsonlJournalSink
+from ai_hats_rack.workspace import backlog_selectors_in_root
 
 from .rack_consumers import consumer_subscribers
 from .rack_wiring import build_rack_kernel
@@ -42,7 +43,11 @@ class CliKernelProvider:
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
-                root.project_dir, tasks_dir=root.tasks_dir, topology=defn.topology
+                root.project_dir,
+                tasks_dir=root.tasks_dir,
+                topology=defn.topology,
+                backlog=(defn.name, defn.cli_alias or defn.name),
+                known_backlogs=backlog_selectors_in_root(root),
             ),
         )
 

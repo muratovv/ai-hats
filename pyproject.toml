@@ -28,7 +28,7 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.6.1",  # ResolvedCheck / ResolvedComponent Loud Validation (0.6.1, HATS-1140/1454)
+    "ai-hats-core>=0.7.0",  # ResolvedCheck carries app/path/run/at/cargo (0.7.0, HATS-1545)
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
     # WorktreeMergeAborted); pinned to it in 9feb462f.
     "ai-hats-wt>=0.5.0",

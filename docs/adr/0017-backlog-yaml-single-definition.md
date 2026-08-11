@@ -295,6 +295,27 @@ Self-loops: the on_enter/on_exit product includes a self-loop key
 (reclaim) — an undeclared self-loop is not an event source, matching
 today's special-casing [3][13].
 
+**Rows carried in from a composition — the `apps.rack` cargo grammar.**
+An integrator may hand the rack rows declared on a trait or role
+(`composition.apps.rack`, ADR-0019 D2/D11). ai-hats owns two keys of such a row
+and nothing else, so the shape of the remainder is **this** package's grammar and
+is specified here (HATS-1545):
+
+- **`apps.rack.<backlog>`** — the level below the app key names the backlog the
+  row gates, matched against `BacklogDefinition.name` (or its `cli_alias`). The
+  level is not optional: a row sitting directly under `apps.rack` refuses. A name
+  no mounted backlog answers to refuses as well, naming what is mounted; a name
+  belonging to a **sibling** backlog is skipped, because each mounted backlog runs
+  its own subscriber and one misdirected row must not brick the others.
+- **`at: [<point>, …]`** — the points the row fires on, in this package's own
+  vocabulary (`edge:<from>--<to>` today). A point naming an edge this topology
+  lacks is skipped rather than refused: from the carrier's side a typo and a point
+  aimed at another topology are the same fact.
+- Uniqueness follows from the above: two backlogs of one root answering to one
+  selector is a load-time refusal (`DuplicateBacklogNameError`), since a name is
+  now how a declaration addresses a backlog and a first-match would install the
+  gate on whichever one the walk found first.
+
 **Execution order is one total order per event: the numeric subscription
 priority** (lower first [6]) — declaration-bound and ambient subscribers
 interleave in it; there are no separate ordering domains (review

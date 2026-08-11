@@ -9,10 +9,11 @@ skills (F3 ruling, HATS-862 plan.md).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 
 class ComponentKind(str, Enum):
@@ -40,20 +41,40 @@ class ResolvedComponent:
 
 @dataclass(frozen=True)
 class ResolvedCheck:
-    """One lifecycle binding, resolved to an absolute script (HATS-1140).
+    """One declared row, resolved to an absolute script (HATS-1140, HATS-1545).
 
-    Already fanned out: a row's ``on: [a, b]`` becomes two of these, so no
-    consumer re-splits. ``script_path`` is absolute and comes from the declaring
-    skill's ``source_path``, never from a provider's tree — that is what makes a
-    binding fire identically under every surface (ADR-0019 D9).
-    """
+    ai-hats owns three of a row's keys — ``run`` (what executes), ``at`` (where)
+    and ``on_error`` (how a verdict is read). ``at`` is owned but never
+    interpreted: ai-hats only guarantees a row names at least one point, since a
+    row bound to nothing is a gate that never fires. ``app`` and ``path`` say
+    which application the row was written under and where in that application's
+    own tree it sat; ``cargo`` is every remaining key, carried byte-for-byte.
+    What a point NAME means, and when it fires, belongs to whoever owns ``app``
+    (ADR-0019 D11).
 
-    skill: str
-    script: str
-    point: str
+    ``script_path`` is absolute and comes from the declaring skill's
+    ``source_path``, never from a provider's tree — that is what makes a row
+    fire identically under every surface (ADR-0019 D9).
+    """  # comment-length: allow — the ownership split IS the contract
+
+    app: str
+    path: tuple[str, ...]
+    run: str
+    at: tuple[str, ...]
+    cargo: Mapping[str, Any]
     on_error: str
     script_path: Path
     declared_by: str
+
+    @property
+    def skill(self) -> str:
+        """The composed skill ``run`` names — its first segment."""
+        return self.run.split("/", 1)[0]
+
+    @property
+    def script(self) -> str:
+        """The path inside that skill's directory — everything after it."""
+        return self.run.split("/", 1)[1] if "/" in self.run else ""
 
 
 @dataclass(frozen=True)

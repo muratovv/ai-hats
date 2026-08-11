@@ -1,4 +1,4 @@
-"""The carrier side of the ``checks:`` channel for the rack (HATS-1141).
+"""The carrier side of the binding channel for the rack (``composition.apps.rack``).
 
 Successor of the ``lifecycle_hooks`` executor retired in HATS-1147 (ADR-0019
 D8): a binding declared by a trait or role fires on the FSM edge it names, in
@@ -42,6 +42,10 @@ class AiHatsCheckPort:
     budget in the request, so the two sides cannot keep constants that drift.
     """
 
+    #: The app key this integration collects. Named HERE, by the module that
+    #: integrates the rack — the composition core knows no application's name.
+    APP = "rack"
+
     def __init__(
         self,
         project_dir: Path,
@@ -67,20 +71,20 @@ class AiHatsCheckPort:
         return tuple(_declaration(check) for check in resolved)
 
     def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
-        return resolve_carried_checks(self.project_dir, session_id=session_id())
+        return resolve_carried_checks(self.project_dir, self.APP, session_id=session_id())
 
     def run_check(self, request: CheckRequest) -> CheckOutcome:
         check: ResolvedCheck = request.declaration.handle
         run = run_hook(
             check.script_path,
-            point=check.point,
+            point=request.event,
             timeout=request.timeout,
             project_dir=self.project_dir,
             force=request.force,
             task_id=request.task_id,
             worktree_path=self._worktree_path(request.task_id),
             tasks_dir=self._tasks_dir,
-            log_path=self._log_path(request.task_id, check),
+            log_path=self._log_path(request.task_id, check, request.event),
         )
         return CheckOutcome(
             ok=run.ok,
@@ -122,7 +126,7 @@ class AiHatsCheckPort:
             ) from exc
         return path
 
-    def _log_path(self, task_id: str, check: ResolvedCheck) -> Path:
+    def _log_path(self, task_id: str, check: ResolvedCheck, event: str) -> Path:
         """R3.4. The dot-component keeps the log out of the document registry, so
         a check's output never gets pinned into ``rack context``.
 
@@ -133,7 +137,7 @@ class AiHatsCheckPort:
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
         """  # comment-length: allow — the collision recurred once already
-        name = f"{check.point.replace(':', '-')}~{check_log_token(check)}.log"
+        name = f"{event.replace(':', '-') or 'event'}~{check_log_token(check)}.log"
         return self._tasks_dir / task_id / ".checks" / name
 
 
@@ -145,7 +149,9 @@ def _declaration(check: ResolvedCheck) -> CheckDeclaration:
     out of a package that must not know them.
     """
     return CheckDeclaration(
-        point=check.point,
+        path=check.path,
+        at=check.at,
+        cargo=check.cargo,
         on_error=check.on_error,
         label=_binding(check),
         handle=check,
@@ -153,7 +159,7 @@ def _declaration(check: ResolvedCheck) -> CheckDeclaration:
 
 
 def _binding(check: ResolvedCheck) -> str:
-    return f"{check.declared_by!r} binds {check.skill}/{check.script} on {check.point}"
+    return f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
 
 
 def _refusal(check: ResolvedCheck, run: HookRun) -> str:
@@ -171,6 +177,8 @@ def consumer_subscribers(
     *,
     tasks_dir: Path,
     topology: Topology,
+    backlog: str | Sequence[str],
+    known_backlogs: Sequence[str] = (),
 ) -> list:
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.
 
@@ -182,6 +190,8 @@ def consumer_subscribers(
         CheckSubscriber(
             AiHatsCheckPort(project_dir, tasks_dir=tasks_dir),
             topology=topology,
+            backlog=backlog,
+            known_backlogs=known_backlogs,
         )
     ]
 

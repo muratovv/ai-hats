@@ -40,8 +40,8 @@ from ai_hats_wt.locks import _state_key
 
 logger = logging.getLogger(__name__)
 
-#: The catalog name of the point ``merge()`` fires (``check_points`` owns it).
-WT_PRE_MERGE = "wt:pre-merge"
+#: The point ``merge()`` fires, in the ``wt`` app's own grammar (HATS-1545).
+WT_PRE_MERGE = "pre-merge"
 
 
 class WorktreeHookError(Exception):
@@ -197,7 +197,7 @@ class HookRunningLifecycle:
         for check in checks:
             run = run_hook(
                 check.script_path,
-                point=check.point,
+                point=WT_PRE_MERGE,
                 timeout=resolve_hook_timeout(),
                 project_dir=ctx.project_dir,
                 worktree_path=ctx.worktree_path,
@@ -314,7 +314,7 @@ def _check_refusal(check, run: HookRun) -> str:
     one script bound to both points must read the same on either, and HATS-1538
     cost a session to a symptom that named the wrong subsystem.
     """
-    binding = f"{check.declared_by!r} binds {check.skill}/{check.script} on {check.point}"
+    binding = f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
     if run.verdict is HookVerdict.REFUSE:
         return run.reason
     return f"checks: {binding} — {run.reason}"

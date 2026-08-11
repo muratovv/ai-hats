@@ -1,4 +1,4 @@
-"""The FSM half of the ``checks:`` channel: the rack owns its own point names.
+"""The FSM half of the binding channel: the rack owns its own point names.
 
 ADR-0019 D11. An integrator composes a role and hands over already-resolved
 declarations; what ``edge:<from>--<to>`` *means*, whether this instance's
@@ -15,6 +15,7 @@ assumed, because a port older than this Protocol must not raise
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any, Protocol, Sequence, runtime_checkable
 
 from .dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
@@ -43,26 +44,43 @@ EDGE_PREFIX = "edge:"
 
 @dataclass(frozen=True)
 class CheckDeclaration:
-    """One carried binding. ``handle`` is opaque — the rack never looks inside.
+    """One carried row. ``handle`` is opaque — the rack never looks inside.
 
-    ``label`` is whatever the carrier wants a refusal to say about the row
-    (who declared it, what it binds); the rack quotes it and never parses it.
+    Since HATS-1545 the carrier does not know this package's grammar: it hands
+    over ``path`` (where the row sat under ``apps.rack`` — the backlog it names)
+    and ``cargo`` (every key ai-hats does not own), and THIS side decides what
+    they mean. ``label`` is whatever the carrier wants a refusal to say about
+    the row; the rack quotes it and never parses it.
     """
 
-    point: str
+    path: tuple[str, ...]
+    at: tuple[str, ...]
+    cargo: Mapping[str, Any]
     on_error: str
     label: str
     handle: Any
 
+    def points(self) -> tuple[str, ...]:
+        """The point names this row binds. The carrier guarantees it is non-empty
+        — that a row names SOMETHING is app-agnostic; what the names mean is ours."""
+        return tuple(self.at)
+
 
 @dataclass(frozen=True)
 class CheckRequest:
-    """One firing, handed back to the carrier's executor."""
+    """One firing, handed back to the carrier's executor.
+
+    ``event`` is the point being fired. The carrier needs it to keep one log per
+    (task, point, row): a row may bind several points, and ``run_hook`` truncates
+    the log it is handed, so a name without it lets the second firing wipe the
+    first one's file (HATS-1137).
+    """
 
     declaration: CheckDeclaration
     task_id: str
     force: bool
     timeout: float
+    event: str = ""
 
 
 @dataclass(frozen=True)
@@ -115,11 +133,18 @@ class CheckSubscriber:
         port: Any,
         *,
         topology: Topology,
+        backlog: str | Sequence[str],
+        known_backlogs: Sequence[str] = (),
         priority: int = CHECK_PRIORITY,
         timeout: float | None = None,
     ) -> None:
         self._port = port
         self._topology = topology
+        # Every selector THIS instance answers to (name and cli_alias): the ADR
+        # promises both address it, and matching only the name sent an aliased
+        # row down the quiet sibling-backlog branch (HATS-1545 F4).
+        self._mine = frozenset({backlog} if isinstance(backlog, str) else backlog)
+        self._known = frozenset(known_backlogs) | self._mine
         self._priority = priority
         self._timeout = EDGE_CHECK_TIMEOUT_S if timeout is None else timeout
 
@@ -146,6 +171,7 @@ class CheckSubscriber:
                     task_id=ctx.task.id,
                     force=ctx.force,
                     timeout=self._timeout,
+                    event=ctx.event.key,
                 )
             )
             if outcome.ok:
@@ -160,23 +186,46 @@ class CheckSubscriber:
         return Delta(work_log=tuple(notes)) if notes else None
 
     def _bound_to(self, event_key: str) -> tuple[CheckDeclaration, ...]:
-        """The declarations this edge fires — grammar first, then topology.
+        """The declarations this edge fires — addressing first, then grammar.
 
-        A point outside this grammar, or naming an edge no state of this
-        topology has, is skipped rather than refused: from the carrier's side a
-        sibling backlog's row and a typo are the same fact, and only here are
-        all the mounted topologies known. Refusing on it is what let one bad
-        ``edge:reviw--done`` abort an unrelated ``edge:brainstorm--plan``.
-        """
+        Addressing is decided HERE, where the mounted names are known, which is
+        what makes a typo loud without making a sibling backlog's row fatal: a
+        name no backlog of this root answers to is a refusal, a name that
+        belongs to a sibling is simply skipped (HATS-1545 R10). A point naming
+        an edge this topology lacks stays a skip for the older reason — it is
+        what let one bad ``edge:reviw--done`` abort an unrelated
+        ``edge:brainstorm--plan``.
+        """  # comment-length: allow — which miss is loud and which is quiet IS the contract
         declared = self._declarations()
         edges = set(all_edge_keys(self._topology))
-        return tuple(
-            row
-            for row in declared
-            if parse_edge_point(row.point) is not None
-            and row.point in edges
-            and row.point == event_key
-        )
+        bound: list[CheckDeclaration] = []
+        for row in declared:
+            if not self._addresses_me(row):
+                continue
+            for point in row.points():
+                if parse_edge_point(point) is None or point not in edges:
+                    continue
+                if point == event_key:
+                    bound.append(row)
+                    break
+        return tuple(bound)
+
+    def _addresses_me(self, row: CheckDeclaration) -> bool:
+        """Whether ``row`` is addressed to THIS backlog. Loud on a name nothing has."""
+        if len(row.path) != 1:
+            raise AbortOperation(
+                f"checks: {row.label} sits at apps.rack{''.join('.' + p for p in row.path)}, but a "
+                f"rack row is declared one level down, under the backlog it gates "
+                f"(apps.rack.<backlog>) — this one names {'no backlog' if not row.path else 'a deeper path'}"
+            )
+        name = row.path[0]
+        if name not in self._known:
+            raise AbortOperation(
+                f"checks: {row.label} is declared under apps.rack.{name}, but no backlog of this "
+                f"project answers to {name!r} (mounted: {', '.join(sorted(self._known))}) — "
+                f"a gate on a backlog that does not exist would never fire"
+            )
+        return name in self._mine
 
     def _declarations(self) -> Sequence[CheckDeclaration]:
         """Ask the port, and turn any trouble into this channel's own refusal —
@@ -214,7 +263,7 @@ class CheckSubscriber:
         notes: list[str] = []
         for declaration in bound:
             reason = (
-                f"checks: {declaration.label} is bound to {declaration.point}, but the "
+                f"checks: {declaration.label} is bound under apps.rack, but the "
                 f"integrator supplying this backlog exposes no check executor "
                 f"(ai_hats_rack.checks.CheckPort.run_check) — the gate cannot run"
             )

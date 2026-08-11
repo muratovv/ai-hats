@@ -89,11 +89,12 @@ composition:
   rules: []
   skills:
     - {skill}
-  checks:
-    - skill: {skill}
-      script: {script}
-      "on": [{edge}]
-      on_error: {on_error}
+  apps:
+    rack:
+      tasks:
+        - run: {skill}/{script}
+          at: [{edge}]
+          on_error: {on_error}
 injection: |
   # ROLE: {name}
 """
@@ -109,17 +110,18 @@ composition:
   rules: []
   skills:
     - {skill}
-  checks:
+  apps:
+    rack:
+      tasks:
 {rows}
 injection: |
   # ROLE: {name}
 """
 
 _CHECK_ROW = """\
-    - skill: {skill}
-      script: {script}
-      "on": [{point}]
-      on_error: refuse
+        - run: {skill}/{script}
+          at: [{point}]
+          on_error: refuse
 """
 
 _PLAIN_YAML = f"""\
@@ -170,6 +172,15 @@ def _seed_library(project: Path) -> None:
             _ROLE_YAML.format(name=name, skill=SKILL, script=script, edge=EDGE, on_error=on_error),
             encoding="utf-8",
         )
+    misaddressed = lib / "roles" / "misaddressed"
+    misaddressed.mkdir(parents=True)
+    (misaddressed / "config.yaml").write_text(
+        _ROLE_YAML.format(
+            name="misaddressed", skill=SKILL, script="pass.sh", edge=EDGE, on_error="refuse"
+        ).replace("      tasks:", "      cards:"),
+        encoding="utf-8",
+    )
+
     plain = lib / "roles" / "plain"
     plain.mkdir(parents=True)
     (plain / "config.yaml").write_text(_PLAIN_YAML, encoding="utf-8")
@@ -275,7 +286,12 @@ def _checks_dir(project: Path, task_id: str) -> Path:
 def _check_log(project: Path, task_id: str, script: str) -> Path:
     """One log per (task, edge, binding), so two bindings on one edge cannot
     truncate each other's transcript (HATS-1137)."""
-    return _checks_dir(project, task_id) / f"{EDGE_LOG_PREFIX}~{SKILL}~{script}.log"
+    stem = f"{EDGE_LOG_PREFIX}~rack~tasks~{SKILL}~{script}"
+    found = sorted(
+        p for p in _checks_dir(project, task_id).glob("*.log") if p.name.rsplit("~", 1)[0] == stem
+    )
+    assert len(found) == 1, f"expected one {stem}* log, got {[p.name for p in found]}"
+    return found[0]
 
 
 def _ran_script(log: Path) -> Path:
@@ -692,7 +708,7 @@ def test_on_error_warn_downgrades_a_broken_check_but_records_it(gate_project, ra
     assert json.loads(taken.stdout)["task"]["state"] == "plan"
     trace = "\n".join(entry["message"] for entry in json.loads(taken.stdout)["task"]["work_log"])
     assert "downgraded by on_error: warn" in trace
-    assert f"{SKILL}/broke.sh on {EDGE}" in trace
+    assert f"{SKILL}/broke.sh under apps.rack" in trace
     assert "ruff exploded" in trace
     assert "hook broke: exited 1" in trace
 
@@ -821,3 +837,27 @@ def test_a_bound_project_still_reads_even_when_the_gate_would_refuse(gate_projec
 
     # Positive control: the gate IS armed — the read went through anyway.
     assert _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env).returncode == 1
+
+
+def test_a_row_naming_a_backlog_this_project_does_not_have_is_loud(gate_project, rack_bin):
+    """HATS-1545 R10 / D8, end to end.
+
+    The backlog is a LEVEL of the key now, so a row says which backlog it gates.
+    A name no mounted backlog answers to used to reach `instance_by_name`, which
+    took a first match — a gate silently installed on the wrong backlog, or on
+    none. Here it is a refusal that names both the wanted name and the mounted
+    ones, taken through the real `rack` binary rather than a stubbed port.
+    """
+    project, env = gate_project("misaddressed")
+    task_id = _create(rack_bin, project, env)
+
+    taken = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+
+    assert taken.returncode != 0, (
+        "a row addressed to a backlog that does not exist must not pass quietly\n"
+        f"{taken.stdout}{taken.stderr}"
+    )
+    combined = taken.stdout + taken.stderr
+    assert "cards" in combined, combined
+    assert "tasks" in combined, combined
+    assert "Traceback" not in combined, combined

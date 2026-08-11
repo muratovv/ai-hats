@@ -37,7 +37,11 @@ EDGE = "edge:review--done"
 SCRIPT = "hooks/done-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
-EDGE_LOG = f"edge-review--done~{SKILL}~hooks+done-gate.sh.log"
+#: One log per (task, point, row). The row identity carries the app and the
+#: backlog since HATS-1545, so two backlogs binding one script cannot collide.
+#: The readable stem of the check-log name; ``check_log_token`` appends an
+#: identity digest so two rows can never share a file (HATS-1137).
+EDGE_LOG_STEM = f"edge-review--done~rack~tasks~{SKILL}~hooks+done-gate.sh"
 GATE_MARKER_DIR = Path(".git") / "ai-hats" / "done-gate"
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.
@@ -73,19 +77,18 @@ injection: |
 _CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
 
 
-def shipped_binding() -> dict:
-    """The ``checks:`` row the ``maintainer`` role actually ships.
+def shipped_apps() -> dict:
+    """The ``composition.apps`` block the ``maintainer`` role actually ships.
 
     Read from the library rather than restated here, so the sandbox exercises
-    the row under review — a hand-copied literal drifts from it in silence, and
-    HATS-1538 proved the drift is what survives. The bare ``on`` key resolves to
-    ``True`` under YAML 1.1, exactly as the library's own ``_parse_check_row``
-    finds it.
+    the rows under review — a hand-copied literal drifts from them in silence,
+    and HATS-1538 proved the drift is what survives. Since HATS-1545 the block
+    is carried whole: its shape below ``apps.<app>`` belongs to the app, so a
+    test that picked rows apart would be re-implementing a grammar it does not
+    own.
     """
     config = yaml.safe_load(MAINTAINER_ROLE.read_text(encoding="utf-8"))
-    rows = config["composition"]["checks"]
-    assert len(rows) == 1, f"expected exactly one checks row, got {rows}"
-    return {("on" if key is True else key): value for key, value in rows[0].items()}
+    return config["composition"]["apps"]
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +108,7 @@ def _seed_library(project: Path, *, bind: bool) -> None:
         "injection": "# ROLE: GATED\n",
     }
     if bind:
-        gated["composition"]["checks"] = [shipped_binding()]
+        gated["composition"]["apps"] = shipped_apps()
     (lib / "roles" / "gated").mkdir(parents=True)
     (lib / "roles" / "gated" / "config.yaml").write_text(
         yaml.safe_dump(gated, sort_keys=False), encoding="utf-8"
@@ -182,8 +185,20 @@ def _state(project: Path, task_id: str) -> dict:
     return yaml.safe_load(_card(project, task_id).read_text(encoding="utf-8"))
 
 
+def _checks_dir(project: Path, task_id: str) -> Path:
+    """Where a check's log would land — asserted ABSENT where no gate should run."""
+    return project / TASKS_SUB / task_id / ".checks"
+
+
+def _sole_log(checks_dir: Path) -> Path:
+    """The one log under ``checks_dir`` whose stem is this gate's."""
+    found = sorted(p for p in checks_dir.glob("*.log") if p.name.rsplit("~", 1)[0] == EDGE_LOG_STEM)
+    assert len(found) == 1, f"expected one {EDGE_LOG_STEM}* log, got {[p.name for p in found]}"
+    return found[0]
+
+
 def _check_log(project: Path, task_id: str) -> Path:
-    return project / TASKS_SUB / task_id / ".checks" / EDGE_LOG
+    return _sole_log(project / TASKS_SUB / task_id / ".checks")
 
 
 def _reason(result: subprocess.CompletedProcess[str]) -> str:
@@ -262,17 +277,20 @@ def _write_marker(project: Path, sha: str) -> Path:
 def test_the_maintainer_role_binds_the_gate_to_both_roads_into_master():
     """S4 / the epic's acceptance: a live consumer, bound and proven to refuse.
 
-    Both points in ONE row, deliberately. `edge:review--done` is the FSM
-    automerge and `wt:pre-merge` is a direct `ai-hats wt merge`; a gate holding
+    One script, TWO rows since HATS-1545 — the app owns the grammar above
+    `run:`, so a row belongs to exactly one app. `apps.rack.tasks` is the FSM
+    automerge and `apps.wt` is a direct `ai-hats wt merge`; a gate holding
     only one of them is the asymmetry that started the epic, and HATS-1538 left
     through the unheld one. HATS-1137's tombstone stood here until the two
     reasons it was withdrawn for were closed (HATS-1540 S1 and S5).
     """
-    row = shipped_binding()
-    assert row["skill"] == SKILL
-    assert row["script"] == SCRIPT
-    assert row["on"] == [EDGE, "wt:pre-merge"]
-    assert row["on_error"] == "refuse"
+    apps = shipped_apps()
+    assert apps["rack"]["tasks"] == [
+        {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse"}
+    ], "the FSM automerge road, qualified by the backlog it gates"
+    assert apps["wt"] == [
+        {"run": f"{SKILL}/{SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
+    ], "the direct `ai-hats wt merge` road"
 
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
@@ -401,7 +419,7 @@ def test_a_role_that_does_not_bind_the_gate_is_not_gated(gate_project, rack_bin)
 
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    assert not _check_log(project, task_id).parent.exists(), "an unbound role must run no check"
+    assert not _checks_dir(project, task_id).exists(), "an unbound role must run no check"
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +437,7 @@ def test_removing_the_checks_row_lets_the_red_card_through(gate_project, rack_bi
     task_id, _ = _to_review(rack_bin, project, env, worktree=True)
 
     role = project / "libraries" / "roles" / "gated" / "config.yaml"
-    assert "checks" not in role.read_text(encoding="utf-8"), "the row must really be gone"
+    assert "apps:" not in role.read_text(encoding="utf-8"), "the rows must really be gone"
 
     taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
 
@@ -428,7 +446,7 @@ def test_removing_the_checks_row_lets_the_red_card_through(gate_project, rack_bi
         f"if it still refuses, case 1 was never proving the gate\n{taken.stdout}{taken.stderr}"
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    assert not _check_log(project, task_id).parent.exists()
+    assert not _checks_dir(project, task_id).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +580,7 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
         f"project's gate — that is the HATS-1538 regression\n{taken.stdout}{taken.stderr}"
     )
     assert json.loads(taken.stdout)["task"]["state"] == "done"
-    log = scratch / task_id / ".checks" / EDGE_LOG
+    log = _sole_log(scratch / task_id / ".checks")
     assert log.is_file(), (
         "the gate must actually FIRE and decide — a test that passes because the "
         "binding never installed proves nothing"

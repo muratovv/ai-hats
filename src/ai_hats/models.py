@@ -27,14 +27,16 @@ from .provenance import ComponentLayer  # noqa: F401
 from .libraries.models import (  # noqa: F401
     GIT_HOOK_EVENTS,
     RUNTIME_HOOK_EVENTS,
-    CheckBinding,
+    AppBinding,
     CheckBindingError,
     ComponentConfig,
+    ComponentKeyError,
     ComponentType,
     Composition,
     LeftoverSidecarHooksError,
     RuleMetadata,
     RuntimeHook,
     SkillMetadata,
+    parse_app_bindings,
     resolve_namespace,
 )
