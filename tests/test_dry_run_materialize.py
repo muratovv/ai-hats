@@ -83,3 +83,34 @@ def test_dry_run_default_leaves_nothing_on_disk(project: Path):
     assert report.escapes == ()
     assert not cache_std.exists()
     assert not cache_mat.exists()
+
+
+def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
+    """S5 / R4: Two --materialize runs in a row yield identical plan entries and files."""
+    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+
+    report1 = dry_run_hitl(project, provider="claude", materialize=True)
+    entries1 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report1.plan.entries]
+    files1 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
+
+    report2 = dry_run_hitl(project, provider="claude", materialize=True)
+    entries2 = [(e.kind.value, str(e.target), e.size, e.digest) for e in report2.plan.entries]
+    files2 = {str(p): p.read_bytes() for p in cache_mat.rglob("*") if p.is_file()}
+
+    assert entries1 == entries2
+    assert files1 == files2
+
+
+def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
+    """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
+    report_clean = dry_run_hitl(project, provider="claude", materialize=False)
+    entries_clean = [(e.kind.value, str(e.target), e.size, e.digest) for e in report_clean.plan.entries]
+
+    # Run --materialize
+    dry_run_hitl(project, provider="claude", materialize=True)
+
+    # Run default dry-run again
+    report_after = dry_run_hitl(project, provider="claude", materialize=False)
+    entries_after = [(e.kind.value, str(e.target), e.size, e.digest) for e in report_after.plan.entries]
+
+    assert entries_clean == entries_after
