@@ -488,6 +488,40 @@ def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
     assert f"{EDGE} aborted by 'checks'" in refused.stderr
     assert MIRROR_WORDS in refused.stderr
     assert "Traceback" not in refused.stderr, "a refusal must be typed, not a stack"
+    # HATS-1572: a binding line is not a hook channel, and a refusal that spoke
+    # needs no wording of ours on top of the child's.
+    assert "hook" not in refused.stderr
+
+
+def test_bytes_absent_from_the_mirror_read_as_a_gate_that_never_ran(gate_project, rack_bin):
+    """HATS-1572 class (b): the channel could not get the bytes, so no verdict
+    was formed — and the message names the RESOLUTION, not the script.
+
+    The measured confusion this closes: an operator read ``hook script missing``
+    and went to fix the script or the binding, when what needed fixing was which
+    root the session resolved from. D9 deliberately does not fall back to the
+    live library, so 'no mirror' is a legitimate state that deserves its own
+    words rather than the vocabulary of corruption.
+    """
+    project, env = gate_project("refusing")
+    task_id = _create(rack_bin, project, env)
+    # The skill IS mirrored; the bound script is not — a session frozen before
+    # this binding existed.
+    _seed_mirror(project, env, script="unrelated.sh", body="exit 0\n")
+    before = _card(project, task_id).read_bytes()
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _card(project, task_id).read_bytes() == before
+    err = refused.stderr
+    assert "the check did not run" in err
+    assert "executes bytes frozen at launch" in err
+    assert str(_mirror_root(project, env)) in err
+    assert "NOT used as a fallback" in err
+    assert "Restart the session" in err
+    assert "Traceback" not in err
+    assert "hook" not in err, "the binding line is not a hook channel (HATS-1572)"
 
     as_json = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
     assert as_json.returncode == 1
