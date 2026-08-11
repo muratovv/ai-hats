@@ -20,7 +20,7 @@ import json
 import string
 import sys
 from hashlib import sha1
-from collections.abc import Iterable, Sequence, Set as AbstractSet
+from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
 from dataclasses import replace
 from pathlib import Path
 
@@ -28,13 +28,16 @@ from ai_hats_core import ResolvedCheck, ResolvedComponent
 
 from .libraries.models import AppBinding, CheckBindingError, resolve_namespace
 
-#: The application key ai-hats fires itself, and therefore the only one whose
-#: cargo it reads. Every other key is carried to whoever owns it.
+#: The worktree application key. ai-hats fires it, so it reads its cargo.
 WT_APP = "wt"
+
+#: The session-start application key (HATS-1581). ai-hats fires this one too:
+#: the launch is its own lifecycle, owned by no other application.
+AI_HATS_APP = "ai-hats"
 
 #: The roster, not the authority: used ONLY to name a block nobody collects
 #: (R9). Each integration names its own key at its own call site.
-KNOWN_APPS: frozenset[str] = frozenset({"rack", WT_APP})
+KNOWN_APPS: frozenset[str] = frozenset({"rack", WT_APP, AI_HATS_APP})
 
 
 def wt_points() -> dict[str, bool]:
@@ -51,9 +54,28 @@ def wt_points() -> dict[str, bool]:
     return points
 
 
+def ai_hats_points() -> dict[str, bool]:
+    """The ``ai-hats`` app's own points, mapped to whether ``on_error: warn`` is legal.
+
+    ``startup`` permits ``warn``: no data is protected at the launch, unlike the
+    wt teardown points D4 fixes at ``refuse``, so whether a stale gate blocks the
+    session is the declaring role's call.
+    """
+    return {"startup": True}
+
+
+#: Every app ai-hats fires itself, mapped to the points it fires for that app.
+#: A row under one of these keys is validated here; every other key is carried
+#: to whoever owns it, unread.
+_OWNED_POINTS: dict[str, Callable[[], dict[str, bool]]] = {
+    WT_APP: wt_points,
+    AI_HATS_APP: ai_hats_points,
+}
+
+
 def owns_app(app: str) -> bool:
     """Whether ai-hats itself fires ``app`` (and so validates and runs its rows)."""
-    return app == WT_APP
+    return app in _OWNED_POINTS
 
 
 def resolve_checks(
@@ -82,7 +104,7 @@ def resolve_checks(
             continue
         script_path = _resolve_script(row, skill)
         if owns_app(row.app):
-            _validate_wt_points(row)
+            _validate_owned_points(row)
         check = ResolvedCheck(
             app=row.app,
             path=row.path,
@@ -179,18 +201,20 @@ def _report_missing_skill(row: AppBinding, removed: AbstractSet[str]) -> None:
     )
 
 
-def _validate_wt_points(row: AppBinding) -> None:
-    """The ``wt`` app is ai-hats's own, so its point NAMES are validated here.
+def _validate_owned_points(row: AppBinding) -> None:
+    """An app ai-hats fires is ai-hats's own, so its point NAMES are validated here.
 
     That a row names at least one point is checked for every app, at parse time
-    (``_app_row``); this is the half only the owner can do.
+    (``_app_row``); this is the half only the owner can do. The point set comes
+    from ``_OWNED_POINTS`` rather than one app's function, so a second owned app
+    (HATS-1581) cannot be validated against the first one's catalog.
     """
     label = _label(row)
-    points = wt_points()
+    points = _OWNED_POINTS[row.app]()
     for name in row.at:
         if name not in points:
             raise CheckBindingError(
-                f"{label} at {name!r}, which is not a point of the 'wt' app "
+                f"{label} at {name!r}, which is not a point of the {row.app!r} app "
                 f"(known: {', '.join(sorted(points))})"
             )
         if row.on_error == "warn" and not points[name]:
@@ -257,9 +281,11 @@ def _cargo_tag(check: ResolvedCheck) -> str:
 
 
 __all__ = [
+    "AI_HATS_APP",
     "KNOWN_APPS",
     "WT_APP",
     "CheckBindingError",
+    "ai_hats_points",
     "check_log_token",
     "owns_app",
     "resolve_checks",

@@ -12,8 +12,10 @@ import pytest
 from ai_hats_core import ComponentKind, ResolvedComponent
 
 from ai_hats.check_points import (
+    AI_HATS_APP,
     KNOWN_APPS,
     CheckBindingError,
+    ai_hats_points,
     check_log_token,
     owns_app,
     resolve_checks,
@@ -54,6 +56,25 @@ def _wt(**overrides) -> AppBinding:
     """A row under ai-hats's own app, whose cargo IS validated here."""
     overrides.setdefault("at", ("pre-merge",))
     return _row(app="wt", path=(), **overrides)
+
+
+def _startup(**overrides) -> AppBinding:
+    """A row under the ``ai-hats`` app — the session-start point (HATS-1581)."""
+    overrides.setdefault("at", ("startup",))
+    return _row(app=AI_HATS_APP, path=(), **overrides)
+
+
+def test_the_session_start_is_ai_hats_own_point():
+    """HATS-1581. The session start is fired by ai-hats itself, so its app key is
+    ai-hats's own — owned, rostered and point-validated exactly like ``wt``.
+
+    ``startup`` permits ``on_error: warn``: unlike the wt teardown points, no data
+    is protected here, so whether a stale gate blocks the launch is the declaring
+    role's call (``role-curator`` warns where ``maintainer`` refuses).
+    """
+    assert owns_app(AI_HATS_APP)
+    assert AI_HATS_APP in KNOWN_APPS
+    assert ai_hats_points()["startup"] is True
 
 
 def test_ai_hats_owns_one_app_and_judges_only_its_cargo():
@@ -319,13 +340,20 @@ def test_the_app_roster_matches_the_integrations_that_claim_the_keys():
     so it has to agree with the integrations that actually collect one. Spelled
     in two places (here and at each integration's call site); rename one and
     `_warn_unclaimed_apps` goes quiet while every row of that app goes
-    uncollected — the silence R9 exists to prevent, inside R9's own guard."""
+    uncollected — the silence R9 exists to prevent, inside R9's own guard.
+
+    HATS-1581 gave ai-hats a SECOND app of its own, so the roster is stated as
+    ``{rack's key} | {apps ai-hats owns}`` rather than a hand-listed pair — which
+    keeps the teeth: an entry neither side answers for still fails.
+    """
     from ai_hats.check_points import WT_APP
     from ai_hats.rack_consumers import AiHatsCheckPort
 
-    assert AiHatsCheckPort.APP in KNOWN_APPS, "the rack integration's key must be on the roster"
-    assert WT_APP in KNOWN_APPS, "ai-hats's own app must be too"
-    assert KNOWN_APPS == {AiHatsCheckPort.APP, WT_APP}, (
+    owned = {WT_APP, AI_HATS_APP}
+
+    assert all(owns_app(app) for app in owned), "each of ai-hats's own apps must be owned"
+    assert not owns_app(AiHatsCheckPort.APP), "the rack's key is collected by it, never owned here"
+    assert KNOWN_APPS == {AiHatsCheckPort.APP} | owned, (
         "the roster must list exactly the apps some integration claims — an extra "
         "entry silences the warning for an app nobody collects"
     )
