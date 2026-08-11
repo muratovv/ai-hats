@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, ResolvedComponent
+from ai_hats_rack.definition import BacklogDefinition, resolve_definition
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.fsm import Topology, all_edge_keys
@@ -45,10 +46,17 @@ def _extension(project_dir, *, tasks_dir, topology, resolve=None, **kwargs) -> C
     ``CheckRunnerExtension`` exposed for the same reason."""
     kwargs.setdefault("backlog", "tasks")
     return CheckSubscriber(
-        AiHatsCheckPort(project_dir, tasks_dir=tasks_dir, resolve=resolve),
+        AiHatsCheckPort(project_dir, catalog=tasks_dir, resolve=resolve),
         topology=topology,
         **kwargs,
     )
+
+
+def _definition(topology: Topology, *, tmp_path: Path) -> BacklogDefinition:
+    """The packaged definition with this test's topology grafted on — the pack
+    takes a definition since HATS-1575 (the rack derives selectors from it)."""
+    packaged = resolve_definition(tmp_path / "unwritten", project_dir=tmp_path)
+    return replace(packaged, name="tasks", cli_alias=None, topology=topology)
 
 
 def _topology() -> Topology:
@@ -106,7 +114,9 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     through the seam (never a re-opened one), and it books slot 15 in-lock."""
     topology = _topology()
     pack = consumer_subscribers(
-        tmp_path, tasks_dir=tmp_path / "tasks", topology=topology, backlog="tasks"
+        tmp_path,
+        definition=_definition(topology, tmp_path=tmp_path),
+        catalog=tmp_path / "tasks",
     )
 
     assert pack, "the consumer pack must carry the check runner"

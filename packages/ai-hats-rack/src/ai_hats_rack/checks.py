@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Mapping
-from typing import Any, Protocol, Sequence, runtime_checkable
+from pathlib import Path
+from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
+from .definition import BacklogDefinition
 from .dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from .fsm import Topology, all_edge_keys
 from .kernel import LOCK_TIMEOUT
@@ -101,6 +103,12 @@ class CheckPort(Protocol):
     def check_declarations(self) -> Sequence[CheckDeclaration]: ...
 
     def run_check(self, request: CheckRequest) -> CheckOutcome: ...
+
+
+#: How an integrator supplies the executor for ONE catalog. The rack builds the
+#: subscriber itself (:func:`check_subscriber`); this is the whole of what the
+#: integrator contributes, because it is the whole of what the rack cannot do.
+CheckPortFactory = Callable[[Path], CheckPort]
 
 
 def parse_edge_point(point: str) -> tuple[str, str] | None:
@@ -273,6 +281,28 @@ class CheckSubscriber:
         return Delta(work_log=tuple(notes)) if notes else None
 
 
+def check_subscriber(
+    definition: BacklogDefinition,
+    *,
+    port: Any,
+    known_backlogs: Sequence[str] = (),
+) -> CheckSubscriber:
+    """The ONE place a backlog's check subscriber is built (HATS-1575).
+
+    Topology and both selectors are derived here, from the definition the kernel
+    runs. Before this the integrator derived all three and handed them back, so
+    the wiring existed only where the integrator had written it out — the tasks
+    kernel — and every other road (sibling backlogs, the workspace the reflect
+    consumers mount) had no way to redo a derivation that was not theirs to make.
+    """  # comment-length: allow — which side owns the derivation is the fix
+    return CheckSubscriber(
+        port,
+        topology=definition.topology,
+        backlog=(definition.name, definition.cli_alias or definition.name),
+        known_backlogs=known_backlogs,
+    )
+
+
 def _oneline(reason: str) -> str:
     return " / ".join(line.strip() for line in reason.splitlines() if line.strip())
 
@@ -284,7 +314,9 @@ __all__ = [
     "CheckDeclaration",
     "CheckOutcome",
     "CheckPort",
+    "CheckPortFactory",
     "CheckRequest",
     "CheckSubscriber",
+    "check_subscriber",
     "parse_edge_point",
 ]

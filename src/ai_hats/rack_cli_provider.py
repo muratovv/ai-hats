@@ -22,7 +22,7 @@ from ai_hats_rack.extensions import DerivedViewsExtension
 from ai_hats_rack.journal import JsonlJournalSink
 from ai_hats_rack.workspace import backlog_selectors_in_root
 
-from .rack_consumers import consumer_subscribers
+from .rack_consumers import check_port_factory, consumer_subscribers
 from .rack_wiring import build_rack_kernel
 from .tracker_wiring import tracker_paths
 
@@ -44,12 +44,21 @@ class CliKernelProvider:
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
                 root.project_dir,
-                tasks_dir=root.tasks_dir,
-                topology=defn.topology,
-                backlog=(defn.name, defn.cli_alias or defn.name),
+                definition=defn,
+                catalog=root.tasks_dir,
                 known_backlogs=backlog_selectors_in_root(root),
             ),
         )
+
+    def check_port(self, root: Any, catalog: Path):
+        """The check executor for ONE mounted catalog of ``root``.
+
+        The half the rack cannot supply: reading the composed rows and spawning
+        the script (``subprocess`` is forbidden in that package by an import
+        pin). Everything else about the channel — topology, selectors, which
+        instances get a subscriber — the rack decides from its own definitions.
+        """
+        return check_port_factory(root.project_dir)(catalog)
 
     def after_create(self, root: Any, result: Any) -> None:
         """Refresh STATE.md after a create (fork K3 #7): create takes no FSM

@@ -44,9 +44,17 @@ SESSION_REVIEWER_ACTOR = "rack:session-reviewer"
 
 def rack_workspace(project_dir: Path) -> Workspace:
     """Discover the workspace for a project: the tasks catalog plus the sibling
-    HYP/PROP catalogs under ``<ai_hats_dir>/tracker`` (mounted once migrated)."""
+    HYP/PROP catalogs under ``<ai_hats_dir>/tracker`` (mounted once migrated).
+
+    Carries the check executor (HATS-1575). This road is not read-only —
+    :func:`set_proposal_status` walks a PROP along a named FSM edge — so a
+    workspace mounted without it runs every bound gate of every backlog as a
+    silent no-op, the tasks catalog included.
+    """  # comment-length: allow — that this road transitions at all is the point
+    from .rack_consumers import check_port_factory
+
     root = RackRoot(project_dir=project_dir, tasks_dir=tasks_dir(project_dir))
-    return Workspace.discover([root])
+    return Workspace.discover([root], check_port=check_port_factory(project_dir))
 
 
 def ensure_backlog(project_dir: Path, definition_name: str) -> None:
