@@ -492,6 +492,12 @@ def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
     # needs no wording of ours on top of the child's.
     assert "hook" not in refused.stderr
 
+    as_json = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+    assert as_json.returncode == 1
+    # R3.3: verbatim in --json — the prefix belongs to the text surface only.
+    assert _reason(as_json) == MIRROR_WORDS
+    assert _card(project, task_id).read_bytes() == before
+
 
 def test_bytes_absent_from_the_mirror_read_as_a_gate_that_never_ran(gate_project, rack_bin):
     """HATS-1572 class (b): the channel could not get the bytes, so no verdict
@@ -522,12 +528,10 @@ def test_bytes_absent_from_the_mirror_read_as_a_gate_that_never_ran(gate_project
     assert "Restart the session" in err
     assert "Traceback" not in err
     assert "hook" not in err, "the binding line is not a hook channel (HATS-1572)"
-
+    # The same sentence reaches --json, where an agent reads it.
     as_json = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
     assert as_json.returncode == 1
-    # R3.3: verbatim in --json — the prefix belongs to the text surface only.
-    assert _reason(as_json) == MIRROR_WORDS
-    assert _card(project, task_id).read_bytes() == before
+    assert "the check did not run" in _reason(as_json)
 
 
 # ---------------------------------------------------------------------------
