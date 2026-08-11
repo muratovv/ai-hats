@@ -83,7 +83,7 @@ def _check_pack(project: Path, script: Path | None = None):
     tasks_dir = project / ".agent" / "tasks"
     return [
         CheckSubscriber(
-            AiHatsCheckPort(project, tasks_dir=tasks_dir, resolve=lambda: checks),
+            AiHatsCheckPort(project, catalog=tasks_dir, resolve=lambda: checks),
             topology=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).topology,
             backlog=resolve_definition(tasks_dir, prefix_alias="T", project_dir=project).name,
         )

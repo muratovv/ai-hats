@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**227 of 227 files catalogued — 234 flows.**
+**228 of 228 files catalogued — 235 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -2346,6 +2346,21 @@ as a claim to check, not as evidence.
 
 - **expect** — a fast-forward, a branch deletion, a brand-new branch and an empty stdin all pass; a non-fast-forward exits 1, and the refusal names `rule_pause_before_shared_state_write` and says "Do NOT retry" rather than failing bare; the env ack overrides the block
 - **why** — the hook is pure bash driven by git over stdin, so nothing in-process reaches it — and a hook that blocks a legal fast-forward is as broken as one that waves a force-push through. The PreToolUse half is unit-tested in tests/test_shared_state_guard.py; only this half needs a real repo.
+
+## `test_sibling_backlog_check_gate.py`
+
+*pins HATS-1575*
+
+- **flow** — a role declares a gate on a sibling backlog (apps.rack.hyp) and a developer walks a HYP card along the edge it names
+- **cmds**
+
+  ```console
+  rack transition HYP-1 confirmed --json
+  rack transition SBX-1 plan
+  ```
+
+- **expect** — the HYP transition is refused by 'checks' in the sibling's own words, the card is left byte-identical, the check log lands under the hypotheses catalog — and the same row does NOT disturb a tasks edge
+- **why** — the sibling road built its kernel through the portable kit, which had no check subscriber at all, so an `on_error: refuse` gate aimed at HYP/PROP passed silently by construction — the failure this epic exists to remove
 
 ## `test_skill_lint_gate.py`
 

@@ -13,9 +13,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Iterable, Sequence
 
 from .cardschema import build_card_schema
+from .checks import CheckPortFactory, check_subscriber
 from .composition import compose_subscribers, stock_factories, stock_validators
 from .definition import BacklogDefinition, load_backlog, resolve_definition
 from .dispatch import Subscriber, bind_subscribers, validate_requires_states
@@ -164,6 +165,10 @@ class Workspace:
     #: integrator override for kernel construction; ``None`` (or a ``None``
     #: return) means the portable default builds the instance.
     kernel_builder: KernelBuilder | None = field(default=None, compare=False)
+    #: integrator-supplied check executor, per catalog. Given one, EVERY instance
+    #: this workspace composes carries its own check subscriber — the invariant
+    #: ADR-0017 §3 rests on, held here and not re-remembered per road (HATS-1575).
+    check_port: CheckPortFactory | None = field(default=None, compare=False)
 
     # ----- discovery --------------------------------------------------------
 
@@ -173,6 +178,7 @@ class Workspace:
         roots: Sequence[RackRoot],
         *,
         kernel_builder: KernelBuilder | None = None,
+        check_port: CheckPortFactory | None = None,
     ) -> "Workspace":
         """Per root: the default tasks catalog is ALWAYS an instance (packaged
         definition if it has no file, honoring the deprecated ``task_prefix``
@@ -200,7 +206,11 @@ class Workspace:
                 )
             _check_prefix_uniqueness(here, root_id)
             instances.extend(here)
-        return cls(instances=tuple(instances), kernel_builder=kernel_builder)
+        return cls(
+            instances=tuple(instances),
+            kernel_builder=kernel_builder,
+            check_port=check_port,
+        )
 
     # ----- routing ----------------------------------------------------------
 
@@ -227,6 +237,16 @@ class Workspace:
         absent that, its ``name`` (the same token its per-backlog create group is
         named by, HATS-1036)."""
         return tuple((i.definition.cli_alias or i.name) for i in self.instances)
+
+    def selectors_in_root(self, root_id: RootId) -> tuple[str, ...]:
+        """Every selector a backlog of ``root_id`` answers to — both spellings.
+
+        The roster the check channel tells "addressed to a sibling backlog" from
+        "addressed to nothing at all" by: only that difference makes a typo loud
+        (HATS-1545 R10). Read off the mounted instances rather than re-walking
+        the tree, which ``backlog_selectors_in_root`` must do having no workspace.
+        """
+        return _selectors_of(i.definition for i in self.instances if i.root_id == root_id)
 
     def instance_by_name(self, name: str) -> BacklogInstance:
         """Route a backlog SELECTOR (``--backlog``) to its instance by CLI name —
@@ -259,7 +279,12 @@ class Workspace:
             kernel = self.kernel_builder(instance)
             if kernel is not None:
                 return kernel
-        return portable_kernel(instance, exists_checker=self._existence_checker_for(instance))
+        return portable_kernel(
+            instance,
+            exists_checker=self._existence_checker_for(instance),
+            check_port=self.check_port,
+            known_backlogs=self.selectors_in_root(instance.root_id),
+        )
 
     def extension(self, name: str, *, root: RootId | None = None) -> Subscriber:
         """The bound ambient extension named ``name`` on the instance that declares
@@ -281,7 +306,12 @@ class Workspace:
             raise AmbiguousExtensionError(name, sorted({i.root_id for i in matches}))
         instance = matches[0]
         _kernel, subscribers = _compose_portable(
-            instance, self._existence_checker_for(instance), None, None
+            instance,
+            self._existence_checker_for(instance),
+            None,
+            None,
+            check_port=self.check_port,
+            known_backlogs=self.selectors_in_root(instance.root_id),
         )
         for sub in subscribers:
             if sub.name == name:
@@ -373,6 +403,9 @@ def _compose_portable(
     exists_checker: "ExistenceChecker | None",
     factories: object,
     validators: object,
+    *,
+    check_port: CheckPortFactory | None = None,
+    known_backlogs: Sequence[str] = (),
 ) -> tuple[Kernel, list[Subscriber]]:
     """The portable composition path (definition -> subscribers -> Kernel -> bind),
     reusing one factory/validator registry (ADR-0017 §4/§5). Returns the kernel AND
@@ -382,6 +415,12 @@ def _compose_portable(
     facs = stock_factories() if factories is None else factories  # type: ignore[assignment]
     vals = stock_validators() if validators is None else validators  # type: ignore[assignment]
     subscribers: list[Subscriber] = compose_subscribers(defn, catalog, facs)
+    if check_port is not None:
+        # Not declared in backlog.yaml on purpose: a channel a backlog can forget
+        # to opt into is the silent absence this epic exists to remove.
+        subscribers.append(
+            check_subscriber(defn, port=check_port(catalog), known_backlogs=known_backlogs)
+        )
     validate_requires_states(subscribers, defn.topology, source=str(catalog))
     kernel = Kernel(
         catalog,
@@ -404,11 +443,21 @@ def portable_kernel(
     exists_checker: "ExistenceChecker | None" = None,
     factories: object = None,
     validators: object = None,
+    check_port: CheckPortFactory | None = None,
+    known_backlogs: Sequence[str] = (),
 ) -> Kernel:
     """Build a kernel for one instance via the portable composition path (ADR-0017
     §4/§5). The integrator attaches its tasks-discipline code channel elsewhere; a
-    HYP/PROP instance gets exactly this portable kit plus its declared extensions."""
-    kernel, _subscribers = _compose_portable(instance, exists_checker, factories, validators)
+    HYP/PROP instance gets this portable kit, its declared extensions, and — given
+    a ``check_port`` — the check subscriber every mounted backlog runs."""
+    kernel, _subscribers = _compose_portable(
+        instance,
+        exists_checker,
+        factories,
+        validators,
+        check_port=check_port,
+        known_backlogs=known_backlogs,
+    )
     return kernel
 
 
@@ -472,21 +521,30 @@ def _check_name_uniqueness(instances: Sequence[BacklogInstance], root_id: RootId
             raise DuplicateBacklogNameError(selector, count, root_id)
 
 
+def _selectors_of(definitions: Iterable[BacklogDefinition]) -> tuple[str, ...]:
+    """The selector rule itself, in one place: a backlog answers to its ``name``
+    and to its ``cli_alias``. Two callers derive the roster from two sources —
+    mounted instances and a fresh scan — and a rule spelled twice is a roster
+    that drifts, which this channel reads as "no backlog answers to that"."""
+    selectors: set[str] = set()
+    for defn in definitions:
+        selectors.update({defn.name, defn.cli_alias or defn.name})
+    return tuple(sorted(s for s in selectors if s))
+
+
 def backlog_selectors_in_root(root: RackRoot) -> tuple[str, ...]:
     """Every selector a backlog of ``root`` answers to, tasks catalog included.
 
-    Public because the check channel needs to tell "addressed to a sibling
-    backlog" from "addressed to nothing at all" — the two are the same fact from
-    a single instance's side, and only the difference makes a typo loud
-    (HATS-1545 R10).
+    Public for the road that has no workspace to read the roster off — the
+    integrator's tasks kernel, built outside :class:`Workspace`. Inside one,
+    :meth:`Workspace.selectors_in_root` answers the same question without the
+    second walk.
     """
     defn = resolve_definition(
         root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
     )
-    selectors = {defn.name, defn.cli_alias or defn.name}
-    for _catalog, sibling in _scan_sibling_backlogs(root.tasks_dir):
-        selectors.update({sibling.name, sibling.cli_alias or sibling.name})
-    return tuple(sorted(s for s in selectors if s))
+    siblings = [sibling for _catalog, sibling in _scan_sibling_backlogs(root.tasks_dir)]
+    return _selectors_of([defn, *siblings])
 
 
 def _split_qualifier(item_id: str) -> tuple[RootId | None, str]:
