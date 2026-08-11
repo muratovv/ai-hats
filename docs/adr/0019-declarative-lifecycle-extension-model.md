@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (HATS-1139, 2026-07-24; last revised at rev 9 — HATS-1541, 2026-08-10).
+Accepted (HATS-1139, 2026-07-24; last revised at rev 10 — HATS-1545, 2026-08-10;
+the text was brought in line with rev 10 by HATS-1571, 2026-08-11).
 Governs epic **HATS-1138** — the declarative mechanism (HATS-1152 → 1140 → 1241
 → 1141 → 1142 → 1143), its consumers (HATS-1137 merge-correctness gate,
 HATS-1144 hunk-review) and the re-bindings (HATS-1145, HATS-1146). The substrate
@@ -13,8 +14,9 @@ review. Driver: HATS-1134 (incident HATS-1130).
 
 **It became `Accepted` at rev 8 (HATS-1540), on the condition it set itself:** a
 live consumer bound and proven to refuse, not merely a merged mechanism. The
-`maintainer` role binds `maintainer-quality-gate/hooks/done-gate.sh` to
-`edge:review--done` **and** `wt:pre-merge`, and both refusals are asserted
+`maintainer` role binds `maintainer-quality-gate/hooks/done-gate.sh` twice — once
+under `apps.rack.tasks` at `edge:review--done`, once under `apps.wt` at
+`pre-merge` (the rev-10 spelling) — and both refusals are asserted
 against the real binary — each one also asserted to flip to a pass when the row
 is removed (`tests/e2e/test_done_gate.py`).
 
@@ -53,10 +55,24 @@ re-cut to a fail-open dispatcher — and the mechanics halves of D4/D5 were
 the extension model only. **Rev 9 (HATS-1541, 2026-08-10) splits ownership of a
 point between the integrator and the application that owns the point** — see the
 new **D11**, and the paragraphs D3 and D9 lost to it. Nothing about the DSL
-changes at rev 9: the `checks:` mapping and every point name are exactly what
-rev 8 shipped.
+changed at rev 9: the `checks:` mapping and every point name were exactly what
+rev 8 shipped. **Rev 10 (HATS-1545, 2026-08-10) then replaced that DSL**: the flat
+`checks:` list became `composition.apps.<app>`, with the application's own grammar
+below the app key, `run: <skill>/<path>` in place of the `skill:`/`script:` pair,
+and `at:` in place of `on:` (YAML 1.1 reads a bare `on` as `True`). A config still
+carrying `checks:` now gets a typed refusal. **HATS-1571 (2026-08-11) carried no
+decision**: it corrected the prose rev 10 left behind — the D3 table, D6, the
+dedup key, *Consequences*, and the claim that ai-hats validates point names for
+two namespaces. Where this document describes a behaviour a currently open card
+will change, that card is named at the paragraph.
 
 ## Context
+
+> **This section is the world of 2026-07-23, kept as the record of why the
+> decision was taken; read its present tense as past.** What it describes has
+> since been acted on: `lifecycle_hooks` is gone (HATS-1147), `Composition`
+> carries `apps` (rev 10), and the missing precondition point on `merge` exists
+> (HATS-1540). The *Decision* sections below describe today.
 
 ### The accretion
 
@@ -109,8 +125,12 @@ has **no extension point at all** (`wt_in` fires at create, `wt_out` at teardown
 > «пользователи смогут подключать свои скрипты в fsm и получать свое кастомное
 > поведение»
 
-Needs two things the current model cannot express: a **named catalog of
-attachment points**, and a **binding layer the composer owns**.
+Needs two things the 2026-07-23 model could not express: a **named set of
+attachment points**, and a **binding layer the composer owns**. The second is
+what shipped. The first was answered differently than this line expected: there
+is no single catalog, because D11 and rev 10 put the point vocabulary with the
+application that fires it — ai-hats knows the names of one app's points, its
+own (`wt`), and carries every other app's verbatim.
 
 ## Decision
 
@@ -126,7 +146,9 @@ with different lifetimes; folding them in buys symmetry at the cost of coupling.
 One new field on `Composition`; **no new `SKILL.md` frontmatter**:
 
 ```yaml
-# library/usage/traits/hunk-review-trait/config.yaml
+# Illustrative — a trait in a user-scope library. The skill it binds lives
+# outside this repo, so no in-tree path is shown; the one binding this
+# repository ships is in `usage/roles/maintainer/config.yaml` (HATS-1540).
 name: hunk-review-trait
 composition:
   skills: [hunk-review-comments]
@@ -169,14 +191,18 @@ What this buys against the two consequences above:
 - **Role control.** A role composing the trait is gated; one that does not, is
   not. Unexpressible in Rev 1.
 - **One mechanism.** Bindings resolve through the composer that already handles
-  traits/rules/skills — same overlay precedence, last-wins, dedup.
+  traits/rules/skills — same overlay precedence, then this channel's own dedup:
+  **first declaration keeps the slot, the strictest `on_error` wins, and a second
+  declaration of the same row warns** rather than replacing it (not last-wins —
+  a later relaxation must not disarm an earlier gate).
   `lifecycle_hooks`' union-scope special case disappears rather than being
   extended to a fifth channel.
-- **Referential integrity.** The skill named by `run:` (its first segment; the
-  pair `skill:`/`script:` below is the pre-1545 spelling) naming a skill nobody composed is a loud
-  composition error (a skill an overlay *removed* is a warning — D6); `script:`
-  is health-checked at composition for exists / non-empty / shebang / executable
-  per **D6**. *(Rev 7: this bullet used to attribute that check to "the existing
+- **Referential integrity.** `run:`'s first segment names the skill; naming a
+  skill nobody composed is a loud composition error (a skill an overlay
+  *removed* is a warning — D6). The rest of `run:` is the path inside that
+  skill's directory, health-checked at composition for **containment** (it must
+  resolve inside the declaring skill's directory), exists, non-empty, shebang
+  and exec bit, per **D6**. *(Rev 7: this bullet used to attribute that check to "the existing
   `_health_check`". Rev 4 recorded that the existing one never examined the exec
   bit, but corrected only its own section and left this sentence standing — the
   check D6 now specifies is new, not inherited.)* Binding does **not** implicitly
@@ -188,70 +214,77 @@ that name. Duplicate authoring for indirection no current consumer needs
 (`design-minimalism`). A moved script is caught loudly by the health-check, not
 silently.
 
-### D3 — The point catalog
+### D3 — The points, and who owns each one
 
-> **Spelling note (HATS-1545).** The `point` column below is the *pre-1545*
-> spelling, kept because the rest of this section reasons about it. There is no
-> single catalog any more: the application owns its point names, and the
-> namespace prefix became the `apps.<app>` key. As written today, `edge:…` and
-> `card:pre-create` are **rack** cargo under `apps.rack.<backlog>`, and the `wt:`
-> rows lose their prefix under `apps.wt` — `wt:pre-merge` is `at: [pre-merge]`.
-> The `wt` names ai-hats validates are `check_points.wt_points()`; a name in any
-> other app's cargo is that app's question. See D2 for the shape and ADR-0017 §3
-> for the rack's own grammar.
+**There is no single catalog.** Since rev 9 (D11) the point vocabulary belongs to
+the application that fires the point, and since rev 10 the namespace prefix *is*
+the `apps.<app>` key. So a point is now identified by two things — the app key it
+sits under, and its `at:` name — and the three columns that matter are who
+validates the name, who fires it, and whether a row there can veto.
 
-| point                                  | when                                                                                          | may veto           | replaces          | execution               |
-| -------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------- | ----------------------- |
-| `edge:<from>--<to>`                    | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | `lifecycle_hooks` | implemented (HATS-1141) |
-| `card:pre-create`                      | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | yes                | **new**           | planned (HATS-1404)     |
-| `wt:pre-merge`                         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes                | **new**           | implemented (HATS-1540) |
-| `wt:create`                            | after `git worktree add`                                                                      | no (warn-continue) | `worktree.wt_in`  | planned (HATS-1146)     |
-| `wt:teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | `worktree.wt_out` | planned (HATS-1146)     |
-| `wt:pre-reclaim`                       | before a worktree is reclaimed — not in the catalog yet, see below                            | yes                | **new**           | planned (HATS-1145)     |
+| `apps.<app>` | `at:`                               | when                                                                                          | may veto           | name validated by                   | fired by                      |
+| ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------- | ----------------------------- |
+| `rack`       | `edge:<from>--<to>`                 | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | rack, against the topology it runs  | `CheckSubscriber` (HATS-1141) |
+| `rack`       | `card:pre-create`                   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | —                  | **nobody**                          | **nobody** (HATS-1578)        |
+| `wt`         | `pre-merge`                         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes                | ai-hats, `check_points.wt_points()` | `wt_lifecycle.py` (HATS-1540) |
+| `wt`         | `create`                            | after `git worktree add`                                                                      | no (warn-continue) | ai-hats, `check_points.wt_points()` | **nobody** (HATS-1577)        |
+| `wt`         | `teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | ai-hats, `check_points.wt_points()` | **nobody** (HATS-1577)        |
+| `wt`         | `pre-reclaim`                       | before a worktree is reclaimed                                                                | yes                | **nobody** — not in `wt_points()`   | **nobody** (HATS-1145)        |
 
-The catalog is **ai-hats's own namespaces only** since rev 9 (D11), and since
-HATS-1545 that means the `wt:` rows alone: `check_points.wt_points()` knows those
-names and a typo there is refused at composition. `card:pre-create` left with the
-namespace prefix — cards are the rack's, so the name is rack cargo now, validated
-by nobody and fired by nobody (it never had a caller; HATS-1404 would give it
-both). The `edge:` row is **not** in that catalog and is not validated by
-ai-hats at all; its grammar, its topology and its subscriptions belong to the
-rack. The `execution` column tracks something else —
-the caller that actually fires the point — and there the rows part company.
-**`edge:` has one:** `ai_hats_rack.checks.CheckSubscriber`, which subscribes at
-`Phase.IN_LOCK` priority 15 to
-every edge key of the topology the kernel runs, so a binding declared there
-fires. **`wt:pre-merge` fires since HATS-1540** — in `merge()`, after the cheap
-local guards and before every mutation — and the `maintainer` role binds there.
-**The `card:` and remaining `wt:` rows are still catalog-only**: each owes the
-call site named in its column, and until then a binding to one of them validates
-at composition and then never runs, which is precisely the silent no-op this ADR
-exists to remove; it is tolerable only because no consumer binds there yet.
+Two independent facts the table separates, because conflating them is how a gate
+goes silently missing:
 
-Two roads publish to a base branch without firing `wt:pre-merge`, both by
+**Who validates the name.** ai-hats validates `at:` names for the one app it
+fires itself — `wt`, via `check_points.wt_points()`, where a typo is refused at
+composition and `on_error: warn` is refused at the data-protection points. Every
+other app's names are opaque cargo: `edge:` and `card:pre-create` are the rack's,
+and ai-hats does not look at them (`owns_app` is `app == "wt"`). The rack in turn
+validates `edge:` against the topology it is running, but a name its grammar does
+not parse — `card:pre-create` among them — is currently skipped in silence rather
+than named; **HATS-1578 owns that gap.**
+
+**Who fires it.** Of the six rows, **two have a caller**: `edge:` through
+`CheckSubscriber`, subscribed at `Phase.IN_LOCK` priority 15 to every edge key of
+the topology the kernel runs; and `wt` `pre-merge`, inside `merge()` after the
+cheap local guards and before every mutation, which is where the `maintainer`
+role binds. The other four validate at composition — or, for `card:pre-create`
+and `pre-reclaim`, do not even do that — and then never run. **That is exactly
+the silent no-op this ADR exists to remove**, and it is live today, not
+hypothetical: a role can arm `apps.wt` `at: [create]` and be told nothing.
+Owners: **HATS-1577** (the `wt` points with no caller), **HATS-1578** (the rack
+points whose name nobody rejects), **HATS-1145** (`pre-reclaim`, which needs the
+point before it can have a caller).
+
+Two roads publish to a base branch without firing `pre-merge`, both by
 **recorded decision** rather than omission, because this ADR's *Risk* section
 demands one or the other. The `merge()` short-circuits (HATS-596 already-merged,
 HATS-1370 patch-integrated) tear a worktree down without merging: their content
 reached the base by another route, so gating them would refuse a supported
 recovery instead of protecting anything. And `cleanup(IsolationMode.SQUASH)` —
 the sub-agent teardown — commits to the base and does **not** fire it: `cleanup`
-suppresses a lifecycle veto by design (ADR-0013 [5] D8, so a sub-agent's own
+suppresses a lifecycle veto by design (ADR-0013 [3] D8, so a sub-agent's own
 error is not masked), so a refusal there would be swallowed and the gate would
 look armed while passing everything. Making it non-suppressible is a change to
 D8's contract, not to that call site; revisit behaviour and this paragraph
 together. Both decisions are pinned by tests in
 `packages/ai-hats-wt/tests/test_wt_pre_merge_point.py`.
-`wt:pre-reclaim` is the one row `check_points.py` does not know at all; it is
-listed here, and in `docs/glossary.md`, so the catalog and the glossary agree
-about what is coming.
+`pre-reclaim` is the one `wt` name `check_points.wt_points()` does not know at
+all — the other two unfired names, `create` and `teardown[*]`, are in it. It is
+listed above, and in `docs/glossary.md`, so the two agree about what is coming.
+(It is not the only unvalidated name in the table: the rack's two are unvalidated
+by ai-hats *by design*, being another app's cargo.)
 
-`card:pre-create` is not reachable through the FSM dispatcher: `after_create`
-builds its own extension list and takes no `extra_subscribers`, so the point
-needs its own call site rather than a subscription (owner: HATS-1404).
+`card:pre-create` is not reachable through the FSM dispatcher: card creation is
+not an event at all — the rack's event kinds carry no creation event, and
+`Kernel.create` dispatches nothing. The only creation callback is `after_create`,
+a provider hook that runs *after* the card exists and takes no subscribers. So
+the point needs its own call site rather than a subscription (owner: HATS-1404
+for the consumer; HATS-1578 for the question of who owns the name meanwhile).
 
 `edge:` names validate against the topology **the kernel is running** (full state
-product — forced transitions fire non-topology edges); the existing
-`_valid_event_names()` rule carries over unchanged. *Rev 9 closed the gap that
+product — forced transitions fire non-topology edges); the rack does that with
+`all_edge_keys(topology)`, and ai-hats validates no edge name at all. *Rev 9
+closed the gap that
 stood here from HATS-1140 to HATS-1540* — the catalog resolved that topology from
 the *packaged* tasks backlog while the kernel ran the catalog-local one
 (`resolve_definition`), so a binding to an edge of a sibling backlog — this
@@ -264,7 +297,7 @@ is now simply not this instance's business — it may be a sibling backlog's, an
 mistaking one for the other is what made a typo on `edge:reviw--done` abort an
 unrelated `edge:brainstorm--plan`.
 
-`wt:pre-merge` is a **precondition**, in the same class as the accepted
+`pre-merge` is a **precondition**, in the same class as the accepted
 `WorktreeDirtyError` / `WorktreeDriftError` / `WorktreeMergeConsentError`
 refusals — explicitly *not* the teardown-veto rejected by ADR-0012 [1] / HATS-775,
 which fires after the merge commit exists and can only strand a worktree.
@@ -279,12 +312,15 @@ the child's stdout tail as the reason / anything else broke, including
 shared env base — moved to the execution primitive's contract, **ADR-0020 [4]
 D2** (split 2026-07-29; the "refuse is 2, not 1" rationale and its rev-4
 history travel with it). This section owns what a *binding* does with the
-outcome — the policy layer `checks:` adds on top of the primitive.
+outcome — the policy layer a `composition.apps` row adds on top of the primitive.
 
 `on_error: refuse | warn`, default **`refuse`** (preserves today's fail-closed
 posture). A consumer opts into `warn` explicitly — but **`on_error: warn` is
-rejected at composition for `wt:pre-merge` and `wt:teardown[*]`**: failure policy
-at data-protection points belongs to the point catalog, not the binding author.
+rejected at composition for `apps.wt` at `pre-merge` and `teardown[*]`**: failure
+policy at a data-protection point belongs to the app that owns the point, not to
+the binding author. That is enforceable only for ai-hats's own app: the authority
+is `check_points.wt_points()`, which maps each `wt` name to whether `warn` is
+legal there. For another app's points the equivalent lever, if any, is that app's.
 ADR-0012 [1] deliberately put that lever in the engine (`wt_lifecycle.py`) so a
 component could not opt out; moving it into user YAML would regress that.
 
@@ -307,7 +343,7 @@ corruption earlier, at composition.)*
 Separating "I refuse" from "I broke" is load-bearing: a check that crashes on a
 task with no worktree must not wedge the backlog. The hunk binding declares
 `on_error: warn` — a *policy* gate fails open, while *data protection*
-(`wt:teardown` harvest) keeps `refuse`.
+(`apps.wt` at `teardown[*]`, the harvest) keeps `refuse`.
 
 ### D5 — Check-point env vocabulary
 
@@ -339,7 +375,7 @@ a script cannot tell "this card is not mine" from "`AI_HATS_DIR` leaked" — the
 ambiguity that turned master red in HATS-1538. The engine states the context and
 decides nothing (supervisor ruling 2026-08-08): the scoping policy belongs to
 the script's author, where it is visible and testable. No second variable carries
-the prefix; it is derivable from `AI_HATS_TASK_ID`. At `wt:pre-merge` the
+the prefix; it is derivable from `AI_HATS_TASK_ID`. At `apps.wt` `pre-merge` the
 variable is absent — that point is not a backlog operation — and
 `AI_HATS_BRANCH_NAME` rides instead, this channel's existing spelling.
 
@@ -347,18 +383,28 @@ Existing point-specific variables keep their names; migrated scripts do not chur
 
 ### D6 — Validation: loud on structure, forgiving on vocabulary
 
-- Unknown namespace / point, malformed row, missing `skill`/`script` → fail loud
-  at composition, naming the trait/role and the entry. A gate that silently fails
-  to install is the HYP-078 / HATS-961 hole.
-- Unknown *optional field* on a row → warn and ignore, so a newer trait does not
-  hard-fail composition on an older engine (ADR-0012 [1] Revisions #3).
+- A malformed row, a missing or unparseable `run:`, an empty `at:` → fail loud at
+  composition, naming the trait/role and the entry. A gate that silently fails to
+  install is the HYP-078 / HATS-961 hole. **An unknown point name is loud only
+  where ai-hats owns the app** (`wt`); another app's names are cargo it cannot
+  judge — see D3 for where that leaves the rack's.
+- **Every key that is not `run:` / `at:` / `on_error:` is carried verbatim as
+  cargo, silently.** Rev 5 specified "unknown *optional field* → warn and ignore"
+  as the forward-compatibility posture (ADR-0012 [1] Revisions #3); rev 10 got
+  the same property structurally instead — ai-hats cannot warn about a key it has
+  no opinion on, because the whole point of the cargo is that the grammar above
+  `run:` is the application's. Forward compatibility now comes from opacity, not
+  from a warning.
 - Script health-check keeps `lifecycle_hooks._health_check`'s *posture* (missing
   / empty / shebang-less → loud, "a no-op gate is a broken gate") but moves to
   **composition time**, since D9 removes the materialization step it ran in.
-- `script:` must resolve **inside** the declaring skill's directory. Today
-  `collect_lifecycle_hooks` joins `skill_dir / script` unresolved
-  (`lifecycle_hooks.py`), so `../../../x.sh` escapes; under D2 the binding is
-  authored in a *trait* that need not own the skill, which makes it worse.
+- **Containment**: `run:`'s tail must resolve **inside** the declaring skill's
+  directory, so `../../../x.sh` cannot escape. This matters more under D2 than it
+  did before, because the binding is authored in a *trait* that need not own the
+  skill. *(Rev 5 recorded this as an open hole in the channel it replaced, where
+  `collect_lifecycle_hooks` joined `skill_dir / script` unresolved. That module
+  is gone with `lifecycle_hooks` itself (HATS-1147), and the check is implemented
+  here: both sides are resolved before the comparison.)*
 
 **Amended at rev 7 (HATS-1240):**
 
@@ -375,20 +421,42 @@ Existing point-specific variables keep their names; migrated scripts do not chur
   `core/skills/worktree-isolation/hooks/wt_entry_gate.py` is `100644`, and it is
   a live declared `runtime_hooks.PreToolUse` binding, not a data file. It works
   today only because the runtime-hook materializer rewrites the mode on copy
-  (`hooks_manager.py`, `mode=0o755`) while the surface then executes the copied
-  path bare. So this check would fail exactly one binding that works today — and
-  that is the argument for it, not against: the exec bit is load-bearing and
-  currently masked by the copy. Adopting the check means fixing that file's mode
-  in the same change.
-- **A binding whose `skill:` an overlay removed is a warning, not an error.**
-  Rev 5 listed uncomposed `skill:` among the loud failures. That is right for a
+  while the surface then executes the copied path bare. So this check would fail
+  exactly one binding that works today — and that is the argument for it, not
+  against: the exec bit is load-bearing and currently masked by the copy.
+  Adopting the check means fixing that file's mode in the same change.
+  **Discharged.** The check is implemented, and both halves of the audit above
+  have since moved: `wt_entry_gate.py` is `100755` in the index, and the
+  materializer no longer rewrites a mode (the one remaining `0o755` in
+  `hooks_manager.py` is the git-hooks dispatcher, a different subject).
+- **A binding whose skill an overlay removed is a warning, not an error.**
+  Rev 5 listed an uncomposed skill among the loud failures. That is right for a
   *typo* and wrong for a deliberate `--remove-skill`, which an overlay may legally
   apply to a trait-brought skill (HATS-1046). Hard-failing would force a user
   making a legitimate removal to author a new role; staying silent would drop a
   gate they expected. So: warn, naming the trait that bound it, drop the binding,
-  and continue composing. A `skill:` that was never composed by anyone remains a
-  loud error — the two cases are distinguishable, because one of them is a
-  recorded removal (supervisor ruling, 2026-07-26).
+  and continue composing. A skill (`run:`'s first segment) that was never composed
+  by anyone remains a loud error — the two cases are distinguishable, because one
+  of them is a recorded removal (supervisor ruling, 2026-07-26). *Whether one
+  stderr line is enough for "you just disarmed a gate" is open — **HATS-1535**.*
+
+**Added at rev 10 (HATS-1545)**, recorded here because they are part of the same
+posture and were not written down when they shipped:
+
+- **A `composition.apps.<app>` block no integration collects → WARN**, naming the
+  declarers and the app keys this build does collect. Without it, `apps.rak:` is a
+  gate that can never install and says nothing. The roster of collected apps is
+  *not* an authority over point names — it only decides whether some integration
+  will pick the block up.
+- **The same row declared twice → WARN, not an error**, naming both declarers and
+  the surviving `on_error`. Refusing would force a project to fork a shipped role
+  to add a second declarer; see D2 for the dedup that follows.
+- **A non-string key anywhere under `composition:` → typed refusal**, and so is a
+  **duplicate key** in a component config. Both are structural: YAML resolves a
+  duplicate key to the last value silently, and a bare `on` to `True`, so a
+  declaration can be destroyed before any validator sees it. This is the one class
+  that refuses rather than warns — you cannot warn about what is no longer in the
+  parsed structure.
 
 One posture, replacing today's three.
 
@@ -430,7 +498,7 @@ and the running topology could disagree.
 **What rev 5–6 said, and why it was adopted.** Bindings are copied nowhere: the
 composed skill tree is *already* materialized per session at
 `<ai_hats_dir>/.cache/sessions/<sid>/plugin/skills/<skill>/…`, so a binding
-`{skill, script}` resolves directly into it and the runner executes it in place.
+the path `run:` resolves to sits directly in it and the runner executes it in place.
 That was correct when it was written — claude was then the **only** surface with
 a per-session tree.
 
@@ -454,7 +522,7 @@ borrowing the *provider's* cache instead of owning one.
 1. **The resolution source is the composition** — *implemented (HATS-1140)*. Every skill in a
    `CompositionResult` already carries `ResolvedComponent.source_path`, the
    skill's own directory (`ai_hats_core/composition.py`). A binding resolves as
-   `source_path / script`. Surface-independent by construction: no code consults
+   `source_path` joined with `run:`'s tail. Surface-independent by construction: no code consults
    a provider layout, so no surface can be forgotten.
 2. **Inside a session, the root is the surface's own skill mirror** — *implemented
    (HATS-1540)*, asked of the provider through `Provider.session_skills_root`
@@ -487,7 +555,7 @@ borrowing the *provider's* cache instead of owning one.
    `check_snapshot.legacy_launch_notices` announces that at launch.
 3. **Outside a session the root is the live library** — *implemented (HATS-1141)*. `rack transition` from a
    bare terminal, from cron, or via the standalone `rack` binary has no
-   `AI_HATS_SESSION_ID` (`_session_id()` returns `""` there) and no snapshot, so
+   `AI_HATS_SESSION_ID` (`session_id()` returns `""` there) and no snapshot, so
    the runner composes the active role from config and resolves from the library.
    The two modes are not a blemish: the non-negotiable property is that the
    out-of-session mode is **live**, never **absent**. Fail-open there would leave
@@ -498,8 +566,8 @@ borrowing the *provider's* cache instead of owning one.
    change it is part of. Note that clause 2 does **not** discharge this on its
    own: a snapshot copies whatever `source_path` points at, so a session started
    inside a worktree would freeze that branch's bytes. The guard belongs to the
-   resolver, and sits there: `check_resolve._reject_worktree_root` walks up from
-   the path the *composition* resolved (`source_path / script`) to the nearest
+   resolver, and sits there: `check_resolve.reject_worktree_root` walks up from
+   the path the *composition* resolved (`source_path` joined with `run:`'s tail) to the nearest
    `.git`. A `.git` directory is the main checkout and resolves. A `.git` *file*
    is either a linked worktree or a submodule working tree, told apart by the
    `gitdir:` it carries — `…/worktrees/<id>` is refused, `…/modules/<path>` is a
@@ -549,7 +617,7 @@ cline but left the three destination paths intact. The layering question wants a
 fresh card under epic HATS-1092. It would also be a cross-package refactor of
 three surfaces behind the published `ai_hats.providers` entry point, and it
 would rest on undocumented symlink behaviour of three third-party scanners.
-Nothing is owed to it later: a binding names `{skill, script}`, not a path, so
+Nothing is owed to it later: a binding names `run: <skill>/<path>`, not an absolute path, so
 whoever adopts that shape moves only the resolution root.
 
 ### D11 — ai-hats carries the declaration; the application that owns the point parses it
@@ -558,7 +626,8 @@ whoever adopts that shape moves only the resolution root.
 decides that they run at all**, and it moves a responsibility rather than adding
 one.
 
-**What was wrong.** ai-hats held the grammar of a point it does not own.
+**What was wrong.** *(Past tense throughout: both symbols named here were deleted
+by this rev.)* ai-hats held the grammar of a point it does not own.
 `check_points.known_points()` built the `edge:` half of its catalog from the
 **packaged** tasks backlog while the kernel ran the resolved one, and
 `check_resolve._guard_topology` existed only to *name* that divergence — it could
@@ -574,19 +643,35 @@ shipped row an hour after HATS-1137 landed it.
 **The split.**
 
 1. **ai-hats is the carrier.** It composes the role, tags every row with the
-   component that declared it, resolves `{skill, script}` to an absolute path and
+   component that declared it, resolves `run:` to an absolute path and
    proves that path can run (containment, exists, non-empty, shebang, exec bit —
-   D6), applies D9's root rule, and hands the row over. It validates the name
-   only for the namespaces **it owns** (`card:`, `wt:` — the ones whose call
-   sites are its own code). Every other namespace it carries verbatim: what the
-   name means is not its question.
+   D6), applies D9's root rule, and hands the row over. It validates the `at:`
+   names of the **one app it fires itself** — `wt`, whose call sites are its own
+   code — against `check_points.wt_points()`. Every other app's cargo it carries
+   verbatim: what the name means is not its question. *(Rev 9 wrote this clause as
+   "`card:`, `wt:`". That was already wrong when rev 10 moved cards under
+   `apps.rack`: `card:pre-create` is the rack's, and nothing validates it — see
+   D3.)*
 2. **The rack parses, filters and subscribes.** `edge:<from>--<to>` is the
    rack's grammar; the topology it validates against is the one
    `resolve_definition` gave the kernel, the same object the dispatcher runs.
-   A point that is not an edge of **this** instance's topology is not this
-   instance's business and is skipped — not aborted. That is the whole of the
-   third silence: a sibling backlog's row and a typo look identical to ai-hats
-   and are told apart by the only party that holds all the topologies.
+   Two different misses, two different answers, and rev 10 added the loud half:
+   - **The backlog address is loud.** A row at the wrong depth under `apps.rack`,
+     or naming a backlog no mounted instance answers to, is a typed refusal that
+     names what *is* mounted. A backlog is addressed by its `name` **or** its
+     `cli_alias` (ADR-0017 §3).
+   - **The point name is quiet.** A point that is not an edge of **this**
+     instance's topology is skipped, not aborted, because from the carrier's side
+     a sibling backlog's row and a typo are the same fact. That was the whole of
+     the third silence, and telling the two apart is what the only holder of all
+     the topologies can do — *but does not do today*: the skip also swallows a
+     name the grammar cannot parse at all. **HATS-1578** owns that.
+
+   Two gaps stand behind this clause and are named rather than papered over:
+   a row addressed to a **sibling** backlog reaches no subscriber at all, on
+   either road (**HATS-1575**), and a project that renames its tasks backlog
+   without setting `cli_alias: tasks` turns the loud half into a refusal on every
+   transition (**HATS-1576**).
 3. **The rack does not execute.** `subprocess` is forbidden in it by an
    AST-level import pin (`packages/ai-hats-rack/tests/test_import_hygiene.py`),
    not merely by a docstring. So the row travels as a declaration and the
@@ -610,7 +695,7 @@ shipped row an hour after HATS-1137 landed it.
    fixed.** Both delivery roads run through the integrator — the port is loaded
    from an entry point the integrator registers, and the composition that
    produces the rows is integrator-only (HATS-865). A project-level artifact
-   would change that and is forbidden by ADR-0021 [6] M5 (the content of a
+   would change that and is forbidden by ADR-0021 [5] M5 (the content of a
    project may not depend on which role was launched). For a bare rack the state
    is therefore "nothing was declared", not "an executor is missing"; it is
    indistinguishable from the truth in the only case that can arise, since with
@@ -622,13 +707,20 @@ longer true: a name the rack does not recognise surfaces the next time the rack
 runs, which for an unbound point may be never. Validation moved from
 **compose-time to consume-time**, and it bought the three silences above. The
 compensation is introspection — a command that reports what was picked up and in
-what state — which is **HATS-1546** and deliberately not this rev: it is a
+what state. **Half of it has since landed** (HATS-1548): `describe_checks`
+resolves every binding the way the session will and reports where each one runs
+from, and it is wired into the launch report and `ai-hats --dry-run`. What is
+still owed is the *live* half — a doctor that reports armed / no-executor /
+foreign-project / stale-session per binding, plus the startup invocation and its
+return-code table — which is **HATS-1546** and deliberately not this rev: it is a
 different risk (a name colliding with the existing `rack doctor`, recursion
 through a startup hook) and must not be proven in the same pass. Until then the
 honest statement is that a typo in an `edge:` point is silent, where before it
 was loud and took an unrelated transition down with it.
 
-**Rejected: teach `known_points()` to resolve the project's topology** (this was
+**Rejected: teach `known_points()` to resolve the project's topology** *(the
+function no longer exists — this rev deleted it; kept as the rejected shape)*
+(this was
 card HATS-1534, cancelled into this one). It closes one silence of three — the
 catalog would stop validating against a topology nobody runs — and leaves
 `_guard_topology` unresolvable, because a point outside the resolved topology
@@ -641,9 +733,12 @@ it, on the composition-resolved path before the root is picked (D9 clause 4):
 bound to the rebased path it would inspect the cache root, which is outside every
 checkout and therefore inside nothing, and would always pass. Dedup and
 provenance stay on the ai-hats side too — rows are tagged with their declaring
-component **at collection** (`composer.py`), before any merge, and the dedup key
-stays `(skill, script, point)` where `check_log_token` can still derive one log
-name per binding (HATS-1137). The rack sees rows that are already unique.
+component **at collection** (`composer.py`), before any merge. The dedup key
+follows from this rev: ai-hats no longer knows what a point *is*, so the key it
+can compute is the row's **structural identity** — app, path in the tree, `run:`,
+and the cargo minus `on_error`. `check_log_token` derives one log name per
+binding from that same identity, which is what keeps the HATS-1137 invariant (two
+rows, two logs, no collision). The rack sees rows that are already unique.
 
 ### D8 — Migration: contract *first*, then expand
 
@@ -668,7 +763,7 @@ is free to be chosen on other grounds. It is chosen thus:
    mode is *a gate that does not install*, and the zero-declaration survey covers
    only the layers we can see. Precedent: HATS-1160 tombstoned `plan_sections`
    the same way.
-3. **Then add `Composition.checks` + the `wt:pre-merge` point** (epic HATS-1138),
+3. **Then add the binding field on `Composition` + the `wt` `pre-merge` point** (epic HATS-1138; the field shipped as `checks:` and was replaced by `apps:` at rev 10),
    on the cleaned substrate and calling the execution primitive step 1's epic
    leaves behind.
 4. **Defer** folding `worktree.wt_in/wt_out` into `checks:`. Its carry is
@@ -695,17 +790,25 @@ places: D9's resolution root — the surface's skill mirror since HATS-1540 — 
 
 ## Consequences
 
-**Gained.** One catalog of points, one exit contract, one validation posture;
-binding becomes reviewable configuration rather than a skill-internal constant;
-skills become reusable under differing policy; `wt:pre-merge` closes the
-HATS-1134 gap without a fifth ad-hoc channel; the union special case is retired
-rather than propagated. **Zero changes to any `SKILL.md` schema.**
+**Gained.** One exit contract and one validation posture (there is no single
+catalog of points, and by D11 there deliberately is not — each application owns
+its own vocabulary); binding becomes reviewable configuration rather than a
+skill-internal constant; skills become reusable under differing policy; the `wt`
+`pre-merge` point closes the HATS-1134 gap without a fifth ad-hoc channel; the
+union special case is retired rather than propagated. **Zero changes to any
+`SKILL.md` schema.**
 
 **Cost.** One new `Composition` field, whose overlay-precedence semantics must be
-defined (dedup by `(skill, script, point)`, strictest `on_error` winning). Two
-concepts coexist during the deprecation window. Binding-site indirection means
-reading `SKILL.md` alone no longer shows where a script fires — mitigated by
-rendering the effective binding table, which nothing renders today. Resolution
+defined: dedup is by the row's **structural identity** — the app, its path in the
+tree, `run:`, and the cargo excluding `on_error` — with the strictest `on_error`
+winning and the first declaration keeping the slot. (Rev 5 wrote that key as
+`(skill, script, point)`; under rev 10 ai-hats does not know what a point is, so
+the key it can compute is structural.) The retired `checks:` key does not coexist
+with `apps:` — it is a typed refusal, not a deprecation window. Binding-site
+indirection means reading `SKILL.md` alone no longer shows where a script fires —
+mitigated by rendering the effective binding table, which `describe_checks` does
+for a launch and `ai-hats --dry-run` (HATS-1548); a user-facing surface for it is
+still owed by HATS-1153 / HATS-1539. Resolution
 has two modes (D9), in-session and out-of-session, and both must be exercised:
 one of them being tested is how a gate ships half-armed. **Added at rev 9:** a
 typo in a point ai-hats does not own is no longer refused at composition — it
@@ -728,13 +831,13 @@ HATS-1546.
 **Resolved at rev 8 (HATS-1540).** The condition was a live consumer bound and
 proven to refuse, because shipping the mechanism unbound would have left a fifth
 channel in the accretion this ADR exists to end. `maintainer` now binds
-`done-gate.sh` to both `edge:review--done` and `wt:pre-merge`, and each refusal
+`done-gate.sh` to both `edge:review--done` and `apps.wt` `pre-merge`, and each refusal
 is asserted together with its flip-to-pass when the row is removed. HATS-1144
 (hunk-review) remains a candidate and is no longer load-bearing for this status.
 
 ## Alternatives considered
 
-**A — Fifth ad-hoc channel just for `wt:pre-merge`.** Cheapest; makes the
+**A — Fifth ad-hoc channel just for a pre-merge point.** Cheapest; makes the
 accretion permanent and leaves `lifecycle_hooks` unproven. Rejected.
 
 **B — Unify all five channels including `git_hooks` / `runtime_hooks`.** Couples
@@ -761,7 +864,8 @@ no current consumer.
 **G — Rev 9: widen the point catalog instead of moving it.** Teach
 `known_points()` to resolve the *project's* backlog topology the way the kernel
 does, so the catalog and the runner stop disagreeing. Was card HATS-1534,
-cancelled into HATS-1541. Rejected: it fixes the divergence and leaves
+cancelled into HATS-1541. *(`known_points()` was deleted by that rev; the shape
+is kept here as the rejected alternative, not as a live symbol.)* Rejected: it fixes the divergence and leaves
 `_guard_topology` in place with nothing it can decide — a point outside the
 resolved topology is still indistinguishable from a sibling backlog's point
 unless the validator holds every mounted topology at once, which only the rack
@@ -783,6 +887,10 @@ does. See **D11**.
 > Two claims here were also overtaken by later revisions: the `0o755`-writing
 > materializer (deleted by D9) and the "no in-repo consumer" survey (see
 > *Consequences*, which now makes a live consumer a release condition).
+> **The DSL below is pre-rev-10 throughout** — `skill:` / `script:` / `on:` as
+> keys, `wt:`-prefixed point names, and `(skill, script, point)` as the dedup key.
+> Rev 10 replaced all of it (see *Revision history*); the spellings are left as
+> written because the record is testimony, not instruction.
 
 Three independent reviewers (completeness / backward-compat / corner-cases)
 returned **INCOMPLETE** on the plan and found defects in rev 3. Corrections that
@@ -798,11 +906,13 @@ supersede the body above:
   throw-away" is **false for two of three callers** — the FSM fires discard on
   `failed`/`cancelled` (`rack_wiring.py:261-262` → `teardown(merge=False)`), and
   `reclaim_if_clean` calls `discard(force=False)` (`manager.py:1042`).
-- D2's "same overlay precedence, last-wins, dedup" describes **unimplemented
-  work, not reuse**: `CompositionResult` has no `checks` field
-  (`ai_hats_core/composition.py:41-59`), `OverlayConfig` has only
-  `add_/remove_{traits,rules,skills}` (`config/overlay.py:31-53`), and the
-  composer never reads `composition.apps` cargo.
+- D2's "same overlay precedence, last-wins, dedup" described **unimplemented
+  work, not reuse**: as of 2026-07-23 `CompositionResult` had no `checks` field,
+  `OverlayConfig` had only `add_/remove_{traits,rules,skills}`, and the composer
+  read no binding cargo at all. All three have since shipped; the review's point
+  — that the sentence claimed reuse of machinery that did not exist — stands as
+  a record of that moment. (D2's "last-wins" was separately wrong and is
+  corrected there.)
 
 **Open question 3 was REVERSED at rev 4 and is REVERSED BACK at rev 8
 (HATS-1540) — its premise does not hold.** The rev-4 argument is kept verbatim
@@ -942,3 +1052,7 @@ shape, see D3 and D9); **HATS-1147**'s deletion set grows (manifest, sweep,
   execution primitive's mechanics and shared env base, the git_hooks
   orchestrator, and the per-channel migration. Split out of this document's
   rev 7 on 2026-07-29, pre-merge.
+- [5] `docs/adr/0021-surface-materialization.md` — the materialization guide:
+  which artifact each surface writes and where, why a project-level artifact
+  carrying the declared rows is forbidden (M5), and the session tree this
+  channel resolves from.
