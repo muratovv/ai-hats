@@ -573,3 +573,30 @@ def test_a_dry_run_under_a_stale_surface_warns_before_the_session_starts(
 
     assert any("session_skills_root" in note for note in report.notes), report.notes
     assert [c.runs_from for c in report.checks] == [None]
+
+
+def test_a_gate_under_a_symlinked_root_is_still_reported_as_armed(tmp_path: Path):
+    """`_plan_covers` compares a plan target against a RESOLVED `runs_from`.
+
+    The plan records its target as the writer spelled it; `rebase_onto_mirror`
+    returns a resolved path. Where the cache root contains a symlink — the macOS
+    default, where /tmp is a link to /private/tmp — the unresolved parent never
+    matched the resolved child, so EVERY armed gate was reported "NOT written by
+    this launch". A false alarm in the one report whose job is to say otherwise.
+
+    Asserted on the predicate, not through a session build: the surfaces under
+    test resolve their own roots, so a session-level test passes either way and
+    proves nothing (measured — the first version of this test did exactly that).
+    """
+    from ai_hats.check_snapshot import _plan_covers
+    from ai_hats.materialization import MaterializationPlan, describe_copy_tree
+
+    real = tmp_path / "real"
+    (real / "skills" / "gate-skill").mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+
+    plan = MaterializationPlan(entries=[describe_copy_tree(real, link / "skills" / "gate-skill")])
+    runs_from = (real / "skills" / "gate-skill" / "check.sh").resolve()
+
+    assert _plan_covers(plan, runs_from) is True

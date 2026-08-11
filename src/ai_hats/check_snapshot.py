@@ -89,11 +89,20 @@ def describe_checks(
 
 
 def _plan_covers(plan: MaterializationPlan, runs_from: Path) -> bool:
-    """Whether this launch writes the tree the script will be read out of."""
+    """Whether this launch writes the tree the script will be read out of.
+
+    Both sides are resolved before comparing: ``runs_from`` comes back from
+    ``rebase_onto_mirror`` already resolved, while a plan entry carries the path
+    as the writer spelled it. On macOS a cache root under ``/tmp`` is a symlink
+    to ``/private/tmp``, so the unresolved parent never matched the resolved
+    child and every armed gate was reported "NOT written by this launch" — a
+    false alarm in the one report that exists to tell the operator otherwise.
+    """  # comment-length: allow — the symlink asymmetry is the whole bug
     from .materialization import WriteKind
 
+    target = runs_from.resolve()
     return any(
-        entry.kind is WriteKind.COPY_TREE and entry.target in runs_from.parents
+        entry.kind is WriteKind.COPY_TREE and entry.target.resolve() in target.parents
         for entry in plan.entries
     )
 
