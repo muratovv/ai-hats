@@ -176,6 +176,27 @@ def _mirror_root(identity: SessionIdentity) -> Path:
     return Path(identity.skills_root)
 
 
+def absent_bytes_notice(identity: SessionIdentity | None) -> str:
+    """Why a bound script's bytes were not there — the D9 answer, in the
+    operator's terms.
+
+    Read off the identity the session carries (HATS-1594), never re-derived: the
+    surface and the mirror were decided once at launch, and asking the registry
+    again here is what made a gate resolve against another surface's mirror.
+    """
+    if identity is None:
+        return (
+            "it resolved against the live library, where the file is simply not "
+            "there — the declaring skill no longer ships it"
+        )
+    return (
+        f"session {identity.id!r} executes bytes frozen at launch: its {identity.provider} "
+        f"mirror at {identity.skills_root} holds no such file, and the live library is NOT "
+        f"used as a fallback (ADR-0019 D9). Restart the session so it mirrors this binding, "
+        f"or run this transition outside a session."
+    )
+
+
 def rebase_onto_mirror(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
     """The composition names ``{skill, script}``; this picks the root.
 

@@ -23,6 +23,7 @@ from hashlib import sha1
 from collections.abc import Callable, Iterable, Sequence, Set as AbstractSet
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from ai_hats_core import ResolvedCheck, ResolvedComponent
 
@@ -155,8 +156,104 @@ def _warn_unclaimed_apps(declared: Sequence[AppBinding]) -> None:
         )
 
 
+#: "the caller did not supply one" — distinct from ``None``, which is a caller
+#: stating there IS no session. Same spelling as ``check_resolve.FROM_ENV``.
+_FROM_ENV: Any = object()
+
+
 def _label(check: ResolvedCheck | AppBinding) -> str:
     return f"checks: {check.declared_by!r} binds {check.run} under apps.{check.app}"
+
+
+#: This channel's own words for each outcome. Its own on purpose: in ai-hats a
+#: "hook" is a channel (git_hooks, runtime_hooks, worktree) and a binding line is
+#: not one, so the primitive's wording would name the wrong subsystem (HATS-1572).
+#: Keyed by the enum member, never by its ``value``: a string key would re-open
+#: the seam the typed outcome exists to close, and the exhaustiveness test below
+#: it could not then be written.
+def _sayings() -> dict:
+    from .hook_exec import HookOutcomeKind as K
+
+    return {
+        K.NOT_EXECUTABLE: "the script is there but cannot be executed — chmod +x it",
+        K.COMMAND_NOT_FOUND: "the script could not be executed: command not found",
+        K.EXEC_FAILED: "the script could not be executed",
+        K.LOG_UNUSABLE: "its log could not be opened, so the run was refused rather than unrecorded",
+        K.SIGNALLED: "the check was killed",
+        K.TIMED_OUT: "the check ran past its budget and was stopped",
+        K.EXITED: "the check broke",
+        K.NO_TIME_LEFT: "the check never started — the caller's lock had no time left",
+    }
+
+
+def check_failure_reason(check: ResolvedCheck, run, *, identity: Any = _FROM_ENV) -> str:
+    """What an operator reads when a bound check does not pass.
+
+    Two classes, kept apart (HATS-1572). A child that RAN and refused speaks for
+    itself, verbatim. A channel that never got to run one says so, and says why —
+    reading those two as one message sends the operator to fix a script when what
+    needs fixing is which bytes the session resolved.
+
+    The wording is this channel's; every FACT the primitive established — the
+    path, the errno, the signal, the budget, the child's own text, whether the
+    tail was cut — travels through untouched.
+    """  # comment-length: allow — the two classes ARE the contract
+    from .hook_exec import HookOutcomeKind, with_truncation_note
+
+    if run.ok:
+        return ""
+    # stderr is the fallback exactly as in the primitive: a gate that reports the
+    # ordinary shell way must not read as one that refused without saying why.
+    said = (run.said or run.stderr).strip()
+    if run.kind is HookOutcomeKind.REFUSED:
+        return with_truncation_note(
+            said or f"{_label(check)} — it refused (exit 2) without saying why", run
+        )
+    if run.kind is HookOutcomeKind.SCRIPT_MISSING:
+        return (
+            f"{_label(check)} — the check did not run: {check.script_path} is not there. "
+            f"{_absent_bytes(identity)}"
+        )
+    head = f"{_label(check)} — {_named(run)}"
+    if run.detail:
+        head += f": {run.detail}"
+    return with_truncation_note(f"{head}\n{said}" if said else head, run)
+
+
+def _absent_bytes(identity: Any) -> str:
+    """The class-(b) half of the sentence, with the session read here and nowhere
+    earlier (the ``FROM_ENV`` idiom of :mod:`check_resolve`).
+
+    Read on this path only: eagerly would re-arm what HATS-1594 removed, and
+    reading it in the CALLER would let an envelope this outcome does not depend
+    on replace a gate's refusal with a complaint about the envelope.
+    """
+    from .check_resolve import CheckResolutionError, absent_bytes_notice, session_identity
+
+    if identity is _FROM_ENV:
+        try:
+            identity = session_identity()
+        except CheckResolutionError as exc:
+            # Degraded, never silent: the operator still learns the gate did not
+            # run, and why we cannot say which bytes it looked for.
+            return f"which bytes it resolved against cannot be told — {exc}"
+    return absent_bytes_notice(identity)
+
+
+def _named(run) -> str:
+    """This channel's phrase for an outcome, with the exit status where it adds
+    something the phrase does not already carry."""
+    from .hook_exec import HookOutcomeKind
+
+    if run.kind is HookOutcomeKind.NOT_EXECUTABLE and run.exit_code == 126:
+        # Pre-flight refuses a non-+x script before it ever runs, so a 126 from a
+        # CHILD means something IT invoked could not run — never chmod this one.
+        return "the script ran, but something it invoked could not be executed (exit 126)"
+    # A kind with no phrase yet still says what the primitive knows, never less.
+    phrase = _sayings().get(run.kind) or run.reason
+    if run.kind is HookOutcomeKind.SIGNALLED or run.exit_code in (None, 0):
+        return phrase
+    return f"{phrase} (exit {run.exit_code})"
 
 
 def _resolve_script(row: AppBinding, skill: ResolvedComponent) -> Path:

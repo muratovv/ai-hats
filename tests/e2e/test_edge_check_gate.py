@@ -764,7 +764,10 @@ def test_on_error_warn_downgrades_a_broken_check_but_records_it(gate_project, ra
     assert "downgraded by on_error: warn" in trace
     assert f"{SKILL}/broke.sh under apps.rack" in trace
     assert "ruff exploded" in trace
-    assert "hook broke: exited 1" in trace
+    # This channel says it in its own words: "hook" names git_hooks /
+    # runtime_hooks / worktree here, never a binding line (HATS-1572).
+    assert "the check broke (exit 1)" in trace
+    assert "hook" not in trace
 
 
 # ---------------------------------------------------------------------------

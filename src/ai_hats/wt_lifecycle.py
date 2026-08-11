@@ -27,8 +27,8 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
-from .check_points import WT_APP, check_log_token
-from .hook_exec import HookRun, HookVerdict, run_hook
+from .check_points import WT_APP, check_failure_reason, check_log_token
+from .hook_exec import run_hook
 from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
 from ai_hats_wt import (
     WT_TEARDOWN_EVENTS,
@@ -211,7 +211,10 @@ class HookRunningLifecycle:
                 log_path=log_dir / f"pre-merge~{check_log_token(check)}.log",
             )
             if not run.ok:
-                _raise_merge_aborted(ctx.branch_name, _check_refusal(check, run))
+                _raise_merge_aborted(
+                    ctx.branch_name,
+                    check_failure_reason(check, run),
+                )
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Run ``wt_out`` hooks bound to ``event`` before the core removes the dir.
@@ -308,19 +311,6 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     else:
         message = detail
     raise WorktreeTeardownAborted(message) from cause
-
-
-def _check_refusal(check, run: HookRun) -> str:
-    """A refusal that spoke stands alone; anything else names the binding.
-
-    Same shape as ``rack_consumers._refusal`` on the edge road, deliberately —
-    one script bound to both points must read the same on either, and HATS-1538
-    cost a session to a symptom that named the wrong subsystem.
-    """
-    binding = f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
-    if run.verdict is HookVerdict.REFUSE:
-        return run.reason
-    return f"checks: {binding} — {run.reason}"
 
 
 def _raise_merge_aborted(branch_name: str, reason: str) -> NoReturn:

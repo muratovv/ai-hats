@@ -389,8 +389,10 @@ def test_corrupt_is_not_softened_by_on_error_warn(tmp_path):
     with pytest.raises(AbortOperation) as exc_info:
         runner.on_event(_ctx())
 
-    assert "hook script missing" in exc_info.value.reason
-    assert "quality::gates/vanished.sh" in exc_info.value.reason
+    reason = exc_info.value.reason
+    assert "the check did not run" in reason  # class (b): no bytes, so no verdict
+    assert "quality::gates/vanished.sh" in reason
+    assert "hook" not in reason, "a binding line is not a hook channel (HATS-1572)"
 
 
 def test_broke_under_warn_proceeds_and_leaves_a_work_log_trace(tmp_path):

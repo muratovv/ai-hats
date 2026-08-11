@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ai_hats_core.deadline import Deadline
 
-from ai_hats.hook_exec import HookVerdict
+from ai_hats.hook_exec import HookOutcomeKind, HookVerdict
 from ai_hats.hook_exec import run_hook as _run_hook
 
 
@@ -603,3 +603,77 @@ def test_a_hook_cannot_start_once_the_lock_budget_is_gone(tmp_path):
     assert not run.ok
     assert "no time left under wt create lock" in run.reason
     assert not (tmp_path / "ran").exists()
+
+
+# ----- HATS-1572: the fact, apart from the wording ---------------------------
+
+
+def test_the_outcome_names_what_happened_without_reading_the_reason(tmp_path):
+    """A channel phrases a failure in its own vocabulary, so it must be able to
+    tell the cases apart WITHOUT matching on ``reason`` — a seam that rots the
+    moment this primitive rewords anything."""
+    cases = {
+        HookOutcomeKind.PASSED: "exit 0\n",
+        HookOutcomeKind.REFUSED: "exit 2\n",
+        HookOutcomeKind.EXITED: "exit 1\n",
+        HookOutcomeKind.NOT_EXECUTABLE: "exit 126\n",
+        HookOutcomeKind.COMMAND_NOT_FOUND: "exit 127\n",
+        HookOutcomeKind.SIGNALLED: "kill -TERM $$\n",
+    }
+    for expected, body in cases.items():
+        script = _script(tmp_path / f"{expected.value}.sh", body)
+        assert (
+            run_hook(
+                script,
+                budget=10,
+                deadline=Deadline.without_lock(10, why="unit test"),
+                project_dir=tmp_path,
+            ).kind
+            is expected
+        )
+
+
+def test_a_script_that_is_not_there_is_told_apart_from_one_that_cannot_run(tmp_path):
+    """The two look alike in ``reason`` and are not the same failure: bytes
+    absent is a resolution question, bytes present but unspawnable is not."""
+    missing = tmp_path / "gone.sh"
+    present = _script(tmp_path / "here.sh", "exit 0\n")
+    present.chmod(0o644)
+
+    assert run_hook(
+        missing,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    ).kind is (HookOutcomeKind.SCRIPT_MISSING)
+    assert run_hook(
+        present,
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    ).kind is (HookOutcomeKind.NOT_EXECUTABLE)
+
+
+def test_a_timeout_is_its_own_outcome(tmp_path):
+    script = _script(tmp_path / "slow.sh", "sleep 5\n")
+
+    run = run_hook(
+        script,
+        budget=0.2,
+        deadline=Deadline.without_lock(0.2, why="unit test"),
+        project_dir=tmp_path,
+    )
+
+    assert run.kind is HookOutcomeKind.TIMED_OUT
+
+
+def test_the_childs_own_words_are_carried_apart_from_the_named_outcome(tmp_path):
+    """``reason`` joins the two; a channel that rewords the outcome still needs
+    the script's own text, so it travels separately."""
+    script = _script(tmp_path / "loud.sh", 'echo "drain the review notes first"\nexit 2\n')
+
+    run = run_hook(
+        script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path
+    )
+
+    assert run.said == "drain the review notes first"

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from ai_hats_core.deadline import Deadline
 
-from .hook_exec import HookRun, HookVerdict, run_hook
+from .hook_exec import HookOutcomeKind, HookRun, run_hook
 
 # What this channel ASKS for. HATS-1593: it is a request, not the timeout — the
 # lock the caller holds mints the ceiling and `run_hook` takes the smaller of
@@ -94,7 +94,8 @@ def _wt_point(event: str) -> str:
 def _wt_reason(run: HookRun, script: Path) -> str:
     """HATS-1269: scripts spawn in place, so a missing one means the declaring
     skill stopped shipping it — say that, not a re-materialize step that no
-    longer exists."""
-    if run.verdict is HookVerdict.CORRUPT and not script.is_file():
+    longer exists. The run already knows which failure it was, so this no longer
+    re-stats the file to find out (HATS-1572)."""
+    if run.kind is HookOutcomeKind.SCRIPT_MISSING:
         return f"{run.reason} — the declaring skill no longer ships this script"
     return run.reason
