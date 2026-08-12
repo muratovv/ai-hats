@@ -19,7 +19,7 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     from ..assembler import Assembler
     from ..githooks_resolve import resolve_git_gates
-    from ..githooks_run import run_chain
+    from ..githooks_run import record_fail_open, run_chain
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
     from ..materialize import compose_for_role
     from ..paths import builtin_library_hooks
@@ -62,25 +62,39 @@ def main(argv: list[str] | None = None) -> int:
     cfg = assembler.project_config
     role = cfg.active_role or cfg.default_role
 
-    gates: list[Path] = []
+    # Resolved BEFORE composition (HATS-1597): it needs only the project, and a
+    # composition that refuses is itself a fail-open worth recording.
     journal: Path | None = None
-    if role:
-        resolution = resolve_git_gates(compose_for_role(assembler, role), args.event)
-        for refusal in resolution.refusals:
-            print(f"ai-hats: git gate refused — {refusal}", file=sys.stderr)
-        gates = [g.path for g in resolution.gates]
+    hooks_root = builtin_library_hooks(project_dir)
+    candidate = None if hooks_root is None else hooks_root / GITHOOKS_BYPASS_JOURNAL
+    if candidate is not None and candidate.is_file():
+        journal = candidate
+    elif role:
+        # Every hatch branch sources this; without it the gates still run
+        # but stop recording bypasses (HATS-1407).
+        print(
+            "ai-hats: bypass journal not found — gate bypasses will NOT be recorded",
+            file=sys.stderr,
+        )
 
-        hooks_root = builtin_library_hooks(project_dir)
-        candidate = None if hooks_root is None else hooks_root / GITHOOKS_BYPASS_JOURNAL
-        if candidate is not None and candidate.is_file():
-            journal = candidate
-        else:
-            # Every hatch branch sources this; without it the gates still run
-            # but stop recording bypasses (HATS-1407).
-            print(
-                "ai-hats: bypass journal not found — gate bypasses will NOT be recorded",
-                file=sys.stderr,
+    gates: list[Path] = []
+    if role:
+        resolution = None
+        try:
+            resolution = resolve_git_gates(compose_for_role(assembler, role), args.event)
+        except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
+            # A composition refusal (removed script, unknown point name) renders
+            # friendly only in the click layer, which a git hook never enters —
+            # so it arrived here as a traceback on `git commit`.
+            record_fail_open(
+                journal,
+                reason=f"composition failed, all gates SKIPPED: {type(exc).__name__}: {exc}",
+                event=args.event,
             )
+        if resolution is not None:
+            for refusal in resolution.refusals:
+                record_fail_open(journal, reason=refusal, event=args.event)
+            gates = [g.path for g in resolution.gates]
 
     return run_chain(
         event=args.event,
