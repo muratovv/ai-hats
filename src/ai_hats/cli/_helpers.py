@@ -305,8 +305,10 @@ def _project_dir(*, start: Path | None = None) -> Path:
             cwd = Path.cwd()
         except FileNotFoundError as exc:
             raise DeadCwdError() from exc
-        if not cwd.exists():
-            raise DeadCwdError()
+    # Outside the branch on purpose: an injected `start` must not opt out of the
+    # guard, or a dead path walks up to a stray ancestor `.agent/` (HATS-788).
+    if not cwd.exists():
+        raise DeadCwdError()
     candidates = [cwd, *cwd.parents]
 
     for d in candidates:

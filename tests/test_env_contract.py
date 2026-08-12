@@ -30,6 +30,13 @@ IDENTITY_KEYS = {
     "ENV_SESSION_CACHE_DIR": "AI_HATS_SESSION_CACHE_DIR",
     "ENV_ROLE": "AI_HATS_ROLE",
     "ENV_ROOT_PID": "AI_HATS_ROOT_PID",
+    # A second interpreter pin: the agy global hook is invoked by the surface,
+    # not by our launcher, so it cannot read AI_HATS_VENV's resolution.
+    "ENV_AI_HATS_PYTHON": "AI_HATS_PYTHON",
+    # Homed in observe beside the id it travels with, not in the env leaf.
+    "ENV_TRACE_LOG_PATH": "TRACE_LOG_PATH",
+    # The envelope (HATS-1594). Carrier of part of the set, so it is IN the set.
+    "ENV_SESSION_IDENTITY": "AI_HATS_SESSION_IDENTITY",
 }
 HOOK_POINT_KEYS = {
     "ENV_HOOK_POINT": "AI_HATS_HOOK_POINT",
@@ -91,6 +98,8 @@ def _integrator_definitions() -> dict[str, list[str]]:
 # `env` cannot re-export it: the leaf-purity exemption runs one way only.
 HOMES = {spelling: "ai_hats.env" for spelling in CONTRACT_KEYS.values()}
 HOMES["AI_HATS_SESSION_ID"] = "ai_hats_observe.trace"
+HOMES["TRACE_LOG_PATH"] = "ai_hats_observe.trace"
+HOMES["AI_HATS_SESSION_IDENTITY"] = "ai_hats.session_identity"
 
 
 @pytest.mark.parametrize(("attr", "spelling"), sorted(CONTRACT_KEYS.items()))

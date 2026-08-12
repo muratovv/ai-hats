@@ -23,6 +23,9 @@ ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 # absent on purpose — its home is `ai_hats_observe.trace` (HATS-948).
 ENV_ROLE = "AI_HATS_ROLE"
 ENV_ROOT_PID = "AI_HATS_ROOT_PID"
+#: The session process's own interpreter. A second pin beside ENV_AI_HATS_VENV
+#: because the agy global hook is invoked by the surface, not by our launcher.
+ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
 
 # Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
 ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
@@ -128,6 +131,7 @@ __all__ = [
     "ENV_SESSION_CACHE_DIR",
     "ENV_ROLE",
     "ENV_ROOT_PID",
+    "ENV_AI_HATS_PYTHON",
     "ENV_HOOK_POINT",
     "ENV_IN_HOOK",
     "ENV_FORCE",

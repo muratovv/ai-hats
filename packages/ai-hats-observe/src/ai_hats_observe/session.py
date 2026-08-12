@@ -28,7 +28,7 @@ from .artifacts import (
     USAGE_JSON,
     session_dirname,
 )
-from .trace import ENV_SESSION_ID, TraceTag
+from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 
 # HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
 # first versioned surface (mirrors usage/v1). Bumped by the migration seam.
@@ -374,5 +374,5 @@ def session_env(session_id: str, trace_path: str) -> dict[str, str]:
     """
     return {
         ENV_SESSION_ID: session_id,
-        "TRACE_LOG_PATH": trace_path,
+        ENV_TRACE_LOG_PATH: trace_path,
     }

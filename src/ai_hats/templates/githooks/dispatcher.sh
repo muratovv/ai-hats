@@ -28,7 +28,7 @@ PROJECT_DIR="$(dirname "$GITHOOKS_DIR")"
 # (HATS-897, HATS-1525). `unset`, not a local blank — `githooks_run` hands this
 # environment to every gate, drop-in and chained hook.
 if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
-    ah_pin="${AI_HATS_PROJECT_DIR/#\~/$HOME}"
+    ah_pin="${AI_HATS_PROJECT_DIR/#\~/${HOME:-}}"
     ah_pin="$(cd "$ah_pin" 2>/dev/null && pwd -P || echo "$ah_pin")"
     if [[ "$ah_pin" != "$PROJECT_DIR" ]]; then
         echo "ai-hats: session pinned to $ah_pin — foreign to $PROJECT_DIR; ignoring its AI_HATS_VENV/AI_HATS_DIR." >&2
@@ -46,9 +46,15 @@ resolve_python() {
         echo "${AI_HATS_VENV}/bin/python"; return 0
     fi
 
-    # Unpaired, or paired with THIS project — the guard above dropped it otherwise,
-    # so no second, weaker test (a prefix match) is needed here.
-    ah_dir="${AI_HATS_DIR:-$PROJECT_DIR/.agent/ai-hats}"
+    # The guard above already dropped a pin belonging to another session. This
+    # keeps the older, narrower test as well — deliberately, not by omission: it
+    # answers a different question ("is that path even inside the tree I gate"),
+    # and this is the one file that cannot be fixed at commit time, so the two
+    # checks are worth more here than the consistency of dropping one.
+    ah_dir="$PROJECT_DIR/.agent/ai-hats"
+    if [[ -n "${AI_HATS_DIR:-}" && "${AI_HATS_DIR}" == "$PROJECT_DIR"/* ]]; then
+        ah_dir="$AI_HATS_DIR"
+    fi
     versions="$ah_dir/versions"
 
     if [[ -f "$PROJECT_DIR/ai-hats.yaml" ]]; then
@@ -57,7 +63,7 @@ resolve_python() {
             | sed -E 's/^venv_path:[[:space:]]+//; s/[[:space:]]+#.*//; s/^"//; s/"$//; s/^'\''//; s/'\''$//' \
             || true)
         if [[ -n "$val" ]]; then
-            val="${val/#\~/$HOME}"
+            val="${val/#\~/${HOME:-}}"
             if [[ "${val:0:1}" == "/" ]]; then venv="$val"; else venv="$PROJECT_DIR/$val"; fi
         fi
     fi

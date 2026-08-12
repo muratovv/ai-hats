@@ -211,14 +211,30 @@ def _run_stub(project: Path, env: dict[str, str]):
     )
 
 
-def test_a_bare_ai_hats_dir_is_an_explicit_override_and_is_honoured(tmp_path: Path):
-    """The relaxation HATS-1613 traded for one policy instead of two, pinned.
+def test_an_out_of_tree_ai_hats_dir_is_refused_even_when_the_pin_agrees(tmp_path: Path):
+    """The pin guard answers "whose session"; this answers "inside my tree at all".
 
-    Until then the stub ALONE rejected an out-of-tree ``AI_HATS_DIR`` by prefix,
-    while the launcher and ``paths`` both honoured a bare one as env-wins. The
-    prefix test is gone, so all three answer alike; the residual exposure is the
-    one those two already carried, not a new one (ADR-0024, Последствия).
+    A pin naming THIS project passes the first check, so only the narrower prefix
+    test stops the stub exec'ing an interpreter from outside the tree it gates —
+    which is why the stub keeps both (HATS-1613 review).
     """
+    project = _project(tmp_path)
+    foreign = _foreign_checkout(tmp_path)
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["AI_HATS_DIR"] = str(foreign)
+    env["AI_HATS_PROJECT_DIR"] = str(project)
+    result = _run_stub(project, env)
+
+    assert result.returncode == 0, (
+        f"an out-of-tree interpreter ran despite the pin agreeing:\n{result.stderr}"
+    )
+    assert "fail-open" in result.stderr
+
+
+def test_a_bare_out_of_tree_ai_hats_dir_is_refused(tmp_path: Path):
+    """Unpaired too: the launcher never reads AI_HATS_DIR for resolution at all
+    (`scripts/ai-hats-launcher:36`), so honouring it here would converge nothing."""
     project = _project(tmp_path)
     foreign = _foreign_checkout(tmp_path)
 
@@ -226,7 +242,30 @@ def test_a_bare_ai_hats_dir_is_an_explicit_override_and_is_honoured(tmp_path: Pa
     env["AI_HATS_DIR"] = str(foreign)
     result = _run_stub(project, env)
 
-    assert result.returncode == 3, (
-        "an unpaired override is a human's explicit choice and must be honoured; "
-        f"stderr:\n{result.stderr}"
+    assert result.returncode == 0, f"the foreign interpreter must not be used:\n{result.stderr}"
+    assert "fail-open" in result.stderr
+
+
+def test_a_pinned_session_without_HOME_still_fails_open(tmp_path: Path):
+    """`set -u` plus `${VAR/#~/$HOME}` at top level exits 1 — and git aborts.
+
+    The pin is set on every commit from an ai-hats session, and a HOME-less
+    environment is ordinary (`env -i`, a systemd unit, a container entrypoint),
+    so an unguarded `$HOME` turns the stub's one promise inside out. Caught in
+    review after the guard shipped with a bare `$HOME` (HATS-1613).
+    """
+    project = _project(tmp_path)
+
+    result = subprocess.run(
+        ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin",
+         f"AI_HATS_PROJECT_DIR={tmp_path / 'elsewhere'}",
+         "bash", str(project / ".githooks" / "pre-commit")],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
     )
+
+    assert result.returncode == 0, (
+        f"the stub must never wedge a commit, HOME or no HOME:\n{result.stderr}"
+    )
+    assert "unbound variable" not in result.stderr, result.stderr

@@ -372,3 +372,13 @@ def test_torn_line_is_reported_never_dropped(tasks_dir, cwd):
     assert len(corrupt) == 1
     assert corrupt[0].raw == '{"v": 1, "ts": "2026-'
     assert corrupt[0].line_no == 2
+
+
+def test_an_unusable_root_pid_is_a_blind_zone_not_a_contradiction(tmp_path, monkeypatch):
+    """A negative pid is nothing to check against, so it cannot refute a claim."""
+    from ai_hats_rack.journal import _claim_verdict
+
+    assert _claim_verdict("session:20260812-101500-3-4242", -1)["verdict"] == "unverified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 0)["verdict"] == "unverified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 4242)["verdict"] == "verified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 9999)["verdict"] == "mismatch"

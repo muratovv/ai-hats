@@ -134,7 +134,7 @@ def _claim_verdict(actor: str, root_pid: int) -> dict[str, Any]:
             "verdict": "unverified",
             "note": f"session id '{claimed}' embeds no minting pid to check",
         }
-    if not root_pid:
+    if root_pid <= 0:
         return {
             "verdict": "unverified",
             "note": f"no usable {ENV_ROOT_PID} to check session id '{claimed}' against",

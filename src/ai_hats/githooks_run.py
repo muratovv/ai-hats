@@ -130,10 +130,11 @@ def record_fail_open(
 def _drop_foreign_pin(env: dict[str, str], project_dir: Path) -> None:
     """Strip a session pin naming another project before the children see it.
 
-    ADR-0024 D3. Normally a no-op: a current stub unsets the pair before exec'ing
-    us. Reaching the warn branch therefore means the INSTALLED stub predates the
-    guard — the delivery window between two ``self …`` runs — so the window
-    announces itself instead of passing a foreign pin down the chain.
+    ADR-0024 D3. The current stub unsets ``AI_HATS_VENV``/``AI_HATS_DIR`` but not
+    the pin itself, so the usual path here is the silent re-pin: the children are
+    told this project rather than the one the pin names. The warn branch means
+    the INSTALLED stub predates the guard — the delivery window between two
+    ``self …`` runs — so that window announces itself.
     """  # comment-length: allow — the branch only fires in a window worth naming
     pin = env.get(AI_HATS_PROJECT_DIR_ENV)
     if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():

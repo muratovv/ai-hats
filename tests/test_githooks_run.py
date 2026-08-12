@@ -296,3 +296,21 @@ def test_no_pin_at_all_is_left_alone(tmp_path, capsys):
 
     assert env == {"AI_HATS_VENV": "/bare/override/.venv"}, "env-wins survives"
     assert capsys.readouterr().err == ""
+
+
+def test_the_usual_path_is_a_silent_repin_not_a_warning(tmp_path, capsys):
+    """A current stub already unset the pair, so only the pin itself arrives.
+
+    Nothing was dropped, so nothing is announced — but the children must still be
+    told this project rather than the one the pin names (HATS-1613 review).
+    """
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {"AI_HATS_PROJECT_DIR": str(tmp_path / "theirs")}
+
+    _drop_foreign_pin(env, project)
+
+    assert env["AI_HATS_PROJECT_DIR"] == str(project)
+    assert capsys.readouterr().err == "", "nothing was dropped, so nothing to announce"
