@@ -133,7 +133,6 @@ def test_wrap_runner_pty_spawn_writes_trace(tmp_path):
     tracer = SidecarTracer(session)
 
     runner = object.__new__(WrapRunner)
-    runner.project_dir = tmp_path  # HATS-1339: _pty_spawn anchors the surface child
     exit_code = runner._pty_spawn(["echo", "hello wrap"], {}, tracer)
 
     assert exit_code == 0
@@ -158,7 +157,6 @@ def test_wrap_runner_pty_spawn_emits_term_reset_prelude(tmp_path, capsys):
     tracer = SidecarTracer(session)
 
     runner = object.__new__(WrapRunner)
-    runner.project_dir = tmp_path  # HATS-1339: _pty_spawn anchors the surface child
     runner._pty_spawn(["true"], {}, tracer)
 
     captured = capsys.readouterr().out
@@ -188,7 +186,6 @@ def test_pty_spawn_does_not_pollute_parent_environ(tmp_path):
     session = Session(session_id="t", session_dir=session_dir)
     tracer = SidecarTracer(session)
     runner = object.__new__(WrapRunner)
-    runner.project_dir = tmp_path  # HATS-1339: _pty_spawn anchors the surface child
 
     cmd = [sys.executable, "-c", f"import os;print(os.environ.get('{sentinel}',''))"]
     try:

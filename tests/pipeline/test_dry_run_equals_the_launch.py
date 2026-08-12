@@ -79,7 +79,9 @@ def _launch_for_real(monkeypatch, project: Path) -> dict:
     monkeypatch.setattr(
         rt.WrapRunner,
         "_pty_spawn",
-        lambda _self, cmd, env, tracer, pty_tap_factory=None: sink.update(env=dict(env)) or 0,
+        lambda _self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None: (
+            sink.update(env=dict(env)) or 0
+        ),
     )
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 

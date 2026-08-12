@@ -150,6 +150,28 @@ def test_a_killed_wrappers_surface_child_goes_with_it(two_sessions) -> None:
     )
 
 
+def test_the_hitl_anchor_names_the_surface_child_too(two_sessions) -> None:
+    """Both runners record the reader, not just the sub-agent one (HATS-1339 D3).
+
+    The HITL path gets the claim injected into ``_pty_spawn`` by ``WrapRunner.run``
+    — the spawn primitive itself knows nothing about caches, so the wiring is the
+    only thing holding the invariant up, and nothing else here would notice it
+    being dropped: this path survives a killed wrapper through the pty hangup
+    instead. The baseline is asserted because a ``child_pid`` without one would
+    pin the dir to whoever inherits that pid next.
+    """  # comment-length: allow — the guard exists because the wiring is deletable
+    _surface, live, _doomed = two_sessions
+
+    anchor = json.loads((live.cache_dir / ANCHOR_NAME).read_text())
+
+    assert anchor.get("child_pid") == live.surface_pid, (
+        f"the HITL anchor never learned the surface pid: {anchor}"
+    )
+    assert anchor.get("child_start_time"), (
+        f"the surface child was recorded without a reuse baseline: {anchor}"
+    )
+
+
 @pytest.fixture
 def orphaned_subagent(tmp_project, tmp_path: Path, repo_root: Path):
     """A sub-agent whose wrapper is SIGKILLed while its surface keeps running.

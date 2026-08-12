@@ -657,11 +657,17 @@ class WrapRunner:
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices, env=env)
             with provider.execution_context(self.project_dir):
+                # HATS-1339: the anchor names the cache's real READER. Redundant
+                # here (the pty hangup already ties the child to us), but it makes
+                # "keep while EITHER owner lives" hold on every runner.
                 exit_code = self._pty_spawn(
                     cmd,
                     env,
                     tracer,
                     pty_tap_factory=pty_tap_factory,
+                    on_spawn=lambda pid: _claim_surface_child(
+                        self.project_dir, session.session_id, pid
+                    ),
                 )
         except KeyboardInterrupt:
             exit_code = 130
@@ -756,8 +762,15 @@ class WrapRunner:
         env: dict[str, str],
         tracer: SidecarTracer,
         pty_tap_factory: PtyTapFactory | None = None,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace.
+
+        ``on_spawn`` is called once with the child's pid, the moment there is
+        one — same seam and same spelling as ``subagent_runner._run_surface``,
+        where both runners hand it the surface-child claim and neither spawn
+        primitive learns what a session cache is. Omitted → no callback, which
+        is exactly what an isolated spawn wants.
 
         Uses ptyprocess so the slave-pty becomes the controlling-tty of the child
         session (TIOCSCTTY in child after setsid). This is required for nested
@@ -772,7 +785,7 @@ class WrapRunner:
         pipes, or handing the master fd to anyone else, silently retires that
         guarantee; ``test_a_killed_wrappers_surface_child_goes_with_it`` is what
         notices. Sub-agents get NO such guarantee — see ``subagent_runner``.
-        """  # comment-length: allow — two kernel contracts, one paragraph each
+        """  # comment-length: allow — one injected seam + two kernel contracts
         import select
         import signal
         import termios
@@ -817,11 +830,8 @@ class WrapRunner:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
-        # HATS-1339: name the cache's real READER in the anchor. Redundant here
-        # — the hangup contract above already binds the child's life to ours —
-        # but it costs one ps per session and makes the sweep's rule ("keep
-        # while EITHER owner lives") hold on every runner, not just one.
-        _claim_surface_child(self.project_dir, tracer.session.session_id, proc.pid)
+        if on_spawn is not None:
+            on_spawn(proc.pid)
 
         # Use raw fd constants (not sys.stdin/stdout.fileno()) so test harnesses
         # that wrap sys.stdin/stdout still pass through to the real terminal —
