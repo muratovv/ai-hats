@@ -1,8 +1,20 @@
-"""e2e: stress test race condition on rack work_log and task card updates (HATS-1466).
+"""e2e (HATS-1466)
 
-Validates that N parallel `rack transition --log` writing to a single
-task card in tight millisecond windows lose no entries and produce no YAML corruption.
-"""
+flow:   several agents log work against the SAME card at once — parallel
+        sub-agents on one ticket, or a session racing its own hooks
+cmds:
+    rack create race-target-task --description "..."
+    rack transition <ID> --log "<message>"
+    rack doctor
+expect: every entry survives — the card holds exactly as many work_log lines as
+        calls made, the YAML still parses, and `rack doctor` reports the backlog
+        intact
+why:    without the card lock a losing writer's read-modify-write drops the
+        winner's entry, or leaves half-serialised YAML — both invisible until
+        someone looks for a log line that was never there. The Kernel-API tier
+        is covered by test_card_lock_concurrency.py (HATS-1264); this drives
+        the CLI, the surface agents actually call.
+"""  # comment-length: allow — the flow block IS the docstring (gen_e2e_catalog)
 
 from __future__ import annotations
 
@@ -124,9 +136,9 @@ def test_rack_parallel_log_writes_single_card(tmp_project) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    assert (
-        doc_proc.returncode == 0
-    ), f"rack doctor failed after stress test:\n{doc_proc.stdout}\n{doc_proc.stderr}"
+    assert doc_proc.returncode == 0, (
+        f"rack doctor failed after stress test:\n{doc_proc.stdout}\n{doc_proc.stderr}"
+    )
 
 
 def test_rack_parallel_workers_multiple_messages_each(tmp_project) -> None:
