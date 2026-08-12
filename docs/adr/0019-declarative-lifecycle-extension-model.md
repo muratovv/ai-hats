@@ -366,12 +366,17 @@ task with no worktree must not wedge the backlog. The hunk binding declares
 
 The shared base every hook receives is the primitive's contract — **ADR-0020 [4]
 D2** — and it is *implemented (HATS-1151)*, with the colour sanitisation from
-HATS-1161: `hook_exec` sets the
-project dir, the fully-qualified `AI_HATS_HOOK_POINT`, `AI_HATS_IN_HOOK=1` and
-`AI_HATS_FORCE`, passes `AI_HATS_TASK_ID` / `AI_HATS_WORKTREE_PATH` through when
-the caller resolved them, **removes** either from the inherited environment when
-it did not, and strips the colour-forcing variables. Rev 4 presented several of
-those as this ADR's own additions; they are the primitive's, for every channel.
+HATS-1161. **The base is enumerated there and nowhere else.** This paragraph used
+to carry its own list of six keys, and that list went stale the moment the
+primitive gained a seventh — `AI_HATS_TASKS_DIR` (HATS-1540), which this very
+section goes on to describe under **Backlog context** below while the list above
+it never grew. A second copy of a contract is how a set drifts, so the copy is
+gone and D2 is the pointer (HATS-1613).
+
+What belongs to this ADR is the *reading*, not the roster: the set-vs-remove
+semantics, the removal of an unresolved value from the inherited environment, and
+the colour stripping are the **primitive's**, for every channel — rev 4 presented
+several of them as this ADR's own additions.
 
 The resolution behind that vocabulary is *implemented (HATS-1540)*, the remainder
 of HATS-1142 after HATS-1151 took the shared primitive. Until then only

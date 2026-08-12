@@ -5,8 +5,10 @@
 # A STUB, deliberately: it finds an ai-hats interpreter and hands the whole event
 # over. Which gates run, in what order, how stdin is replayed, what happens to a
 # script you dropped in yourself — none of that is here, because all of it will
-# change and this file must not. It is installed once and is never re-installed,
-# so every line it carries is a contract with projects composed years apart.
+# change and this file must not. It is re-copied on `self init` / `self update` /
+# `set_role`, but NEVER at commit time: between two such runs these exact bytes
+# are what execute, so every line here is a contract with the projects composed
+# in that window — which spans years.
 #
 # Two things it must do alone, because nothing else can:
 #   1. bootstrap an interpreter (the thing being delegated to cannot find itself);
