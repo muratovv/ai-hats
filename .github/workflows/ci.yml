@@ -23,8 +23,11 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # A copy of the dev-extras pin on purpose: `.[dev]` here would drag 7
+      # workspace packages and the SDK's bundled binary into a job that only
+      # lints. tests/test_dev_tool_pins.py proves the copy matches (HATS-1607).
       - name: Install ruff
-        run: pip install "ruff>=0.4"
+        run: pip install "ruff==0.16.2"
       - name: ruff check
         run: bash scripts/ci-local.sh lint
 
