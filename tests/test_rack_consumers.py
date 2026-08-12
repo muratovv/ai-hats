@@ -142,6 +142,28 @@ def test_an_unowned_backlog_composes_nothing_and_says_so(tmp_path, capsys):
     assert str(tasks_dir) in said
 
 
+def test_a_bound_check_on_an_unowned_backlog_refuses_in_words(tmp_path):
+    """The guard on the road an injected resolver can still reach: no owner means
+    no project declared these rows, and this channel says so in its own typed
+    refusal — a traceback out of an in-lock subscriber is a defect, not a message.
+    """
+    script = _script(tmp_path, "exit 0")
+    runner = _extension(
+        None,
+        tasks_dir=tmp_path / "tasks",
+        topology=_topology(),
+        resolve=lambda: (_check(script),),
+    )
+
+    with pytest.raises(CheckResolutionError) as exc_info:
+        runner.on_event(_ctx())
+
+    assert str(tmp_path / "tasks") in str(exc_info.value)
+    assert "no project owns" in str(exc_info.value) or "which no project owns" in str(
+        exc_info.value
+    )
+
+
 def _wt_state(project_dir: Path, task_id: str, worktree: Path) -> Path:
     """The worktree-state record rack writes at execute, as the runner reads it."""
     from ai_hats.paths import worktrees_dir

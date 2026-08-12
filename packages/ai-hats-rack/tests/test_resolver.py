@@ -193,6 +193,39 @@ def test_an_anchorless_backlog_does_not_inherit_the_callers_prefix(tmp_path):
     assert root.prefix == DEFAULT_PREFIX
 
 
+def test_a_relative_override_is_resolved_against_the_caller(tmp_path):
+    """The answer must not depend on whatever cwd a later reader has: a bare
+    walk-up over a relative path answered ``.``, and that ``.`` then travelled to
+    a gate as ``AI_HATS_PROJECT_DIR``."""
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    sandbox = caller / "sbx"
+    sandbox.mkdir(parents=True)
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+
+    root = resolve_root(caller, Path("sbx/tasks"))
+
+    assert root.tasks_dir == caller / "sbx" / "tasks"
+    assert root.backlog_owner == sandbox
+    assert root.prefix == "SBX"
+
+
+def test_a_leaked_ai_hats_dir_takes_the_prefix_of_the_backlog_it_names(tmp_path):
+    """Same rule as the override road: ids name the backlog's project. The env
+    road kept the caller's prefix, stamping it onto another project's cards."""
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    other = tmp_path / "other"
+    (other / ".agent" / "ai-hats").mkdir(parents=True)
+    (other / "ai-hats.yaml").write_text("task_prefix: OTHER\n")
+
+    root = resolve_root(caller, None, environ={"AI_HATS_DIR": str(other / ".agent" / "ai-hats")})
+
+    assert root.backlog_owner == other
+    assert root.prefix == "OTHER"
+
+
 def test_foreign_root_is_typed_error_and_never_mkdirs(tmp_path):
     # HATS-839: a start with no project marker must NOT bootstrap a phantom
     # tracker — typed refusal, filesystem byte-identical before and after.

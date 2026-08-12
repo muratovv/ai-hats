@@ -95,7 +95,7 @@ class AiHatsCheckPort:
         """The owner, proven present: rows only exist when a project declared them."""
         if self.backlog_owner is None:
             raise CheckResolutionError(
-                f"checks: a bound check was requested for the backlog at {self._tasks_dir}, "
+                f"checks: a bound check was requested for the backlog at {self._catalog}, "
                 f"which no project owns — nothing could have declared it"
             )
         return self.backlog_owner

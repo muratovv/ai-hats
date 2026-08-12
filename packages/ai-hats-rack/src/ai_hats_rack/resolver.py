@@ -194,10 +194,13 @@ def resolve_root(
     backlog, walked up from ``tasks_dir`` without the gitlink hop (HATS-1573).
     """  # comment-length: allow — the precedence order IS the contract
     if tasks_dir_override is not None:
-        owner = find_marker_root(tasks_dir_override)
+        # A relative override is the CALLER's: left alone it made the walk-up
+        # answer '.', which then travelled as a gate's AI_HATS_PROJECT_DIR.
+        backlog = caller_cwd / tasks_dir_override.expanduser()
+        owner = find_marker_root(backlog)
         return RackRoot(
             project_dir=find_project_root(caller_cwd) or caller_cwd,
-            tasks_dir=tasks_dir_override,
+            tasks_dir=backlog,
             backlog_owner=owner,
             # Ids name the backlog's project, never wherever the operator stands.
             prefix=load_root(owner).prefix if owner is not None else DEFAULT_PREFIX,
@@ -211,11 +214,14 @@ def resolve_root(
             anchor = project_dir or caller_cwd
             base = load_root(anchor)
             env_tasks_dir = env_dir / TASKS_SUBPATH
+            owner = find_marker_root(caller_cwd / env_tasks_dir)
             return RackRoot(
                 project_dir=base.project_dir,
                 tasks_dir=env_tasks_dir,
-                backlog_owner=find_marker_root(env_tasks_dir),
-                prefix=base.prefix,
+                backlog_owner=owner,
+                # Same rule as the override road above: a leaked AI_HATS_DIR must
+                # not stamp this caller's prefix onto another project's backlog.
+                prefix=load_root(owner).prefix if owner is not None else DEFAULT_PREFIX,
             )
 
     if project_dir is None:

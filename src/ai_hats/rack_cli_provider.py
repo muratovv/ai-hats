@@ -61,6 +61,10 @@ class CliKernelProvider:
             root.project_dir,
             backlog_owner=root.backlog_owner,
             tasks_dir=root.tasks_dir,
+            # The SAME file `after_create` writes: a transition indexes the
+            # backlog it moved a card in, never the checkout the operator
+            # happens to stand in, whose index it would replace wholesale.
+            state_md_path=_state_md_for(root),
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(

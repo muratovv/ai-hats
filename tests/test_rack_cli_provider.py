@@ -220,6 +220,32 @@ def test_after_create_never_writes_into_a_foreign_checkout(tmp_path):
     assert not (foreign / ".agent" / "ai-hats" / "STATE.md").exists()
 
 
+def test_a_transition_indexes_the_backlog_it_moved_a_card_in(tmp_path):
+    """The twin of the test above on the FSM road — the half that was missed.
+
+    ``DerivedViewsExtension`` replaces STATE.md wholesale, so a kernel pointed at
+    the anchor did not merely leave a stray file: it rewrote the enclosing
+    project's index from a backlog that project never declared (HATS-1573).
+    """
+    from ai_hats.tracker_wiring import tracker_paths
+
+    foreign = tmp_path / "foreign"
+    (foreign / ".agent" / "ai-hats").mkdir(parents=True)
+    foreign_state = tracker_paths(foreign).state_md_path
+    foreign_state.write_text("# the anchor's own index\n")
+    sandbox = tmp_path / "sbx"
+    tasks_dir = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks_dir.mkdir(parents=True)
+    root = RackRoot(project_dir=foreign, tasks_dir=tasks_dir, backlog_owner=sandbox, prefix="HATS")
+    kernel = CliKernelProvider().build_kernel(root, sandbox)
+    kernel.create(actor="test", caller_cwd=sandbox, task_id="HATS-1", title="demo")
+
+    kernel.transition("HATS-1", "plan", actor="test", caller_cwd=sandbox)
+
+    assert foreign_state.read_text() == "# the anchor's own index\n"
+    assert "HATS-1" in tracker_paths(sandbox).state_md_path.read_text()
+
+
 def test_after_create_indexes_new_card(tmp_path):
     from ai_hats.tracker_wiring import tracker_paths
     from ai_hats_rack.kernel import Kernel
