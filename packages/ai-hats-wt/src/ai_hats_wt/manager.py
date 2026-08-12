@@ -1344,9 +1344,7 @@ class WorktreeManager:
         per-route handling (merge/discard propagate, ``cleanup`` suppresses) is
         owned by the calling teardown method, not by the bundle.
         """
-        self._lifecycle.before_teardown(
-            event, self._lifecycle_ctx(deadline, skip_hooks=skip_hooks)
-        )
+        self._lifecycle.before_teardown(event, self._lifecycle_ctx(deadline, skip_hooks=skip_hooks))
 
     # ------------------------------------------------------------------
     # State persistence

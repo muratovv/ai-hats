@@ -32,9 +32,9 @@ Step **не видит** общий state. Получает только то, �
 @dataclass(frozen=True)
 class StepIO:
     name: str
-    requires: frozenset[str] = frozenset()    # MUST be in state — build-time validated
-    optional: frozenset[str] = frozenset()    # passed if present, otherwise omitted
-    produces: frozenset[str] = frozenset()    # delta keys this step may emit
+    requires: frozenset[str] = frozenset()  # MUST be in state — build-time validated
+    optional: frozenset[str] = frozenset()  # passed if present, otherwise omitted
+    produces: frozenset[str] = frozenset()  # delta keys this step may emit
 
 
 FailurePolicy = Literal["halt", "continue"]
@@ -69,8 +69,8 @@ class Pipeline(Step):
         external_req: set[str] = set()
         external_opt: set[str] = set()
         for s in self.steps:
-            external_req |= (s.io.requires - produced)
-            external_opt |= (s.io.optional - produced - external_req)
+            external_req |= s.io.requires - produced
+            external_opt |= s.io.optional - produced - external_req
             produced |= s.io.produces
         return StepIO(
             name=self.pipeline_name,
@@ -92,8 +92,7 @@ PHASE 2 — `run(pipeline, initial)` валидирует против факт�
 ```python
 def run(pipeline: Pipeline, initial: Mapping[str, Any]) -> Mapping[str, Any]:
     validate(pipeline, frozenset(initial.keys()))
-    return _run_steps(pipeline.steps, dict(initial),
-                      parent_policy=pipeline.failure_policy)
+    return _run_steps(pipeline.steps, dict(initial), parent_policy=pipeline.failure_policy)
 
 
 def _run_steps(steps, state, *, parent_policy):

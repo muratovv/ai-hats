@@ -204,7 +204,13 @@ def test_an_ambient_tasks_dir_never_reaches_a_check(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
     script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
 
-    run = run_hook(script, point="wt:pre-merge", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
+    run = run_hook(
+        script,
+        point="wt:pre-merge",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    )
 
     assert run.reason == "unset"
 

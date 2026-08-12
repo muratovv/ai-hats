@@ -35,21 +35,25 @@ class ArtifactCategory(str, Enum):
     HOOKS = "hooks"
     SETTINGS = "settings"
 
+
 class DeliveryMode(str, Enum):
     CACHE_FLAG = "cache_flag"
     SDK_OPTION = "sdk_option"
     NATIVE_ROOT = "native_root"
     INLINE = "inline"
 
+
 class RunMode(str, Enum):
     HITL = "hitl"
     AUTOMATE = "automate"
+
 
 @dataclass(frozen=True)
 class SessionPolicy:
     context: bool = True
     hooks: bool = True
     settings: bool = True
+
 
 @dataclass
 class BuiltArtifacts:

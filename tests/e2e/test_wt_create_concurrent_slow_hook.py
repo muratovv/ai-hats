@@ -54,13 +54,22 @@ def _init_project(project: Path, launcher: Path, env: dict) -> None:
 
     init = subprocess.run(
         [
-            str(launcher), "self", "init",
-            "-p", "claude",
-            "-r", "e2e-wthook-role",
+            str(launcher),
+            "self",
+            "init",
+            "-p",
+            "claude",
+            "-r",
+            "e2e-wthook-role",
             "--no-wizard",
-            "--task-prefix", "TST",
+            "--task-prefix",
+            "TST",
         ],
-        cwd=str(project), env=env, capture_output=True, text=True, timeout=180,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     assert init.returncode == 0, f"self init failed:\n{init.stdout}\n{init.stderr}"
 
@@ -78,8 +87,11 @@ def test_concurrent_creates_survive_a_hook_longer_than_the_create_lock(
     procs = {
         branch: subprocess.Popen(
             [str(launcher), "wt", "create", branch],
-            cwd=str(project), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=str(project),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         for branch in ("task/probe-a", "task/probe-b")
     }
