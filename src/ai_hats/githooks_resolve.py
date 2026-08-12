@@ -7,6 +7,7 @@ HATS-1337.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,6 +75,23 @@ def resolve_git_gates(result: CompositionResult, event: str) -> Resolution:
                 # The dispatcher reads one path per line; a newline would split
                 # one gate into two unrunnable halves.
                 refusals.append(f"{skill.name}: '{script}' resolves to a path with a newline")
+                continue
+            # HATS-1597: only our own gates reached execve unchecked; the
+            # neighbours on this chain have always checked.
+            if not os.access(candidate, os.X_OK):
+                refusals.append(f"{skill.name}: '{script}' is not executable — chmod +x it")
+                continue
+            try:
+                with candidate.open("rb") as fh:
+                    head = fh.read(2)
+            except OSError as exc:
+                refusals.append(f"{skill.name}: '{script}' cannot be read: {exc}")
+                continue
+            if head != b"#!":
+                refusals.append(
+                    f"{skill.name}: '{script}' has no shebang ('#!') first line — "
+                    "it would fail to exec"
+                )
                 continue
             gates.append(ResolvedGate(skill=skill.name, script=script, path=candidate))
 

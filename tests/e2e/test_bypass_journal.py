@@ -464,3 +464,34 @@ def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
     entry = lines[0]
     assert entry["cmd"] == "git push origin master"
     assert entry["session_id"] == "test-session-123"
+
+
+# ----- HATS-1597: a gate SKIPPED by the dispatcher is a bypass too -------------
+
+
+@pytest.mark.integration
+def test_a_gate_the_dispatcher_could_not_run_is_recorded_as_fail_open(gated_repo: Path):
+    """A skipped gate is a disarmed gate, and ADR-0020 D2 forbids that happening
+    SILENTLY — that row is the machine form of ADR-0019 D4's anti-disarm rule.
+    Refusing outright would wedge the commit (D3) and push the human to
+    `--no-verify`, which disarms the whole chain; recording keeps the skip
+    visible where `pre-push-bypass-report.sh` reads it.
+    """
+    from ai_hats.githooks_run import record_fail_open
+
+    cwd = os.getcwd()
+    os.chdir(gated_repo)  # the writer resolves --git-common-dir from cwd
+    try:
+        record_fail_open(
+            JOURNAL_HELPER, reason="s: 'git_hooks/g.sh' is not executable", event="pre-commit"
+        )
+    finally:
+        os.chdir(cwd)
+
+    lines = _journal_lines(gated_repo)
+    assert len(lines) == 1, f"the skip left no journal line: {lines}"
+    entry = lines[0]
+    assert set(entry) == EXPECTED_FIELDS, f"field drift: {sorted(entry)}"
+    assert entry["kind"] == "fail_open"
+    assert entry["event"] == "pre-commit"
+    assert "not executable" in entry["reason"] and "g.sh" in entry["reason"]

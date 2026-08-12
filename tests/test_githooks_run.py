@@ -212,3 +212,40 @@ def test_the_runner_does_not_leak_ai_hats_env_into_a_bare_run(tmp_path: Path):
 
     assert _run(project, gates=[gate], journal=None) == 0
     assert seen.read_text().strip() == "[unset]"
+
+
+# ----- HATS-1597: an unrunnable script degrades, it never raises ---------------
+
+
+def _unrunnable(project: Path, mode: int, *, shebang: bool) -> Path:
+    script = project / "lib" / "broken.sh"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/usr/bin/env bash\ntrue\n" if shebang else "true\n")
+    script.chmod(mode)
+    return script
+
+
+@pytest.mark.parametrize(
+    ("mode", "shebang"), [(0o644, True), (0o755, False)], ids=["non-executable", "no-shebang"]
+)
+def test_a_script_that_cannot_be_exec_d_does_not_raise(tmp_path, capsys, mode, shebang):
+    """`run_chain` reaches execve for drop-ins and the chained hook too — neither
+    passes through `resolve_git_gates` — and a mode can change between any check
+    and the exec. PermissionError (no x bit) and OSError/ENOEXEC (no shebang)
+    both used to surface as a traceback on a human's commit.
+    """
+    project = _repo(tmp_path)
+
+    assert _run(project, gates=[_unrunnable(project, mode, shebang=shebang)]) == 0
+    assert "fail-open" in capsys.readouterr().err, "the skip must be spoken"
+
+
+def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
+    """Skipping is per-script: one bad mode must not silently disarm the rest."""
+    project = _repo(tmp_path)
+    broken = _unrunnable(project, 0o644, shebang=True)
+    ran = project / "ran.txt"
+    good = _script(project / "lib" / "good.sh", f'touch "{ran}"')
+
+    assert _run(project, gates=[broken, good]) == 0
+    assert ran.exists(), "a later gate was skipped along with the broken one"

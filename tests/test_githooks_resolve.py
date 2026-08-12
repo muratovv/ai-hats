@@ -399,3 +399,58 @@ def test_a_refusing_gate_still_blocks_the_event(tmp_path: Path) -> None:
     assert ran.read_text().split("\0")[:-1] == [".git/COMMIT_EDITMSG"], (
         "the gate must have run, with git's argument intact across the separator"
     )
+
+
+# ----- HATS-1597: the dispatcher degrades, it never raises at a human ----------
+
+
+@pytest.mark.integration
+def test_a_gate_that_cannot_be_exec_d_is_refused_at_resolve_time(tmp_path: Path) -> None:
+    """Both unrunnable shapes join the existing refusal cascade rather than
+    reaching execve. The neighbours on this chain have always checked
+    (`githooks_run` for drop-ins and the chained hook, `check_points` for
+    `checks:`); only our own gates did not."""
+    from ai_hats.githooks_resolve import resolve_git_gates
+
+    skill = _skill(tmp_path / "lib", "s", event="pre-commit", scripts=["git_hooks/g.sh"])
+    gate = skill.source_path / "git_hooks" / "g.sh"
+
+    gate.write_text("#!/usr/bin/env bash\nexit 0\n")
+    gate.chmod(0o644)
+    refusals = resolve_git_gates(_result(skill), "pre-commit").refusals
+    assert len(refusals) == 1 and "not executable" in refusals[0], refusals
+
+    gate.write_text("exit 0\n")
+    gate.chmod(0o755)
+    refusals = resolve_git_gates(_result(skill), "pre-commit").refusals
+    assert len(refusals) == 1 and "shebang" in refusals[0], refusals
+
+
+@pytest.mark.integration
+def test_a_composition_that_refuses_does_not_wedge_the_commit(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """A CheckBindingError (a removed script, an unknown point name) renders
+    friendly only in the click layer, which a git hook never enters — so it
+    reached the human as a traceback and exit 1. Needs no broken FILE: an
+    ordinary typo in `composition.apps` gets here.
+
+    Patched on `materialize`: `main` imports the name inside its own body, so
+    the source module is the only place a stub is observable.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    project = _gate_project(tmp_path)
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("composition refused: unknown point 'edge:typo'")
+
+    monkeypatch.setattr("ai_hats.materialize.compose_for_role", _boom)
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    assert rc == 0, "a broken composition must not wedge a human commit"
+    err = capsys.readouterr().err
+    assert "fail-open" in err and "composition" in err, err
