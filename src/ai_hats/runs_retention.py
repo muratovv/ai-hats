@@ -150,7 +150,7 @@ def sweep_runs(
 
     _touch(stamp, report)
     if report.files_removed or report.errors:
-        logger.info("%s", report.summary())
+        logger.warning("%s", report.summary())
     return report
 
 

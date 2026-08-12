@@ -125,7 +125,7 @@ def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> 
         if reason is None:
             continue
         shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok session-cache (dead owner/TTL)
-        logger.info("reclaimed session cache %s: %s", entry.name, reason)
+        logger.warning("reclaimed session cache %s: %s", entry.name, reason)
 
 
 def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | None:
@@ -156,7 +156,7 @@ def _drain_workspace_cache(legacy: Path, cutoff: float, liveness: _LazyLiveness)
             _expire_session_dirs(entry, cutoff, liveness)
             _rmdir_quiet(entry)
             continue
-        logger.info("dropping stale in-tree cache %s (HATS-1398)", entry)
+        logger.warning("dropping stale in-tree cache %s (HATS-1398)", entry)
         try:
             if entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
@@ -217,7 +217,7 @@ def _sweep_orphan_project_keys(
                 logger.info("project cache key %s kept: session %s is running", entry.name, live)
                 continue
             shutil.rmtree(entry, ignore_errors=True)  # safe-delete: ok regenerable cache
-            logger.info("reclaimed orphaned project cache key: %s", entry.name)
+            logger.warning("reclaimed orphaned project cache key: %s", entry.name)
         except OSError as exc:
             logger.warning("project-key sweep skipped %s: %s", entry.name, exc)
 
@@ -282,9 +282,9 @@ class EnvironmentRecovery:
             try:
                 with versions_lock(self.project_dir, timeout=GC_LOCK_TIMEOUT):
                     for residue in sweep_incomplete_versions(self.project_dir):
-                        logger.info("reclaimed incomplete version residue: %s", residue.name)
+                        logger.warning("reclaimed incomplete version residue: %s", residue.name)
                     for orphan in reclaim_orphan_versions(self.project_dir):
-                        logger.info("reclaimed orphaned version: %s", orphan.name)
+                        logger.warning("reclaimed orphaned version: %s", orphan.name)
             except VersionLockError:
                 logger.info(
                     "version GC skipped: lock held by another ai-hats process "
@@ -300,4 +300,4 @@ class EnvironmentRecovery:
         # legacy/override/editable run, so it is safe at this universal seam.
         reclaimed_venv = reclaim_legacy_venv(self.project_dir)
         if reclaimed_venv is not None:
-            logger.info("reclaimed legacy .venv: %s", reclaimed_venv)
+            logger.warning("reclaimed legacy .venv: %s", reclaimed_venv)
