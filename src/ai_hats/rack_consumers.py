@@ -32,7 +32,7 @@ from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
 from .check_points import check_log_token
-from .check_resolve import CheckResolutionError, resolve_carried_checks, session_id
+from .check_resolve import CheckResolutionError, resolve_carried_checks, session_identity
 from .hook_exec import HookRun, HookVerdict, run_hook
 from .libraries.models import CheckBindingError
 
@@ -76,7 +76,7 @@ class AiHatsCheckPort:
         return tuple(_declaration(check) for check in resolved)
 
     def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
-        return resolve_carried_checks(self.project_dir, self.APP, session_id=session_id())
+        return resolve_carried_checks(self.project_dir, self.APP, identity=session_identity())
 
     def run_check(self, request: CheckRequest) -> CheckOutcome:
         check: ResolvedCheck = request.declaration.handle

@@ -54,7 +54,7 @@ def _launch(monkeypatch, seen: dict[str, Any]) -> None:
     from ai_hats import runtime as rt
     from ai_hats import wrap_runner as wr
 
-    def _spy(project_dir, *, session_dir, session_id="", extra_env=None, compose=None):  # noqa: ARG001
+    def _spy(project_dir, *, session_dir, identity=None, extra_env=None, compose=None):  # noqa: ARG001
         seen["record_exists"] = (Path(session_dir) / ROLE_MATERIALIZATION_JSON).is_file()
         seen["extra_env"] = dict(extra_env or {})
         return []

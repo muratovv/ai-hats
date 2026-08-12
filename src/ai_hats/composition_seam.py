@@ -329,8 +329,13 @@ def build_preview_payload(
     )
 
 
-def compose_for_checks(project_dir: Path) -> CompositionResult | None:
+def compose_for_checks(project_dir: Path, role: str | None = None) -> CompositionResult | None:
     """Fail-CLOSED compose for the ``checks:`` gate channel (HATS-1141).
+
+    ``role`` is the session's own role expression when a session is asking, and
+    ``None`` only outside one — where ``active_role`` genuinely is the answer.
+    It was hardcoded ``None`` through HATS-1594, so a session launched with
+    ``--role`` had its gates composed from whatever the config still said.
 
     The exact opposite of :func:`compose_for_carry` below, and deliberately so:
     carry degrades to ``None`` because trouble there must never block a worktree,
@@ -345,26 +350,17 @@ def compose_for_checks(project_dir: Path) -> CompositionResult | None:
     """  # comment-length: allow — the contrast with its neighbour IS the contract
     from .materialize import compose_for_role
 
-    asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, None)
+    asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)
     if not effective:
         return None
     return compose_for_role(asm, effective, runtime_overlay=runtime_overlay)
 
 
-def session_skills_root_for_checks(project_dir: Path, session_id: str) -> Path | None:
-    """Where this project's surface mirrored ``session_id``'s skills (HATS-1540).
-
-    At the seam because provider resolution is the seam's job (HATS-865): the
-    check channel is a brick and may not reach the registry itself. ``None`` iff
-    the surface mirrors no skills — the caller turns that into a refusal, since a
-    binding with no bytes must not wave a transition through.
-    """
-    from .models import ProjectConfig
-    from .paths.constants import PROJECT_CONFIG
-    from .providers import get_provider
-
-    provider = get_provider(ProjectConfig.from_yaml(project_dir / PROJECT_CONFIG).provider)
-    return provider.session_skills_root(project_dir, session_id)
+# HATS-1594 retired `session_skills_root_for_checks`. It re-read
+# `ProjectConfig.provider` to find the mirror, so a session launched with `-p`
+# resolved against a surface it was not running. The root is now decided once at
+# launch and carried on `SessionIdentity.skills_root` — there is no second
+# lookup left to disagree.
 
 
 def compose_for_carry(project_dir: Path, role: str | None = None):

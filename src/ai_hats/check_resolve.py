@@ -20,10 +20,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterator
 
-from ai_hats_observe.trace import ENV_SESSION_ID
-
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import CompositionResult, ResolvedCheck
+
+    from .session_identity import SessionIdentity
 
 
 #: The binding-channel key in every spelling the YAML parser accepts — ``apps``
@@ -40,16 +40,26 @@ class CheckResolutionError(Exception):
     """The check channel cannot be resolved — always a refusal, never a skip."""
 
 
-def session_id() -> str:
-    """The launching session, or ``""`` outside one (the live-resolution mode)."""
-    return os.environ.get(ENV_SESSION_ID, "")
+def session_identity() -> SessionIdentity | None:
+    """What the launching session IS, or ``None`` outside one (HATS-1594).
+
+    ``None`` is the live-resolution mode and nothing else; an envelope that is
+    present and untrustworthy raises, because reading it as absence would send
+    the resolution back to the config this channel must stop asking.
+    """
+    from .session_identity import SessionIdentity, SessionIdentityError
+
+    try:
+        return SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        raise CheckResolutionError(f"checks: {exc}") from exc
 
 
 def resolve_carried_checks(
     project_dir: Path,
     app: str,
     *,
-    session_id: str = "",
+    identity: SessionIdentity | None = None,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
     """Every row declared under ``app``, re-based onto its root.
@@ -60,13 +70,13 @@ def resolve_carried_checks(
     never handed to this one — and a broken row of one app cannot abort
     another's event (HATS-1545).
     """
-    result = (compose or _compose_fail_closed)(project_dir)
+    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app)
     if not checks:
         return ()
-    return _rooted(project_dir, result, checks, session_id)
+    return _rooted(result, checks, identity)
 
 
 def resolve_checks_at(
@@ -74,7 +84,7 @@ def resolve_checks_at(
     app: str,
     point: str,
     *,
-    session_id: str = "",
+    identity: SessionIdentity | None = None,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
     """Every row of ``app`` bound to one point, re-based onto its root.
@@ -87,20 +97,19 @@ def resolve_checks_at(
     HATS-1581, because ai-hats now fires two apps and nothing stops them from
     spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
-    result = (compose or _compose_fail_closed)(project_dir)
+    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app and point in check.at)
     if not checks:
         return ()
-    return _rooted(project_dir, result, checks, session_id)
+    return _rooted(result, checks, identity)
 
 
 def _rooted(
-    project_dir: Path,
     result: CompositionResult,
     checks: tuple[ResolvedCheck, ...],
-    session_id: str,
+    identity: SessionIdentity | None,
 ) -> tuple[ResolvedCheck, ...]:
     """Pick the root every one of ``checks`` runs from — the mode split."""
     # D9 clause 4 first, over every binding: a source inside a linked worktree is
@@ -108,9 +117,9 @@ def _rooted(
     # rather than whatever the surface lookup happens to say.
     for check in checks:
         reject_worktree_root(check.script_path, check)
-    if not session_id:
+    if identity is None:
         return checks
-    mirror = _session_mirror(project_dir, session_id, result)
+    mirror = mirror_for(_mirror_root(identity), result)
     return tuple(rebase_onto_mirror(check, mirror) for check in checks)
 
 
@@ -129,10 +138,6 @@ class _Mirror:
     leaf: dict[str, str]
 
 
-def _session_mirror(project_dir: Path, session_id: str, result: CompositionResult) -> _Mirror:
-    return mirror_for(_provider_skills_root(project_dir, session_id), result)
-
-
 def mirror_for(root: Path, result: CompositionResult) -> _Mirror:
     """The mirror at ``root``, with the leaf spelling this composition dictates.
 
@@ -147,32 +152,21 @@ def mirror_for(root: Path, result: CompositionResult) -> _Mirror:
     )
 
 
-def _provider_skills_root(project_dir: Path, session_id: str) -> Path:
-    """Where the session's surface mirrored its composed skills.
+def _mirror_root(identity: SessionIdentity) -> Path:
+    """The mirror the session actually wrote — read, not re-resolved (HATS-1594).
 
-    Through the seam: the composition layer is integrator-only (HATS-865), so a
-    brick asks it for the provider rather than reaching the registry. Fail-closed
-    on every branch — a surface that mirrors nothing leaves a binding with no
-    bytes to run, and passing the transition through would be the silent absence
-    this channel exists to remove.
+    The surface decided this once at launch, holding its own provider object.
+    Asking the registry again here is what made a gate resolve against claude's
+    mirror in a session running under agy; an empty value is that surface saying
+    it mirrors nothing, which leaves a binding no bytes and so must refuse.
     """
-    from .composition_seam import session_skills_root_for_checks
-
-    try:
-        root = session_skills_root_for_checks(project_dir, session_id)
-    except Exception as exc:
+    if not identity.skills_root:
         raise CheckResolutionError(
-            f"checks: the surface running session {session_id!r} could not be resolved "
-            f"({type(exc).__name__}): {exc} — so the skill mirror a binding runs from "
-            f"cannot be located"
-        ) from exc
-    if root is None:
-        raise CheckResolutionError(
-            f"checks: this project's surface mirrors no skills for a session, so a binding "
-            f"has no bytes to run in session {session_id!r} — run outside a session "
-            f"(no {ENV_SESSION_ID}) or use a surface that materializes skills"
+            f"checks: the surface running session {identity.id!r} ({identity.provider}) "
+            f"mirrors no skills, so a binding has no bytes to run — run outside a session "
+            f"or use a surface that materializes skills"
         )
-    return root
+    return Path(identity.skills_root)
 
 
 def rebase_onto_mirror(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
@@ -334,18 +328,28 @@ def _reraise(exc: OSError) -> None:
     raise exc
 
 
-def _compose_role(project_dir: Path) -> CompositionResult | None:
-    """The active role's live composition — the binding list in BOTH modes.
+def _compose_role(
+    project_dir: Path, identity: SessionIdentity | None
+) -> CompositionResult | None:
+    """The session's live composition — the binding list in BOTH modes.
 
     Through the seam: the composition layer is integrator-only (HATS-865), and
-    this module is a consumer of it, not a member. ``None`` when no role is set.
-    """
+    this module is a consumer of it, not a member. The role comes from the
+    session when there is one, and only outside a session from the config —
+    where ``active_role`` genuinely is the answer. ``None`` when no role is set.
+
+    Live, never frozen: HATS-1540 retired the snapshotted binding list so a
+    session that predates a binding still resolves it. Only the identity is
+    fixed at launch.
+    """  # comment-length: allow — which half is frozen is the contract
     from .composition_seam import compose_for_checks
 
-    return compose_for_checks(project_dir)
+    return compose_for_checks(project_dir, role=identity.role if identity else None)
 
 
-def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
+def _compose_fail_closed(
+    project_dir: Path, identity: SessionIdentity | None = None
+) -> CompositionResult | None:
     """``None`` iff nothing is declared. Any other trouble raises — the
     fail-open ``compose_for_carry`` is right for carry and is HYP-078 here.
 
@@ -371,7 +375,7 @@ def _compose_fail_closed(project_dir: Path) -> CompositionResult | None:
     if not declared:
         return None
     try:
-        result = _compose_role(project_dir)
+        result = _compose_role(project_dir, identity)
     except Exception as exc:
         raise CheckResolutionError(
             f"checks are declared but the role could not be composed ({type(exc).__name__}): {exc}"
@@ -391,5 +395,5 @@ __all__ = [
     "declares_checks",
     "resolve_carried_checks",
     "resolve_checks_at",
-    "session_id",
+    "session_identity",
 ]
