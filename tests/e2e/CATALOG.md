@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**229 of 229 files catalogued — 236 flows.**
+**230 of 230 files catalogued — 237 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -71,6 +71,20 @@ as a claim to check, not as evidence.
 
 - **expect** — agy hook dispatcher resolves session hooks from out-of-tree cache and fires scripts
 - **why** — without out-of-tree cache resolution, moving session cache out of workspace silently disables all registered runtime hooks
+
+## `test_agy_dispatcher_timeout.py`
+
+*pins HATS-1598*
+
+- **flow** — an agy tool call whose PreToolUse hook hangs instead of answering
+- **cmds**
+
+  ```console
+  sh -c '... "$AI_HATS_PYTHON" -m ai_hats_agy.hook_dispatcher "$@"' sh PreToolUse Edit
+  ```
+
+- **expect** — the hook is killed at its budget and the dispatcher returns 1 (BROKE per ADR-0020 D2), naming the hook on stderr
+- **why** — the dispatcher runs on EVERY tool call, so an unbounded hook wedges the whole session — one typo in a gate script and no tool ever returns
 
 ## `test_agy_headless_hook_execution.py`
 
