@@ -62,14 +62,15 @@ class _LazyLiveness:
 
     ``capture()`` costs ~21 ms against ~930 processes where the whole key scan
     costs ~12 ms, so an unconditional read would triple session start for the
-    common case of nothing to reap (plan Q4/Q7). Two things keep it off the hot
-    path: the read happens at the FIRST query, hence after the candidate list
-    was taken (a session started later is absent from the table and would read
-    as dead); and ``os.kill(pid, 0)`` is tried first, which can only ever answer
-    *alive* — a pid that answers is never reaped this pass, so the gate is
-    strictly more conservative than the snapshot it skips (at worst a reused pid
-    defers a reclaim by a run). Everything it cannot rule out goes to
-    :meth:`LivenessSnapshot.is_live`, which owns the real decision.
+    common case of nothing to reap (plan Q4/Q7). ``os.kill(pid, 0)`` answers the
+    two cases that need no table — an absent pid is dead however it is anchored,
+    and a living pid with no recorded baseline is exactly the snapshot's own
+    verdict — leaving the table to the one case that turns on it: a living pid
+    WITH a baseline, which is the reused-pid question the anchor was written to
+    answer (plan Q3). Gating that on ``os.kill`` first, as this class did until
+    HATS-1339, made the reuse branch unreachable in production. The read still
+    happens at the first query that needs it, hence after the candidate list was
+    taken, and :meth:`LivenessSnapshot.is_live` still owns the verdict.
     """  # comment-length: allow — the hot-path contract is the reason S1 exists
 
     def __init__(self, capture: Callable[[], LivenessSnapshot] = LivenessSnapshot.capture) -> None:
@@ -77,7 +78,9 @@ class _LazyLiveness:
         self._snapshot: LivenessSnapshot | None = None
 
     def is_live(self, root_pid: int, start_time: str | None) -> bool:
-        if _pid_alive(root_pid):
+        if not _pid_alive(root_pid):
+            return False
+        if start_time is None:
             return True
         if self._snapshot is None:
             self._snapshot = self._capture()

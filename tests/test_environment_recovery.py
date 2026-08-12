@@ -17,7 +17,12 @@ from ai_hats.environment_recovery import (
     _sweep_orphan_project_keys,
     _sweep_orphan_session_caches,
 )
-from ai_hats.session_liveness import LivenessSnapshot, anchor_path, session_owner
+from ai_hats.session_liveness import (
+    LivenessSnapshot,
+    anchor_path,
+    session_owner,
+    write_session_anchor,
+)
 from ai_hats_observe import SessionManager
 from ai_hats.paths import (
     cache_home,
@@ -358,9 +363,9 @@ class _CountingCapture:
         return self._snapshot if self._snapshot is not None else LivenessSnapshot.capture()
 
 
-def _session_dir(project_dir, pid, *, age_hours=0.0):
+def _session_dir(project_dir, pid, *, age_hours=0.0, counter=1):
     """A session cache dir named the way ``create_session`` names one."""
-    entry = session_cache_root(project_dir) / f"20260101-000000-1-{pid}"
+    entry = session_cache_root(project_dir) / f"20260101-000000-{counter}-{pid}"
     (entry / "plugin").mkdir(parents=True)
     (entry / "hooks.json").write_text("{}", encoding="utf-8")
     if age_hours:
@@ -390,7 +395,84 @@ def test_dead_owner_is_reaped_before_the_ttl(tmp_path):
     _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
 
     assert not orphan.exists()
-    assert spy.calls == 1, "the table is read once, and only for a candidate"
+    assert spy.calls == 0, "an absent pid is proof of death without any ps"
+
+
+def test_a_dir_with_no_baseline_costs_no_process_table_read(tmp_path):
+    """Both no-table branches in one sweep: an absent pid is dead on ``os.kill``
+    alone, and a living pid with nothing to compare against is alive by
+    definition — neither question the table could answer differently."""
+    dead = _session_dir(tmp_path, _dead_pid())
+    plain = _session_dir(tmp_path, os.getpid(), counter=2)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert not dead.exists()
+    assert plain.exists()
+    assert spy.calls == 0
+
+
+def test_recorded_baselines_cost_one_process_table_read_for_the_whole_sweep(tmp_path):
+    """The reuse question is the only one that reaches ``ps``, and the snapshot
+    it captures is shared by every candidate that asks."""
+    first = _session_dir(tmp_path, os.getpid())
+    second = _session_dir(tmp_path, os.getpid(), counter=2)
+    write_session_anchor(first)
+    write_session_anchor(second)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert first.exists() and second.exists(), "our own live baseline must match"
+    assert spy.calls == 1
+
+
+@pytest.fixture
+def live_proc():
+    """A real, live child process whose pid we can probe; killed on teardown."""
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        yield proc
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_reused_pid_reads_as_dead_through_the_lazy_gate(live_proc):
+    """Through the INTEGRATED gate, not the snapshot behind it.
+
+    ``os.kill`` cannot tell the owner from whoever inherited its pid, so a living
+    pid with a mismatched baseline must still reach the process table — the
+    recorded ``start_time`` is the entire reason the anchor exists (plan Q3).
+    """
+    assert _LazyLiveness().is_live(live_proc.pid, "Mon Jan  1 00:00:00 2001") is False
+
+
+@pytest.mark.parametrize("baseline", [None, "Mon Jan  1 00:00:00 2001"])
+def test_the_cheap_gate_never_answers_differently_from_the_snapshot(live_proc, baseline):
+    """The gate exists to SKIP the table, never to disagree with it.
+
+    Every row of the truth table, cheap path against full snapshot: our own pid,
+    a live child, and a pid that is certainly gone. Only the sub-millisecond
+    exit race between ``os.kill`` and the capture can part them.
+    """
+    snapshot = LivenessSnapshot.capture()
+    for pid in (os.getpid(), live_proc.pid, _dead_pid()):
+        assert _LazyLiveness().is_live(pid, baseline) is snapshot.is_live(pid, baseline)
+
+
+def test_a_dir_whose_owner_pid_was_reused_is_reaped(tmp_path, live_proc):
+    """The same, end to end through the sweep."""
+    entry = _session_dir(tmp_path, live_proc.pid)
+    anchor_path(entry).write_text(
+        json.dumps({"root_pid": live_proc.pid, "start_time": "Mon Jan  1 00:00:00 2001"}),
+        encoding="utf-8",
+    )
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert not entry.exists()
 
 
 def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
@@ -405,14 +487,25 @@ def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
     assert not entry.exists()
 
 
-def test_dir_naming_no_owner_still_follows_the_ttl(tmp_path):
+@pytest.mark.parametrize(
+    ("aged_name", "fresh_name"),
+    [
+        ("dry-run-materialize", "dry-run"),
+        # A pre-HATS-1248 id ends at the COUNTER, not a pid. Reading that tail as
+        # a pid handed the dir to pid 1 (launchd), which never exits, so the dir
+        # — and every project key holding one — was retained forever.
+        ("20260529-084521-1", "20260530-084521-1"),
+        ("sid-1", "sid-2"),
+    ],
+)
+def test_dir_naming_no_owner_still_follows_the_ttl(tmp_path, aged_name, fresh_name):
     """``dry-run-materialize`` and legacy ids carry no pid — age is all there is."""
     root = session_cache_root(tmp_path)
-    aged = root / "dry-run-materialize"
+    aged = root / aged_name
     aged.mkdir(parents=True)
     old = time.time() - 48 * 3600
     os.utime(aged, (old, old))
-    fresh = root / "legacy-sid"
+    fresh = root / fresh_name
     fresh.mkdir(parents=True)
     spy = _CountingCapture()
 

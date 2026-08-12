@@ -175,18 +175,28 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _pid_from_dirname(name: str) -> int | None:
-    """The pid a session id carries, parsed from the RIGHT.
+    """The pid a session id carries, matched against the id GRAMMAR.
 
-    Ids are ``<YYYYMMDD-HHMMSS>-<counter>-<pid>`` and sub-agents nest as
-    ``<parent>_<base>-<counter>-<pid>`` (``ai_hats_observe.session``), so the
-    last ``-`` component is the owning pid in both shapes. ``None`` for a name
-    that carries none (``dry-run``, a legacy id).
-    """
-    tail = name.rpartition("-")[2]
-    if not tail.isdigit():
+    ``<YYYYMMDD>-<HHMMSS>-<counter>-<pid>``, sub-agents nesting as
+    ``<parent>_<base>-<counter>-<pid>`` (``ai_hats_observe.session``): the
+    innermost ``_`` component is the owning id, and it must fill all four
+    positions. ``None`` for a name that carries no pid — ``dry-run``, and the
+    reason this reads the grammar rather than the last dash token: the
+    pre-HATS-1248 id ``<YYYYMMDD>-<HHMMSS>-<counter>`` ends at the counter,
+    which read as pid 1 (launchd, never exits — the dir and its whole project
+    key were then retained forever) or as some unrelated pid the session never
+    owned.
+    """  # comment-length: allow — the shape IS the contract this parser enforces
+    parts = name.rpartition("_")[2].split("-")
+    if len(parts) != 4:
         return None
-    pid = int(tail)
-    return pid if pid > 0 else None
+    day, clock, counter, pid = parts
+    if not (len(day) == 8 and day.isdigit() and len(clock) == 6 and clock.isdigit()):
+        return None
+    if not (counter.isdigit() and pid.isdigit()):
+        return None
+    value = int(pid)
+    return value if value > 0 else None
 
 
 def session_owner(session_dir: Path) -> tuple[int | None, str | None]:

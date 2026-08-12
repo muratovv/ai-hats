@@ -127,7 +127,18 @@ def test_nested_subagent_id_yields_the_child_pid(tmp_path):
     assert session_liveness.session_owner(session_dir) == (58600, None)
 
 
-@pytest.mark.parametrize("name", ["dry-run", "dry-run-materialize", "legacy_session"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "dry-run",
+        "dry-run-materialize",
+        "legacy_session",
+        # Pre-HATS-1248 ids stop at the COUNTER. Reading that tail as a pid made
+        # every one of them the property of pid 1 (launchd), which never exits.
+        "20260529-084521-1",
+        "sid-1",
+    ],
+)
 def test_no_owner_anywhere_leaves_the_caller_on_ttl(tmp_path, name):
     session_dir = tmp_path / name
     session_dir.mkdir()
