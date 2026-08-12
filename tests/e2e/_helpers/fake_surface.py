@@ -55,7 +55,7 @@ class HoldfastProvider(ClaudeProvider):
 
 #: Exits on its hold OR on being orphaned, so SIGKILLing the ai-hats parent that
 #: owns the session leaves nothing running behind it.
-_HOLD_SRC = '''\
+_HOLD_SRC = """\
 import os
 import sys
 import time
@@ -65,17 +65,17 @@ sys.stdout.flush()
 deadline = time.monotonic() + float(os.environ.get("FAKE_SURFACE_HOLD_SECONDS", "0"))
 while time.monotonic() < deadline and os.getppid() > 1:
     time.sleep(0.1)
-'''
+"""
 
 #: ai-hats installs no logging handler anywhere in the tree, so a sweep's INFO
 #: record falls to ``logging.lastResort`` (WARNING) and vanishes. Wiring one is
 #: the host's job, and the test IS the host — else no reclaim is observable.
-_SITECUSTOMIZE = '''\
+_SITECUSTOMIZE = """\
 import logging
 import sys
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(name)s %(message)s")
-'''
+"""
 
 #: Long enough that a held session outlives the whole test, short enough that a
 #: leaked one dies on its own.
