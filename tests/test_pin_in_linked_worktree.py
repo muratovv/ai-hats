@@ -5,7 +5,9 @@ HATS-1613 / ADR-0024 D2. ``subagent_runner`` hands the child ``AI_HATS_PROJECT_D
 designed and permanent. What reconciles them is the worktree-hop — and *because*
 the contract makes the hop load-bearing, these tests exercise the real one rather
 than monkeypatching it (`test_cli_helpers.py` already covers the branching with a
-stub; a stubbed hop cannot catch a broken hop).
+stub; a stubbed hop cannot catch a broken hop). The worktree is handed in via
+``_project_dir(start=…)`` rather than by `chdir`-ing the process — exit 1 of
+`scripts/check_test_isolation.py`.
 
 Net for the trust-policy work in the same task: if resolution stops hopping, a
 legitimate pin starts reading as foreign, ``AI_HATS_DIR`` gets dropped, and every
@@ -48,12 +50,11 @@ def test_worktree_cwd_with_main_checkout_pin_resolves_to_main(tmp_path, monkeypa
     main = _project(tmp_path / "main")
     wt = tmp_path / "linked"
     _git(main, "worktree", "add", str(wt))
-    monkeypatch.chdir(wt)
     _pin(monkeypatch, main)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        resolved = _project_dir()
+        resolved = _project_dir(start=wt)
         base = ai_hats_dir(resolved)
 
     assert resolved.resolve() == main.resolve(), (
@@ -72,12 +73,11 @@ def test_worktree_cwd_with_a_genuinely_foreign_pin_still_warns(tmp_path, monkeyp
     other = _project(tmp_path / "other")
     wt = tmp_path / "linked"
     _git(main, "worktree", "add", str(wt))
-    monkeypatch.chdir(wt)
     _pin(monkeypatch, other)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        base = ai_hats_dir(_project_dir())
+        base = ai_hats_dir(_project_dir(start=wt))
 
     assert [w for w in caught if "foreign" in str(w.message)], (
         "a pin naming an unrelated project must warn"
@@ -101,12 +101,11 @@ def test_worktree_carrying_its_own_agent_dir_resolves_to_itself(tmp_path, monkey
     wt = tmp_path / "linked"
     _git(main, "worktree", "add", str(wt))
     (wt / ".agent" / "ai-hats").mkdir(parents=True)
-    monkeypatch.chdir(wt)
     _pin(monkeypatch, main)
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        resolved = _project_dir()
+        resolved = _project_dir(start=wt)
         base = ai_hats_dir(resolved)
 
     assert resolved.resolve() == wt.resolve()
