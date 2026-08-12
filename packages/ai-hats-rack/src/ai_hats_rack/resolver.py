@@ -119,8 +119,33 @@ def find_marker_root(start: Path) -> Path | None:
     backlog path is not a cwd. Applied to a sandbox under a linked worktree it
     would answer with the enclosing checkout — the HATS-1573 defect itself.
     """
+    for candidate in _marker_roots(start):
+        return candidate
+    return None
+
+
+def _marker_roots(start: Path):
+    """``start`` and every ancestor of it that carries a project marker."""
     for candidate in (start, *start.parents):
         if (candidate / ".agent").is_dir() or (candidate / CONFIG_NAME).is_file():
+            yield candidate
+
+
+def find_backlog_owner(tasks_dir: Path) -> Path | None:
+    """The project that OWNS ``tasks_dir``, or ``None`` when none does.
+
+    Ownership is CONTAINMENT, not proximity: a project owns the catalogs under
+    its own tracker and nothing else. "Nearest marker above" answers a different
+    question — which project a cwd is in (:func:`find_project_root`) — and using
+    it here made a scratch directory anywhere under ``$HOME`` the property of
+    ``$HOME``, whose role then composed gates onto a backlog it never declared
+    and whose STATE.md the transition rewrote (HATS-1573, supervisor ruling
+    2026-08-12). A backlog nobody owns is a legitimate state, and the channel
+    says so rather than guessing an owner.
+    """  # comment-length: allow — what "owns" means IS the contract
+    for candidate in _marker_roots(tasks_dir):
+        tracker = load_root(candidate).tasks_dir.parents[1]
+        if tasks_dir == tracker or tracker in tasks_dir.parents:
             return candidate
     return None
 
@@ -197,7 +222,7 @@ def resolve_root(
         # A relative override is the CALLER's: left alone it made the walk-up
         # answer '.', which then travelled as a gate's AI_HATS_PROJECT_DIR.
         backlog = caller_cwd / tasks_dir_override.expanduser()
-        owner = find_marker_root(backlog)
+        owner = find_backlog_owner(backlog)
         return RackRoot(
             project_dir=find_project_root(caller_cwd) or caller_cwd,
             tasks_dir=backlog,
@@ -214,7 +239,7 @@ def resolve_root(
             anchor = project_dir or caller_cwd
             base = load_root(anchor)
             env_tasks_dir = env_dir / TASKS_SUBPATH
-            owner = find_marker_root(caller_cwd / env_tasks_dir)
+            owner = find_backlog_owner(caller_cwd / env_tasks_dir)
             return RackRoot(
                 project_dir=base.project_dir,
                 tasks_dir=env_tasks_dir,

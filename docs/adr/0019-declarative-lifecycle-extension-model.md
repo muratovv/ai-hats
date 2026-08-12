@@ -511,6 +511,16 @@ retired: within one project it still separates the tasks backlog from a sibling
 catalog (`hypotheses`, `proposals`), which the engine deliberately does not
 decide. What it no longer has to catch is another project's backlog.*
 
+*Owns, defined (ruling 2026-08-12): a project owns the catalogs **under its own
+tracker** (`<project>/<ai_hats_dir>/tracker/**`) and no others —
+`resolver.find_backlog_owner`. Containment, not proximity: answering "who owns
+this backlog?" with "the nearest project marker above it", the way
+`find_project_root` answers "which project is this cwd in?", made a scratch
+catalog anywhere under a home directory that carries a tracker the property of
+that home — its role composing gates onto a backlog it never declared, this same
+defect one directory further out. A backlog no project owns is a legitimate
+state, not a broken one, and is answered with no bindings plus a notice.*
+
 Implementation consequence — see **D9**, which replaces the obvious-but-wrong
 answer (make `materialize_lifecycle_hooks()` role-aware and add a role-aware
 drift detector). That approach was rejected in rev 5.
