@@ -5,10 +5,10 @@ HYP and PROP backlogs through the rack :class:`Workspace` here instead of the
 retired ``ai_hats_tracker`` stores; the retro session window reads closed task
 cards through :func:`closed_tasks` (HATS-1259). Reads return small views (the
 fields those consumers render); writes go through the field-owning extensions
-(``hyp-verdicts``/``prop-votes``) and named FSM edges. Card CREATE is a direct
-dir-per-card write under the catalog alloc-lock — the kernel's ``create`` cannot
-allocate a card whose required declared fields (``hypothesis``/``category`` …) it
-does not accept, so this mirrors the migration writer instead.
+(``hyp-verdicts``/``prop-votes``) and named FSM edges. Card CREATE goes through
+``kernel.create`` like every other write (HATS-1596): its ``fields``/``links``
+mappings carry a custom backlog's declared fields and link kinds, so this road
+needs no writer of its own.
 
 Import-hygiene: this is the integrator boundary; the rack imports no first-party
 code, and this module imports no ``ai_hats_tracker``.
@@ -21,9 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol, Sequence, TypeVar
 
-
-import yaml
-from filelock import FileLock
 
 from ai_hats_core import atomic_write_text
 from ai_hats_rack import Workspace
@@ -276,52 +273,26 @@ def closed_tasks(project_dir: Path) -> list[ClosedTaskView]:
 # ----- writes -----------------------------------------------------------------
 
 
-def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def _create_card(
+    ws: Workspace, prefix: str, *, title: str, fields: dict, links: dict[str, list[str]]
+) -> str:
+    """Create through the kernel of the backlog ``prefix`` routes to (HATS-1596).
 
-
-def _next_id(catalog: Path, prefix: str) -> str:
-    """Next ``<prefix>-NNN`` across BOTH the flat sources and the dir-per-card
-    cards (they coexist post-migration) — the alloc lock aligns with the kernel."""
-    import re
-
-    max_n = 0
-    pat = re.compile(rf"^{re.escape(prefix)}-(\d+)")
-    if catalog.is_dir():
-        for entry in catalog.iterdir():
-            m = pat.match(entry.name)
-            if m:
-                max_n = max(max_n, int(m.group(1)))
-    return f"{prefix}-{max_n + 1:03d}"
-
-
-def _create_card(ws: Workspace, prefix: str, body: dict, links: dict[str, list[str]]) -> str:
-    """Allocate the next id under the catalog alloc-lock and write a minimal
-    dir-per-card ``task.yaml`` directly (the kernel's create cannot allocate a
-    HYP/PROP whose required declared fields it does not accept)."""
+    One write path, so a HYP/PROP card gets what every other card gets: an alloc
+    lock that times out instead of waiting forever, the write-strict schema, the
+    initial state from the topology, link validation, and a journal entry.
+    ``caller_cwd`` is the process cwd — the anchor the CLI route into this same
+    kernel already passes.
+    """  # comment-length: allow — what delegation buys back is the point
     instance = ws.instance_for(f"{prefix}-0")
-    catalog = instance.catalog
-    catalog.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(catalog / ".alloc.lock")):
-        new_id = _next_id(catalog, prefix)
-        card = {"id": new_id, **body}
-        clean_links = {k: v for k, v in links.items() if v}
-        if clean_links:
-            card["links"] = clean_links
-        dest = catalog / new_id / "task.yaml"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(dest, yaml.safe_dump(card, sort_keys=False, allow_unicode=True))
-    return new_id
-
-
-def _is_card_id(ws: Workspace, item_id: str) -> bool:
-    if not item_id:
-        return False
-    try:
-        ws.instance_for(item_id)
-        return True
-    except (UnknownExtensionError, UnknownPrefixError):
-        return False
+    result = ws.kernel_for_instance(instance).create(
+        actor=REFLECT_ACTOR,
+        caller_cwd=Path.cwd(),
+        title=title,
+        fields=fields,
+        links={kind: list(targets) for kind, targets in links.items() if targets},
+    )
+    return result.task.id
 
 
 def create_hypothesis(
@@ -336,36 +307,31 @@ def create_hypothesis(
     success_criterion: str | None = None,
     exit_criteria: dict | None = None,
 ) -> str:
-    """Create a new active HYP (returns its id). Real task IDs ride the
-    ``source_task`` link; non-ID sentinels (like ``supervisor-observation``)
-    land in the ``origin`` field."""
-    body: dict = {
-        "title": title,
-        "state": "active",
-        "created": datetime.now(timezone.utc).date().isoformat(),
-        "hypothesis": hypothesis,
-    }
+    """Create a new HYP (returns its id). A source_task that names an EXISTING
+    card rides the ``source_task`` link; anything else — a sentinel like
+    ``supervisor-observation``, or an id that no longer resolves — lands in the
+    ``origin`` field rather than becoming an edge the kernel would refuse."""
+    fields: dict = {"hypothesis": hypothesis}
     if baseline is not None:
-        body["baseline"] = baseline
+        fields["baseline"] = baseline
     if expected_outcome:
-        body["expected_outcome"] = list(expected_outcome)
+        fields["expected_outcome"] = list(expected_outcome)
     if success_criterion is not None:
-        body["success_criterion"] = success_criterion
+        fields["success_criterion"] = success_criterion
     if exit_criteria is not None:
-        body["exit_criteria"] = exit_criteria
+        fields["exit_criteria"] = exit_criteria
 
     links: dict[str, list[str]] = {}
     if source_task:
-        if _is_card_id(ws, source_task):
+        if ws.exists(source_task):
             links["source_task"] = [source_task]
-        else:
-            if not origin:
-                origin = source_task
+        elif not origin:
+            origin = source_task
 
     if origin:
-        body["origin"] = origin
+        fields["origin"] = origin
 
-    return _create_card(ws, "HYP", body, links)
+    return _create_card(ws, "HYP", title=title, fields=fields, links=links)
 
 
 def create_proposal(
@@ -379,19 +345,22 @@ def create_proposal(
     related_hypotheses=(),
     failed_session_id: str | None = None,
 ) -> str:
-    """Create a new open PROP (returns its id)."""
-    body: dict = {
-        "title": title,
-        "state": "open",
-        "created": _utc_stamp(),
+    """Create a new PROP (returns its id)."""
+    fields: dict = {
         "category": category,
         "target": target,
         "description": description,
         "rationale": rationale,
     }
     if failed_session_id:
-        body["failed_session_id"] = failed_session_id
-    return _create_card(ws, "PROP", body, {"related_hypotheses": list(related_hypotheses)})
+        fields["failed_session_id"] = failed_session_id
+    return _create_card(
+        ws,
+        "PROP",
+        title=title,
+        fields=fields,
+        links={"related_hypotheses": list(related_hypotheses)},
+    )
 
 
 def append_verdict(

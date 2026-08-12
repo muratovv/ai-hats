@@ -225,6 +225,27 @@ def test_merge_unknown_target_fails_loud(project_dir, monkeypatch):
 
 
 def test_task_id_overrides_source_task(project_dir, monkeypatch):
+    anchor = (
+        rack_workspace(project_dir)
+        .kernel_for("HATS-1")
+        .create(actor="test", caller_cwd=project_dir, title="anchor")
+        .task.id
+    )
+    _mock_pipeline(
+        monkeypatch,
+        result_text=("action: create\ndraft:\n  title: t\n  hypothesis: h\n"),
+    )
+    res = CliRunner().invoke(reflect, ["issue", "obs", "--task", anchor])
+    assert res.exit_code == 0, res.output
+    card = _card(project_dir, "HYP-001")
+    assert card.links["source_task"] == [anchor]
+    assert "origin" not in card.extras or not card.extras["origin"]
+
+
+def test_a_task_id_that_does_not_exist_demotes_to_origin(project_dir, monkeypatch):
+    """HATS-1596: this used to write `source_task: [HATS-304]` on a card whose
+    target was never created — an edge the kernel refuses on every other write
+    path. The observation is still worth keeping, so the id rides `origin`."""
     _mock_pipeline(
         monkeypatch,
         result_text=("action: create\ndraft:\n  title: t\n  hypothesis: h\n"),
@@ -232,8 +253,8 @@ def test_task_id_overrides_source_task(project_dir, monkeypatch):
     res = CliRunner().invoke(reflect, ["issue", "obs", "--task", "HATS-304"])
     assert res.exit_code == 0, res.output
     card = _card(project_dir, "HYP-001")
-    assert card.links["source_task"] == ["HATS-304"]
-    assert "origin" not in card.extras or not card.extras["origin"]
+    assert "source_task" not in card.links
+    assert card.extras["origin"] == "HATS-304"
 
 
 def test_background_spawns_detached_subprocess_and_returns(
