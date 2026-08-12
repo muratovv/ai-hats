@@ -348,7 +348,32 @@ fi
 #     and configures in one step. An already-initialized project whose venv
 #     broke (e.g. a host python upgrade) keeps `self update` for heal-
 #     recovery, not a re-init. (HATS-612)
+
+# HATS-1617: this launcher is a copy installed once and never self-updating, so it
+# drifts from the package silently. The project leaves the contract it expects on
+# disk because this path runs BEFORE any interpreter — nothing in Python can be
+# asked here. Behind-only: one host launcher serves N projects, so being newer than
+# an old project is correct, not skew. Absent/unparseable marker ⇒ stay quiet.
+SKEW_EXPECTED=""
+launcher_is_behind() {
+    SKEW_EXPECTED=""
+    local marker="$AH_DIR/launcher-contract" expected
+    [[ -f "$marker" ]] || return 1
+    expected="$(head -1 "$marker" 2>/dev/null | tr -d '[:space:]' || true)"
+    [[ "$expected" =~ ^[0-9]+$ ]] || return 1
+    (( expected > LAUNCHER_CONTRACT )) || return 1
+    SKEW_EXPECTED="$expected"
+}
+
 missing_venv_hint() {
+    # A stale launcher cannot act on `self update` / `self init` advice — it would
+    # re-run the same stale resolution. Name the real fix instead of appending it.
+    if launcher_is_behind; then
+        echo "  Your host launcher is stale: it implements contract $LAUNCHER_CONTRACT," >&2
+        echo "  but $PROJECT expects $SKEW_EXPECTED." >&2
+        echo "  Refresh it (one-time): curl -sSL https://github.com/muratovv/ai-hats/raw/master/scripts/install-launcher.sh | bash" >&2
+        return
+    fi
     if [[ -f "$PROJECT/ai-hats.yaml" ]]; then
         echo "  Run: ai-hats self update" >&2
     else
