@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**230 of 230 files catalogued — 237 flows.**
+**226 of 226 files catalogued — 233 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -708,20 +708,6 @@ as a claim to check, not as evidence.
 - **expect** — a pre-launch warning naming stale environment packages appears on stdout when drift is detected, and is suppressed when packages match
 - **why** — unnoticed environment drift leads to subtle runtime failures when active CLI tools conflict with project specification
 
-## `test_env_scrub.py`
-
-*pins HATS-685, HATS-876*
-
-- **flow** — a developer running sub-agent execution or worktree commands with ambient PYTHONPATH or GIT_* set expecting clean subprocess environment scrubbing
-- **cmds**
-
-  ```console
-  ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py
-  ```
-
-- **expect** — subprocess environment strips inherited PYTHONPATH and GIT_* variables while preserving PATH and HOME
-- **why** — ambient environment variable leakage redirects launcher imports to workspace source or leaks git repository state; pure unit tests in this module also check helper functions and are candidates for relocation (HATS-1499)
-
 ## `test_epic_auto_transition_e2e.py`
 
 *pins HATS-690, HATS-1263*
@@ -958,20 +944,6 @@ as a claim to check, not as evidence.
 - **expect** — launcher probe detects missing entry point attribute and aborts execution with exit code 1
 - **why** — without ep.load() entry-point probes, broken entry point attributes pass find_spec checks and crash late during session dispatch
 
-## `test_install_heavy_sharding.py`
-
-*pins HATS-676, HATS-771*
-
-- **flow** — a maintainer running the e2e test suite gate with xdist sharding
-- **cmds**
-
-  ```console
-  bash scripts/run-e2e-gate.sh
-  ```
-
-- **expect** — install-heavy test items are capped into fixed xdist groups to prevent network saturating race conditions
-- **why** — without xdist group throttling, uncapped concurrent uv pip installs saturate package indexes and cause flaky network resets
-
 ## `test_install_launcher_piped.py`
 
 *pins HATS-766*
@@ -1000,20 +972,6 @@ as a claim to check, not as evidence.
 
 - **expect** — wheel build produces standalone package wheels for all workspace sub-packages
 - **why** — without proper wheel build configuration, sub-packages fail to package required package data
-
-## `test_interpreter_guard.py`
-
-*pins HATS-1218*
-
-- **flow** — a developer running CLI commands using an incompatible Python interpreter version
-- **cmds**
-
-  ```console
-  python3.9 -m ai_hats --version
-  ```
-
-- **expect** — interpreter guard checks Python version and exits with error naming supported Python version
-- **why** — without interpreter guards, running on unsupported Python versions produces obscure runtime errors
 
 ## `test_launcher_env_pair_isolation.py`
 
@@ -1895,20 +1853,6 @@ as a claim to check, not as evidence.
 
 - **expect** — safety gate hook intercepts destructive command and requires explicit user confirmation
 - **why** — without safety gate hooks, agents execute irreversible destructive shell commands without review
-
-## `test_scaffolding_regression_guard.py`
-
-*pins HATS-1497*
-
-- **flow** — a maintainer running e2e test suite regression checks
-- **cmds**
-
-  ```console
-  bash scripts/run-e2e-gate.sh
-  ```
-
-- **expect** — regression guard verifies all e2e test files use git helpers and conftest fixtures
-- **why** — without scaffolding regression guards, e2e tests introduce raw subprocess calls that leak state
 
 ## `test_self_bump_unclaimed_sweep.py`
 

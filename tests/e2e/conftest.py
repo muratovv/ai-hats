@@ -167,7 +167,7 @@ def _install_heavy_group_map(install_heavy_files, k):  # noqa: ANN001, ANN202
 
     Returns ``{file: "install_heavy_<n>"}``. Pure + deterministic (``sorted`` →
     stable order → ``i % k``; no clock/random) so it is unit-testable without
-    pytest internals — see ``tests/e2e/test_install_heavy_sharding.py``. File
+    pytest internals — see ``tests/e2e_harness/test_install_heavy_sharding.py``. File
     granularity (not per-test) keeps every test of an install-heavy file in ONE
     group, so a module-scoped own-build fixture (e.g. ``private_launcher``)
     never rebuilds across workers.

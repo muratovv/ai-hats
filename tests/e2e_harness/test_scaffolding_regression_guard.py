@@ -1,11 +1,8 @@
-"""e2e (HATS-1497)
+"""The e2e harness's scaffolding guard (HATS-1497).
 
-flow:   a maintainer running e2e test suite regression checks
-cmds:
-    bash scripts/run-e2e-gate.sh
-expect: regression guard verifies all e2e test files use git helpers and conftest fixtures
-why:    without scaffolding regression guards, e2e tests introduce raw subprocess calls
-        that leak state
+Subject: every ``tests/e2e/test_*.py`` as source text. A test that re-rolls its
+own raw-subprocess git helper skips the isolation the canonical ``Project`` /
+``_helpers.git`` surface provides, and leaks state into the next test.
 """
 
 from __future__ import annotations
@@ -15,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
-E2E_DIR = Path(__file__).resolve().parent
+# HATS-1600: the guard lives outside the directory it scans — ``__file__.parent``
+# would scan this one and pass vacuously.
+E2E_DIR = Path(__file__).resolve().parent.parent / "e2e"
 
 # R8: Per-file explicit justification for remaining raw subprocess git helpers.
 # Any module-level git helper that spawns raw subprocesses must be documented here with its reason.
@@ -60,8 +59,6 @@ def test_e2e_no_local_git_or_launcher_scaffolding():
     launcher_violations: list[str] = []
 
     for test_file in sorted(E2E_DIR.glob("test_*.py")):
-        if test_file.name == Path(__file__).name:
-            continue
         try:
             tree = ast.parse(test_file.read_text())
         except Exception as exc:

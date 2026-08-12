@@ -1,13 +1,9 @@
-"""e2e (HATS-676, HATS-771)
+"""The e2e harness's install-heavy sharding (HATS-676, HATS-771).
 
-flow:   a maintainer running the e2e test suite gate with xdist sharding
-cmds:
-    bash scripts/run-e2e-gate.sh
-expect: install-heavy test items are capped into fixed xdist groups to prevent network
-        saturating race conditions
-why: without xdist group throttling, uncapped concurrent uv pip installs saturate
-     package
-        indexes and cause flaky network resets"""
+Subject: ``tests/e2e/conftest.py`` — its group map and collection hook. Uncapped
+concurrent ``uv pip install`` saturates the package index, which is the flake
+class the K-group cap exists to bound.
+"""
 
 from __future__ import annotations
 
@@ -17,11 +13,11 @@ from pathlib import Path
 import pytest
 
 # Import the e2e conftest by path — tests/e2e/ is not a package, so a plain
-# ``import conftest`` is ambiguous with tests/conftest.py. Its only load-time
-# side effect is a ``sys.path.insert(0, <tests/e2e>)`` — identical to (and
-# idempotent with) pytest's own conftest load; the rest is fixture/hook defs
-# and path math.
-_CONFTEST = Path(__file__).resolve().parent / "conftest.py"
+# ``import conftest`` is ambiguous with tests/conftest.py AND with this
+# directory's own. Its only load-time side effect is a
+# ``sys.path.insert(0, <tests/e2e>)`` — identical to (and idempotent with)
+# pytest's own conftest load; the rest is fixture/hook defs and path math.
+_CONFTEST = Path(__file__).resolve().parent.parent / "e2e" / "conftest.py"
 _spec = importlib.util.spec_from_file_location("e2e_conftest_under_test", _CONFTEST)
 _conftest = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_conftest)

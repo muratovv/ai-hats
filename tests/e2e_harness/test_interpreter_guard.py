@@ -1,12 +1,9 @@
-"""e2e (HATS-1218)
+"""The e2e harness's interpreter guard (HATS-1218).
 
-flow: a developer running CLI commands using an incompatible Python interpreter version
-cmds:
-    python3.9 -m ai_hats --version
-expect: interpreter guard checks Python version and exits with error naming supported
-        Python version
-why: without interpreter guards, running on unsupported Python versions produces obscure
-     runtime errors"""
+Subject: ``_helpers.interpreter`` — the path math that tells an editable install
+of THIS checkout apart from one pointing at a foreign one. The worktree trap it
+exists for: tests run here, code imported from the main checkout.
+"""
 
 from __future__ import annotations
 
