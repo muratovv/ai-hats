@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from ai_hats.cli.wait import wait_cmd
+from ai_hats.cli.wait import PROBE_TIMEOUT_S, _probe_budget, wait_cmd
 
 
 @pytest.mark.parametrize(
@@ -25,6 +25,9 @@ from ai_hats.cli.wait import wait_cmd
         (("--poll", "0.2", "--timeout", "-1"), "--timeout"),
         (("--poll", "0.2", "--timeout", "nan"), "--timeout"),
         (("--poll", "0.2", "--timeout", "inf"), "--timeout"),
+        (("--probe-timeout", "-1"), "--probe-timeout"),
+        (("--probe-timeout", "nan"), "--probe-timeout"),
+        (("--probe-timeout", "inf"), "--probe-timeout"),
     ],
 )
 def test_non_positive_poll_or_bad_timeout_rejected_at_input(
@@ -48,8 +51,13 @@ def test_non_positive_poll_or_bad_timeout_rejected_at_input(
     [
         ("--poll", "0.2", "--timeout", "0"),
         ("--poll", "1.1", "--timeout", "1e2"),
+        ("--poll", "0.2", "--probe-timeout", "0"),
     ],
-    ids=["timeout-zero-waits-forever", "fractional-and-exponential-values"],
+    ids=[
+        "timeout-zero-waits-forever",
+        "fractional-and-exponential-values",
+        "probe-timeout-zero-is-the-opt-out",
+    ],
 )
 def test_legal_poll_and_timeout_values_accepted(extra_args: tuple[str, ...]) -> None:
     """Legal float values must pass the guard untouched: ``--timeout 0`` keeps
@@ -62,4 +70,24 @@ def test_legal_poll_and_timeout_values_accepted(extra_args: tuple[str, ...]) -> 
     assert result.exit_code == 0, f"legal values refused: {result.output}"
     assert "--poll" not in result.output and "--timeout" not in result.output, (
         f"a guard named a flag on legal input: {result.output}"
+    )
+
+
+def test_probe_is_bounded_by_default_when_nothing_else_bounds_it() -> None:
+    """The default must protect the unbounded wait, not only the deadlined one.
+
+    ``--timeout 0`` is the common call and leaves no deadline to derive a probe
+    bound from, so if the default were 0 (off) the HATS-1598 defect would
+    survive in the configuration most people run. Asserting the wiring too: an
+    option default that drifts off the constant silently un-bounds it.
+    """
+    budget, by_deadline = _probe_budget(PROBE_TIMEOUT_S, deadline=None)
+
+    assert budget == PROBE_TIMEOUT_S, f"no deadline left the probe unbounded: {budget}"
+    assert not by_deadline, "with no deadline, the bound cannot be attributed to one"
+    assert PROBE_TIMEOUT_S > 0, "a non-positive default is the opt-out, not a bound"
+
+    default = next(p.default for p in wait_cmd.params if p.name == "probe_timeout")
+    assert default == PROBE_TIMEOUT_S, (
+        f"--probe-timeout defaults to {default}, not the module constant {PROBE_TIMEOUT_S}"
     )
