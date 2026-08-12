@@ -48,13 +48,14 @@ def wt_points() -> dict[str, bool]:
 
     ADR-0019 D4: failure policy at a data-protection point belongs here, not to
     the row's author.
-    """
-    from ai_hats_wt.carry import WT_TEARDOWN_EVENTS
 
-    points = {"create": True, "pre-merge": False}
-    for event in WT_TEARDOWN_EVENTS:
-        points[f"teardown[{event}]"] = False
-    return points
+    One entry, because a point is a name WITH a call site. ``create`` and
+    ``teardown[merge|discard|cleanup]`` sat here fired by nobody: a binding to
+    one validated at composition and then never ran — the silent no-op ADR-0019
+    exists to remove. HATS-1577 removed the names so that binding is refused;
+    HATS-1146 returns them together with the call site, not before it.
+    """  # comment-length: allow — why the catalog shrank is the decision
+    return {"pre-merge": False}
 
 
 def ai_hats_points() -> dict[str, bool]:

@@ -86,9 +86,7 @@ def test_ai_hats_owns_one_app_and_judges_only_its_cargo():
     assert owns_app("wt")
     assert not owns_app("rack")
     assert {"rack", "wt"} <= KNOWN_APPS
-    assert wt_points()["pre-merge"] is False
-    assert wt_points()["create"] is True
-    assert wt_points()["teardown[merge]"] is False
+    assert wt_points() == {"pre-merge": False}
 
 
 def test_a_foreign_apps_cargo_is_carried_not_judged(skill):
@@ -110,19 +108,26 @@ def test_a_run_naming_no_script_is_loud(skill):
         resolve_checks([_row(run="gate.sh")], [skill])
 
 
-def test_warn_is_rejected_at_wt_data_protection_points(skill):
+def test_warn_is_rejected_at_the_wt_data_protection_point(skill):
     """ADR-0019 D4: ADR-0012 deliberately put the failure-policy lever for
     worktree data protection in the engine; moving it into user YAML would let a
-    component opt out of the harvest."""
-    for point in ("pre-merge", "teardown[merge]"):
-        with pytest.raises(CheckBindingError, match="on_error: warn"):
-            resolve_checks([_wt(at=(point,), on_error="warn")], [skill])
+    component opt out of it. ``pre-merge`` is the whole catalog since HATS-1577,
+    so this is the only wt name the lever applies to; the legal-``warn`` half of
+    D4 is covered on the other owned app, at ``startup``."""
+    with pytest.raises(CheckBindingError, match="on_error: warn"):
+        resolve_checks([_wt(at=("pre-merge",), on_error="warn")], [skill])
 
 
-def test_warn_is_allowed_at_wt_policy_points(skill):
-    (resolved,) = resolve_checks([_wt(at=("create",), on_error="warn")], [skill])
-
-    assert resolved.on_error == "warn"
+def test_a_wt_point_with_no_call_site_is_not_in_the_catalog(skill):
+    """HATS-1577. A name ai-hats validates and then never fires is the silent
+    no-op ADR-0019 exists to remove, so ``create`` and ``teardown[*]`` left the
+    catalog rather than staying armable: binding to one is now refused at
+    composition instead of composing clean and never running. HATS-1146 returns
+    them together with the call site, not before it.
+    """
+    for point in ("create", "teardown[merge]", "teardown[discard]", "teardown[cleanup]"):
+        with pytest.raises(CheckBindingError, match="not a point of the 'wt' app"):
+            resolve_checks([_wt(at=(point,))], [skill])
 
 
 def test_a_wt_point_ai_hats_does_not_fire_is_loud(skill):
