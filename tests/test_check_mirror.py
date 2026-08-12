@@ -353,6 +353,28 @@ def test_a_surface_that_mirrors_nothing_refuses(tmp_path: Path):
 # `get_provider` before anything launches, and refuses there.
 
 
+def test_a_broken_composition_refuses_even_when_the_caller_supplied_it(tmp_path: Path):
+    """HATS-1594: the ``result.errors`` refusal belongs to the CHANNEL.
+
+    An in-process caller hands its own composition through ``compose=`` to avoid
+    composing twice. While that refusal lived inside the fail-closed composer,
+    passing ``compose=`` skipped it — so a role whose composition reported errors
+    armed nothing while looking armed, at the one point that kills a launch.
+    """
+    from dataclasses import replace
+
+    project = _project(tmp_path)
+    skill = _skill(project)
+    broken = replace(
+        _result(skills=[skill], checks=[_check(skill)]), errors=["Role 'ghost' not found"]
+    )
+
+    with pytest.raises(CheckResolutionError, match="broken composition"):
+        resolve_carried_checks(
+            project, "rack", identity=_identity(project), compose=lambda _: broken
+        )
+
+
 def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
     """The rebase joins a declared relative path, so prove it stays contained."""
     project = _project(tmp_path)

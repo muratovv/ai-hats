@@ -70,7 +70,7 @@ def resolve_carried_checks(
     never handed to this one — and a broken row of one app cannot abort
     another's event (HATS-1545).
     """
-    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
+    result = _composed(project_dir, identity, compose)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app)
@@ -97,7 +97,7 @@ def resolve_checks_at(
     HATS-1581, because ai-hats now fires two apps and nothing stops them from
     spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
-    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
+    result = _composed(project_dir, identity, compose)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app and point in check.at)
@@ -378,9 +378,25 @@ def _compose_fail_closed(
         raise CheckResolutionError(
             f"checks are declared but the role could not be composed ({type(exc).__name__}): {exc}"
         ) from exc
-    if result is None:
-        return None
-    if result.errors:
+    return result
+
+
+def _composed(
+    project_dir: Path,
+    identity: SessionIdentity | None,
+    compose: Callable[[Path], CompositionResult | None] | None,
+) -> CompositionResult | None:
+    """The binding list, from whoever holds it — and never a broken one.
+
+    The ``result.errors`` refusal lives HERE rather than inside
+    ``_compose_fail_closed`` because it is a property of the channel, not of one
+    way of obtaining a composition. An in-process caller passing ``compose``
+    (HATS-1594) would otherwise skip it, and a role whose composition reported
+    errors would arm nothing while looking armed — which is the whole defect
+    class this channel exists to remove.
+    """  # comment-length: allow — why the check is not in the composer
+    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
+    if result is not None and result.errors:
         raise CheckResolutionError(
             f"checks are declared but composing role {result.name!r} reported "
             f"{result.errors} — a gate cannot be installed from a broken composition"
