@@ -11,8 +11,11 @@ why:    command waiting allows processes to block until external conditions are 
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -109,6 +112,110 @@ def test_timeout_exits_124(tmp_project) -> None:
     )
 
     assert result.exit_code == 124, f"expected 124, got {result.exit_code}: {result.stderr[-300:]}"
+
+
+def test_hung_predicate_still_times_out(tmp_project) -> None:
+    """The deadline must bound the WAIT, not merely the gaps between probes.
+
+    Before HATS-1598 the probe ran unbounded and the deadline was read only
+    after it returned, so a predicate that never answers made ``--timeout``
+    unreachable — 124 was dead code for this whole class.
+    """
+    result = tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "sleep 300",
+        "--poll",
+        "0.2",
+        "--timeout",
+        "3",
+        timeout=60.0,
+        extra_env=_env(),
+    )
+
+    assert result.exit_code == 124, f"expected 124, got {result.exit_code}: {result.stderr[-300:]}"
+    assert result.duration_s < 30.0, (
+        f"gave up only after {result.duration_s:.1f}s — a 3s --timeout that "
+        f"returns that late is not bounding the probe"
+    )
+
+
+def test_hung_predicate_breaks_when_probe_budget_expires(tmp_project) -> None:
+    """``--timeout 0`` is the case the deadline cannot cover.
+
+    "Wait forever" is a statement about the EVENT, never a licence for one probe
+    to hang forever — under it there is no deadline to bound the probe with, so
+    ``--probe-timeout`` is the only thing between a dead ssh and a wedged
+    session. Asserting the reason, not just exit 2: an unknown flag also exits 2
+    (click UsageError), which would pass this test with the feature absent.
+    """
+    result = tmp_project.run(
+        "wait",
+        "--until-cmd",
+        "sleep 300",
+        "--poll",
+        "0.2",
+        "--timeout",
+        "0",
+        "--probe-timeout",
+        "2",
+        timeout=60.0,
+        extra_env=_env(),
+    )
+
+    assert result.exit_code == 2, f"expected 2, got {result.exit_code}: {result.output[-300:]}"
+    assert "predicate did not answer in 2s" in result.output, (
+        f"exit 2 must name the expired probe budget, else it is indistinguishable "
+        f"from a rejected flag: {result.output[-300:]}"
+    )
+
+
+def _alive(pid: int) -> bool:
+    """Whether ``pid`` still exists (signal 0 probes without delivering)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_hung_compound_predicate_leaves_no_orphan(tmp_project) -> None:
+    """Killing the probe must kill what the probe started.
+
+    ``timeout=`` alone reaps only the direct child: under ``shell=True`` a
+    compound predicate keeps its own children, so a "bounded" wait would return
+    while the real work — the dead ssh it was waiting on — runs on, reparented
+    and invisible. The predicate here publishes its child's pid so the test can
+    assert on the process rather than on the wait's exit code.
+    """
+    pidfile = tmp_project.path / "child.pid"
+    result = tmp_project.run(
+        "wait",
+        "--until-cmd",
+        f"sleep 300 & echo $! > {pidfile}; wait",
+        "--poll",
+        "0.2",
+        "--timeout",
+        "0",
+        "--probe-timeout",
+        "2",
+        timeout=60.0,
+        extra_env=_env(),
+    )
+
+    assert result.exit_code == 2, f"expected 2, got {result.exit_code}: {result.output[-300:]}"
+    child = int(pidfile.read_text().strip())
+    try:
+        settle = time.monotonic() + 5.0
+        while _alive(child) and time.monotonic() < settle:
+            time.sleep(0.1)
+        assert not _alive(child), (
+            f"grandchild {child} outlived the probe that spawned it — the kill "
+            f"reached the shell only, so the wait returned over live work"
+        )
+    finally:
+        if _alive(child):
+            os.kill(child, signal.SIGKILL)
 
 
 @pytest.mark.parametrize(
