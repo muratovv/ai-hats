@@ -172,17 +172,37 @@ def test_the_delegate_exit_code_reaches_git(tmp_path: Path):
 
 
 def test_a_leaked_ai_hats_dir_from_another_project_is_ignored(tmp_path: Path):
-    """A session elsewhere exports AI_HATS_DIR; honouring it would send the stub
-    hunting for an interpreter under a foreign checkout (HATS-897)."""
+    """A session elsewhere exports its pin; honouring it would send the stub
+    hunting for an interpreter under a foreign checkout (HATS-897).
+
+    The PAIR is what marks it as somebody else's: ai-hats never writes
+    ``AI_HATS_DIR`` alone — the launcher, ``provider.get_env`` and ``_hook_env``
+    all put it beside ``AI_HATS_PROJECT_DIR`` (ADR-0024 D3).
+    """
     project = _project(tmp_path)
-    foreign = tmp_path / "foreign" / ".agent" / "ai-hats" / ".venv" / "bin"
-    foreign.mkdir(parents=True)
-    (foreign / "python").write_text("#!/usr/bin/env bash\nexit 3\n")
-    (foreign / "python").chmod(0o755)
+    foreign = _foreign_checkout(tmp_path)
 
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
-    env["AI_HATS_DIR"] = str(tmp_path / "foreign" / ".agent" / "ai-hats")
-    result = subprocess.run(
+    env["AI_HATS_DIR"] = str(foreign)
+    env["AI_HATS_PROJECT_DIR"] = str(tmp_path / "foreign")
+    result = _run_stub(project, env)
+
+    assert result.returncode == 0, "the foreign interpreter must not be used"
+    assert "fail-open" in result.stderr
+
+
+def _foreign_checkout(tmp_path: Path) -> Path:
+    """Another project whose interpreter announces itself by exiting 3."""
+    base = tmp_path / "foreign" / ".agent" / "ai-hats"
+    (base / ".venv" / "bin").mkdir(parents=True)
+    python = base / ".venv" / "bin" / "python"
+    python.write_text("#!/usr/bin/env bash\nexit 3\n")
+    python.chmod(0o755)
+    return base
+
+
+def _run_stub(project: Path, env: dict[str, str]):
+    return subprocess.run(
         ["/bin/bash", str(project / ".githooks" / "pre-commit")],
         cwd=str(project),
         env=env,
@@ -190,5 +210,23 @@ def test_a_leaked_ai_hats_dir_from_another_project_is_ignored(tmp_path: Path):
         text=True,
     )
 
-    assert result.returncode == 0, "the foreign interpreter must not be used"
-    assert "fail-open" in result.stderr
+
+def test_a_bare_ai_hats_dir_is_an_explicit_override_and_is_honoured(tmp_path: Path):
+    """The relaxation HATS-1613 traded for one policy instead of two, pinned.
+
+    Until then the stub ALONE rejected an out-of-tree ``AI_HATS_DIR`` by prefix,
+    while the launcher and ``paths`` both honoured a bare one as env-wins. The
+    prefix test is gone, so all three answer alike; the residual exposure is the
+    one those two already carried, not a new one (ADR-0024, Последствия).
+    """
+    project = _project(tmp_path)
+    foreign = _foreign_checkout(tmp_path)
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["AI_HATS_DIR"] = str(foreign)
+    result = _run_stub(project, env)
+
+    assert result.returncode == 3, (
+        "an unpaired override is a human's explicit choice and must be honoured; "
+        f"stderr:\n{result.stderr}"
+    )

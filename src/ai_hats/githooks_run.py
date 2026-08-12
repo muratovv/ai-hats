@@ -15,6 +15,8 @@ from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
 
+from .env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+
 #: Git events that deliver a protocol on stdin every hook must see.
 STDIN_PROTOCOL_EVENTS = frozenset(
     {
@@ -125,6 +127,29 @@ def record_fail_open(
         )
 
 
+def _drop_foreign_pin(env: dict[str, str], project_dir: Path) -> None:
+    """Strip a session pin naming another project before the children see it.
+
+    ADR-0024 D3. Normally a no-op: a current stub unsets the pair before exec'ing
+    us. Reaching the warn branch therefore means the INSTALLED stub predates the
+    guard — the delivery window between two ``self …`` runs — so the window
+    announces itself instead of passing a foreign pin down the chain.
+    """  # comment-length: allow — the branch only fires in a window worth naming
+    pin = env.get(AI_HATS_PROJECT_DIR_ENV)
+    if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
+        return
+    dropped = [name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if env.pop(name, None)]
+    # Re-pin rather than leave the lie: a gate reading it must get this project.
+    env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
+    if dropped:
+        print(
+            f"ai-hats: dropped {', '.join(dropped)} pinned to {pin} — foreign to "
+            f"{project_dir}. The installed git-hook stub predates this guard; "
+            f"run `ai-hats self update` to refresh it.",
+            file=sys.stderr,
+        )
+
+
 def run_chain(
     *,
     event: str,
@@ -146,6 +171,7 @@ def run_chain(
         return 0
 
     env = dict(os.environ)
+    _drop_foreign_pin(env, project_dir)
     # A gate's own $0 is its library path, so it cannot recover the event from it.
     env["AI_HATS_HOOK_EVENT"] = event
     if journal is not None:

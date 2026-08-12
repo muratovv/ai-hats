@@ -22,6 +22,21 @@ GITHOOKS_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 # happens inside a linked worktree — which is what gates every worktree.
 PROJECT_DIR="$(dirname "$GITHOOKS_DIR")"
 
+# ADR-0024 D3. The line above is this stub's OWN answer to "which project", so a
+# pin naming a different one belongs to somebody else's session: drop the keys
+# travelling with it rather than resolve an interpreter under a foreign checkout
+# (HATS-897, HATS-1525). `unset`, not a local blank — `githooks_run` hands this
+# environment to every gate, drop-in and chained hook.
+if [[ -n "${AI_HATS_PROJECT_DIR:-}" ]]; then
+    ah_pin="${AI_HATS_PROJECT_DIR/#\~/$HOME}"
+    ah_pin="$(cd "$ah_pin" 2>/dev/null && pwd -P || echo "$ah_pin")"
+    if [[ "$ah_pin" != "$PROJECT_DIR" ]]; then
+        echo "ai-hats: session pinned to $ah_pin — foreign to $PROJECT_DIR; ignoring its AI_HATS_VENV/AI_HATS_DIR." >&2
+        unset AI_HATS_VENV AI_HATS_DIR
+    fi
+    unset ah_pin
+fi
+
 # Mirrors the launcher's venv precedence, read-only. NOT a call into the launcher:
 # that one heals and reinstalls, which is minutes of work inside somebody's commit.
 resolve_python() {
@@ -31,12 +46,9 @@ resolve_python() {
         echo "${AI_HATS_VENV}/bin/python"; return 0
     fi
 
-    # Honoured only when it belongs to THIS project: a session elsewhere exports
-    # it, and a leaked pin would hunt under a foreign checkout (HATS-897).
-    ah_dir="$PROJECT_DIR/.agent/ai-hats"
-    if [[ -n "${AI_HATS_DIR:-}" && "${AI_HATS_DIR}" == "$PROJECT_DIR"/* ]]; then
-        ah_dir="$AI_HATS_DIR"
-    fi
+    # Unpaired, or paired with THIS project — the guard above dropped it otherwise,
+    # so no second, weaker test (a prefix match) is needed here.
+    ah_dir="${AI_HATS_DIR:-$PROJECT_DIR/.agent/ai-hats}"
     versions="$ah_dir/versions"
 
     if [[ -f "$PROJECT_DIR/ai-hats.yaml" ]]; then

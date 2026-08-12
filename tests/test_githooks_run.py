@@ -249,3 +249,50 @@ def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
 
     assert _run(project, gates=[broken, good]) == 0
     assert ran.exists(), "a later gate was skipped along with the broken one"
+
+
+# ---- foreign session pin, dropped for the children (HATS-1613, ADR-0024 D3) ----
+
+
+def test_a_foreign_pin_is_dropped_and_repinned_for_the_chain(tmp_path, capsys):
+    """The delivery window: a stub predating the guard passes the pair through."""
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {
+        "AI_HATS_PROJECT_DIR": str(tmp_path / "theirs"),
+        "AI_HATS_VENV": "/somewhere/else/.venv",
+        "AI_HATS_DIR": "/somewhere/else/.agent/ai-hats",
+    }
+
+    _drop_foreign_pin(env, project)
+
+    assert "AI_HATS_VENV" not in env
+    assert "AI_HATS_DIR" not in env
+    assert env["AI_HATS_PROJECT_DIR"] == str(project), "a gate must be told the truth"
+    err = capsys.readouterr().err
+    assert "self update" in err, "a silent window is the defect this branch exists for"
+
+
+def test_a_matching_pin_is_left_alone(tmp_path, capsys):
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {"AI_HATS_PROJECT_DIR": str(project), "AI_HATS_VENV": "/mine/.venv"}
+
+    _drop_foreign_pin(env, project)
+
+    assert env["AI_HATS_VENV"] == "/mine/.venv"
+    assert capsys.readouterr().err == ""
+
+
+def test_no_pin_at_all_is_left_alone(tmp_path, capsys):
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    env = {"AI_HATS_VENV": "/bare/override/.venv"}
+    _drop_foreign_pin(env, tmp_path)
+
+    assert env == {"AI_HATS_VENV": "/bare/override/.venv"}, "env-wins survives"
+    assert capsys.readouterr().err == ""
