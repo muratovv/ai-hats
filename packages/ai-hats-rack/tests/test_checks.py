@@ -276,6 +276,40 @@ def test_a_row_naming_no_mounted_backlog_is_a_loud_refusal():
     assert port.ran == []
 
 
+def test_an_unaddressable_row_only_refuses_the_edge_it_names():
+    """HATS-1576: a project whose backlog is `blog` or `dotfiles` — named that
+    from birth, not renamed — mounts no `tasks`, and every shipped row addresses
+    `apps.rack.tasks`. Refusing on the row's OWN edge is the gate doing its job;
+    refusing on `open--review` too is the tracker bricked, and `--force` cannot
+    reach it (ctx.force is passed inside CheckRequest, i.e. after this point).
+    """  # comment-length: allow — which edge dies is the whole defect
+    port = _Port(_row("edge:review--done", backlog="tasks"))
+    subscriber = CheckSubscriber(
+        port, topology=_topology(), backlog="blog", known_backlogs=("blog",)
+    )
+
+    assert subscriber.on_event(_ctx("edge:open--review")) is None
+    assert port.ran == []
+
+    with pytest.raises(AbortOperation):
+        subscriber.on_event(_ctx("edge:review--done"))
+
+
+def test_the_unmounted_name_refusal_names_the_way_out():
+    """A refusal that only states the mismatch sends the reader to the shipped
+    role; the fix is one line in their own backlog.yaml (HATS-1576)."""
+    port = _Port(_row("edge:review--done", backlog="tasks"))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        CheckSubscriber(
+            port, topology=_topology(), backlog="blog", known_backlogs=("blog",)
+        ).on_event(_ctx())
+
+    reason = exc_info.value.reason
+    assert "cli_alias" in reason, "the refusal must name the alias that re-addresses it"
+    assert "apps.rack.blog" in reason, "…and the alternative: re-address the row"
+
+
 def test_a_rack_row_that_names_no_backlog_at_all_is_a_loud_refusal():
     """`apps.rack` with rows directly under it skips the level that says WHICH
     backlog — the qualification the DSL makes unwritable-by-omission."""

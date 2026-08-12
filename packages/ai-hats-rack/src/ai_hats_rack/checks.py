@@ -194,29 +194,41 @@ class CheckSubscriber:
         return Delta(work_log=tuple(notes)) if notes else None
 
     def _bound_to(self, event_key: str) -> tuple[CheckDeclaration, ...]:
-        """The declarations this edge fires — addressing first, then grammar.
+        """The declarations this edge fires — THIS edge's rows first, then addressing.
 
         Addressing is decided HERE, where the mounted names are known, which is
         what makes a typo loud without making a sibling backlog's row fatal: a
         name no backlog of this root answers to is a refusal, a name that
-        belongs to a sibling is simply skipped (HATS-1545 R10). A point naming
-        an edge this topology lacks stays a skip for the older reason — it is
-        what let one bad ``edge:reviw--done`` abort an unrelated
-        ``edge:brainstorm--plan``.
-        """  # comment-length: allow — which miss is loud and which is quiet IS the contract
+        belongs to a sibling is simply skipped (HATS-1545 R10).
+
+        It is asked only of rows this edge would actually fire (HATS-1576). Asked
+        first, it made an unaddressable row fatal on EVERY edge — a project whose
+        backlog is named `blog` mounts no `tasks`, every shipped row addresses
+        `apps.rack.tasks`, and the whole tracker stopped; `--force` cannot reach
+        it, since ``ctx.force`` travels inside the request built after this. It
+        is the same argument the point filter already carried: one bad
+        ``edge:reviw--done`` must not abort an unrelated ``edge:brainstorm--plan``.
+        A point naming an edge this topology lacks stays a skip for that reason.
+        """  # comment-length: allow — which miss is loud, and WHERE, is the contract
         declared = self._declarations()
         edges = set(all_edge_keys(self._topology))
         bound: list[CheckDeclaration] = []
         for row in declared:
+            if not self._fires_on(row, event_key, edges):
+                continue
             if not self._addresses_me(row):
                 continue
-            for point in row.points():
-                if parse_edge_point(point) is None or point not in edges:
-                    continue
-                if point == event_key:
-                    bound.append(row)
-                    break
+            bound.append(row)
         return tuple(bound)
+
+    def _fires_on(self, row: CheckDeclaration, event_key: str, edges: set[str]) -> bool:
+        """Whether ``row`` names THIS event among the points this topology has."""
+        for point in row.points():
+            if parse_edge_point(point) is None or point not in edges:
+                continue
+            if point == event_key:
+                return True
+        return False
 
     def _addresses_me(self, row: CheckDeclaration) -> bool:
         """Whether ``row`` is addressed to THIS backlog. Loud on a name nothing has."""
@@ -228,10 +240,15 @@ class CheckSubscriber:
             )
         name = row.path[0]
         if name not in self._known:
+            mounted = sorted(self._known)
             raise AbortOperation(
                 f"checks: {row.label} is declared under apps.rack.{name}, but no backlog of this "
-                f"project answers to {name!r} (mounted: {', '.join(sorted(self._known))}) — "
-                f"a gate on a backlog that does not exist would never fire"
+                f"project answers to {name!r} (mounted: {', '.join(mounted)}) — "
+                f"a gate on a backlog that does not exist would never fire. "
+                f"Give the backlog it means `cli_alias: {name}` in its backlog.yaml, so it "
+                f"answers to both selectors — that is the fix when the row ships with a role "
+                f"you do not own. Otherwise re-address the row to one of: "
+                f"{', '.join('apps.rack.' + s for s in mounted)}."
             )
         return name in self._mine
 
