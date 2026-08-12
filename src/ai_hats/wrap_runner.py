@@ -40,6 +40,7 @@ from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
     _scan_escape,
+    _claim_session_cache,
     _cleanup_session_cache,
     _print_session_start,
     _print_session_end,
@@ -474,6 +475,7 @@ class WrapRunner:
                     StartupNotice("warn", text)
                     for text in legacy_launch_notices(provider_name, result, payload.policy)
                 )
+        _claim_session_cache(self.project_dir, session.session_id)
         session.init_audit(
             role=active_role,
             provider=provider_name,

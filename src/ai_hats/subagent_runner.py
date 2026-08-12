@@ -33,6 +33,7 @@ from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
     SUBAGENT_EXIT_TIMEOUT,
     SUBAGENT_EXIT_ERROR,
+    _claim_session_cache,
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
@@ -198,6 +199,7 @@ class SubAgentRunner:
             policy=self.payload.policy,
             artifacts=BuiltArtifacts(),
         )
+        _claim_session_cache(self.project_dir, session.session_id)
 
         # The gates this sub-agent runs under. Every AUTOMATE record ever written
         # said `checks: []`, so the reflect loop could not see whether a

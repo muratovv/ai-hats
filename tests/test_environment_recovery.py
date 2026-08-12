@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
 import time
 
@@ -11,9 +13,11 @@ import pytest
 from ai_hats.environment_recovery import (
     EnvironmentRecovery,
     NoOpRecovery,
+    _LazyLiveness,
     _sweep_orphan_project_keys,
     _sweep_orphan_session_caches,
 )
+from ai_hats.session_liveness import LivenessSnapshot, anchor_path, session_owner
 from ai_hats_observe import SessionManager
 from ai_hats.paths import (
     cache_home,
@@ -21,6 +25,7 @@ from ai_hats.paths import (
     complete_sentinel,
     current_pointer,
     runs_dir,
+    session_cache_dir,
     session_cache_root,
     version_dir,
     versions_root,
@@ -329,3 +334,226 @@ def test_unreadable_cache_home_is_reported(tmp_path, monkeypatch, caplog):
         cache_home().chmod(0o755)
 
     assert "cache home unreadable" in caplog.text
+
+
+# ----- Liveness-gated session-cache reaping (HATS-1339 / S2) -----
+
+
+def _dead_pid() -> int:
+    """A pid that certainly is not running: a child we started and reaped."""
+    proc = subprocess.Popen([sys.executable, "-c", ""])
+    proc.wait()
+    return proc.pid
+
+
+class _CountingCapture:
+    """Capture seam that records whether a sweep read the process table at all."""
+
+    def __init__(self, snapshot=None):
+        self.calls = 0
+        self._snapshot = snapshot
+
+    def __call__(self):
+        self.calls += 1
+        return self._snapshot if self._snapshot is not None else LivenessSnapshot.capture()
+
+
+def _session_dir(project_dir, pid, *, age_hours=0.0):
+    """A session cache dir named the way ``create_session`` names one."""
+    entry = session_cache_root(project_dir) / f"20260101-000000-1-{pid}"
+    (entry / "plugin").mkdir(parents=True)
+    (entry / "hooks.json").write_text("{}", encoding="utf-8")
+    if age_hours:
+        old = time.time() - age_hours * 3600
+        os.utime(entry, (old, old))
+    return entry
+
+
+def test_live_owner_survives_past_the_ttl(tmp_path):
+    """The measured defect: a session's dir mtime is stamped at creation and
+    never refreshed, so crossing the TTL deleted 12 running sessions' caches."""
+    live = _session_dir(tmp_path, os.getpid(), age_hours=48)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert (live / "hooks.json").exists()
+    assert spy.calls == 0, "a running owner must be settled without reading ps"
+
+
+def test_dead_owner_is_reaped_before_the_ttl(tmp_path):
+    """Certain death is reapable NOW — waiting out the TTL is what left 10 of
+    these on disk."""
+    orphan = _session_dir(tmp_path, _dead_pid())
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert not orphan.exists()
+    assert spy.calls == 1, "the table is read once, and only for a candidate"
+
+
+def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
+    """The dir name says our (live) pid; the anchor says a dead one and wins."""
+    entry = _session_dir(tmp_path, os.getpid())
+    anchor_path(entry).write_text(
+        json.dumps({"root_pid": _dead_pid(), "start_time": None}), encoding="utf-8"
+    )
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert not entry.exists()
+
+
+def test_dir_naming_no_owner_still_follows_the_ttl(tmp_path):
+    """``dry-run-materialize`` and legacy ids carry no pid — age is all there is."""
+    root = session_cache_root(tmp_path)
+    aged = root / "dry-run-materialize"
+    aged.mkdir(parents=True)
+    old = time.time() - 48 * 3600
+    os.utime(aged, (old, old))
+    fresh = root / "legacy-sid"
+    fresh.mkdir(parents=True)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert not aged.exists()
+    assert fresh.exists()
+    assert spy.calls == 0, "an ownerless dir is decided by mtime alone"
+
+
+def test_reclaim_says_what_it_dropped_and_why(tmp_path, caplog):
+    dead = _dead_pid()
+    orphan = _session_dir(tmp_path, dead)
+
+    with caplog.at_level("INFO"):
+        _sweep_orphan_session_caches(tmp_path)
+
+    assert orphan.name in caplog.text
+    assert f"owner pid {dead} is gone" in caplog.text
+
+
+def test_nothing_to_reap_never_reads_the_process_table(tmp_path):
+    """The hot-path contract: an empty cache root costs no ``ps`` (plan Q4)."""
+    session_cache_root(tmp_path).mkdir(parents=True)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert spy.calls == 0
+
+
+def test_a_dir_that_vanished_mid_sweep_is_reported(tmp_path, caplog):
+    """A peer's normal exit drops its cache dir between the listing and the stat."""
+    from ai_hats.environment_recovery import _reap_reason
+
+    gone = session_cache_root(tmp_path) / "legacy-sid"
+
+    with caplog.at_level("WARNING"):
+        assert _reap_reason(gone, time.time(), _LazyLiveness()) is None
+
+    assert "session-cache sweep skipped" in caplog.text
+
+
+def test_unreadable_session_dir_is_reported(tmp_path, caplog):
+    """No silent ``except OSError: pass`` survives in the reaping path."""
+    entry = _session_dir(tmp_path, os.getpid())
+    session_cache_root(tmp_path).chmod(0o000)
+    try:
+        with caplog.at_level("WARNING"):
+            _sweep_orphan_session_caches(tmp_path)
+    finally:
+        session_cache_root(tmp_path).chmod(0o755)
+
+    assert entry.exists()
+    assert "session-cache sweep skipped" in caplog.text
+
+
+# ----- Foreign keys holding a live session (HATS-1339 / S3) -----
+
+
+def _foreign_key(name, pid, *, age_days=30):
+    key = cache_home() / name
+    entry = key / "sessions" / f"20260101-000000-1-{pid}"
+    entry.mkdir(parents=True)
+    (entry / "hooks.json").write_text("{}", encoding="utf-8")
+    for path in (entry, key / "sessions", key):
+        _age(path, age_days)
+    return key, entry
+
+
+def test_foreign_key_holding_a_live_session_is_untouched(tmp_path, monkeypatch, caplog):
+    """E2: a long session never touches its key's direct children again, so the
+    key ages out while the session it holds is still running."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    key, entry = _foreign_key("peer-deadbeef", os.getpid())
+
+    with caplog.at_level("INFO"):
+        _sweep_orphan_project_keys(tmp_path)
+
+    assert (entry / "hooks.json").exists()
+    assert "is running" in caplog.text
+
+
+def test_stale_key_whose_sessions_are_all_dead_is_reclaimed(tmp_path, monkeypatch):
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    key, _entry = _foreign_key("gone-deadbeef", _dead_pid())
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert not key.exists()
+
+
+def test_fresh_keys_never_read_the_process_table(tmp_path, monkeypatch):
+    """Liveness only ever runs on a key the TTL already condemned."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    _foreign_key("peer-deadbeef", os.getpid(), age_days=0)
+    spy = _CountingCapture()
+
+    _sweep_orphan_project_keys(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert spy.calls == 0
+
+
+# ----- create_session chokepoint wiring (HATS-1339) -----
+
+
+def test_recovery_expires_aged_bulk_run_artifacts(tmp_path):
+    """``sweep_runs`` rides the same chokepoint — no new command (card Scope §3)."""
+    run = runs_dir(tmp_path) / "session_20250101-000000-1-1"
+    run.mkdir(parents=True)
+    bulk = run / "transcript.jsonl"
+    bulk.write_text("{}", encoding="utf-8")
+    facts = run / "audit.md"
+    facts.write_text("# audit", encoding="utf-8")
+    _age(bulk, 90)
+
+    EnvironmentRecovery(tmp_path).run()
+
+    assert not bulk.exists()
+    assert facts.exists()
+
+
+def test_claim_marks_the_cache_dir_with_this_process(tmp_path):
+    """The runners' session-start seam; ``session_owner`` reads it back."""
+    from ai_hats.runtime_common import _claim_session_cache
+
+    _claim_session_cache(tmp_path, "20260101-000000-1-999999")
+
+    cache_dir = session_cache_dir(tmp_path, "20260101-000000-1-999999")
+    assert session_owner(cache_dir)[0] == os.getpid()
+
+
+def test_claimed_cache_survives_a_sweep_by_a_peer(tmp_path):
+    """End to end for the wiring: claim, age the dir, sweep — it must remain."""
+    from ai_hats.runtime_common import _claim_session_cache
+
+    _claim_session_cache(tmp_path, "legacy-sid-without-a-pid")
+    cache_dir = session_cache_dir(tmp_path, "legacy-sid-without-a-pid")
+    old = time.time() - 48 * 3600
+    os.utime(cache_dir, (old, old))
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert cache_dir.exists(), "an anchored dir is never decided by age"

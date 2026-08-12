@@ -218,6 +218,29 @@ def sigint_shield(
             logger.warning("SIGINT shield not restored: %r", exc)
 
 
+def _claim_session_cache(project_dir: Path, session_id: str) -> None:
+    """Record this process as the owner of the session's cache dir (HATS-1339).
+
+    The opening bracket of ``_cleanup_session_cache`` below: claimed at the
+    runners' session-start seam so a peer's sweep reaps the dir on proof of
+    death instead of on age, which used to delete a live session's skills and
+    ``hooks.json`` mid-flight.
+
+    Two placements it deliberately avoids. NOT the providers' shared
+    ``_cache_dir`` helper — ``--dry-run`` enumerates that dir with ``rglob``
+    (dotfiles included) and would read the anchor as an escaped write and rmtree
+    the tree. NOT before ``build_session_artifacts`` either: creating the dir
+    early makes the builder's own ``mkdir`` a no-op, which drops it from the
+    launch record and breaks its equality with the dry-run plan (HATS-1552).
+    The window costs nothing — until the anchor lands, the pid in the session id
+    already names the owner.
+    """  # comment-length: allow — both wrong seams fail silently, one per paragraph
+    from .paths import session_cache_dir
+    from .session_liveness import write_session_anchor
+
+    write_session_anchor(session_cache_dir(project_dir, session_id))
+
+
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     """Remove the session's per-session cache dir (HATS-294).
 
