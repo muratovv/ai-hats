@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**228 of 228 files catalogued — 235 flows.**
+**229 of 229 files catalogued — 236 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -2905,6 +2905,21 @@ as a claim to check, not as evidence.
 
 - **expect** — exactly one worktree creation succeeds while the loser exits with a friendly error
 - **why** — concurrent worktree creation must lock branch allocation to prevent duplicate worktrees
+
+## `test_wt_create_concurrent_slow_hook.py`
+
+*pins HATS-1593*
+
+- **flow** — two agents creating worktrees on DIFFERENT branches at the same time, while the role's wt_in hook takes longer than the create lock's budget
+- **cmds**
+
+  ```console
+  ai-hats wt create task/probe-a   # concurrently with
+  ai-hats wt create task/probe-b
+  ```
+
+- **expect** — both creates succeed; neither is refused by the create lock
+- **why** — wt_in is documented at 45s but ran inside the repo-wide create lock, whose budget is 10s — a peer on an unrelated branch was refused.
 
 ## `test_wt_entry_gate_hook.py`
 

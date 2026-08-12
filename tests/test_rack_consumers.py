@@ -27,6 +27,8 @@ from ai_hats_rack.models import TaskCard
 from ai_hats import check_resolve
 from ai_hats.check_points import resolve_checks
 from ai_hats.check_resolve import CheckResolutionError
+from ai_hats_core.deadline import Deadline
+
 from ai_hats.hook_exec import run_hook
 from ai_hats.models import AppBinding
 from ai_hats.paths import session_cache_dir
@@ -202,7 +204,13 @@ def test_an_ambient_tasks_dir_never_reaches_a_check(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_TASKS_DIR", "/somewhere/else/tasks")
     script = _script(tmp_path, 'echo "${AI_HATS_TASKS_DIR-unset}"\nexit 2')
 
-    run = run_hook(script, point="wt:pre-merge", timeout=10, project_dir=tmp_path)
+    run = run_hook(
+        script,
+        point="wt:pre-merge",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    )
 
     assert run.reason == "unset"
 

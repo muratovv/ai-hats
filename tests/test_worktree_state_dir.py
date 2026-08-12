@@ -95,13 +95,15 @@ def test_lifecycle_ctx_threads_state_dir_into_hook_log_dir(git_project, tmp_path
     or re-base ``_wt_hook_log_dir`` on ``worktrees_dir(project_dir)`` (→ the log dir no
     longer sits under ``custom``).
     """
+    from ai_hats_core.deadline import Deadline
+
     from ai_hats.wt_lifecycle import _wt_hook_log_dir
 
     custom = tmp_path / "custom_state"
     mgr = WorktreeManager(
         git_project, branch_name="task/hats-851", lifecycle=HOOK_LIFECYCLE, state_dir=custom
     )
-    ctx = mgr._lifecycle_ctx()
+    ctx = mgr._lifecycle_ctx(Deadline.without_lock(60.0, why="unit test"))
 
     assert ctx.state_dir == custom
     log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)

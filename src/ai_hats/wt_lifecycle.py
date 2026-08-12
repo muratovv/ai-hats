@@ -167,6 +167,7 @@ class HookRunningLifecycle:
                 worktree_path=ctx.worktree_path,
                 project_dir=ctx.project_dir,
                 branch_name=ctx.branch_name,
+                deadline=ctx.deadline,
                 log_path=log_dir / f"wt_in-{script.name}.log",
             )
             if not outcome.ok:
@@ -200,7 +201,8 @@ class HookRunningLifecycle:
             run = run_hook(
                 check.script_path,
                 point=WT_PRE_MERGE,
-                timeout=resolve_hook_timeout(),
+                budget=resolve_hook_timeout(),
+                deadline=ctx.deadline,
                 project_dir=ctx.project_dir,
                 worktree_path=ctx.worktree_path,
                 extra_env={"AI_HATS_BRANCH_NAME": ctx.branch_name},
@@ -258,6 +260,7 @@ class HookRunningLifecycle:
                 worktree_path=ctx.worktree_path,
                 project_dir=ctx.project_dir,
                 branch_name=ctx.branch_name,
+                deadline=ctx.deadline,
                 log_path=log_dir / f"{event}-{script.name}.log",
             )
             if not outcome.ok:

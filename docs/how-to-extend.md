@@ -386,8 +386,10 @@ for all three. `wt_in` ignores `on:` — it fires once, at create.
   (`wt_in` | `merge` | `discard` | `cleanup`).
 - **`cwd` = the project dir**, **`stdin` closed** (an interactive `read` fails fast
   instead of hanging), stdout/stderr streamed to a managed log under `.agent/`.
-- **A bounded timeout** (default 45 s, override `AI_HATS_WT_HOOK_TIMEOUT_S`), kept
-  below the worktree lifecycle-lock budget so a hung hook can't starve peer `wt` ops.
+- **A bounded timeout** (default 45 s, override `AI_HATS_WT_HOOK_TIMEOUT_S`). Both
+  are a *request*: the lock held while your hook runs caps it, so a hung hook can't
+  starve peer `wt` ops and several hooks share one ceiling rather than each getting
+  the full budget.
 
 **Worked example — seed `.env` into the worktree.** The common case: your agent needs
 the project's gitignored `.env` (or a `.venv`, a local config) that `git worktree add`

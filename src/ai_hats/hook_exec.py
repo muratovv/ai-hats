@@ -19,6 +19,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
+from ai_hats_core.deadline import Deadline
+
 from .paths import AI_HATS_PROJECT_DIR_ENV
 
 # Big enough for a multi-line instruction, not just a verdict line.
@@ -68,7 +70,8 @@ def run_hook(
     script: Path,
     *,
     point: str,
-    timeout: float,
+    budget: float,
+    deadline: Deadline,
     project_dir: Path,
     force: bool = False,
     task_id: str | None = None,
@@ -85,13 +88,25 @@ def run_hook(
     so a channel never hands in its own strings for those. ``script`` must
     already be absolute — resolution belongs to the caller. ``KeyboardInterrupt``
     propagates regardless of the caller's error policy.
-    """
+
+    ``budget`` is what the channel asks for, ``deadline`` what the caller is
+    bounded by; the run gets the smaller, so no channel compares its own
+    constant against a lock (HATS-1593).
+    """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(f"hook script missing: {script}", None)
     if not os.access(script, os.X_OK):
         return _corrupt(f"hook script not executable: {script}", None)
 
-    header = f"# hook point={point} script={script} timeout={timeout}s"
+    timeout = deadline.budget_for(budget)
+    if timeout <= 0.0:
+        return HookRun(
+            verdict=HookVerdict.BROKE,
+            exit_code=None,
+            reason=f"hook broke: no time left under {deadline.origin}: {script}",
+        )
+
+    header = f"# hook point={point} script={script} timeout={timeout}s under {deadline.origin}"
     try:
         sink, sink_path, said_from = _open_stdout_sink(log_path, header)
     except OSError as exc:
