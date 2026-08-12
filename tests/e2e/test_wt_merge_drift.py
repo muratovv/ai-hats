@@ -1,19 +1,16 @@
-"""End-to-end coverage for ``ai-hats wt merge`` drift guard (HATS-457).
+"""e2e (HATS-457)
 
-Per ``dev_rule_e2e_gate``: changes that touch ``src/ai_hats/cli/worktree.py``
-or ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` require an e2e test using the real
-launcher + real pip install + real ``ai-hats`` binary. The drift guard
-implements HYP-017: between ``wt create`` and ``wt merge`` another
-agent's worktree may have already advanced the local base branch, and
-the second agent's pre-merge ``grep-verify`` becomes silently stale.
-
-**Fail-under-revert**: comment out ``self._check_drift()`` in
-``WorktreeManager.merge`` → step (5) below proceeds with exit 0
-instead of exit 1, and the test fails. This verifies the test
-actually exercises the new behavior (not some pre-existing guard).
+flow:   a developer merging a worktree branch when base branch has advanced since
+        creation
+cmds:
+    # when base branch has new commits since worktree creation
+    ai-hats wt merge task/test-drift
+expect: merge is refused detailing drift files unless --accept-drift is passed
+why:    base branch drift must be flagged to prevent overwriting concurrent changes
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -39,16 +36,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _git_no_hooks(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

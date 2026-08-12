@@ -20,8 +20,9 @@ from ai_hats_rack.cli_common import emit_json
 from ai_hats_rack.definition import resolve_definition
 from ai_hats_rack.extensions import DerivedViewsExtension
 from ai_hats_rack.journal import JsonlJournalSink
+from ai_hats_rack.workspace import backlog_selectors_in_root
 
-from .rack_consumers import consumer_subscribers
+from .rack_consumers import check_port_factory, consumer_subscribers
 from .rack_wiring import build_rack_kernel
 from .tracker_wiring import tracker_paths
 
@@ -31,7 +32,8 @@ class CliKernelProvider:
 
     def build_kernel(self, root: Any, caller_cwd: Path):
         """The full integrator assembly (mirror of the K6 driver) — kernel +
-        every stock extension + the (currently empty) consumer add-on pack."""
+        every stock extension + the consumer add-on pack (the ``checks:``
+        runner, subscribed to THIS definition's topology)."""
         defn = resolve_definition(
             root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
         )
@@ -41,9 +43,22 @@ class CliKernelProvider:
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
-                root.project_dir, tasks_dir=root.tasks_dir, topology=defn.topology
+                root.project_dir,
+                definition=defn,
+                catalog=root.tasks_dir,
+                known_backlogs=backlog_selectors_in_root(root),
             ),
         )
+
+    def check_port(self, root: Any, catalog: Path):
+        """The check executor for ONE mounted catalog of ``root``.
+
+        The half the rack cannot supply: reading the composed rows and spawning
+        the script (``subprocess`` is forbidden in that package by an import
+        pin). Everything else about the channel — topology, selectors, which
+        instances get a subscriber — the rack decides from its own definitions.
+        """
+        return check_port_factory(root.project_dir)(catalog)
 
     def after_create(self, root: Any, result: Any) -> None:
         """Refresh STATE.md after a create (fork K3 #7): create takes no FSM
@@ -103,12 +118,18 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
     from ai_hats_wt import (
         WorktreeBaseBranchMismatchError,
         WorktreeDriftError,
+        WorktreeMergeAborted,
         WorktreeMergeConsentError,
         WorktreeStateLostError,
     )
 
     tid = task_id or getattr(exc, "task_id", "") or "<id>"
     branch = getattr(exc, "branch_name", "") or f"task/{tid.lower()}"
+    if isinstance(exc, WorktreeMergeAborted):
+        # HATS-1540: name the subsystem that refused. HATS-1538 cost a session
+        # to a symptom that pointed at plan-gate, so `checks` says so here and
+        # the check's own words carry the recipe.
+        return ("checks_refused", f"Refused (checks) — cannot merge for {tid}.", [str(exc)])
     if isinstance(exc, WorktreeMergeConsentError):
         return (
             "worktree_merge_consent",

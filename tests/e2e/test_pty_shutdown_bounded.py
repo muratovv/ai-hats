@@ -1,26 +1,12 @@
-"""End-to-end coverage for bounded PTY shutdown — HATS-411.
+"""e2e (HATS-411)
 
-The unit suite (``tests/test_pty_shutdown.py``) exercises the escalation
-contract with a ``FakeProc`` and monkeypatched signals — fast, but
-cannot catch the original bug where ``ptyprocess.wait()`` blocks on real
-``os.waitpid(pid, 0)`` against a real macOS exit-pending child.
-
-This module spawns real ``ptyprocess.PtyProcess`` children and asserts:
-
-1. ``bounded_proc_shutdown`` returns within the configured deadline
-   (in-test elapsed assertions; pytest-timeout is NOT a project dep,
-   so a true hang relies on CI job-level wall-clock to catch),
-2. ``emit_terminal_reset`` writes DECRST bytes when the fd is a real
-   TTY and skips when redirected to a file (isatty guard),
-3. ``WrapRunner._pty_spawn`` end-to-end exercises the wired
-   ``bounded_proc_shutdown`` call site without raising.
-
-Children are **not** perfect macOS `?Es` reproducers — that path
-requires Claude-grade libuv-handle leak at the kernel level — but
-cover the broader "child ignores SIGTERM" + wired-path-import-works
-failure shapes.
-
-Marker: ``integration`` (real PTY, real signals).
+flow:   a developer terminating an interactive PTY session when child ignores SIGTERM
+cmds:
+    ai-hats execute -r assistant
+expect: PTY runner escalates SIGTERM to SIGKILL within deadline and resets terminal
+        modes
+why:    without bounded shutdown, macOS libuv handle leaks cause processes to hang
+        indefinitely during exit
 """
 
 from __future__ import annotations

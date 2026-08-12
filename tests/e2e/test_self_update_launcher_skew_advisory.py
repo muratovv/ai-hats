@@ -1,33 +1,16 @@
-"""E2E: self update warns when a stale launcher leaves the versioned layout dormant (HATS-655).
+"""e2e (HATS-647, HATS-655)
 
-Value under test: when the host launcher predates ``versions/current`` resolution
-(HATS-647), every ``self update`` builds a ``versions/<sha>/`` the launcher never
-uses — the versioned layout is silently dormant. This advisory names what is off
-and points at the one-time host-level fix, WITHOUT ever touching the launcher.
-
-Exercised with a deliberately STALE launcher shim (always resolves ``.venv``,
-never reads ``versions/current``) + real pip + real ``ai-hats self update`` (per
-``dev_rule_e2e_gate``). Deterministic two-update flow, no race.
-
-Flow:
-  1. First ``self update`` (migration) — the shim bootstraps ``.venv`` and the
-     python self-update builds ``versions/<shaA>`` + flips ``current``. No
-     versioned install pre-existed → NO hint (first migration runs from .venv by
-     design).
-  2. Second ``self update`` (HEAD advanced → shaB) — a versioned install now
-     pre-exists, yet the stale shim still runs the updater from ``.venv`` → the
-     dormancy hint fires, naming ``versions/<shaB>``.
-
-Invariants asserted:
-  - the hint is ABSENT on update 1, PRESENT on update 2;
-  - the stale launcher file is BYTE-UNCHANGED across both updates (non-mutation).
-
-Fail-under-revert:
-  - removing the hint → update-2 'hint present' assertion fails;
-  - an accidental launcher write → the byte-unchanged assertion fails.
+flow:   a developer running self update when host launcher binary is older than installed
+        framework
+cmds:
+    ai-hats self update
+expect: self update displays advisory warning detailing launcher upgrade instructions
+why:    without launcher skew advisories, outdated host launchers miss versioned venv
+        resolution features
 """
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -82,10 +65,6 @@ def _run(cmd, *, cwd, env, timeout):
     )
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -97,8 +76,8 @@ def _head_sha(repo: Path) -> str:
 
 def _advance(src_repo: Path, marker: str) -> str:
     (src_repo / marker).write_text("hats-655 e2e\n")
-    _git(["add", marker], src_repo)
-    _git(["commit", "--quiet", "-m", f"test: advance HEAD ({marker})"], src_repo)
+    git(src_repo, "add", marker)
+    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
     return _head_sha(src_repo)
 
 
@@ -115,9 +94,9 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     # Install the STALE launcher shim.
@@ -165,3 +144,7 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
     assert launcher.read_bytes() == launcher_bytes_before, (
         "the advisory must NEVER write the host launcher"
     )
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

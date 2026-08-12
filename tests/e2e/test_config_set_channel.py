@@ -1,14 +1,15 @@
-"""E2E: ``ai-hats config set --channel`` persists the harness block and
-``config status`` shows the Channel line (HATS-764).
+"""e2e (HATS-764)
 
-Per ``dev_rule_e2e_gate``, the ``src/ai_hats/cli/`` surface change (new
-``--channel/--repo/--path`` flags + a Channel status line) needs a
-real-subprocess test: real launcher + real ``ai-hats`` binary (session-shared
-venv via ``shared_launcher``), marked ``integration``.
-
-Fail-under-revert: the pre-HATS-764 ``config set`` has no ``--channel`` option →
-the invocation is a click "no such option" usage error (non-zero), so the
-exit-0 + yaml-round-trip assertions below fail.
+flow:   a maintainer configures the engine release channel and local source path
+        for a project checkout
+cmds:
+    ai-hats config set --channel edge
+    ai-hats config set --channel local --path .
+    ai-hats config status
+expect: ai-hats.yaml persists harness settings, config status displays "Channel: edge",
+        and combining --repo with non-edge channels exits nonzero with an error
+why:    unpersisted channel options or invalid flag combinations cause the engine to
+        resolve from the wrong source tree
 """
 
 from __future__ import annotations

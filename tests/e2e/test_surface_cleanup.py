@@ -1,38 +1,19 @@
-"""E2E: HATS-407 — surface-command cleanup (init / config set / bump).
+"""e2e (HATS-337, HATS-407, HATS-790, HATS-1203)
 
-Validates the post-HATS-407 contracts via the **real** package invoked as
-``python -m ai_hats`` (HATS-790: no bin/ai-hats console script) in real
-subprocess invocations:
+flow:   a developer initializing project configuration
+cmds:
+    ai-hats self init -p claude -r assistant --no-wizard
+expect: project configuration creates ai-hats.yaml and user-rules/ without copying
+        role content files or creating legacy backup directories
+why:    project initialization must create clean minimal configuration files without
+        materializing redundant framework copies
 
-- ``ai-hats self init`` — scaffolds dirs + ai-hats.yaml + ./CLAUDE.md +
-  .gitignore + the empty ``user-rules/`` landing zone (HATS-1203 retired the
-  ``imports.md`` aggregator). **No** role-content materialization under
-  ``<ai_hats_dir>/library/{rules,skills}/``, **no** ``.last_backup/`` created.
-
-- ``ai-hats config set -r ROLE`` — yaml-only flip of ``default_role``.
-  ``active_role`` stays empty (runtime cache, written by session start
-  only). No mutation under ``<ai_hats_dir>/library/``, no ``.last_backup/``.
-
-- ``ai-hats self bump`` — leaves a dropped-in user-rule alone and
-  materializes nothing for it; no role-content, no ``.last_backup/``.
-
-Per ``dev_rule_e2e_gate``: real subprocess chain (real bash, the real package
-run as ``<dev-venv python> -m ai_hats`` — HATS-790 removed the
-``<repo>/.venv/bin/ai-hats`` console script), ``@pytest.mark.integration``. No
-pip install — we exercise the locally-installed package directly so the
-turnaround stays cheap.
-
-NB: we deliberately bypass the host launcher (``$HOME/.local/bin/ai-hats``,
-HATS-339), which since HATS-337 refuses to run without a pre-existing
-``<project>/.agent/ai-hats/.venv``. These tests target the surface of
-``self init`` / ``config set`` / ``self bump`` against an empty project,
-so the launcher's venv precondition is not the contract under test.
-
-Fail-under-revert (dev_rule_e2e_gate §4): reverting the HATS-407 commits
-makes ``set_role`` repopulate ``library/rules/*`` and emit
-``.last_backup/`` again; assertions below catch both regressions.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer updating default role configuration
+cmds:
+    ai-hats config set -r sre
+expect: default_role is updated in ai-hats.yaml without modifying the canonical
+        framework directory or creating backups
+why:    config set must perform yaml-only role configuration updates
 """
 
 from __future__ import annotations

@@ -1,28 +1,17 @@
-"""End-to-end coverage for ``ai-hats wt merge`` HEAD-wandered guard
-(HATS-533).
+"""e2e (HATS-486, HATS-509, HATS-518, HATS-533)
 
-The merge-time twin of HATS-518: if main-repo HEAD has moved off
-``_original_branch`` between ``wt create`` and ``wt merge`` (manual
-``git checkout``, a peer agent operating directly in the main repo
-without a linked worktree, an IDE branch-switch), ``git merge`` in the
-main-repo cwd would silently land on the current branch. Same
-silent-wrong-branch-merge class as HATS-486 — discovered live in the
-HATS-509 session.
-
-Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py``
-requires a real-launcher + real-binary e2e test. CliRunner / pipeline
-tests do NOT satisfy the gate.
-
-**Fail-under-revert**: remove the new ``WorktreeBaseBranchMismatchError``
-guard block in ``WorktreeManager.merge`` → step (5) below proceeds with
-exit 0, the wandered-feature branch absorbs the worktree commit, and
-the negative assertions fail. The test exercises the new behaviour,
-not some pre-existing guard.
-
-Modelled on ``tests/e2e/test_wt_merge_drift.py``.
+flow:   a developer merging a worktree branch when main repository HEAD is on a
+        different branch
+cmds:
+    # when main HEAD is checked out on a different branch than base
+    ai-hats wt merge task/wandered-probe
+expect: merge is refused with instructions to checkout base branch before retrying
+why:    wt merge requires main repository HEAD to match base branch to prevent
+        wrong-branch merges
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -48,16 +37,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration
@@ -94,9 +73,7 @@ def test_e2e_wt_merge_head_wandered_guard(shared_launcher, tmp_path):
         )
 
     # ---- 1. bootstrap project ----
-    _git(project, "init", "-b", "main")
-    _git(project, "config", "user.email", "e2e@test")
-    _git(project, "config", "user.name", "E2E")
+    init_repo(project, branch="main")
     (project / "README.md").write_text("# e2e\n")
     _git(project, "add", "README.md")
     _git(project, "commit", "-m", "init")

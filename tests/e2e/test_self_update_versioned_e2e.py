@@ -1,33 +1,15 @@
-"""E2E: ``ai-hats self update`` is blue-green versioned (HATS-647 / R0).
+"""e2e (HATS-647)
 
-The value under test: an update never mutates the venv a live run is
-executing from. ``self update`` on a managed default venv installs the new
-version into ``versions/<sha>/`` and atomically flips ``versions/current``;
-the previous ``versions/<old-sha>/`` is left untouched, so a concurrently
-live run pinned to it keeps its frozen environment.
-
-Setup contract (real subprocess + real pip + real launcher), per
-``dev_rule_e2e_gate``:
-
-  - ``src-repo``  — a clone of REPO_ROOT used as the local (non-editable)
-    install source. Its HEAD sha names the installed version dir.
-  - First ``self update`` → ``versions/<shaA>/`` + ``current → shaA``.
-  - A trivial commit advances ``src-repo`` HEAD → ``shaB``.
-  - Second ``self update`` → ``versions/<shaB>/`` + ``current → shaB``,
-    while ``versions/<shaA>/`` survives unchanged.
-
-Fail-under-revert: the pre-HATS-647 code installs in place into the single
-``.venv`` and never creates ``versions/`` — so the ``versions/<sha>/`` +
-``current`` assertions below fail, and ``versions/<shaA>/`` is never
-preserved across the second update.
-
-Pin-at-spawn details (a process pinned via ``AI_HATS_VENV`` stays on its
-sha even after ``current`` flips; descendants inherit the pin) are covered
-by the launcher unit tests in ``tests/test_launcher.py`` — this e2e proves
-the real ``self update`` produces and advances the versioned layout.
-"""
+flow:   a developer executing self update under versioned venv layout
+cmds:
+    ai-hats self update
+expect: self update builds new versioned venv in versions/<sha>/ and atomically updates
+        current symlink
+why: without versioned venv builds, updates overwrite active venvs mid-session causing
+     tool crashes"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -65,10 +47,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -103,13 +81,13 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
     # Align the clone's symbolic HEAD with its checked-out working tree so
     # `git ls-remote <src> HEAD` (what the edge resolver reads to name the
     # version dir) matches the installed source — robust whether REPO_ROOT is a
     # master checkout or a linked worktree on a feature branch.
-    _git(["checkout", "-B", "e2e-main"], src_repo)
+    git(src_repo, "checkout", "-B", "e2e-main")
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -139,8 +117,8 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
 
     # ----- 2. advance src-repo HEAD → shaB (trivial, still installable) -----
     (src_repo / "E2E_VERSIONED_MARKER.txt").write_text("hats-647 e2e\n")
-    _git(["add", "E2E_VERSIONED_MARKER.txt"], src_repo)
-    _git(["commit", "--quiet", "-m", "test: advance HEAD for versioned e2e"], src_repo)
+    git(src_repo, "add", "E2E_VERSIONED_MARKER.txt")
+    git(src_repo, "commit", "--quiet", "-m", "test: advance HEAD for versioned e2e")
     sha_b = _head_sha(src_repo)
     assert sha_b != sha_a
 
@@ -156,3 +134,7 @@ def test_e2e_self_update_blue_green_versioned(tmp_path: Path) -> None:
     # ----- 4. the real launcher (no env) resolves the new current end-to-end -----
     clean = {k: v for k, v in env.items() if k != ENV_AI_HATS_VENV}
     _run([str(launcher_dest), "--help"], cwd=project, env=clean, timeout=60)
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

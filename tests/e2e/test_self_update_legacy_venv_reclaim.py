@@ -1,29 +1,14 @@
-"""E2E: the legacy .venv is reclaimed once versioned is healthy (HATS-653 / Phase B).
+"""e2e (HATS-653)
 
-Value under test: after lazy migration to the versioned layout, the orphaned
-pre-versioning ``<ai_hats_dir>/.venv`` is reclaimed — but only once a process
-actually runs from a complete versioned venv. Exercised with a real launcher +
-real pip + real ``ai-hats self update`` (per ``dev_rule_e2e_gate``), no flaky
-race: the two-step flow is deterministic.
-
-Flow:
-  1. Fresh project → first ``self update``. The launcher bootstraps the default
-     ``.venv`` (migration), then the python self-update builds ``versions/<shaA>``
-     and flips ``current``. This first updater runs **from** ``.venv``
-     (``current_run_sha`` is None) → the reclaim guard skips, ``.venv`` is kept.
-  2. Second ``self update`` (HEAD advanced → shaB). Now the launcher resolves
-     ``current → versions/<shaA>`` and runs the updater **from** the versioned
-     venv (``current_run_sha`` resolves) → the reclaim fires at self-update
-     start, discarding ``.venv``.
-
-Fail-under-revert:
-  - reverting the reclaim → step-2 ``not .venv.exists()`` fails (stale fallback
-    lingers);
-  - reverting the ``current_run_sha`` guard (always reclaim) → step-1
-    ``.venv.exists()`` fails (the first update deletes the venv it runs from).
-"""
+flow:   a developer running self update after migrating to versioned venv layout
+cmds:
+    ai-hats self update
+expect: self update reclaims unneeded legacy .venv directory freeing disk space
+why: without legacy venv reclamation, orphaned .venv directories consume unnecessary
+     disk space"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -61,10 +46,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -76,8 +57,8 @@ def _head_sha(repo: Path) -> str:
 
 def _advance(src_repo: Path, marker: str) -> str:
     (src_repo / marker).write_text("hats-653 e2e\n")
-    _git(["add", marker], src_repo)
-    _git(["commit", "--quiet", "-m", f"test: advance HEAD ({marker})"], src_repo)
+    git(src_repo, "add", marker)
+    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
     return _head_sha(src_repo)
 
 
@@ -94,9 +75,9 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -129,3 +110,7 @@ def test_e2e_legacy_venv_reclaimed_once_versioned_healthy(tmp_path: Path) -> Non
     assert not legacy_venv.exists(), (
         "legacy .venv must be reclaimed once the updater runs from a versioned venv"
     )
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

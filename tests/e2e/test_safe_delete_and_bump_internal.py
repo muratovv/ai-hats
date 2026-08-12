@@ -1,21 +1,12 @@
-"""E2E (HATS-470): bump CLI removal + `_bump_internal` entry-point + trash bin.
+"""e2e (HATS-470, HATS-582)
 
-Three contracts a reviewer can refute by reverting the relevant code:
-
-1. ``ai-hats self bump`` is no longer a registered CLI command → exit
-   ≠ 0 with "No such command 'bump'" on stderr/stdout.
-2. The hidden ``python -m ai_hats._bump_internal`` works as a
-   stand-alone entry-point: idempotent, exit 0, prints the trash
-   summary banner when destructive ops fire.
-3. A destructive bump path (legacy-ref healing inside ``self init``)
-   creates a real ``$TMPDIR/ai-hats/trash-<ts>-<pid>-XXXXXX/`` session
-   with a populated ``MANIFEST.md``.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Cost amortization (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
+flow:   a developer running self update with safe-delete protection enabled
+cmds:
+    # self update runs internal bump pipeline with safe-delete protection
+    ai-hats self update
+expect: safe-delete helper moves discarded files to session trash directory rather than raw
+        deletion
+why:    without safe-delete protection, framework migrations perform unrecoverable file deletions
 """
 
 from __future__ import annotations
@@ -47,18 +38,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder (~90s) — now reuses the single session venv
-    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
-    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
-    the same ``(launcher, env, shared_venv)`` tuple the old fixture did.
-    """
-    return shared_launcher
 
 
 def _init_minimal_project(launcher: Path, env: dict, project: Path) -> None:
@@ -168,11 +147,13 @@ def test_e2e_bump_internal_rejects_unknown_args(installed_launcher, tmp_path):
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "HATS-1480 — heal_external_refs rewrites a legacy .agent/hooks/<name> ref to "
-        "library/hooks/<name>; HATS-1268 renamed the guard to its flattened skill form, "
-        "so the target no longer exists and assert_runtime_hooks_resolve refuses init. "
-        "The rewrite is itself residue of the scheme HATS-1170 retired — the fix is to "
-        "drop an ai-hats-owned legacy ref, not repoint it at a hollow copy."
+        "HATS-1500 — heal_external_refs rewrites a legacy .agent/hooks/<name> ref to "
+        "library/hooks/<name>; HATS-1268 renamed the guard to its flattened skill form "
+        "and HATS-1480 deleted the directory outright, so the target cannot exist and "
+        "assert_runtime_hooks_resolve refuses init. The rewrite is itself residue of the "
+        "scheme HATS-1170 retired — the fix is to drop an ai-hats-owned legacy ref, not "
+        "repoint it at a hollow copy. Do NOT swap this seed for a resolvable one: the "
+        ".agent/hooks/ ref IS the repro."
     ),
 )
 @pytest.mark.integration

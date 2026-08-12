@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -26,14 +25,17 @@ from .environment_recovery import _sweep_orphan_session_caches  # noqa: F401
 from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
+from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
+from .session_identity import SessionIdentity
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
-    SessionPolicy,
     assemble_launch_command,
+    assemble_launch_env,
     consumed_session_id,
 )
 from .session_report import SessionReport
+from .startup_checks import run_startup_checks
 from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
@@ -65,47 +67,6 @@ if TYPE_CHECKING:
     from .pty_tap import PtyTapFactory
 
 logger = logging.getLogger(__name__)
-
-
-# ----- HATS-833 session-start heal-note formatting -----
-
-# No "git" entry since HATS-1337: git hooks are not a healed surface —
-# the dispatcher carries no gate set, and the project is written at
-# install time only.
-_SURFACE_LABEL = {"runtime": "runtime-hook", "wt": "wt-hook"}
-_KIND_PHRASE = {
-    "missing": "materialized (was missing)",
-    "content": "updated (content drift)",
-    "wiring": "re-wired",
-    "stale": "swept (no longer composed)",
-}
-
-
-def _hook_display_name(surface: str, name: str) -> str:
-    """Drop the script extension for runtime/wt names (git ``name`` is the bare
-    event)."""
-    if surface in ("runtime", "wt") and "." in name:
-        return name.rsplit(".", 1)[0]
-    return name
-
-
-def _format_hook_heal(changes) -> str:
-    """One-glance heal note: one clause per changed hook, kinds on the same hook
-    folded (``content`` + ``wiring`` → ``updated (content drift) + re-wired``)."""
-    grouped: dict[tuple[str, str], list[str]] = {}
-    order: list[tuple[str, str]] = []
-    for c in changes:
-        key = (c.surface, _hook_display_name(c.surface, c.name))
-        if key not in grouped:
-            grouped[key] = []
-            order.append(key)
-        if c.kind not in grouped[key]:
-            grouped[key].append(c.kind)
-    clauses = []
-    for surface, dname in order:
-        phrases = " + ".join(_KIND_PHRASE.get(k, k) for k in grouped[(surface, dname)])
-        clauses.append(f"{_SURFACE_LABEL.get(surface, surface)} {dname} {phrases}")
-    return "managed hooks healed at start — " + "; ".join(clauses)
 
 
 _COLLISION_HINTS = {
@@ -145,22 +106,41 @@ def _format_mirror_heal(removed: list[str], trash_root) -> str:
     )
 
 
-def _format_version_skew(changes) -> str:
-    """Warn note when drift exists but the binary is behind upstream (req-7:
-    name the unhealed drift rather than skip silently)."""
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for c in changes:
-        label = f"{c.surface} {_hook_display_name(c.surface, c.name)}"
-        if label not in seen:
-            seen.add(label)
-            uniq.append(label)
-    listed = ", ".join(uniq[:6])
-    more = "" if len(uniq) <= 6 else f" (+{len(uniq) - 6} more)"
-    return (
-        "managed hooks drifted but not healed — installed ai-hats is behind "
-        "upstream. Run 'ai-hats self update'. Stale: " + listed + more + "."
+def _broken_hook_refs_text(refs, *, project_dir: Path, ours: bool) -> str:
+    """One instruction for the refs of one ownership (HATS-1522).
+
+    This text is the only instruction anyone gets — nobody reads the source
+    after it — so it answers three questions on its own: what broke and how
+    badly, what to run, and what that run changes beyond the repair. It names
+    `self init`, not `self update`: the latter reinstalls the harness from
+    GitHub, which on an editable install is somebody's working checkout.
+    """
+    files = ", ".join(sorted({r.settings_file for r in refs}))
+    head = (
+        f"1 hook in {files} points at a file that is gone"
+        if len(refs) == 1
+        else f"{len(refs)} hooks in {files} point at files that are gone"
     )
+    them = "these entries" if len(refs) > 1 else "this entry"
+    lines = [f"{head} — the harness reports an error on every matching tool call:"]
+    lines += [f"    {r.event}  →  {r.command}" for r in refs]
+    if ours:
+        lines += [
+            f"    ai-hats wrote {them}, so it can clean up for you:",
+            "",
+            f"    Fix: cd {project_dir} && ai-hats self init --no-wizard",
+            "",
+            "    That command also applies any ai-hats migration this project has",
+            "    not seen yet, so expect other files under it to change.",
+        ]
+    else:
+        it = "them" if len(refs) > 1 else "it"
+        missing = "files" if len(refs) > 1 else "file"
+        lines += [
+            f"    ai-hats did not write {them} and will not touch {it} —",
+            f"    delete {it} yourself, or put the missing {missing} back.",
+        ]
+    return "\n".join(lines)
 
 
 class WrapRunner:
@@ -189,39 +169,9 @@ class WrapRunner:
     def _resync_managed_hooks(
         self, session: Session | None = None, result=None
     ) -> list[StartupNotice]:
-        """Heal drift of ALL managed-hook surfaces at session start (HATS-833,
-        generalizing HATS-593 layer B from git-only to runtime + wt + git).
-
-        ``HooksManager.sync_hooks()`` is idempotent, drift-gated, skips a role-less
-        project, and refuses to heal from a stale binary. Fail-open: a best-effort
-        drift-heal must never block session start. The sole trigger is here —
-        there is no ``ai-hats self sync-hooks`` command and no git-event hook
-        anymore (HATS-833 Q2).
-
-        Returns startup notices to surface (HATS-833 req-5): a single NOTE naming
-        each healed hook + change kind on the heal path; a WARN on failure or when
-        drift was detected but left unhealed under version-skew. Empty list on a
-        clean in-sync start (silent). ``result`` reuses the session's composition
-        to avoid a second compose.
-        """
-        try:
-            res = self.hooks.sync_hooks(result)
-            if session is not None:
-                session.log_sys(f"managed-hook resync: {res.status}")
-            notices: list[StartupNotice] = []
-            if res.status == "synced" and res.changes:
-                notices.append(StartupNotice("note", _format_hook_heal(res.changes)))
-            if res.status == "version-skew":
-                notices.append(StartupNotice("warn", _format_version_skew(res.changes)))
-            # Genuine hooks warnings raised while healing (HATS-969) — through the hold.
-            notices.extend(StartupNotice("warn", w) for w in res.warnings)
-            return notices
-        except Exception as exc:
-            logger.warning("managed-hook resync at session start failed", exc_info=True)
-            summary = f"managed-hook resync failed: {type(exc).__name__}: {exc}"
-            if session is not None:
-                session.log_sys(f"managed-hook resync FAILED — {summary}")
-            return [StartupNotice("warn", summary)]
+        """Retired per HATS-1480 / D5: all managed hook surfaces are materialized
+        at init/session-build time; no session-start drift net remains."""
+        return []
 
     def _payload_startup_notices(self) -> list[StartupNotice]:
         """Hooks warnings from the first-run compose seam (set_role materialize),
@@ -337,6 +287,38 @@ class WrapRunner:
         if findings:
             session.log_sys(f"env-drift lint: {len(findings)} finding(s)")
         return [StartupNotice("warn", text) for text in findings]
+
+    def _check_broken_hook_refs(self, session: "Session") -> list[StartupNotice]:
+        """HATS-1509: WARN per settings hook ref pointing at a missing script —
+        the harness prints 'No such file or directory' on every matching call,
+        with no hint that an ``ai-hats:``-tagged one is ours to reclaim. Reports
+        only; the install-time sweep stays the sole deleter (HATS-905). Fail-open.
+        """
+        try:
+            from . import migration_assert
+
+            broken = migration_assert.find_broken_hook_refs(
+                self.project_dir, targets=migration_assert.SESSION_SCAN_TARGETS
+            )
+        except Exception as exc:
+            logger.warning("broken-hook-ref scan at session start failed", exc_info=True)
+            session.log_sys(f"broken-hook-ref scan FAILED — {type(exc).__name__}: {exc}")
+            return []
+        if broken:
+            session.log_sys(f"broken hook refs: {len(broken)} finding(s)")
+        # One instruction per ownership, not per finding: the remedy differs by
+        # ownership and only by that (HATS-1522).
+        notices = []
+        for ours in (True, False):
+            group = [ref for ref in broken if bool(ref.managed) is ours]
+            if group:
+                notices.append(
+                    StartupNotice(
+                        "warn",
+                        _broken_hook_refs_text(group, project_dir=self.project_dir, ours=ours),
+                    )
+                )
+        return notices
 
     def _check_skill_script_collisions(
         self, session: "Session", result: "CompositionResult"
@@ -476,20 +458,22 @@ class WrapRunner:
                 session_args = artifacts.cli_args
                 session_env = artifacts.extra_env
                 meta_prompt = artifacts.full_content or ""
+                # HATS-1540: a surface older than `session_skills_root` handles
+                # this seam fine and still cannot root a bound check. Said here,
+                # at launch, not at the first refused transition.
+                skew = surface_skew_notice(provider_name, provider, self.project_dir, result)
+                if skew:
+                    builder_notices.append(StartupNotice("warn", skew))
             else:
-                # HATS-1207 R4: the legacy entry point predates SessionPolicy, so
-                # a non-default policy is dropped — loudly, not in silence.
+                # HATS-1207 R4 / HATS-1241: the legacy entry point predates both
+                # SessionPolicy and the check snapshot — loudly, not in silence.
                 session_args, session_env, meta_prompt = provider.build_session_prompt(
                     self.project_dir, result, session.session_id
                 )
-                if payload.policy != SessionPolicy():
-                    builder_notices.append(
-                        StartupNotice(
-                            "warn",
-                            f"provider '{provider_name}' predates the artifact builder: "
-                            f"session policy {payload.policy} is NOT applied to it.",
-                        )
-                    )
+                builder_notices.extend(
+                    StartupNotice("warn", text)
+                    for text in legacy_launch_notices(provider_name, result, payload.policy)
+                )
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -517,14 +501,32 @@ class WrapRunner:
         session.record_provider_session_id(claude_session_id)
 
         # HATS-1216: persist launch record as role_materialization.json
-        env_map = {
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-        }
+        env_map = assemble_launch_env(
+            provider,
+            self.project_dir,
+            session.session_dir,
+            session_id=session.session_id,
+            trace_path=str(session.trace_path),
+            # HATS-1594: the expression, not the base name — a check bound by a
+            # runtime-added trait must resolve for the gate too.
+            role=payload.role_expression,
+            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            extra_env=session_env,
+        )
         prompt_file = next(
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),
             session.meta_prompt_path if session.meta_prompt_path.is_file() else None,
         )
+        # HATS-1548: the same section --dry-run shows, on the launch record — one
+        # call site would be a report about a session nobody can compare against.
+        reported_checks, check_notes = describe_checks(
+            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+        )
+        builder_notices.extend(StartupNotice("warn", text) for text in check_notes)
+        # The record carries the same notes the dry-run does. They are already on
+        # their way to the screen as StartupNotices; a launch record that omitted
+        # them would disagree with `--dry-run` about the same session.
+        report_notes = tuple(n.text for n in builder_notices)
         report = SessionReport(
             role=active_role,
             provider=provider_name,
@@ -535,6 +537,8 @@ class WrapRunner:
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
+            checks=reported_checks,
+            notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())
 
@@ -544,15 +548,9 @@ class WrapRunner:
         # restarts from provider stalls).
         self._log_restart_gap(session)
 
-        # Build environment
-        env = {
-            **os.environ,
-            **session.get_env(),
-            **provider.get_env(session.session_dir, self.project_dir),
-            **session_env,
-            ENV_ROLE: active_role,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
+        # The record above IS this environment minus the inherited part — one
+        # expression, so the report cannot under-state what the child receives.
+        env = {**os.environ, **env_map}
 
         # HATS-833: fail-open session-start drift net for all managed-hook
         # surfaces; reuses the composition above and returns startup notices.
@@ -564,6 +562,22 @@ class WrapRunner:
         startup_notices.extend(self._payload_startup_notices())
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
+        startup_notices.extend(self._check_broken_hook_refs(session))
+        # HATS-1581. LAST here on purpose: unlike its fail-open neighbours a
+        # refusal does not return, so everything above must speak first. And
+        # after the launch record, which is what the gate reads.
+        startup_notices.extend(
+            run_startup_checks(
+                self.project_dir,
+                session_dir=session.session_dir,
+                # HATS-1594: parsed back out of the env just written, so the gate
+                # is judged by the very bytes the children will read — and the
+                # composition is handed over rather than composed a second time.
+                identity=SessionIdentity.from_env(env_map),
+                extra_env=env_map,
+                compose=lambda _project_dir: result,
+            )
+        )
 
         session.log_sys(f"Launching: {' '.join(cmd)}")
         session.append_audit(f"Launched {provider_name} CLI")

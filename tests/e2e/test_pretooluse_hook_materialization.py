@@ -1,28 +1,18 @@
-"""E2E (HATS-467): PreToolUse hook scripts materialized to disk.
+"""e2e (HATS-437, HATS-467)
 
-Four contracts a reviewer can refute by reverting the relevant code:
-
-1. ``ai-hats self init`` writes ``<ai_hats_dir>/library/hooks/*.sh``
-   with mode ``0o755``, matching the package-data source bytes, plus
-   a ``.manifest`` listing them.
-2. A second ``self init`` is idempotent — bytes-identical files do
-   not get rewritten (no spurious mtime updates).
-3. After mutating a materialized hook by hand and re-running
-   ``self update``, the file is restored to package-data bytes
-   (refresh actually fires through ``Assembler.bump``).
-4. The materialized hook is functional: piping a classifier-matching
-   ``tool_input`` JSON to it (without a TTY, no
-   ``AI_HATS_SHARED_STATE_ACK``) yields exit 2 — proof that the
-   HATS-437 safety net is alive after this task lands.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
+flow:   an agent executing destructive tool commands in an initialized project
+cmds:
+    # in an initialized project workspace
+    gh pr merge 42 --merge --delete-branch
+expect: hook scripts are written to disk with executable permissions and block
+        unacknowledged destructive tool commands
+why:    PreToolUse guards rely on materialized script files on disk to enforce state
+        safety rules during agent execution
 """
 
 from __future__ import annotations
 
 import json
-import stat
 import subprocess
 from pathlib import Path
 
@@ -61,40 +51,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only tests (A/B/D) on the session-scoped shared venv (HATS-582).
-
-    Tests A (init materializes), B (idempotent re-init) and D (safety net
-    live) only ``self init`` into a fresh ``tmp_path`` project and read the
-    materialized hooks back — they never mutate the venv, so they reuse the
-    single session venv from :func:`tests.e2e.conftest.shared_launcher`.
-
-    The shared ``env`` is NEUTRAL; this module needs two extra hygiene knobs
-    that the old module fixture applied, so we layer them on a COPY:
-
-    * pop ``PYTHONPATH`` — ``ai-hats wt exec`` sets ``PYTHONPATH=src`` which
-      shadows the installed ``ai_hats`` package with the source tree (which
-      lacks the ``library`` subpackage) → "no roles found".
-    * isolate ``HOME`` to an empty tmpdir — otherwise the dev user's
-      ``~/.ai-hats/`` customizations (personal-workflow trait, custom roles)
-      bleed into composition and shadow framework roles.
-
-    Returns ``(launcher, env, shared_venv)`` — the same shape Test C's
-    :func:`private_launcher` returns.
-
-    Test C (``test_e2e_self_update_refreshes_hook_after_drift``) runs
-    ``self update --force-downgrade`` which REINSTALLS into the pinned venv —
-    it is the lone mutator and keeps a private builder (:func:`private_launcher`).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    isolated_home = tmp_path_factory.mktemp("pretooluse-home")
-    env["HOME"] = str(isolated_home)
-    return launcher, env, shared_venv
 
 
 @pytest.fixture(scope="module")
@@ -180,121 +136,7 @@ def _package_hook_source_bytes(name: str) -> bytes:
     return (lib / "hooks" / name).read_bytes()
 
 
-# ---------------------- Test A: init materializes ----------------------
-
-
-@pytest.mark.integration
-def test_e2e_init_materializes_hooks_executable(installed_launcher, tmp_path):
-    """`self init` writes both hooks +x with package-data bytes + manifest."""
-    launcher, env, _venv = installed_launcher
-    project = tmp_path / "proj_init_materialize"
-    _init_minimal_project(launcher, env, project)
-
-    hooks_dir = _materialized_hooks_dir(project)
-    assert hooks_dir.is_dir(), f"hooks dir missing: {hooks_dir}; init must mkdir + populate"
-
-    for name in HOOK_BASENAMES:
-        f = hooks_dir / name
-        assert f.is_file(), f"materialized hook missing: {f}"
-        # 0o755 — executable by all, writable by owner only.
-        mode = stat.S_IMODE(f.stat().st_mode)
-        assert mode == 0o755, (
-            f"{name} mode is {oct(mode)}, expected 0o755 — safe_delete.replace(mode=...) regression"
-        )
-        # Bytes identical to package data — guarantees we copied from
-        # the right source.
-        assert f.read_bytes() == _package_hook_source_bytes(name), (
-            f"materialized {name} diverges from package source"
-        )
-
-    manifest = hooks_dir / ".manifest"
-    assert manifest.is_file(), f".manifest missing under {hooks_dir}"
-    manifest_text = manifest.read_text()
-    for name in HOOK_BASENAMES:
-        assert name in manifest_text, f"{name} absent from manifest:\n{manifest_text}"
-
-
-# ---------------------- Test B: idempotent re-init ----------------------
-
-
-@pytest.mark.integration
-def test_e2e_init_materialize_is_idempotent(installed_launcher, tmp_path):
-    """Second ``self init`` does not rewrite identical files (mtime stable)."""
-    launcher, env, _venv = installed_launcher
-    project = tmp_path / "proj_init_idempotent"
-    _init_minimal_project(launcher, env, project)
-
-    hooks_dir = _materialized_hooks_dir(project)
-    guard = hooks_dir / GUARD_FLAT_NAME
-    first_mtime = guard.stat().st_mtime_ns
-
-    # Re-run init.
-    _init_minimal_project(launcher, env, project)
-
-    second_mtime = guard.stat().st_mtime_ns
-    assert first_mtime == second_mtime, (
-        f"identical-bytes re-init must not rewrite the file; "
-        f"mtime changed: {first_mtime} → {second_mtime}"
-    )
-
-
-# ---------------------- Test C: self update refresh ----------------------
-
-
-# HATS-695: the --force-downgrade self update is a real uv install that times
-# out under the -n8 gate's 300s budget on a slow/degraded network. Quarantined
-# (HATS-694) to unblock the v0.8.0 gate; still runs solo and passes. Un-quarantine
-# once HATS-695 makes it network-resilient.
-@pytest.mark.quarantine
-@pytest.mark.integration
-@pytest.mark.install_heavy  # HATS-678: private_launcher build is a real uv install
-def test_e2e_self_update_refreshes_hook_after_drift(private_launcher, tmp_path):
-    """Hand-edit a materialized hook → ``self update`` restores it.
-
-    Drives the ``Assembler.bump`` → ``_materialize_pretooluse_hooks``
-    refresh path. Fail-under-revert: drop the call in
-    ``Assembler.bump`` and this stays drifted.
-
-    LONE MUTATOR (HATS-582): runs ``self update --force-downgrade`` which
-    reinstalls into the pinned venv, so it uses :func:`private_launcher`
-    (its own build) instead of the session-shared venv.
-    """
-    launcher, env, venv = private_launcher
-    project = tmp_path / "proj_self_update_refresh"
-    _init_minimal_project(launcher, env, project)
-
-    hooks_dir = _materialized_hooks_dir(project)
-    guard = hooks_dir / GUARD_FLAT_NAME
-    original_bytes = guard.read_bytes()
-    drifted = b"#!/usr/bin/env bash\n# tampered\nexit 0\n"
-    assert drifted != original_bytes
-
-    guard.write_bytes(drifted)
-    # Preserve +x just in case the user kept it executable.
-    guard.chmod(0o755)
-    assert guard.read_bytes() == drifted
-
-    # No-op pip path: same git SHA → skip_install branch in
-    # cli.maintenance.update. Bump still runs through _bump_internal
-    # subprocess, exercising the refresh. --force-downgrade required
-    # because this dev env is ahead of origin/master (see fixture).
-    # HATS-673: timeout 180 (not 120) — this is the no-op skip_install
-    # path (no pip), but the _bump_internal subprocess + composition
-    # still run under the gate's -n8 CPU contention, so widen the margin
-    # cheaply. Stays well under the pip-path 300s ceiling above.
-    _run(
-        [str(launcher), "self", "update", "--force-downgrade"],
-        cwd=project,
-        env=env,
-        timeout=180,
-    )
-
-    restored = guard.read_bytes()
-    assert restored == original_bytes, (
-        "self update must restore the drifted hook to package-data bytes; "
-        f"first 80 bytes of restored:\n{restored[:80]!r}"
-    )
-    assert stat.S_IMODE(guard.stat().st_mode) == 0o755
+# ---------------------- Test D: safety net live ----------------------
 
 
 # ---------------------- Test D: safety net live ----------------------

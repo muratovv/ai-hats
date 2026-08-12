@@ -1,27 +1,13 @@
-"""E2E (HATS-1269): worktree hooks spawn in place, from the declaring skill.
+"""e2e (HATS-1269)
 
-Two halves, matching the two things the retired flatten copy cost.
-
-**Uncomposing a skill cannot disarm a live worktree's hook.** The copy lived
-under a manifest whose sweep fired whenever the declaring skill left the
-composition, so a project that re-inited to another role mid-flight lost the
-script from under a worktree that had already recorded it — and the fail-closed
-teardown then blocked the merge. In place there is nothing to sweep.
-
-**A file shipped beside the hook is on disk when it runs** (`bundle: dir`,
-ADR-0020 D1). The flatten reduced a script to ``<skill>-<basename>`` in a shared
-dir, silently losing every neighbouring data file.
-
-Fail-under-revert: restore ``materialize_worktree_hooks`` + its manifest sweep
-and ``test_hook_survives_its_skill_leaving_the_composition`` goes red on the
-blocked merge; restore the flatten copy and ``test_hook_reads_a_file_shipped
-_beside_it`` goes red because ``neighbour.txt`` is not next to the script.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ``ai-hats`` binary,
-@pytest.mark.integration.
-"""
+flow:   a developer committing code with in-place hook script modifications
+cmds:
+    git commit -m "update"
+expect: hook scripts execute in-place without copying redundant files
+why:    hooks must execute from canonical paths without unnecessary file materialization"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -45,10 +31,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
-
-
 def _wt_path(project: Path, branch: str) -> Path | None:
     out = _git(project, "worktree", "list", "--porcelain").stdout
     cur: Path | None = None
@@ -59,15 +41,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
             if line.strip().endswith("/" + branch):
                 return cur
     return None
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wt-inplace-home"))
-    return launcher, env, shared_venv
 
 
 def _seed_project(launcher: Path, env: dict, project: Path, role: str) -> None:

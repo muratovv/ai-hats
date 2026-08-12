@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-agy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Antigravity CLI (agy) surface plugin for the ai-hats framework — registers the `agy` CLI as an ai-hats provider."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     "ai-hats",
     "ai-hats-core",
-    "ai-hats-observe>=0.5.0",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-observe>=0.6.0",  # floor tracks the workspace version (HATS-1399)
     "filelock>=3.0",
 ]
 

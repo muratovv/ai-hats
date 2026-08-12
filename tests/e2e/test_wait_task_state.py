@@ -1,7 +1,12 @@
-"""e2e for ``ai-hats wait --task ... --until ...`` (HATS-986).
+"""e2e (HATS-986)
 
-``--until`` is repeatable and OR-combined: a ping-pong waiter that names only
-one target state hangs forever when the card leaves by the other edge.
+flow:   a background sub-agent waiting for a task card to reach a target state
+cmds:
+    ai-hats wait --task HATS-1 --until review --until done --poll 0.2
+expect: the process polls until the task card transitions to any specified target
+        state and exits with code 0
+why:    task state waiting enables non-blocking coordination between background
+        sub-agents and parent processes
 """
 
 from __future__ import annotations
@@ -11,6 +16,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from _helpers.wait import parse_happened
 
 pytestmark = pytest.mark.integration
 
@@ -46,11 +53,20 @@ def _flip_state_after(card: Path, state: str, delay: float) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, "-c", code])
 
 
+_FLIP_DELAY = 1.0
+
+
 def test_waits_until_card_reaches_state(tmp_project) -> None:
+    """Exit 0 must be CAUSED by observing the flip, not merely coincide with it.
+
+    Asserting only the exit code passes against a ``wait`` whose polling loop is
+    deleted, so this pins the observables that separate the two: more than one
+    poll, elapsed covering the flip delay, and the card actually in the state.
+    """
     card = _write_card(tmp_project, "HATS-1", "execute")
-    flipper = _flip_state_after(card, "review", 1.0)
+    flipper = _flip_state_after(card, "review", _FLIP_DELAY)
     try:
-        tmp_project.run(
+        result = tmp_project.run(
             "wait",
             "--task",
             "HATS-1",
@@ -66,15 +82,37 @@ def test_waits_until_card_reaches_state(tmp_project) -> None:
     finally:
         flipper.wait(timeout=10)
 
+    happened = parse_happened(result.stdout)
+    assert happened.polls >= 2, (
+        f"exited after {happened.polls} poll(s) — the predicate was false at "
+        f"t=0, so a single poll means it never waited"
+    )
+    # duration_s, not the wait's own elapsed: wait starts its clock after the
+    # interpreter boots, while the flipper's delay runs from before that — the
+    # two are different clocks and comparing them under-reads by the boot time.
+    assert result.duration_s >= _FLIP_DELAY, (
+        f"returned in {result.duration_s:.1f}s (wait reported {happened.elapsed_s}s) "
+        f"but the card only flips at {_FLIP_DELAY}s"
+    )
+    assert "state: review" in card.read_text(), "the state the wait claimed to observe"
 
-def test_until_is_repeatable_and_or_combined(tmp_project) -> None:
+
+@pytest.mark.parametrize(
+    ("lands_on", "position"),
+    [("execute", "first"), ("done", "last")],
+)
+def test_until_is_repeatable_and_or_combined(tmp_project, lands_on: str, position: str) -> None:
     """The ping-pong hole: a waiter naming one state hangs when the card leaves
     by the other edge. Worker waits for `execute` (rework) OR `done` (accepted).
+
+    Parametrized over BOTH targets (HATS-1493): landing only on `done` — the
+    last ``--until`` — leaves "only the last value is honoured" alive, which is
+    the very defect the OR-combination exists to prevent.
     """
     card = _write_card(tmp_project, "HATS-1", "review")
-    flipper = _flip_state_after(card, "done", 1.0)
+    flipper = _flip_state_after(card, lands_on, _FLIP_DELAY)
     try:
-        tmp_project.run(
+        result = tmp_project.run(
             "wait",
             "--task",
             "HATS-1",
@@ -91,6 +129,13 @@ def test_until_is_repeatable_and_or_combined(tmp_project) -> None:
         ).expect_ok()
     finally:
         flipper.wait(timeout=10)
+
+    happened = parse_happened(result.stdout)
+    assert happened.polls >= 2, f"{position} --until: {happened.polls} poll(s), it never waited"
+    assert result.duration_s >= _FLIP_DELAY, (
+        f"{position} --until: returned in {result.duration_s:.1f}s, before the {_FLIP_DELAY}s flip"
+    )
+    assert f"state: {lands_on}" in card.read_text()
 
 
 def test_unknown_task_exits_2_rather_than_waiting(tmp_project) -> None:

@@ -1,19 +1,13 @@
-"""E2E (HATS-792): an ai-hats.yaml whose ``schema_version`` is newer than this
-binary understands makes a real ``ai-hats`` command FAIL LOUD — nonzero exit +
-remediation pointer — and does NOT silently rewrite the file.
+"""e2e (HATS-792)
 
-POLICY (locked with reviewer): ``schema_version > KNOWN_SCHEMA_VERSION`` →
-refuse to operate. Migrations run upward only to the known version; silently
-treating a newer schema as the known one would both misread its format and risk
-clobbering future fields on the next save. So ``from_yaml`` raises, and any
-command that loads the config inherits the nonzero exit.
-
-Per ``dev_rule_e2e_gate`` this is a real-binary test: real ``ai-hats`` process
-(the dev-venv binary via ``tmp_project``), marked ``integration``.
-
-Fail-under-revert: remove the schema_version guard in ``from_yaml`` →
-schema_version 99 loads silently (treated as v4), the command exits 0, and the
-exit/remediation/no-rewrite assertions below fail.
+flow:   a developer attempts to run commands on a project whose config file was
+        written by a future version of the tool
+cmds:
+    ai-hats config status
+expect: process exits nonzero, prints "schema_version 99 is newer" with "ai-hats self
+        update" remediation instructions, and leaves ai-hats.yaml byte-identical
+why:    parsing a future schema version as a legacy format risks misinterpreting
+        configuration fields or clobbering unrecognised options on save
 """
 
 from __future__ import annotations

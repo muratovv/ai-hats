@@ -1,43 +1,12 @@
-"""E2E smoke: ``ai-hats self update`` installs cleanly via the uv engine (HATS-763).
+"""e2e (HATS-763)
 
-Test scope (deliberate):
-
-  This is the **e2e smoke gate** for the engine swap — it asserts the real
-  ``ai-hats`` binary completes a ``self update --revision`` flow end-to-end with
-  a real launcher + real uv + real venv (per ``dev_rule_e2e_gate``). Transitive
-  deps are served from an isolated uv cache (``UV_CACHE_DIR``) so the run never
-  pollutes the host cache.
-
-  The **precise fail-under-revert canary** is the unit test in
-  ``tests/test_cli_init_flow.py::test_update_command_uses_uv_reinstall`` which
-  asserts the ``uv pip install --python … --reinstall`` shape of
-  ``_build_update_cmd``. That assertion flips immediately if the engine regresses.
-
-Why a smoke test, not a timing / log-grep fail-under-revert here:
-
-  - ``cli/maintenance.py`` invokes uv with ``capture_output=True``, so uv's
-    stdout is unreachable through the outer subprocess.
-  - Warm vs cold uv-cache timing on the ``--revision <SHA> --force`` path is
-    within CI variance — too noisy for a robust threshold.
-
-  The unit test owns the precise behavioural contract; this test owns the
-  real-binary smoke coverage.
-
-Setup contract (real subprocess + real uv):
-
-  - ``src-repo``     — clone of REPO_ROOT (carries tags + history so the
-                       ``--revision`` install path is reachable).
-  - ``uv-cache``     — dedicated tmp dir exported as ``UV_CACHE_DIR``
-                       (avoids polluting the host uv cache).
-  - launcher install — bootstraps the launcher binary + first venv via
-                       ``scripts/install-launcher.sh`` and the first
-                       ``self update`` (real ``uv pip install``).
-  - ``self update --revision <SHA> --force`` — runs ``_build_update_cmd``
-                       through the real ai-hats binary at the same SHA so the
-                       post-call binary still recognises every flag.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update with warm uv package cache
+cmds:
+    ai-hats self update
+expect: self update utilizes uv cache for fast wheel installation without re-downloading
+        packages
+why: without uv cache utilization, self update spends excessive time downloading cached
+     python wheels"""
 
 from __future__ import annotations
 

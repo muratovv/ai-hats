@@ -1,13 +1,17 @@
-"""End-to-end coverage for rebased branch refusal and containment (HATS-1370).
+"""e2e (HATS-1370)
 
-Per ``dev_rule_e2e_gate``: changes touching ``packages/ai-hats-wt/src/ai_hats_wt/manager.py``
-or ``src/ai_hats/cli/worktree.py`` require an e2e test using the real launcher + real pip.
-Verifies that:
-1. Merging a rebased branch without --accept-drift exits 1 with WorktreeRebasedBranchError.
-2. Merging a rebased branch with --accept-drift exits 0 and cleans up worktree + branch.
+flow:   a developer merging a worktree branch whose commit was already cherry-picked
+        to base
+cmds:
+    # when worktree commit was cherry-picked to base branch
+    ai-hats wt merge task/rebased-e2e
+expect: merge is refused with WorktreeRebasedBranchError unless --accept-drift is passed
+why:    rebased branches must fail closed to ensure explicit operator consent before
+        cleanup
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo, git as _git
 
 import subprocess
 from pathlib import Path
@@ -30,16 +34,6 @@ def _run(cmd, *, cwd, env, timeout=120, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _locate_worktree(project: Path, branch: str) -> Path:
@@ -73,12 +67,7 @@ def test_e2e_wt_rebased_branch_refusal(shared_launcher, tmp_path):
             expect_exit=expect_exit,
         )
 
-    _git(project, "init", "-b", "master")
-    _git(project, "config", "user.email", "e2e@test.com")
-    _git(project, "config", "user.name", "E2E Test")
-    (project / "README.md").write_text("# main repo\n")
-    _git(project, "add", ".")
-    _git(project, "commit", "-m", "init")
+    init_repo(project, branch="master")
 
     # Create worktree
     ai_hats("wt", "create", "task/rebased-e2e")

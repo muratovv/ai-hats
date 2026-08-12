@@ -1,29 +1,15 @@
-"""E2E: cleanup never deadlocks and never corrupts after a hard kill (HATS-650 / R3).
+"""e2e (HATS-650)
 
-Two crash-safety properties of the ``versions/.gc.lock`` advisory lock, both with
-a real launcher + real pip + real ``ai-hats self update`` (per ``dev_rule_e2e_gate``):
-
-- :func:`test_e2e_gc_lock_crash_safe_auto_release` — an install is frozen mid-
-  critical-section (``.complete`` written, ``current`` not yet flipped) **holding
-  the lock**, then ``SIGKILL``-ed. The kernel auto-releases the ``fcntl`` lock on
-  death, so the next ``self update`` re-acquires and converges. Fail-under-revert
-  anchor: while the install is paused the test asserts the lock is **held** (a
-  ``filelock`` probe times out); reverting the lock makes that probe succeed.
-
-- :func:`test_e2e_gc_lock_serializes_complete_flip_window` — while the install is
-  frozen between ``.complete`` and the flip, a concurrent GC pass (the real
-  ``EnvironmentRecovery`` collaborator every session runs) tries to reclaim the
-  just-completed, non-``current``, unreferenced target. The lock makes it skip;
-  the install then flips ``current`` onto a **live** dir. Fail-under-revert:
-  without the lock the concurrent GC reclaims the target out from under the flip,
-  so ``current`` ends up pointing at a deleted dir.
-
-The freeze point is the ``AI_HATS_TEST_PAUSE_AFTER_COMPLETE`` seam in
-``_run_managed_versioned_update`` — no flaky SIGKILL/timing race; the test drives
-the interleaving deterministically via the ``.ready`` sentinel.
-"""
+flow:   multiple developer processes concurrently executing self update version cleanup
+cmds:
+    ai-hats self update
+expect: garbage collection process acquires file lock before pruning old version
+        directories
+why: without GC file locks, concurrent update processes delete version directories in
+     active use by other sessions"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -63,10 +49,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -78,8 +60,8 @@ def _head_sha(repo: Path) -> str:
 
 def _advance(src_repo: Path, marker: str) -> str:
     (src_repo / marker).write_text("hats-650 e2e\n")
-    _git(["add", marker], src_repo)
-    _git(["commit", "--quiet", "-m", f"test: advance HEAD ({marker})"], src_repo)
+    git(src_repo, "add", marker)
+    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
     return _head_sha(src_repo)
 
 
@@ -103,9 +85,9 @@ def _bootstrap(tmp_path: Path):
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -227,3 +209,7 @@ def test_e2e_gc_lock_serializes_complete_flip_window(tmp_path: Path) -> None:
     assert current == sha_b
     assert (versions / current).is_dir(), "current points at a reclaimed dir (corruption)"
     assert (versions / current / ".complete").exists()
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

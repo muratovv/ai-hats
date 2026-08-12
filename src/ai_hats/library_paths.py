@@ -18,6 +18,103 @@ from .paths import builtin_library_layers, user_home
 from .paths.constants import LIBRARIES_DIRNAME
 
 
+LIBRARY_PATHS_CONFIG = "library_paths.yaml"
+
+
+def _user_global_library_paths() -> list[Path]:
+    """User-global library layers configured in ``~/.ai-hats/library_paths.yaml``.
+
+    Format: ``paths: [<dir>, ...]``. Returns valid directory paths. Invalid or
+    non-existent entries, malformed YAML, or unreadable files log a warning and
+    are skipped so an invalid file cannot break composition or teardown.
+    """
+    import logging
+    import yaml
+
+    config_file = user_home() / ".ai-hats" / LIBRARY_PATHS_CONFIG
+    if not config_file.is_file():
+        return []
+
+    try:
+        data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "user library paths: failed to load %s (%s)", config_file, exc
+        )
+        return []
+
+    if not isinstance(data, dict):
+        logging.getLogger(__name__).warning(
+            "user library paths: expected dict in %s, got %s", config_file, type(data).__name__
+        )
+        return []
+
+    raw_paths = data.get("paths")
+    if not isinstance(raw_paths, list):
+        if raw_paths is not None:
+            logging.getLogger(__name__).warning(
+                "user library paths: expected list for 'paths' in %s, got %s",
+                config_file,
+                type(raw_paths).__name__,
+            )
+        return []
+
+    result: list[Path] = []
+    for entry in raw_paths:
+        if not isinstance(entry, (str, Path)):
+            logging.getLogger(__name__).warning(
+                "user library paths: invalid entry in %s: %r", config_file, entry
+            )
+            continue
+        p = Path(entry).expanduser()
+        if not p.is_dir():
+            logging.getLogger(__name__).warning(
+                "user library paths: directory does not exist: %s (from %s)", p, config_file
+            )
+            continue
+        result.append(p)
+    return result
+
+
+def user_global_library_paths() -> list[Path]:
+    """All user-global library roots: ``~/.ai-hats`` (if dir) + ``library_paths.yaml``."""
+    roots: list[Path] = []
+    global_lib = user_home() / ".ai-hats"
+    if global_lib.is_dir():
+        roots.append(global_lib)
+    roots.extend(_user_global_library_paths())
+    return roots
+
+
+def worktree_local_libraries(project_dir: Path) -> Path | None:
+    """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
+
+    Inside a linked worktree ``project_dir`` hopped to MAIN (HATS-524), so the
+    git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
+    edits. Re-point only when cwd is in a worktree whose main checkout IS
+    ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
+    common main-checkout path (and under subprocess-mocking tests).
+
+    Lives beside :func:`build_library_paths` because every caller of that one
+    owes this: a caller that skips it searches a root set the composition does
+    not have, and a declaration it cannot see reads as absent (HATS-1141).
+    """  # comment-length: allow — the second paragraph IS the reason it moved here
+    cwd = Path.cwd()
+    try:
+        if cwd.resolve().is_relative_to(project_dir.resolve()):
+            return None
+    except (OSError, ValueError):
+        return None
+
+    from ai_hats_wt import WorktreeManager
+
+    main_root = WorktreeManager.main_worktree_root(cwd)
+    if main_root is None or main_root.resolve() != project_dir.resolve():
+        return None
+    wt_top = WorktreeManager.worktree_toplevel(cwd)
+    return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
+
+
 def build_library_paths(
     project_dir: Path,
     *,
@@ -25,13 +122,14 @@ def build_library_paths(
     local_libraries: Path | None = None,
     extra: Sequence[Path] = (),
 ) -> list[Path]:
-    """Ordered library roots, earlier = lower priority (``LibraryResolver`` last-wins).
+    """Build the ordered list of library root paths for component resolution.
 
-    Built-in shipping (``core`` then ``usage``) first; override points —
-    entry-point packages, user-global, config-specified, project-local, explicit
-    ``extra`` — layer on top. ``local_libraries`` overrides the project-local
-    layer (the worktree re-point, HATS-831); ``None`` means
-    ``<project_dir>/libraries``.
+    Order (first-wins in search, last-wins in layer override):
+    1. Built-in skill source packages (e.g. ``ai-hats-library``)
+    2. User global library (``~/.ai-hats`` + ``library_paths.yaml``)
+    3. Project configured library paths (from ``ai-hats.yaml``)
+    4. Project local libraries (``./libraries`` or explicit)
+    5. Extra runtime overrides
     """
     paths: list[Path] = list(builtin_library_layers(project_dir))
 
@@ -42,13 +140,11 @@ def build_library_paths(
 
     paths.extend(skill_source_roots())
 
-    # ``user_home()`` honours ``AI_HATS_USER_HOME`` (HATS-532) for e2e isolation.
-    global_lib = user_home() / ".ai-hats"
-    if global_lib.is_dir():
-        paths.append(global_lib)
+    paths.extend(user_global_library_paths())
 
     for configured in config_paths:
-        expanded = Path(configured).expanduser()
+        p = Path(configured).expanduser()
+        expanded = (project_dir / p).resolve() if not p.is_absolute() else p.resolve()
         if expanded.is_dir():
             paths.append(expanded)
 

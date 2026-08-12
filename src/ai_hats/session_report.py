@@ -9,9 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .materialization import MaterializationPlan
 from .session_artifacts import SessionPolicy
+
+if TYPE_CHECKING:  # pragma: no cover — typing only
+    from .check_snapshot import ReportedCheck
 
 
 def _human_size(n: int) -> str:
@@ -20,6 +24,12 @@ def _human_size(n: int) -> str:
     if n < 1024 * 1024:
         return f"{n / 1024:.1f} KB"
     return f"{n / (1024 * 1024):.1f} MB"
+
+
+def _where(check: dict) -> str:
+    """The app and points a row binds, as one column of the launch report."""
+    at = ",".join(check.get("at") or []) or "-"
+    return f"{check['app']}:{at}"
 
 
 @dataclass(frozen=True)
@@ -33,12 +43,18 @@ class SessionReport:
     prompt: Path | None
     plan: MaterializationPlan
     cwd: str = ""
+    # Render-only, and deliberately outside to_dict(): the body was never in the
+    # payload, and a plan-mode build has no file for --dry-run-full to read.
+    prompt_text: str | None = None
     # Paths that appeared on disk during a plan-mode build: a write that went
     # around the port. Empty is the invariant; non-empty names a live bypass.
     escapes: tuple[Path, ...] = ()
     # Known gaps between what this report can observe and what the surface
     # actually delivers — never leave such a gap silent.
     notes: tuple[str, ...] = ()
+    # HATS-1548: the gates this launch arms. Not derivable from the plan — the
+    # skill mirror a check runs from is written per SKILL, not per binding.
+    checks: tuple[ReportedCheck, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +83,19 @@ class SessionReport:
                 for e in self.plan.entries
             ],
             "duplicates": [str(p) for p in self.plan.duplicates()],
+            "checks": [
+                {
+                    "skill": c.binding.skill,
+                    "script": c.binding.script,
+                    "app": c.binding.app,
+                    "at": list(c.binding.at),
+                    "on_error": c.binding.on_error,
+                    "declared_by": c.binding.declared_by,
+                    "runs_from": str(c.runs_from) if c.runs_from else None,
+                    "planned": c.planned,
+                }
+                for c in self.checks
+            ],
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),
         }
@@ -95,7 +124,11 @@ class SessionReport:
             lines += ["", f"prompt    {d['prompt']}"]
             if full:
                 body = Path(d["prompt"])
-                lines.append(body.read_text() if body.is_file() else "(not written)")
+                lines.append(
+                    self.prompt_text
+                    if self.prompt_text is not None
+                    else (body.read_text() if body.is_file() else "(not written)")
+                )
 
         lines += ["", "materialized"]
         if not d["materialized"]:
@@ -110,6 +143,21 @@ class SessionReport:
 
         for dup in d["duplicates"]:
             lines.append(f"  ! {dup} materialized twice")
+
+        lines += ["", "checks"]
+        if not d["checks"]:
+            lines.append("  (none bound)")
+        for c in d["checks"]:
+            lines.append(
+                f"  {_where(c):<20} {c['skill']}/{c['script']}"
+                f"  on_error={c['on_error']}  by {c['declared_by']}"
+            )
+            # An armed gate is the quiet case; anything else is what the operator
+            # came for, so only the unhappy branches get a second line.
+            if c["runs_from"] is None:
+                lines.append("    ! UNRESOLVED — this gate has no bytes to run (see notes)")
+            elif not c["planned"]:
+                lines.append(f"    ! {c['runs_from']} is NOT written by this launch")
 
         if d["notes"]:
             lines.append("")

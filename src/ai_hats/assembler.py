@@ -37,11 +37,10 @@ from .paths import (
     builtin_library_hooks as _builtin_library_hooks,
     builtin_library_layers as _builtin_library_layers,
     claude_skills_dir,
-    hooks_dir as _lib_hooks_dir,
     rules_dir as _lib_rules_dir,
     skills_dir as _lib_skills_dir,
 )
-from .paths.constants import LIBRARIES_DIRNAME, PROJECT_CONFIG
+from .paths.constants import PROJECT_CONFIG
 from .placeholders import expand_path_placeholders
 from .plugin_dir import (
     drop_legacy_claude_publish,
@@ -102,13 +101,6 @@ def _ai_hats_owned_hook_basenames(project_dir: "Path | None" = None) -> frozense
             }
     except OSError:
         pass
-    if project_dir is not None:
-        from .sweeper import read_marker_names
-
-        try:
-            names |= read_marker_names(_lib_hooks_dir(project_dir) / ".manifest")
-        except OSError:
-            pass
     return frozenset(names)
 
 
@@ -176,28 +168,9 @@ class Assembler:
         )
 
     def _worktree_local_libraries(self) -> Path | None:
-        """Project-local ``libraries/`` re-pointed to the linked worktree, or ``None``.
+        from ai_hats.library_paths import worktree_local_libraries
 
-        Inside a linked worktree ``_project_dir`` hopped to MAIN (HATS-524), so the
-        git-tracked ``libraries/`` would resolve to MAIN — invisible to worktree
-        edits. Re-point only when cwd is in a worktree whose main checkout IS
-        ``project_dir``. The ``is_relative_to`` pre-gate skips the git probe on the
-        common main-checkout path (and under subprocess-mocking tests).
-        """
-        cwd = Path.cwd()
-        try:
-            if cwd.resolve().is_relative_to(self.project_dir.resolve()):
-                return None
-        except (OSError, ValueError):
-            return None
-
-        from ai_hats_wt import WorktreeManager
-
-        main_root = WorktreeManager.main_worktree_root(cwd)
-        if main_root is None or main_root.resolve() != self.project_dir.resolve():
-            return None
-        wt_top = WorktreeManager.worktree_toplevel(cwd)
-        return (wt_top / LIBRARIES_DIRNAME) if wt_top is not None else None
+        return worktree_local_libraries(self.project_dir)
 
     def _cleanup_legacy_claude_publish(self) -> None:
         """Thin seam over the shared legacy sweeps (HATS-905, HATS-1172): the generic
@@ -386,7 +359,7 @@ class Assembler:
 
         runs_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
         tasks_dir(self.project_dir).mkdir(parents=True, exist_ok=True)
-        for subdir_fn in (_lib_rules_dir, _lib_skills_dir, _lib_hooks_dir):
+        for subdir_fn in (_lib_rules_dir, _lib_skills_dir):
             subdir_fn(self.project_dir).mkdir(parents=True, exist_ok=True)
 
         # HATS-469 R2: capture greenfield state BEFORE the ai-hats.yaml
@@ -557,15 +530,22 @@ class Assembler:
         """
         return self.user_config.overlay_for(role_name)
 
-    def _effective_traits(self, role_name: str) -> list[str]:
-        """Role's base traits with global-then-project overlay edits applied.
+    def _effective_traits(
+        self, role_name: str, runtime_overlay: OverlayConfig | None = None
+    ) -> list[str]:
+        """Role's base traits with global-then-project-then-runtime overlay edits applied.
 
         One home for a walk `config status` and the audit snapshot both need —
         two copies would have to agree forever (HATS-1435).
         """
         base_cfg = self.resolver.resolve_role_config(role_name)
         traits: list[str] = list(base_cfg.composition.traits) if base_cfg else []
-        for layer in (self._get_global_overlay(role_name), self._get_overlay(role_name)):
+        layers = [
+            self._get_global_overlay(role_name),
+            self._get_overlay(role_name),
+            runtime_overlay,
+        ]
+        for layer in layers:
             if layer is None:
                 continue
             for name in layer.remove_traits:
@@ -606,15 +586,19 @@ class Assembler:
         )
 
     def _get_overlay_provenance(
-        self, role_name: str, *, result: CompositionResult | None = None
+        self,
+        role_name: str,
+        *,
+        result: CompositionResult | None = None,
+        runtime_overlay: OverlayConfig | None = None,
     ) -> dict[str, dict[str, str]]:
         """Return a ``{component_type: {name: layer}}`` provenance map for a role.
 
         ``component_type`` ∈ ``{"traits", "rules", "skills"}``. ``layer`` ∈
-        ``{"built-in", "global", "project"}``. Used by ``config status`` to
+        ``{"built-in", "global", "project", "runtime"}``. Used by ``config status`` to
         annotate the dependency tree with a source-tag per node.
 
-        Walked in the same global-then-project order used by ``_get_overlays``
+        Walked in the same global-then-project-then-runtime order used by ``_get_overlays``
         so that a name added by global and re-added by project surfaces as
         ``project`` (last-wins), matching the composer's final state.
 
@@ -636,18 +620,23 @@ class Assembler:
             # which `config status` renders as "role has no rules" (HATS-1373).
             logger.warning("provenance for role %r is incomplete: %r", role_name, exc)
 
-        effective_traits = self._effective_traits(role_name)
+        effective_traits = self._effective_traits(role_name, runtime_overlay=runtime_overlay)
 
         for trait_name in effective_traits:
             p = self.resolver.resolve(trait_name, ComponentType.TRAIT)
-            provenance["traits"][trait_name] = self._classify_component_layer(p).value
+            if p is not None:  # silent-ok: synthetic/missing trait has no filesystem path
+                provenance["traits"][trait_name] = self._classify_component_layer(p).value
 
         # Apply overlay-claim overrides in order: each `add` claims provenance, each `remove`
         # drops the entry so a later layer's add can re-claim it.
-        for layer, label in (
+        layers_with_labels: list[tuple[OverlayConfig | None, str]] = [
             (self._get_global_overlay(role_name), ComponentLayer.GLOBAL.value),
             (self._get_overlay(role_name), ComponentLayer.PROJECT.value),
-        ):
+        ]
+        if runtime_overlay is not None:
+            layers_with_labels.append((runtime_overlay, ComponentLayer.RUNTIME.value))
+
+        for layer, label in layers_with_labels:
             if layer is None:
                 continue
             for name in layer.remove_traits:

@@ -16,6 +16,7 @@
 #   scripts/ci-local.sh lint       # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage   # the stage that was the sole failing executor
 #   scripts/ci-local.sh security   # CI-only stage; env-scoped (see NOTE below)
+#   scripts/ci-local.sh done-gate  # what edge:review--done demands (HATS-1137)
 #
 # NOTE: the `install-smoke` CI job is deliberately NOT a stage here — it runs
 # install-launcher.sh which writes ~/.local/bin/ai-hats, an unwanted side effect
@@ -30,10 +31,16 @@ set -euo pipefail
 
 export PYTHONDONTWRITEBYTECODE=1
 
-PY="${PYTHON:-python}"
-
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+
+if [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python" ]]; then
+    PY="$repo_root/.venv/bin/python"
+elif [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python3" ]]; then
+    PY="$repo_root/.venv/bin/python3"
+else
+    PY="${PYTHON:-python}"
+fi
 
 ci_lint() {
     echo "[ci-local] lint (ruff check + format)" >&2
@@ -45,12 +52,20 @@ ci_lint() {
 
 ci_unit() {
     echo "[ci-local] unit (pytest -m 'not integration')" >&2
-    "$PY" -m pytest -m "not integration" -q ${@+"$@"}
+    "$PY" -B -m pytest -m "not integration" -q ${@+"$@"}
+}
+
+# HATS-1137: the integration tier OUTSIDE tests/e2e — the half `unit` excludes
+# by marker and `merge-smoke` does not reach by path. Without it the done-gate
+# would call itself green while skipping every real-subprocess test in tests/.
+ci_integration() {
+    echo "[ci-local] integration (pytest --ignore=tests/e2e -m integration)" >&2
+    "$PY" -B -m pytest --ignore=tests/e2e -m integration -q ${@+"$@"}
 }
 
 ci_coverage() {
     echo "[ci-local] coverage (unit + real-git integration, --cov-fail-under=78)" >&2
-    "$PY" -m pytest --ignore=tests/e2e/ \
+    "$PY" -B -m pytest --ignore=tests/e2e/ \
         --cov=ai_hats \
         --cov-report=term-missing \
         --cov-report=xml \
@@ -66,7 +81,7 @@ ci_security() {
 
 ci_merge_smoke() {
     echo "[ci-local] merge-smoke (curated e2e subset)" >&2
-    "$PY" -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "smoke and not quarantine and not live_claude" tests/e2e/ -q ${@+"$@"}
 }
 
 # Offline and instant, so unlike version-skew it belongs in the `all` bundle.
@@ -75,10 +90,25 @@ ci_dependency_floor() {
     "$PY" scripts/check_dependency_floor.py
 }
 
+# Offline and instant, like the others. HATS-1599: a ratchet, so it is green
+# only while the tree patches its own units no more than the recorded baseline.
+ci_test_isolation() {
+    echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
+    "$PY" scripts/check_test_isolation.py
+}
+
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
     "$PY" scripts/check_silent_fallback.py
+}
+
+# Offline and instant, like the two above. HATS-1498: the flow catalog is
+# rendered from the tests' own docstrings, so it goes stale the moment one is
+# edited without regenerating.
+ci_e2e_catalog() {
+    echo "[ci-local] e2e-catalog (tests/e2e/CATALOG.md vs the flow blocks)" >&2
+    "$PY" scripts/gen_e2e_catalog.py --check
 }
 
 # The full maintainer tier (~25 min). Excluded from `all`; this is the selection
@@ -86,7 +116,27 @@ ci_silent_fallback() {
 # narrower than the gate that guards the push (HATS-1372).
 ci_e2e() {
     echo "[ci-local] e2e (integration + smoke, quarantine excluded)" >&2
-    "$PY" -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
+    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
+}
+
+# HATS-1137: the composition of the `edge:review--done` quality gate, and the
+# ONE place it is configured. `maintainer-quality-gate/hooks/done-gate.sh --run`
+# executes this stage and marks the SHA on green; changing what "green enough to
+# be done" means is an edit HERE, never in the gate script.
+#
+# Excluded from `all`: `all` is the pre-push bundle and already runs `coverage`,
+# which collects the same non-e2e integration tests without a marker filter.
+ci_done_gate() {
+    echo "[ci-local] done-gate (e2e-catalog -> lint -> unit -> integration -> merge-smoke)" >&2
+    local stage rc
+    for stage in e2e-catalog lint unit integration merge-smoke; do
+        "ci_${stage//-/_}" || {
+            rc=$?
+            echo "[ci-local] done-gate: stage '$stage' FAILED (rc=$rc) — stopping here" >&2
+            return "$rc"
+        }
+    done
+    echo "[ci-local] done-gate: every stage green" >&2
 }
 
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
@@ -102,11 +152,15 @@ shift 2>/dev/null || true   # remaining argv is passed through to the pytest sta
 case "$stage" in
     lint) ci_lint ${@+"$@"} ;;
     unit) ci_unit ${@+"$@"} ;;
+    integration) ci_integration ${@+"$@"} ;;
     coverage) ci_coverage ${@+"$@"} ;;
+    done-gate) ci_done_gate ;;
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
     silent-fallback) ci_silent_fallback ;;
+    test-isolation) ci_test_isolation ;;
+    e2e-catalog) ci_e2e_catalog ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
     all)
@@ -114,6 +168,8 @@ case "$stage" in
         ci_lint
         ci_dependency_floor
         ci_silent_fallback
+        ci_test_isolation
+        ci_e2e_catalog
         ci_unit
         ci_coverage
         ci_merge_smoke
@@ -121,7 +177,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | coverage | security | merge-smoke | e2e | dependency-floor | silent-fallback | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | done-gate | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
         exit 2
         ;;
 esac

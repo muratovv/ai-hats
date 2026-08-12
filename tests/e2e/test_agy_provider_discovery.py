@@ -1,10 +1,12 @@
-"""E2E: the real ``ai-hats-agy`` surface plugin is discovered by the ``ai-hats``
-binary via the ``ai_hats.providers`` entry point (HATS-1093).
+"""e2e (HATS-1093)
 
-Mirrors ``test_cline_provider_discovery.py`` but drives the REAL
-``ai_hats_agy.AgyProvider`` and the REAL entry-point declaration read from the
-package's pyproject — so it fails under revert if the package drops its
-``[project.entry-points."ai_hats.providers"]`` line (uninstall → ``agy`` gone).
+flow:   a developer listing available providers after installing ai-hats-agy package
+cmds:
+    ai-hats list providers
+expect: agy provider is discovered via python entry points and displayed alongside
+        built-ins
+why:    without entry-point discovery, installed surface packages cannot be resolved by
+        the main binary
 """
 
 from __future__ import annotations

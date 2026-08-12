@@ -68,7 +68,7 @@ From role to materialized prompt — a single pipeline; the split happens only a
 
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
-The overlay from `ai-hats.yaml.customizations` affects the pipeline at two points: `add` / `remove` patches the component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored.
+The overlays apply in order `[global, project, runtime]`: global customizations (`~/.ai-hats/customizations.yaml`) first, project customizations (`ai-hats.yaml`) second, and ephemeral runtime role specs (`-r "maintainer + leader"`, HATS-1456) last. Overlay `add` / `remove` patches component lists before resolution, and `injection_append` is appended last — after the role's own injection. Deduplication happens during resolution: traits are collected first (depth-first), then the role's own rules and skills are added on top; duplicates by name are ignored (first-wins).
 
 <a id="materialization"></a>
 
@@ -247,7 +247,7 @@ ai_hats_library/
     skills/         55+ skills (golang-*, terraform, ansible, observability, system-design, ...)
 ```
 
-The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
+The `core/` vs `usage/` split is informational; both are loaded by `Assembler._build_library_paths`. User overrides layer on top via `~/.ai-hats/`, `~/.ai-hats/library_paths.yaml`, `ai-hats.yaml: library_paths`, and `<project>/libraries/` — see [11].
 
 Vendored golang-* skills carry the upstream commit SHA, LICENSE, and attribution in `metadata.yaml.upstream.*` — the foundation for a future plugin system (see HATS-050).
 
@@ -326,20 +326,18 @@ Some operations write shared state with no undo path — `gh pr merge` and
 `git push --force` chief among them. The framework defends against
 autonomous invocations in two layers:
 
-1. **Always-on rule** `rule_pause_before_shared_state_write` — injected
-   via `trait-agent` into every agent role; registered in
-   `ALWAYS_ON_RULES` so it ships inline in the provider system prompt
+1. **Rule** `rule_pause_before_shared_state_write` — injected
+   via `trait-agent` into every agent role so it ships inline in the provider system prompt
    on every session. Requires the agent to pause and name the command
    before any shared-state write (PR/issue/release/push/TaskCreate), and
    forbids chaining such commands with other Bash calls in one
    invocation.
 
 2. **Deterministic hooks** on the irreversible subset:
-   - `library/hooks/pre_bash_shared_state_guard.sh` — Claude Code
-     PreToolUse hook. Wired into `.claude/settings.json` idempotently by
-     `ClaudeProvider.ensure_runtime_hooks()` during `self init` and
-     `self update`. Blocks `gh pr merge` and `git push --force` when run
-     without a controlling TTY (i.e. agent context).
+   - `pre_bash_shared_state_guard.sh` — Claude Code PreToolUse hook (in session tree plugin skills).
+     Wired into session settings.json by `ClaudeProvider.build_session_artifacts()`.
+     Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
+     (i.e. agent context).
    - `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
      — git pre-push hook installed via the HATS-088 mechanism. Detects
      non-fast-forward pushes and blocks them; branch creations and

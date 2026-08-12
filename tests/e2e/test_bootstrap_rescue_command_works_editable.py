@@ -1,20 +1,12 @@
-"""E2E: the rescue command bootstrap prints actually repairs the venv (HATS-1367).
+"""e2e (HATS-1556)
 
-Value under test: the printed rescue was ``uv pip install --python <exe>
-'<dist>'``. On an editable install that is the no-op uv audits as
-already-satisfied — the supervisor who hit this ran it by hand, watched it
-change nothing, and only then started debugging. This test asserts the
-command's **effect**, not its text: extract it from stderr, run it, and require
-the venv to work afterwards.
-
-Setup (real venv + real uv + real ``python -m ai_hats``, per ``dev_rule_e2e_gate``):
-the class-B venv of HATS-1368, with ``uv`` removed from PATH so the automatic
-heal cannot run and the gate falls through to printing the manual command —
-the exact state a user is in when they reach for it.
-
-Fail-under-revert: restore the by-name rescue and the extracted command names
-distributions that only exist inside this workspace, so running it leaves
-``ai_hats_wt`` unimportable and the final assertion fails.
+flow:   a developer executing printed rescue command when automatic bootstrap heal fails
+cmds:
+    python -m ai_hats --version
+expect: gate prints manual repair command that successfully restores workspace
+        dependencies
+why:    without accurate rescue commands, manual repair instructions fail to restore
+        editable workspace packages
 """
 
 from __future__ import annotations

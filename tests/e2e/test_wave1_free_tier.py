@@ -1,22 +1,16 @@
-"""Wave 1 free-tier pilots — prove ``tmp_project`` fixture works.
+"""e2e (HATS-478)
 
-These three tests exercise the role-less :func:`tmp_project` fixture
-against CLI commands that don't require an active agent (free-tier:
-no SDK calls, $0 quota, <5s wall-clock target). Each maps to a Core
-scenario from the HATS-466 scenarios catalog:
-
-* ``test_list_providers_includes_claude`` → S-CLI-22
-* ``test_list_roles_shows_bundled_defaults`` → S-CLI-23 (adjusted:
-  empty ``library_paths`` falls back to the framework-bundled library,
-  so the stable assertion is "the well-known defaults are visible",
-  not "no roles enumerated")
-* ``test_config_show_prompt_reports_no_active_role`` → S-CLI-16
-  negative shape (no role set in an initialised project → non-zero
-  exit + stable error marker on stdout)
-
-Body of each test stays ≤ 10 LOC — if a pilot grows past that, the
-fixture is doing too little.
-"""
+flow:   a developer running free-tier inspection commands in a role-less project
+cmds:
+    ai-hats list providers
+    ai-hats list roles
+    ai-hats config show-prompt
+expect: free-tier CLI commands execute under 5s without launching provider sessions or
+        burning API
+        quota
+why: without free-tier command validation, simple inspection subcommands require
+     expensive provider
+        initializations"""
 
 from __future__ import annotations
 

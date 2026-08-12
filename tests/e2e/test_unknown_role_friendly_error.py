@@ -1,45 +1,12 @@
-"""E2E: every CLI entry-point exits clean on unknown ``--role <bogus>``.
+"""e2e (HATS-507, HATS-545, HATS-547)
 
-History: pre-HATS-507 the bare ``--role <bogus>`` path leaked a bare
-``RuntimeError`` traceback with no typo discoverability. HATS-507 (bare),
-HATS-547 / S-CLI-20 (``execute``) and HATS-545 / S-CLI-05 (``agent``) now
-share the ``cli/_helpers._handle_role_not_found`` renderer across all three
-"compose-then-run" entry-points.
-
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``):
-
-1. ``tmp_project`` fixture bootstraps a role-less project pointed at the
-   dev-venv ``ai-hats`` binary.
-2. We invoke ``ai-hats <argv>`` for four CLI surfaces:
-   - ``bare`` — ``--role <bogus>`` (HATS-507 regression guard).
-   - ``execute-batch`` — ``execute --batch -r <bogus> --prompt ok``.
-   - ``execute-interactive`` — ``execute -r <bogus> --prompt ok``
-     (interactive is default; the exception fires in ``compose_role``
-     BEFORE ``WrapRunner`` PTY-attaches, so this runs cleanly in a
-     non-TTY subprocess — no provider binary is ever spawned).
-   - ``agent`` — ``agent <bogus> --task ok`` (HATS-545 — orchestration
-     surface per ``docs/how-to-orchestration.md``; same
-     ``compose_role`` raise point, same handler).
-3. Assertions per surface (identical contract):
-   - exit code == 2 (Click's UsageError convention)
-   - stderr names the bogus role
-   - stderr contains the ``Available roles:`` header
-   - stderr lists at least one known shipped role (``maintainer``)
-   - combined stdout+stderr does NOT contain ``Traceback``
-
-Fail-under-revert:
-
-- Removing the typed raise in ``pipeline/steps/compose.py`` makes ALL
-  four params fail (bare ``RuntimeError`` leaks).
-- Removing the ``try/except`` in ``cli/__init__.py:_launch_session``
-  makes only the ``bare`` param fail.
-- Removing the ``try/except`` in ``cli/execute.py:execute_cmd`` makes
-  only the ``execute-*`` params fail (HATS-547 surface).
-- Removing the ``try/except`` in ``cli/agent.py:run_subagent`` makes
-  only the ``agent`` param fail (HATS-545 surface).
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer specifying an unknown role name on CLI
+cmds:
+    ai-hats --role definitely-not-a-real-role
+expect: CLI exits with code 2 listing available roles without printing raw Python
+        traceback
+why:    without role error handling, typos in role parameters dump raw RuntimeError
+        tracebacks to user
 """
 
 from __future__ import annotations

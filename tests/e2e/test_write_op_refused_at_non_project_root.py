@@ -1,17 +1,11 @@
-"""e2e (HATS-839): a write op (`rack create`) issued from a NON-project root must
-refuse and bootstrap no phantom `.agent/` tracker.
+"""e2e (HATS-839, HATS-1263)
 
-Re-pointed off the legacy ``ai-hats task`` CLI (HATS-1263); the gate now lives in
-``ai_hats_rack.resolver``, which raises `NoProjectRootError` on a marker-less root
-(`.agent/` | `ai-hats.yaml`) with zero side effects — an eager `mkdir` on a
-mis-resolved root is how stray trackers were born (HATS-788).
-
-Explicit PYTHONPATH pins the spawned interpreter to THIS checkout (HATS-685):
-the autouse `_scrub_redirect_env` strips it, so a raw env copy would resolve the
-editable install (MAIN).
-
-Fail-under-revert: without the gate, `create` at a bare dir prints the created
-card and materializes `.agent/ai-hats/...` there.
+flow:   a developer issuing write operations outside an onboarded ai-hats project root
+cmds:
+    ai-hats self init -r assistant -p claude
+expect: command refuses write operations when current directory lacks git or project markers
+why:    without project root write guards, running commands in random folders creates
+        phantom .agent dirs
 """  # comment-length: allow
 
 from __future__ import annotations

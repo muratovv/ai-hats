@@ -29,14 +29,16 @@ overrides the delay for every case (`0` disables).
 All run in `WrapRunner.run()` between session creation and the PTY spawn,
 each fail-open — a broken check must never block session start:
 
-| Producer                   | Emits                                                                        |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| `_resync_managed_hooks`    | NOTE per healed hook surface; WARN on failure / version-skew (HATS-833)      |
-| `_check_skill_collisions`  | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)     |
-| `_payload_startup_notices` | WARN per hooks warning carried from the first-run compose seam (HATS-970)    |
-| finalize-hitl preload      | WARN when the finalize pipeline fails to eager-load (HATS-566)               |
-| `_lint_provider_settings`  | WARN per provider-reported settings pitfall (HATS-1006, below)               |
-| `_lint_env_drift`          | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below) |
+| Producer                         | Emits                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| `_resync_managed_hooks`          | NOTE per healed hook surface; WARN on failure / version-skew (HATS-833)      |
+| `_check_skill_collisions`        | NOTE on mirror heal; WARN on a home-scope skill collision (HATS-901/907)     |
+| `_check_skill_script_collisions` | WARN per skill-script filename collision (HATS-1114)                         |
+| `_payload_startup_notices`       | WARN per hooks warning carried from the first-run compose seam (HATS-970)    |
+| finalize-hitl preload            | WARN when the finalize pipeline fails to eager-load (HATS-566)               |
+| `_lint_provider_settings`        | WARN per provider-reported settings pitfall (HATS-1006, below)               |
+| `_lint_env_drift`                | WARN when the editable dev env is stale — needs `uv sync` (HATS-1013, below) |
+| `_check_broken_hook_refs`        | WARN per settings hook ref pointing at a missing file (HATS-1509, below)     |
 
 ## Provider settings lint (HATS-1006)
 
@@ -101,3 +103,36 @@ interpreter inside `<repo_root>/.venv` — consumer installs never run the
 check. Warn-only (bare `uv sync` in exact mode would remove dev-extra
 packages, so the hint pins `--inexact`); fail-open on uv missing, timeout, or
 any exit code other than 0/1.
+
+## Broken hook refs (HATS-1509)
+
+A settings entry can outlive the script it names — the pre-HATS-1170 residue
+`ai-hats:hats-437` points at `library/hooks/pre_bash_shared_state_guard.sh`,
+which materialization deletes once the guard moves into the `safety-guard`
+skill and gets a skill-prefixed filename. The harness then prints
+`No such file or directory` on every matching tool call, and nothing says the
+entry is ai-hats's to reclaim.
+
+`find_broken_hook_refs` (`src/ai_hats/migration_assert.py`) stats every
+path-like hook command. `WrapRunner._check_broken_hook_refs` runs it over
+`SESSION_SCAN_TARGETS` — `.claude/settings.json`, `.claude/settings.local.json`
+and agy's pre-HATS-1166 `.gemini/settings.json` remnant, whose entries carry
+`command` on the matcher itself rather than under a nested `hooks` list.
+
+The remedy follows ownership, which is why `BrokenHookRef.managed` exists: an
+`ai-hats:`-tagged entry (either tag spelling) is reclaimed by the install-time
+sweep, so the notice names `ai-hats self update`; an untagged one is the user's
+own and only they can fix it.
+
+```
+⚠ 1 startup warning(s):
+  • .claude/settings.json: PreToolUse hook points at a missing file
+    ($CLAUDE_PROJECT_DIR/.agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh)
+    — the harness errors on every matching call; ai-hats owns this entry —
+    run 'ai-hats self update' to reclaim it.
+```
+
+Reports only, never deletes: the sweep stays install-time (HATS-905). The same
+scan is a hard refusal at the end of every install-time path
+(`assert_runtime_hooks_resolve`) — but over the Claude pair only, so agy
+residue warns without ever failing a bump.

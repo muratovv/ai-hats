@@ -1,19 +1,17 @@
-"""E2E gate for HATS-518: ``ai-hats wt create`` refuses when HEAD ≠ master.
+"""e2e (HATS-518, HATS-1263)
 
-Runs the **real** binaries (pip-installed from the local repo via
-``tmp_venv_project``) against a real git project: ``wt create`` on the
-``ai-hats`` binary, the task ops on ``rack`` (HATS-1263). Exists to satisfy
-``dev_rule_e2e_gate`` for changes in ``src/ai_hats/cli/worktree.py``
-and ``src/ai_hats/rack_wiring.py``.
-
-**Fail-under-revert check**: revert the guard from ``cli/worktree.py``
-(or remove ``_assert_head_is_canonical_base`` from ``worktree.py``) →
-``test_wt_create_refuses_on_feature_branch`` must fail with
-``expected non-zero exit, got 0``. Reviewer rejects if the test passes
-both with and without the guard.
+flow:   a developer creating a worktree or executing a task from a feature branch
+cmds:
+    # when checked out on a feature branch
+    ai-hats wt create task/probe
+expect: worktree creation and task execution are refused when main repository HEAD is
+        not on base
+why:    worktrees must be created from base branch to prevent branching off dirty
+        feature branches
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -22,16 +20,6 @@ import pytest
 
 
 pytestmark = pytest.mark.integration
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _rack(proj, *args: str) -> subprocess.CompletedProcess[str]:

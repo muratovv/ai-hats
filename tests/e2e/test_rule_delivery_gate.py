@@ -1,17 +1,17 @@
-"""HATS-700 — end-to-end behaviour of the rule-delivery pre-commit hook.
+"""e2e (HATS-700)
 
-``pre-commit-rule-delivery.sh`` is a pure-bash surface the unit suite cannot
-exercise. This file drives the script against a real ephemeral git repo. The
-wiring scenarios stub the checker through ``AI_HATS_RULE_DELIVERY_CMD`` (offline,
-deterministic — they verify changed-files scope, fail-open, override, and
-block-on-nonzero, not the checker itself, which the G2 unit test covers). One
-final scenario runs the REAL checker (``python -m ai_hats.rule_delivery``) to
-prove the module integrates with the hook end to end.
-
-Slow only because of git init + subprocess spin-up.
+flow:   a developer committing trait configuration changes that reference rules
+cmds:
+    # with staged trait configuration referencing a missing rule
+    git commit -m "add rule"
+expect: the pre-commit hook verifies that all referenced rules exist and blocks the
+        commit with an error if a rule reference is missing
+why:    trait configurations must not reference non-existent rules to prevent broken
+        rule pointers in role injections
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -24,10 +24,6 @@ HOOK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/usage/skills/rule-delivery-gate/git_hooks/pre-commit-rule-delivery.sh"
 )
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_stub(path: Path, rc: int, message: str = "") -> Path:
@@ -174,3 +170,28 @@ def test_real_checker_blocks_dangling_pointer(repo: Path):
     )
     assert res.returncode == 1, res.stderr
     assert "rule_totally_undelivered" in res.stderr
+
+
+@pytest.mark.integration
+def test_real_checker_allows_existing_rule_without_delivery_field(repo: Path):
+    """HATS-1515: An existing rule without delivery: always_on in metadata is allowed by real checker."""
+    from _helpers.env import checkout_pythonpath
+
+    rule_dir = repo / "library" / "core" / "rules" / "rule_existing"
+    rule_dir.mkdir(parents=True)
+    (rule_dir / "metadata.yaml").write_text("name: rule_existing\n")
+    (rule_dir / "rule.md").write_text("Existing rule body.\n")
+
+    _stage_cfg(
+        repo,
+        "library/core/traits/trait-good/config.yaml",
+        "name: trait-good\ninjection: |\n  Follow policy — see rule `rule_existing`.\n",
+    )
+    res = _run_hook(
+        repo,
+        env={
+            "AI_HATS_RULE_DELIVERY_CMD": "python3 -m ai_hats.rule_delivery",
+            "PYTHONPATH": checkout_pythonpath(REPO_ROOT),
+        },
+    )
+    assert res.returncode == 0, res.stderr

@@ -1,16 +1,18 @@
-"""HATS-1013 — e2e: session start surfaces the env-drift warning pre-spawn.
+"""e2e (HATS-1192)
 
-Model: ``test_settings_lint_startup_warn.py`` (real composition + materializers;
-only the PTY spawn is stubbed). The detector itself is unit-covered in
-``tests/test_env_drift.py``; here it is pinned to a sentinel so the run is
-deterministic regardless of the developer's real venv state — the guarantee is
-the WIRING: ``WrapRunner.run()`` calls the producer and renders its warning
-through the startup-notice channel.
+flow:   a developer starts an interactive session when background tooling packages in
+        their environment have fallen behind project declarations
+cmds:
+    ai-hats agent assistant --task "Say hi"
+expect: a pre-launch warning naming stale environment packages appears on stdout when
+        drift is detected, and is suppressed when packages match
+why:    unnoticed environment drift leads to subtle runtime failures when active CLI
+        tools conflict with project specification
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,10 +25,6 @@ from ai_hats.paths import PROJECT_CONFIG
 pytestmark = pytest.mark.integration
 
 DRIFT_TEXT = "dev env outdated: stale ai-hats-tracker 0.5.0 -> 0.6.0 — run 'uv sync'"
-
-
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -100,3 +98,7 @@ def test_in_sync_env_launches_silent(tmp_path: Path, monkeypatch):
     output = _launch(project, monkeypatch)
 
     assert "dev env outdated" not in output, output
+
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

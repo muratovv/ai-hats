@@ -6,13 +6,16 @@ rule/skill metadata, hook wiring. T18 (HATS-876) lifts this module into the
 from __future__ import annotations
 
 import difflib
+import json
 import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from ai_hats_core import YamlModel as _YamlModel
 
@@ -38,29 +41,147 @@ class CheckBindingError(ValueError):
     """A declared check binding cannot install (HATS-1140, ADR-0019 D6)."""
 
 
-class CheckBinding(_YamlModel):
-    """One ``composition.checks`` row: a skill's script bound to lifecycle points.
+@dataclass(frozen=True)
+class AppBinding:
+    """One row of ``composition.apps``, with its declarer and its place in the tree.
 
-    Frozen + ``extra="forbid"`` follows :class:`RuntimeHook`; the forward-compat
-    WARN for an unknown row key lives in :func:`_parse_check_row`, so this stays
-    the guard for construction paths that never see it.
+    ai-hats owns three keys — ``run`` (what executes), ``at`` (where) and
+    ``on_error`` (how a verdict is read); ``cargo`` is every other key and is
+    never read here. ``at`` is owned but not *interpreted*: ai-hats checks only
+    that a row names at least one point, because a row bound to nothing is a gate
+    that never fires — the silent absence this channel exists to remove. What each
+    name MEANS stays the owning application's question (HATS-1545 F3).
+
+    ``path`` is the trail of keys from the app node down to the row, so an
+    application that nests (``apps.rack.<backlog>``) gets its level back and one
+    that does not (``apps.wt``) gets an empty trail.
+    """  # comment-length: allow — which of the three keys is interpreted is the contract
+
+    declared_by: str
+    app: str
+    path: tuple[str, ...]
+    run: str
+    at: tuple[str, ...]
+    on_error: str
+    cargo: Mapping[str, Any]
+
+    @property
+    def skill(self) -> str:
+        """The skill ``run`` names — its first segment."""
+        return self.run.split("/", 1)[0]
+
+    @property
+    def script(self) -> str:
+        """The path inside that skill's directory — everything after it."""
+        return self.run.split("/", 1)[1] if "/" in self.run else ""
+
+    def identity(self) -> tuple[str, tuple[str, ...], str, str]:
+        """What makes two rows the same row (HATS-1545 R6).
+
+        ``on_error`` is excluded because it is the one field that MERGES —
+        two declarations of one row keep the stricter. Cargo is compared whole
+        and opaquely, so the same script at two different points is two rows.
+        """
+        return (
+            self.app,
+            self.path,
+            self.run,
+            json.dumps({"at": list(self.at), **dict(self.cargo)}, sort_keys=True, default=str),
+        )
+
+
+def parse_app_bindings(
+    apps: Mapping[str, Any], *, declared_by: str, source: Path | None = None
+) -> tuple[AppBinding, ...]:
+    """Flatten one component's ``composition.apps`` into rows, in document order.
+
+    A row is recognised STRUCTURALLY — a mapping carrying ``run:`` — so the
+    grammar above it belongs to the application and ai-hats never checks its
+    depth (HATS-1545 R4). Flattening here is what makes provenance survive: the
+    declarer is stamped on each row before any two components' rows meet, so no
+    merge step can drop it (D4).
     """
+    where = f"{source}: " if source is not None else ""
+    if not isinstance(apps, dict):
+        raise CheckBindingError(
+            f"{where}'composition.apps' must be a mapping of <app>: <block>, "
+            f"got {type(apps).__name__}"
+        )
+    rows: list[AppBinding] = []
+    for app, block in apps.items():
+        _walk_app_block(block, app=app, path=(), declared_by=declared_by, where=where, rows=rows)
+    return tuple(rows)
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    skill: str
-    script: str
-    on: tuple[str, ...]
-    on_error: Literal["refuse", "warn"] = "refuse"
+def _walk_app_block(
+    node: Any,
+    *,
+    app: str,
+    path: tuple[str, ...],
+    declared_by: str,
+    where: str,
+    rows: list[AppBinding],
+) -> None:
+    label = f"{where}composition.apps.{'.'.join((app, *path))}"
+    if isinstance(node, list):
+        for index, item in enumerate(node):
+            if not isinstance(item, dict):
+                raise CheckBindingError(
+                    f"{label}[{index}]: a row must be a mapping carrying 'run:', "
+                    f"got {type(item).__name__}"
+                )
+            rows.append(_app_row(item, app=app, path=path, declared_by=declared_by, label=label))
+        return
+    if isinstance(node, dict):
+        if "run" in node:
+            rows.append(_app_row(node, app=app, path=path, declared_by=declared_by, label=label))
+            return
+        for key, child in node.items():
+            _walk_app_block(
+                child,
+                app=app,
+                path=(*path, str(key)),
+                declared_by=declared_by,
+                where=where,
+                rows=rows,
+            )
+        return
+    raise CheckBindingError(
+        f"{label}: expected a row, a list of rows, or a mapping of further keys, "
+        f"got {type(node).__name__} — a scalar here declares no gate and would fire nothing"
+    )
 
-    @field_validator("on")
-    @classmethod
-    def _reject_empty_on(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value:
-            # A binding to no point is a gate that never fires — the silence
-            # HATS-1140 exists to remove, not a degenerate-but-valid row.
-            raise ValueError("must name at least one point")
-        return value
+
+def _app_row(
+    row: Mapping[str, Any], *, app: str, path: tuple[str, ...], declared_by: str, label: str
+) -> AppBinding:
+    run = row.get("run")
+    if not isinstance(run, str) or not run.strip():
+        raise CheckBindingError(f"{label}: 'run:' must be a non-empty '<skill>/<script>' string")
+    on_error = row.get("on_error", "refuse")
+    if on_error not in ("refuse", "warn"):
+        raise CheckBindingError(
+            f"{label}: 'on_error:' must be 'refuse' or 'warn', got {on_error!r}"
+        )
+    at = row.get("at")
+    if isinstance(at, str):
+        at = [at]
+    if not isinstance(at, list) or not at or not all(isinstance(p, str) and p.strip() for p in at):
+        raise CheckBindingError(
+            f"{label}: 'at:' must name at least one point (a string or a list of strings); "
+            f"got {at!r} — a row bound to nothing is a gate that never fires. What each name "
+            f"means is {app!r}'s question, but that a row names one is not"
+        )
+    cargo = {key: value for key, value in row.items() if key not in ("run", "on_error", "at")}
+    return AppBinding(
+        declared_by=declared_by,
+        app=app,
+        path=path,
+        run=run.strip(),
+        at=tuple(p.strip() for p in at),
+        on_error=on_error,
+        cargo=cargo,
+    )
 
 
 class Composition(_YamlModel):
@@ -71,7 +192,132 @@ class Composition(_YamlModel):
     traits: list[str] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
-    checks: list[CheckBinding] = Field(default_factory=list)
+    #: Per-application declaration blocks, carried verbatim (HATS-1545 R1). The
+    #: value is opaque: ai-hats knows no app's grammar, only that a mapping with
+    #: ``run:`` inside it is a row.
+    apps: dict[str, Any] = Field(default_factory=dict)
+
+
+class ComponentKeyError(ValueError):
+    """A component config carries a key no reader can act on (HATS-1545 R2)."""
+
+
+def load_component_yaml(path: Path) -> dict[str, Any]:
+    """Parse a component config, refusing keys that would be lost in silence.
+
+    ``yaml.safe_load`` keeps the LAST of two identical keys and says nothing
+    (measured), so a second ``composition:`` — or a second app under it — erases
+    a declared gate with no diagnostic anywhere. That is the exact silence this
+    channel exists to remove, and unlike every other defect here it cannot be
+    warned about after the fact: the losing declaration is already gone from the
+    structure by the time any reader sees it. So it is the one class that
+    refuses rather than warns (HATS-1545 R2).
+
+    Composed, then constructed from the same node tree: the audit reads the
+    parse events, which is where a duplicate is still observable.
+    """  # comment-length: allow — why this class refuses where others warn
+    loader = yaml.SafeLoader(path.read_text())
+    try:
+        node = loader.get_single_node()
+        if node is None:
+            return {}
+        _reject_duplicate_keys(node, path)
+        _refuse_retired_checks_key(_composition_node(node), path)
+        _reject_non_string_keys(_apps_node(node), path)
+        return loader.construct_document(node) or {}
+    finally:
+        loader.dispose()
+
+
+def _reject_duplicate_keys(node: yaml.Node, path: Path, trail: tuple[str, ...] = ()) -> None:
+    """Refuse a repeated mapping key anywhere in the document, naming its trail."""
+    if not isinstance(node, yaml.MappingNode):
+        if isinstance(node, yaml.SequenceNode):
+            for index, item in enumerate(node.value):
+                _reject_duplicate_keys(item, path, (*trail, str(index)))
+        return
+    seen: set[str] = set()
+    for key_node, value_node in node.value:
+        key = str(getattr(key_node, "value", key_node))
+        where = ".".join((*trail, key)) or key
+        if key in seen:
+            raise ComponentKeyError(
+                f"{path}: duplicate key {key!r} under {'.'.join(trail) or '<document root>'} — "
+                f"YAML keeps only the last one, so the earlier {where!r} would be dropped "
+                f"with no diagnostic; give it a distinct key or merge the two blocks by hand"
+            )
+        seen.add(key)
+        _reject_duplicate_keys(value_node, path, (*trail, key))
+
+
+def _child_node(node: yaml.Node | None, key: str) -> yaml.Node | None:
+    """The value node under ``key``, if ``node`` is a mapping that has one."""
+    if not isinstance(node, yaml.MappingNode):
+        return None
+    for key_node, value_node in node.value:
+        if getattr(key_node, "value", None) == key:
+            return value_node
+    return None
+
+
+def _composition_node(root: yaml.Node) -> yaml.Node | None:
+    """The ``composition:`` value node, if the document has one."""
+    return _child_node(root, "composition")
+
+
+def _apps_node(root: yaml.Node) -> yaml.Node | None:
+    """The ``composition.apps:`` value node — the only OPEN registry here."""
+    return _child_node(_composition_node(root), "apps")
+
+
+def _refuse_retired_checks_key(composition: yaml.Node | None, path: Path) -> None:
+    """Name the retirement of ``checks:`` instead of letting it read as no gates.
+
+    Falling through to the strip-unknown WARN would drop a declared gate and
+    carry on — the silence this channel exists to remove. So the retired key gets
+    its own refusal, and it says where the rows moved (supervisor ruling
+    2026-08-10; HATS-1545 F2).
+    """
+    if _child_node(composition, "checks") is None:
+        return
+    raise ComponentKeyError(
+        f"{path}: 'composition.checks:' was retired in HATS-1545 — its rows now live under "
+        f"'composition.apps.<app>', where the application owns the grammar below its own key. "
+        f"Move each row: the skill/script pair becomes 'run: <skill>/<script>', 'on:' becomes "
+        f"'at:' (YAML 1.1 reads a bare 'on' as True), and a rack row names the backlog it gates "
+        f"— apps.rack.<backlog>. A wt row keeps its points bare: apps.wt with at: [pre-merge]. "
+        f"Refusing rather than dropping it, because a gate that vanishes quietly is the defect "
+        f"this channel exists to remove"
+    )
+
+
+def _reject_non_string_keys(
+    node: yaml.Node | None, path: Path, trail: tuple[str, ...] = ()
+) -> None:
+    """Refuse a key YAML resolves to something other than a string.
+
+    Scoped to ``composition.apps`` because that subtree is the OPEN registry: an
+    app's block is carried verbatim, so no remap can fix a key after the fact.
+    ``on:`` is the live case — YAML 1.1 resolves it to ``True``, and ``on``/``yes``
+    then collapse into one cell (measured). The old channel patched that up for
+    one known field; under an opaque block ai-hats does not know which key is
+    significant, so the trap is removed by refusing the spelling instead.
+    """  # comment-length: allow — why a remap is impossible here is the decision
+    if isinstance(node, yaml.SequenceNode):
+        for index, item in enumerate(node.value):
+            _reject_non_string_keys(item, path, (*trail, str(index)))
+        return
+    if not isinstance(node, yaml.MappingNode):
+        return
+    for key_node, value_node in node.value:
+        if key_node.tag != "tag:yaml.org,2002:str":
+            where = ".".join(("composition", "apps", *trail))
+            raise ComponentKeyError(
+                f"{path}: under {where}, the key {key_node.value!r} is not a string — YAML 1.1 "
+                f"reads it as {key_node.tag.rpartition(':')[2]}, so it can never match the key a "
+                f"reader looks for; quote it (\"{key_node.value}\") or rename it (e.g. 'on' -> 'at')"
+            )
+        _reject_non_string_keys(value_node, path, (*trail, str(key_node.value)))
 
 
 class ComponentConfig(_YamlModel):
@@ -85,9 +331,8 @@ class ComponentConfig(_YamlModel):
 
     @classmethod
     def from_yaml(cls, path: Path) -> ComponentConfig:
-        data = yaml.safe_load(path.read_text()) or {}
+        data = load_component_yaml(path)
         cls._strip_unknown_composition_keys(data, path)
-        cls._normalize_check_rows(data, path)
         return cls.model_validate(
             {**data, "source_path": path, "name": data.get("name") or path.parent.name}
         )
@@ -118,71 +363,13 @@ class ComponentConfig(_YamlModel):
                 file=sys.stderr,
             )
 
-    @staticmethod
-    def _normalize_check_rows(data: dict[str, Any], path: Path) -> None:
-        """Turn raw ``composition.checks`` rows into validated bindings.
-
-        Runs before ``model_validate`` so a defect is reported against the file
-        and the row index rather than as a bare pydantic error (HATS-1140).
-        """
-        composition = data.get("composition")
-        if not isinstance(composition, dict):
-            return
-        rows = composition.get("checks")
-        if rows is None:
-            return
-        if not isinstance(rows, list):
-            raise CheckBindingError(
-                f"{path}: 'composition.checks' must be a list of "
-                f"{{skill, script, on}} rows, got {type(rows).__name__}"
-            )
-        composition["checks"] = [
-            _parse_check_row(row, index=i, path=path) for i, row in enumerate(rows)
-        ]
-
-
-def _parse_check_row(row: Any, *, index: int, path: Path) -> CheckBinding:
-    """Parse one ``checks:`` row; loud on structure, forgiving on vocabulary."""
-    label = f"{path}: composition.checks[{index}]"
-    if not isinstance(row, dict):
-        raise CheckBindingError(
-            f"{label}: must be a mapping of {{skill, script, on}}, got {type(row).__name__}"
-        )
-    if True in row and "on" not in row:
-        # YAML 1.1 resolves a bare ``on`` key to True (ai_hats_wt/carry.py).
-        row = {("on" if key is True else key): value for key, value in row.items()}
-    known = sorted(CheckBinding.model_fields)
-    unknown = [key for key in row if key not in known]
-    if unknown:
-        # Forward-compat (ADR-0019 D6 / ADR-0012 Revisions #3): a newer trait's
-        # optional field must not hard-fail composition on an older engine.
-        row = {key: value for key, value in row.items() if key in known}
-        print(
-            f"WARN: {label}: ignoring unknown row key(s) "
-            f"{', '.join(repr(key) for key in unknown)} (known: {', '.join(known)})",
-            file=sys.stderr,
-        )
-    try:
-        return CheckBinding.model_validate(row)
-    except ValidationError as exc:
-        raise CheckBindingError(f"{label}: {_describe_row_defect(exc)}") from exc
-
-
-def _describe_row_defect(exc: ValidationError) -> str:
-    defects = "; ".join(
-        f"{'.'.join(str(part) for part in err['loc']) or '<row>'}: {err['msg']}"
-        for err in exc.errors()
-    )
-    return (
-        f"{defects} — a row must be {{skill, script, on: [<ns>:<point>], on_error?: refuse|warn}}"
-    )
-
 
 class RuleMetadata(_YamlModel):
     name: str = ""
     description: str = ""
     author: str = ""
     tags: list[str] = Field(default_factory=list)
+    delivery: str | None = None
 
     @classmethod
     def from_yaml(cls, path: Path) -> RuleMetadata:

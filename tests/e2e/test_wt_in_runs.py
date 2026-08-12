@@ -1,18 +1,15 @@
-"""E2E (HATS-823): a wt_in hook runs AFTER `git worktree add`, via the real binary.
+"""e2e (HATS-823)
 
-The fixture `wt_in` hook records the worktree path it was handed. Proving the
-path is the linked worktree (a temp `ai-hats-wt-*` dir), not the project root,
-confirms wt_in runs post-checkout (ADR-0012 Revisions #1 — git refuses a
-non-empty target dir, so the seed cannot run before `git worktree add`).
-
-fail-under-revert: drop the `_run_wt_in_hooks()` call from `create()` and the
-`.seeded` marker never appears → this test goes red.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ai-hats binary,
-@pytest.mark.integration.
-"""
+flow:   a developer creating a worktree when wt_in lifecycle hooks are registered
+cmds:
+    ai-hats wt create task/probe
+expect: wt_in lifecycle hook executes during worktree creation and populates initial
+        files
+why:    wt_in hook must fire during worktree setup to provision required environment
+        state"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -34,19 +31,6 @@ def _run(cmd, *, cwd, env, timeout=180, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wtin-home"))
-    return launcher, env, shared_venv
 
 
 @pytest.mark.integration

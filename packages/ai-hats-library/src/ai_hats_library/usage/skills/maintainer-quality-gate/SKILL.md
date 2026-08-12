@@ -1,31 +1,267 @@
 ---
 name: maintainer-quality-gate
-description: Maintainer-only quality gates — pre-push e2e+smoke when pushing to master
+description: Maintainer-only quality gates — pre-push e2e+smoke to master, and the review→done quality gate
 ai_hats:
-  # HATS-550 / HATS-686 — hook-carrier skill. The assembler installs the
-  # dual-mode pre-push script into `.githooks/pre-push.d/` at composition
-  # time. Default (git pre-push): INSTANT pass-marker check keyed to the
-  # pushed master local_sha. `--run` (scripts/run-e2e-gate.sh): runs the
-  # ~27-min suite out of band and writes the marker on pass + clean tree.
+  # HATS-550 / HATS-686 — hook-carrier skill. Since HATS-1337 the gate is NOT
+  # copied anywhere: `ai-hats self init` installs one dispatcher per event in
+  # `.githooks/`, and the script below is resolved from this skill directory and
+  # run in place at push time. Default (git pre-push): INSTANT pass-marker check
+  # keyed to the pushed master local_sha. `--run` (scripts/run-e2e-gate.sh):
+  # runs the ~27-min suite out of band, marker on pass + clean tree.
   # Hard gate: no env-var bypass; `git push --no-verify` is the only escape.
   git_hooks:
     pre-push:
       - git_hooks/pre-push-e2e-master.sh
 license: MIT
 ---
+
 # maintainer-quality-gate
 
 Maintainer-only quality gates for the ai-hats codebase, delivered as
-infrastructure (git hooks) rather than agent-side decision logic.
+infrastructure (a git hook and a `composition.apps` binding) rather than agent-side
+decision logic.
 
 ## What it ships
 
-A single dual-mode `pre-push` script —
-`git_hooks/pre-push-e2e-master.sh` — installed by the assembler into
-`.githooks/pre-push.d/maintainer-quality-gate-pre-push-e2e-master.sh`
-during composition, plus an ergonomic wrapper `scripts/run-e2e-gate.sh`.
+Two gates and the mechanism they share:
 
-## Why two modes (HATS-686)
+- `git_hooks/pre-push-e2e-master.sh` — the dual-mode **pre-push** gate on
+  pushes to master (HATS-550 / HATS-686), plus its wrapper
+  `scripts/run-e2e-gate.sh`.
+- `hooks/done-gate.sh` — the dual-mode gate bound to **both roads into
+  master**: `edge:review--done` under `apps.rack.tasks` (the FSM automerge) and
+  `pre-merge` under `apps.wt` (a direct `ai-hats wt merge`) — HATS-1137, both
+  points since HATS-1540. Its `--check`
+  mode is what the binding runs; its `--run` mode is what
+  `make done-gate` invokes.
+- `lib/gate-marker.sh` — the SHA pass-marker store both read and write,
+  parameterised by gate name.
+
+Both gates follow the same shape: the expensive run happens **out of band**
+and leaves a marker keyed to a commit SHA; the gate on the critical path only
+looks that marker up, so it is instant. A marker cannot go stale — its key is
+the content it certifies, so a new commit is simply a commit with no marker.
+
+## The review→done gate (HATS-1137)
+
+### Who runs what, and when
+
+**The agent**, once the work is finished and committed, in its task worktree:
+
+    cd <task worktree> && make done-gate
+
+That is the only step invoked by hand. It runs the whole `done-gate` stage
+(minutes) and, on green, leaves a marker behind.
+
+**The harness**, with nobody involved, when the card is moved:
+
+1. `rack transition <ID> done`.
+2. The rack kernel takes the **per-task file lock** — `<tasks_dir>/<ID>/.lock`,
+   30s timeout (`ai_hats_rack.kernel.LOCK_TIMEOUT`).
+3. Still in the lock, it dispatches `edge:review--done` down the priority
+   ladder. The checks subscriber (`ai_hats_rack.checks.CheckSubscriber`,
+   subscriber name `checks`) sits at **priority 15**, `Phase.IN_LOCK`.
+4. It asks the integrator's port (`ai_hats.rack_consumers.AiHatsCheckPort`) for
+   what the **active role** composes — in a session resolved from the surface's
+   own skill mirror, outside one from the live library (ADR-0019 D9) — keeps the
+   rows whose point is an edge of the topology this kernel runs (ADR-0019 D11),
+   and finds the `maintainer` role's rows — two since HATS-1545, one per app,
+   binding this script to both points.
+5. `hook_exec.run_hook` spawns the script with **no argv at all**, `stdin`
+   `/dev/null`, `cwd` = the project dir, a 20s budget
+   (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
+   dispatch (`case "${1:---check}"`) therefore lands in `--check`.
+6. Exit 0 → the ladder continues. Exit 2 → `AbortOperation` carrying the
+   script's stdout tail verbatim, and the kernel persists nothing at all.
+
+Every run's full transcript lands beside the card at
+
+    <tasks_dir>/<ID>/.checks/edge-review--done~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
+
+— one file per (task, edge, binding). The leading-dot directory keeps it out of
+the document registry (`docstore._is_document`), so a gate never pins its own
+output into every agent's `rack context`.
+
+### Why priority 15
+
+The in-lock order is `single-slot(5) < frozen(8) < plan-gate(10) < checks(15) <
+ownership claim(20) < scaffold/worktree(30) < ownership release(40)`
+(`rack_wiring.build_rack_kernel`). On **this** edge the subscriber that matters
+sits behind 15: the worktree **teardown-merge** at 30 (it subscribes to every
+edge into a terminal state, and `to_state == "done"` is the one that merges).
+The ownership claim at 20 subscribes only to edges into `execute`, so it never
+fires here; the release at 40 does, and also runs after the gate.
+
+So a refusal at 15 leaves the card in `review`, the card file byte-unchanged —
+the kernel's single persist is always last — and **no merge commit on master**.
+
+### `--check` — what the binding actually runs
+
+In the script's real order; every branch below is an explicit `exit`:
+
+1. `AI_HATS_TASKS_DIR` set and NOT this project's own tracker tasks dir →
+   **pass (0)**. Role scope is not backlog scope: a role-scoped binding fires on
+   every backlog the rack CLI touches, scratch `--tasks-dir` included, and this
+   gate guards what enters THIS repo. A **declared** fail-open — the engine
+   states the context and the policy lives here (supervisor ruling 2026-08-08).
+   The comparison reads `ai-hats.yaml` and the documented default, never
+   `AI_HATS_DIR`: that variable is the leaky one, and whose tracker this is is
+   the whole question. Absent at `pre-merge`, which resolves no backlog.
+2. No `<project>/scripts/ci-local.sh` → **refuse (2)**. No dispatcher means no
+   `done-gate` stage, so no marker could ever be earned honestly. A gate that
+   cannot verify must not pass; the message names both fixes (add the stage, or
+   drop the binding row).
+3. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
+   code entering master through this card; a doc/research card brings none. The
+   runner refuses on its own when it could not TELL, so absent means absent here,
+   never unknown.
+4. The path gone from disk → **pass (0)**. Rack's
+   own teardown either finalizes an already-merged branch or refuses the merge
+   itself, so there is no live branch content to gate.
+5. `git -C <wt> rev-parse HEAD` — the **task branch's tip**, never the main
+   checkout's HEAD: at priority 15 the merge has not happened, so the content
+   under judgement is what the branch holds. Unresolvable → **refuse (2)**.
+6. Marker for that exact SHA → **pass (0)**. Missing → **refuse (2)** with the
+   copy-pasteable `cd <wt> && make done-gate`.
+
+**One script, two points, no branch between them.** The tree under judgement
+arrives as `AI_HATS_WORKTREE_PATH` at *both*, resolved once by the runner
+(HATS-1540 R2) instead of each gate re-deriving
+`sessions/worktrees/task-<id>.json` and parsing the JSON by hand. The primitive
+*removes* an unresolved value from the inherited environment rather than letting
+an ambient one through — that applies to `AI_HATS_TASKS_DIR` too, so a stale one
+cannot reach the script at `pre-merge` and read as "not my backlog".
+
+### `--run` — `make done-gate`, and where the marker lands
+
+Runs `scripts/ci-local.sh done-gate` (`e2e-catalog → lint → unit → integration →
+merge-smoke`, stopping at the first red) from `git rev-parse --show-toplevel`.
+On green **and a clean tree** it writes
+
+    <git-common-dir>/ai-hats/done-gate/<HEAD sha>
+
+carrying `sha=`, `timestamp=` and `stage=done-gate`. Two things about that path:
+
+- **`--git-common-dir`, never `--git-dir`.** The common dir is the main
+  checkout's `.git`, shared by every linked worktree — which is exactly what
+  makes a marker **written inside the task worktree** visible **from the main
+  checkout**, where the check runs. `--git-dir` would file it under
+  `.git/worktrees/<id>/` and the check would never see it.
+- It lives under `.git/`, so it is never committed. Markers are tiny; no GC.
+
+A marker counts only when its filename and its recorded `sha=` line agree
+(`gate_marker_ok`) — a half-written or hand-copied file names a commit it does
+not certify.
+
+A **dirty tree** runs the suite and writes nothing (exit 0, loudly): the gate
+ran against the working tree, so what passed is not what the branch tip holds.
+Commit, then re-run. Run it **in the task worktree** — the marker is keyed to
+that branch's tip, which is the commit the check looks up.
+
+The composition lives in `scripts/ci-local.sh`, not here: changing what "green
+enough to be done" means is a project-side edit, and the gate script never
+moves.
+
+### Why the marker cannot go stale
+
+Its key is the **content** it certifies. A new commit is a new SHA and simply
+has no marker, so the gate refuses again by construction. There is no expiry
+and no invalidation step, and none is needed — while one run covers every card
+sitting on that same commit.
+
+### The exit contract it obeys (ADR-0020 D2)
+
+| exit                     | class   | what the runner does                                                            |
+| ------------------------ | ------- | ------------------------------------------------------------------------------- |
+| `0`                      | pass    | on to the next binding                                                          |
+| `2`                      | refuse  | abort the transition; the stdout tail **is** the reason the agent reads         |
+| `126` / `127`            | corrupt | abort; `on_error: warn` can **never** soften it (else `rm` would disarm a gate) |
+| anything else, incl. `1` | broke   | governed by `on_error`: `refuse` aborts, `warn` downgrades to a work-log note   |
+
+Refuse is `2` and not `1` because `1` is what a shell script produces **by
+accident**: under `set -e` any stray non-zero command — a failed `grep`, a
+missing file — ends the script with 1. Reserving 1 for "the check broke" keeps
+an accident from reading as a verdict. That is also why `hooks/done-gate.sh`
+runs under `set -uo pipefail` with **no** `-e`, and spells out every exit.
+
+### Why two steps and not one
+
+The `done-gate` stage takes minutes. The rack task lock times out at 30s and
+the per-check budget is 20s (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`, `< LOCK_TIMEOUT`
+at import time), so the heavy work cannot run in the lock at all: it would be
+killed at 20s, and a peer waiting on the lock would mis-blame a concurrent
+operation. Splitting it leaves the critical path as one file read — instant.
+
+### Why a separate script from the pre-push gate
+
+The pre-push gate's default mode reads git's pre-push protocol from **stdin**,
+and the check runner gives its children `stdin=DEVNULL`. Empty stdin hits that
+script's "no master target" fast path and it exits 0 — reusing it would have
+produced a gate that is silently always green.
+
+## Binding several scripts to one point
+
+`composition.apps` takes **one script per row**, so two scripts on one point is
+two rows. Nothing else changes — same point, same edge, same lock:
+
+```yaml
+composition:
+  skills:
+    - maintainer-quality-gate # a binding never pulls its skill in (ADR-0019 D2)
+  apps:
+    rack: # the application; below it, rack's own grammar
+      tasks: # the backlog this row gates (name or cli_alias)
+        - run: maintainer-quality-gate/hooks/done-gate.sh
+          at: [edge:review--done]
+          on_error: refuse
+        - run: maintainer-quality-gate/hooks/changelog-entry.sh
+          at: [edge:review--done, edge:execute--review]
+          on_error: warn
+    wt: # ai-hats's own app: rows sit directly under the key
+      - run: maintainer-quality-gate/hooks/done-gate.sh
+        at: [pre-merge]
+        on_error: refuse
+```
+
+`run:` is `<skill>/<path-inside-it>`, replacing the `skill:` / `script:` pair.
+ai-hats owns three keys of a row — `run:`, `at:`, `on_error:` — and carries
+everything else to whoever owns `<app>`; the depth between the app key and the
+row is that app's grammar too (HATS-1545, ADR-0017 §3).
+
+What that means at run time:
+
+- **Order is composition order** — traits in the order the role lists them,
+  then the role's own rows (`composer._resolve_traits`, then the role's own
+  `declared_checks.extend`). The runner filters that tuple by point and does
+  **not** re-sort it.
+- **The first refusal stops the rest.** The runner raises on the spot, so a
+  later binding never spawns. The one exception is a binding whose outcome is
+  *broke* under `on_error: warn`: that one is downgraded to a work-log note and
+  the loop continues.
+- **Each binding writes its own log**,
+  `.checks/<event>~<app>[~<level>…]~<skill>~<script>~<digest>.log`, with `/`
+  escaped to `+`. Before HATS-1137 the name carried the edge only, so binding #2
+  truncated #1's file; the trailing digest (HATS-1545) covers `at:` and the rest
+  of the row's identity, so two rows differing only in the points they bind
+  cannot share a file either. Glob for the stem — do not hand-build the name.
+- `at:` is a list, so **one row may name several points**, and **several rows
+  may name the same point**. Only an exact `(app, path, run, at + cargo)`
+  identity collapses: `check_points.resolve_checks` dedups on it, keeps the
+  **first** declaration's slot, warns naming both declarers, and hardens
+  `on_error` to the strictest of the two — a later `warn` can never relax a gate
+  an earlier row declared `refuse`.
+- Binding to a skill the role does not compose is a loud composition error, not
+  an implicit compose. `on_error: warn` is rejected outright at a data-protection
+  point (`apps.wt` at `pre-merge`), whose failure policy
+  `check_points.wt_points()` fixes (ADR-0019 D4).
+- The field is `at:`, not `on:`. YAML 1.1 resolves a bare `on` key to the boolean
+  `True`, and under an opaque cargo block no parser can remap it back — ai-hats
+  does not know the key is significant. HATS-1545 removed the trap by choosing a
+  word outside YAML 1.1's truthy set and deleted the old remap; a config still
+  carrying the retired `checks:` key gets a **typed refusal** naming where the
+  rows moved.
+
+## The master pre-push gate — why two modes (HATS-686)
 
 The gate suite takes ~27 min. Running it **inside** the pre-push hook is
 incompatible with pushing to GitHub over SSH: git opens the SSH connection
@@ -41,19 +277,23 @@ holds the connection open.
 The fix decouples the run from the push via a pass-marker keyed to the
 commit SHA, preserving the HATS-550 "no-broken-master, no-bypass" contract.
 
-## How it works
+## How the pre-push gate works
 
 ### Run mode — `scripts/run-e2e-gate.sh` (or `… --run`)
 
-Run this **before** pushing master. From the repo root the hook first sweeps
-the dev checkout's `build/` directory (HATS-568 — stale wheel-build artefacts
-cause "File exists: build/bdist...dist-info" collisions across worktree-tier
-e2e tests), then previews stale tmp cruft (`ai-hats-wt-*`, `pytest-of-*`) via
-`scripts/clean-tmp-cruft.sh` (HATS-731/HATS-570 — keeps APFS metadata ops fast
-on a loaded host). The preview is **dry-run by default** — the sweeper matches
-every `ai-hats-wt-*` by name and cannot tell a leaked test worktree from a live
-session, so the gate never auto-deletes one; opt in to real `--force` deletion
-with `AI_HATS_E2E_CLEAN_TMP=1`. Then runs:
+Run this **before** pushing master. From the repo root the hook requires
+`pytest` on PATH (absent → ABORT, no marker), then runs the `lint` and `unit`
+stages of `scripts/ci-local.sh` as a preamble (HATS-726 — the marker has to
+mean "everything CI checks is green"; a red stage aborts before the ~25-min
+tier starts). Then it sweeps the dev checkout's `build/` directory (HATS-568 —
+stale wheel-build artefacts cause "File exists: build/bdist...dist-info"
+collisions across worktree-tier e2e tests), then previews stale tmp cruft
+(`ai-hats-wt-*`, `pytest-of-*`) via `scripts/clean-tmp-cruft.sh`
+(HATS-731/HATS-570 — keeps APFS metadata ops fast on a loaded host). The
+preview is **dry-run by default** — the sweeper matches every `ai-hats-wt-*` by
+name and cannot tell a leaked test worktree from a live session, so the gate
+never auto-deletes one; opt in to real `--force` deletion with
+`AI_HATS_E2E_CLEAN_TMP=1`. Then runs:
 
     pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ \
            -q --tb=line --no-header -p no:cacheprovider
@@ -66,13 +306,15 @@ fails-closed — HATS-645; `@pytest.mark.quarantine` known-flaky tests deselecte
 On **pass** AND a **clean working tree**, it writes a marker keyed to
 `git rev-parse HEAD`:
 
-| condition                          | marker | exit |
-|------------------------------------|:------:|:----:|
-| pytest rc 0, clean tree            |  ✅ written | 0 |
-| pytest rc 5 (no tests), clean tree |  ✅ written (defensive) | 0 |
-| pytest rc 0 but **dirty** tree     |  ❌ none | 0 |
-| pytest failure (other rc)          |  ❌ none | 1 |
-| pytest not on PATH                  |  ❌ none, ABORT | 1 |
+| condition                             |         marker         | exit |
+| ------------------------------------- | :--------------------: | :--: |
+| pytest rc 0, clean tree               |       ✅ written       |  0   |
+| pytest rc 5 (no tests), clean tree    | ✅ written (defensive) |  0   |
+| pytest rc 0 but **dirty** tree        |        ❌ none         |  0   |
+| HEAD unresolvable / marker unwritable |        ❌ none         |  0   |
+| pytest failure (other rc)             |        ❌ none         |  1   |
+| `lint` or `unit` preamble red         |     ❌ none, ABORT     |  1   |
+| pytest not on PATH                    |     ❌ none, ABORT     |  1   |
 
 The clean-tree invariant matters: the gate builds wheels from the *working
 tree*, so a marker is only honest when tree == HEAD == the SHA you will push.
@@ -125,7 +367,16 @@ consuming project.
 
 - Plan (decoupling): `.agent/ai-hats/tracker/backlog/tasks/HATS-686/plan.md`
 - Plan (gate origin): `.agent/ai-hats/tracker/backlog/tasks/HATS-550/plan.md`
-- E2e test: `tests/e2e/test_prepush_e2e_master_gate.py`
+- Plan (review→done gate): `.agent/ai-hats/tracker/backlog/tasks/HATS-1137/plan.md`
+- E2e tests: `tests/e2e/test_prepush_e2e_master_gate.py`,
+  `tests/e2e/test_done_gate.py`
 - Wrapper: `scripts/run-e2e-gate.sh`
-- Assembler install path: `src/ai_hats/assembler.py` → `_install_git_hooks`
-- Sibling pattern: `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
+- Gate composition: `scripts/ci-local.sh` → `done-gate` stage
+- Binding shape and outcome policy: ADR-0019 D2 / D4; exit contract: ADR-0020 D2
+- Check runner and log path: `src/ai_hats/rack_consumers.py`; in-lock ladder:
+  `src/ai_hats/rack_wiring.py` → `build_rack_kernel`
+- Git-hook install path (dispatchers only, HATS-1337):
+  `src/ai_hats/hooks_manager.py` → `install_git_hooks`; gate resolution at
+  spawn: `src/ai_hats/githooks_resolve.py`
+- Sibling pattern:
+  `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`

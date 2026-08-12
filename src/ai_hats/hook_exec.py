@@ -19,6 +19,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
+from ai_hats_core.deadline import Deadline
+
 from .paths import AI_HATS_PROJECT_DIR_ENV
 
 # Big enough for a multi-line instruction, not just a verdict line.
@@ -68,11 +70,13 @@ def run_hook(
     script: Path,
     *,
     point: str,
-    timeout: float,
+    budget: float,
+    deadline: Deadline,
     project_dir: Path,
     force: bool = False,
     task_id: str | None = None,
     worktree_path: Path | None = None,
+    tasks_dir: Path | None = None,
     extra_env: Mapping[str, str] | None = None,
     log_path: Path | None = None,
     tail_bytes: int = REASON_TAIL_BYTES,
@@ -84,13 +88,25 @@ def run_hook(
     so a channel never hands in its own strings for those. ``script`` must
     already be absolute — resolution belongs to the caller. ``KeyboardInterrupt``
     propagates regardless of the caller's error policy.
-    """
+
+    ``budget`` is what the channel asks for, ``deadline`` what the caller is
+    bounded by; the run gets the smaller, so no channel compares its own
+    constant against a lock (HATS-1593).
+    """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
         return _corrupt(f"hook script missing: {script}", None)
     if not os.access(script, os.X_OK):
         return _corrupt(f"hook script not executable: {script}", None)
 
-    header = f"# hook point={point} script={script} timeout={timeout}s"
+    timeout = deadline.budget_for(budget)
+    if timeout <= 0.0:
+        return HookRun(
+            verdict=HookVerdict.BROKE,
+            exit_code=None,
+            reason=f"hook broke: no time left under {deadline.origin}: {script}",
+        )
+
+    header = f"# hook point={point} script={script} timeout={timeout}s under {deadline.origin}"
     try:
         sink, sink_path, said_from = _open_stdout_sink(log_path, header)
     except OSError as exc:
@@ -106,7 +122,9 @@ def run_hook(
             proc = subprocess.run(  # noqa: S603 — spawning the caller's hook IS the contract; no shell
                 [str(script)],
                 cwd=str(project_dir),
-                env=_hook_env(point, project_dir, force, task_id, worktree_path, extra_env),
+                env=_hook_env(
+                    point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env
+                ),
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
                 stderr=err_sink,
@@ -168,6 +186,7 @@ def _hook_env(
     force: bool,
     task_id: str | None,
     worktree_path: Path | None,
+    tasks_dir: Path | None,
     extra: Mapping[str, str] | None,
 ) -> dict[str, str]:
     """The shared base every hook receives (ADR-0020 D2), then the caller's own
@@ -191,6 +210,12 @@ def _hook_env(
     _put(env, "AI_HATS_FORCE", "1" if force else None)
     _put(env, "AI_HATS_TASK_ID", task_id)
     _put(env, "AI_HATS_WORKTREE_PATH", str(worktree_path) if worktree_path else None)
+    # HATS-1540: the primitive OWNS this one too, so a point that does not resolve
+    # a backlog (`wt:pre-merge`) removes it rather than inheriting whatever the
+    # ambient environment carries. Left to `extra`, which can only add, a stale
+    # value reached the gate and a script comparing it to its own tracker read
+    # "not my backlog" and waved the merge through — measured, not feared.
+    _put(env, "AI_HATS_TASKS_DIR", str(tasks_dir) if tasks_dir else None)
     env.update(extra or {})
     return env
 

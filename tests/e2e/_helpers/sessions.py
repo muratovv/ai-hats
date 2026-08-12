@@ -207,3 +207,39 @@ def wait_for_file(
         f"File {path} did not reach min_size={min_size} bytes within "
         f"{timeout:.1f}s. Last observed size: {last_size}."
     )
+
+
+def stand_in_session(
+    env: dict[str, str],
+    project: Path,
+    session_id: str,
+    *,
+    role: str = "assistant",
+    provider: str = "claude",
+    skills_root: Path | str | None = None,
+) -> dict[str, str]:
+    """Make ``env`` look like a real session's, envelope included (HATS-1594).
+
+    A bare ``AI_HATS_SESSION_ID`` is no longer a session: the gate channel reads
+    the envelope beside it and refuses when it is missing, because in production
+    only ``assemble_launch_env`` writes that variable and it always writes both.
+    A test that sets the id alone is therefore standing in for a session no
+    launch produces, and gets refused for exactly the right reason.
+
+    ``skills_root`` defaults to a path under the session that does not exist —
+    correct for a sandbox that binds no check. A test whose bindings must
+    resolve passes the root it actually planted into.
+    """  # comment-length: allow — why setting the id alone stopped working
+    from ai_hats.session_identity import SessionIdentity
+
+    session_dir = project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id
+    identity = SessionIdentity(
+        id=session_id,
+        role=role,
+        provider=provider,
+        project_dir=project,
+        session_dir=session_dir,
+        skills_root=str(skills_root if skills_root is not None else session_dir / "skills"),
+    )
+    env.update(identity.to_env())
+    return env

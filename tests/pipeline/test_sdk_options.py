@@ -106,7 +106,7 @@ def test_build_options_always_on_rule_appears_in_append(
     project_dir: Path,
     tmp_path: Path,
 ) -> None:
-    """Rules listed in ALWAYS_ON_RULES end up in the RULES section."""
+    """Composed rules end up in the RULES section."""
     rule_dir = tmp_path / "rule"
     rule_dir.mkdir()
     # HATS-700: the always-on body is read on demand from source_path/rule.md
@@ -135,13 +135,14 @@ def test_build_options_always_on_rule_appears_in_append(
     assert "Don't rm -rf the homedir." in append
 
 
-def test_build_options_non_always_on_rule_not_inlined(
+def test_build_options_every_composed_rule_inlined(
     project_dir: Path,
     tmp_path: Path,
 ) -> None:
-    """Rules outside ALWAYS_ON_RULES stay off the system prompt."""
+    """Every rule in composition.rules gets inlined into ## RULES section."""
     rule_dir = tmp_path / "rule"
     rule_dir.mkdir()
+    (rule_dir / "rule.md").write_text("Optional rule body.")
     other_rule = ResolvedComponent(
         name="some_optional_rule",
         component_type=ComponentKind.RULE,
@@ -161,8 +162,9 @@ def test_build_options_non_always_on_rule_not_inlined(
         session_id="sid",
         provider=ClaudeProvider(),
     ).system_prompt["append"]  # type: ignore[index]
-    # Section absent entirely (no always-on rules in this composition).
-    assert "Optional rule body." not in append
+    assert "## RULES" in append
+    assert "some_optional_rule" in append
+    assert "Optional rule body." in append
 
 
 def test_build_options_skills_absent_from_append_but_materialized(

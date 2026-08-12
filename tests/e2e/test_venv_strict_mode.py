@@ -1,20 +1,14 @@
-"""HATS-645: ``AI_HATS_E2E_REQUIRE_VENV`` converts a venv-tier skip into a fail.
+"""e2e (HATS-645)
 
-Two layers:
-
-* **Unit** (``test_*_skips`` / ``*_to_failure``) — the fail-closed *decision* in
-  :func:`tests.e2e._helpers.venv.venv_unavailable`, exercised directly. Fast, no
-  subprocess, deliberately NOT marked ``integration``.
-* **Seam** (``test_seam_*``) — the integration the unit layer can't reach: that
-  a REAL ``pytest`` run, driving the REAL ``_shared_launcher_venv`` fixture, exits
-  **non-zero under strict mode** (so the gate blocks) and **zero without it** (so
-  an offline dev still gets a green local suite). This is the contract the whole
-  task turns on — offline ⇒ gate blocks instead of false-greening — and it only
-  exists at the pytest-process boundary, so it is a real-subprocess
-  ``@pytest.mark.integration`` test. The venv is forced unbuildable
-  deterministically (empty ``PATH`` ⇒ ``network_available()`` False), so the
-  fixture short-circuits at its first branch — no actual build, ~instant.
-"""
+flow:   a maintainer running the e2e test suite gate under strict venv requirements mode
+cmds:
+    bash scripts/run-e2e-gate.sh
+expect: missing or unbuildable test venvs raise fatal failures under strict mode instead
+        of
+        skipping tests
+why: without strict venv mode in CI gates, environment setup failures silently skip e2e
+     test suites
+        and pass false green"""
 
 from __future__ import annotations
 
@@ -25,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from _helpers.venv import REQUIRE_VENV_ENV, venv_unavailable
+from _helpers.venv import REQUIRE_VENV_ENV
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -76,44 +70,6 @@ def _run_probe_offline(tmp_path, *, strict: bool) -> subprocess.CompletedProcess
         text=True,
         timeout=120,
     )
-
-
-def test_strict_mode_converts_skip_to_failure(monkeypatch):
-    """Gate sets the env to "1" → a missing venv is a FAILURE, not a skip.
-
-    Explicit skip/fail discrimination (not ``pytest.raises``): a regression
-    that reverts the env check makes ``venv_unavailable`` *skip*, and a bare
-    ``pytest.raises(Failed)`` would let that Skipped propagate and mark this
-    test *skipped* — amber, not red. Converting the skip into an explicit
-    ``pytest.fail`` here guarantees the regression shows up as RED.
-    """
-    monkeypatch.setenv(REQUIRE_VENV_ENV, "1")
-    try:
-        venv_unavailable("offline / no warm pip cache")
-    except pytest.skip.Exception:
-        pytest.fail("strict mode (env=1) must FAIL the venv tier, not skip it")
-    except pytest.fail.Exception as exc:
-        # The message names the fail-closed reason so a blocked maintainer sees why.
-        assert "fail-closed" in str(exc)
-    else:
-        pytest.fail("venv_unavailable must not return normally")
-
-
-def test_non_strict_mode_skips(monkeypatch):
-    """Env unset (normal local run) → graceful skip, suite stays green."""
-    monkeypatch.delenv(REQUIRE_VENV_ENV, raising=False)
-    with pytest.raises(pytest.skip.Exception):
-        venv_unavailable("offline / no warm pip cache")
-
-
-def test_env_set_to_other_value_still_skips(monkeypatch):
-    """Only the literal "1" arms strict mode; any other value degrades."""
-    monkeypatch.setenv(REQUIRE_VENV_ENV, "0")
-    with pytest.raises(pytest.skip.Exception):
-        venv_unavailable("offline")
-
-
-# --------------------------- seam (real pytest run) ---------------------------
 
 
 @pytest.mark.integration

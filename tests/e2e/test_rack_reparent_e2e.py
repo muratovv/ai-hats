@@ -1,10 +1,12 @@
-"""e2e: rack transition re-parenting and link ops (HATS-1350).
+"""e2e (HATS-1350)
 
---set parent_task=... is forbidden because parent_task is a structural link field
-guarded by link graph logic. Valid link operations are:
-1. --link parent_task:<parent> for linking an unparented card.
-2. --link parent_task:<new_parent> on an already linked card fails with already_linked.
-3. --unlink parent_task:<old_parent> --link parent_task:<new_parent> atomically re-parents.
+flow:   a developer modifying task parent relationships using link flags
+cmds:
+    rack transition HATS-101 --unlink parent_task:HATS-100 --link parent_task:HATS-102
+expect: direct field mutation of parent_task is rejected while atomic unlink and link
+        flags update the parent reference in task.yaml
+why:    parent_task is a structural relationship field that must be updated through
+        graph validation rather than direct field assignment
 """
 
 from __future__ import annotations

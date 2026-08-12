@@ -1,30 +1,15 @@
-"""E2E (HATS-1147): the ``lifecycle_hooks`` channel is retired.
+"""e2e (HATS-1147)
 
-Two halves, matching the two ways the retirement can regress.
-
-**The tombstone fires.** A skill declaring ``lifecycle_hooks:`` must fail
-composition by name, through the real binary. This is the load-bearing half:
-the zero-declaration survey covered only the layers we can see, so a
-third-party layer must not be able to ship an edge gate that silently never
-installs (the HYP-078 hole ADR-0019 D8 closes by tombstone rather than by a
-deprecation window).
-
-**The rack is untouched.** Every FSM edge used to run
-``HookRunnerExtension._assert_manifest_intact`` in-lock. With the channel gone
-a real ``rack transition`` still walks plan → execute, and no
-``tracker/lifecycle-hooks/`` tree appears.
-
-Fail-under-revert: drop the ``lifecycle_hooks`` raise from
-``SkillMetadata.from_skill_dir`` and ``self init`` composes the fixture role
-silently → ``test_declaration_fails_composition_by_name`` goes red.
-
-Per dev_rule_e2e_gate: real bash + real pip + real ``ai-hats`` binary for the
-composition half; the rack half runs the real ``ai_hats_rack`` CLI against the
-current checkout (the ``test_plan_gate_per_section_e2e`` pattern — an editable
-install would resolve the main checkout, not this worktree).
-"""
+flow:   a developer initializing a project after lifecycle hooks retirement
+cmds:
+    ai-hats self init -r assistant -p claude
+expect: session initialization materializes runtime tool hooks while skipping retired
+        lifecycle hooks
+why: without lifecycle hook retirement, deprecated hook types generate unnecessary
+     settings.json noise"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import shutil
@@ -42,12 +27,6 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_LIB = REPO_ROOT / "tests" / "fixtures" / "lifecycle_tombstone_lib"
-
-
-def _git(cwd: Path, *args: str):
-    return subprocess.run(  # noqa: S603 — fixed argv, test helper
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True
-    )
 
 
 def _run_rack(project_dir: Path, *args: str, timeout: float = 60.0):

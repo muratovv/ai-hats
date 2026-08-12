@@ -1,15 +1,17 @@
-"""e2e: the shim tier reaches rack's WIRED kernel, not the bare one (HATS-1263).
+"""e2e (HATS-1263)
 
-``test_rack_cutover_flow`` pins this for the ``rack`` console script in a built
-venv; this probe pins it on the interpreter tier the re-pointed suite drives.
-The failure it guards is silent — an unresolvable ``ai_hats_rack.kernel_factory``
-entry point falls back to the BARE kernel (no worktree, no STATE.md, no gates),
-so a re-pointed worktree test would go green by not testing.
-
-Fail-under-revert: drop the entry point → no worktree on execute → RED.
+flow:   a developer running task lifecycle commands via the module invocation interface
+cmds:
+    rack create "wired probe" --role assistant
+    rack transition SBX-001 execute
+expect: STATE.md is refreshed on card creation and a git worktree is provisioned when
+        transitioning to execute
+why:    module-level rack execution must bind the full kernel extensions rather than
+        falling back to a bare un-wired state
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -28,10 +30,6 @@ _PLAN_SECTIONS = (
     "\n## Requirements\nx\n## Approach & counter\nx\n"
     "## Scope & Out-of-scope\nx\n## Steps\n1. x\n## Verification Protocol\nx\n"
 )
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 def _rack(project: Path, *args: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -61,14 +59,16 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env() -> dict[str, str]:
+def env(project: Path) -> dict[str, str]:
+    """Takes ``project`` because a session envelope names the tree it composed
+    against, and a bare id is not a session any launch produces (HATS-1594)."""
     from _helpers.env import checkout_pythonpath
+    from _helpers.sessions import stand_in_session
 
     e = os.environ.copy()
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
-    e["AI_HATS_SESSION_ID"] = "e2e-rack-wired-probe"
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    return e
+    return stand_in_session(e, project, "e2e-rack-wired-probe")
 
 
 def test_shim_tier_create_refreshes_state_md(project: Path, env: dict[str, str]):

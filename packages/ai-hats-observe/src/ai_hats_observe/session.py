@@ -363,7 +363,16 @@ class Session:
 
     def get_env(self) -> dict[str, str]:
         """Environment variables for this session."""
-        return {
-            ENV_SESSION_ID: self.session_id,
-            "TRACE_LOG_PATH": str(self.trace_path),
-        }
+        return session_env(self.session_id, str(self.trace_path))
+
+
+def session_env(session_id: str, trace_path: str) -> dict[str, str]:
+    """The session-scoped variables, without needing a live session.
+
+    Split out for ``--dry-run``, which reports the child's environment before a
+    session exists (HATS-1548) — a second spelling of these keys would drift.
+    """
+    return {
+        ENV_SESSION_ID: session_id,
+        "TRACE_LOG_PATH": trace_path,
+    }

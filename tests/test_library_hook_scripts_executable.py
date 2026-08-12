@@ -74,3 +74,18 @@ def test_declared_hook_script_is_executable_in_the_index(script: Path):
         f"{relative} is {modes[relative]} — a declared hook script must ship "
         f"executable; copies that chmod on the way out only mask it"
     )
+
+
+@pytest.mark.parametrize("script", _declared_scripts(), ids=lambda p: p.name)
+def test_declared_hook_script_has_a_shebang(script: Path):
+    """The exec bit's other half (HATS-1597). A `0755` file with no `#!` passes
+    every `os.access(X_OK)` check on the chain and dies at execve instead
+    (ENOEXEC) — and since the git road now degrades fail-open, a gate failing
+    that way is a gate SILENTLY off. This is the guard that keeps it loud."""
+    with script.open("rb") as fh:
+        head = fh.read(2)
+
+    assert head == b"#!", (
+        f"{script.name} has no shebang — the kernel refuses it with "
+        f"'Exec format error' and the gate is skipped, not run"
+    )

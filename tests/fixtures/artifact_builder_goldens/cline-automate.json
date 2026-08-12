@@ -1,7 +1,18 @@
 {
+  "checks": [],
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
-  "env_keys": [],
+  "env_keys": [
+    "AI_HATS_DIR",
+    "AI_HATS_PROJECT_DIR",
+    "AI_HATS_ROLE",
+    "AI_HATS_ROOT_PID",
+    "AI_HATS_SESSION_ID",
+    "AI_HATS_SESSION_IDENTITY",
+    "CLINE_DATA_DIR",
+    "CLINE_HUB_PORT",
+    "TRACE_LOG_PATH"
+  ],
   "escapes": [],
   "launch": [
     "cline",
@@ -9,7 +20,7 @@
     "<cache>/sessions/dry-run",
     "--yolo",
     "--json",
-    "## PRIORITIES\n1. Quality\n\nRole body.\n\n# TASK\ndemo"
+    "## PRIORITIES\n1. Quality\n\nRole body.\n\n# WORKING_DIRECTORY\n<project>\n\nThis is the project every path and CLI call below refers to. Run each command with this directory as its working directory \u2014 `rack` resolves its backlog by walking up from where it runs, so a command started elsewhere reads and writes a different project.\n\n# TASK\ndemo"
   ],
   "materialized": [
     {

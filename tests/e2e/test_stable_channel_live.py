@@ -1,33 +1,12 @@
-"""E2E (LIVE): the stable channel installs the published wheel from the real
-PyPI index (HATS-765).
+"""e2e (HATS-765)
 
-764 built the stable resolver (``ai-hats==<ver>`` spec, fail-loud on a 404) and
-unit-tested it against a *stubbed* index, explicitly deferring the live check to
-765. This is that live check: a stable-channel ``self update`` resolved against
-the **real** PyPI ``ai-hats`` JSON endpoint.
-
-Self-skipping until the name is published. The skip guard is the production
-resolver itself (``fetch_latest_stable_version``) — its liveness IS the test's
-precondition, so there is no second source of truth to drift:
-
-  * pre-publish (the ``ai-hats`` name has no release) → resolver raises
-    ``ChannelResolveError`` (404) → this test SKIPs with a documented reason.
-    That is its RED baseline: it stays green-by-skip, never a false pass.
-  * epic-close (HATS-762 push-once live-verify, right after the first publish)
-    → resolver returns the version → the body runs for real.
-
-Precondition for the body (epic-close): the publish that activates this test
-ships the *current* version, so the published release is >= the local-source dev
-build installed during ``self init`` — the semver-monotonic downgrade guard
-(``_classify_semver_downgrade``) admits the install rather than refusing it. When
-the local build is AHEAD of the latest published tag (the normal between-releases
-state, incl. release-prep), the body SKIPs: the downgrade guard correctly refuses
-that install, which is expected, not a failure.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real launcher + real ``uv`` install +
-real ``ai-hats`` binary, marked ``integration`` + ``install_heavy`` (a real index
-install at call time).
-"""
+flow:   a developer updating framework version on stable release channel
+cmds:
+    ai-hats self update
+expect: self update resolves latest tagged stable release and installs versioned release
+        venv
+why: without stable channel support, production users cannot pin update checks to
+     verified releases"""
 
 from __future__ import annotations
 

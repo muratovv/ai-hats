@@ -1,13 +1,16 @@
-"""E2E (HATS-1291): a new worktree arrives with its own provisioned venv.
+"""e2e (HATS-1242)
 
-Proves not merely that `.venv` exists but that its interpreter imports the
-WORKTREE's source — importing MAIN's is what the HATS-1242 guard aborts on.
-
-fail-under-revert: drop `worktree-venv` from the maintainer role's `skills:`
-and no venv is minted → this test goes red.
-"""
+flow:   a developer creating a worktree in a project requiring isolated python
+        environments
+cmds:
+    ai-hats wt create task/probe
+expect: a virtual environment is provisioned inside worktree .venv and imports
+        worktree source
+why:    worktrees must provision isolated venvs to prevent importing main repository
+        packages"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import shutil
 import subprocess
@@ -38,10 +41,6 @@ def _run(cmd, *, cwd, env, timeout=300, expect_exit=0):
     return result
 
 
-def _git(cwd: Path, *args: str):
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
-
-
 def _wt_path(project: Path, branch: str) -> Path | None:
     out = _git(project, "worktree", "list", "--porcelain").stdout
     cur: Path | None = None
@@ -52,15 +51,6 @@ def _wt_path(project: Path, branch: str) -> Path | None:
             if line.strip().endswith("/" + branch):
                 return cur
     return None
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("wtvenv-home"))
-    return launcher, env, shared_venv
 
 
 def _init(launcher: Path, env: dict, project: Path) -> None:

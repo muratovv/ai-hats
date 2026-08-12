@@ -435,6 +435,7 @@ class Kernel:
         depends_on: Sequence[str] = (),
         tags: Sequence[str] | None = None,
         fields: Mapping[str, Any] | None = None,
+        links: Mapping[str, Sequence[str]] | None = None,
     ) -> KernelResult:
         """Create a card. Id allocation + reserve is atomic under the
         directory-scoped alloc lock (HATS-936); timeout is a loud failure.
@@ -445,7 +446,10 @@ class Kernel:
         ``fields`` is the generic field mapping (HATS-1036): any declared field by
         name (a custom backlog's required ``hypothesis`` etc.), merged over the
         named tasks kwargs so both the tasks verb and per-backlog groups share one
-        create path; a name absent from the routed schema is ignored."""
+        create path; a name absent from the routed schema is ignored.
+        ``links`` is its link-side twin (HATS-1596): ``{kind: [target, …]}`` for any
+        declared kind, applied through the same link op as the named
+        ``parent_task``/``depends_on``."""  # comment-length: allow — the two generic channels are the contract
         if not title.strip():
             raise RequiredFieldError("title", "a task requires a non-empty title")
         if task_id is not None and prefix_of(task_id) != self.prefix:
@@ -484,7 +488,7 @@ class Kernel:
                 # HATS-1327/1333: pre-persist, so a refused link writes nothing.
                 self._apply_declared_links(
                     task,
-                    self._declared_links(parent_task, depends_on),
+                    self._declared_links(parent_task, depends_on, links),
                     actor=actor,
                     caller_cwd=caller_cwd,
                 )
@@ -527,10 +531,16 @@ class Kernel:
             apply_non_state_op(txn, LinkOp(kind=kind, target=target))
 
     @staticmethod
-    def _declared_links(parent_task: str, depends_on: Sequence[str]) -> list[tuple[str, str]]:
+    def _declared_links(
+        parent_task: str,
+        depends_on: Sequence[str],
+        extra: Mapping[str, Sequence[str]] | None = None,
+    ) -> list[tuple[str, str]]:
         """An empty ``parent_task`` means "no parent" — never an existence check."""
         links: list[tuple[str, str]] = [("parent_task", parent_task)] if parent_task else []
         links += [("depends_on", t) for t in depends_on]
+        for kind, targets in (extra or {}).items():
+            links += [(kind, t) for t in targets if t]
         return links
 
     def _next_id(self) -> str:

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
-from .constants import ENV_ROLE, ENV_ROOT_PID, PROVIDER_CLAUDE
+from .constants import PROVIDER_CLAUDE
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -26,7 +26,8 @@ from .harness.errors import HarnessTimeoutError
 from .harness.guard import apply_post_run_guard
 from .harness.surface_guard import SurfaceGuard
 from ai_hats_wt import IsolationMode, WorktreeManager
-from .session_artifacts import BuiltArtifacts, RunMode
+from .check_snapshot import describe_checks
+from .session_artifacts import BuiltArtifacts, RunMode, assemble_launch_env
 from .session_report import SessionReport
 from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
@@ -198,23 +199,38 @@ class SubAgentRunner:
             artifacts=BuiltArtifacts(),
         )
 
-        notes: list[str] = []
-        if provider_name == PROVIDER_CLAUDE:
-            meta_prompt = self._build_sdk_prompt_audit(
-                artifacts=artifacts,
-                task=task,
-                ticket_id=ticket_id,
-            )
-            launch = [f"{k}={v}" for k, v in sorted(artifacts.sdk_options.items())]
-        else:
-            meta_prompt = self._build_meta_prompt(
-                role_context=artifacts.full_content or "",
-                task=task,
-                ticket_id=ticket_id,
-            )
-            flags = provider.model_flags(model) if model else []
-            cmd = provider.get_cli_command() + artifacts.cli_args + flags
-            launch = provider.get_run_command(cmd, meta_prompt)
+        # The gates this sub-agent runs under. Every AUTOMATE record ever written
+        # said `checks: []`, so the reflect loop could not see whether a
+        # sub-agent had its gates at all (HATS-1552).
+        reported_checks, notes = describe_checks(
+            provider, self.project_dir, result, session.session_id, artifacts.port.plan
+        )
+        # Everything ai-hats adds to the child's environment, expressed once
+        # (HATS-1548) — the sub-agent path merged its own subset and reported a
+        # different one: `extra_env` was reported and never delivered, while the
+        # six keys it did deliver appeared in no record (HATS-1552).
+        launch_env = assemble_launch_env(
+            provider,
+            self.project_dir,
+            session.session_dir,
+            session_id=session.session_id,
+            trace_path=str(session.trace_path),
+            # HATS-1594: the expression, not the base name `role_name` reports.
+            role=self.payload.role_expression,
+            root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
+            extra_env=artifacts.extra_env,
+        )
+        described = provider.describe_automate_launch(
+            self.project_dir,
+            result,
+            session.session_id,
+            artifacts,
+            task=task,
+            ticket_id=ticket_id,
+            model=model,
+            env=launch_env,
+        )
+        meta_prompt = described.prompt
 
         session.save_meta_prompt(meta_prompt)
         session.init_audit(
@@ -234,61 +250,27 @@ class SubAgentRunner:
             provider=provider.name,
             run_mode=RunMode.AUTOMATE.value,
             policy=self.payload.policy,
-            launch=launch,
-            env=dict(artifacts.extra_env),
+            launch=described.launch,
+            env=launch_env,
             prompt=prompt_file,
             plan=artifacts.port.plan,
             cwd="<worktree, assigned at launch>",
+            checks=reported_checks,
             notes=tuple(notes),
         )
         session.save_role_materialization(report.to_dict())
 
         session.log_sub(f"Sub-agent started: role={role_name}")
 
-        # HATS-474 review fix: keep the env we pass to a *subprocess* (Agy
-        # path) as the full inherited environment — subprocess.run replaces
-        # the child env wholesale when given. The SDK path uses an *overlay*
-        # via ClaudeAgentOptions.env, which the SDK merges on top of
-        # os.environ at spawn time, so we hand it only ai-hats-specific
-        # keys to avoid widening the secret-exposure surface (the SDK
-        # stores options on a long-lived object, repr-able).
-        provider_env = provider.get_env(session.session_dir, self.project_dir)
-        env = {
-            **os.environ,
-            **session.get_env(),
-            **provider_env,
-            ENV_ROLE: role_name,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
-        sdk_env_overlay = {
-            **session.get_env(),
-            **provider_env,
-            ENV_ROLE: role_name,
-            ENV_ROOT_PID: str(os.getpid()),  # HATS-955: ownership liveness anchor
-        }
-        from .skills_dir import inject_skill_paths_to_env
+        # HATS-474 review fix: a *subprocess* (Agy path) gets the full inherited
+        # environment — subprocess.run replaces the child env wholesale when
+        # given one. The SDK path takes `launch_env` as an *overlay* it merges
+        # on top of os.environ itself, so handing it only ai-hats keys keeps the
+        # secret-exposure surface off a long-lived, repr-able options object.
+        env = {**os.environ, **launch_env}
 
-        inject_skill_paths_to_env(env, result.skills)
-        inject_skill_paths_to_env(sdk_env_overlay, result.skills)
-
-        # Legacy subprocess path still needs cmd / skill_args precomputed.
-        # The Claude SDK path materializes skills internally via
-        # ``build_options`` → ``_build_plugins``, so we skip the upfront
-        # ``materialize_runtime_skills`` call when provider is claude
-        # (the cache dir is produced inside the SDK builder instead).
-        cmd: list[str] = []
         if provider_name != PROVIDER_CLAUDE:
-            cmd = provider.get_cli_command()
-            # HATS-307: materialize spawned role's skills for the sub-agent.
-            # For Agy this is currently a no-op (HATS-367 follow-up).
-            # Cleaned by _cleanup_session_cache in the finally block.
-            skill_args = provider.materialize_runtime_skills(
-                self.project_dir,
-                result,
-                session.session_id,
-            )
-            cmd = cmd + skill_args
-            session.log_sub(f"Executing: {' '.join(cmd)}")
+            session.log_sub(f"Executing: {' '.join(described.launch)}")
 
         mode = IsolationMode(isolation_mode)
         session.log_sub(f"Isolation: {mode.value}")
@@ -330,7 +312,7 @@ class SubAgentRunner:
                         session_id=session.session_id,
                         task=task,
                         ticket_id=ticket_id,
-                        env=sdk_env_overlay,
+                        env=launch_env,
                         model=model,
                         timeout_s=timeout_s,
                         artifacts=artifacts,
@@ -361,14 +343,12 @@ class SubAgentRunner:
                     )
                 else:
                     # Legacy subprocess path (Agy and future non-SDK providers).
-                    flags = provider.model_flags(model) if model else []
-                    full_cmd = provider.get_run_command(
-                        cmd + flags,
-                        meta_prompt,
-                    )
+                    # The reported argv IS the executed one — this used to
+                    # re-derive it from materialize_runtime_skills, and matched
+                    # what was reported only by coincidence (HATS-1552).
                     with provider.execution_context(self.project_dir):
                         proc = subprocess.run(
-                            full_cmd,
+                            described.launch,
                             cwd=str(work_dir),
                             env=env,
                             capture_output=True,
@@ -478,132 +458,3 @@ class SubAgentRunner:
             ownership.release_session_pid(registry, session.session_id, os.getpid())
         except Exception as exc:  # noqa: BLE001 — fail-open teardown
             session.log_sys(f"release-on-finish failed: {exc}")
-
-    # ----- HATS-474 helpers -----
-
-    def _run_via_sdk(
-        self,
-        *,
-        result,
-        work_dir: Path,
-        session_id: str,
-        task: str,
-        ticket_id: str,
-        env: dict[str, str],
-        model: str,
-        timeout_s: int,
-    ):
-        """Drive the SDK path for one sub-agent attempt.
-
-        Composes :class:`ClaudeAgentOptions` from the role result and runs
-        the SDK under a wall-clock cap. Never raises — returns an
-        :class:`SdkRunResult` for every terminal path (success, SDK error,
-        timeout) so the caller's finalize logic is uniform.
-        """
-        from .sdk_options import build_first_user_message, build_options
-        from ai_hats.surfaces.claude.sdk_runner import run_claude_sdk_blocking
-
-        ticket_context = self._load_ticket(ticket_id)
-        linked_context = self._load_linked_context(ticket_id)
-
-        options = build_options(
-            result,
-            provider=self.payload.provider,
-            project_dir=self.project_dir,
-            session_id=session_id,
-            work_dir=work_dir,
-            model=model or "",
-            extra_env=env or None,
-        )
-        # HATS-681: PROJECT_STATE (the STATE.md backlog dump) is no longer
-        # injected — it was unused dead weight in every sub-agent run.
-        # HATS-689: LINKED_CONTEXT carries the directly-linked cards (this is
-        # the live Claude channel for that section).
-        initial_message = build_first_user_message(
-            ticket_context=ticket_context,
-            linked_context=linked_context,
-            task=task,
-        )
-        return run_claude_sdk_blocking(
-            options=options,
-            initial_message=initial_message,
-            timeout_s=timeout_s,
-        )
-
-    def _build_sdk_prompt_audit(
-        self,
-        *,
-        artifacts: BuiltArtifacts,
-        task: str,
-        ticket_id: str,
-    ) -> str:
-        """Render a human-readable artifact of what the SDK was actually sent."""
-        from .surfaces.claude.sdk_options import build_first_user_message
-
-        sys_opt = artifacts.sdk_options.get("system_prompt")
-        if isinstance(sys_opt, dict):
-            system_text = sys_opt.get("append", "")
-        else:
-            system_text = sys_opt or ""
-
-        initial_message = build_first_user_message(
-            ticket_context=self._load_ticket(ticket_id),
-            linked_context=self._load_linked_context(ticket_id),
-            task=task,
-        )
-        return (
-            "==== SDK system_prompt (preset=claude_code, append) ====\n"
-            f"{system_text}\n"
-            "\n"
-            "==== SDK first user message ====\n"
-            f"{initial_message}\n"
-        )
-
-    def _build_meta_prompt(self, role_context: str, task: str, ticket_id: str) -> str:
-        """Build the meta-prompt for sub-agent execution."""
-        sections = []
-
-        if role_context:
-            sections.append(role_context)
-
-        # HATS-1479: a surface whose tool picks its own cwd otherwise resolves
-        # the project to whatever absolute path the prompt happens to name.
-        sections.append(
-            "# WORKING_DIRECTORY\n"
-            f"{self.project_dir.resolve().as_posix()}\n\n"
-            "This is the project every path and CLI call below refers to. Run "
-            "each command with this directory as its working directory — `rack` "
-            "resolves its backlog by walking up from where it runs, so a command "
-            "started elsewhere reads and writes a different project."
-        )
-
-        # TICKET_CONTEXT
-        if ticket_id:
-            ticket_context = self._load_ticket(ticket_id)
-            if ticket_context:
-                sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
-
-            # LINKED_CONTEXT (HATS-689)
-            linked_context = self._load_linked_context(ticket_id)
-            if linked_context:
-                sections.append(f"# LINKED_CONTEXT\n{linked_context}")
-
-        # TASK
-        if task:
-            sections.append(f"# TASK\n{task}")
-
-        return "\n\n".join(sections)
-
-    def _load_ticket(self, ticket_id: str) -> str:
-        """Load ticket context from task card (delegates to ``linked_context``)."""
-        from .linked_context import load_ticket
-        from .paths import tasks_dir
-
-        return load_ticket(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)
-
-    def _load_linked_context(self, ticket_id: str) -> str:
-        """Assemble the ``LINKED_CONTEXT`` body for a ticket's direct links."""
-        from .linked_context import load_linked_context
-        from .paths import tasks_dir
-
-        return load_linked_context(tasks_root=tasks_dir(self.project_dir), ticket_id=ticket_id)

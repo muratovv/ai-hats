@@ -18,10 +18,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -64,6 +66,88 @@ def _scrub_redirect_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
+_trace_lock = threading.Lock()
+_in_traced_run = threading.local()
+
+
+@pytest.fixture(autouse=True)
+def _trace_e2e_subprocesses(request, monkeypatch):
+    """Step 1 equivalence harness (HATS-1497): record subprocess spawns to AI_HATS_E2E_TRACE."""
+    trace_path = os.environ.get("AI_HATS_E2E_TRACE")
+    if not trace_path:
+        return
+
+    seq = 0
+
+    def _record(args, cwd, env, rc):
+        nonlocal seq
+        seq += 1
+        argv_clean = [str(a) for a in (args if isinstance(args, (list, tuple)) else [args])]
+        env_delta = {}
+        if env is not None:
+            for k, v in env.items():
+                if os.environ.get(k) != v:
+                    env_delta[k] = str(v)
+        rec = {
+            "nodeid": request.node.nodeid,
+            "seq": seq,
+            "argv": argv_clean,
+            "cwd": str(cwd) if cwd else str(Path.cwd()),
+            "env_delta": env_delta,
+            "returncode": rc,
+        }
+        with _trace_lock:
+            with open(trace_path, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+
+    orig_run = subprocess.run
+
+    def traced_run(*args, **kwargs):
+        _in_traced_run.active = True
+        try:
+            res = orig_run(*args, **kwargs)
+        finally:
+            _in_traced_run.active = False
+        cmd_args = args[0] if args else kwargs.get("args")
+        cwd = kwargs.get("cwd")
+        env = kwargs.get("env")
+        _record(cmd_args, cwd, env, res.returncode)
+        return res
+
+    orig_popen_init = subprocess.Popen.__init__
+
+    def traced_popen_init(self, *args, **kwargs):
+        orig_popen_init(self, *args, **kwargs)
+        if getattr(_in_traced_run, "active", False):
+            return
+        cmd_args = args[0] if args else kwargs.get("args")
+        cwd = kwargs.get("cwd")
+        env = kwargs.get("env")
+        orig_wait = self.wait
+
+        def traced_wait(*wargs, **wkwargs):
+            rc = orig_wait(*wargs, **wkwargs)
+            if not getattr(self, "_traced_recorded", False):
+                self._traced_recorded = True
+                _record(cmd_args, cwd, env, rc)
+            return rc
+
+        self.wait = traced_wait
+        orig_comm = self.communicate
+
+        def traced_comm(*cargs, **ckwargs):
+            res = orig_comm(*cargs, **ckwargs)
+            if not getattr(self, "_traced_recorded", False):
+                self._traced_recorded = True
+                _record(cmd_args, cwd, env, self.returncode)
+            return res
+
+        self.communicate = traced_comm
+
+    monkeypatch.setattr(subprocess, "run", traced_run)
+    monkeypatch.setattr(subprocess.Popen, "__init__", traced_popen_init)
+
+
 # HATS-678 / HATS-771: cap on how many INSTALL-heavy e2e tests (~26 across 21
 # files doing a real ``uv pip install``) may run concurrently under the gate's
 # ``-n8 --dist=loadgroup``. ``_install_heavy_group_map`` round-robins their
@@ -83,7 +167,7 @@ def _install_heavy_group_map(install_heavy_files, k):  # noqa: ANN001, ANN202
 
     Returns ``{file: "install_heavy_<n>"}``. Pure + deterministic (``sorted`` →
     stable order → ``i % k``; no clock/random) so it is unit-testable without
-    pytest internals — see ``tests/e2e/test_install_heavy_sharding.py``. File
+    pytest internals — see ``tests/e2e_harness/test_install_heavy_sharding.py``. File
     granularity (not per-test) keeps every test of an install-heavy file in ONE
     group, so a module-scoped own-build fixture (e.g. ``private_launcher``)
     never rebuilds across workers.
@@ -211,11 +295,7 @@ def requires_claude_auth() -> None:
 
 @pytest.fixture
 def requires_cline_auth() -> None:
-    """Skip if ``cline`` binary missing (HATS-1087).
-
-    Probe: ``cline --version`` exits 0. Mirrors ``requires_claude_auth``;
-    auth-gated paths surface their own detection inside the cline run envelope.
-    """
+    """Skip if ``cline`` binary missing or unauthenticated/unusable (HATS-1087, HATS-1550)."""
     if not shutil.which("cline"):
         pytest.skip("cline binary not found in PATH")
     try:
@@ -229,6 +309,28 @@ def requires_cline_auth() -> None:
         pytest.skip(f"cline --version probe failed: {exc}")
     if cp.returncode != 0:
         pytest.skip(f"cline --version exit {cp.returncode}: {cp.stderr[:200]}")
+
+    try:
+        probe = subprocess.run(
+            ["cline", "--yolo", "--json", "-t", "5", "Reply OK"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.skip(f"cline execution probe failed: {exc}")
+    probe_output = (probe.stdout or "") + "\n" + (probe.stderr or "")
+    if (
+        probe.returncode != 0
+        or 'finishReason":"error"' in probe_output
+        or "Unauthorized" in probe_output
+        or "Insufficient balance" in probe_output
+        or "Please recharge" in probe_output
+        or "re-authenticate" in probe_output
+        or "Authentication failed" in probe_output
+    ):
+        output = probe_output.strip()
+        pytest.skip(f"cline auth/execution probe failed: {output[-300:]}")
 
 
 @pytest.fixture
@@ -311,22 +413,12 @@ def tmp_project(tmp_path: Path, ai_hats_shim: Path):
     from ai_hats.assembler import Assembler
     from ai_hats.models import ProjectConfig
 
+    from _helpers.git import init_repo
     from _helpers.project import Project
 
     project_path = tmp_path / "project"
     project_path.mkdir()
-    import subprocess
-
-    subprocess.run(
-        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
-    )
+    init_repo(project_path, branch="master")
     ProjectConfig(provider="claude", library_paths=[]).save(project_path / PROJECT_CONFIG)
     Assembler(project_path).init()
     return Project(
@@ -437,24 +529,14 @@ def tmp_venv_project(tmp_path: Path, _shared_launcher_venv, repo_root: Path):
     sandboxed launcher (NOT the dev venv binary used by
     :func:`tmp_project`).
     """
+    from _helpers.git import init_repo
     from _helpers.project import Project
     from _helpers.repo_src import build_src
 
     launcher, shared_venv = _shared_launcher_venv
     project_path = tmp_path / "project"
     project_path.mkdir()
-    import subprocess
-
-    subprocess.run(
-        ["git", "init", "-b", "master"], cwd=str(project_path), check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"], cwd=str(project_path), check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_path), check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init", "--allow-empty"], cwd=str(project_path), check=True
-    )
+    init_repo(project_path, branch="master")
     return Project(
         path=project_path,
         ai_hats_binary=launcher,
@@ -516,3 +598,9 @@ def shared_launcher(_shared_launcher_venv, repo_root: Path, tmp_path_factory):
         user_home=tmp_path_factory.mktemp("shared-launcher-user-home"),
     )
     return launcher, env, shared_venv
+
+
+@pytest.fixture
+def installed_launcher(shared_launcher):
+    """Delegate to session-scoped shared_launcher (HATS-1497). Returns (launcher, env, shared_venv)."""
+    return shared_launcher

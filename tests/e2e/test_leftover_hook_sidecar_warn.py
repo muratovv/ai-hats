@@ -1,18 +1,12 @@
-"""E2E: ``ai-hats self update`` warns about a leftover hook-bearing
-``metadata.yaml`` (HATS-815, detection-only).
+"""e2e (HATS-815)
 
-A project-local skill under ``libraries/skills/`` still ships a
-``metadata.yaml`` carrying ``git_hooks`` after the 814 frontmatter cutover. It
-is NOT referenced by the active role, so the 814 compose-guard never reads it —
-exactly the gap the proactive bump diagnostic closes. ``self update`` must
-SUCCEED (the orphan is not composed) and emit the actionable migrate-by-hand
-WARN on stderr, naming the skill.
-
-Per ``dev_rule_e2e_gate``: real ``ai-hats`` binary, real subprocess. The e2e
-gate is not strictly triggered (no ``cli/`` change — the detector lives in
-``assembler._run_diagnostics``), but the user-facing contract is "warns on
-``self update``", so it is proven end-to-end here.
-"""
+flow:   a developer running any ai-hats command when leftover hook sidecar files exist
+cmds:
+    ai-hats config status
+expect: CLI emits warning for leftover hook sidecar files without failing command
+        execution
+why: without sidecar warnings, orphaned sidecar files accumulate unnoticed in project
+     directories"""
 
 from __future__ import annotations
 

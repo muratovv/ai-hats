@@ -359,3 +359,22 @@ def test_base_surface_reports_no_leaks(tmp_path: Path) -> None:
     home = tmp_path / "home"
     _seed_global_leak(home)
     assert AgyProvider().leaked_user_global_project_hooks(home) == []
+
+
+def test_leak_detector_catches_session_tree_leaked_hooks(tmp_path: Path) -> None:
+    """R2 #1, D1 (HATS-1480): Leak detector catches hook commands pointing at
+    session tree plugin/skills/<skill>/hooks/ paths."""
+    home = tmp_path / "home"
+    leaked_cmd = "$CLAUDE_PROJECT_DIR/.agent/ai-hats/sessions/20260804-123456/plugin/skills/safety-guard/hooks/wt_gate.py"
+    _seed_global_leak(
+        home,
+        extra=[
+            {
+                "matcher": "Edit",
+                "_ai_hats_managed": "ai-hats:safety-guard",
+                "hooks": [{"type": "command", "command": leaked_cmd}],
+            }
+        ],
+    )
+    res = ClaudeProvider().leaked_user_global_project_hooks(home)
+    assert leaked_cmd in res

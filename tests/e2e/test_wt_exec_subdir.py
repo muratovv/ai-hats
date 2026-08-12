@@ -1,10 +1,13 @@
-"""e2e (HATS-1205): ``ai-hats wt exec <branch> -C <subdir>`` reaches into a
-worktree subdirectory from OUTSIDE the worktree — the S2 scenario, where cwd
-carries no signal.
+"""e2e (HATS-1205)
 
-Fail-under-revert: drop the ``-C`` plumbing in ``wt_exec`` and the inner
-``git rev-parse --show-prefix`` reports ``""`` (the worktree root), not ``sub/``.
-"""
+flow:   a developer executing commands in a worktree subdirectory from outside the
+        worktree
+cmds:
+    ai-hats wt exec task/hats-1 -C sub -- git rev-parse --show-prefix
+expect: command executes within the specified relative subdirectory of the target
+        worktree
+why:    -C flag in wt exec enables reaching into worktree subdirectories from main
+        checkout"""
 
 from __future__ import annotations
 

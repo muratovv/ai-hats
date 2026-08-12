@@ -10,7 +10,31 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in rule delivery (`delivery: always_on` in `metadata.yaml`)** (HATS-1511). Allow rules from any library layer (including user-global and project-local) to request full body delivery into system prompt `## RULES` via `delivery: always_on` in `metadata.yaml`.
+
+- **User-global library paths (`~/.ai-hats/library_paths.yaml`)** (HATS-1508). Support user-level external library directories (`paths: [<dir>, ...]`) inside `build_library_paths` without modifying project `ai-hats.yaml` or using symlinks.
+
+- **Runtime role spec composition (`-r "maintainer + leader"` / `-r "maintainer - trait-base"`)** (HATS-1456). Support ad-hoc runtime expressions in `-r` / `--role` to add or remove traits, rules, or skills for a single session without editing `ai-hats.yaml`. Evaluates as an ephemeral third overlay layer (`[global, project, runtime]`).
+
+- **`leader` and `worker` traits for paired sessions** (HATS-1491). Two `usage/` traits that split one card between two live sessions: the leader owns the plan and a two-contour review (completeness first, then discipline) and writes no code; the worker owns every mechanical step, sleeps on `ai-hats wait --until execute --until done`, and hands work back with the artifacts that settle each claim. Mix onto any base role — `ai-hats -r "maintainer + leader"`, `ai-hats -p agy -r "maintainer + worker"`. Until now the `leader` / `worker` examples in the docs named components that did not exist, so a command copied from them exited 2.
+
+### Fixed
+
+- **A hung predicate no longer makes `ai-hats wait --timeout` unreachable** (HATS-1598). The probe ran through `subprocess.run` with no `timeout=`, and the deadline was read only after it returned, so `ai-hats wait --until-cmd 'ssh box test -f /out/done' --timeout 60` waited forever on a dead connection — exit 124 was unreachable for every hung predicate. A probe is now bounded by whichever is nearer: the wait's own deadline (exit 124) or the new `--probe-timeout SEC` (default 30, exit 2), which also covers `--timeout 0`, where there is no deadline to bound a probe with. An expired probe is killed by process group, so a compound predicate's children do not outlive it. The same hole in the agy hook dispatcher is closed with a 60s per-hook budget (`AI_HATS_AGY_HOOK_TIMEOUT_S`): it runs on every tool call, so one hung `PreToolUse` hook wedged the whole session; a killed hook returns 1 — `BROKE` per ADR-0020 D2, not a refusal.
+
+- **`--dry-run` and the launch record describe the sub-agent launch that actually happens** (HATS-1552). `ai-hats agent --dry-run` built the meta-prompt with its own function, so the reported argv for cline and agy dropped `WORKING_DIRECTORY` and both ticket sections — and for a CLI surface the whole prompt is one argv token. `role_materialization.json` reported `env_keys: []` while the sub-agent received six variables (`AI_HATS_SESSION_ID` among them), reported `artifacts.extra_env`, which the child never received, and reported `checks: []` for every sub-agent ever launched, leaving `session-reviewer` blind to whether its gates were armed. The runner also re-derived its command at spawn time and matched its own record by coincidence, and the claude engine sent the SDK a one-line `Ticket: <id>` while the saved audit rendered the whole card. Prompt, argv, env and SDK options now each come from one expression shared by the runner and the report.
+
+- **`--dry-run` under cline no longer binds a socket** (HATS-1554). `ClineProvider.get_env` allocated the hub port by binding `127.0.0.1:0`, and it sits on the report path, so a dry-run performed a network side effect invisible to the materialization port and then named a port the launch would never use. `get_env` is pure; the bind moved to the new launch-only `Provider.claim_launch_env` hook (empty by default, so other surfaces are unaffected).
+
+- **Multi-root, hyphenated, and structural dangling rule pointer detection** (HATS-1514). Fix four gaps in `find_dangling_rule_pointers`: support hyphenated rule names in prose regex, scan all library roots (`build_library_paths()`), validate `composition.rules` in `config.yaml`, and recognize HATS-1511 `delivery: always_on` opt-ins.
+
+- **Silent drop of composed rules and empty rule bodies** (HATS-1511). Log explicit warnings when a rule in composition is not delivered to the prompt or when an always-on/opt-in rule has an empty body, closing previously silent drop paths.
+
 ### Changed — BREAKING
+
+- **Inverted rule-delivery default: every composed rule body is delivered in full** (HATS-1515). Every rule in `composition.rules` delivers its `rule.md` body into system prompt `## RULES`. Removed `ALWAYS_ON_RULES` and `SUMMARIZED_IN_INJECTION` sets; `rule-delivery-gate` checks that all rule pointers name existing rules in the library.
 
 - **`AI_HATS_DIR` + foreign `AI_HATS_PROJECT_DIR` pin raises exit code 1 (`foreign_project_pin`)** (HATS-1471).
   When `AI_HATS_DIR` is set to a sandbox directory and `AI_HATS_PROJECT_DIR` is set to a foreign project path, `rack` commands and `ai-hats wait` now refuse execution with exit code 1 and typed error `foreign_project_pin` detailing both paths and `ai_hats_dir`. Previously, `rack` ignored `AI_HATS_DIR` on CLI resolution and wrote to the live project root.
@@ -26,6 +50,12 @@ since the latest tag lives under **Unreleased** until the next release.
   dropped silently — the customization simply stops applying, with no error.**
 
 ### Fixed
+
+- **`LibraryResolver.list_components` now discovers symlinked components and namespaces** (HATS-1505). Replaced `Path.rglob` with `os.walk(followlinks=True)` guarded by realpath traversal tracking, allowing symlinked trait, skill, rule, and role directories to be listed properly and preventing `RoleSpecError` during runtime composition.
+
+- **Symlinked library components no longer break worktree teardown** (HATS-1494). ``resolve_hook_script`` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. ``~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills``). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
+
+- **Deferred rule removals in overlays and customizations** (HATS-1456). Rule removals (`remove: rules: [name]`) in `customizations` and overlays now resolve against the full composed set (mirroring skill removals), allowing rules brought by traits to be removed cleanly.
 
 - **An estimated token count no longer reaches `metrics.json` looking measured**
   (HATS-1433). The agy recovery ladder (HATS-1427) falls back from the real

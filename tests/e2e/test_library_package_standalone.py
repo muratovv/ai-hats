@@ -1,13 +1,11 @@
-"""E2E: the ai-hats-library data package installs and resolves ALONE (HATS-876/T18).
+"""e2e (HATS-971)
 
-Real ``uv build`` + install of ONLY ``ai-hats-library`` into a bare venv — no
-ai-hats, no other workspace member — then probes the data-only-wheel contract
-(review P1 #14): ``files("ai_hats_library")`` is a real dir with
-``core/``+``usage/``+``hooks/`` and ``as_file`` round-trips a ``SKILL.md`` read.
-Proves the visibility win (drop-in for a non-ai-hats consumer) and that the
-package is self-contained (zero deps). Fail-under-revert: if the wheel stops
-shipping the layer data, the probe's ``dir`` checks go red.
-"""
+flow:   a developer importing ai_hats_library sub-package independently
+cmds:
+    python -c "import ai_hats_library"
+expect: library package imports cleanly without requiring full ai_hats core dependencies
+why: without standalone library packaging, third-party extensions cannot consume library
+     assets alone"""
 
 from __future__ import annotations
 

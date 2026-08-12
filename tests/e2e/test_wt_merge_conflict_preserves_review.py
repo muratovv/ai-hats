@@ -1,23 +1,13 @@
-"""End-to-end coverage for HATS-481 L4' — `transition done` must NOT
-mark a task DONE when the merge fails (e.g. merge conflict).
+"""e2e (HATS-481)
 
-Per ``dev_rule_e2e_gate`` (and the precedent of
-``tests/e2e/test_wt_merge_drift.py``): user-visible behavior of
-``rack transition <ID> done`` requires a real-binary e2e test.
-
-The bug pre-HATS-481: `_teardown_worktree` caught ALL exceptions at
-WARNING and let `transition` proceed to `_save_task`, persisting the
-new DONE state despite the merge failure. Same class as the GitHub
-Merge Queue Apr-2026 incident — work silently dropped, state lies.
-
-**Fail-under-revert** (mandatory): replace the new fail-loud block in
-`_teardown_worktree` with the pre-HATS-481 `except Exception:
-logger.warning(...)` swallow. With L4' reverted, step (7) below
-observes ``state == "done"`` instead of ``"review"`` and the assertion
-fails. Verified locally before commit.
-"""
+flow:   a developer finalizing a task when a git merge conflict occurs
+cmds:
+    rack transition TST-001 done
+expect: task state remains in review and worktree branch is preserved for resolution
+why:    tasks must not transition to done when git merge fails due to conflicts"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -43,16 +33,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _task_state(project: Path, task_id: str) -> str:

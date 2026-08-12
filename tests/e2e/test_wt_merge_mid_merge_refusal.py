@@ -1,28 +1,17 @@
-"""End-to-end coverage for ``ai-hats wt merge`` mid-merge guard
-(HATS-587 / F4).
+"""e2e (HATS-587, HATS-602)
 
-If the main repo already has an unfinished merge in progress (a foreign
-``MERGE_HEAD`` — a peer's conflicting merge left mid-resolution, an IDE
-"merge branch" the operator never finished, a prior aborted run), the
-internal ``git merge --no-ff`` exits 128. Pre-587 that surfaced as a raw
-``CalledProcessError`` traceback. The guard now detects the pre-existing
-``MERGE_HEAD`` and refuses with an actionable recipe, leaving the worktree
-and branch untouched.
-
-Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py`` +
-``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` requires a real-launcher + real-binary e2e.
-CliRunner / pipeline tests do NOT satisfy the gate.
-
-**Fail-under-revert**: remove the ``_refuse_if_mid_merge()`` call from
-``_fast_forward_merge`` / ``_squash_merge`` (HATS-602 moved the guard there
-from ``WorktreeManager.merge``, inside the base-branch lock) → step (5)
-below crashes with a raw exit-128 ``CalledProcessError`` (or completes the
-foreign merge), and the no-traceback / refusal assertions fail.
-
-Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
+flow:   a developer merging a worktree branch when main repository is in a mid-merge
+        state
+cmds:
+    # when main repository has MERGE_HEAD set from an unfinished merge
+    ai-hats wt merge task/midmerge-probe
+expect: merge is refused with instructions to abort or complete the in-progress merge
+why:    wt merge must refuse execution when main repository is mid-merge to avoid
+        corrupting index
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -48,16 +37,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

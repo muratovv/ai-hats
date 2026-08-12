@@ -1,26 +1,16 @@
-"""E2E: an interrupted ``self update`` never bricks the tool (HATS-648 / R1).
+"""e2e (HATS-648)
 
-Value under test: ``kill`` / Ctrl-C mid-``self update`` → the next launch still
-works, ``versions/current`` is always valid, and incomplete residue does not
-leak. Two deterministic post-crash states are exercised with a real subprocess
-+ real pip + real launcher (per ``dev_rule_e2e_gate``) — no flaky SIGKILL race:
-
-  1. **sentinel-on-success** — a real managed install writes the ``.complete``
-     sentinel into ``versions/<sha>/``. The sentinel is the completeness
-     authority ``read_current_sha`` gates on, written only after install+verify.
-  2. **no-leak sweep** — an aged incomplete ``versions/<sha>/`` (the residue a
-     crashed install leaves: a dir without ``.complete``) is reclaimed by the
-     next real ``ai-hats`` invocation, while a *recent* incomplete dir (a
-     possible install in flight), the complete previous version, and
-     ``current`` are all left untouched.
-
-Fail-under-revert:
-  - reverting the sentinel write → test 1's ``.complete`` assertion fails;
-  - reverting the recovery sweep → test 2's aged-residue ``not exists``
-    assertion fails (the leak persists).
-"""
+flow: a developer running self update when update process encounters mid-flight
+      interrupts
+cmds:
+    ai-hats self update
+expect: backup directory allows atomicity rollback ensuring project configuration is not
+        corrupted
+why: without crash safety rollbacks, interrupted updates leave project configurations in
+     broken half-applied states"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -57,10 +47,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
 
 
 def _head_sha(repo: Path) -> str:
@@ -153,3 +139,7 @@ def test_e2e_self_update_reclaims_incomplete_residue(tmp_path: Path) -> None:
     assert (versions / sha_a / ".complete").is_file(), "complete shaA was touched"
     assert (versions / "current").read_text().strip() == sha_b
     assert (versions / sha_b / ".complete").is_file()
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

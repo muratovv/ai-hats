@@ -1,29 +1,18 @@
-"""End-to-end coverage for ``ai-hats wt merge`` on a state file whose
-``original_branch`` is ``null`` (HATS-714).
+"""e2e (HATS-714)
 
-A worktree state JSON can lose ``original_branch`` — corrupt write,
-hand-edit, or a pre-versioned/legacy state file. ``_load_by_key`` then
-sets ``_original_branch = data.get("original_branch")`` → ``None``. Every
-guard in ``WorktreeManager.merge`` is gated on ``_original_branch is not
-None``, so ``None`` falls straight through to ``_fast_forward_merge`` →
-``git rev-parse None`` → an opaque ``TypeError`` traceback (worktree.py)
-instead of an actionable refusal — the failure shape HATS-479/482 worked
-to eliminate.
-
-Per ``dev_rule_e2e_gate``: change to ``src/ai_hats/cli/worktree.py``
-requires a real-launcher + real-binary e2e test. CliRunner / pipeline
-tests do NOT satisfy the gate.
-
-**Fail-under-revert**: remove the ``WorktreeStateIncompleteError`` guard at
-the top of ``WorktreeManager.merge`` → ``wt merge`` reverts to dumping a
-``TypeError`` traceback. The ``"Traceback" not in stderr`` /
-``"incomplete worktree state" in stdout`` assertions then fail. The test
-exercises the new typed-refusal behaviour, not a pre-existing guard.
-
-Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
+flow:   a developer merging a worktree with corrupt or null original_branch state
+        metadata
+cmds:
+    # when worktree state JSON has null original_branch
+    ai-hats wt merge task/null-base-probe
+expect: merge is refused with a typed error naming missing original_branch field without
+        traceback
+why:    incomplete worktree state metadata must produce a clean typed error instead of
+        TypeError
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import subprocess
@@ -50,16 +39,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

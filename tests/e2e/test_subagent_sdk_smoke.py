@@ -1,28 +1,13 @@
-"""E2E: HATS-474 Phase 2 — SubAgentRunner runs through ``claude_agent_sdk``.
+"""e2e (HATS-474)
 
-Real-SDK smoke test that satisfies ``dev_rule_e2e_gate`` for the Phase 2
-cutover: invokes :meth:`SubAgentRunner.run` end-to-end against the real
-``claude`` binary the SDK bundles, then verifies the new SDK-specific
-contract on the resulting session:
-
-* ``transcript.txt`` is non-empty (agent produced something)
-* ``metrics.json`` contains ``claude_session_id`` (captured from
-  ``ResultMessage.session_id`` — proves the SDK path executed)
-* ``metrics.json`` contains ``total_cost_usd`` (proves the SDK
-  surfaced cost telemetry; legacy subprocess path never could)
-* ``metrics.json`` records ``num_turns`` and ``stop_reason``
-
-Cost-capped via:
-
-* ``model = "claude-haiku-4-5"`` — cheapest tier
-* ``max_budget_usd = 0.10`` — hard SDK cap per call
-* a one-line prompt; expected ≤ ~$0.005 per run
-
-Fail-under-revert (dev_rule_e2e_gate §4): the SDK path lives in
-``runtime._run_via_sdk`` shipped in HATS-474 Phase 2. Reverting that
-commit drops the agent back to subprocess(``claude -p``); ``metrics
-.json`` no longer carries ``claude_session_id`` or ``total_cost_usd``
-and these assertions fail.
+flow:   an agent spawning sub-agent execution via SubAgentRunner SDK integration
+cmds:
+    # sub-agent execution via SubAgentRunner
+    ai-hats agent probe --task "Reply PONG"
+expect: sub-agent runs through Claude SDK, recording cost telemetry and session ID in
+        metrics.json
+why:    without SDK integration, sub-agent execution relies on legacy subprocesses and
+        loses cost telemetry
 """
 
 from __future__ import annotations

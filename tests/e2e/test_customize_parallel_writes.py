@@ -1,11 +1,12 @@
-"""HATS-526 — N parallel ``config customize`` calls lose no additions.
+"""e2e (HATS-526)
 
-The command's read-modify-write had no mutual exclusion — last writer wins,
-earlier additions silently vanished (plan-stage PoC kept 1 of 3);
-``file_lock`` around the RMW serializes them. Real-binary pattern mirrors
-``test_task_description_file.py``. dev_rule_e2e_gate: this is the gated test;
-fail-under-revert — drop the ``file_lock`` wrapping in ``customize`` and
-the all-N assertions fail.
+flow:   multiple developer processes concurrently customizing role configurations
+cmds:
+    ai-hats config customize role-1 --add-trait trait-1
+expect: file lock serializes configuration updates so no concurrent customizations are
+        lost
+why:    without file locking during config customize, concurrent processes overwrite
+        each other's additions
 """
 
 from __future__ import annotations

@@ -1,26 +1,17 @@
-"""End-to-end coverage for ``ai-hats wt merge`` when the worktree branch is
-ALREADY merged into its base and the main checkout HEAD has wandered to a
-foreign branch (HATS-596).
+"""e2e (HATS-596)
 
-Merge-surface twin of ``test_task_transition_done_already_merged_head_wandered``
-and the complement of ``test_wt_merge_head_wandered.py`` (HATS-533): there the
-work is NOT merged and a wandered HEAD MUST refuse (wrong-branch-merge risk);
-here the work IS merged into base, so no ``git merge`` is needed and the HEAD
-position is irrelevant — ``wt merge`` MUST succeed via the checkout-independent
-already-merged short-circuit.
-
-Per ``dev_rule_e2e_gate``: behaviour reachable through
-``src/ai_hats/cli/worktree.py`` needs a real-launcher + real-binary e2e test.
-
-**Fail-under-revert**: remove the HATS-596 short-circuit in
-``WorktreeManager.merge`` → the HATS-533 HEAD-mismatch guard fires → ``wt
-merge`` exits 1 with "base branch mismatch", and the exit-0 / branch-deleted
-assertions below fail.
-
-Modelled on ``tests/e2e/test_wt_merge_head_wandered.py``.
+flow:   a developer merging an already-merged worktree branch when main repository HEAD
+        has moved
+cmds:
+    # when worktree branch is already merged and main HEAD is on another branch
+    ai-hats wt merge task/already-probe
+expect: merge completes cleanly via short-circuit without attempting re-merge or
+        refusing
+why:    already-merged worktrees must clean up without requiring main HEAD to match base
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -43,16 +34,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

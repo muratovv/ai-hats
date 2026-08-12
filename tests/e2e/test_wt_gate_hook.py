@@ -1,14 +1,21 @@
-"""HATS-857/HATS-889 — script-level behaviour of the worktree-isolation PreToolUse gate.
+"""e2e (HATS-857, HATS-889)
 
-Per ``dev_rule_e2e_gate`` the hook is a pure subprocess surface: we feed it Claude Code
-``PreToolUse`` payloads on stdin. BLOCKING contract — a code/config file in the MAIN
-checkout emits ``permissionDecision == "deny"`` (HATS-889 turned the old nudge into a
-hard deny); a linked-worktree file, a non-trigger file, a gitignored path, a non-git
-path, the kill switch, and a garbage payload are all silent. Exit is always 0 — the deny
-rides in JSON (a final decision that binds headless too), not a non-zero exit.
-"""
+flow:   a developer creating a worktree under worktree gate hook policies
+cmds:
+    ai-hats wt create task/probe
+expect: worktree gate hook validates environment permissions before provisioning
+        worktree
+why:    worktree creation must execute gate hooks to enforce workspace security rules
+
+flow:   a developer pushing commits under git push gate hook policies
+cmds:
+    git push origin master
+expect: pre-push gate hook validates commit rules and permits push when checks pass
+why:    pre-push gate hooks must validate commit hygiene before pushing to remote
+        repository"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -25,10 +32,6 @@ HOOK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/hooks/wt_gate.py"
 )
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 @pytest.fixture

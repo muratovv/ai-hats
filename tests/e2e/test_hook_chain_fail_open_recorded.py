@@ -1,14 +1,13 @@
-"""HATS-1373 — a hook that stops parsing its payload must still say so.
+"""e2e (HATS-1373)
 
-Every PreToolUse hook fails open on an unreadable payload, which is correct: a
-guard that cannot read its input must not block the user. But it used to do so
-in complete silence, and a gate that always allows is indistinguishable from a
-gate with nothing to block — the shape the HATS-1252 judge verdict §7 named as
-why the epic's other defects reached production.
-
-Driven over the COMPOSED chain rather than one script (``dev_rule_e2e_gate``):
-these hooks are edited as a family, and a per-script test cannot show that the
-family as a whole still fails open.
+flow:   an agent triggering tool execution with unparsable or malformed hook payloads
+cmds:
+    # agent triggering tool execution when hook receives unparsable payload
+    git push origin master
+expect: tool execution passes fail-open without blocking the call and records event on
+        stderr
+why:    unparsable hook payloads must fail open so broken hooks do not silently block
+        workflow
 """
 
 from __future__ import annotations

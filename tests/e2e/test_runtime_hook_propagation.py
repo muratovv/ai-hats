@@ -1,27 +1,12 @@
-"""E2E (HATS-601): skill-declared runtime hooks propagate end-to-end.
+"""e2e (HATS-601)
 
-A composed skill declaring ``runtime_hooks:`` (PreToolUse + PostToolUse) is,
-after a real ``ai-hats self init``:
-
-A. wired into ``.claude/settings.json`` — one managed entry per
-   ``(event, skill, matcher)``, tagged ``ai-hats:<skill>:<event>:<matcher>``,
-   under the correct event, pointing at the materialized script;
-B. materialized to ``<sid>/plugin/skills/<skill>/hooks/<basename>.sh``,
-   executable;
-C. functional — piping the exact ``tool_input`` JSON shape Claude Code feeds a
-   hook into the materialized script yields the contracted exit code (2 on the
-   sentinel, 0 otherwise). This is the "пробрасывается как надо" guarantee up
-   to the Claude-Code contract boundary; we do NOT launch a real ``claude``.
-
-Fail-under-revert:
-  * drop the provider wiring (slice 2) → settings.json has no managed entry;
-  * drop the materialize call (slice 1) → script missing → piping into it
-    fails with exit 127 instead of the contracted 0/2.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. The fixture library
-lives under ``tests/fixtures/runtime_hook_lib`` and is copied into the
-project's auto-searched ``<project>/libraries/`` before init.
+flow:   a developer initializing a project with a role that declares skill runtime hooks
+cmds:
+    ai-hats self init -p claude -r e2e-rthook-role --no-wizard
+expect: runtime hooks are wired into settings.json and materialized executable scripts
+        return correct codes
+why:    without end-to-end hook propagation, skill runtime hooks are dropped during
+        session initialization
 """
 
 from __future__ import annotations
@@ -73,24 +58,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session-scoped shared venv (HATS-582 pattern).
-
-    Mirrors ``test_pretooluse_hook_materialization.installed_launcher``: the
-    test only ``self init``s a fresh project and reads it back, so it reuses
-    the shared venv. Layer two hygiene knobs on a COPY of the neutral env:
-    pop ``PYTHONPATH`` (``wt exec`` sets ``PYTHONPATH=src`` which shadows the
-    installed package that carries ``library``) and isolate ``HOME`` (so the
-    dev user's ``~/.ai-hats/`` customizations do not bleed into composition).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("rthook-home"))
-    return launcher, env, shared_venv
 
 
 def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:

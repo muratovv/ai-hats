@@ -1,29 +1,18 @@
-"""End-to-end coverage for ``rack transition <ID> done`` when the
-task branch is ALREADY merged into its base and the main checkout HEAD has
-wandered to a foreign branch (HATS-596).
+"""e2e (HATS-533, HATS-593, HATS-596, HATS-1263)
 
-Complement of ``test_task_transition_done_head_wandered.py`` (HATS-533):
-there the work is NOT merged and a wandered HEAD MUST refuse (wrong-branch
-merge risk). Here the work IS merged into base, so the main-repo HEAD
-position is irrelevant — finalize MUST succeed via the checkout-independent
-already-merged short-circuit instead of the false "base branch mismatch".
-
-This is the exact shape the supervisor hit during the HATS-593 finalize:
-the work was fully merged into master AND pushed, but the main checkout sat
-on a concurrent feature branch with uncommitted WIP, and ``transition done``
-refused with a false mid-merge / un-merged hint.
-
-**Fail-under-revert**: remove the HATS-596 short-circuit in
-``Worktree.merge()`` → the HATS-533 HEAD-mismatch guard fires →
-``transition done`` exits 1 with "base branch mismatch", and the exit-0 /
-``state: done`` assertions below fail.
-
-Modelled on ``tests/e2e/test_task_transition_done_head_wandered.py``. Driven
-through the ``rack`` CLI (HATS-1263); ``self init`` stays on the ``ai-hats``
-launcher.
+flow:   a developer finalizing a task whose branch is already merged into base while
+        main repository HEAD has moved to another branch
+cmds:
+    # when task branch is merged into base and main HEAD is on another branch
+    rack transition TST-001 done
+expect: transition to done succeeds immediately via short-circuit without attempting
+        to re-merge or complaining about main HEAD position
+why:    already-merged task branches must finalize cleanly even if the main checkout
+        has moved to a different working branch
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -46,16 +35,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

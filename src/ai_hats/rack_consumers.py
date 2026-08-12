@@ -1,33 +1,225 @@
-"""Consumer add-ons for the rack kernel — the seam HATS-1141 fills.
+"""The carrier side of the binding channel for the rack (``composition.apps.rack``).
 
-This module hosted ``HookRunnerExtension``, the executor for the
-``lifecycle_hooks`` channel retired in HATS-1147 (ADR-0019 D8).
+Successor of the ``lifecycle_hooks`` executor retired in HATS-1147 (ADR-0019
+D8): a binding declared by a trait or role fires on the FSM edge it names, in
+the lock, before the single persist.
 
-The pack is now EMPTY BY DESIGN, not deleted. ``rack_cli_provider`` already
-passes it to every kernel it builds, so HATS-1141 fills one function body
-instead of also having to remember the subscription — and an unsubscribed
-check runner is a gate that never fires, the exact hole this retirement closes.
-"""  # comment-length: allow — the emptiness is load-bearing; deleting it is the failure mode
+HATS-1541 (ADR-0019 D11) moved the *decisions* out. What ``edge:`` means, which
+of the carried rows this instance's topology has an edge for, and what the
+subscriptions are is now ``ai_hats_rack.checks``; what stays here is what only
+the integrator can do — compose the role, resolve the script
+(:mod:`ai_hats.check_resolve`) and spawn the process, which the rack may not
+(``subprocess`` is forbidden in it by an AST import pin).
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, Sequence
 
-from ai_hats_rack.fsm import Topology
+from ai_hats_core import ResolvedCheck
+from ai_hats_core.deadline import Deadline
+from ai_hats_rack.checks import (
+    CHECK_PRIORITY,
+    EDGE_CHECK_TIMEOUT_S,
+    CheckDeclaration,
+    CheckOutcome,
+    CheckPortFactory,
+    CheckRequest,
+    check_subscriber,
+)
+from ai_hats_rack.definition import BacklogDefinition
+from ai_hats_rack.dispatch import AbortOperation
+
+from .check_points import check_log_token
+from .check_resolve import CheckResolutionError, resolve_carried_checks
+from .hook_exec import HookRun, HookVerdict, run_hook
+from .libraries.models import CheckBindingError
+
+
+class AiHatsCheckPort:
+    """``ai_hats_rack.checks.CheckPort``: where rows come from, and who runs one.
+
+    The rack holds the deadline (``LOCK_TIMEOUT`` is its constant) and ships the
+    budget in the request, so the two sides cannot keep constants that drift.
+    """
+
+    #: The app key this integration collects. Named HERE, by the module that
+    #: integrates the rack — the composition core knows no application's name.
+    APP = "rack"
+
+    def __init__(
+        self,
+        project_dir: Path,
+        *,
+        catalog: Path,
+        resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
+    ) -> None:
+        self.project_dir = project_dir
+        # The catalog of the backlog being gated, not the project's tasks dir:
+        # a sibling's check log belongs under the sibling, and the gate reads
+        # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
+        self._catalog = catalog
+        self._resolve = resolve if resolve is not None else self._resolve_carried
+        self._worktrees: dict[str, Path | None] = {}
+
+    def check_declarations(self) -> Sequence[CheckDeclaration]:
+        """Every carried row, already deduped, provenance-tagged and rooted.
+
+        Resolution failures become this channel's own typed refusal — a
+        traceback out of an in-lock subscriber is a defect, not a message.
+        """
+        try:
+            resolved = self._resolve()
+        except (CheckBindingError, CheckResolutionError, OSError) as exc:
+            raise AbortOperation(f"checks: {exc}") from exc
+        return tuple(_declaration(check) for check in resolved)
+
+    def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
+        return resolve_carried_checks(self.project_dir, self.APP)
+
+    def run_check(self, request: CheckRequest) -> CheckOutcome:
+        check: ResolvedCheck = request.declaration.handle
+        run = run_hook(
+            check.script_path,
+            point=request.event,
+            budget=request.timeout,
+            # The rack forbids itself a core dependency, so it ships a number and
+            # not a deadline; minting here still shares one ceiling across the
+            # checks of one transition. Moving t0 to the lock: follow-up.
+            deadline=Deadline.without_lock(request.timeout, why="rack task lock (shipped)"),
+            project_dir=self.project_dir,
+            force=request.force,
+            task_id=request.task_id,
+            worktree_path=self._worktree_path(request.task_id),
+            tasks_dir=self._catalog,
+            log_path=self._log_path(request.task_id, check, request.event),
+        )
+        return CheckOutcome(
+            ok=run.ok,
+            reason=_refusal(check, run),
+            downgradable=run.downgradable,
+        )
+
+    def _worktree_path(self, task_id: str) -> Path | None:
+        """The task's live worktree, resolved ONCE for every binding on the edge.
+
+        HATS-1540 R2: before this, each gate re-derived
+        ``<ai_hats_dir>/sessions/worktrees/task-<id>.json`` and parsed the JSON
+        by hand — three spellings of one lookup, and a gate that got it wrong
+        judged the wrong tree. A pure read (``peek_worktree_path``), because a
+        refused transition must leave lifecycle state exactly as it found it.
+        The memo keeps that "once" now that the rack calls back per row.
+        """  # comment-length: allow — why it is cached is the HATS-1540 contract
+        if task_id not in self._worktrees:
+            self._worktrees[task_id] = self._lookup_worktree(task_id)
+        return self._worktrees[task_id]
+
+    def _lookup_worktree(self, task_id: str) -> Path | None:
+        """The read itself — memoized by the caller, so it takes its filelock once."""
+        from ai_hats_wt import WorktreeManager
+
+        from .paths import worktrees_dir
+
+        try:
+            path = WorktreeManager.peek_worktree_path(
+                self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
+            )
+        except (OSError, ValueError) as exc:
+            # "Cannot tell" is not "no worktree". Handing a gate an absent
+            # variable here reads to it as "this card brings no commits, nothing
+            # to gate" — the wave-through the channel exists to remove.
+            raise AbortOperation(
+                f"checks: the worktree of {task_id} could not be resolved "
+                f"({type(exc).__name__}): {exc} — refusing rather than gating no tree"
+            ) from exc
+        return path
+
+    def _log_path(self, task_id: str, check: ResolvedCheck, event: str) -> Path:
+        """R3.4. The dot-component keeps the log out of the document registry, so
+        a check's output never gets pinned into ``rack context``.
+
+        One file per (task, point, binding). ``run_hook`` truncates the log it is
+        handed, so a name built from the point alone let the second binding on an
+        edge wipe the first one's file — and ``_note_truncation`` went on
+        pointing the first one's reason at it (HATS-1137). The discriminator is
+        the dedup identity ``check_points.resolve_checks`` keys on, so a retry
+        of the same edge still lands on that binding's own previous log.
+        """  # comment-length: allow — the collision recurred once already
+        name = f"{event.replace(':', '-') or 'event'}~{check_log_token(check)}.log"
+        return self._catalog / task_id / ".checks" / name
+
+
+def _declaration(check: ResolvedCheck) -> CheckDeclaration:
+    """One resolved row as the rack sees it: a point, a policy, a label, a handle.
+
+    ``handle`` is the ``ResolvedCheck`` itself and travels back untouched — the
+    rack never opens it, which is what keeps ``{skill, script, script_path}``
+    out of a package that must not know them.
+    """
+    return CheckDeclaration(
+        path=check.path,
+        at=check.at,
+        cargo=check.cargo,
+        on_error=check.on_error,
+        label=_binding(check),
+        handle=check,
+    )
+
+
+def _binding(check: ResolvedCheck) -> str:
+    return f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
+
+
+def _refusal(check: ResolvedCheck, run: HookRun) -> str:
+    """A refusal that spoke stands alone — R3.3 wants the child's tail verbatim
+    in ``--json``. Everything else is the substrate failing, so it is named."""
+    if run.ok:
+        return ""
+    if run.verdict is HookVerdict.REFUSE:
+        return run.reason
+    return f"checks: {_binding(check)} — {run.reason}"
+
+
+def check_port_factory(project_dir: Path) -> CheckPortFactory:
+    """This integrator's ``CheckPortFactory``: one executor per gated catalog.
+
+    The whole of what ai-hats contributes to the channel since HATS-1575. Which
+    topology a row is matched against, which selectors a backlog answers to and
+    which instances get a subscriber at all are the rack's to decide, and it
+    decides them from the definition it runs (``ai_hats_rack.checks``); deriving
+    them here meant every road that did not repeat the derivation — the sibling
+    backlogs, the workspace the reflect consumers mount — silently had no gate.
+    """  # comment-length: allow — the boundary this draws IS the fix
+    return lambda catalog: AiHatsCheckPort(project_dir, catalog=catalog)
 
 
 def consumer_subscribers(
     project_dir: Path,
     *,
-    tasks_dir: Path | None = None,
-    topology: Topology | None = None,
+    definition: BacklogDefinition,
+    catalog: Path,
+    known_backlogs: Sequence[str] = (),
 ) -> list:
     """The consumer add-on pack for ``build_rack_kernel(extra_subscribers=…)``.
 
-    Empty until HATS-1141 populates it with the check runner. The parameters are
-    that runner's inputs, kept so the call site needs no edit when it arrives.
+    The tasks kernel is assembled outside :class:`Workspace`, so its subscriber
+    is appended here — through the rack's own constructor, so the two roads
+    cannot wire the same channel two ways.
     """
-    return []
+    return [
+        check_subscriber(
+            definition,
+            port=check_port_factory(project_dir)(catalog),
+            known_backlogs=known_backlogs,
+        )
+    ]
 
 
-__all__ = ["consumer_subscribers"]
+__all__ = [
+    "CHECK_PRIORITY",
+    "EDGE_CHECK_TIMEOUT_S",
+    "AiHatsCheckPort",
+    "check_port_factory",
+    "consumer_subscribers",
+]

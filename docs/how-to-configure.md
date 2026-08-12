@@ -125,9 +125,9 @@ Wizard is one-shot — to change provider / role / prefix later use `ai-hats con
 
 A role is a composition of traits + rules + skills + injection — definition in [1]. The shipped library is layered:
 
-| Layer                  | Roles                                                                                                                  | When to pick                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                                      | Curated user-facing — pick one.                    |
+| Layer                  | Roles                                                                                                          | When to pick                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `library/usage/roles/` | `assistant`, `dev-python`, `dev-web`, `architect`, `sre`, `go-dev`, `go-dev-full`                              | Curated user-facing — pick one.                    |
 | `library/core/roles/`  | `initial-wizard`, `session-reviewer`, `judge`, `role-judge`, `role-auditor`, `hypothesis-intake`, `test-agent` | Engine-internal — do **not** pick as your primary. |
 
 Bring-your-own roles go under `~/.ai-hats/roles/<name>/` or `<project>/libraries/roles/<name>/`. Override precedence and full library layout — see [3].
@@ -190,6 +190,37 @@ overlay applies to **every** project you open.
 ai-hats config customize sre --add-skill kubernetes-ops              # project
 ai-hats config customize sre --add-skill kubernetes-ops --global     # user-wide
 ```
+
+### Ephemeral runtime composition (`-r "role + trait"`)
+
+When testing an ad-hoc hypothesis or temporary behavior override, pass a **role spec** in `-r` instead of writing persistent customizations:
+
+```bash
+ai-hats -r "maintainer + leader"
+ai-hats -r "maintainer - trait-base + trait-base-star"
+```
+
+- **Ephemeral layer:** The runtime expression becomes a third overlay layer (`[global, project, runtime]`) for that session only and is never persisted to `ai-hats.yaml`.
+- **Syntax:** Base role first, followed by `+` and `-` operations. Quotes are required when spaces are used (`-r "maintainer + leader"` or compact `-r maintainer+leader`). Hyphenated names like `trait-base` stay identifiers; `-` is an operator only when surrounded by spaces.
+- **Injections & Rules:** Injection blocks are deduplicated first-wins. Removing a rule brought by a trait (`- rule-name`) resolves against the composed set (both in runtime specs and in persistent `customizations` with `remove: rules: [name]`).
+
+> **Note on deferred rule removals:** Previously, removing a rule in an overlay or customization required the rule to be explicitly listed in the base role's `composition.rules`. As of HATS-1456, rule removals are deferred and resolve against the full composed set (matching skill removal behavior).
+
+#### Paired sessions: `leader` + `worker`
+
+The two traits shipped for this are `leader` and `worker` (HATS-1491) — the same base role, split into two live sessions that hand a card back and forth through its state and `work_log`, sleeping on `ai-hats wait` in between:
+
+```bash
+# window 1 — worker (cheaper model); start this one FIRST, it goes to sleep
+ai-hats -p agy -r "maintainer + worker"
+
+# window 2 — leader; he takes `plan -> execute` and the merge, so both acks live here
+AI_HATS_PLAN_ACK=1 AI_HATS_MERGE_ACK=1 ai-hats -r "maintainer + leader" --model opus
+```
+
+The leader owns the plan and the review and writes no code; the worker owns every mechanical step and hands work back with the artifacts that settle each claim (commit SHAs, the runner's own exit code, a separate one for the linter). The human enters twice: approving the plan, and the final review. Both traits are `usage/`-level and carry no composition of their own — they mix onto whatever base role already has the working gear.
+
+Sub-agents accept the same expression (`ai-hats agent "maintainer + worker" --task "..."`), but that is a different primitive: a batch sub-agent has no wake channel. See [how-to-orchestration.md](how-to-orchestration.md).
 
 Inspect each layer:
 

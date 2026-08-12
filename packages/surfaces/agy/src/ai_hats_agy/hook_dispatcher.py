@@ -13,9 +13,44 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import subprocess
 from pathlib import Path
+
+#: Per-hook budget. A runtime gate answers in milliseconds; past this, "slow" is
+#: indistinguishable from "hung" and the tool call must not wait any longer.
+HOOK_TIMEOUT_S = 60.0
+_TIMEOUT_ENV = "AI_HATS_AGY_HOOK_TIMEOUT_S"
+
+
+def _hook_timeout() -> float:
+    """The effective budget: ``AI_HATS_AGY_HOOK_TIMEOUT_S`` or the default.
+
+    Parsed here rather than reused from ``ai_hats.worktree_hooks``: this process
+    runs on every tool call and must not import the integrator (module
+    docstring). Anything unusable falls back — a typo must not disarm the bound.
+    """
+    raw = os.environ.get(_TIMEOUT_ENV)
+    if not raw:
+        return HOOK_TIMEOUT_S
+    try:
+        budget = float(raw)
+    except ValueError:
+        return HOOK_TIMEOUT_S
+    return budget if budget > 0 else HOOK_TIMEOUT_S
+
+
+def _kill_group(running: subprocess.Popen) -> None:
+    """Kill the expired hook and whatever it started.
+
+    Killing the shell alone leaves its children running against the very tool
+    call the hook was gating.
+    """
+    try:
+        os.killpg(os.getpgid(running.pid), signal.SIGKILL)
+    except OSError:
+        running.kill()
 
 
 def _session_hooks_file() -> Path | None:
@@ -114,22 +149,39 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
         if tool_name and matcher != "*" and tool_name not in matcher.split("|"):
             continue
 
+        budget = _hook_timeout()
         try:
-            res = subprocess.run(
+            with subprocess.Popen(
                 command,
                 shell=True,
-                input=stdin_data,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                capture_output=True,
                 env=os.environ.copy(),
-            )
-            if res.stdout:
-                sys.stdout.write(res.stdout)
-            if res.stderr:
-                sys.stderr.write(res.stderr)
+                # Its own process group, so an expired hook dies whole.
+                start_new_session=True,
+            ) as running:
+                try:
+                    said, complained = running.communicate(input=stdin_data, timeout=budget)
+                except subprocess.TimeoutExpired:
+                    _kill_group(running)
+                    # BROKE, not refuse (ADR-0020 D2): a killed hook never
+                    # formed a verdict.
+                    sys.stderr.write(
+                        f"ai-hats-hook-dispatcher: hook broke: timed out "
+                        f"after {budget:g}s: {command}\n"
+                    )
+                    return 1
+                code = running.returncode
 
-            if res.returncode != 0:
-                return res.returncode
+            if said:
+                sys.stdout.write(said)
+            if complained:
+                sys.stderr.write(complained)
+
+            if code != 0:
+                return code
         except Exception as err:
             sys.stderr.write(f"ai-hats-hook-dispatcher error executing {command}: {err}\n")
             return 1

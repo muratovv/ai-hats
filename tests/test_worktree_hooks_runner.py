@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_hats_core.deadline import Deadline
+
 from ai_hats.worktree_hooks import (
     WT_HOOK_TIMEOUT_S,
     resolve_hook_timeout,
@@ -30,6 +32,7 @@ def _run(script: Path, tmp_path: Path, **kw):
         project_dir=kw.get("proj", tmp_path),
         branch_name=kw.get("branch", "task/x"),
         timeout=kw.get("timeout"),
+        deadline=kw.get("deadline", Deadline.without_lock(60.0, why="unit test")),
         log_path=kw.get("log"),
     )
 
@@ -138,3 +141,16 @@ def test_default_timeout_under_lifecycle_lock_budget():
     from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
 
     assert WT_HOOK_TIMEOUT_S < LIFECYCLE_LOCK_TIMEOUT
+
+
+def test_the_env_override_cannot_outlive_the_lock(tmp_path, monkeypatch):
+    """HATS-1593: AI_HATS_WT_HOOK_TIMEOUT_S used to sail past the import guard.
+
+    It is a request now, and the lock's deadline is the ceiling — so an operator
+    who asks for 900s under a 10s lock gets 10s, not a wedged peer.
+    """
+    monkeypatch.setenv("AI_HATS_WT_HOOK_TIMEOUT_S", "900")
+    assert resolve_hook_timeout() == 900.0
+
+    create_lock = Deadline.under_lock(10.0, lock="wt create")
+    assert create_lock.budget_for(resolve_hook_timeout()) <= 10.0

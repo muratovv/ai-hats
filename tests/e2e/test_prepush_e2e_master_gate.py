@@ -1,21 +1,36 @@
-"""HATS-550 / HATS-686 — end-to-end behaviour of the master-push e2e gate.
+"""e2e (HATS-550, HATS-686)
 
-Per ``dev_rule_e2e_gate``: this hook is pure bash that no in-process unit
-test can meaningfully exercise. Each case spawns ``bash <hook>`` as a real
-subprocess.
+flow:   a maintainer pushes to master, and the pre-push hook decides from a
+        stored marker whether the e2e tier has already passed for this commit
+cmds:
+    git push origin master    # allowed only with a green marker for the pushed sha
+expect: a non-master target, a branch deletion and an empty stdin are all
+        no-ops; a master push is allowed only when a pass-marker keyed to the
+        pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is
+        blocked when that marker is absent, keyed to another sha, or carries a
+        body sha that disagrees; in a mixed payload the master line still needs
+        its own marker
+why:    the marker is the only evidence the tier ever ran — honour one written
+        for a different commit and the gate certifies code nobody tested
 
-HATS-686 split the gate into two modes (the slow suite must not run inside
-pre-push while git holds the GitHub SSH connection — it gets killed at ~30s):
-
-* **CHECK MODE** (default — git pre-push protocol on stdin): instant marker
-  lookup. A master push is allowed iff a green pass-marker keyed to the
-  pushed ``local_sha`` exists under ``<git-common-dir>/ai-hats/e2e-gate/``.
-* **RUN MODE** (``--run``): runs the real suite and, on pass + clean tree,
-  writes the marker keyed to ``git rev-parse HEAD``.
-
-We never invoke the real gated suite here — we stub ``pytest`` on PATH with a
-tiny shell script whose exit code we control, and assert the hook's branching
-on stdin shape / argv / child exit code / marker side effects.
+flow:   the same maintainer runs the gate itself, which must clear lint and
+        unit before spending ~25 minutes on the tier, then record the marker
+cmds:
+    bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
+expect: a lint failure blocks before the tier is reached and a unit failure
+        names the stage; a green preamble runs both stages and then the suite;
+        the marker is written on pass and on rc 5 (nothing selected), but never
+        on failure and never from a dirty tree; a missing pytest blocks; the
+        argv carries the tier's markers and folders, deselects quarantined
+        tests, and arms fail-closed venv strict mode, explaining a venv skip
+        only when that is actually the cause; xdist is used when available and
+        capped at a worker ceiling, falling back to serial without it; the tmp
+        sweep is dry-run unless opted into; and the wrapper errors when the
+        hook is absent
+why:    pre-push runs while git holds the GitHub SSH connection and is killed
+        at ~30s, so the tier cannot run there — splitting check from run is what
+        makes the gate possible at all, and a marker written from a dirty tree
+        or a failed run certifies something that was never green
 """
 
 from __future__ import annotations
@@ -355,7 +370,9 @@ def test_mixed_payload_requires_marker_for_master_line(tmp_path: Path):
 # ===========================================================================
 
 
-def _commit_dispatcher(repo: Path, *, lint_rc: int, unit_rc: int) -> Path:
+def _commit_dispatcher(
+    repo: Path, *, lint_rc: int = 0, unit_rc: int = 0, e2e_catalog_rc: int = 0
+) -> Path:
     """Commit a fake ``scripts/ci-local.sh`` with controlled per-stage exit codes.
 
     It must be committed, not merely written: the gate refuses to write a
@@ -372,6 +389,7 @@ def _commit_dispatcher(repo: Path, *, lint_rc: int, unit_rc: int) -> Path:
         'case "$1" in\n'
         f"  lint) exit {lint_rc} ;;\n"
         f"  unit) exit {unit_rc} ;;\n"
+        f"  e2e-catalog) exit {e2e_catalog_rc} ;;\n"
         "esac\n"
         "exit 0\n"
     )
@@ -428,17 +446,39 @@ def test_run_mode_unit_failure_blocks_and_names_the_stage(tmp_path: Path):
 
 
 @pytest.mark.integration
-def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
-    """Green lint + unit → both stages ran, the suite ran, the marker is written."""
+def test_run_mode_e2e_catalog_failure_blocks_and_names_the_stage(tmp_path: Path):
+    """HATS-1562: A red e2e-catalog stage in pre-push preamble aborts the gate.
+
+    Fail-under-revert: revert git_hooks/pre-push-e2e-master.sh preamble stage loop ->
+    e2e-catalog is not run in preamble, e2e tier runs and writes marker.
+    """
     repo = _git_repo(tmp_path)
-    _commit_dispatcher(repo, lint_rc=0, unit_rc=0)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=1)
+    bindir = tmp_path / "bin"
+    _make_pytest_stub(bindir, exit_code=0)
+
+    res = _run(bindir, cwd=repo)
+
+    assert res.returncode == 1, res.stderr
+    assert "'e2e-catalog' stage FAILED" in res.stderr
+    assert "no marker written" in res.stderr
+    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"]
+    assert not (bindir / "last_argv").exists(), "e2e tier ran despite a red e2e-catalog stage"
+    assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
+
+
+@pytest.mark.integration
+def test_run_mode_green_preamble_runs_both_stages_then_the_suite(tmp_path: Path):
+    """Green lint + unit + e2e-catalog → all stages ran, the suite ran, the marker is written."""
+    repo = _git_repo(tmp_path)
+    _commit_dispatcher(repo, lint_rc=0, unit_rc=0, e2e_catalog_rc=0)
     bindir = tmp_path / "bin"
     _make_pytest_stub(bindir, exit_code=0)
 
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 0, res.stderr
-    assert _stages_run(repo) == ["lint", "unit"]
+    assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"]
     assert (bindir / "last_argv").exists(), "e2e tier did not run"
     assert (_marker_dir(repo) / _head(repo)).exists()
 

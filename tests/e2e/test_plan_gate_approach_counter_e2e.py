@@ -1,27 +1,18 @@
-"""HATS-621 — the conditional "Approach & counter" stage at the real CLI boundary.
+"""e2e (HATS-621, HATS-1263)
 
-M3 adds ``Section(name="Approach & counter", required=False)`` to
-``PLAN_SECTIONS`` (``src/ai_hats/state.py``). Two real-binary guarantees:
-
-1. The scaffold the binary writes on ``transition <ID> plan`` carries the
-   ``## Approach & counter`` heading in position C — after ``Requirements``,
-   before ``Scope & Out-of-scope``.
-   **Fail-under-revert:** drop the ``Section`` → the heading is absent →
-   ``test_scaffold_contains_approach_counter_in_position_c`` fails.
-2. The section is OPTIONAL: a plan that fills every REQUIRED section but leaves
-   ``## Approach & counter`` empty still passes the plan→execute gate (exit 0).
-   Guards against anyone flipping it to ``required=True``.
-
-``dev_rule_e2e_gate`` note: M3 touches ``src/ai_hats/state.py``, which is not
-literally under the rule's ``cli/**`` trigger. This e2e is added per the task's
-explicit acceptance — the real-binary scaffold is the user-facing contract.
-
-Harness mirrors ``test_plan_gate_per_section_e2e.py``: ``python -m ai_hats_rack``
-with an explicit ``PYTHONPATH`` exercises the CURRENT checkout (re-pointed off
-the legacy ``ai-hats task`` CLI, HATS-1263).
+flow:   a developer transitioning a task to execute with an empty optional Approach &
+        counter plan section
+cmds:
+    rack transition HATS-621S plan
+expect: the plan scaffold includes the Approach & counter heading and transition to
+        execute succeeds when required sections are filled even if Approach &
+        counter is empty
+why:    the Approach & counter section provides structured design evaluation but must
+        remain optional to avoid blocking straightforward task execution
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -39,16 +30,6 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
 
 
 def _run_rack(

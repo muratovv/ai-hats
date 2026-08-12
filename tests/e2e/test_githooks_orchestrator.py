@@ -1,12 +1,14 @@
-"""HATS-1337 e2e — the orchestrator's three promises, on real commits.
+"""e2e (HATS-1337)
 
-Real ``self init`` + real ``git commit``/``worktree`` (``dev_rule_e2e_gate``):
-
-* **fail-open** — ai-hats gone, a human commit still lands (R2);
-* **worktree parity** — a commit inside a linked worktree runs the SAME gates as
-  the main checkout (R1, the Z1 regression);
-* **survives update** — the next commit after a version flip runs the NEW
-  version's gates with no re-materialization step in between (R9 / M12).
+flow:   a developer committing code across git worktrees or after framework updates
+        when ai-hats environment variables may be missing
+cmds:
+    # in a project with missing ai-hats binary or inside a linked worktree
+    git commit -m "feature"
+expect: commits succeed gracefully when ai-hats binaries are unreachable and linked
+        worktrees execute the same gate suite as the main checkout
+why:    git hooks must fail open to avoid wedging developer commits when tools are
+        unreachable while ensuring linked worktrees enforce consistent quality gates
 """
 
 from __future__ import annotations
@@ -176,3 +178,46 @@ def test_the_next_commit_after_an_update_runs_the_new_gates(tmp_path: Path):
     assert (project / ".githooks" / "pre-commit").read_bytes() == dispatcher_before, (
         "the durable artifact must survive by content, not be re-materialized"
     )
+
+
+# ---------------------------------------------------------------------------
+# HATS-1597: a gate that cannot be exec'd degrades, it does not wedge the commit
+# ---------------------------------------------------------------------------
+
+
+def _assert_fails_open(cp, project: Path, why: str) -> None:
+    """The D3 contract, spelled once: the commit lands, the skip is spoken, and
+    the gate demonstrably did not run. `Traceback` is checked explicitly because
+    that is the reported symptom — an exit code alone would not catch it."""
+    assert "Traceback" not in cp.stderr, f"{why}: a hook raised at the human\n{cp.stderr}"
+    assert cp.returncode == 0, f"{why}: a human commit must never be wedged\n{cp.stderr}"
+    assert "guard.sh" in cp.stderr, f"{why}: the skipped gate is not named\n{cp.stderr}"
+    assert "fail-open" in cp.stderr, f"{why}: the skip is not spoken\n{cp.stderr}"
+    assert not (project / ".marker-guard").exists(), f"{why}: the gate cannot have run"
+
+
+def test_a_commit_lands_when_a_gate_is_not_executable(tmp_path: Path):
+    """`git_hooks:` is a public extension point, so a declared gate arrives with
+    whatever mode its author committed. Without the exec bit the dispatcher hit
+    `PermissionError` inside `subprocess.run` and the commit died on a traceback,
+    leaving `--no-verify` — which disarms the WHOLE chain — as the only way out.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)  # init first: only the commit path is under test
+    (lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh").chmod(0o644)
+
+    _assert_fails_open(_commit(project, "a.txt"), project, "non-executable gate")
+
+
+def test_a_commit_lands_when_a_gate_has_no_shebang(tmp_path: Path):
+    """Its own test, not a parametrize case: this one is exec-bit CLEAN, so an
+    `os.access(X_OK)` check passes it and the kernel refuses at execve instead
+    (`OSError: [Errno 8] Exec format error`). A fix for the mode alone leaves it red.
+    """
+    project, lib = _project(tmp_path)
+    _self_init(project)
+    guard = lib / "skills" / "guard_skill" / "git_hooks" / "guard.sh"
+    guard.write_text(GUARD.split("\n", 1)[1])  # every line but the shebang
+    guard.chmod(0o755)
+
+    _assert_fails_open(_commit(project, "a.txt"), project, "gate without a shebang")

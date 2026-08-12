@@ -19,10 +19,11 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     from ..assembler import Assembler
     from ..githooks_resolve import resolve_git_gates
-    from ..githooks_run import run_chain
+    from ..githooks_run import record_fail_open, run_chain
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
     from ..materialize import compose_for_role
     from ..paths import builtin_library_hooks
+    from ..session_identity import SessionIdentity, SessionIdentityError
 
     parser = argparse.ArgumentParser(prog="ai_hats.cli.githooks_hook")
     parser.add_argument("event")
@@ -35,32 +36,77 @@ def main(argv: list[str] | None = None) -> int:
         "may name any directory, and only the stub knows which one ran.",
     )
     parser.add_argument("hook_args", nargs="*", help="arguments git passed to the hook")
-    args = parser.parse_args(argv)
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    # The stub's `--` guards a hook argument starting with `-`; argparse honours
+    # that separator only on 3.13+, so the split is ours to make (HATS-1519).
+    passthrough: list[str] | None = None
+    if "--" in raw:
+        cut = raw.index("--")
+        raw, passthrough = raw[:cut], raw[cut + 1 :]
+    try:
+        args = parser.parse_args(raw)
+    except SystemExit as exc:
+        # Scoped to the parse alone: past this point a non-zero code is a gate's
+        # verdict, and swallowing that would disable the gates silently.
+        code = exc.code if isinstance(exc.code, int) else 0
+        if code:
+            print(
+                f"ai-hats: hook dispatcher cannot parse its own arguments (exit {code}) "
+                "— hooks SKIPPED (fail-open); run 'ai-hats self update'",
+                file=sys.stderr,
+            )
+        return 0
 
     project_dir: Path = args.project_dir
     assembler = Assembler(project_dir)
-    cfg = assembler.project_config
-    role = cfg.active_role or cfg.default_role
+    # HATS-1594: in a session the role is what THAT session composed; the config
+    # is the answer only outside one. Reading it unconditionally ran maintainer's
+    # git gates inside a judge session, which never declared them.
+    try:
+        identity = SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        print(f"ai-hats: git gates SKIPPED (fail-open) — {exc}", file=sys.stderr)
+        return 0
+    if identity is not None:
+        role = identity.role
+    else:
+        cfg = assembler.project_config
+        role = cfg.active_role or cfg.default_role
+
+    # Resolved BEFORE composition (HATS-1597): it needs only the project, and a
+    # composition that refuses is itself a fail-open worth recording.
+    journal: Path | None = None
+    hooks_root = builtin_library_hooks(project_dir)
+    candidate = None if hooks_root is None else hooks_root / GITHOOKS_BYPASS_JOURNAL
+    if candidate is not None and candidate.is_file():
+        journal = candidate
+    elif role:
+        # Every hatch branch sources this; without it the gates still run
+        # but stop recording bypasses (HATS-1407).
+        print(
+            "ai-hats: bypass journal not found — gate bypasses will NOT be recorded",
+            file=sys.stderr,
+        )
 
     gates: list[Path] = []
-    journal: Path | None = None
     if role:
-        resolution = resolve_git_gates(compose_for_role(assembler, role), args.event)
-        for refusal in resolution.refusals:
-            print(f"ai-hats: git gate refused — {refusal}", file=sys.stderr)
-        gates = [g.path for g in resolution.gates]
-
-        hooks_root = builtin_library_hooks(project_dir)
-        candidate = None if hooks_root is None else hooks_root / GITHOOKS_BYPASS_JOURNAL
-        if candidate is not None and candidate.is_file():
-            journal = candidate
-        else:
-            # Every hatch branch sources this; without it the gates still run
-            # but stop recording bypasses (HATS-1407).
-            print(
-                "ai-hats: bypass journal not found — gate bypasses will NOT be recorded",
-                file=sys.stderr,
+        resolution = None
+        try:
+            resolution = resolve_git_gates(compose_for_role(assembler, role), args.event)
+        except Exception as exc:  # noqa: BLE001 — a hook must never raise at a human
+            # A composition refusal (removed script, unknown point name) renders
+            # friendly only in the click layer, which a git hook never enters —
+            # so it arrived here as a traceback on `git commit`.
+            record_fail_open(
+                journal,
+                reason=f"composition failed, all gates SKIPPED: {type(exc).__name__}: {exc}",
+                event=args.event,
             )
+        if resolution is not None:
+            for refusal in resolution.refusals:
+                record_fail_open(journal, reason=refusal, event=args.event)
+            gates = [g.path for g in resolution.gates]
 
     return run_chain(
         event=args.event,
@@ -68,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         githooks_dir=args.githooks_dir,
         gates=gates,
         journal=journal,
-        argv=args.hook_args,
+        argv=args.hook_args if passthrough is None else passthrough,
     )
 
 

@@ -197,6 +197,13 @@ def main(
     if ctx.invoked_subcommand is None:
         from ..tags import TagValidationError, parse_tags
 
+        if "+" in ctx.args:
+            raise click.UsageError(
+                "bare '+' in provider arguments — a role spec with spaces must be quoted:\n"
+                '       ai-hats -r "maintainer + leader"\n'
+                "       or written without spaces:  ai-hats -r maintainer+leader"
+            )
+
         if dry_run or dry_run_json or dry_run_full:
             _dry_run_session(
                 provider=provider,

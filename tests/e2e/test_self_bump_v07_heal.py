@@ -1,26 +1,12 @@
-"""E2E: HATS-415 inline v0.6 → v0.7 migration via ``ai-hats self bump``.
+"""e2e (HATS-408, HATS-415, HATS-582, HATS-1203)
 
-Covers the four contracts (was HATS-408 P4 — relocated from
-``self migrate-v07`` to inline ``bump``):
-
-1. Refusal on user edit (default behaviour): exit 1, no writes.
-2. ``--migrate-force`` bypass: sweep Tier 1+2 — ``imports.md`` among them,
-   since HATS-1203 retired it — persist yaml hardening
-   (``imports_order`` strip + ``default_role`` heal),
-   stderr WARN per overwritten file. **No auto-commit** — the worktree
-   carries unstaged deletions, user commits at leisure.
-3. Idempotent rerun: second ``--migrate-force`` on the migrated tree is a
-   no-op (nothing to sweep).
-4. ``--check-branches``: surfaces a warning row when a sibling local
-   branch touches a path the sweep would delete.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fixture strategy (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build;
-every test pins to it via ``AI_HATS_VENV``. Per-test cost stays under ~3s.
-"""
+flow:   a developer upgrading a project carrying v0.7 configuration schemas
+cmds:
+    ai-hats self update
+expect: migration step updates legacy schema fields to schema_version 4 and restructures
+        paths
+why: without v0.7 schema migration, upgrading older projects leads to schema parsing
+     crashes"""
 
 from __future__ import annotations
 
@@ -161,26 +147,9 @@ def _seed_v06_project(project_dir: Path) -> dict[str, Path]:
     return paths
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder (~90s) — now reuses the single session venv
-    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
-    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
-    the ``(launcher, env)`` 2-tuple this module's tests unpack (the shared
-    venv path is dropped — tests here don't need it).
-    """
-    launcher, env, _shared_venv = shared_launcher
-    return launcher, env
-
-
-# ----- Test 1: default behaviour refuses, makes no changes -----
-
-
 @pytest.mark.integration
 def test_e2e_refuse_on_user_edit_default_behavior(installed_launcher, tmp_path):
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)
@@ -240,7 +209,7 @@ def test_e2e_migrate_force_bypass_sweeps_without_commit(installed_launcher, tmp_
     write_canonical). No atomic commit — the worktree carries unstaged
     deletions. Variant B (auto-commit) was explicitly rejected during the
     HATS-415 design fork."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)
@@ -309,7 +278,7 @@ def test_e2e_idempotent_rerun(installed_launcher, tmp_path):
     no Tier-1 findings → migration skips entirely (HATS-415 trigger
     contract). Subsequent bump work (scaffold, write_canonical) is also
     idempotent on a clean v0.7 layout."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     _seed_v06_project(project)
@@ -363,7 +332,7 @@ def test_e2e_check_branches_warns(installed_launcher, tmp_path):
     sibling branch modifies a path slated for deletion. Does not block —
     the user-edit refusal still fires for the same reason it would
     without the flag."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     paths = _seed_v06_project(project)

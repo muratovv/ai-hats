@@ -1,30 +1,15 @@
-"""HATS-654 — the ``<event>`` dispatcher must fan out git STDIN to EVERY .d/ hook.
+"""e2e (HATS-654)
 
-Per ``dev_rule_e2e_gate``: the dispatcher (``AI-HATS-DISPATCHER-MARKER``) is pure
-bash that no in-process unit test can meaningfully exercise. This file does a
-REAL ``git push`` to a bare remote, driven by the LIVE dispatcher template wired
-via ``core.hooksPath``, with TWO ``pre-push.d/`` hooks:
-
-  * ``00-drain.sh``  — consumes ALL of stdin (mirrors git-mastery's
-    ``pre-push-shared-state.sh``, which is lexicographically first in the real
-    chain and reads the whole ref list).
-  * ``10-marker.sh`` — mirrors the maintainer ``pre-push-e2e-master.sh`` trigger
-    (master ref + non-zero local sha) and writes a marker file when it fires.
-
-Before HATS-654 the dispatcher ran both hooks sharing ONE stdin, so ``00-drain``
-ate the ref protocol and ``10-marker`` read EOF → its ``empty stdin → exit 0``
-fast-path fired → the e2e gate silently no-opped on every multi-hook push. The
-fix captures stdin once and replays a fresh copy into each hook.
-
-Fail-under-revert: revert the STDIN fan-out in
-``src/ai_hats/templates/githooks/dispatcher.sh`` → ``10-marker`` sees empty
-stdin → no marker → ``test_dispatcher_fans_out_stdin_to_each_hook`` goes RED.
-The companion ``test_marker_hook_fires_when_first`` is a control: it has no
-drainer ahead of the marker, so it stays GREEN under the revert — proving the
-main test's failure is the fan-out, not the marker logic.
-"""
+flow:   a developer pushing git commits with pre-push hook active
+cmds:
+    git push origin master
+expect: pre-push dispatcher reads refs from stdin and fans out verification checks
+        across pushed commits
+why: without stdin ref fanout, pre-push hooks verify only HEAD commit leaving pushed
+     branch history unverified"""
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import os
 import subprocess
@@ -62,13 +47,7 @@ exit 0
 
 
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return _git_helper(cwd, *args).stdout.strip()
 
 
 def _write_hook(path: Path, body: str) -> None:

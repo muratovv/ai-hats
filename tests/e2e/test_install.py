@@ -1,21 +1,17 @@
-"""End-to-end smoke test for venv-first launcher install flow (HATS-333).
+"""e2e (HATS-333)
 
-Catches integration bugs that unit tests miss because they stub the
-launcher / pip / python (test_launcher.py, test_bootstrap_sh.py). Two
-real bugs were found this way after the HATS-333 epic closed and would
-have been masked by the stubbed unit suite:
-
-  1. local-path AI_HATS_REPO_URL → pip rejected `ai-hats @ /path` (PEP
-     508 requires URL scheme). Fixed in launcher + cli/maintenance.py.
-  2. `ai-hats init` was already nested under `self` (HATS-242), but
-     bootstrap.sh and docs still pointed at the top-level form which
-     does not exist.
-
-This test runs the **real** launcher, **real** pip install (from the
-local repo path), **real** ai-hats commands. Slow (~60s on a warm pip
-cache). Marked `integration` to be opted out via `pytest -m "not
-integration"` when iterating.
-"""
+flow:   a developer running venv-first launcher installation, initialization, and
+        self-update recovery
+cmds:
+    bash scripts/install-launcher.sh
+    ai-hats self update
+    ai-hats self init -r assistant -p claude
+    ai-hats config status
+expect: launcher installs binary, self-update builds managed venv, init creates project
+        config, and broken python recovers via self update
+why: without end-to-end launcher lifecycle verification, host python upgrades or stale
+     venvs
+        leave the tool unstartable without recovery instructions"""
 
 from __future__ import annotations
 

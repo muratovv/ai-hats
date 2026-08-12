@@ -1,14 +1,17 @@
-"""e2e (HATS-887): ``ai-hats wt exec -- git …`` strips an ambient GIT_* so the
-inner command resolves the WORKTREE, not a leaked GIT_DIR.
+"""e2e (HATS-887)
 
-Issued from the MAIN checkout on purpose: there ``_resolve_worktree`` uses the
-filesystem ``list_active`` path (unpoisoned by GIT_DIR), so the only thing the
-ambient GIT_DIR can still corrupt is the inner ``git`` that ``wt exec`` spawns —
-exactly the fix under test. Fail-under-revert: drop the GIT_* pop in ``wt_exec``
-and the inner ``rev-parse --absolute-git-dir`` returns the main ``.git``.
+flow:   a developer executing git commands via wt exec with ambient GIT_DIR environment
+        variables
+cmds:
+    # with ambient GIT_DIR set to main repository
+    ai-hats wt exec -- git rev-parse --absolute-git-dir
+expect: ambient GIT_DIR is stripped so inner git resolves the worktree git directory
+why:    wt exec must un-poison git environment variables to prevent operations on main
+        checkout
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -19,10 +22,6 @@ import pytest
 from _helpers.wt import spawn_worktree
 
 pytestmark = pytest.mark.integration
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _ai_hats(binary: Path, *args: str, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:

@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ai_hats_agy.hook_dispatcher import dispatch_hook
+import pytest
+
+from ai_hats_agy.hook_dispatcher import HOOK_TIMEOUT_S, _hook_timeout, dispatch_hook
 
 
 def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:
@@ -77,3 +79,22 @@ def test_dispatcher_without_the_pin_says_so_instead_of_exiting_quietly(
     res = dispatch_hook("PreToolUse", tool_name="Edit")
     assert res == 0
     assert "AI_HATS_SESSION_CACHE_DIR unset" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "abc", "0", "-5", "nonsense60"])
+def test_unusable_budget_override_keeps_the_default(monkeypatch, raw: str) -> None:
+    """A typo in the override must not disarm the bound (HATS-1598).
+
+    Every value here is one an operator could plausibly export; if any of them
+    resolved to 0 or a negative, the hook would run unbounded again — the exact
+    defect the budget exists to close, reintroduced through a config channel.
+    """
+    monkeypatch.setenv("AI_HATS_AGY_HOOK_TIMEOUT_S", raw)
+
+    assert _hook_timeout() == HOOK_TIMEOUT_S
+
+
+def test_positive_budget_override_is_honoured(monkeypatch) -> None:
+    monkeypatch.setenv("AI_HATS_AGY_HOOK_TIMEOUT_S", "2.5")
+
+    assert _hook_timeout() == 2.5

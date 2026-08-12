@@ -1,12 +1,16 @@
-"""E2E integration test for Agy surface worktree-isolation write guard (HATS-1102).
+"""e2e (HATS-1102)
 
-Verifies that:
-1. AgyProvider materializes the wt_gate.py hook script into session cache rules/.agents/skills/worktree-isolation/hooks/.
-
-2. Running the materialized wt_gate.py script against an Edit/Write payload targeting a code/config file in the MAIN checkout emits permissionDecision == 'deny'.
+flow:   an agent executing write tools targeting code files in main checkout under agy
+cmds:
+    # when attempting to edit main checkout files in agy session
+    ai-hats execute -p agy --batch -r maintainer --prompt "Edit main"
+expect: worktree gate hook denies destructive writes in main checkout
+why:    without worktree gate hooks materialized for agy, agents make unauthorized
+        direct edits to main checkout
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -22,10 +26,6 @@ from ai_hats.paths import session_cache_dir
 from ai_hats_agy.provider import AgyProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 @pytest.mark.integration

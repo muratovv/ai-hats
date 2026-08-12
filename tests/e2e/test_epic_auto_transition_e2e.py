@@ -1,18 +1,15 @@
-"""E2E gate for HATS-690: child-driven epic auto-transitions via the real CLI.
+"""e2e (HATS-690, HATS-1263)
 
-Runs the **real** ``rack`` console script from the pip-installed venv
-(``tmp_venv_project``) against a real git project — re-pointed off the legacy
-CLI (HATS-1263).
-
-**Fail-under-revert**: drop ``EpicAutomationExtension`` or its wiring
-(``rack_wiring.py:418``) → the epic never changes state and no ``epic <id>:``
-delta is echoed, so both marker loops fail.
-
-Ids are parsed from ``Created:``, not hardcoded: the default task prefix
-differs between the CLIs (legacy ``TASK``, rack ``HATS``).
-"""
+flow:   a developer completing all child tasks belonging to an epic task card
+cmds:
+    rack transition HATS-690 done
+expect: backlog manager detects all child tasks completed and auto-transitions epic task
+        card
+why: without epic auto-transition, completed epics remain open requiring manual state
+     updates"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -21,16 +18,6 @@ import pytest
 
 
 pytestmark = pytest.mark.integration
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _git_init_on_master(project: Path) -> None:

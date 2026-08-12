@@ -1,24 +1,11 @@
-"""E2E (HATS-938): `self init` on an editable host auto-seeds harness.channel:local.
+"""e2e (HATS-938)
 
-Value under test: a fresh project initialised on a machine whose ai-hats install
-resolves to a LOCAL editable source must write ``harness: {channel: local, path:
-<src>}`` with NO manual yaml edit — so its first heal/`self update` installs
-editable-from-local instead of the (currently broken) remote release.
-
-Signal path exercised end-to-end: no ``AI_HATS_VENV``, no pre-existing yaml, and
-``AI_HATS_REPO_URL`` pointing at a real local checkout. The launcher's
-``detect_init_src`` sees a local install source and exports ``AI_HATS_INIT_SRC``
-BEFORE the venv bootstrap; the python ``self init`` then seeds channel:local from
-that env. ``-r/-p`` + non-TTY stdin takes the no-wizard path so init runs no extra
-pip install — the seed is the only observable write.
-
-Fail-under-revert: revert either the launcher export OR the ``Assembler.init``
-seed and the fresh venv is a NON-editable remote-style install with no editable
-signal → init keeps the STABLE default → no ``harness`` block → assertion fails.
-
-Setup contract (real subprocess + real uv + real launcher), per
-``dev_rule_e2e_gate``.
-"""
+flow:   a developer running self init in a git repository with local harness channel
+cmds:
+    ai-hats self init --channel local
+expect: project config is created with local harness channel pointing at repository path
+why: without local channel seeding, initialised projects default to remote git
+     repositories for updates"""
 
 from __future__ import annotations
 

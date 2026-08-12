@@ -1,10 +1,12 @@
-"""HATS-632 — script-level behaviour of the tool-call-hygiene PreToolUse guard.
+"""e2e (HATS-632)
 
-Per ``dev_rule_e2e_gate`` the guard is a pure-bash surface the unit suite cannot
-meaningfully exercise. We invoke it as a real subprocess, feeding Claude Code
-``PreToolUse`` payloads on stdin and asserting the **non-blocking** contract:
-exit 0 + ``hookSpecificOutput.additionalContext`` on a covered command, and
-NEVER a ``permissionDecision`` (so the command is never blocked or auto-approved).
+flow:   an agent executing shell commands covered by dedicated tools
+cmds:
+    grep foo .
+expect: the PreToolUse hook emits additionalContext suggesting dedicated tools without
+        blocking or modifying command permissions
+why:    tool hygiene guidance encourages efficient tool choices while remaining
+        non-blocking to preserve execution flow
 """
 
 from __future__ import annotations
@@ -168,6 +170,12 @@ def test_exit_code_masking_nudges(command):
         "pytest tests/ | tail; exit ${PIPESTATUS[0]}",
         "pytest tests/",
         "python -m pytest tests/",
+        # The rule's own "✅ intra-command" form: the status is CAPTURED to a
+        # file the agent then reads, so nothing is masked — nudging here taught
+        # the agent to distrust the one shape the rule prescribes.
+        "pytest tests/ > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        "python -m pytest tests/ -q > /tmp/gate.log 2>&1; echo $? > /tmp/gate.rc",
+        "ruff check src/ > /tmp/lint.log 2>&1; echo $?>/tmp/lint.rc",
     ],
 )
 def test_exit_code_preservation_gets_no_nudge(command):

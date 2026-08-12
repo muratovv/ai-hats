@@ -25,6 +25,11 @@
 # moral equivalent of `git push --no-verify` — a deliberate local act by the
 # trusted maintainer, NOT an accidental normal-flow bypass. See SKILL.md.
 #
+# HATS-1137: the marker mechanism moved to ../lib/gate-marker.sh, parameterised
+# by gate name. This gate keeps the name `e2e-gate`, so the path it reads and
+# writes is byte-identical to the pre-1137 one — every marker the maintainer has
+# already accumulated stays valid, and no push turns into a surprise 27-min run.
+#
 # Run-mode behaviour carried over from earlier tickets:
 #   * HATS-568: sweeps stale `build/` wheel artefacts before the run.
 #   * HATS-731: previews stale tmp cruft (`ai-hats-wt-*`, `pytest-of-*`) via
@@ -48,24 +53,19 @@ set -uo pipefail
 
 zero='0000000000000000000000000000000000000000'
 
+# The gate's name IS its marker directory. Renaming it invalidates every marker
+# on every maintainer's disk at once, so it does not change.
+GATE_NAME='e2e-gate'
+
 # --- shared helpers --------------------------------------------------------
 
-# Resolve the marker directory under the shared .git common dir so a marker
-# written in one worktree is visible from any worktree of the same repo.
-# Arg 1: a directory inside the repo (defaults to cwd).
-marker_dir() {
-    local in_dir="${1:-.}"
-    local common
-    common="$(git -C "$in_dir" rev-parse --git-common-dir 2>/dev/null || true)"
-    [[ -z "$common" ]] && return 1
-    # `git -C` makes --git-common-dir relative to in_dir; absolutise it.
-    case "$common" in
-        /*) : ;;
-        *) common="$in_dir/$common" ;;
-    esac
-    common="$(cd "$common" 2>/dev/null && pwd)" || return 1
-    printf '%s/ai-hats/e2e-gate' "$common"
-}
+# HATS-1337 runs gates in place from the library rather than copying them into
+# `.githooks/`, so the sibling lib is reachable from $0's own directory.
+_self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if ! . "$_self_dir/../lib/gate-marker.sh"; then
+    echo "[e2e-gate] cannot load $_self_dir/../lib/gate-marker.sh — push to master BLOCKED" >&2
+    exit 1
+fi
 
 # --- check mode (default) --------------------------------------------------
 
@@ -87,8 +87,7 @@ check_mode() {
         exit 0
     fi
 
-    local mdir
-    mdir="$(marker_dir ".")" || {
+    gate_marker_dir "$GATE_NAME" "." >/dev/null || {
         echo "[e2e-gate] could not resolve git dir — push to master BLOCKED" >&2
         exit 1
     }
@@ -96,12 +95,7 @@ check_mode() {
     local sha missing=0
     while IFS= read -r sha; do
         [[ -z "$sha" ]] && continue
-        if [[ ! -f "$mdir/$sha" ]]; then
-            missing=1
-            break
-        fi
-        # Defensive: marker filename must equal the SHA recorded inside it.
-        if ! grep -qx "sha=$sha" "$mdir/$sha" 2>/dev/null; then
+        if ! gate_marker_ok "$GATE_NAME" "." "$sha"; then
             missing=1
             break
         fi
@@ -152,7 +146,7 @@ EOF
     local dispatcher="$repo_root/scripts/ci-local.sh"
     if [[ -f "$dispatcher" ]]; then
         local stage
-        for stage in lint unit; do
+        for stage in lint unit e2e-catalog; do
             if ! bash "$dispatcher" "$stage"; then
                 cat >&2 <<EOF
 
@@ -272,19 +266,13 @@ EOF
         exit 0
     fi
 
-    local mdir
-    mdir="$(marker_dir "$repo_root")" || {
-        echo "[e2e-gate] suite passed but could not resolve git dir — NO marker written" >&2
+    local marker
+    marker="$(gate_marker_write "$GATE_NAME" "$repo_root" "$head_sha" \
+                  "pytest_rc=$rc" "$(printf '%s\n' "$output" | tail -1)")" || {
+        echo "[e2e-gate] suite passed but could not write the marker — NO marker written" >&2
         exit 0
     }
-    mkdir -p "$mdir"
-    {
-        printf 'sha=%s\n' "$head_sha"
-        printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        printf 'pytest_rc=%s\n' "$rc"
-        printf '%s\n' "$output" | tail -1
-    } > "$mdir/$head_sha"
-    echo "[e2e-gate] green — wrote marker $mdir/$head_sha (HATS-686)." >&2
+    echo "[e2e-gate] green — wrote marker $marker (HATS-686)." >&2
     echo "[e2e-gate] 'git push origin master' on this HEAD will now pass instantly." >&2
     exit 0
 }

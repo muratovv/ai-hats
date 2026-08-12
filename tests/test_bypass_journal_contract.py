@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,18 +28,6 @@ def _python_fields() -> tuple[str, ...]:
     sys.modules["bypass_journal"] = module
     spec.loader.exec_module(module)
     return module.FIELDS
-
-
-def _shell_fields() -> tuple[str, ...]:
-    """Read the exported schema by sourcing the file, as a consumer would."""
-    res = subprocess.run(
-        ["bash", "-c", f'. "{SH}" && printf "%s" "$AI_HATS_BYPASS_FIELDS"'],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=True,
-    )
-    return tuple(res.stdout.split())
 
 
 LIBRARY = HOOKS.parent
@@ -108,14 +95,21 @@ def test_every_shipped_helper_copy_is_byte_identical_to_the_canon():
     assert not drifted, f"copies drifted from package data: {drifted}"
 
 
-def test_the_two_writers_declare_the_same_fields():
-    assert _shell_fields() == _python_fields()
-
-
-def test_the_shell_printf_emits_exactly_its_declared_fields():
-    """The exported list is only a claim — check it against what is written."""
-    emitted = tuple(re.findall(r'"([a-z_]+)":"%s"', SH.read_text()))
-    assert emitted == _shell_fields()
+def test_every_dir_with_bypass_journal_sh_has_bypass_journal_py():
+    """HATS-1486 — shell wrapper delegates to python twin, so every directory
+    housing `bypass_journal.sh` must also contain `bypass_journal.py`.
+    """
+    missing_py = [
+        str(sh_path.parent.relative_to(REPO_ROOT))
+        for layer in ("core", "usage")
+        for sh_path in (REPO_ROOT / HOOKS.parent / layer / "skills").glob(
+            "*/hooks/bypass_journal.sh"
+        )
+        if not (sh_path.parent / "bypass_journal.py").exists()
+    ]
+    assert not missing_py, (
+        f"directories with bypass_journal.sh but missing bypass_journal.py: {missing_py}"
+    )
 
 
 @pytest.mark.integration
@@ -148,7 +142,9 @@ def test_both_writers_produce_the_same_keys_on_a_real_repo(tmp_path: Path):
     assert len(lines) == 2, lines
     shell_entry, py_entry = (json.loads(line) for line in lines)
 
-    assert set(shell_entry) == set(py_entry)
+    py_fields = _python_fields()
+    assert tuple(shell_entry.keys()) == py_fields
+    assert tuple(py_entry.keys()) == py_fields
     assert shell_entry["reason"] == "SHELL_VAR"
     assert py_entry["reason"] == "PY_VAR"
 
@@ -201,3 +197,36 @@ def test_both_writers_handle_multiline_and_escaping_identically(tmp_path: Path):
 
     assert shell_entry["cmd"] == multiline_cmd
     assert py_entry["cmd"] == multiline_cmd
+
+
+@pytest.mark.integration
+def test_shell_writer_handles_control_characters(tmp_path: Path):
+    """RED test: control characters in cmd must be escaped so json.loads parses the line."""
+    import os
+
+    subprocess.run(["git", "init", "--quiet"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
+
+    cmd_with_ctrl = "echo \x01 \x1b \x07"
+
+    env = dict(os.environ)
+    env["CMD_VAL"] = cmd_with_ctrl
+    subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'. "{SH}" && ai_hats_journal_bypass hatch SHELL_VAR "$CMD_VAL" "session-1"',
+        ],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+    raw_content = (tmp_path / ".git/ai-hats/bypasses.jsonl").read_text()
+    lines = raw_content.splitlines()
+    assert len(lines) == 1, f"Expected 1 line in JSONL, got {len(lines)}. Raw:\n{raw_content}"
+
+    shell_entry = json.loads(lines[0])
+    assert shell_entry["cmd"] == cmd_with_ctrl

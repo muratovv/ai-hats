@@ -1,10 +1,13 @@
-"""e2e: scripts/clean-tmp-cruft.sh (HATS-570).
+"""e2e (HATS-570)
 
-Real-bash exercise of the one-shot sweep helper. Falls under the
-maintainer e2e gate (the change touches ``scripts/*.sh``): a real
-``bash`` invocation of the real script, asserting the dry-run / --force /
-idempotency contract. Fails-under-revert — delete the script and the
-first run errors on the missing path.
+flow:   a developer running temp cleanup script to remove leftover test worktree
+        directories
+cmds:
+    bash scripts/clean-tmp-cruft.sh --force
+expect: script removes temporary worktree and pytest directories while preserving caller
+        worktree
+why:    without tmp cleanup scripts, interrupted test runs leak temporary worktree
+        directories in /tmp
 """
 
 from __future__ import annotations

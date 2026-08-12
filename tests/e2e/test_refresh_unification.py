@@ -1,40 +1,12 @@
-"""E2E: HATS-469 — ``Assembler._refresh()`` unification.
+"""e2e (HATS-469, HATS-582)
 
-Five contracts a reviewer can refute by reverting the relevant code:
-
-1. **Greenfield init is silent.** A fresh ``ai-hats self init -p claude``
-   on an empty tmpdir seeds ``migration_step=latest`` BEFORE ``_refresh``
-   fires; the registry is a no-op (no ``[ai-hats] running migration``
-   banner). Static hooks (``.claude/settings.json`` + materialised hook
-   scripts) ARE installed. Diagnostics (orphan / empty-.agent note) are
-   silent — nothing to diagnose on a fresh project.
-2. **Re-init triggers registry on a stale project.** A project with
-   ``migration_step=0`` re-init'd via ``ai-hats self init`` replays the
-   registry exactly once: banner fires on the re-init, the second init
-   does NOT replay (gated). Diagnostics ARE surfaced (re-init = user-
-   initiated path).
-3. **First-session bootstrap is silent.** A project at
-   ``migration_step=latest`` with ``default_role`` set: running
-   ``ai-hats execute -r ROLE -p claude`` (which goes through
-   ``runtime.set_role`` → ``_refresh(install_time=False)``) MUST install
-   role git hooks + static hooks WITHOUT firing the migration banner or
-   any orphan diagnostic on stderr.
-4. **No residual ``.bump(`` call sites in production source.** A grep
-   against ``src/`` proves HATS-469 left no dangling callers of the
-   removed ``Assembler.bump`` method. Comments and docstrings that
-   mention ``Assembler.bump`` historically are allowed (filtered).
-5. **``Assembler.bump`` is gone, ``_refresh`` + ``_run_diagnostics`` are
-   public-via-private-API surfaces.** Import-time check on the installed
-   wheel — guards against a future merge that resurrects ``bump``
-   without breaking the rest of the suite.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Cost
-amortization (HATS-582): reuses the session-scoped shared venv via
-:func:`tests.e2e.conftest.shared_launcher` — no per-module venv build.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update to refresh project composition
+cmds:
+    ai-hats self update
+expect: composition refresh unifies role, trait, and skill definitions under single
+        materialization step
+why: without unified composition refresh, updating framework files leaves active project
+     prompts stale"""
 
 from __future__ import annotations
 
@@ -67,20 +39,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder that ran ``install-launcher.sh`` +
-    ``self update`` (~90s) once per module. Every test here is read-only on
-    the venv (each works in a fresh ``tmp_path`` project), so they now reuse
-    the single session venv from
-    :func:`tests.e2e.conftest.shared_launcher`. Returns the same
-    ``(launcher, env, shared_venv)`` tuple the old fixture did.
-    """
-    return shared_launcher
 
 
 def _init(launcher: Path, project: Path, env: dict[str, str], *args: str):
@@ -128,11 +86,11 @@ def test_e2e_greenfield_init_silent_registry_and_diagnostics(
         f"greenfield init failed to seed migration_step: {raw}"
     )
 
-    # Sanity: materialize_runtime_hooks fired. Greenfield init composes no
-    # role, so since HATS-1268 there are no skill-declared hooks to land — the
-    # package-data helper is what proves the step ran at all.
-    helper = project / ".agent" / "ai-hats" / "library" / "hooks" / "bypass_journal.sh"
-    assert helper.exists(), "static hooks not installed"
+    # Sanity: _refresh ran. Greenfield init composes no role, so no hook script
+    # lands anywhere — the registry stamp above is what proves the step ran, and
+    # what must NOT exist is the retired copy (HATS-1480).
+    retired = project / ".agent" / "ai-hats" / "library" / "hooks"
+    assert not retired.exists(), f"retired library/hooks/ re-created by init: {retired}"
 
 
 # ----- Test 2: re-init replays registry once + surfaces diagnostics -----
@@ -283,21 +241,6 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
     # Diagnostics MUST stay silent (R3).
     assert ORPHAN_WARN_FRAGMENT not in res.stderr, (
         f"set_role surfaced orphan diagnostic (HATS-469 R3 broken):\n{res.stderr}"
-    )
-
-    # Static hooks (D1: always-fire) ARE installed.
-    guard_script = (
-        project
-        / ".agent"
-        / "ai-hats"
-        / "library"
-        / "hooks"
-        / "safety-guard-pre_bash_shared_state_guard.sh"
-    )
-    assert guard_script.exists(), (
-        f"set_role failed to install static hooks (D1 broken — "
-        f"materialize_runtime_hooks must always fire in _refresh):\n"
-        f"stderr={res.stderr}"
     )
 
 

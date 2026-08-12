@@ -73,6 +73,58 @@ def _previous_hook(project_dir: Path, githooks_dir: Path, event: str) -> Path | 
     return candidate
 
 
+#: `hook` for a skip nobody's script produced — the dispatcher decided it.
+DISPATCHER = "githooks-dispatcher"
+
+
+def record_fail_open(
+    journal: Path | None, *, reason: str, event: str, hook: str = DISPATCHER
+) -> None:
+    """Say — on stderr AND in the bypass journal — that a gate was skipped.
+
+    ADR-0020 D2 forbids passing a gate **silently**, not passing it: that row is
+    the machine form of ADR-0019 D4's anti-disarm rule. Refusing outright here
+    would wedge a human commit (D3) and push them to ``--no-verify``, which
+    disarms the WHOLE chain — so the skip is recorded instead, where
+    ``pre-push-bypass-report.sh`` surfaces it at push time.
+
+    The writer is a SIBLING of the sourced shell wrapper — the contract
+    ``bypass_journal.sh`` states — and is spawned rather than imported: the
+    library may be a user tree outside the installed package.
+    """  # comment-length: allow — why a skip is recorded and not refused is the point
+    print(f"ai-hats: git gate SKIPPED (fail-open) — {reason}", file=sys.stderr)
+    writer = None if journal is None else journal.with_name("bypass_journal.py")
+    if writer is None or not writer.is_file():
+        print(f"ai-hats: fail-open NOT RECORDED ({reason}) — no journal writer", file=sys.stderr)
+        return
+    try:
+        # stderr is NOT captured: the writer's own "NOT RECORDED …" diagnostics
+        # are the only signal that the record was lost, so they must reach the human.
+        proc = subprocess.run(  # noqa: S603 — fixed argv; writer from our own library
+            [
+                sys.executable,
+                str(writer),
+                "record",
+                "--kind",
+                "fail_open",
+                "--reason",
+                reason,
+                "--hook",
+                hook,
+            ],
+            env={**os.environ, "AI_HATS_HOOK_EVENT": event},
+            check=False,
+        )
+    except OSError as exc:
+        print(f"ai-hats: fail-open NOT RECORDED ({reason}) — {exc}", file=sys.stderr)
+        return
+    if proc.returncode != 0:
+        print(
+            f"ai-hats: fail-open NOT RECORDED ({reason}) — writer exit {proc.returncode}",
+            file=sys.stderr,
+        )
+
+
 def run_chain(
     *,
     event: str,
@@ -108,7 +160,19 @@ def run_chain(
     payload = sys.stdin.buffer.read() if replay else None
 
     for script in scripts:
-        proc = subprocess.run([str(script), *argv], env=env, input=payload, check=False)
+        try:
+            proc = subprocess.run([str(script), *argv], env=env, input=payload, check=False)
+        except OSError as exc:
+            # Drop-ins and the chained hook never pass through resolve_git_gates,
+            # and a mode can change between its check and this execve — so the
+            # exec itself must degrade too, never raise at a human's commit.
+            record_fail_open(
+                journal,
+                reason=f"cannot execute '{script.name}': {exc}",
+                event=event,
+                hook=script.name,
+            )
+            continue
         if proc.returncode != 0:
             label = "chained project hook" if script == chained else "hook"
             print(

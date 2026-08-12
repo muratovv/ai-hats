@@ -38,3 +38,20 @@ def test_registered_subcommands_still_route_normally() -> None:
         assert result.exit_code == 0, result.output
         assert "Manage git worktrees" in result.output
         mock_launch.assert_not_called()
+
+
+def test_bare_plus_rejected_with_usage_error() -> None:
+    """HATS-1456 (S5b): bare '+' in passthrough args is rejected with exit code 2."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["-r", "assistant", "+", "ai-hats-framework"])
+    assert result.exit_code == 2
+    assert "bare '+' in provider arguments" in result.output
+
+
+def test_plus_inside_argument_allowed() -> None:
+    """HATS-1456 (S5b): '+' inside another argument (e.g. model name) is not rejected."""
+    runner = CliRunner()
+    with patch("ai_hats.cli._launch_session") as mock_launch:
+        result = runner.invoke(main, ["--model", "gpt-4+turbo"])
+        assert result.exit_code == 0, result.output
+        mock_launch.assert_called_once()

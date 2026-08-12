@@ -1,14 +1,13 @@
-"""E2E: ``ai-hats self bump`` heals stale legacy-path refs in user-managed files (HATS-397).
+"""e2e (HATS-397)
 
-Covers the production scenario from the proxmox regression: after the v4
-layout migration moves ``.agent/hooks/<file>`` → ``<ai_hats_dir>/library/hooks/<file>``,
-user-authored references to the old path in ``.claude/settings.json`` (and
-markdown docs) must be auto-updated, so the next Bash hook / runbook still
-works without manual intervention.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``. Pipeline-integration
-and in-process ``CliRunner`` tests do NOT satisfy the gate.
+flow:   a developer running self update on project containing legacy file path
+        references
+cmds:
+    ai-hats self update
+expect: migration step rewrites legacy file paths in settings.json to updated framework
+        layout
+why:    without legacy ref healing, upgrading projects leaves broken path references
+        pointing to deleted files
 """
 
 from __future__ import annotations
@@ -119,24 +118,10 @@ def _git_init_commit(project_dir: Path, env: dict[str, str]) -> None:
     _git(project_dir, "commit", "-q", "-m", "seed", env=env)
 
 
-@pytest.fixture
-def installed_launcher(shared_launcher):
-    """Delegate to the session-scoped shared venv (HATS-582).
-
-    Was a module-scoped builder (~90s) — now reuses the single session venv
-    from :func:`tests.e2e.conftest.shared_launcher`. Every test here is
-    read-only on the venv (works in a fresh ``tmp_path`` project). Returns
-    the ``(launcher, env)`` 2-tuple this module's tests unpack (the shared
-    venv path is dropped — tests here don't need it).
-    """
-    launcher, env, _shared_venv = shared_launcher
-    return launcher, env
-
-
 @pytest.mark.integration
 def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp_path):
     """Clean git tree → settings.json + markdown both auto-healed in one bump."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     _seed_legacy_project(project)
@@ -196,7 +181,7 @@ def test_e2e_healer_rewrites_settings_and_clean_markdown(installed_launcher, tmp
 @pytest.mark.integration
 def test_e2e_healer_dirty_markdown_falls_back_to_inventory(installed_launcher, tmp_path):
     """Markdown with uncommitted changes is preserved + listed in inventory."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     _seed_legacy_project(project)
@@ -236,7 +221,7 @@ def test_e2e_healer_dirty_markdown_falls_back_to_inventory(installed_launcher, t
 @pytest.mark.integration
 def test_e2e_healer_idempotent_rerun(installed_launcher, tmp_path):
     """Second bump on healed clean tree → no further changes, no new inventory."""
-    launcher, env = installed_launcher
+    launcher, env, _ = installed_launcher
     project = tmp_path / "proj"
     project.mkdir()
     _seed_legacy_project(project)

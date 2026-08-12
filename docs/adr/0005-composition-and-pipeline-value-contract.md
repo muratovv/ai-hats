@@ -55,7 +55,7 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 
 **New artifacts**
 
-- `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` and added to `ALWAYS_ON_RULES` so the rule body materializes in every agent session prompt (~600-char budget).
+- `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` so the rule body materializes in every agent session prompt (~600-char budget).
 - `tests/test_composer_immutable.py` — П1 invariants.
 - `tests/test_wraprunner_signature.py` — П2 invariants.
 - `tests/pipeline/test_funnel_value_contract.py` — П3 invariant.

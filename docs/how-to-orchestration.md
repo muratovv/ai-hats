@@ -11,6 +11,8 @@ For sub-agents and fan-out, reach for **`ai-hats agent <role>`**. The role is re
 ai-hats agent <role> --task "..." -p <provider>
 ```
 
+**Runtime role specs.** The role argument in `ai-hats agent "<role-spec>"` accepts expressions for ad-hoc behavioral variants (e.g. `ai-hats agent "maintainer + worker" --task "..."`). Quotes are required when spaces are used. `worker` and `leader` are real traits (HATS-1491) — but note that a sub-agent is a *batch* primitive with no wake channel, so the paired-session protocol those traits describe (two live sessions sleeping on `ai-hats wait` and waking each other through a card) needs two interactive sessions instead. See [how-to-configure.md](how-to-configure.md#paired-sessions-leader--worker).
+
 `ai-hats execute` is the **low-level primitive** behind it — a dual-mode launcher (`--interactive`, the default, is the same path as bare `ai-hats`; `--batch` is the same path as `ai-hats agent`). Both run the same pipeline through the same wiring, so reach for `execute` only for the knobs the wrapper still does not expose — chiefly an initial-injection prompt resolved by name:
 
 ```bash

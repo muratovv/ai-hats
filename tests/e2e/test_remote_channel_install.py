@@ -1,12 +1,12 @@
-"""E2E: the remote channel resolves an ai-hats-core with .migrations (HATS-943/937).
+"""e2e (HATS-943)
 
-Build the ai-hats wheel from the working tree, install it into a **fresh** venv
-so `ai-hats-core` resolves from PyPI (not the workspace) — the one config no
-other test exercises. The probe import is what raised `ModuleNotFoundError:
-ai_hats_core.migrations` under the pre-fix `>=0.3.0` pin. Fail-under-revert: pin
-`>=0.3.0` → install resolves a core without `.migrations` → import raises. Real
-`uv build` + `uv pip install` (PyPI) → `@install_heavy`.
-"""
+flow:   a developer initializing a project configured with remote git harness channel
+cmds:
+    ai-hats self init --channel remote
+expect: project config sets remote harness channel and self update fetches updates from
+        remote git repo
+why: without remote channel support, production installations cannot update directly
+     from remote git repos"""
 
 from __future__ import annotations
 

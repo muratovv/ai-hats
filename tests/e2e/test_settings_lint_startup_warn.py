@@ -1,18 +1,17 @@
-"""HATS-1006 — e2e: session start warns on deprecated Claude permission rules.
+"""e2e (HATS-1006)
 
-Model: ``test_skills_mirror_self_heals.py`` (real composition + materializers;
-only the PTY spawn is stubbed). Guarantees, each fail-under-revert:
-
-1. **Warn**: a deprecated ``Write(path)`` rule seeded into the project's
-   ``.claude/settings.json`` is announced pre-spawn with its replacement.
-2. **Clean**: after replacing it with the ``Edit(path)`` twin the second
-   launch is silent for this surface (no false positive on Edit rules).
-"""
+flow:   a developer running any ai-hats command when settings.json carries malformed JSON structure
+cmds:
+    ai-hats config status
+expect: session startup warns user of settings.json lint errors without aborting
+        execution
+why: without settings lint warnings, invalid settings.json entries cause silent hook
+     execution drops"""
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,10 +22,6 @@ from ai_hats.cli import main
 from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
-
-
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -101,3 +96,7 @@ def test_session_start_warns_on_deprecated_write_rule(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "Edit(//**/.env)" not in second, second
     assert "is ignored by Claude Code" not in second, second
+
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

@@ -1,12 +1,12 @@
-"""E2E sentinel: project root remains clean after session (ADR-0021 M4).
+"""e2e (HATS-1338)
 
-GREEN under claude (HATS-1170 / HATS-1336):
-Fail-under-revert: revert root wiring prior to HATS-1170 / HATS-1336 —
-``.claude/settings.json`` appears in project root and the clean-root assertion fails.
-
-RED under agy (HATS-1338):
-Expected failure: agy writes ``./GEMINI.md`` into project root during session setup / set_role
-(assembler.py:772-776). HATS-1338 will remove xfail when fixed.
+flow:   a developer running a session in a project workspace
+cmds:
+    ai-hats execute -r assistant
+expect: project root remains clean with framework state kept strictly inside
+        .agent/ai-hats/
+why:    without root cleanliness guards, framework sessions pollute project roots with
+        transient setting files
 """
 
 from __future__ import annotations

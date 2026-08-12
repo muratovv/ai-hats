@@ -3,7 +3,7 @@
 Static + composed-prompt assertions:
     - Rule files exist with expected sections.
     - Rule is listed in trait-agent's composition.
-    - Rule is registered as always-on (in ALWAYS_ON_RULES).
+    - Rule directory exists.
     - When composing assistant / maintainer roles against the real
       library, the rule text reaches the built system prompt.
 
@@ -17,7 +17,6 @@ from pathlib import Path
 
 from ai_hats.assembler import Assembler
 from ai_hats.models import ComponentConfig
-from ai_hats.providers import ALWAYS_ON_RULES
 from ai_hats.surfaces.claude.provider import ClaudeProvider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -54,14 +53,6 @@ def test_rule_body_covers_irreversible_commands() -> None:
 def test_rule_listed_in_trait_agent_composition() -> None:
     trait = ComponentConfig.from_yaml(LIBRARY / "core/traits/trait-agent/config.yaml")
     assert "rule_pause_before_shared_state_write" in trait.composition.rules
-
-
-def test_rule_is_always_on() -> None:
-    # ALWAYS_ON_RULES is the source-of-truth set used by both providers'
-    # build_system_prompt to decide which rules ship inline (vs on-demand).
-    # The shared-state-write rule must NOT be deferrable — losing it
-    # mid-session would re-introduce HYP-026/HYP-027.
-    assert "rule_pause_before_shared_state_write" in ALWAYS_ON_RULES
 
 
 def test_rule_present_in_composed_assistant_prompt() -> None:

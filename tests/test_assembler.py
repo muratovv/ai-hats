@@ -104,7 +104,7 @@ def test_init_creates_structure(tmp_path):
 
     assert (rules_dir(project)).is_dir()
     assert (skills_dir(project)).is_dir()
-    assert (hooks_dir(project)).is_dir()
+    assert not (hooks_dir(project)).exists()
     assert (tasks_dir(project)).is_dir()
     assert (runs_dir(project)).is_dir()
     assert (project / PROJECT_CONFIG).exists()
@@ -1145,15 +1145,12 @@ def test_user_skill_dir_survives_bump(project_with_library):
 # --------------------------------------------------------------------- #
 
 
-def test_tool_call_hygiene_is_always_on(tmp_path):
+def test_tool_call_hygiene_inlined_in_prompt(tmp_path):
     """dev_rule_tool_call_hygiene must appear in system prompt (HATS-251)."""
     from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
-    from ai_hats.providers import ALWAYS_ON_RULES
     from ai_hats.surfaces.claude.provider import ClaudeProvider
 
-    assert "dev_rule_tool_call_hygiene" in ALWAYS_ON_RULES
-
-    # HATS-700: the always-on body is read on demand from source_path/rule.md.
+    # HATS-700: the rule body is read on demand from source_path/rule.md.
     rule_dir = tmp_path / "dev_rule_tool_call_hygiene"
     rule_dir.mkdir()
     (rule_dir / "rule.md").write_text("# Rule: Tool-Call Hygiene\nUse dedicated tools over Bash.")
@@ -1312,10 +1309,27 @@ def _subagent_payload(result):
     )
 
 
+def _sdk_audit(provider, project, result, *, task: str) -> str:
+    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt``.
+
+    Built through ``build_session_artifacts`` in plan mode rather than a
+    test-only prompt builder — the point is to assert what ships (HATS-1552).
+    """
+    from ai_hats.materialization import PlanMaterializer
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.sdk_options import render_sdk_prompt_audit
+
+    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    provider.build_session_artifacts(
+        project, result, "audit-probe", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+    )
+    return render_sdk_prompt_audit(artifacts, project, task=task, ticket_id="")
+
+
 def test_subagent_meta_prompt_has_no_literal_placeholder(
     project_with_placeholder_library,
 ):
-    """HATS-380 residual gap: SubAgentRunner._build_meta_prompt must expand
+    """HATS-380 residual gap: the sub-agent meta-prompt must expand
     `<ai_hats_dir>` in result.merged_injection. Roles like session-reviewer
     (auto-spawned by reflect-session) carry the literal in their injection."""
     from ai_hats.providers import get_provider
@@ -1326,13 +1340,7 @@ def test_subagent_meta_prompt_has_no_literal_placeholder(
     asm.set_role("ph-role", provider_name="claude")
     result = asm.composer.compose("ph-role")
 
-    meta_prompt = get_provider("claude").build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="",
-    )
+    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="")
 
     assert "<ai_hats_dir>" not in meta_prompt
     # Spot-check both trait + role injection landed expanded.
@@ -1360,13 +1368,7 @@ def test_subagent_meta_prompt_omits_project_state(project_with_placeholder_libra
         "# Task State\n\n## DONE\n- **HATS-001**: SENTINEL_DONE_TASK\n"
     )
 
-    meta_prompt = get_provider("claude").build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="do the real thing",
-    )
+    meta_prompt = _sdk_audit(get_provider("claude"), project, result, task="do the real thing")
 
     assert "# TASK" in meta_prompt  # the real task still lands
     assert "# PROJECT_STATE" not in meta_prompt
@@ -1397,13 +1399,7 @@ def test_subagent_sdk_first_message_omits_project_state(project_with_placeholder
         _subagent_payload(result),
         session_mgr=SessionManager(project, runs_dir=runs_dir(project)),
     )
-    audit = runner.payload.provider.build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="do the real thing",
-    )
+    audit = _sdk_audit(runner.payload.provider, project, result, task="do the real thing")
 
     assert "# TASK" in audit  # the real task still lands
     assert "# PROJECT_STATE" not in audit
@@ -1460,7 +1456,9 @@ def test_v4_partition_routes_managed_hook_to_library_hooks(project_with_library)
     asm = Assembler(project_dir)
     asm._migrate_layout_v4_hooks_partition()
 
-    assert (project_dir / ".agent" / "ai-hats" / "library" / "hooks" / managed_basename).exists()
+    assert not (
+        project_dir / ".agent" / "ai-hats" / "library" / "hooks" / managed_basename
+    ).exists()
     assert not (project_dir / ".agent" / "ai-hats" / "user-hooks" / managed_basename).exists()
 
 
@@ -1506,32 +1504,6 @@ def test_owned_basenames_includes_shared_state_guard():
         assert "pre_bash_shared_state_guard.sh" in owned
 
 
-def test_v4_partition_keeps_manifested_skill_hook(project_with_library):
-    """A skill-materialized hook recorded in .manifest stays in library/hooks/
-    (HATS-1123).
-
-    It used to be evicted to user-hooks/ while .claude/settings.json kept
-    pointing at the vacated path — every Bash call in every live session then
-    failed with ENOENT until the next successful materialize.
-    """
-    from ai_hats.assembler import Assembler
-
-    project_dir, _ = project_with_library
-    hooks = project_dir / ".agent" / "ai-hats" / "library" / "hooks"
-    hooks.mkdir(parents=True)
-    (hooks / "safety-guard-safety_gate.py").write_text("#!/usr/bin/env python3\n")
-    (hooks / ".manifest").write_text(
-        "# ai-hats managed — do not edit\nsafety-guard-safety_gate.py\n"
-    )
-
-    Assembler(project_dir)._migrate_layout_v4_hooks_partition()
-
-    assert (hooks / "safety-guard-safety_gate.py").exists()
-    assert not (
-        project_dir / ".agent" / "ai-hats" / "user-hooks" / "safety-guard-safety_gate.py"
-    ).exists()
-
-
 def test_v4_partition_skips_hooks_dir_outside_project(project_with_library, monkeypatch):
     """Pass 2 refuses when AI_HATS_DIR points the managed hooks dir outside
     project_dir (HATS-1123).
@@ -1555,30 +1527,6 @@ def test_v4_partition_skips_hooks_dir_outside_project(project_with_library, monk
 
     assert (foreign_hooks / "user_authored.sh").exists()
     assert not (foreign / "user-hooks" / "user_authored.sh").exists()
-
-
-def test_owned_basenames_includes_skill_hooks_from_manifest(tmp_path):
-    """Skill-materialized hooks recorded in library/hooks/.manifest are
-    framework-owned (HATS-1123).
-
-    Package data ships only the two ``.sh`` guards, so a package-only
-    predicate classifies every HATS-597 ``<skill>-<script>`` hook as
-    user-owned and the v4 partition evicts it to user-hooks/, leaving
-    settings.json wiring pointing at a deleted file.
-    """
-    from ai_hats.assembler import _ai_hats_owned_hook_basenames
-
-    hooks = tmp_path / ".agent" / "ai-hats" / "library" / "hooks"
-    hooks.mkdir(parents=True)
-    (hooks / ".manifest").write_text(
-        "# ai-hats managed — do not edit\n"
-        "pre_bash_shared_state_guard.sh\n"
-        "safety-guard-safety_gate.py\n"
-    )
-
-    owned = _ai_hats_owned_hook_basenames(tmp_path)
-
-    assert "safety-guard-safety_gate.py" in owned
 
 
 def test_owned_basenames_falls_back_to_package_data_without_manifest(tmp_path):

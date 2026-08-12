@@ -1,13 +1,11 @@
-"""E2E gate for the integrator wheel (HATS-861 hatchling migration; HATS-876/T18).
+"""e2e (HATS-861)
 
-Real ``uv build`` + by-name install of the root ``ai-hats`` wheel. R2:
-``__version__`` keeps the scm string format + PEP-440 parses. R3 (T18): the
-library is a SEPARATE dep — the wheel drops the ``ai_hats/library/`` force-include
-and declares ``Requires-Dist: ai-hats-library``; once both install,
-``files("ai_hats_library")`` is a real dir with ``core/``+``usage/``. Fail-under-
-revert: dropping the pin (or re-adding the force-include) breaks R3; dropping the
-``vcs version-file`` hook strips ``_version.py`` (R2).
-"""
+flow:   a developer building wheel distribution packages for framework integration
+cmds:
+    python -m build
+expect: wheel build produces standalone package wheels for all workspace sub-packages
+why: without proper wheel build configuration, sub-packages fail to package required
+     package data"""
 
 from __future__ import annotations
 

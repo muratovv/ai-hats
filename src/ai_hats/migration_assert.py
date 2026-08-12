@@ -35,12 +35,15 @@ from .paths import (
     CLAUDE_PROJECT_DIR_VAR,
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
+    gemini_settings_path,
     strip_claude_project_dir,
 )
 
 __all__ = [
     "assert_runtime_hooks_resolve",
     "BrokenHookRef",
+    "find_broken_hook_refs",
+    "SESSION_SCAN_TARGETS",
     "SETTINGS_TARGETS",
 ]
 
@@ -52,6 +55,16 @@ SETTINGS_TARGETS: tuple[str, ...] = (
     CLAUDE_SETTINGS_JSON_REL,
     CLAUDE_SETTINGS_LOCAL_JSON_REL,
 )
+
+_GEMINI_SETTINGS_REL = str(gemini_settings_path(Path(".")))
+
+# HATS-1509: the WARN reports and never deletes, so it may also read agy's
+# remnant — which the assert must not, or a broken agy ref hard-fails bump.
+SESSION_SCAN_TARGETS: tuple[str, ...] = (*SETTINGS_TARGETS, _GEMINI_SETTINGS_REL)
+
+# Managed-tag keys in both shipped spellings: claude's, then agy's pre-1166 one.
+_TAG_KEYS: tuple[str, ...] = ("_ai_hats_managed", "tag")
+_TAG_PREFIX = "ai-hats:"
 
 # Hook event types the asserter walks. Claude Code's settings.json
 # schema groups hooks under these keys; each value is a list of
@@ -88,12 +101,14 @@ class BrokenHookRef:
         event: Hook event name (``PreToolUse`` / ``SessionEnd`` / ...).
         command: The literal command string that failed to resolve.
         resolved_path: The absolute path the asserter tried to stat.
+        managed: Entry carries an ``ai-hats:`` tag — ``self update`` reclaims it.
     """
 
     settings_file: str
     event: str
     command: str
     resolved_path: Path
+    managed: bool = False
 
 
 def _looks_like_path(command: str) -> bool:
@@ -132,26 +147,28 @@ def _resolve(command: str, project_dir: Path) -> Path:
     return (project_dir / command).resolve()
 
 
-def _walk_hook_commands(data: object) -> list[tuple[str, str]]:
-    """Walk a parsed settings.json ``hooks`` dict and yield (event, command).
+def _is_managed(matcher: dict) -> bool:
+    """True when the matcher carries an ``ai-hats:`` tag under either spelling."""
+    return any(
+        isinstance(matcher.get(key), str) and matcher[key].startswith(_TAG_PREFIX)
+        for key in _TAG_KEYS
+    )
 
-    Settings shape:
 
-    .. code-block:: json
+def _walk_hook_commands(
+    data: object,
+    *,
+    allow_matcher_command: bool = False,
+) -> list[tuple[str, str, bool]]:
+    """Walk a parsed ``hooks`` dict and yield (event, command, managed).
 
-        {
-          "hooks": {
-            "PreToolUse": [
-              {"matcher": "Bash", "hooks": [{"type": "command", "command": "..."}]}
-            ]
-          }
-        }
-
-    Only event keys in :data:`_HOOK_EVENT_KEYS` are walked; unknown
-    keys are silently skipped (future-proofing if Claude Code adds new
-    event types).
+    Claude nests the command under ``hooks``; agy's pre-HATS-1166 remnant hangs
+    it off the matcher itself, which ``allow_matcher_command`` opts into — never
+    for Claude, where such an entry is malformed, unexecuted, and must not
+    become a bump-refusing "broken ref" (HATS-1509).
+    Unknown event keys are skipped — see :data:`_HOOK_EVENT_KEYS`.
     """
-    out: list[tuple[str, str]] = []
+    out: list[tuple[str, str, bool]] = []
     if not isinstance(data, dict):
         return out
     hooks = data.get("hooks")
@@ -165,28 +182,38 @@ def _walk_hook_commands(data: object) -> list[tuple[str, str]]:
         for matcher in matchers:
             if not isinstance(matcher, dict):
                 continue
+            managed = _is_managed(matcher)
             entries = matcher.get("hooks")
             if not isinstance(entries, list):
-                continue
+                if not allow_matcher_command:
+                    continue
+                entries = [matcher]  # agy legacy: command on the matcher itself
             for entry in entries:
                 if not isinstance(entry, dict):
                     continue
                 command = entry.get("command")
                 if isinstance(command, str) and command:
-                    out.append((event, command))
+                    out.append((event, command, managed))
     return out
 
 
-def find_broken_hook_refs(project_dir: Path) -> list[BrokenHookRef]:
-    """Scan every settings target and return refs whose path doesn't resolve.
+def find_broken_hook_refs(
+    project_dir: Path,
+    *,
+    targets: tuple[str, ...] = SETTINGS_TARGETS,
+) -> list[BrokenHookRef]:
+    """Scan ``targets`` and return refs whose path doesn't resolve.
 
     Returns an empty list when all hooks resolve OR when no settings
     file is present. Malformed settings.json (JSON parse error,
     permission failure) is treated as "no findings" — those are not
     HATS-549's problem to surface.
+
+    The default keeps the install-time assert on the Claude pair; pass
+    :data:`SESSION_SCAN_TARGETS` for the report-only session-start scan.
     """
     broken: list[BrokenHookRef] = []
-    for rel in SETTINGS_TARGETS:
+    for rel in targets:
         settings_path = project_dir / rel
         if not settings_path.is_file():
             continue
@@ -194,7 +221,8 @@ def find_broken_hook_refs(project_dir: Path) -> list[BrokenHookRef]:
             data = json.loads(settings_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
-        for event, command in _walk_hook_commands(data):
+        flat_ok = rel == _GEMINI_SETTINGS_REL
+        for event, command, managed in _walk_hook_commands(data, allow_matcher_command=flat_ok):
             if not _looks_like_path(command):
                 continue  # shell command, not a file ref
             resolved = _resolve(command, project_dir)
@@ -206,6 +234,7 @@ def find_broken_hook_refs(project_dir: Path) -> list[BrokenHookRef]:
                     event=event,
                     command=command,
                     resolved_path=resolved,
+                    managed=managed,
                 )
             )
     return broken
@@ -243,8 +272,11 @@ def assert_runtime_hooks_resolve(
     if not broken:
         return
 
+    # HATS-1513: name the files that actually hold the findings — a hardcoded
+    # settings.json sent whoever hit an overlay ref to edit an innocent file.
+    where = ", ".join(sorted({ref.settings_file for ref in broken}))
     lines = [
-        f"{len(broken)} hook command path(s) in .claude/settings.json "
+        f"{len(broken)} hook command path(s) in {where} "
         "do not resolve to an existing file. Claude Code will print "
         "'No such file or directory' on every matching tool call.",
         "",

@@ -1,16 +1,19 @@
-"""HATS-931 — e2e: session start heals a *marker-less* pre-marker skills mirror.
+"""e2e (HATS-931)
 
-Model: ``test_skills_mirror_self_heals.py`` (HATS-907) but the planted mirror has
-NO ``.ai-hats-managed`` marker — the real pre-marker export (field report:
-~/dotfiles). Fail-under-revert of the ``scope == "project"`` heal partition:
-(1) a mirror dir whose name matches a composed skill is swept without a marker
-(ownership = the name collision) and announced by a NOTE; (2) a non-composed dir
-never collides and survives; (3) the second launch is silent.
-"""
+flow: an agent starting a session when project carries a stale marker-less skills mirror
+        matching a composed skill
+cmds:
+    ai-hats execute -r mirror-role
+expect: session start removes stale skill mirror matching composed role skill while
+        preserving
+        unrelated user skills
+why: without marker-less mirror healing, pre-marker skill mirrors persist and override
+     active
+        library skills"""
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,10 +24,6 @@ from ai_hats.cli import main
 from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
-
-
-def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _make_project(tmp_path: Path) -> tuple[Path, Path]:
@@ -115,3 +114,7 @@ def test_session_start_heals_markerless_skills_mirror(tmp_path: Path, monkeypatc
     second = _launch(project, monkeypatch)
     assert "skills mirror" not in second, second
     assert (mirror / "gamma" / "SKILL.md").read_text() == gamma_content
+
+
+def _git(*args: str, cwd: Path) -> None:
+    _git_helper(cwd, *args)

@@ -253,17 +253,9 @@ def test_runtime_sdk_path_carries_all_overlay_content(
     asm = Assembler(project)
 
     result = compose_for_role(asm, "maintainer")
-    # HATS-1130: the SDK path under test is Claude's — build_meta_prompt is a
-    # claude-surface method (it reaches into .sdk_options). ec85f43d swapped in
-    # AgyProvider, which does not have it.
-    provider = ClaudeProvider()
-    sdk_text = provider.build_meta_prompt(
-        result=result,
-        project_dir=project,
-        ticket_context="",
-        linked_context="",
-        task="test",
-    )
+    # HATS-1130: the SDK path under test is Claude's. ec85f43d swapped in
+    # AgyProvider, whose prompt is a different shape entirely.
+    sdk_text = _sdk_audit(ClaudeProvider(), project, result, task="test")
 
     missing = [m for m in markers.values() if m not in sdk_text]
     assert not missing, (
@@ -301,3 +293,20 @@ def test_hitl_session_prompt_carries_all_overlay_content(
     assert not missing, (
         f"HITL prompt.md missing overlay markers {missing}; prompt.md head:\n{prompt_md[:400]!r}"
     )
+
+
+def _sdk_audit(provider, project, result, *, task: str) -> str:
+    """The bytes the real AUTOMATE path renders into ``meta_prompt.txt``.
+
+    Built through ``build_session_artifacts`` in plan mode rather than a
+    test-only prompt builder — the point is to assert what ships (HATS-1552).
+    """
+    from ai_hats.materialization import PlanMaterializer
+    from ai_hats.session_artifacts import BuiltArtifacts, RunMode
+    from ai_hats.surfaces.claude.sdk_options import render_sdk_prompt_audit
+
+    artifacts = BuiltArtifacts(port=PlanMaterializer())
+    provider.build_session_artifacts(
+        project, result, "audit-probe", run_mode=RunMode.AUTOMATE, artifacts=artifacts
+    )
+    return render_sdk_prompt_audit(artifacts, project, task=task, ticket_id="")

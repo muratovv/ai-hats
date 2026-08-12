@@ -1459,12 +1459,7 @@ def _seed_healthy_layers(project: Path) -> None:
     ai_hats = project / ".agent" / "ai-hats"
     (ai_hats / "tracker" / "backlog").mkdir(parents=True)
     (ai_hats / "user-rules").mkdir()
-    hooks = ai_hats / "library" / "hooks"
-    hooks.mkdir(parents=True)
-    (hooks / ".manifest").write_text(
-        f"# ai-hats managed — do not edit\n{MANAGED_HOOK_NAME}\n", encoding="utf-8"
-    )
-    (hooks / MANAGED_HOOK_NAME).write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    (ai_hats / "library").mkdir(parents=True)
 
 
 def test_check_exits_zero_on_healthy_install(tmp_path: Path) -> None:
@@ -1558,7 +1553,7 @@ def test_update_reports_layers_restored_by_the_bump(tmp_path: Path, monkeypatch)
     shutil.rmtree(library)
 
     def fake_run(args, **kw):
-        (library / "hooks").mkdir(parents=True, exist_ok=True)  # stand-in for the bump
+        library.mkdir(parents=True, exist_ok=True)  # stand-in for the bump
         return _make_completed(list(args), returncode=0)
 
     monkeypatch.setattr("shutil.which", lambda _n: "/usr/bin/uv")
@@ -1574,15 +1569,36 @@ def test_update_reports_layers_restored_by_the_bump(tmp_path: Path, monkeypatch)
 
 
 def test_check_exits_one_when_a_declared_hook_is_missing(tmp_path: Path) -> None:
-    """The HATS-595 blocker, as a test (HATS-1163): a script the manifest claims
-    is absent on disk, where the triage used to report all-OK."""
+    """The HATS-595 blocker, as a test (HATS-1163): a script referenced in settings
+    is absent on disk, where the triage reports BROKEN hook refs."""
     project = _setup_update_test_env(tmp_path)
     _seed_healthy_layers(project)
-    (project / ".agent" / "ai-hats" / "library" / "hooks" / MANAGED_HOOK_NAME).unlink()
+    claude_dir = project / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "*",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "/path/to/nonexistent_hook_script.sh",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
         result = CliRunner().invoke(update, ["--check"])
 
     assert result.exit_code == 1, result.output
-    assert MANAGED_HOOK_NAME in result.output
+    assert "nonexistent_hook_script.sh" in result.output
     assert "ai-hats self init" in result.output

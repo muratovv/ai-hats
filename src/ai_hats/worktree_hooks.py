@@ -14,21 +14,15 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ai_hats_wt.locks import LIFECYCLE_LOCK_TIMEOUT
+from ai_hats_core.deadline import Deadline
+
 from .hook_exec import HookRun, HookVerdict, run_hook
 
-# Default per-hook wall-clock budget. Strictly below LIFECYCLE_LOCK_TIMEOUT so
-# the timeout — not the lock — is what bounds a hung hook (see module docstring).
+# What this channel ASKS for. HATS-1593: it is a request, not the timeout — the
+# lock the caller holds mints the ceiling and `run_hook` takes the smaller of
+# the two. A constant here cannot know which of four locks is held above it.
 WT_HOOK_TIMEOUT_S: float = 45.0
 _TIMEOUT_ENV = "AI_HATS_WT_HOOK_TIMEOUT_S"
-
-# D7: hook budget must stay under the lock timeout, else a hung hook makes a
-# lock-waiting peer mis-blame a concurrent op. Explicit raise survives ``-O``.
-if WT_HOOK_TIMEOUT_S >= LIFECYCLE_LOCK_TIMEOUT:  # pragma: no cover
-    raise RuntimeError(
-        f"WT_HOOK_TIMEOUT_S ({WT_HOOK_TIMEOUT_S}) must be < "
-        f"LIFECYCLE_LOCK_TIMEOUT ({LIFECYCLE_LOCK_TIMEOUT})"
-    )
 
 
 def resolve_hook_timeout() -> float:
@@ -63,6 +57,7 @@ def run_worktree_hook(
     worktree_path: Path,
     project_dir: Path,
     branch_name: str,
+    deadline: Deadline,
     timeout: float | None = None,
     log_path: Path | None = None,
 ) -> HookOutcome:
@@ -76,7 +71,8 @@ def run_worktree_hook(
     run = run_hook(
         script,
         point=_wt_point(event),
-        timeout=resolve_hook_timeout() if timeout is None else timeout,
+        budget=resolve_hook_timeout() if timeout is None else timeout,
+        deadline=deadline,
         project_dir=project_dir,
         worktree_path=worktree_path,
         # This channel's own vocabulary, kept verbatim: `AI_HATS_EVENT` has live

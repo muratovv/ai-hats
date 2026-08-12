@@ -1,24 +1,11 @@
-"""E2E: ``ai-hats self update`` repairs legacy refs in a single invocation (HATS-400).
+"""e2e (HATS-400)
 
-The proxmox regression that motivated this test:
-
-  1. User had ``.claude/settings.json`` pointing at ``.agent/hooks/<file>``.
-  2. User ran ``ai-hats self update``: pip install pulled new code (with
-     migration_healer), but the in-process auto-bump kept using the OLD
-     in-memory code (no healer). Project remained half-fixed.
-  3. User had to run ``ai-hats self bump`` a second time manually.
-
-After HATS-400, ``ai-hats self update`` re-execs auto-bump in a fresh
-subprocess when the version changed → newly installed code (healer,
-migrations) activates immediately.
-
-This test seeds a project that looks like proxmox pre-fix, runs ONE
-``ai-hats self update``, and asserts the legacy refs are healed without a
-second invocation.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-"""
+flow:   a developer running self update when new framework commits are present locally
+cmds:
+    ai-hats self update
+expect: self update automatically runs internal bump pipeline to apply fresh migrations
+why: without auto-bump on update, code updates run against stale project configuration
+     schemas"""
 
 from __future__ import annotations
 

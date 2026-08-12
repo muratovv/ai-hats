@@ -1,30 +1,13 @@
-"""E2E: ``ai-hats self update`` skips pip install when installed SHA == remote.
+"""e2e (HATS-432)
 
-The bug it catches:
-
-  ``ai-hats self update`` unconditionally ran ``pip install --force-reinstall
-  --no-cache-dir`` even when the installed HEAD already matched remote
-  master. On slow links this added 10-60s of silent re-download per
-  invocation. After the no-op short-circuit, the command reuses the
-  HATS-432 ahead/behind probe and skips pip entirely when both sides
-  resolve to the same SHA with ``ahead == 0`` and ``behind == 0``.
-
-Setup contract (real subprocess + real pip):
-
-  - ``src-repo``  — clone of REPO_ROOT, master tip becomes the installed
-                    SHA after editable install.
-  - ``fake-remote.git`` — bare clone of REPO_ROOT with master pinned to
-                    the SAME SHA as src-repo's HEAD. The probe sees
-                    ``installed_sha == latest_sha`` and ``(ahead, behind)
-                    == (0, 0)``.
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fail-under-revert: if the short-circuit is removed from
-``cli/maintenance.py``, the in-sync invocation runs pip and the
-"skipping reinstall" hint never prints — the assertion below fails.
-"""
+flow: a developer running self update when project is already at latest framework
+      version
+cmds:
+    ai-hats self update
+expect: self update detects identical commit SHA and exits cleanly stating already
+        up-to-date
+why: without noop skip detection, running self update unnecessarily rebuilds identical
+     virtual environments"""
 
 from __future__ import annotations
 

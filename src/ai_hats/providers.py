@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult, ResolvedComponent
 from ai_hats_observe.parsers.trace import TraceParser
-from ai_hats.session_artifacts import ArtifactCategory, BuiltArtifacts, RunMode, SessionPolicy
+from ai_hats.session_artifacts import (
+    ArtifactCategory,
+    AutomateLaunch,
+    BuiltArtifacts,
+    RunMode,
+    SessionPolicy,
+    assemble_meta_prompt,
+)
 
 if TYPE_CHECKING:
     from ai_hats_observe.parsers.base import TranscriptParser
@@ -23,18 +30,17 @@ from .provider_entry_points import (
     _is_first_party_entry_point,
     _provider_entry_points,
 )
+from .models import RuleMetadata
 from .resolver import read_rule_body
 
 
 logger = logging.getLogger(__name__)
 
+
 # HATS-1336: no runtime-hooks owner — retiring the mechanism was HATS-905's
 # designed switch, so the sweeper now reclaims the root ai-hats:* entries.
 
-# HATS-865: definition moved to the constants leaf; re-exported here for the
-# existing `from ai_hats.providers import ALWAYS_ON_RULES` importers.
 from .constants import (  # noqa: E402
-    ALWAYS_ON_RULES,
     INJECTION_START,
     INJECTION_END,
     PROVIDER_CLAUDE,
@@ -132,6 +138,19 @@ class Provider(abc.ABC):
     def rules_dir(self, session_dir: Path) -> Path:
         """Directory where rules files should be placed."""
 
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path | None:
+        """Where this surface mirrors the session's composed skills (HATS-1540).
+
+        The root a bound check resolves its script from in-session, one level
+        above the per-skill directory. ``None`` means this surface mirrors no
+        skills, so a binding has nothing to resolve against and refuses —
+        ``legacy_launch_notices`` announces that at launch rather than leaving it
+        to be discovered when a gate does not fire. Concrete, not abstract: an
+        out-of-tree provider behind ``ai_hats.providers`` predates this accessor
+        and must keep importing (ADR-0019 D9).
+        """  # comment-length: allow — the None branch IS the contract
+        return None
+
     @contextlib.contextmanager
     def execution_context(self, project_dir: Path) -> contextlib.AbstractContextManager[None]:
         """Context manager active around provider CLI execution.
@@ -199,6 +218,9 @@ class Provider(abc.ABC):
         mode = RunMode(run_mode)
         policy = policy or SessionPolicy()
         artifacts.policy = policy
+        # HATS-1540: no second copy here. The SKILLS category already writes an
+        # unconditional mirror of every composed skill (SessionPolicy has no
+        # skills field), and `session_skills_root` is what a check resolves off.
         for category in ArtifactCategory:
             if policy.is_enabled(category):
                 self.build_category_artifact(
@@ -281,15 +303,42 @@ class Provider(abc.ABC):
         if result.merged_injection:
             sections.append(result.merged_injection)
 
-        # Only always-on rules in prompt; body read on demand from source_path
-        # (HATS-700 — composer no longer eager-loads rule bodies).
-        always_on = [r for r in result.rules if r.name in ALWAYS_ON_RULES]
-        if always_on:
+        rules_to_deliver: list[tuple[ResolvedComponent, str]] = []
+        for rule in result.rules:
+            if rule.source_path and rule.source_path.is_dir():
+                meta_file = rule.source_path / "metadata.yaml"
+                if meta_file.is_file():
+                    try:
+                        meta = RuleMetadata.from_yaml(meta_file)
+                        if meta.delivery is not None and meta.delivery not in ("always_on", ""):
+                            logger.warning(
+                                "rule %r: unrecognized delivery value %r at %s",
+                                rule.name,
+                                meta.delivery,
+                                meta_file,
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "rule %r: failed to load metadata at %s: %s",
+                            rule.name,
+                            meta_file,
+                            exc,
+                        )
+
+            body = read_rule_body(rule.source_path) if rule.source_path else ""
+            if body:
+                rules_to_deliver.append((rule, body))
+            else:
+                logger.warning(
+                    "rule %r: body is empty or unreadable at %s",
+                    rule.name,
+                    rule.source_path,
+                )
+
+        if rules_to_deliver:
             rules_section = "## RULES\n"
-            for rule in always_on:
-                body = read_rule_body(rule.source_path)
-                if body:
-                    rules_section += f"\n### {rule.name}\n{body}\n"
+            for rule, body in rules_to_deliver:
+                rules_section += f"\n### {rule.name}\n{body}\n"
             sections.append(rules_section)
 
         # HATS-1203: project-authored rules, after the framework's own so they
@@ -357,9 +406,52 @@ class Provider(abc.ABC):
         """
         return cmd
 
+    def describe_automate_launch(
+        self,
+        project_dir: Path,
+        result: CompositionResult,
+        session_id: str,
+        artifacts: BuiltArtifacts,
+        *,
+        task: str,
+        ticket_id: str,
+        model: str,
+        env: dict[str, str],
+    ) -> AutomateLaunch:
+        """The sub-agent launch this surface performs — argv and prompt together.
+
+        One expression for ``SubAgentRunner`` and for ``--dry-run``: a report
+        assembled by a second function is a report about a different launch
+        (HATS-1552). Default covers every CLI surface; an SDK surface overrides.
+        """
+        del result, session_id, env
+        prompt = assemble_meta_prompt(
+            project_dir,
+            role_context=artifacts.full_content or "",
+            task=task,
+            ticket_id=ticket_id,
+        )
+        flags = self.model_flags(model) if model else []
+        cmd = self.get_cli_command() + artifacts.cli_args + flags
+        return AutomateLaunch(launch=self.get_run_command(cmd, prompt), prompt=prompt)
+
     @abc.abstractmethod
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
-        """Get environment variables needed for the provider."""
+        """Environment variables this provider needs. Pure — claims nothing.
+
+        A value that only exists once something is taken for real (a bound port,
+        a lease) belongs in :meth:`claim_launch_env`, or ``--dry-run`` performs
+        the side effect while reporting a value the launch will not use.
+        """
+
+    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Env values a launch must claim for real — ``{}`` for most surfaces.
+
+        Called only on the launch path. Keys must be a subset of
+        :meth:`get_env`'s, so a report names them either way (HATS-1554).
+        """
+        del session_dir, project_dir
+        return {}
 
     def build_session_prompt(
         self,

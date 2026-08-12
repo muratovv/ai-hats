@@ -1,34 +1,12 @@
-"""E2E: an empty ``provider:`` in ai-hats.yaml exits clean, not on a traceback.
+"""e2e (HATS-1224)
 
-History (HATS-1224): ``_effective_provider`` raised a bare ``RuntimeError`` when
-no provider was configured, and no CLI arm caught it — every launch surface
-leaked a 9-frame traceback. Its sibling failure (an *unknown* provider name) had
-exited 2 with a friendly list since HATS-965/HATS-1218, so two adjacent
-provider-config errors behaved differently. The fix mirrors that pattern: a typed
-``composition_seam.MissingProviderError`` + ``cli/_helpers._handle_missing_provider``.
-
-Why an emptied ``provider:`` is the probe: ``ProjectConfig.provider`` defaults to
-``claude``, so only an explicit empty value reaches the raise. ``-p ""`` cannot —
-it is falsy and falls through to the config. The raise fires inside the compose
-seam before any runner spawns, so this needs no provider binary, no auth, no
-network, and runs cleanly in a non-TTY subprocess.
-
-Setup contract (real subprocess + real ``ai-hats`` binary — satisfies
-``dev_rule_e2e_gate`` for changes under ``src/ai_hats/cli/``): ``tmp_project``
-bootstraps with ``provider: claude``; this file rewrites ai-hats.yaml with an
-empty provider. A VALID role (``maintainer``, shipped by the built-in library) is
-passed on every surface so role validation — which runs BEFORE the provider check
-— cannot be what fails.
-
-Surfaces cover both seam functions: ``build_composition_payload`` (bare launch,
-``execute --batch``, ``agent``) and ``build_preview_payload`` (``--dry-run`` on
-both the HITL and the automate side).
-
-Fail-under-revert: dropping the ``except MissingProviderError`` arm at any one
-CLI site re-leaks that surface's traceback and fails its parametrized case.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer specifying a provider name whose package is not installed
+cmds:
+    ai-hats -p missing-provider --role assistant
+expect: CLI exits cleanly with code 2 displaying friendly remediation instructions
+        without traceback
+why: without friendly provider error handling, uninstalled provider packages throw raw
+     ImportErrors"""
 
 from __future__ import annotations
 

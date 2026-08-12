@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.resolver import RackRoot
 from ai_hats_rack.workspace import (
@@ -20,6 +21,7 @@ from ai_hats_rack.workspace import (
     DuplicatePrefixError,
     UnknownPrefixError,
     Workspace,
+    backlog_selectors_in_root,
 )
 
 _HYP = """\
@@ -183,6 +185,73 @@ def test_kernel_for_sibling_builds_the_portable_kit(tmp_path):
     assert isinstance(kernel, Kernel)
     assert kernel.prefix == "HYP"
     assert kernel.topology.initial == "active"
+
+
+# ----- check_port seam (HATS-1575) -------------------------------------------
+
+
+def _names_on(kernel: Kernel, event_key: str) -> set[str]:
+    return {sub.name for sub in kernel._dispatcher.subscribers_for(event_key, Phase.IN_LOCK)}
+
+
+def test_sibling_kernel_carries_its_own_check_subscriber(tmp_path):
+    """The defect: a row addressed to a sibling had no subscriber anywhere, so an
+    `on_error: refuse` gate on HYP passed silently by construction."""
+    root = _root(tmp_path)
+    _mount_hyp(root)
+    ws = Workspace.discover(
+        [root], kernel_builder=lambda inst: None, check_port=lambda catalog: object()
+    )
+    assert "checks" in _names_on(ws.kernel_for("HYP-7"), "edge:active--confirmed")
+
+
+def test_no_check_port_leaves_the_portable_kit_untouched(tmp_path):
+    """Standalone rack: no integrator, so no executor and nothing to subscribe."""
+    root = _root(tmp_path)
+    _mount_hyp(root)
+    ws = Workspace.discover([root], kernel_builder=lambda inst: None)
+    assert "checks" not in _names_on(ws.kernel_for("HYP-7"), "edge:active--confirmed")
+
+
+def test_check_port_is_asked_for_the_gated_catalog(tmp_path):
+    """One executor per catalog: a sibling's log and its AI_HATS_TASKS_DIR must
+    name the backlog being gated, never the project's tasks dir."""
+    root = _root(tmp_path)
+    hyp = _mount_hyp(root)
+    asked: list[Path] = []
+    ws = Workspace.discover(
+        [root],
+        kernel_builder=lambda inst: None,
+        check_port=lambda catalog: asked.append(catalog) or object(),
+    )
+    ws.kernel_for("HYP-7")
+    assert asked == [hyp]
+
+
+def test_tasks_instance_gets_one_when_no_builder_claims_it(tmp_path):
+    """The reflect/judge road mounts the workspace with NO kernel_builder, and
+    walks PROP along a named edge — there the tasks instance was ungated too."""
+    root = _root(tmp_path)
+    ws = Workspace.discover([root], check_port=lambda catalog: object())
+    assert "checks" in _names_on(ws.kernel_for("HATS-1"), "edge:review--done")
+
+
+def test_subscriber_knows_every_selector_of_its_root(tmp_path):
+    """A name belonging to a sibling is skipped, a name nothing answers to
+    refuses — the roster is what separates them (HATS-1545 R10)."""
+    root = _root(tmp_path)
+    _mount_hyp(root, _HYP + "cli_alias: hyp\n")
+    ws = Workspace.discover([root], check_port=lambda catalog: object())
+    assert set(ws.selectors_in_root(ws.instances[0].root_id)) == {"tasks", "hypotheses", "hyp"}
+
+
+def test_both_roster_derivations_agree(tmp_path):
+    """One rule, two sources: mounted instances here, a fresh scan there. A
+    roster that drifts reads to the channel as 'no backlog answers to that'."""
+    root = _root(tmp_path)
+    _mount_hyp(root, _HYP + "cli_alias: hyp\n")
+    ws = Workspace.discover([root])
+    assert ws.selectors_in_root(ws.instances[0].root_id) == backlog_selectors_in_root(root)
 
 
 def test_exists_is_cross_backlog(tmp_path):

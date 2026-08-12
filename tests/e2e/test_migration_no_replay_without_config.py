@@ -1,21 +1,15 @@
-"""E2E (HATS-1123): an uninitialised cwd must not replay migrations into the
-project ``AI_HATS_DIR`` points at.
+"""e2e (HATS-1123)
 
-``dev_rule_e2e_gate`` artifact for the ``migrations.py`` / ``assembler.py``
-guards. Reproduces the live incident: a sub-agent shell in a git worktree (no
-``ai-hats.yaml`` — it is gitignored) carries an absolute ``AI_HATS_DIR`` aimed at
-the MAIN checkout. ``migration_step`` defaults to 0 for the missing config, so
-the whole registry replays; step 6's hooks-partition is the one pass keyed on
-``ai_hats_dir`` rather than ``project_dir``, so it evicted MAIN's
-skill-materialized hooks to ``user-hooks/`` while ``.claude/settings.json`` kept
-pointing at the vacated path.
-
-The discriminator is the EVICTION (a move into ``user-hooks/``), not the
-hook's absence: a hook no longer backed by the composition is legitimately
-swept as stale by ``materialize_runtime_hooks``, recoverably and on the record.
-Verified fail-under-revert: with the guards reverted, ``user-hooks/`` receives
-the sentinel.
-"""
+flow:   an agent running self update from an uninitialized worktree directory
+cmds:
+    # running self update from worktree lacking project config
+    ai-hats self update
+expect: bump process skips migration replay when project config is missing avoiding
+        foreign hook
+        evictions
+why: without uninitialized workspace guards, running migrations from worktrees evicts
+     main
+        checkout user hooks"""
 
 from __future__ import annotations
 

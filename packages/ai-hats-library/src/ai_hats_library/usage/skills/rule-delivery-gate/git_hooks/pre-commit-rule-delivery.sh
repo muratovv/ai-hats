@@ -8,8 +8,8 @@
 #
 # Scope: fires only when a commit stages a library config.yaml (any of the three layouts named at the filter).
 # injection — the place a dangling pointer is introduced). The check itself scans
-# the whole working-tree `library/` (a pointer's deliverability depends on the
-# global ALWAYS_ON_RULES + SUMMARIZED_IN_INJECTION + every config), so it cannot
+# the whole working-tree `library/` (a pointer's existence depends on the
+# library rules directory), so it cannot
 # be a per-file diff. Changed-files SCOPE keeps the gate off commits that touch
 # no injection; it never retro-blocks pre-existing content.
 #

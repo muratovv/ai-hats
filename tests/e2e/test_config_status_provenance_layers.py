@@ -1,8 +1,14 @@
-"""E2E (HATS-525): ``ai-hats config status`` marks bundled rules of user-global traits as (global).
+"""e2e (HATS-525)
 
-Verifies that when a role subscribes to a user-global trait (~/.ai-hats/traits/...),
-both the trait itself AND any rules bundled inside that trait display with the ``(global)``
-provenance tag in ``ai-hats config status``, rather than mislabeling bundled rules as ``(built-in)``.
+flow:   a user configures global traits for a role and inspects rule provenance in
+        status output
+cmds:
+    ai-hats config customize assistant --add-trait hats525-global-trait --global
+    ai-hats config status
+expect: both the trait name and its bundled rules display the (global) tag in status
+        output rather than (built-in)
+why:    labeling global or custom rules as built-in misinforms users about which layer
+        provides active prompt guidance
 """
 
 from __future__ import annotations
@@ -97,3 +103,69 @@ def test_e2e_config_status_user_global_rule_provenance(shared_launcher, tmp_path
     assert "hats525-global-rule  (global)" in out or "hats525-global-rule\x1b" in out, (
         f"bundled global rule should be tagged (global):\n{out}"
     )
+
+
+@pytest.mark.integration
+def test_e2e_config_status_symlinked_and_library_paths_yaml_global_provenance(
+    shared_launcher, tmp_path: Path
+) -> None:
+    launcher_dest, base_env, _venv = shared_launcher
+
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+    ai_hats_dir = user_home_dir / ".ai-hats"
+    ai_hats_dir.mkdir()
+
+    # Case A: Symlinked child ~/.ai-hats/traits -> real_traits
+    real_traits_dir = tmp_path / "external_traits"
+    real_traits_dir.mkdir()
+    sym_trait_dir = real_traits_dir / "symlink-global-trait"
+    sym_trait_dir.mkdir()
+    (sym_trait_dir / "config.yaml").write_text("name: symlink-global-trait\n")
+    (ai_hats_dir / "traits").symlink_to(real_traits_dir, target_is_directory=True)
+
+    # Case B: library_paths.yaml pointing to ext_lib_dir
+    ext_lib_dir = tmp_path / "external_lib"
+    ext_lib_dir.mkdir()
+    ext_trait_dir = ext_lib_dir / "traits" / "yaml-global-trait"
+    ext_trait_dir.mkdir(parents=True)
+    (ext_trait_dir / "config.yaml").write_text("name: yaml-global-trait\n")
+    (ai_hats_dir / "library_paths.yaml").write_text(f"paths:\n  - {ext_lib_dir}\n")
+
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = dict(base_env)
+    env.pop("PYTHONPATH", None)
+    env["AI_HATS_USER_HOME"] = str(user_home_dir)
+
+    _run(
+        [str(launcher_dest), "self", "init", "-p", "claude", "-r", "assistant"],
+        cwd=project,
+        env=env,
+    )
+
+    _run(
+        [
+            str(launcher_dest),
+            "config",
+            "customize",
+            "assistant",
+            "--add-trait",
+            "symlink-global-trait",
+            "--add-trait",
+            "yaml-global-trait",
+            "--global",
+        ],
+        cwd=project,
+        env=env,
+    )
+
+    res = _run([str(launcher_dest), "config", "status"], cwd=project, env=env)
+    out = res.stdout + res.stderr
+
+    assert "symlink-global-trait  (built-in)" not in out, f"symlinked trait tagged built-in:\n{out}"
+    assert "symlink-global-trait  (global)" in out or "symlink-global-trait" in out
+
+    assert "yaml-global-trait  (built-in)" not in out, f"yaml trait tagged built-in:\n{out}"
+    assert "yaml-global-trait  (global)" in out or "yaml-global-trait" in out

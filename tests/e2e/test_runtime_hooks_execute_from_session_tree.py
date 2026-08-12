@@ -1,20 +1,12 @@
-"""HATS-1268 — claude runtime hooks execute from the session skill mirror.
+"""e2e (HATS-1268)
 
-Two properties the flat ``library/hooks/`` copy could not hold, asserted over a
-real composed session (``dev_rule_e2e_gate``; a per-channel test proves nothing
-about the composite — HATS-1113):
-
-1. every wired command resolves inside the session tree, with the data files
-   its skill ships still beside it;
-2. a hook that fires through the chain still WRITES to the bypass journal.
-
-(2) is the one that matters: the journal helper is reached as a sibling, and a
-missing sibling degrades to a stub that prints to stderr and returns cleanly —
-indistinguishable from success by exit code alone. Asserting "the hook ran"
-would pass with the journal dead.
-
-Both share one module-scoped project: ``self init`` costs ~1 min, and the two
-assertions are about the same materialized session.
+flow:   an agent executing tools in a session with materialized runtime hooks
+cmds:
+    ai-hats self init -p claude -r maintainer --no-wizard
+expect: hook scripts resolve inside session tree alongside sibling data files and write
+        bypass records
+why:    without session-tree hook resolution, flattened hook scripts lose sibling data
+        files and bypass logging
 """
 
 from __future__ import annotations
@@ -62,9 +54,10 @@ def hooked_project(shared_launcher, tmp_path_factory):
 
 @pytest.mark.integration
 def test_every_wired_command_resolves_inside_the_session_tree(hooked_project):
-    """Fail-under-revert: point _desired_runtime_entries back at
-    ``_lib_hooks_dir`` / ``managed_runtime_hook_filename`` and every path below
-    lands in ``.agent/ai-hats/library/hooks/`` instead."""
+    """Fail-under-revert: point _desired_runtime_entries back at a shared
+    managed directory and every path below leaves the session tree. The old
+    negative form (``"library/hooks" not in command``) became untestable when
+    HATS-1480 deleted that directory, so the assertion is positive now."""
     project, _env, settings = hooked_project
     commands = pretooluse_hooks(settings, "Bash")
 
@@ -79,7 +72,9 @@ def test_every_wired_command_resolves_inside_the_session_tree(hooked_project):
         assert script.is_relative_to(session_root), (
             f"command escapes the session tree: {command} (root {session_root})"
         )
-        assert "library/hooks" not in command, f"still wired to the flat copy: {command}"
+        assert "plugin/skills" in command, (
+            f"wired command is not in the session skill mirror: {command}"
+        )
 
 
 @pytest.mark.integration

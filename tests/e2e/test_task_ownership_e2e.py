@@ -1,15 +1,16 @@
-"""e2e (HATS-955): task ownership across real ``rack`` processes (HATS-1263 —
-was the legacy ``ai-hats task`` CLI; same registry, same env contract).
+"""e2e (HATS-955, HATS-1263)
 
-Two separate ``rack`` invocations with distinct ``AI_HATS_ROOT_PID`` model two
-agents. Exercises the real cross-process path a unit test cannot: the
-env-stamped liveness anchor + ``ps``-based reclaim-on-death + the fcntl-locked
-registry file written by short-lived CLI subprocesses. Fail-under-revert:
-without the ownership wiring a live owner is not protected (the second agent
-steals the task) and a dead owner is never detected.
+flow:   multiple agent processes executing tasks in parallel
+cmds:
+    rack transition HATS-1 execute
+expect: an active task lock prevents another live agent process from claiming the task
+        while stale locks from terminated processes are reclaimed
+why:    task ownership locks ensure single-agent execution per task while recovering
+        automatically from crashed processes
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import os
@@ -30,20 +31,18 @@ _PLAN = (
 )
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
-
-
 def _rack(*args: str, cwd: Path, session: str, root_pid: int) -> subprocess.CompletedProcess[str]:
     """Run the backlog CLI (HATS-1263). No ``rack`` console script on this tier;
     PYTHONPATH puts the checkout in reach of ``python -m``."""
     from _helpers.env import checkout_pythonpath
+    from _helpers.sessions import stand_in_session
 
     env = dict(os.environ)
     env["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT)
     env[ENV_AI_HATS_VENV] = str(Path(sys.executable).parent.parent)
-    env["AI_HATS_SESSION_ID"] = session
     env["AI_HATS_ROOT_PID"] = str(root_pid)
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    stand_in_session(env, cwd, session)
     # plan->execute is consent-gated on rack; ownership is what these tests probe.
     env["AI_HATS_PLAN_ACK"] = "1"
     return subprocess.run(

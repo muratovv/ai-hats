@@ -1,10 +1,12 @@
-"""E2E: pre-HATS-1170 root wiring residue is swept off the project root.
+"""e2e (HATS-1170, HATS-1336)
 
-Only the sweeper can reclaim these entries — ``ensure_runtime_hooks`` is a
-no-op and ``runtime_wiring_changes`` returns ``[]`` (HATS-1336). The sweep is
-``install_time`` only (``assembler.py:848-851``), so these drive a real
-``_bump_internal``, not ``set_role`` and not session start.
-"""
+flow:   a developer running ai-hats self update to sweep legacy root residue files
+cmds:
+    ai-hats self update
+expect: self update command sweeps legacy root residue files and keeps framework state inside
+        .agent/ai-hats/
+why: without root residue sweeps, legacy config files remain in project root corrupting
+     state resolution"""
 
 from __future__ import annotations
 
@@ -256,6 +258,34 @@ def test_root_carries_no_ai_hats_hook_commands_after_sweep(seeded):
         assert not [c for c in commands if ".agent/ai-hats/" in c or "/.agy/" in c], (
             f"{settings.name} still carries ai-hats wiring: {commands}"
         )
+
+
+@pytest.mark.integration
+def test_named_remedy_command_reaches_the_gemini_surface(seeded, shared_launcher):
+    """HATS-1522: the startup WARN names ``self init --no-wizard`` — this proves
+    that command reaches the agy surface the startup scan reads.
+
+    The other tests here drive ``_bump_internal``; a promise made to a user is
+    only kept by the command the user is actually told to type.
+    """
+    project, env = seeded
+    launcher, _env, _venv = shared_launcher
+    gemini = project / ".gemini" / "settings.json"
+    assert _tags(gemini, "tag"), "seed must start dirty or the test proves nothing"
+
+    result = subprocess.run(
+        [str(launcher), "self", "init", "--no-wizard"],
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert _tags(gemini, "tag") == [], (
+        f"residue survived the command the WARN names: {_tags(gemini, 'tag')}"
+    )
 
 
 @pytest.mark.integration

@@ -1,14 +1,16 @@
-"""E2E: fall-through probe refuses a venv missing ANY workspace member (HATS-895).
+"""e2e (HATS-895)
 
-Discriminates against the partial fix ``import ai_hats.cli`` alone:
-``ai_hats_wt`` is NOT in the CLI import chain (deferred per ADR-0013), so a
-wt-mined venv would pass a cli-only probe and exit 0 — this test loops over
-EVERY ``packages/*`` member and demands a clean refusal + heal hint for each.
-
-Fail-under-revert: bare probe → core-mine execs a raw ``ModuleNotFoundError``
-traceback (no "not importable" message), wt-mine exits 0. Real subprocess +
-real uv + real launcher per ``dev_rule_e2e_gate``.
-"""
+flow: a developer running regular CLI commands when any workspace member package is
+      missing from
+        venv
+cmds:
+    ai-hats --help
+expect: launcher import probe fails cleanly with exit code 1 naming missing package and
+        self update
+        repair hint
+why: without comprehensive workspace member probes, missing optional workspace packages
+     leak
+        uncaught ModuleNotFoundErrors"""
 # comment-length: allow — deliberate fail-under-revert contract docstring
 
 from __future__ import annotations

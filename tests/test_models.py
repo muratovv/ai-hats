@@ -3,9 +3,9 @@ from pydantic import ValidationError
 
 from ai_hats.models import (
     KNOWN_SCHEMA_VERSION,
-    CheckBinding,
     CheckBindingError,
     ComponentConfig,
+    ComponentKeyError,
     Composition,
     FeedbackConfig,
     FeedbackPolicy,
@@ -16,6 +16,7 @@ from ai_hats.models import (
     SessionRetroConfig,
     SkillMetadata,
     SmartThreshold,
+    parse_app_bindings,
     resolve_namespace,
 )
 
@@ -276,7 +277,7 @@ def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert "did you mean" not in err
-    assert "known: checks, rules, skills, traits" in err
+    assert "known: apps, rules, skills, traits" in err
 
 
 def test_composition_rejects_unknown_key_when_loader_bypassed():
@@ -290,121 +291,121 @@ def test_composition_rejects_unknown_key_when_loader_bypassed():
 # -- HATS-1140: composition.checks binding rows --
 
 
-def test_checks_row_parses_with_bare_on_key(tmp_path, capsys):
-    """HATS-1140 S1: the row shape is ``{skill, script, on, on_error}`` (ADR-0019
-    D2). ``on`` is unquoted in every example the ADR and the docs show, and
-    PyYAML resolves a bare ``on`` key to ``True`` under YAML 1.1 — so without a
-    restore the field arrives missing and the binding is a gate that never
-    installs. Precedent for the restore: ``ai_hats_wt/carry.py``.
+def test_apps_block_parses_into_rows_with_provenance(tmp_path):
+    """The role-facing shape: app key, backlog level, `run:`/`at:`/`on_error:`."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  apps:\n    rack:\n      tasks:\n"
+        "        - run: s/h.sh\n          at: [edge:plan--execute]\n"
+    )
+
+    config = ComponentConfig.from_yaml(config_file)
+    (row,) = parse_app_bindings(config.composition.apps, declared_by="r")
+
+    assert (row.app, row.path, row.run) == ("rack", ("tasks",), "s/h.sh")
+    assert row.at == ("edge:plan--execute",)
+    assert row.cargo == {}, "at: is owned, so it is not cargo"
+    assert row.on_error == "refuse", "the strict default, never inferred from cargo"
+    assert row.declared_by == "r"
+
+
+def test_an_app_with_no_backlog_level_keeps_an_empty_trail(tmp_path):
+    """Depth belongs to the app: `wt` puts rows straight under its key, and
+    ai-hats must not require the level `rack` happens to have."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  apps:\n    wt:\n      - run: s/h.sh\n        at: [pre-merge]\n"
+    )
+
+    config = ComponentConfig.from_yaml(config_file)
+    (row,) = parse_app_bindings(config.composition.apps, declared_by="r")
+
+    assert (row.app, row.path) == ("wt", ())
+
+
+def test_a_row_without_run_is_not_a_row(tmp_path):
+    """`run:` is what makes a mapping a row, so a mapping without it is read as
+    another level of the app's own grammar — and a scalar under it is loud."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("name: r\ncomposition:\n  apps:\n    rack:\n      tasks: 3\n")
+
+    config = ComponentConfig.from_yaml(config_file)
+    with pytest.raises(CheckBindingError, match="expected a row"):
+        parse_app_bindings(config.composition.apps, declared_by="r")
+
+
+def test_a_bare_on_key_is_now_refused_instead_of_remapped(tmp_path):
+    """YAML 1.1 reads `on:` as True. The old channel remapped it for one known
+    field; under an opaque app block ai-hats cannot know which key is
+    significant, so the trap is removed by refusing the spelling."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  apps:\n    rack:\n      tasks:\n"
+        "        - run: s/h.sh\n          on: [edge:plan--execute]\n"
+    )
+
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(config_file)
+
+    assert "not a string" in str(exc.value)
+    assert "'on' -> 'at'" in str(exc.value)
+
+
+def test_apps_row_with_a_bad_on_error_is_loud(tmp_path):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  apps:\n    rack:\n      tasks:\n"
+        "        - run: s/h.sh\n          on_error: maybe\n"
+    )
+
+    config = ComponentConfig.from_yaml(config_file)
+    with pytest.raises(CheckBindingError, match="on_error"):
+        parse_app_bindings(config.composition.apps, declared_by="r")
+
+
+def test_the_retired_checks_key_refuses_and_says_where_the_rows_moved(tmp_path):
+    """HATS-1545 F2 (supervisor ruling 2026-08-10).
+
+    Written against the shape legacy configs ACTUALLY have — `skill:`/`script:`
+    and a bare `on:`. An earlier version of this test used `at:` inside the
+    legacy block, a shape no real config carries, and so certified a migration
+    path nobody could take. The strip-unknown WARN is the wrong answer here: it
+    drops a declared gate and carries on, which is the silence this channel
+    exists to remove. So the retired key gets its own refusal, and the refusal
+    has to say where the rows go.
     """
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
-        "name: r\n"
-        "composition:\n"
-        "  skills: [hunk-review-comments]\n"
-        "  checks:\n"
-        "    - skill: hunk-review-comments\n"
-        "      script: hooks/check.sh\n"
-        "      on: [edge:review--done, wt:pre-merge]\n"
-        "      on_error: warn\n"
+        "name: r\ncomposition:\n  skills: [s]\n  checks:\n"
+        "    - skill: s\n      script: h.sh\n      on: [edge:review--done]\n"
+        "      on_error: refuse\n"
+    )
+
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(config_file)
+
+    message = str(exc.value)
+    assert "composition.checks" in message, "name the key that was retired"
+    assert "composition.apps" in message, "name where the rows moved"
+    assert "run:" in message and "at:" in message, "name the field renames"
+    assert str(config_file) in message, "name the file the author must edit"
+
+
+def test_an_unknown_composition_key_holding_a_truthy_key_still_strips(tmp_path, capsys):
+    """HATS-1545 F8. The HATS-581 / ADR-0012 forward-compat policy is: strip, so
+    an OLDER binary survives a config a NEWER one wrote. The non-string-key
+    refusal is scoped to `composition.apps` — the one OPEN registry, where no
+    remap is possible — so an unknown subtree keeps warning rather than failing.
+    """
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "name: r\ncomposition:\n  future_thing:\n    - widget: x\n      on: [a]\n"
     )
 
     config = ComponentConfig.from_yaml(config_file)
 
-    (row,) = config.composition.checks
-    assert row.skill == "hunk-review-comments"
-    assert row.script == "hooks/check.sh"
-    assert row.on == ("edge:review--done", "wt:pre-merge")
-    assert row.on_error == "warn"
-    assert capsys.readouterr().err == ""
-
-
-def test_checks_row_defaults_on_error_to_refuse(tmp_path):
-    """ADR-0019 D4: default ``refuse`` preserves today's fail-closed posture; a
-    consumer opts into ``warn`` explicitly."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        "name: r\ncomposition:\n  checks:\n"
-        "    - {skill: s, script: h.sh, on: ['edge:plan--execute']}\n"
-    )
-
-    (row,) = ComponentConfig.from_yaml(config_file).composition.checks
-
-    assert row.on_error == "refuse"
-
-
-def test_checks_typo_of_checks_key_now_suggests_it(tmp_path, capsys):
-    """The motivating typo of HATS-1152, which could not be demonstrated until
-    ``checks`` existed as a field: ``cheks:`` is a gate that never installs, and
-    difflib now names the intended key."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("name: r\ncomposition:\n  cheks: []\n")
-
-    ComponentConfig.from_yaml(config_file)
-
-    assert "did you mean 'checks'?" in capsys.readouterr().err
-
-
-def test_checks_unknown_row_key_warns_and_is_ignored(tmp_path, capsys):
-    """R4b / ADR-0019 D6: an unknown OPTIONAL field must not hard-fail an older
-    engine reading a newer trait — warn, ignore, continue."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        "name: r\ncomposition:\n  checks:\n"
-        "    - skill: s\n      script: h.sh\n      on: [edge:plan--execute]\n"
-        "      timeout: 30\n"
-    )
-
-    (row,) = ComponentConfig.from_yaml(config_file).composition.checks
-
-    assert row.skill == "s"
-    err = capsys.readouterr().err
-    assert "ignoring unknown row key(s) 'timeout'" in err
-
-
-def test_checks_row_missing_script_is_loud(tmp_path):
-    """R3 / ADR-0019 D6: a malformed row is a gate that silently never installs;
-    the error names the file and the row index, which a bare pydantic
-    ValidationError does not."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        "name: r\ncomposition:\n  checks:\n    - {skill: s, on: ['edge:plan--execute']}\n"
-    )
-
-    with pytest.raises(CheckBindingError) as exc:
-        ComponentConfig.from_yaml(config_file)
-
-    assert "composition.checks[0]" in str(exc.value)
-    assert "script" in str(exc.value)
-
-
-def test_checks_row_without_any_point_is_loud(tmp_path):
-    """A binding to no point fires nowhere — the same silent absence R3 removes,
-    so an empty ``on`` is malformed rather than a degenerate-but-valid row."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        "name: r\ncomposition:\n  checks:\n    - {skill: s, script: h.sh, on: []}\n"
-    )
-
-    with pytest.raises(CheckBindingError, match="at least one point"):
-        ComponentConfig.from_yaml(config_file)
-
-
-def test_checks_block_that_is_not_a_list_is_loud(tmp_path):
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("name: r\ncomposition:\n  checks: {skill: s}\n")
-
-    with pytest.raises(CheckBindingError, match="must be a list"):
-        ComponentConfig.from_yaml(config_file)
-
-
-def test_checks_row_rejects_unknown_key_when_loader_bypassed():
-    """The HATS-1152 shape: ``from_yaml`` warns and strips, but a caller building
-    the row directly gets extra="forbid"."""
-    with pytest.raises(ValidationError):
-        CheckBinding.model_validate(
-            {"skill": "s", "script": "h.sh", "on": ("edge:plan--execute",), "bogus": 1}
-        )
+    assert config.composition.apps == {}
+    assert "future_thing" in capsys.readouterr().err
 
 
 # -- OverlayConfig tests --
@@ -1216,3 +1217,65 @@ def test_facade_surface_parity():
     }
     missing = sorted(n for n in expected if not hasattr(facade, n))
     assert not missing, f"facade lost re-exports: {missing}"
+
+
+# --- HATS-1545 S1: the loader that refuses a key YAML would drop silently ---
+
+
+def _component(tmp_path, body: str):
+    path = tmp_path / "config.yaml"
+    path.write_text(body)
+    return path
+
+
+def test_duplicate_composition_key_is_refused_by_name(tmp_path):
+    """`yaml.safe_load` keeps the last of two identical keys and says nothing,
+    so a second `apps:` erases the first block's gate (HATS-1545 R2, D1)."""
+    path = _component(
+        tmp_path,
+        "name: x\ncomposition:\n  apps:\n    rack:\n      tasks: [a]\n  apps:\n    wt: [b]\n",
+    )
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'apps'" in str(exc.value)
+    assert "composition" in str(exc.value)
+
+
+def test_duplicate_backlog_key_under_an_app_is_refused(tmp_path):
+    """The refusal reaches every depth: R1 shrinks the key surface to app and
+    backlog, it does not remove it."""
+    path = _component(
+        tmp_path,
+        "name: x\ncomposition:\n  apps:\n    rack:\n      tasks: [a]\n      tasks: [b]\n",
+    )
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'tasks'" in str(exc.value)
+
+
+def test_duplicate_top_level_composition_key_is_refused(tmp_path):
+    """A second `composition:` drops the whole first block — same class."""
+    path = _component(
+        tmp_path, "name: x\ncomposition:\n  skills: [a]\ncomposition:\n  rules: [b]\n"
+    )
+    with pytest.raises(ComponentKeyError) as exc:
+        ComponentConfig.from_yaml(path)
+    assert "'composition'" in str(exc.value)
+
+
+def test_a_config_with_no_duplicate_still_loads(tmp_path):
+    path = _component(tmp_path, "name: x\ncomposition:\n  skills: [a, b]\n  rules: []\n")
+    config = ComponentConfig.from_yaml(path)
+    assert config.composition.skills == ["a", "b"]
+
+
+def test_every_shipped_library_config_survives_the_strict_loader():
+    """Strictness that bricks the shipped library is a regression, not a gate."""
+    from pathlib import Path
+
+    import ai_hats_library
+
+    roots = sorted(Path(ai_hats_library.__file__).parent.rglob("config.yaml"))
+    assert roots, "no library configs found — the probe would prove nothing"
+    for path in roots:
+        ComponentConfig.from_yaml(path)

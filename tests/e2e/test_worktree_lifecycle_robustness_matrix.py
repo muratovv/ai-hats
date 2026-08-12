@@ -1,26 +1,38 @@
-"""Epic acceptance matrix for HATS-835 (worktree lifecycle & merge robustness).
+"""e2e (HATS-697, HATS-714, HATS-788, HATS-835)
 
-Each child of the epic hardened one failure mode of the
-``task transition`` / worktree lifecycle and shipped its own focused e2e.
-This module is the **capstone**: one parametrized real-launcher matrix that
-walks the shared bootstrap once per case and asserts the epic's user-visible
-guarantees hold together. It deliberately overlaps the per-child e2e — the
-value is a single "the lifecycle is robust as a whole" acceptance gate that
-fails loudly if any one invariant regresses.
+flow:   a developer finalizing an already-merged task whose worktree state file was
+        removed
+cmds:
+    rack transition TST-001 done
+expect: transition done short-circuits to done without false state lost errors and
+        cleans up branch
+why:    already-merged branches with missing state metadata must finalize cleanly
 
-Covered invariants (child → scenario):
-- HATS-697 — an already-merged branch whose worktree state was lost finalizes
-  ``done`` without a re-merge instead of a false ``worktree state lost``.
-- HATS-697 — a forced ``execute`` spins NO fresh worktree.
-- HATS-714 — a state file with ``original_branch: null`` yields a typed
-  "incomplete worktree state" refusal, never an opaque traceback.
-- HATS-788 — ``transition done`` from INSIDE the task's own linked worktree is
-  refused before any teardown.
+flow:   a developer forcing a task transition to execute with --force
+cmds:
+    rack transition TST-001 execute --force --reason "shipped on master"
+expect: task state moves to execute without spinning up a fresh git worktree
+why:    forced execute overrides worktree provisioning when work was shipped out-of-band
 
-Per ``dev_rule_e2e_gate``: this exercises the real launcher + real binary.
-"""
+flow:   a developer finalizing a task when worktree state metadata contains null
+        original_branch
+cmds:
+    rack transition TST-001 done
+expect: transition done is refused with a typed error naming missing original_branch
+        field
+why:    incomplete worktree state metadata must produce a clean typed error without
+        traceback
+
+flow:   a developer finalizing a task from inside its own linked worktree directory
+cmds:
+
+    # from inside the linked worktree directory
+    rack transition TST-001 done
+expect: transition done is refused before teardown and worktree directory is preserved
+why:    transition done from inside a worktree must refuse to avoid removing caller cwd"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import json
 import subprocess
@@ -44,16 +56,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _git_clean(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

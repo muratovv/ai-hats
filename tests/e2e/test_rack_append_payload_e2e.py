@@ -1,12 +1,12 @@
-"""e2e: the ``--append`` array form leaves an addressable card (HATS-1299).
+"""e2e (HATS-1299)
 
-The defect lived at the argv → disk boundary: ``--append tags=["x"]`` nested the
-array as one entry, the card stopped loading, and every repair verb died on the
-read before it could mutate. An in-process test can pin the parse; only a real
-process proves the card is still there afterwards.
-
-Fail-under-revert: restore ``ops.py``'s JSON-only ``--append`` (``Append(payload)``
-for the whole array) → the ``context`` call below exits 1.
+flow:   a developer appending JSON array payloads to task card fields using the CLI
+cmds:
+    rack transition HATS-9001 --append 'tags=["one","two"]'
+expect: array elements are appended to the field in task.yaml and the task card remains
+        parseable and addressable by CLI commands
+why:    malformed array appending corrupts task YAML structure and makes task cards
+        unreadable by tracker commands
 """
 
 from __future__ import annotations

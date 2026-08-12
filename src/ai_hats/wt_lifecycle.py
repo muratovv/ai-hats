@@ -27,11 +27,21 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
-from .worktree_hooks import run_worktree_hook
-from ai_hats_wt import WT_TEARDOWN_EVENTS, LifecycleContext, WorktreeTeardownAborted
+from .check_points import WT_APP, check_log_token
+from .hook_exec import HookRun, HookVerdict, run_hook
+from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
+from ai_hats_wt import (
+    WT_TEARDOWN_EVENTS,
+    LifecycleContext,
+    WorktreeMergeAborted,
+    WorktreeTeardownAborted,
+)
 from ai_hats_wt.locks import _state_key
 
 logger = logging.getLogger(__name__)
+
+#: The point ``merge()`` fires, in the ``wt`` app's own grammar (HATS-1545).
+WT_PRE_MERGE = "pre-merge"
 
 
 class WorktreeHookError(Exception):
@@ -90,7 +100,7 @@ def resolve_hook_script(
     recomputed at every spawn, never persisted — downstream the library lives in
     a versioned venv that ``self update`` replaces. Both halves of the row are
     persisted state a tamperer can reach, so the resolved path is contained
-    against its skill root and that root against the search roots (M11).
+    against its skill root (M11).
     """
     from .library_paths import find_component_dir
     from .models import resolve_namespace
@@ -107,8 +117,6 @@ def resolve_hook_script(
     if skill_dir is None:
         return None, f"skill {skill!r} declaring this hook is not in the library"
     skill_dir = skill_dir.resolve()
-    if not any(_contains(root, skill_dir) for root in roots):
-        return None, f"skill {skill!r} resolves outside every library root"
 
     candidate = (skill_dir / script).resolve()
     if not _contains(skill_dir, candidate):
@@ -159,10 +167,51 @@ class HookRunningLifecycle:
                 worktree_path=ctx.worktree_path,
                 project_dir=ctx.project_dir,
                 branch_name=ctx.branch_name,
+                deadline=ctx.deadline,
                 log_path=log_dir / f"wt_in-{script.name}.log",
             )
             if not outcome.ok:
                 _warn_wt_in_failed(row, outcome.reason)
+
+    def before_merge(self, ctx: LifecycleContext) -> None:
+        """Run every ``wt:pre-merge`` check before the merge mutates anything.
+
+        Resolved LIVE from the composition, not from the create-time carry: a
+        gate must judge by the rule in force at merge time, and the carry is the
+        record of what a worktree holds (ADR-0013 D5), not of what may guard it.
+        The catalog fixes this point's policy at ``refuse`` (ADR-0019 D4), so
+        every non-pass outcome — refusal, broken script, missing script alike —
+        aborts. ``skip_hooks`` does NOT apply: it exists so a teardown can drop
+        data harvesting, never so a merge can drop its gate.
+        """  # comment-length: allow — the three deliberate non-symmetries with wt_out
+        if ctx.worktree_path is None:
+            return
+        from .check_resolve import CheckResolutionError, resolve_checks_at
+
+        try:
+            checks = resolve_checks_at(ctx.project_dir, WT_APP, WT_PRE_MERGE)
+        except CheckResolutionError as exc:
+            _raise_merge_aborted(ctx.branch_name, f"checks: {exc}")
+        if not checks:
+            return
+        log_dir = _wt_hook_log_dir(ctx.state_dir, ctx.branch_name)
+        for check in checks:
+            run = run_hook(
+                check.script_path,
+                point=WT_PRE_MERGE,
+                budget=resolve_hook_timeout(),
+                deadline=ctx.deadline,
+                project_dir=ctx.project_dir,
+                worktree_path=ctx.worktree_path,
+                extra_env={"AI_HATS_BRANCH_NAME": ctx.branch_name},
+                # The dedup identity, not the basename: two rows whose scripts
+                # share a basename would otherwise truncate each other's log
+                # while the first one's reason still points at it — the HATS-1137
+                # defect `rack_consumers._escaped` exists to prevent.
+                log_path=log_dir / f"pre-merge~{check_log_token(check)}.log",
+            )
+            if not run.ok:
+                _raise_merge_aborted(ctx.branch_name, _check_refusal(check, run))
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Run ``wt_out`` hooks bound to ``event`` before the core removes the dir.
@@ -209,6 +258,7 @@ class HookRunningLifecycle:
                 worktree_path=ctx.worktree_path,
                 project_dir=ctx.project_dir,
                 branch_name=ctx.branch_name,
+                deadline=ctx.deadline,
                 log_path=log_dir / f"{event}-{script.name}.log",
             )
             if not outcome.ok:
@@ -234,10 +284,20 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     itself name the sub-agent recovery (D8 provenance).
     """
     skill = row.get("skill", "?")
+    match event:
+        case "merge":
+            subcmd = "merge"
+        case "discard" | "cleanup":
+            subcmd = "discard"
+        case _:
+            raise ValueError(f"Unknown wt teardown event: {event!r}")
+
+    cmd_hint = f"ai-hats wt {subcmd} {branch_name} --skip-hooks"
+
     detail = (
         f"wt_out hook from skill '{skill}' failed on {event} ({reason}). "
         f"Teardown aborted — worktree '{branch_name}' preserved. Fix the hook "
-        f"and retry, or force with --skip-hooks (accepts the data loss)."
+        f"and retry, or force with `{cmd_hint}` and repeat the command (accepts the data loss)."
     )
     cause = WorktreeHookError(detail)
     if event == "cleanup":
@@ -248,6 +308,32 @@ def _raise_teardown_aborted(event: str, branch_name: str, row: dict, reason: str
     else:
         message = detail
     raise WorktreeTeardownAborted(message) from cause
+
+
+def _check_refusal(check, run: HookRun) -> str:
+    """A refusal that spoke stands alone; anything else names the binding.
+
+    Same shape as ``rack_consumers._refusal`` on the edge road, deliberately —
+    one script bound to both points must read the same on either, and HATS-1538
+    cost a session to a symptom that named the wrong subsystem.
+    """
+    binding = f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
+    if run.verdict is HookVerdict.REFUSE:
+        return run.reason
+    return f"checks: {binding} — {run.reason}"
+
+
+def _raise_merge_aborted(branch_name: str, reason: str) -> NoReturn:
+    """Refuse the merge with the tree intact (HATS-1540).
+
+    No ``--skip-hooks`` recipe, unlike its teardown sibling: that escape exists
+    to accept losing harvested data, and there is no equivalent thing to accept
+    here — the way past this gate is to satisfy it.
+    """
+    raise WorktreeMergeAborted(
+        f"checks refused the merge of worktree '{branch_name}' at {WT_PRE_MERGE} — "
+        f"nothing was merged and the worktree is intact.\n{reason}"
+    )
 
 
 #: The bundle ai-hats injects at every WorktreeManager construction / load.

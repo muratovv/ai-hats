@@ -1,24 +1,19 @@
-"""End-to-end coverage for the ``rack transition <ID> done`` drift recovery
-recipe (HATS-509 on the legacy CLI, ported to rack by HATS-1274).
+"""e2e (HATS-509, HATS-1274, HATS-1307)
 
-``WorktreeDriftError``'s body is facts-only by contract, so the recipe is
-owned by the CLI handler — on rack, ``rack_cli_provider._wt_error_shape``.
-It leads with the rebase (HATS-1307: the remedy a flagless ``rack transition``
-can complete) and names ``--accept-drift`` only as the conscious-acceptance
-fallback, on ``ai-hats wt merge`` and NOT on ``rack transition``, where
-copy-pasting it fails with ``No such option``.
-
-**Fail-under-revert**: remove the ``WorktreeDriftError`` branch from
-``_wt_error_shape`` → the refusal collapses back to the generic
-``Refused (worktree) for <id>: <exc>`` shape with an empty recipe, and the
-recipe assertions below fail.
-
-Driven through the ``rack`` CLI; ``self init`` stays on the ``ai-hats``
-launcher.
+flow:   a developer finalizing a task when the base branch has advanced with new
+        commits since the task worktree was created
+cmds:
+    # when base branch has advanced with new commits
+    rack transition TST-001 done
+expect: transition to done is refused with detailed drift information and instructions
+        to rebase or run ai-hats wt merge --accept-drift
+why:    branch drift must be reported with copy-pasteable resolution steps to prevent
+        unintended merge overwrites
 """
 # comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -41,16 +36,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

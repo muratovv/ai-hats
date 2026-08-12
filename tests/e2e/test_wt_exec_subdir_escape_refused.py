@@ -1,9 +1,10 @@
-"""e2e (HATS-1205): ``-C`` may not walk out of the worktree.
+"""e2e (HATS-1205)
 
-Fail-under-revert: drop the ``is_relative_to`` containment check in
-``_effective_dir`` and the command runs OUTSIDE the worktree — the probe then
-exits 0 and reports a path that is not under it.
-"""
+flow:   a developer attempting to navigate outside worktree boundaries using wt exec -C
+cmds:
+    ai-hats wt exec task/hats-1 -C ../.. -- pwd
+expect: directory traversal outside worktree root is refused with an error
+why:    -C flag must enforce containment within the target worktree root"""
 
 from __future__ import annotations
 

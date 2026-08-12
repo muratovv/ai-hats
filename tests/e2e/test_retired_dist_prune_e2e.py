@@ -1,33 +1,18 @@
-"""E2E (HATS-1280): a managed ``self update`` leaves a retired distribution behind.
+"""e2e (HATS-1497)
 
-What this pins: 0.14.0 dropped the ``ai-hats-tracker`` dependency, but an update
-installs without synchronising — the retired distribution and its
-``[project.scripts] ai-hats-tracker`` console entry survive in the venv that
-still carries them. On the managed (blue-green) path the upgrade builds a
-*fresh* ``versions/<sha>/`` (nothing stale to find there), while the
-pre-versioning legacy ``<ai_hats_dir>/.venv`` keeps a working
-``bin/ai-hats-tracker``.
-
-Why the FIRST update is the load-bearing case: ``reclaim_legacy_venv``
-(``version_recovery.py``) returns early while the updater is itself running
-from ``.venv`` (``current_run_sha`` is None), so the first update keeps that
-directory verbatim — stale scripts and all. The SECOND update discards the
-whole directory, which would make a naive "``.venv`` is gone" assertion pass
-with no fix in place and prove nothing. Hence: exactly ONE update, and the
-assertion is "``.venv`` survives, its retired console script does not".
-
-Shape: bootstrap the pre-versioning install from the last ref that still ships
-``packages/ai-hats-tracker`` (``self init`` → the launcher's heal builds
-``.venv``; no ``versions/`` yet), advance the install source to the working
-tree (the version that retired the dist), then one managed ``self update``.
-
-Fail-under-revert: revert the prune and ``.venv/bin/ai-hats-tracker`` is still
-on disk after the update — the final assertion fails.
-
-Deliberate long contract module docstring — noqa: comment-length.
-"""
+flow: a developer running self update after a framework package dependency has been
+      retired
+cmds:
+    ai-hats self update
+expect: self update creates versioned venv without retired package and prunes retired
+        console
+        scripts from legacy venv
+why: without retired distribution pruning, deprecated package binaries persist in
+     managed venvs and
+        shadow updated commands"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import json
 import os
@@ -74,10 +59,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -99,9 +80,9 @@ def _clone_pair(tmp_path: Path) -> tuple[Path, Path]:
     src_new = tmp_path / "src-new"
     for clone, ref in ((src_old, PRE_RETIREMENT_REF), (src_new, "HEAD")):
         subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(clone)], check=True)
-        _git(["config", "user.email", "e2e@test"], clone)
-        _git(["config", "user.name", "E2E"], clone)
-        _git(["checkout", "-B", "e2e-main", ref], clone)  # align ls-remote HEAD
+        git(clone, "config", "user.email", "e2e@test")
+        git(clone, "config", "user.name", "E2E")
+        git(clone, "checkout", "-B", "e2e-main", ref)  # align ls-remote HEAD
     assert RETIRED_DIST in (src_old / "pyproject.toml").read_text(), (
         f"{PRE_RETIREMENT_REF[:12]} does not depend on {RETIRED_DIST} — wrong ref; "
         "the install below would carry nothing to prune"
@@ -191,11 +172,11 @@ def test_e2e_first_managed_update_prunes_retired_console_script(tmp_path: Path) 
 
     for clone, ref in ((src_old, PRE_RETIREMENT_REF), (src_new, "HEAD")):
         subprocess.run(["git", "clone", "--quiet", str(REPO_ROOT), str(clone)], check=True)
-        _git(["config", "user.email", "e2e@test"], clone)
-        _git(["config", "user.name", "E2E"], clone)
+        git(clone, "config", "user.email", "e2e@test")
+        git(clone, "config", "user.name", "E2E")
         # `e2e-main` aligns the clone's symbolic HEAD (what the edge resolver
         # reads via `git ls-remote HEAD`) with the checked-out tree.
-        _git(["checkout", "-B", "e2e-main", ref], clone)
+        git(clone, "checkout", "-B", "e2e-main", ref)
     sha_new = _head_sha(src_new)
 
     assert RETIRED_DIST in (src_old / "pyproject.toml").read_text(), (

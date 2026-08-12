@@ -1,40 +1,18 @@
-"""HATS-517 — `rack transition <ID> execute` must handle the case where the
-target branch (``task/<id-lower>``) already exists.
+"""e2e (HATS-517, HATS-518, HATS-1263)
 
-Three sub-cases (see plan + task card):
-
-* **Case A** — branch exists, no worktree owns it. Transition must
-  attach the existing branch to a new linked worktree → exit 0.
-  Exercised here at the CLI boundary.
-* **Case B** — branch is currently checked out in the MAIN worktree.
-  After HATS-518 landed on master, ``_setup_worktree`` calls
-  ``assert_head_is_canonical_base()`` BEFORE ``WorktreeManager.create()``,
-  so this path is intercepted with ``WorktreeBaseBranchError`` (exit 1)
-  long before the HATS-517 classifier runs. The classifier remains as
-  defense-in-depth for direct ``WorktreeManager().create()`` callers
-  (Python API, tests) — exercised at unit level in
-  ``tests/test_worktree.py::TestBranchExistsClassifier``.
-* **Case C** is exercised at unit-test level (same class) — it requires
-  a manual linked-worktree setup that doesn't add coverage at the
-  subprocess boundary.
-
-Pattern (subprocess + ``python -m ai_hats_rack``) mirrors
-``tests/e2e/test_plan_gate_per_section_e2e.py`` — keeps the test
-checkout-independent (works from main repo or a linked worktree, no
-console script required). Re-pointed off the legacy ``ai-hats task``
-CLI in HATS-1263.
-
-dev_rule_e2e_gate (HATS-517 touches ``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` +
-``src/ai_hats/cli/task.py``): this file is the gated test. Sanity:
-under ``git stash`` of the HATS-517 classifier in
-``WorktreeManager.create()``, Case A fails with the original
-``WorktreeCreateError: branch already exists`` from
-``git worktree add -b ...``.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
+flow:   a developer transitioning a task to execute when its target git branch already
+        exists
+cmds:
+    # when target task branch already exists in the repository
+    rack transition HATS-517A execute
+expect: the existing git branch is attached to a newly created worktree directory when
+        not currently checked out in main
+why:    transition to execute must reuse existing task branches safely without failing
+        on pre-existing git branch references
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -53,16 +31,6 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = REPO_ROOT / "src"
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
 
 
 def _run_rack(

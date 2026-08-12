@@ -1,20 +1,25 @@
-"""HATS-437 — end-to-end behaviour of the shared-state-guard hooks.
+"""e2e (HATS-437, HATS-633)
 
-Per ``dev_rule_e2e_gate``: the two hook scripts (PreToolUse + git pre-push)
-are pure-bash surfaces that the unit suite cannot meaningfully exercise.
-This file invokes the scripts as a real subprocess to cover:
-
-  * PreToolUse hook: non-TTY block on irreversible, ack-override, pass-through
-    for safe / shared / empty payloads, chained-command detection.
-  * Git pre-push hook: non-fast-forward detection, deletion / new-branch
-    short-circuit, ack-override.
-
-Slow only because of subprocess spin-up (~ms each, no pip install).
+flow:   a maintainer pushes, and git hands the pre-push shared-state hook the
+        refspec on stdin before anything leaves the machine
+cmds:
+    git push                                       # fast-forward -> allowed
+    git push --force                               # rewrites history -> blocked
+    git push origin :branch                        # deletion -> allowed
+    AI_HATS_SHARED_STATE_ACK=1 git push --force    # ack -> allowed
+expect: a fast-forward, a branch deletion, a brand-new branch and an empty stdin
+        all pass; a non-fast-forward exits 1, and the refusal names
+        `rule_pause_before_shared_state_write` and says "Do NOT retry" rather
+        than failing bare; the env ack overrides the block
+why:    the hook is pure bash driven by git over stdin, so nothing in-process
+        reaches it — and a hook that blocks a legal fast-forward is as broken as
+        one that waves a force-push through. The PreToolUse half is unit-tested
+        in tests/test_shared_state_guard.py; only this half needs a real repo.
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git_helper
 
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -23,171 +28,17 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PRETOOL_HOOK = (
-    REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh"
-)
 PREPUSH_HOOK = (
     REPO_ROOT
     / "packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh"
 )
 
 
-def _run(script: Path, *, stdin: str, env: dict | None = None, timeout: int = 5):
-    base_env = os.environ.copy()
-    # Strip any ambient ack so tests don't accidentally inherit one from
-    # the parent shell (e.g. when developer ran with the override locally).
-    base_env.pop("AI_HATS_SHARED_STATE_ACK", None)
-    if env:
-        base_env.update(env)
-    return subprocess.run(
-        ["bash", str(script)],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=base_env,
-    )
-
-
-# --- PreToolUse hook -------------------------------------------------------
-
-
-@pytest.mark.integration
-def test_pretool_gates_gh_pr_merge_on_a_full_payload():
-    """A real PreToolUse payload gets the JSON answer, not the exit-2 one.
-
-    The hook is dual-mode since HATS-1294: a payload carrying ``hook_event_name``
-    — the only form the harness ever sends — is answered with a
-    ``permissionDecision`` on stdout and exit 0. Reading the exit code here
-    reported the live path as allowed (HATS-1308).
-    """
-    payload = (
-        '{"hook_event_name":"PreToolUse","tool_name":"Bash",'
-        '"tool_input":{"command":"gh pr merge 5 --merge --delete-branch"}}'
-    )
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 0, res.stderr
-    hso = json.loads(res.stdout)["hookSpecificOutput"]
-    assert hso["permissionDecision"] in {"deny", "ask"}, res.stdout
-    assert "gh pr merge" in hso["permissionDecisionReason"]
-
-
-@pytest.mark.integration
-def test_pretool_blocks_git_push_force_non_tty():
-    payload = '{"tool_input":{"command":"git push --force origin master"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_blocks_short_flag_force():
-    payload = '{"tool_input":{"command":"git push -f origin master"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_blocks_force_with_lease():
-    payload = '{"tool_input":{"command":"git push --force-with-lease origin foo"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_blocks_chained_irreversible():
-    """Catches the actual HYP-026/027 incident pattern (compound Bash call)."""
-    payload = (
-        '{"tool_input":{"command":"git pull && gh pr merge 9 --merge --delete-branch && git push"}}'
-    )
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_ack_overrides_block():
-    payload = '{"tool_input":{"command":"gh pr merge 5"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload, env={"AI_HATS_SHARED_STATE_ACK": "1"})
-    assert res.returncode == 0, res.stderr
-    assert "AI_HATS_SHARED_STATE_ACK=1" in res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_gates_regular_push_without_ack():
-    """HATS-1253: regular `git push` is `gated` — blocked, and the refusal
-    names the flag that opens it. Was ``test_pretool_allows_regular_push``,
-    which encoded the pre-1253 rule-only-pause policy."""
-    payload = '{"tool_input":{"command":"git push origin master"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 2, res.stderr
-    assert "AI_HATS_SHARED_STATE_ACK=1" in res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_allows_regular_push_with_ack():
-    """The approved-push handshake completes — the point of HATS-1253."""
-    payload = '{"tool_input":{"command":"git push origin master"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload, env={"AI_HATS_SHARED_STATE_ACK": "1"})
-    assert res.returncode == 0, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_allows_safe_command():
-    payload = '{"tool_input":{"command":"ls -la"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 0, res.stderr
-
-
-@pytest.mark.integration
-def test_pretool_allows_empty_payload():
-    """Hook must not crash on empty stdin (test invocations, harness no-ops)."""
-    res = _run(PRETOOL_HOOK, stdin="")
-    assert res.returncode == 0
-
-
-@pytest.mark.integration
-def test_pretool_allows_non_bash_payload():
-    """tool_input without a `.command` field — allow with no fuss."""
-    payload = '{"tool_input":{"file_path":"/tmp/foo"}}'
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 0
-
-
-@pytest.mark.integration
-def test_pretool_block_carries_recovery_guidance():
-    """HATS-633 — a refusal must steer the agent, not just stop it.
-
-    HATS-1294 replaced the rule-name pointer with an explicit account of how
-    consent is actually reached; HATS-1308 restated the invariant to match:
-    the text must name the consent flag and warn off the retry, which is the
-    #1 failure mode after a deliberate refusal.
-
-    Asserted on the full payload — the form the harness sends. The legacy
-    stderr branch carries the consent flag but not the retry warning, and which
-    of the two branches is even reachable is HATS-1311.
-    """
-    payload = (
-        '{"hook_event_name":"PreToolUse","tool_name":"Bash",'
-        '"tool_input":{"command":"gh pr merge 5 --merge"}}'
-    )
-    res = _run(PRETOOL_HOOK, stdin=payload)
-    assert res.returncode == 0, res.stderr
-    reason = json.loads(res.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-    assert "AI_HATS_SHARED_STATE_ACK" in reason
-    assert "do not retry" in reason.lower()
-
-
 # --- Git pre-push hook -----------------------------------------------------
 
 
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return _git_helper(cwd, *args).stdout.strip()
 
 
 @pytest.fixture

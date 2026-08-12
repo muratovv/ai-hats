@@ -1,13 +1,15 @@
-"""e2e (HATS-913): ``ai-hats wt exec`` threads the worktree's ``packages/*/src``
-into PYTHONPATH, so a workspace package imports from the WORKTREE, not via the
-main checkout's editable installs (the Franken-mix).
+"""e2e (HATS-913)
 
-Fail-under-revert: drop the ``workspace_pythonpath`` call in ``wt_exec`` (back
-to ``src``-only) and the inner ``import mypkg`` raises ModuleNotFoundError —
-``mypkg`` lives only under ``packages/mypkg/src``.
-"""
+flow:   a developer executing python commands in a worktree containing workspace
+        packages
+cmds:
+    ai-hats wt exec -- python -c "import mypkg"
+expect: packages/*/src directories within worktree are added to PYTHONPATH
+why:    wt exec must thread workspace packages into PYTHONPATH for isolated package
+        resolution"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import os
 import subprocess
@@ -21,10 +23,6 @@ from ai_hats_wt.env import PACKAGES_DIRNAME, SRC_DIRNAME
 from _helpers.wt import spawn_worktree
 
 pytestmark = pytest.mark.integration
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def _child_env(repo_root: Path) -> dict[str, str]:

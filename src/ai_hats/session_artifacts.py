@@ -8,6 +8,10 @@ from pathlib import Path
 
 from .materialization import ApplyMaterializer, Materializer
 
+#: Stands in for a value only the launch can produce (pid, uuid, trace path, a
+#: bound port). Lives here so a provider can spell it without importing dry_run.
+AT_LAUNCH = "<assigned at launch>"
+
 
 class ArtifactCategory(str, Enum):
     CONTEXT = "context"
@@ -61,6 +65,115 @@ def assemble_launch_command(
     cmd.extend(session_args)
     is_resume = any(f in extra for f in ("--resume", "--continue", "-c"))
     return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
+
+
+def assemble_launch_env(
+    provider,
+    project_dir: Path,
+    session_dir: Path,
+    *,
+    session_id: str,
+    trace_path: str,
+    role: str,
+    root_pid: str,
+    extra_env: dict[str, str],
+    claim: bool = True,
+) -> dict[str, str]:
+    """Everything ai-hats ADDS to the child's environment (HATS-1548).
+
+    Sibling of :func:`assemble_launch_command`, and for the same reason: the
+    launch merged six sources inline while the report merged two of them, so
+    ``--dry-run`` and ``role_materialization.json`` both under-reported the
+    session — including ``AI_HATS_SESSION_ID``, the variable that decides how a
+    bound check resolves. Inherited ``os.environ`` stays out: the child gets it
+    whatever ai-hats does, and listing it would bury what the launch contributes.
+    """  # comment-length: allow — the omission it fixes was invisible for a reason
+    from ai_hats_observe.session import session_env
+
+    from .constants import ENV_ROOT_PID
+    from .session_identity import SessionIdentity
+
+    # HATS-1594: the ONE place a session's identity is produced. Gates running in
+    # the processes this launches used to re-derive it from ai-hats.yaml, which
+    # does not hold it whenever --role/-p override.
+    identity = SessionIdentity(
+        id=session_id,
+        role=role,
+        provider=provider.name,
+        project_dir=project_dir,
+        session_dir=session_dir,
+        # Resolved where the provider object is in hand, so no consumer takes a
+        # second surface lookup that could answer differently.
+        skills_root=str(provider.session_skills_root(project_dir, session_id) or ""),
+    )
+    # ``claim`` separates a report from a launch: only the launch may take a
+    # resource (cline binds a hub port). Same keys either way — a key set that
+    # depended on the mode would be the reporting defect, moved (HATS-1554).
+    return {
+        **session_env(session_id, trace_path),
+        **provider.get_env(session_dir, project_dir),
+        **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),
+        **extra_env,
+        # Last on purpose: the scalars are projections of the envelope, so the
+        # identity overrides anything upstream spelled differently.
+        **identity.to_env(),
+        ENV_ROOT_PID: root_pid,
+    }
+
+
+@dataclass(frozen=True)
+class AutomateLaunch:
+    """What a sub-agent run consists of: the argv, and the prompt bytes inside it.
+
+    The two are returned together because for a CLI surface they are the same
+    thing — the whole prompt is one argv token — and deriving one separately
+    from the other is exactly how they drifted (HATS-1552).
+    """
+
+    launch: list[str]
+    prompt: str
+
+
+def assemble_meta_prompt(
+    project_dir: Path,
+    *,
+    role_context: str,
+    task: str,
+    ticket_id: str,
+) -> str:
+    """The prompt bytes a CLI sub-agent is launched with (HATS-1552).
+
+    Sibling of :func:`assemble_launch_command`. The dry-run held a second,
+    tidier version of this that dropped ``WORKING_DIRECTORY`` and both ticket
+    sections — and since agy and cline take the whole prompt as one argv token,
+    the reported command was not the command.
+    """
+    from .linked_context import ticket_sections
+    from .paths import tasks_dir
+
+    ticket_context, linked_context = ticket_sections(
+        tasks_root=tasks_dir(project_dir), ticket_id=ticket_id
+    )
+    sections = []
+    if role_context:
+        sections.append(role_context)
+    # HATS-1479: a surface whose tool picks its own cwd otherwise resolves the
+    # project to whatever absolute path the prompt happens to name.
+    sections.append(
+        "# WORKING_DIRECTORY\n"
+        f"{project_dir.resolve().as_posix()}\n\n"
+        "This is the project every path and CLI call below refers to. Run "
+        "each command with this directory as its working directory — `rack` "
+        "resolves its backlog by walking up from where it runs, so a command "
+        "started elsewhere reads and writes a different project."
+    )
+    if ticket_context:
+        sections.append(f"# TICKET_CONTEXT\n{ticket_context}")
+    if linked_context:
+        sections.append(f"# LINKED_CONTEXT\n{linked_context}")
+    if task:
+        sections.append(f"# TASK\n{task}")
+    return "\n\n".join(sections)
 
 
 def consumed_session_id(cmd: list[str], provider_session_id: str) -> str:

@@ -28,13 +28,17 @@ dependencies = [
     # First-party workspace packages (uv sources below) — the kernel (HATS-862:
     # composition value-types, YamlModel, git_env, safe_delete, atomic_io) lives
     # in ai-hats-core; the worktree engine (ai_hats_wt) lives in ai-hats-wt.
-    "ai-hats-core>=0.6.1",  # ResolvedCheck / ResolvedComponent Loud Validation (0.6.1, HATS-1140/1454)
-    "ai-hats-wt>=0.4.3",    # WorktreeDriftError carries base_branch/worktree_path (0.4.2, HATS-1307)
+    "ai-hats-core>=0.7.0",  # ResolvedCheck carries app/path/run/at/cargo (0.7.0, HATS-1545)
+    # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
+    # WorktreeMergeAborted); pinned to it in 9feb462f.
+    "ai-hats-wt>=0.5.0",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
-    "ai-hats-rack>=0.1.8",  # floor tracks the workspace version (HATS-1399)
-    "ai-hats-observe>=0.5.0",  # is_measured + FLAG_SENSOR_ERROR, imported at module level (0.5.0, HATS-1374)
+    # HATS-1541 grew this package to 0.2.0 (ai_hats_rack.checks — the FSM half
+    # of the checks channel, imported at module level by rack_consumers).
+    "ai-hats-rack>=0.2.0",
+    "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
     "ai-hats-library>=0.5.1",  # floor tracks the workspace version (HATS-1399)
     "click>=8.1",
     "pyyaml>=6.0",
@@ -59,7 +63,11 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-xdist>=3.5",
-    "ruff>=0.4",
+    # HATS-1607: exact, because this pin decides the gate's ANSWER — a floor let
+    # two venvs of different ages run different ruffs on one tree. Moving it is a
+    # deliberate commit; tests/test_dev_tool_pins.py holds ci.yml and the
+    # installed interpreter to it.
+    "ruff==0.16.2",
     "bandit>=1.7",
     "pip-audit>=2.7",
 ]
@@ -114,6 +122,11 @@ ai-hats-library = { workspace = true }
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+# HATS-1607: the gate's subject is python files — declared, not inherited from
+# whatever file types the current ruff happens to handle. 0.16.0 took markdown
+# out of preview and silently pulled 14 md files under tests/ into the format
+# check, golden fixtures among them.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 # S110/S112 (try-except-pass/continue) are a strict subset of what

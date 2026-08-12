@@ -1,44 +1,16 @@
-"""End-to-end coverage for HATS-481 L1' + L3' — parallel `rack
-transition <ID> done` on tasks sharing a base ref must both land cleanly.
+"""e2e (HATS-481)
 
-Per ``dev_rule_e2e_gate`` (and the precedent of
-``tests/e2e/test_wt_merge_drift.py`` / ``test_wt_merge_conflict_preserves_review.py``):
-user-visible behavior of ``rack transition <ID> done`` requires
-a real-binary e2e test.
-
-The bug we are preventing: two ``transition done`` invocations on
-worktrees sharing a base ref both run ``git merge --no-ff <task-branch>``
-on the base. Git's ``.git/index.lock`` rejects the second → CalledProcessError.
-Pre-HATS-481 ``_teardown_worktree`` swallowed it and ``transition``
-still marked the task DONE (silent data loss).
-
-With L4' alone the loser exits non-zero and the user retries.
-With L1' (base-branch lock) + L3' (retry) the contention is invisible
-to the user and both transitions complete first time.
-
-**Fail-under-revert** (mandatory per e2e gate):
-disabling BOTH L1' (replace `_acquire_base_branch_lock` body with
-``contextlib.nullcontext``) AND L3' (set ``MERGE_RETRY_MAX=1``) makes
-this test fail — `index.lock` contention causes one transition to exit
-non-zero. Disabling either layer alone is non-deterministic:
-
-==============  ===========================  ===========================
-Revert          What remains active           Result
-==============  ===========================  ===========================
-Only L1'        L3' + L4'                     L3' may absorb → flaky
-Only L4'        L1' + L3'                     L1' serializes → green
-Only L3'        L1' + L4'                     L1' serializes → green
-**L1' + L3'**   Only L4'                      Loser exits 1 → fails ✓
-==============  ===========================  ===========================
-
-The single test in this file therefore verifies the *interaction* of
-L1' + L3'; ``test_wt_merge_conflict_preserves_review.py`` (TC-E2)
-verifies L4' in isolation. Together they cover the whole stack.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   two developer processes concurrently running transition done on tasks sharing
+        base branch
+cmds:
+    rack transition TST-001 done
+expect: base branch lock serializes merges and both transitions succeed without data
+        loss
+why:    concurrent task finalization must synchronize base branch merges to prevent lock
+        contention"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -64,16 +36,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 def _task_state(project: Path, task_id: str) -> str:

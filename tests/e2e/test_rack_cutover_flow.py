@@ -1,15 +1,29 @@
-"""e2e: the wired `rack` binary cutover flow (HATS-1038 C1 + C2).
+"""e2e (HATS-1038)
 
-Drives the REAL `rack` console script from a freshly-built launcher venv (so
-entry-point discovery runs against real installed metadata) through a git
-sandbox: create → plan-gate → execute (worktree) → done (merge-consent), plus a
-`context` from INSIDE the task worktree. Fail-under-revert: dropping C1 (the
-`ai_hats_rack.kernel_factory` entry point / `rack_cli_provider`) falls `rack`
-back to the BARE kernel → no STATE.md refresh, no worktree; dropping C2 (the
-resolver gitlink hop) makes `context` from the worktree fail to resolve.
+flow:   a developer creating a task and verifying state and plan gate enforcement
+cmds:
+    rack create "wired flow" --role assistant
+    rack transition SBX-001 plan
+    rack transition SBX-001 execute
+expect: card is created with STATE.md updated and transition to execute fails on
+        an empty plan
+why:    rack must update project STATE.md on task creation and block execute on
+        unfilled plan scaffolds
+
+flow:   a developer executing a task with a filled plan and checking context from
+        inside a linked worktree
+cmds:
+    rack transition SBX-001 execute
+    rack context SBX-001
+expect: linked worktree is created on execute and rack context resolves the main
+        tracker from inside the worktree
+why:    rack must provision isolated worktrees on execute and resolve the main
+        tracker from worktree subdirectories
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
+from _helpers.sessions import stand_in_session
 
 import os
 import subprocess
@@ -26,10 +40,6 @@ _PLAN_SECTIONS = (
     "\n## Requirements\nx\n## Approach & counter\nx\n"
     "## Scope & Out-of-scope\nx\n## Steps\n1. x\n## Verification Protocol\nx\n"
 )
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
 
 
 def _rack(rack: Path, *args: str, cwd: Path, env: dict) -> subprocess.CompletedProcess[str]:
@@ -61,9 +71,10 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     _init_project(main)
     env = {
         **base_env,
-        "AI_HATS_SESSION_ID": "e2e-rack-cutover",
         "AI_HATS_ROOT_PID": str(os.getpid()),
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    stand_in_session(env, main, "e2e-rack-cutover")
 
     # --- C1a: the wired kernel refreshes STATE.md after create (bare does not) ---
     created = _rack(rack, "create", "wired flow", "--role", "assistant", cwd=main, env=env)

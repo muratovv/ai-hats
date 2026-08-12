@@ -5,7 +5,11 @@ write that goes around it happens for real during a dry-run and shows up here.
 Run per (surface × run_mode). The AUTOMATE pairs used to be where HATS-1207's
 bypasses lived and were asserted to REPORT an escape; since HATS-1207 routed
 both run-paths through the builder they are asserted to be clean instead.
-"""
+
+Files only — read as "a dry-run does nothing" this file overstates itself, which
+is how a socket bind hid inside ``ClineProvider.get_env``. The non-file half is
+``tests/test_dry_run_claims_nothing.py`` (HATS-1554).
+"""  # comment-length: allow — what the guarantee does NOT cover is the point
 
 from __future__ import annotations
 
@@ -110,3 +114,51 @@ def test_claude_automate_delivers_the_builders_own_values(project: Path):
     assert not any("bypass 1" in n for n in report.notes)
     assert report.escapes == ()
     assert any(arg.startswith("system_prompt=") for arg in report.launch)
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_the_reported_env_names_what_ai_hats_adds_to_the_child(project: Path, surface: str):
+    """HATS-1548: the record listed two of the six sources the launch merges.
+
+    ``AI_HATS_SESSION_ID`` is the load-bearing one — it is what
+    ``check_resolve.session_id()`` reads to pick between resolving off the
+    session mirror and resolving live, so a report that omits it cannot be used
+    to reason about a gate at all.
+    """
+    from ai_hats.constants import ENV_ROLE, ENV_ROOT_PID
+    from ai_hats_observe.trace import ENV_SESSION_ID
+
+    report = dry_run_hitl(project, provider=surface)
+
+    assert {ENV_SESSION_ID, ENV_ROLE, ENV_ROOT_PID, "TRACE_LOG_PATH"} <= set(report.env)
+    assert report.to_dict()["env_keys"] == sorted(report.env)
+    assert "PATH" not in report.env, "inherited os.environ is not what the launch adds"
+
+
+@pytest.mark.parametrize("surface", ["claude", "agy"])
+def test_full_render_shows_the_composed_body(project: Path, surface: str):
+    """The wiring, not the rendering: ``dry_run_hitl`` must hand the body over.
+
+    Its own render-level test builds the report by hand, so it stayed green with
+    the report field never populated — found by reverting the wiring (HATS-1548).
+
+    cline is excluded on purpose; see the sibling below.
+    """
+    report = dry_run_hitl(project, provider=surface)
+
+    assert report.prompt is not None, "this surface writes a prompt file"
+    assert "Role body." in report.render(full=True)
+    assert "(not written)" not in report.render(full=True)
+
+
+def test_cline_hitl_has_no_prompt_file_to_dump(project: Path):
+    """Why cline sits out the case above — and pinned so it cannot rot.
+
+    It materializes no ``.md``, so ``full=True`` renders no body section at all.
+    Parametrizing it in would have passed on the role text appearing in the
+    launch argv instead, which is a different claim entirely.
+    """
+    report = dry_run_hitl(project, provider="cline")
+
+    assert report.prompt is None
+    assert "Role body." in " ".join(report.launch), "it rides the argv instead"

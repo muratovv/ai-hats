@@ -1,27 +1,15 @@
-"""End-to-end coverage for HATS-479 — concurrent ``ai-hats wt create``.
+"""e2e (HATS-479)
 
-Per ``dev_rule_e2e_gate``: changes to ``src/ai_hats/cli/worktree.py`` or
-``packages/ai-hats-wt/src/ai_hats_wt/manager.py`` require an e2e test using the real launcher
-+ real ``ai-hats`` binary. This test exercises the L1+L2+L4 defense:
-
-* two concurrent ``ai-hats wt create task/<same>`` processes,
-* exactly one exit 0,
-* loser exits 1 with a human-readable "already exists" message
-  (NOT an opaque ``CalledProcessError`` traceback),
-* exactly one branch on disk,
-* exactly one state JSON under ``.agent/ai-hats/sessions/worktrees/``,
-* no leaked ``/tmp/ai-hats-wt-task-<same>-*`` directories beyond the
-  winner's worktree.
-
-**Fail-under-revert** (mandatory per e2e gate):
-comment out ``with _acquire_create_lock(...):`` in
-``WorktreeManager.create()`` → both processes race past L2, both call
-``git worktree add``, both can exit 0 (state.json race-overwritten) or
-the loser exits 1 with an opaque ``CalledProcessError`` lacking the
-"already exists" friendly message. Either way, an assertion fails.
-"""
+flow:   two developer sessions concurrently creating a worktree for the same branch
+cmds:
+    ai-hats wt create task/race
+expect: exactly one worktree creation succeeds while the loser exits with a friendly
+        error
+why:    concurrent worktree creation must lock branch allocation to prevent duplicate
+        worktrees"""
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
 import subprocess
 from pathlib import Path
@@ -47,16 +35,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
 
 @pytest.mark.integration

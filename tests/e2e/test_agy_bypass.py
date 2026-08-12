@@ -1,3 +1,18 @@
+"""e2e (HATS-1096)
+
+flow:   a user whose repo root holds a GEMINI.md full of standing instructions
+        runs an agy-provider role, and expects agy not to obey that file
+cmds:
+    ai-hats self init --provider agy
+    ai-hats agent assistant --task "Say hi"
+expect: the run exits 0 and nothing from GEMINI.md reaches stdout or stderr;
+        the file is left byte-identical on disk and no `.GEMINI.md.ai_hats_bak`
+        sidecar appears
+why:    left alone, the repo's root GEMINI.md becomes ambient instructions for
+        every agy role — and a bypass built by moving the file aside would
+        mutate the user's tree to get there, so both are forbidden
+"""
+
 from __future__ import annotations
 
 import os

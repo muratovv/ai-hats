@@ -1,39 +1,12 @@
-"""E2E: ``ai-hats self update`` refuses silent downgrade (HATS-441).
+"""e2e (HATS-432, HATS-441)
 
-The bug it catches:
-
-  Before HATS-441, ``ai-hats self update`` unconditionally ran
-  ``pip install --force-reinstall git+...`` even when the installed HEAD
-  was *ahead* of remote master. The result: a silent downgrade —
-  ``dev77+ga0ad85058 → dev70+gbc84726c2`` without warning, replacing an
-  editable install (with unpushed work) by the non-editable remote
-  snapshot.
-
-After HATS-441, the command refuses with exit code 3 unless
-``--force-downgrade`` is passed.
-
-Setup contract (real subprocess + real pip):
-
-  - ``src-repo``  — clone of REPO_ROOT + one empty commit on top of
-                    master. ``installed_sha`` resolves to this checkout's
-                    HEAD via editable install.
-  - ``fake-remote.git`` — bare clone of REPO_ROOT. Its master is exactly
-                    one commit *behind* ``src-repo``. Used as
-                    ``AI_HATS_REPO_URL`` for the probe + pip target.
-  - editable install: launcher bootstrap installs from src-repo; we
-                    then convert to ``pip install -e src-repo`` so the
-                    package directory carries a usable ``.git`` for the
-                    HATS-432 ahead/behind probe (``_fetch_into_pkg``).
-
-Per ``dev_rule_e2e_gate``: real ``bash`` + real ``pip install`` + real
-``ai-hats`` binary, marked ``@pytest.mark.integration``.
-
-Fail-under-revert: if the gate is removed from ``cli/maintenance.py``,
-the refuse-case invocation succeeds (exit 0, silent downgrade) and the
-``returncode == 3`` assertion below fails.
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer attempting self update when local version is ahead of remote release
+cmds:
+    ai-hats self update
+expect: update gate refuses implicit downgrade unless --force-downgrade flag is
+        explicitly passed
+why: without downgrade gates, background update checks inadvertently downgrade developer
+     builds to older releases"""
 
 from __future__ import annotations
 

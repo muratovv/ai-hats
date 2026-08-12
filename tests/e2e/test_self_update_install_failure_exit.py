@@ -1,38 +1,15 @@
-"""E2E: ``ai-hats self update`` exits non-zero when the install fails (HATS-718).
+"""e2e (HATS-549, HATS-718)
 
-The bug it catches:
-
-  In ``_run_managed_versioned_update`` the venv-create / pip-install / verify
-  failure branches printed ``[red]Update failed[/]`` then did a bare ``return``
-  — so click exited 0. A scripted chain (``ai-hats self update && ai-hats self
-  init``), CI, or an agent reading exit codes could not distinguish a broken
-  install from a successful one, and the ``&&`` chain proceeded to run ``init``
-  against a half-updated environment. HATS-549 already fixed this class for the
-  bump path (``sys.exit(1)``); this test pins the install-failure branches to
-  the same contract.
-
-Setup contract (real subprocess + real pip + real launcher), per
-``dev_rule_e2e_gate``:
-
-  - ``src-repo`` — a clone of REPO_ROOT used as the local (non-editable)
-    install source. First ``self update`` → ``versions/<shaA>/`` + ``current``.
-  - ``src-repo`` HEAD then advances to ``shaB`` whose working tree carries a
-    DELIBERATELY BROKEN ``pyproject.toml`` (invalid TOML). git resolves shaB
-    fine (it names the new version dir), but ``pip install <src-repo>`` fails
-    to build it → the managed update's pip-install branch fires.
-  - Second ``self update`` → exit 1, and ``versions/current`` is NOT flipped
-    (still shaA), so the tool keeps running on the old, working version.
-
-Fail-under-revert: with the ``462/474/485`` bare ``return``s restored, the
-second update prints the red failure text but exits 0 — the ``expect_exit=1``
-assertion below fails. (And because ``current`` is never flipped either way,
-the half-updated environment is what the pre-fix ``&&`` chain would have run
-``init`` against.)
-
-Deliberate long e2e scenario contract — noqa: comment-length.
-"""
+flow:   a developer running self update when package installation command fails
+cmds:
+    ai-hats self update
+expect: self update exits with non-zero code, displays error log, and preserves existing
+        venv
+why: without install failure handling, failed uv pip installs corrupt current working
+     virtual environments"""
 
 from __future__ import annotations
+from _helpers.git import git
 
 import os
 import subprocess
@@ -71,10 +48,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
     return result
 
 
-def _git(args, cwd):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
-
-
 def _head_sha(repo: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -100,9 +73,9 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
         ["git", "clone", "--quiet", str(REPO_ROOT), str(src_repo)],
         check=True,
     )
-    _git(["config", "user.email", "e2e@test"], src_repo)
-    _git(["config", "user.name", "E2E"], src_repo)
-    _git(["checkout", "-B", "e2e-main"], src_repo)  # HATS-764: align ls-remote HEAD
+    git(src_repo, "config", "user.email", "e2e@test")
+    git(src_repo, "config", "user.name", "E2E")
+    git(src_repo, "checkout", "-B", "e2e-main")  # HATS-764: align ls-remote HEAD
     sha_a = _head_sha(src_repo)
 
     env = os.environ.copy()
@@ -125,8 +98,8 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     (src_repo / "pyproject.toml").write_text(
         "this is not valid TOML @@@ [[[ HATS-718 broken build\n"
     )
-    _git(["add", "pyproject.toml"], src_repo)
-    _git(["commit", "--quiet", "-m", "test: break pyproject so pip install fails"], src_repo)
+    git(src_repo, "add", "pyproject.toml")
+    git(src_repo, "commit", "--quiet", "-m", "test: break pyproject so pip install fails")
     sha_b = _head_sha(src_repo)
     assert sha_b != sha_a
 
@@ -149,3 +122,7 @@ def test_e2e_self_update_install_failure_exits_nonzero(tmp_path: Path) -> None:
     assert (versions / sha_a / "bin" / "python").is_file(), (
         "previous working version dir was damaged by the failed update"
     )
+
+
+def _git(args, cwd):
+    return git(cwd, *args)

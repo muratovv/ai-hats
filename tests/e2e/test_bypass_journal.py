@@ -1,15 +1,17 @@
-"""HATS-1407 — a gate bypass must leave a durable trace, not just stderr.
+"""e2e (HATS-1407)
 
-Per ``dev_rule_e2e_gate``: the journal is pure bash sourced across a directory
-boundary, so the thing most likely to break is the relative path itself. These
-tests lay out the REAL install shape — helper at ``.githooks/bypass_journal.sh``,
-hook at ``.githooks/<event>.d/<skill>-<basename>`` — and run the hook as a real
-subprocess against a throwaway git repo. Running the hook from its source path
-instead would resolve ``../bypass_journal.sh`` somewhere else entirely and prove
-nothing about production.
+flow:   a developer committing code with gate bypass environment variables enabled
+cmds:
+    # with AI_HATS_PRIVACY_ACK=1 enabled
+    git commit -m "bypass commit"
+expect: git pre-commit hook logs bypass entry to journal and post-commit stamps
+        commit SHA
+why:    without bypass logging, gate overrides leave no audit records in repository
+        history
 """
 
 from __future__ import annotations
+from _helpers.git import init_repo
 
 import json
 import os
@@ -65,9 +67,13 @@ EXPECTED_FIELDS = {
 @pytest.fixture
 def gated_repo(tmp_path: Path) -> Path:
     """A git repo wired the way ``install_git_hooks`` wires a real one."""
-    subprocess.run(["git", "init", "--quiet"], cwd=str(tmp_path), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(tmp_path), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
+    from _helpers.git import git
+
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "config", "user.email", "t@t")
+    git(tmp_path, "config", "user.name", "t")
+    git(tmp_path, "config", "core.hooksPath", "/dev/null")
+    git(tmp_path, "config", "commit.gpgsign", "false")
 
     # HATS-1337: nothing is copied any more — a gate runs in place from the
     # library, with the journal handed to it by the dispatcher as env.
@@ -184,6 +190,29 @@ def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
     assert _journal_lines(gated_repo) == []
 
 
+@pytest.mark.integration
+def test_a_lone_shell_helper_without_its_writer_fails_loud_not_silent(gated_repo: Path):
+    """HATS-1486: the shell side only wraps — the writer is a sibling .py.
+
+    Resolving to a `bypass_journal.sh` with no `bypass_journal.py` beside it is a
+    reachable state (a copy taken out of its directory), and it must fail the way
+    every other unreachable-journal path does: loudly, without blocking.
+    """
+    orphan_dir = gated_repo / "orphan"
+    orphan_dir.mkdir()
+    orphan = orphan_dir / "bypass_journal.sh"
+    orphan.write_bytes(JOURNAL_HELPER.read_bytes())
+
+    res = _run_hook(
+        gated_repo,
+        AI_HATS_PRIVACY_ACK="1",
+        AI_HATS_BYPASS_JOURNAL=str(orphan),
+    )
+    assert res.returncode == 0, "a broken journal must not block the commit"
+    assert "NOT RECORDED" in res.stderr, res.stderr
+    assert _journal_lines(gated_repo) == []
+
+
 # --- every git-hook hatch, in the real install layout ------------------------
 
 
@@ -196,9 +225,7 @@ def test_a_missing_helper_fails_loud_not_silent(gated_repo: Path):
 def test_every_git_hook_hatch_is_recorded(tmp_path: Path, hook_rel: str, event: str, hatch: str):
     """One row per hatch: tripping it must leave a line naming that variable."""
     repo = tmp_path
-    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    init_repo(repo)
 
     # HATS-1337: gates run in place from the library, journal handed over as env.
     hook = LIB / hook_rel
@@ -276,9 +303,7 @@ def _wire_dispatcher(repo: Path, event: str, hooks: list[Path]) -> None:
 def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     """The card's question: was THIS commit gated? Unstamped, the journal cannot say."""
     repo = tmp_path
-    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    init_repo(repo)
 
     _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
     _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
@@ -302,15 +327,47 @@ def test_post_commit_stamps_the_sha_onto_the_bypass(tmp_path: Path):
     assert entries[0]["sha"] == head, "the bypass is not attributable to its commit"
 
 
+@pytest.mark.integration
+def test_stamp_preserves_unparseable_journal_lines_verbatim(tmp_path: Path):
+    """HATS-1486: awk passed junk through line-wise; the python stamper must too.
+
+    A journal can hold a line no parser accepts — that is exactly what the old
+    shell escaper produced. Rewriting the file must not drop it: the stamper is
+    not a validator, and losing a bypass record is the defect this file removes.
+    """
+    repo = tmp_path
+    init_repo(repo)
+
+    _wire_dispatcher(repo, "pre-commit", [LIB / f"{GM}/pre-commit-privacy.sh"])
+    _wire_dispatcher(repo, "post-commit", [LIB / f"{GM}/post-commit-bypass-stamp.sh"])
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=str(repo), check=True)
+
+    journal_path = repo / JOURNAL_REL
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    broken_line = "THIS IS NOT VALID JSON {"
+    journal_path.write_text(broken_line + "\n")
+
+    (repo / "a.txt").write_text("first\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["AI_HATS_PRIVACY_ACK"] = "1"
+    env["AI_HATS_BYPASS_JOURNAL"] = str(JOURNAL_HELPER)
+    env.update(_ai_hats_pin())
+    subprocess.run(["git", "commit", "-q", "-m", "bypassed"], cwd=str(repo), check=True, env=env)
+
+    raw_lines = journal_path.read_text().splitlines()
+    assert len(raw_lines) == 2, raw_lines
+    assert raw_lines[0] == broken_line, "the unparseable line was not preserved"
+    assert json.loads(raw_lines[1])["sha"] != "", "the valid row was not stamped"
+
+
 # --- the consumer: a journal nobody reads is a sensor nobody consumes --------
 
 
 @pytest.mark.integration
 def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
     repo = tmp_path
-    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    init_repo(repo)
     (repo / "a.txt").write_text("one\n")
     subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=str(repo), check=True)
@@ -348,9 +405,7 @@ def test_pre_push_reports_bypasses_in_the_pushed_range(tmp_path: Path):
 def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
     """Negative control — the report must mean 'these commits skipped a gate'."""
     repo = tmp_path
-    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    init_repo(repo)
     (repo / "a.txt").write_text("one\n")
     subprocess.run(["git", "add", "a.txt"], cwd=str(repo), check=True)
     subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=str(repo), check=True)
@@ -384,9 +439,7 @@ def test_pre_push_is_silent_when_the_pushed_range_is_clean(tmp_path: Path):
 def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
     """3a and 3b: pre_bash_shared_state_guard records cmd and session_id from stdin JSON payload."""
     repo = tmp_path
-    subprocess.run(["git", "init", "--quiet"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.email", "t@e.x"], cwd=str(repo), check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), check=True)
+    init_repo(repo)
 
     guard = LIB / "core/skills/safety-guard/hooks/pre_bash_shared_state_guard.sh"
     payload = json.dumps(
@@ -411,3 +464,34 @@ def test_pre_bash_shared_state_guard_records_cmd_and_session_id(tmp_path: Path):
     entry = lines[0]
     assert entry["cmd"] == "git push origin master"
     assert entry["session_id"] == "test-session-123"
+
+
+# ----- HATS-1597: a gate SKIPPED by the dispatcher is a bypass too -------------
+
+
+@pytest.mark.integration
+def test_a_gate_the_dispatcher_could_not_run_is_recorded_as_fail_open(gated_repo: Path):
+    """A skipped gate is a disarmed gate, and ADR-0020 D2 forbids that happening
+    SILENTLY — that row is the machine form of ADR-0019 D4's anti-disarm rule.
+    Refusing outright would wedge the commit (D3) and push the human to
+    `--no-verify`, which disarms the whole chain; recording keeps the skip
+    visible where `pre-push-bypass-report.sh` reads it.
+    """
+    from ai_hats.githooks_run import record_fail_open
+
+    cwd = os.getcwd()
+    os.chdir(gated_repo)  # the writer resolves --git-common-dir from cwd
+    try:
+        record_fail_open(
+            JOURNAL_HELPER, reason="s: 'git_hooks/g.sh' is not executable", event="pre-commit"
+        )
+    finally:
+        os.chdir(cwd)
+
+    lines = _journal_lines(gated_repo)
+    assert len(lines) == 1, f"the skip left no journal line: {lines}"
+    entry = lines[0]
+    assert set(entry) == EXPECTED_FIELDS, f"field drift: {sorted(entry)}"
+    assert entry["kind"] == "fail_open"
+    assert entry["event"] == "pre-commit"
+    assert "not executable" in entry["reason"] and "g.sh" in entry["reason"]

@@ -1,24 +1,12 @@
-"""E2E (HATS-607): a skill's runtime hook BODY actually executes.
+"""e2e (HATS-601, HATS-607)
 
-HATS-601's e2e (`test_runtime_hook_propagation.py`) proves the script is
-materialized, wired into `.claude/settings.json`, and returns the contracted
-*exit code* when fed a payload. This test adds the missing dimension — proof
-that the hook **body runs**, via an observable **side-effect**:
-
-The fixture hook (`e2e-rthook/hooks/probe.sh`) appends the payload's
-`hook_event_name` to the file named by `RTHOOK_MARKER`. After a real
-`ai-hats self init` composes the role, we feed the materialized script the
-exact JSON shape Claude Code's hook channel sends — once as `PreToolUse`,
-once as `PostToolUse` — and assert the marker records BOTH events. A dangling
-settings.json pointer (no materialize) would exit 127 and never write the
-marker; a hook whose body never ran would leave the marker absent.
-
-Fidelity: simulated call + side-effect (supervisor-chosen). We do NOT launch a
-live `claude` — that tier is auth-gated, flaky, and tests third-party
-behaviour (same boundary HATS-601 accepted).
-
-Per `dev_rule_e2e_gate`: real `bash` + real `pip install` + real `ai-hats`
-binary, `@pytest.mark.integration`.
+flow:   an agent executing tool calls that trigger skill-declared runtime hooks
+cmds:
+    ai-hats self init -p claude -r e2e-rthook-role --no-wizard
+expect: runtime hook script executes for both PreToolUse and PostToolUse events writing
+        side-effects
+why:    without verifying hook body execution, dangling settings.json pointers fail
+        silently without running logic
 """
 
 from __future__ import annotations
@@ -53,22 +41,6 @@ def _run(cmd, *, cwd, env, timeout, expect_exit=0):
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     return result
-
-
-@pytest.fixture
-def installed_launcher(shared_launcher, tmp_path_factory):
-    """Read-only test on the session-scoped shared venv (HATS-582 pattern).
-
-    Mirrors ``test_runtime_hook_propagation.installed_launcher``: pop
-    ``PYTHONPATH`` (``wt exec`` sets ``PYTHONPATH=src`` which shadows the
-    installed package carrying ``library``) and isolate ``HOME`` (so the dev
-    user's ``~/.ai-hats/`` customizations do not bleed into composition).
-    """
-    launcher, base_env, shared_venv = shared_launcher
-    env = dict(base_env)
-    env.pop("PYTHONPATH", None)
-    env["HOME"] = str(tmp_path_factory.mktemp("rthook-fires-home"))
-    return launcher, env, shared_venv
 
 
 def _init_with_fixture_role(launcher: Path, env: dict, project: Path) -> None:

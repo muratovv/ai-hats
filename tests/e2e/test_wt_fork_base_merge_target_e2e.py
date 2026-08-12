@@ -1,28 +1,19 @@
-"""E2E gate for HATS-942: base != merge-target fork workflow.
+"""e2e (HATS-942)
 
-Runs the **real** binaries (``rack`` for the lifecycle, ``ai-hats`` for ``wt``)
-against a real git project shaped like the ``hunk`` fork: ``main`` = pristine
-upstream mirror, ``fork-main`` = dev trunk. With ``worktree.base_branch: main`` /
-``merge_target: fork-main`` configured and HEAD on ``fork-main``:
-
-  * ``rack transition <id> execute`` is ACCEPTED on ``fork-main`` (the default
-    guard would refuse a non-canonical HEAD) and cuts the worktree from
-    ``main`` (not ``fork-main``);
-  * ``rack transition <id> done`` lands the work on ``fork-main``, leaving
-    ``main`` untouched.
-
-Satisfies ``dev_rule_e2e_gate`` for ``src/ai_hats/cli/worktree.py`` /
-``rack_wiring.py`` + ``wt_effects.py``. **Fail-under-revert:**
-
-  * revert the guard generalization (``assert_head_is_canonical_base`` ignores
-    ``merge_target``) → execute REFUSES on ``fork-main`` → test red;
-  * revert the ``start_point`` (``create`` cuts from HEAD) → the worktree
-    carries ``fork-main``'s ``FORK.md`` → the "cut from main" assertion fails.
+flow:   a developer creating and merging task worktrees in a fork repository setup
+cmds:
+    # in a repo with base_branch=main and merge_target=fork-main
+    rack transition HATS-001 execute
+    rack transition HATS-001 done
+expect: worktree is cut from base_branch and changes are merged into merge_target on
+        done
+why:    fork repository setups require cutting from base branch while landing work on
+        merge target
 """
 
 from __future__ import annotations
+from _helpers.git import git as _git
 
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,10 +22,6 @@ from ai_hats.paths import ENV_AI_HATS_VENV
 
 
 pytestmark = pytest.mark.integration
-
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
 
 
 def _rack_driver(proj):

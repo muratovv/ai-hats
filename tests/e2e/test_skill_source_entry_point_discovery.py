@@ -1,12 +1,13 @@
-"""E2E: an out-of-tree skill source on the ``ai_hats.skills`` entry-point group
-is discovered by the real ``ai-hats`` binary (HATS-871 / T11).
+"""e2e (HATS-991)
 
-Builds a synthetic installed distribution — an anchor package holding a
-``skills/<name>/SKILL.md`` data dir plus a ``*.dist-info`` carrying
-``entry_points.txt`` — on ``PYTHONPATH`` and drives ``ai-hats list skills``. The
-plugin's skill appears alongside the built-ins WITHOUT ai-hats hard-coding the
-package (IoC via ``importlib.metadata``). Fail-under-revert: drop
-``_load_skill_source_entry_points`` → ``acme-skill`` never resolves → assertion fails.
+flow:   a developer listing available skills when third-party skill packages are
+        installed
+cmds:
+    ai-hats list skills
+expect: output lists skills declared in entry_points.txt of installed packages
+        alongside built-in framework skills
+why:    out-of-tree skill packages must be discoverable via importlib entry points
+        without modifying core framework code
 """
 
 from __future__ import annotations

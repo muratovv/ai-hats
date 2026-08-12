@@ -1,22 +1,12 @@
-"""E2E: ``ai-hats self update`` drops the stale update-check cache (HATS-781).
+"""e2e (HATS-781)
 
-Value under test: the update-check cache is keyed only on ``project_dir`` +
-a 24h TTL. Without invalidation, a reinstall within that window leaves the
-session-end Update banner reporting the PRE-update installed SHA and a stale
-``behind`` count — nagging "update available" the instant the user finished
-updating. ``self update`` must unlink
-``<cache_root>/update-check.json`` on success so the next
-session re-probes from scratch.
-
-Fail-under-revert: drop the ``_invalidate_update_cache(project_dir)`` call from
-``cli/maintenance.py`` and the seeded cache file survives the ``self update`` —
-the final assertion fails.
-
-Setup contract (real subprocess + real uv + real launcher + real ``ai-hats``
-binary), per ``dev_rule_e2e_gate``. Uses the ``local`` channel: an offline,
-network-free editable reinstall that still exercises the real ``update()``
-success exit where the unlink is wired.
-"""
+flow:   a developer running self update to upgrade framework version
+cmds:
+    ai-hats self update
+expect: successful update invalidates update-check cache file so stale version banners
+        vanish
+why: without update cache invalidation, upgrade banners persist on terminal after
+     completing update"""
 
 from __future__ import annotations
 

@@ -23,8 +23,11 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # A copy of the dev-extras pin on purpose: `.[dev]` here would drag 7
+      # workspace packages and the SDK's bundled binary into a job that only
+      # lints. tests/test_dev_tool_pins.py proves the copy matches (HATS-1607).
       - name: Install ruff
-        run: pip install "ruff>=0.4"
+        run: pip install "ruff==0.16.2"
       - name: ruff check
         run: bash scripts/ci-local.sh lint
 
@@ -176,3 +179,14 @@ jobs:
       - name: Check no broad handler swallows a failure silently
         if: always()
         run: bash scripts/ci-local.sh silent-fallback
+      # Offline too (HATS-1599) — a ratchet on how much the suite patches the
+      # units it tests; it only ever refuses a rise over the recorded baseline.
+      - name: Check the suite patches its units no more than the baseline
+        if: always()
+        run: bash scripts/ci-local.sh test-isolation
+      # Offline as well (HATS-1498) — the e2e tier itself runs in no CI job, but
+      # its catalog is rendered from docstrings a PR can edit, so the freshness
+      # check is cheap enough to run where the tier is not.
+      - name: Check the e2e flow catalog is current
+        if: always()
+        run: bash scripts/ci-local.sh e2e-catalog

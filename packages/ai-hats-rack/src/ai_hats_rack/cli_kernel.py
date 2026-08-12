@@ -19,6 +19,7 @@ import click
 from .cli_common import resolved_root as _resolved_root
 from .composition import build_card_schema, stock_validators
 from .definition import resolve_definition
+from .errors import RackConfigError
 from .dispatch import bind_subscribers, validate_requires_states
 from .extensions import standalone_extensions
 from .journal import JsonlJournalSink
@@ -38,13 +39,32 @@ class KernelProvider(Protocol):
     def build_kernel(self, root: RackRoot, caller_cwd: Path) -> Kernel: ...
     def after_create(self, root: RackRoot, result: KernelResult) -> None: ...
     def handle_error(self, exc: Exception, as_json: bool, task_id: str = ...) -> bool: ...
+    # Probed with getattr, never assumed (HATS-1575): a provider older than this
+    # method must not raise AttributeError — it simply supplies no check executor.
+    def check_port(self, root: RackRoot, catalog: Path) -> Any: ...
 
 
 @lru_cache(maxsize=1)
 def _provider() -> KernelProvider | None:
-    """First registered wiring factory, or None → bare standalone kernel."""
+    """First registered wiring factory, or None → bare standalone kernel.
+
+    The load is wrapped (HATS-1541): a half-installed or version-skewed
+    integrator raised out of here as an ``ImportError`` / ``AttributeError``
+    with no mention of what was being loaded, and ``lru_cache`` does not cache
+    an exception, so every verb paid the same traceback again. Refusing is still
+    right — a wired surface that silently degrades to the bare kernel drops
+    ownership, worktrees and every bound check — but it must say so.
+    """  # comment-length: allow — why it refuses rather than degrades is the point
     for ep in importlib.metadata.entry_points(group=KERNEL_FACTORY_GROUP):
-        return ep.load()()
+        try:
+            return ep.load()()
+        except Exception as exc:
+            raise RackConfigError(
+                f"the integrator registered under '{KERNEL_FACTORY_GROUP}' as {ep.value!r} "
+                f"could not be loaded ({type(exc).__name__}): {exc} — the wired kernel "
+                f"cannot be built, and running bare would silently drop ownership, "
+                f"worktrees and every bound check"
+            ) from exc
     return None
 
 
@@ -96,7 +116,27 @@ def _workspace(
             provider.build_kernel(root, caller_cwd) if provider is not None else _bare_kernel(root)
         )
 
-    return Workspace.discover([root], kernel_builder=_builder), root
+    return (
+        Workspace.discover(
+            [root], kernel_builder=_builder, check_port=_provider_check_port(provider, root)
+        ),
+        root,
+    )
+
+
+def _provider_check_port(provider: KernelProvider | None, root: RackRoot):
+    """The integrator's check-executor factory, bound to ``root``; ``None`` when
+    it supplies none.
+
+    Probed rather than assumed: a provider predating this method must degrade to
+    "no executor", the same skew discipline ``CheckSubscriber`` applies to the
+    port itself. ``root`` is bound here because the rack holds it and the
+    provider does not — a factory the workspace can then call per catalog.
+    """
+    factory = getattr(provider, "check_port", None) if provider is not None else None
+    if not callable(factory):
+        return None
+    return lambda catalog: factory(root, catalog)
 
 
 def _echo_deltas(result: KernelResult) -> None:

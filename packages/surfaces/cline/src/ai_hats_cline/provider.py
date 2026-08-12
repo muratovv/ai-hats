@@ -134,11 +134,17 @@ class ClineProvider(Provider):
 
     # -- skills ----------------------------------------------------------------
 
+    def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        """HATS-1540: what a bound check resolves its script from in-session."""
+        from ai_hats.paths import session_cache_dir
+
+        return session_cache_dir(project_dir, session_id) / "skills"
+
     def _deliver_skills(self, project_dir, result, session_id, artifacts) -> None:
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
         cache_dir = self._cache_dir(project_dir, session_id, artifacts)
-        skills_dir = cache_dir / "skills"
+        skills_dir = self.session_skills_root(project_dir, session_id)
         # Shared with agy (HATS-1271): a private copy drifted and lost the
         # {{backlog_fsm_edges}} expansion the shared one has done since HATS-1051.
         materialize_skills_dir(skills_dir, result.skills, project_dir, artifacts.port)
@@ -211,6 +217,18 @@ class ClineProvider(Provider):
         return [*kept, "--yolo", "--json", meta_prompt]
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Pure: the hub port reads as the launch's to pick (HATS-1554)."""
+        from ai_hats.session_artifacts import AT_LAUNCH
+
+        return self._env(project_dir, hub_port=AT_LAUNCH)
+
+    def claim_launch_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
+        """Bind the hub port. Only a real launch may take one."""
+        del session_dir
+        return {"CLINE_HUB_PORT": str(self._allocate_hub_port())}
+
+    def _env(self, project_dir: Path, *, hub_port: str) -> dict[str, str]:
+        """One key list for both modes, so the report cannot name a different set."""
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
         from ai_hats.paths import ai_hats_dir, tool_home
 
@@ -218,7 +236,7 @@ class ClineProvider(Provider):
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
             # Per-session hub port — parallel sessions EADDRINUSE on the default (HATS-973).
-            "CLINE_HUB_PORT": str(self._allocate_hub_port()),
+            "CLINE_HUB_PORT": hub_port,
             # HATS-1171: --config relocates cline's base dir; pin data (auth /
             # sessions / db) back to the real cline home so auth survives and
             # resolve_transcript still finds the transcript.
