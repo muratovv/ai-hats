@@ -34,9 +34,36 @@ _FILLED_PLAN = (
 )
 
 
+def _session_env(session: str) -> dict[str, str]:
+    """A session as the wire contract spells it (ADR-0024, ai-hats HATS-1594).
+
+    Written out rather than imported: the rack does not depend on the integrator
+    and its tests must not either. That makes this the contract's first
+    third-party consumer, which is a feature — if the envelope cannot be
+    produced without importing ai-hats, it is not a public format.
+
+    The id alone is no longer a session: an ai-hats gate bound to an FSM edge
+    reads the envelope beside it and refuses when only half is there.
+    """  # comment-length: allow — why this is duplicated, not imported
+    return {
+        ENV_SESSION_ID: session,
+        "AI_HATS_SESSION_IDENTITY": json.dumps(
+            {
+                "v": 1,
+                "id": session,
+                "role": "assistant",
+                "provider": "claude",
+                "project_dir": "/nonexistent-rack-test-project",
+                "session_dir": f"/nonexistent-rack-test-project/.agent/{session}",
+                "skills_root": "",
+            }
+        ),
+    }
+
+
 def _drive(runner, tmp_path, session="s1"):
     """create HATS-001 and walk brainstorm→plan→execute through the CLI."""
-    env = {ENV_SESSION_ID: session}
+    env = _session_env(session)
     runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)], env=env)
     plan = runner.invoke(main, ["transition", "HATS-001", "plan", *_tasks_args(tmp_path)], env=env)
     assert plan.exit_code == 0, plan.output

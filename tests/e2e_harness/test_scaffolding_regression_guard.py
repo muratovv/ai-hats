@@ -31,6 +31,7 @@ _GIT_EXEMPTIONS: dict[str, str] = {
     "test_prepush_e2e_master_gate.py": "Tests pre-push master gate with custom GIT_CONFIG_GLOBAL isolation.",
     "test_session_cache_out_of_tree.py": "Tests out-of-tree session cache with custom git status output parsing.",
     "test_broken_hook_ref_startup_warn.py": "Tests broken hook ref startup warning with raw git process.",
+    "test_githooks_session_identity.py": "Commits carry a session envelope in env and must run the real hook chain; the shared helper fixes env, forces check=True and hardens hooksPath to /dev/null.",
 }
 
 _PROCESS_ATTRS = {"run", "Popen", "check_output", "check_call", "call", "system", "popen"}

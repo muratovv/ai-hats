@@ -18,7 +18,7 @@ import os
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import CompositionResult, ResolvedCheck
@@ -34,6 +34,13 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 _CHECKS_KEY = re.compile(
     rb"""^[ \t]*(?:apps|"apps"|'apps'|checks|"checks"|'checks')[ \t]*:""", re.MULTILINE
 )
+
+
+#: "the caller did not supply one" — distinct from ``None``, which is a caller
+#: stating there IS no session. Read from the environment only when a binding
+#: actually needs rooting, so a project declaring no gates never pays and, more
+#: importantly, never REFUSES on an environment it has no use for (HATS-1594).
+FROM_ENV: Any = object()
 
 
 class CheckResolutionError(Exception):
@@ -59,7 +66,7 @@ def resolve_carried_checks(
     project_dir: Path,
     app: str,
     *,
-    identity: SessionIdentity | None = None,
+    identity: SessionIdentity | None | Any = FROM_ENV,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
     """Every row declared under ``app``, re-based onto its root.
@@ -70,7 +77,7 @@ def resolve_carried_checks(
     never handed to this one — and a broken row of one app cannot abort
     another's event (HATS-1545).
     """
-    result = _composed(project_dir, identity, compose)
+    result, identity = _composed(project_dir, identity, compose)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app)
@@ -84,7 +91,7 @@ def resolve_checks_at(
     app: str,
     point: str,
     *,
-    identity: SessionIdentity | None = None,
+    identity: SessionIdentity | None | Any = FROM_ENV,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> tuple[ResolvedCheck, ...]:
     """Every row of ``app`` bound to one point, re-based onto its root.
@@ -97,7 +104,7 @@ def resolve_checks_at(
     HATS-1581, because ai-hats now fires two apps and nothing stops them from
     spelling a point alike — filtering on ``at`` alone would cross the wires.
     """
-    result = _composed(project_dir, identity, compose)
+    result, identity = _composed(project_dir, identity, compose)
     if result is None:
         return ()
     checks = tuple(check for check in result.checks if check.app == app and point in check.at)
@@ -346,8 +353,8 @@ def _compose_role(project_dir: Path, identity: SessionIdentity | None) -> Compos
 
 
 def _compose_fail_closed(
-    project_dir: Path, identity: SessionIdentity | None = None
-) -> CompositionResult | None:
+    project_dir: Path, identity: SessionIdentity | None | Any = FROM_ENV
+) -> tuple[CompositionResult | None, SessionIdentity | None]:
     """``None`` iff nothing is declared. Any other trouble raises — the
     fail-open ``compose_for_carry`` is right for carry and is HYP-078 here.
 
@@ -371,21 +378,25 @@ def _compose_fail_closed(
             f"whether any check is declared could not be determined ({type(exc).__name__}): {exc}"
         ) from exc
     if not declared:
-        return None
+        # Nothing to root, so nothing to be told: a project with no bindings must
+        # not be refused over a session envelope it has no use for (HATS-1594).
+        return None, None
+    if identity is FROM_ENV:
+        identity = session_identity()
     try:
         result = _compose_role(project_dir, identity)
     except Exception as exc:
         raise CheckResolutionError(
             f"checks are declared but the role could not be composed ({type(exc).__name__}): {exc}"
         ) from exc
-    return result
+    return result, identity
 
 
 def _composed(
     project_dir: Path,
-    identity: SessionIdentity | None,
+    identity: SessionIdentity | None | Any,
     compose: Callable[[Path], CompositionResult | None] | None,
-) -> CompositionResult | None:
+) -> tuple[CompositionResult | None, SessionIdentity | None]:
     """The binding list, from whoever holds it — and never a broken one.
 
     The ``result.errors`` refusal lives HERE rather than inside
@@ -395,13 +406,17 @@ def _composed(
     errors would arm nothing while looking armed — which is the whole defect
     class this channel exists to remove.
     """  # comment-length: allow — why the check is not in the composer
-    result = compose(project_dir) if compose else _compose_fail_closed(project_dir, identity)
+    if compose:
+        result = compose(project_dir)
+        identity = None if identity is FROM_ENV else identity
+    else:
+        result, identity = _compose_fail_closed(project_dir, identity)
     if result is not None and result.errors:
         raise CheckResolutionError(
             f"checks are declared but composing role {result.name!r} reported "
             f"{result.errors} — a gate cannot be installed from a broken composition"
         )
-    return result
+    return result, identity
 
 
 __all__ = [
