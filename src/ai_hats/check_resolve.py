@@ -328,9 +328,7 @@ def _reraise(exc: OSError) -> None:
     raise exc
 
 
-def _compose_role(
-    project_dir: Path, identity: SessionIdentity | None
-) -> CompositionResult | None:
+def _compose_role(project_dir: Path, identity: SessionIdentity | None) -> CompositionResult | None:
     """The session's live composition — the binding list in BOTH modes.
 
     Through the seam: the composition layer is integrator-only (HATS-865), and

@@ -121,12 +121,34 @@ def _mirrored(project: Path, skill: ResolvedComponent, sid: str = SID) -> Path:
     return _MirrorSurface().session_skills_root(project, sid) / skill.name
 
 
+def _identity(project: Path, sid: str = SID, skills_root: str | None = None):
+    """The envelope a session of ``sid`` would carry (HATS-1594).
+
+    ``skills_root`` defaults to what the stub surface mirrors, which is what the
+    launch would have written into it; pass ``""`` for a surface that mirrors
+    none.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    if skills_root is None:
+        skills_root = str(_MirrorSurface().session_skills_root(project, sid))
+    return SessionIdentity(
+        id=sid,
+        role="stub-role",
+        provider="stub",
+        project_dir=project,
+        session_dir=project / ".agent" / "ai-hats" / "sessions" / "runs" / f"session_{sid}",
+        skills_root=skills_root,
+    )
+
+
 def _resolve(project: Path, skill: ResolvedComponent, sid: str = SID, **kw):
     result = _result(skills=[skill], checks=[_check(skill)])
+    # No sid is the live-resolution mode: no session, so no envelope.
+    kw.setdefault("identity", _identity(project, sid) if sid else None)
     return resolve_carried_checks(
         project,
         "rack",
-        session_id=sid,
         compose=lambda _: result,
         **kw,
     )
@@ -310,35 +332,25 @@ def test_the_mirror_lives_inside_what_session_teardown_drops(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_surface_that_mirrors_nothing_refuses(tmp_path: Path, monkeypatch):
-    """The ABC default is ``None``, and a gate with no bytes must not pass."""
-    from ai_hats import providers
+def test_a_surface_that_mirrors_nothing_refuses(tmp_path: Path):
+    """The ABC default is ``None``, and a gate with no bytes must not pass.
 
-    class _Bare(_MirrorSurface):
-        def session_skills_root(self, project_dir: Path, session_id: str):
-            return None
-
-    monkeypatch.setattr(providers, "get_provider", lambda name: _Bare())
+    HATS-1594 moved WHERE the surface is asked, not whether: the launch turns a
+    ``None`` root into an empty ``skills_root``, and the refusal fires here on
+    that. The launch half is pinned by ``test_session_identity_launch.py``.
+    """
     project = _project(tmp_path)
     skill = _skill(project)
 
     with pytest.raises(CheckResolutionError, match="mirrors no skills"):
-        _resolve(project, skill)
+        _resolve(project, skill, identity=_identity(project, skills_root=""))
 
 
-def test_an_unloadable_provider_refuses(tmp_path: Path, monkeypatch):
-    """A surface that cannot be loaded is not a reason to wave a gate through."""
-    from ai_hats import providers
-
-    def _boom(name):
-        raise RuntimeError("no such surface")
-
-    monkeypatch.setattr(providers, "get_provider", _boom)
-    project = _project(tmp_path)
-    skill = _skill(project)
-
-    with pytest.raises(CheckResolutionError, match="could not be resolved"):
-        _resolve(project, skill)
+# HATS-1594 retired `test_an_unloadable_provider_refuses`. The channel no longer
+# loads a provider at all — it reads the root off the envelope — so there is
+# nothing left here to be unloadable. A session cannot exist under a provider
+# that will not load: `build_composition_payload` resolves it through
+# `get_provider` before anything launches, and refuses there.
 
 
 def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
@@ -349,7 +361,9 @@ def test_a_script_escaping_the_mirror_root_is_refused(tmp_path: Path):
     result = _result(skills=[skill], checks=[_check(skill, script="../../../etc/passwd")])
 
     with pytest.raises(CheckResolutionError, match="outside this session's mirror root"):
-        resolve_carried_checks(project, "rack", session_id=SID, compose=lambda _: result)
+        resolve_carried_checks(
+            project, "rack", identity=_identity(project), compose=lambda _: result
+        )
 
 
 def test_outside_a_session_the_library_copy_runs(tmp_path: Path):

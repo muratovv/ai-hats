@@ -157,9 +157,7 @@ class SessionIdentity:
     def _required(data: dict, key: str) -> str:
         value = data.get(key)
         if not isinstance(value, str) or not value:
-            raise SessionIdentityError(
-                f"{ENV_SESSION_IDENTITY} carries no non-empty {key!r}"
-            )
+            raise SessionIdentityError(f"{ENV_SESSION_IDENTITY} carries no non-empty {key!r}")
         return value
 
 
