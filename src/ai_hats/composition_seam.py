@@ -363,8 +363,12 @@ def session_skills_root_for_checks(project_dir: Path, session_id: str) -> Path |
 def compose_for_carry(project_dir: Path, role: str | None = None):
     """Fail-open compose for worktree-carry collection; a ``CompositionResult``
     or ``None``. Tracker-side callers route here — TEMP until HATS-866 re-cuts
-    tracker→wt via the ``needs_worktree`` effect. Any failure degrades to
+    tracker→wt via the ``needs_worktree`` effect. An *exception* degrades to
     ``None`` with a WARN: carry trouble must never block worktree creation.
+
+    ``result.errors`` is left to the caller, exactly as in ``compose_for_checks``
+    above — ``wt_carry.collect_carry_for_role`` warns there and keeps whatever
+    composed, because only it knows how many carry rows survived (HATS-1592).
     """
     try:
         asm, _cfg, effective, runtime_overlay, _spec = _project_context(project_dir, role)

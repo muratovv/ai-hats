@@ -34,13 +34,19 @@ def collect_carry_for_role(
     from the declaring skill, so what a recorded row now promises is **"its
     script resolved at create time"**. A typo in ``SKILL.md`` is dropped here
     with a WARN instead of surfacing days later as a blocked merge.
-    """
+
+    HATS-1592: a composition carrying ``result.errors`` still yields its carry,
+    with a WARN — zero skills and one dropped skill both read as "declares no
+    hooks" from here. Never a refusal or a degrade-to-empty: an overlay typo
+    composes fully today, so dropping the carry on *any* error would cause the
+    very loss this record exists to prevent.
+    """  # comment-length: allow — why this warns instead of degrading IS the contract
     if result is None:
         return {}
     from .hook_collection import collect_worktree_hooks, resolve_skill_script
 
     try:
-        return serialize_collected_hooks(
+        carry = serialize_collected_hooks(
             {
                 kind: [
                     (skill, hook)
@@ -57,6 +63,16 @@ def collect_carry_for_role(
             exc,
         )
         return {}
+    if result.errors:
+        logger.warning(
+            "worktree carry: role %r composed with errors, so its carry may be "
+            "incomplete — %d hook row(s) recorded; worktree data whose wt_out hook "
+            "is missing will be destroyed at teardown without further warning. %s",
+            result.name,
+            sum(len(rows) for rows in carry.values()),
+            result.errors,
+        )
+    return carry
 
 
 def _keep_row(result, skill_name: str, hook, resolve) -> bool:
