@@ -19,6 +19,9 @@ deadlock is reachable by construction:
 Each acquisition yields a :class:`~ai_hats_core.deadline.Deadline` carrying that
 lock's own budget (HATS-1593), so work run under it — hooks above all — is bounded
 by the lock in hand instead of a constant that cannot know which lock is held.
+Layer 1 is the outermost lock *this package owns*, not necessarily the outermost
+one held: on the FSM road the rack's task lock encloses it, so ``merge()`` takes
+that deadline and layer 1 clamps its own against it (HATS-1603).
 
 The lock directory ``<state_dir>`` **must reside on a local filesystem** —
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
