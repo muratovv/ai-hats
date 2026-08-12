@@ -266,8 +266,15 @@ suppresses a lifecycle veto by design (ADR-0013 [3] D8, so a sub-agent's own
 error is not masked), so a refusal there would be swallowed and the gate would
 look armed while passing everything. Making it non-suppressible is a change to
 D8's contract, not to that call site; revisit behaviour and this paragraph
-together. Both decisions are pinned by tests in
-`packages/ai-hats-wt/tests/test_wt_pre_merge_point.py`.
+together — that half is carried forward as **Q1** under *Open questions*, which
+is where the asymmetry between the two kinds of road is stated. Both decisions
+are pinned in `packages/ai-hats-wt/tests/test_wt_pre_merge_point.py` — one test
+per short-circuit flavour and one for the squash road
+(`test_an_already_merged_branch_does_not_fire_the_point`,
+`test_the_patch_integrated_short_circuit_does_not_fire_the_point`,
+`test_the_squash_cleanup_path_does_not_fire_the_point`). The patch-integrated
+flavour had none until HATS-1595: an audit read its bare `return` as an omission
+and filed the unfired gate as a defect, which is what a missing pin costs.
 `pre-reclaim` is the one `wt` name `check_points.wt_points()` does not know at
 all — the other two unfired names, `create` and `teardown[*]`, are in it. It is
 listed above, and in `docs/glossary.md`, so the two agree about what is coming.
@@ -834,6 +841,36 @@ channel in the accretion this ADR exists to end. `maintainer` now binds
 `done-gate.sh` to both `edge:review--done` and `apps.wt` `pre-merge`, and each refusal
 is asserted together with its flip-to-pass when the row is removed. HATS-1144
 (hunk-review) remains a candidate and is no longer load-bearing for this status.
+
+## Open questions
+
+**Q1 — of the three roads D3 leaves ungated, the squash one is the only one that
+publishes.** `cleanup(IsolationMode.SQUASH)` — the sub-agent teardown — runs
+`git merge --squash` plus a `feat(agent): <branch>` commit onto the recorded base
+branch in the main checkout (`_squash_merge`) and fires no `pre-merge`. That is a
+recorded decision, stated at the call site and in D3, pinned by
+`test_the_squash_cleanup_path_does_not_fire_the_point`, and its reasoning holds
+for the mechanics it addresses: `cleanup` suppresses a lifecycle veto by design
+(ADR-0013 [3] D8, so a sub-agent's own error is not masked), so a refusal there
+would be swallowed and the gate would look armed while passing everything.
+
+What it does not settle is the asymmetry it shares a paragraph with. The two
+`merge()` short-circuits publish **nothing**: `git merge` does not run, their
+content reached the base by another route, and `pre-merge` is a *precondition of
+publishing* (D3) — so gating them would protect nothing and would refuse a
+supported recovery, which is why they are ungated. Re-derived from the sources
+under HATS-1595 (2026-08-12) after an audit read the same two `return`s as an
+omission. The squash road is not in that class: content enters a base branch
+through a path no row can see, and the only remaining contour is
+`pre-push-e2e-master.sh`, which keys on `refs/heads/master` lines of the push
+protocol — a different gate, on a different trigger, silent for any base that is
+not master and for anything never pushed.
+
+Three shapes, none costed: make the veto non-suppressible at this one call site
+(a change to D8's contract, not to the call site); give the road its own point,
+whose refusal semantics need not inherit D8; or rule it out of scope on the
+ground that the branch a sub-agent squashes into still has to cross `pre-merge`
+on its own way into master. **No owner and no card as of 2026-08-12.**
 
 ## Alternatives considered
 

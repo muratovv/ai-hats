@@ -181,6 +181,34 @@ def test_an_already_merged_branch_does_not_fire_the_point(repo: Path):
     assert "before_merge" not in recorder.calls
 
 
+def test_the_patch_integrated_short_circuit_does_not_fire_the_point(repo: Path):
+    """The second flavour of the neighbour's decision (HATS-1370), pinned by HATS-1595.
+
+    Patch-equivalent commits are torn down without merging — merging would pull
+    the pre-rebase duplicates in. Publishing nothing, this road gives a
+    precondition of publishing nothing to hold, and gating it would strand the
+    branch the operator asked to clean up with ``--accept-drift``. Until this
+    test, ADR-0019 D3's claim that both flavours are pinned held for one.
+    """
+    recorder = _Recording(veto=True)
+    mgr = _worktree(repo, recorder)
+    # The same patch under a new sha on the base: `git cherry` reads it as
+    # integrated while the branch tip stays outside the base's history, which is
+    # what tells the two short-circuits apart.
+    (repo / "work.txt").write_text("done\n")
+    # The path, never `add .`: the state dir lives in this repo, and sweeping it
+    # into the commit changes the patch — `git cherry` then reads a different
+    # patch-id and the short-circuit under test is not the one that runs.
+    _git(repo, "add", "work.txt")
+    _git(repo, "commit", "-m", "the same work, rebased onto main")
+
+    mgr.merge(accept_drift=True)
+
+    assert "before_merge" not in recorder.calls
+    assert "before_teardown[merge]" in recorder.calls, "HATS-823: harvest still runs"
+    assert not mgr.worktree_path
+
+
 def test_a_bare_core_fires_nothing(repo: Path):
     """ADR-0013 D2: the no-op bundle keeps the engine hook-agnostic."""
     mgr = WorktreeManager(repo, branch_name="task/two", lifecycle=NOOP_LIFECYCLE)
