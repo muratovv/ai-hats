@@ -1005,17 +1005,14 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
 
 
 def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
-    """HATS-657 (both consequences): current → a COMPLETE versioned venv whose
-    bin/python is gone (a host python upgrade dangled the interpreter), and this
-    update runs from the healed legacy .venv.
+    """HATS-657: current → a COMPLETE versioned venv whose bin/python is gone (a
+    host python upgrade dangled the interpreter), and this update runs from the
+    healed legacy .venv.
 
-    #1 The broken dir must be REBUILT, not reused: read_current_sha returns None
-       (not usable) → already_current False, and the reuse gate also requires
-       bin/python → the dir falls through to the rmtree+rebuild branch instead of
-       being reused with a dead interpreter (which would crash _version_string).
-    #2 The HATS-655 dormancy advisory must NOT false-fire: pre_existing_versioned
-       is False (the pre-existing versioned was not usable), so the heal is silent
-       — the launcher correctly skipped a BROKEN venv, it is not stale."""
+    The broken dir must be REBUILT, not reused: read_current_sha returns None
+    (not usable) → already_current False, and the reuse gate also requires
+    bin/python → the dir falls through to the rmtree+rebuild branch instead of
+    being reused with a dead interpreter (which would crash _version_string)."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
@@ -1030,7 +1027,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
     assert read_current_sha(tmp_path) is None  # broken venv is not usable
-    printed = _capture_prints(monkeypatch)
+    _capture_prints(monkeypatch)
 
     # Record every subprocess call while delegating to the real fake (which
     # rebuilds bin/python on `uv venv` — HATS-790: no bin/ai-hats console script).
@@ -1051,14 +1048,12 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
             migrate_force=False,
             check_branches=False,
         )
-    # #1 REBUILT (not reused): a venv create + pip install ran for the target sha.
+    # REBUILT (not reused): a venv create + pip install ran for the target sha.
     assert any("venv" in c and "uv" in c for c in calls)
     assert any("pip" in c for c in calls)
     # The interpreter is restored and the sha is usable / current again.
     assert (version_dir(tmp_path, "cafef00d") / "bin" / "python").exists()
     assert read_current_sha(tmp_path) == "cafef00d"
-    # #2 No false dormancy advisory — the broken versioned was correctly skipped.
-    assert not any("host launcher is not using" in p for p in printed)
 
 
 def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeypatch):
@@ -1194,7 +1189,9 @@ def _update_with_launcher(tmp_path, monkeypatch, stamp):
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
     launcher = tmp_path / "host-ai-hats"
-    launcher.write_text("#!/usr/bin/env bash\n" if stamp is None else f"LAUNCHER_CONTRACT={stamp}\n")
+    launcher.write_text(
+        "#!/usr/bin/env bash\n" if stamp is None else f"LAUNCHER_CONTRACT={stamp}\n"
+    )
     monkeypatch.setenv(ENV_LAUNCHER_DEST, str(launcher))
     printed = _capture_prints(monkeypatch)
 

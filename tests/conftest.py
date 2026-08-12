@@ -258,6 +258,22 @@ def _isolate_ai_hats_dir(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_installed_launcher(tmp_path_factory, monkeypatch):
+    """Point the launcher-skew check at nothing for EVERY test (HATS-1617).
+
+    ``_installed_launcher_path`` falls back to ``shutil.which("ai-hats")``, so an
+    unpinned test reads the DEVELOPER'S host launcher and the contract-skew
+    advisory fires or stays quiet according to whose machine runs the suite.
+    Aiming it at a path that does not exist yields *indeterminate* — the silent
+    branch. Tests that exercise the advisory set the env themselves (runs after
+    this, undone at teardown).
+    """
+    absent = tmp_path_factory.getbasetemp() / "no-such-launcher"
+    monkeypatch.setenv("AI_HATS_LAUNCHER_DEST", str(absent))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _grant_merge_consent(monkeypatch):
     """Set ``AI_HATS_MERGE_ACK=1`` for EVERY test (HATS-1019).
 

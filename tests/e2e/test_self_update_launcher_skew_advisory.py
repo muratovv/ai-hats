@@ -22,7 +22,7 @@ import pytest
 from _helpers.project import pin_edge_channel
 from _helpers.workspace import build_workspace_member_wheels
 from ai_hats.paths import ENV_AI_HATS_VENV
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = (
     pytest.mark.install_heavy
@@ -100,6 +100,9 @@ def test_e2e_stale_launcher_contract_advisory(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env[ENV_REPO_URL] = str(src_repo)
+    # HATS-1617: name the shim as THE installed launcher — the skew check reads
+    # this file's stamp, so leaving it to `which` would test the host's launcher.
+    env[ENV_LAUNCHER_DEST] = str(launcher)
     env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")
     env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)

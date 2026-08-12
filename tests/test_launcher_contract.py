@@ -30,7 +30,7 @@ def test_contract_starts_above_the_unstamped_sentinel() -> None:
 
 def test_unstamped_launcher_reads_as_pre_contract(tmp_path: Path) -> None:
     launcher = tmp_path / "ai-hats"
-    launcher.write_text("#!/usr/bin/env bash\nexec python -m ai_hats \"$@\"\n")
+    launcher.write_text('#!/usr/bin/env bash\nexec python -m ai_hats "$@"\n')
     assert read_launcher_contract(launcher) == 0
 
 
@@ -65,16 +65,12 @@ def test_skew_when_installed_launcher_is_behind(
     assert _launcher_contract_skew() == (0, LAUNCHER_CONTRACT)
 
 
-def test_no_skew_when_launcher_is_level(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_skew_when_launcher_is_level(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _installed(tmp_path, monkeypatch, f"LAUNCHER_CONTRACT={LAUNCHER_CONTRACT}\n")
     assert _launcher_contract_skew() is None
 
 
-def test_no_skew_when_launcher_is_ahead(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_skew_when_launcher_is_ahead(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """One host launcher serves N projects — newer than this one is not skew."""
     _installed(tmp_path, monkeypatch, f"LAUNCHER_CONTRACT={LAUNCHER_CONTRACT + 5}\n")
     assert _launcher_contract_skew() is None

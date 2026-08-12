@@ -988,6 +988,20 @@ as a claim to check, not as evidence.
 - **expect** — wheel build produces standalone package wheels for all workspace sub-packages
 - **why** — without proper wheel build configuration, sub-packages fail to package required package data
 
+## `test_launcher_contract_skew.py`
+
+*pins HATS-1617*
+
+- **flow** — a developer whose host launcher is an older copy than the project's package, hitting any ai-hats command on the path where the venv cannot be resolved
+- **cmds**
+
+  ```console
+  ai-hats config status
+  ```
+
+- **expect** — the failure names the launcher skew and prints the refresh command, instead of advising a self init / self update that a stale launcher cannot act on
+- **why** — the launcher is a copy that never self-updates, and it dies before any interpreter runs — so nothing on the Python side can report the skew. Without this the only symptom is a misdirecting hint (HATS-1600 paid a session for it)
+
 ## `test_launcher_env_pair_isolation.py`
 
 *pins HATS-1123*
@@ -2095,17 +2109,17 @@ as a claim to check, not as evidence.
 
 ## `test_self_update_launcher_skew_advisory.py`
 
-*pins HATS-647, HATS-655*
+*pins HATS-647, HATS-655, HATS-1617*
 
-- **flow** — a developer running self update when host launcher binary is older than installed framework
+- **flow** — a developer running self update when the host launcher binary is older than the installed framework
 - **cmds**
 
   ```console
   ai-hats self update
   ```
 
-- **expect** — self update displays advisory warning detailing launcher upgrade instructions
-- **why** — without launcher skew advisories, outdated host launchers miss versioned venv resolution features
+- **expect** — self update names the contract skew and prints the launcher refresh command
+- **why** — the launcher is a copy that never self-updates. This is the SUCCESS-path contour — the update completes, so the failure-path check inside the launcher (tests/e2e/test_launcher_contract_skew.py) never runs here
 
 ## `test_self_update_legacy_venv_reclaim.py`
 

@@ -3,7 +3,7 @@
 flow: a developer whose host launcher is an older copy than the project's package,
       hitting any ai-hats command on the path where the venv cannot be resolved
 cmds:
-    ai-hats <anything>
+    ai-hats config status
 expect: the failure names the launcher skew and prints the refresh command, instead
         of advising a self init / self update that a stale launcher cannot act on
 why: the launcher is a copy that never self-updates, and it dies before any
