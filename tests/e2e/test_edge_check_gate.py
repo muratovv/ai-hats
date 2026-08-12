@@ -347,9 +347,10 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
 
     Asked of the real accessor (``Provider.session_skills_root``, HATS-1540) with
     the surface read back out of the sandbox's own ``ai-hats.yaml`` — the two
-    steps ``composition_seam.session_skills_root_for_checks`` takes. Hard-coding
-    a root here would let a test plant where the child never reads and still go
-    green on some other surface's tree.
+    steps the LAUNCH takes before it writes the root into the session envelope
+    (HATS-1594; the seam helper that used to take them at resolve time is gone).
+    Hard-coding a root here would let a test plant where the child never reads
+    and still go green on some other surface's tree.
     """
     from ai_hats.models import ProjectConfig
     from ai_hats.paths.constants import PROJECT_CONFIG
