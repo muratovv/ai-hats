@@ -191,6 +191,61 @@ def test_create_accepts_a_non_numeric_tail(tasks_dir, cwd):
 
 
 # ---------------------------------------------------------------------------
+# HATS-1596: `links=` — any declared kind at create, same write path
+# ---------------------------------------------------------------------------
+
+
+def test_create_writes_a_link_of_any_declared_kind(tasks_dir, cwd):
+    """`parent_task`/`depends_on` were the only kinds create could write, so a
+    backlog declaring its own kind (HYP `source_task`, PROP `related_hypotheses`)
+    had no create-time channel and its callers hand-rolled the card instead."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    task = _create(kernel, cwd, task_id="T-2", links={"related": ["T-1"]})
+    assert task.related == ["T-1"]
+    assert kernel.get("T-2").related == ["T-1"]
+
+
+def test_create_link_of_any_kind_logs_what_it_linked(tasks_dir, cwd):
+    """Same route as `--depends`, so the same work_log evidence."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    task = _create(kernel, cwd, task_id="T-2", links={"related": ["T-1"]})
+    assert any("Linked T-1 (related)" in e.message for e in task.work_log)
+
+
+def test_create_link_to_unknown_target_persists_nothing(tasks_dir, cwd):
+    """The property the hand-rolled writer lacked: a refused link writes zero
+    bytes, so no card is left holding an edge the link op would have refused."""
+    kernel = make_kernel(tasks_dir)
+    with pytest.raises(UnknownTaskError) as err:
+        _create(kernel, cwd, task_id="T-2", links={"related": ["T-404"]})
+    assert err.value.task_id == "T-404"
+    assert not (tasks_dir / "T-2").exists()
+
+
+def test_create_links_merge_with_the_named_link_kwargs(tasks_dir, cwd):
+    """`links=` is additive, not a replacement — `--parent`/`--depends` keep working."""
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    _create(kernel, cwd, task_id="T-2")
+    task = _create(kernel, cwd, task_id="T-3", depends_on=["T-1"], links={"related": ["T-2"]})
+    assert task.depends_on == ["T-1"] and task.related == ["T-2"]
+
+
+def test_create_link_of_an_unknown_kind_is_typed(tasks_dir, cwd):
+    """A kind absent from the backlog's declared kinds is a typed refusal, not a
+    silently-written key — `fields=` ignores an unknown NAME, links must not."""
+    from ai_hats_rack.registry import UnknownLinkKindError
+
+    kernel = make_kernel(tasks_dir)
+    _create(kernel, cwd, task_id="T-1")
+    with pytest.raises(UnknownLinkKindError):
+        _create(kernel, cwd, task_id="T-2", links={"invented_kind": ["T-1"]})
+    assert not (tasks_dir / "T-2").exists()
+
+
+# ---------------------------------------------------------------------------
 # Single persist / in-lock abort = zero bytes (HATS-723 / HATS-481 heirs)
 # ---------------------------------------------------------------------------
 
