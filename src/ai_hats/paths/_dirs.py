@@ -42,16 +42,15 @@ import yaml
 
 from .. import env
 from .constants import (
+    # Pair var pinned alongside AI_HATS_DIR at spawn (HATS-897); spelling homed
+    # in the env leaf since HATS-1613.
+    AI_HATS_PROJECT_DIR_ENV as AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR as ENV_AI_HATS_DIR,
     ENV_AI_HATS_VENV as ENV_AI_HATS_VENV,
     PROJECT_CONFIG,
 )
 
 LegacyClass = Literal["sessions", "tracker", "library", "root"]
-
-# Pair var pinned alongside AI_HATS_DIR at session spawn — scopes the pin
-# to the project it was resolved for (HATS-897).
-AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
 
 # ---------- Base resolver ----------
 

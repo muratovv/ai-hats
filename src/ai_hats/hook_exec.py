@@ -21,7 +21,15 @@ from typing import Mapping
 
 from ai_hats_core.deadline import Deadline
 
-from .paths import AI_HATS_PROJECT_DIR_ENV
+from .env import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_FORCE,
+    ENV_HOOK_POINT,
+    ENV_IN_HOOK,
+    ENV_TASK_ID,
+    ENV_TASKS_DIR,
+    ENV_WORKTREE_PATH,
+)
 
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
@@ -267,19 +275,19 @@ def _hook_env(
     for forcing in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
         env.pop(forcing, None)
     env["NO_COLOR"] = "1"
-    env["AI_HATS_HOOK_POINT"] = point
+    env[ENV_HOOK_POINT] = point
     env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
     # A check must not re-enter the per-task lock from a subprocess (D5).
-    env["AI_HATS_IN_HOOK"] = "1"
-    _put(env, "AI_HATS_FORCE", "1" if force else None)
-    _put(env, "AI_HATS_TASK_ID", task_id)
-    _put(env, "AI_HATS_WORKTREE_PATH", str(worktree_path) if worktree_path else None)
+    env[ENV_IN_HOOK] = "1"
+    _put(env, ENV_FORCE, "1" if force else None)
+    _put(env, ENV_TASK_ID, task_id)
+    _put(env, ENV_WORKTREE_PATH, str(worktree_path) if worktree_path else None)
     # HATS-1540: the primitive OWNS this one too, so a point that does not resolve
     # a backlog (`wt:pre-merge`) removes it rather than inheriting whatever the
     # ambient environment carries. Left to `extra`, which can only add, a stale
     # value reached the gate and a script comparing it to its own tracker read
     # "not my backlog" and waved the merge through — measured, not feared.
-    _put(env, "AI_HATS_TASKS_DIR", str(tasks_dir) if tasks_dir else None)
+    _put(env, ENV_TASKS_DIR, str(tasks_dir) if tasks_dir else None)
     env.update(extra or {})
     return env
 

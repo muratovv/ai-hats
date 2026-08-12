@@ -23,6 +23,13 @@ from pathlib import Path
 HOOK_TIMEOUT_S = 60.0
 _TIMEOUT_ENV = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
+# Sanctioned mirror of the env contract (ADR-0024 D5): this process must not
+# import ai-hats (see the module docstring), so the spellings are declared here
+# and held against the home by ``tests/test_env_contract.py``.
+ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
+ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+ENV_AI_HATS_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
+
 
 def _hook_timeout() -> float:
     """The effective budget: ``AI_HATS_AGY_HOOK_TIMEOUT_S`` or the default.
@@ -59,7 +66,7 @@ def _session_hooks_file() -> Path | None:
     An ai-hats session without the pin predates the cache move; say so rather
     than exit 0, which reads exactly like "no hooks configured".
     """
-    pinned = os.environ.get("AI_HATS_SESSION_CACHE_DIR")
+    pinned = os.environ.get(ENV_SESSION_CACHE_DIR)
     if pinned:
         return Path(pinned) / "hooks.json"
     sys.stderr.write(
@@ -71,8 +78,8 @@ def _session_hooks_file() -> Path | None:
 
 def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
     """Read session hooks manifest and execute matching hooks for this event."""
-    session_id = os.environ.get("AI_HATS_SESSION_ID")
-    project_dir_str = os.environ.get("AI_HATS_PROJECT_DIR")
+    session_id = os.environ.get(ENV_SESSION_ID)
+    project_dir_str = os.environ.get(ENV_AI_HATS_PROJECT_DIR)
 
     if not session_id or not project_dir_str:
         # Standalone agy run outside ai-hats session — no-op exit 0
