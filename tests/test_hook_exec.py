@@ -10,6 +10,8 @@ import os
 import tracemalloc
 from pathlib import Path
 
+from ai_hats_core.deadline import Deadline
+
 from ai_hats.hook_exec import HookVerdict
 from ai_hats.hook_exec import run_hook as _run_hook
 
@@ -41,7 +43,7 @@ def test_refusal_carries_the_scripts_own_words(tmp_path):
         "exit 2\n",
     )
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path)
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.REFUSE
     assert run.exit_code == 2
@@ -65,7 +67,7 @@ def test_refusal_that_speaks_on_stderr_still_reaches_the_operator(tmp_path):
         'echo "refusing: 3 unresolved review notes" >&2\nexit 2\n',
     )
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path)
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.REFUSE
     assert "refusing: 3 unresolved review notes" in run.reason
@@ -77,7 +79,7 @@ def test_a_wholly_silent_refusal_still_names_itself(tmp_path):
     the script, never come back empty."""
     script = _script(tmp_path / "mute.sh", "exit 2\n")
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path)
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.REFUSE
     assert str(script) in run.reason
@@ -87,8 +89,8 @@ def test_a_wholly_silent_refusal_still_names_itself(tmp_path):
 def test_every_reason_names_the_script(tmp_path):
     """The skill is named by the caller, the script only ever by the reason —
     and ``hook broke: exited 1`` named neither it nor its log."""
-    broke = run_hook(_script(tmp_path / "b.sh", "exit 1\n"), timeout=10, project_dir=tmp_path)
-    slow = run_hook(_script(tmp_path / "s.sh", "sleep 5\n"), timeout=0.4, project_dir=tmp_path)
+    broke = run_hook(_script(tmp_path / "b.sh", "exit 1\n"), budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
+    slow = run_hook(_script(tmp_path / "s.sh", "sleep 5\n"), budget=0.4, deadline=Deadline.without_lock(0.4, why="unit test"), project_dir=tmp_path)
 
     assert str(tmp_path / "b.sh") in broke.reason
     assert str(tmp_path / "s.sh") in slow.reason
@@ -100,7 +102,7 @@ def test_missing_script_is_corrupt_and_not_downgradable(tmp_path):
     "otherwise every warn-binding becomes a way to disarm a gate by deleting a
     file". A flat pass/refuse/broke cannot express that, so it is its own class.
     """
-    run = run_hook(tmp_path / "gone.sh", timeout=10, project_dir=tmp_path)
+    run = run_hook(tmp_path / "gone.sh", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.CORRUPT
     assert not run.downgradable
@@ -113,7 +115,7 @@ def test_exit_one_is_broke_and_downgradable(tmp_path):
     status a shell check produces *by accident*. It routes to the caller's
     error policy, never reads as a considered verdict (ADR-0020 D2).
     """
-    run = run_hook(_script(tmp_path / "oops.sh", "exit 1\n"), timeout=10, project_dir=tmp_path)
+    run = run_hook(_script(tmp_path / "oops.sh", "exit 1\n"), budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.BROKE
     assert run.exit_code == 1
@@ -122,7 +124,7 @@ def test_exit_one_is_broke_and_downgradable(tmp_path):
 
 def test_timeout_is_broke_not_refuse(tmp_path):
     """A hung check formed no verdict, so a timeout is broke (ADR-0020 D2)."""
-    run = run_hook(_script(tmp_path / "slow.sh", "sleep 5\n"), timeout=0.4, project_dir=tmp_path)
+    run = run_hook(_script(tmp_path / "slow.sh", "sleep 5\n"), budget=0.4, deadline=Deadline.without_lock(0.4, why="unit test"), project_dir=tmp_path)
 
     assert run.verdict is HookVerdict.BROKE
     assert "timed out" in run.reason
@@ -141,7 +143,7 @@ def test_truncated_reason_points_at_the_full_log(tmp_path):
         "exit 2\n",
     )
 
-    run = run_hook(script, timeout=20, project_dir=tmp_path, log_path=log, tail_bytes=256)
+    run = run_hook(script, budget=20, deadline=Deadline.without_lock(20, why="unit test"), project_dir=tmp_path, log_path=log, tail_bytes=256)
 
     assert run.truncated
     assert "FAILED tests/test_kernel.py::test_persist_once" in run.reason
@@ -157,7 +159,7 @@ def test_a_small_truncation_reports_bytes_not_zero_kibibytes(tmp_path):
     """
     script = _script(tmp_path / "small.sh", "echo abcdefghijklmnopqrstuvwxyz\nexit 2\n")
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path, tail_bytes=8)
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path, tail_bytes=8)
 
     assert run.truncated
     assert "0 KiB" not in run.reason
@@ -175,7 +177,7 @@ def test_log_keeps_both_streams_while_the_reason_keeps_only_stdout(tmp_path):
     )
     log = tmp_path / "logs" / "both.log"
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path, log_path=log)
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path, log_path=log)
 
     assert run.reason == "the verdict"
     assert "noisy diagnostic" in run.stderr
@@ -197,7 +199,7 @@ def test_a_hook_that_removes_its_own_log_still_returns_an_outcome(tmp_path):
     logs = tmp_path / "logs"
     script = _script(tmp_path / "selfclean.sh", f'echo hi\nrm -rf "{logs}"\nexit 0\n')
 
-    run = run_hook(script, timeout=10, project_dir=tmp_path, log_path=logs / "h.log")
+    run = run_hook(script, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path, log_path=logs / "h.log")
 
     assert run.verdict is HookVerdict.PASS
     assert "unreadable" in run.reason
@@ -214,7 +216,7 @@ def test_an_unusable_log_path_is_a_governed_outcome(tmp_path):
 
     run = run_hook(
         _script(tmp_path / "ok.sh", "exit 0\n"),
-        timeout=10,
+        budget=10, deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=tmp_path,
         log_path=collision,
     )
@@ -243,7 +245,7 @@ def test_a_loud_stderr_never_lands_in_the_parents_memory(tmp_path):
 
     tracemalloc.start()
     try:
-        run = run_hook(script, timeout=120, project_dir=tmp_path, log_path=log)
+        run = run_hook(script, budget=120, deadline=Deadline.without_lock(120, why="unit test"), project_dir=tmp_path, log_path=log)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -267,7 +269,7 @@ def test_the_log_says_who_ran_and_the_reason_never_repeats_it(tmp_path):
     run = run_hook(
         _script(tmp_path / "mute.sh", "exit 2\n"),
         point="wt:teardown[discard]",
-        timeout=10,
+        budget=10, deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=tmp_path,
         log_path=log,
     )
@@ -280,7 +282,7 @@ def test_the_log_says_who_ran_and_the_reason_never_repeats_it(tmp_path):
 
 
 def test_pass(tmp_path):
-    run = run_hook(_script(tmp_path / "ok.sh", "exit 0\n"), timeout=10, project_dir=tmp_path)
+    run = run_hook(_script(tmp_path / "ok.sh", "exit 0\n"), budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
     assert run.verdict is HookVerdict.PASS
     assert run.ok
 
@@ -288,14 +290,14 @@ def test_pass(tmp_path):
 def test_non_executable_is_corrupt(tmp_path):
     p = tmp_path / "ne.sh"
     p.write_text("#!/usr/bin/env bash\nexit 0\n")  # no +x
-    run = run_hook(p, timeout=10, project_dir=tmp_path)
+    run = run_hook(p, budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
     assert run.verdict is HookVerdict.CORRUPT
     assert not run.downgradable
 
 
 def test_exit_127_is_corrupt_not_broke(tmp_path):
     """127 means the script never ran — no verdict to downgrade (ADR-0019 D4)."""
-    run = run_hook(_script(tmp_path / "nf.sh", "exit 127\n"), timeout=10, project_dir=tmp_path)
+    run = run_hook(_script(tmp_path / "nf.sh", "exit 127\n"), budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
     assert run.verdict is HookVerdict.CORRUPT
     assert not run.downgradable
     assert "127" in run.reason
@@ -303,7 +305,7 @@ def test_exit_127_is_corrupt_not_broke(tmp_path):
 
 def test_signal_death_is_broke(tmp_path):
     run = run_hook(
-        _script(tmp_path / "sig.sh", "kill -TERM $$\n"), timeout=10, project_dir=tmp_path
+        _script(tmp_path / "sig.sh", "kill -TERM $$\n"), budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path
     )
     assert run.verdict is HookVerdict.BROKE
     assert "signal" in run.reason
@@ -314,7 +316,7 @@ def test_invalid_utf8_is_governed_not_a_stack_trace(tmp_path):
     decodes with ``errors='replace'`` so bad bytes become a governed reason."""
     run = run_hook(
         _script(tmp_path / "bin.sh", "printf 'caf\\xe9 broke'\nexit 2\n"),
-        timeout=10,
+        budget=10, deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=tmp_path,
     )
     assert run.verdict is HookVerdict.REFUSE
@@ -337,7 +339,7 @@ def test_stdin_is_closed_so_a_reading_hook_cannot_hang(tmp_path):
         os.dup2(read_fd, 0)
         run = run_hook(
             _script(tmp_path / "rd.sh", "read x || true\nexit 0\n"),
-            timeout=5,
+            budget=5, deadline=Deadline.without_lock(5, why="unit test"),
             project_dir=tmp_path,
         )
     finally:
@@ -366,7 +368,7 @@ def test_a_colour_forcing_session_env_does_not_reach_the_hook(tmp_path, monkeypa
         "exit 2\n",
     )
 
-    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+    run = run_hook(script, point="wt:create", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.reason == "[unset|unset|unset|1]"
 
@@ -380,7 +382,7 @@ def test_a_check_that_wants_colour_can_opt_back_in(tmp_path, monkeypatch):
     run = run_hook(
         script,
         point="wt:create",
-        timeout=10,
+        budget=10, deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=tmp_path,
         extra_env={"FORCE_COLOR": "3"},
     )
@@ -403,7 +405,7 @@ def test_escapes_the_hook_wrote_itself_never_reach_the_operator(tmp_path):
         "exit 2\n",
     )
 
-    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+    run = run_hook(script, point="wt:create", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.reason == "refusing: 3 unresolved notes"
     assert "\x1b" not in run.stderr
@@ -415,7 +417,7 @@ def test_the_log_keeps_the_raw_bytes_the_hook_wrote(tmp_path):
     log = tmp_path / "raw.log"
     script = _script(tmp_path / "ansi.sh", "printf '\\033[31mred\\033[0m\\n'\nexit 2\n")
 
-    run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path, log_path=log)
+    run_hook(script, point="wt:create", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path, log_path=log)
 
     assert "\x1b[31m" in log.read_text()
 
@@ -438,7 +440,7 @@ def test_the_shared_env_base_comes_from_the_primitive(tmp_path):
     run = run_hook(
         script,
         point="edge:review--done",
-        timeout=10,
+        budget=10, deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=proj,
         extra_env={"AI_HATS_EVENT": "wt_in"},
     )
@@ -465,6 +467,6 @@ def test_an_unresolvable_worktree_path_is_unset_not_inherited(tmp_path, monkeypa
         'echo "[${AI_HATS_WORKTREE_PATH-unset}|${AI_HATS_TASK_ID-unset}]"\nexit 2\n',
     )
 
-    run = run_hook(script, point="wt:create", timeout=10, project_dir=tmp_path)
+    run = run_hook(script, point="wt:create", budget=10, deadline=Deadline.without_lock(10, why="unit test"), project_dir=tmp_path)
 
     assert run.reason == "[unset|unset]"

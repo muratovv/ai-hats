@@ -79,13 +79,18 @@ def _run_one(
     session_dir: Path,
     extra_env: Mapping[str, str] | None,
 ):
+    from ai_hats_core.deadline import Deadline
+
     from .hook_exec import run_hook
     from .worktree_hooks import resolve_hook_timeout
 
+    budget = resolve_hook_timeout()
     return run_hook(
         check.script_path,
         point=STARTUP_POINT,
-        timeout=resolve_hook_timeout(),
+        budget=budget,
+        # Nothing serialises session startup, so this budget IS the ceiling.
+        deadline=Deadline.without_lock(budget, why="session startup"),
         project_dir=project_dir,
         extra_env=dict(extra_env or {}),
         # The dedup identity, not the basename: run_hook truncates the log it is

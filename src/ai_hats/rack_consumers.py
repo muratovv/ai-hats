@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from ai_hats_core import ResolvedCheck
+from ai_hats_core.deadline import Deadline
 from ai_hats_rack.checks import (
     CHECK_PRIORITY,
     EDGE_CHECK_TIMEOUT_S,
@@ -82,7 +83,11 @@ class AiHatsCheckPort:
         run = run_hook(
             check.script_path,
             point=request.event,
-            timeout=request.timeout,
+            budget=request.timeout,
+            # The rack forbids itself a core dependency, so it ships a number and
+            # not a deadline; minting here still shares one ceiling across the
+            # checks of one transition. Moving t0 to the lock: follow-up.
+            deadline=Deadline.without_lock(request.timeout, why="rack task lock (shipped)"),
             project_dir=self.project_dir,
             force=request.force,
             task_id=request.task_id,

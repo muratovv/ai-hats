@@ -34,6 +34,7 @@ from typing import Any, Iterator
 import filelock
 
 from ai_hats_core import atomic_write_text, scrubbed_git_env
+from ai_hats_core.deadline import Deadline
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,7 @@ def _lock_path(state_path: Path) -> Path:
 
 
 @contextmanager
-def _acquire(state_path: Path, *, timeout: float = LOCK_TIMEOUT) -> Iterator[None]:
+def _acquire(state_path: Path, *, timeout: float = LOCK_TIMEOUT) -> Iterator[Deadline]:
     """Acquire an OS-level lock on ``state_path``.
 
     Raises :class:`WorktreeLockError` on timeout. The lock file is
@@ -152,7 +153,7 @@ def _acquire(state_path: Path, *, timeout: float = LOCK_TIMEOUT) -> Iterator[Non
     lock = filelock.FileLock(str(lock_path), timeout=timeout)
     try:
         with lock:
-            yield
+            yield Deadline.under_lock(timeout, lock="wt state")
     except filelock.Timeout as exc:
         raise WorktreeLockError(
             f"Worktree state '{state_path.name}' is locked by another "
@@ -178,7 +179,7 @@ def _create_lock_path(state_dir: Path) -> Path:
 
 
 @contextmanager
-def _acquire_create_lock(state_dir: Path) -> Iterator[None]:
+def _acquire_create_lock(state_dir: Path) -> Iterator[Deadline]:
     """Hold the repo-scoped create-mutex for the wt-create critical section.
 
     HATS-479 L1 (see ADR-0006). Serializes ai-hats vs. ai-hats writes to
@@ -197,7 +198,7 @@ def _acquire_create_lock(state_dir: Path) -> Iterator[None]:
             waited = time.monotonic() - t0
             if waited > CREATE_LOCK_CONTENTION_WARN:
                 logger.warning("wt create lock acquired after %.2fs (contention)", waited)
-            yield
+            yield Deadline.under_lock(CREATE_LOCK_TIMEOUT, lock="wt create")
     except filelock.Timeout as exc:
         raise WorktreeLockError(
             f"wt create lock held by another process for "
@@ -229,7 +230,7 @@ def _base_lock_path(state_dir: Path, base_branch: str) -> Path:
 @contextmanager
 def _acquire_base_branch_lock(
     state_dir: Path, base_branch: str, *, timeout: float = BASE_LOCK_TIMEOUT
-) -> Iterator[None]:
+) -> Iterator[Deadline]:
     """Serialize merges into the same base ref (HATS-481 L1').
 
     Granularity = one writer per ``(project, base_ref)``. Two merges into
@@ -258,7 +259,7 @@ def _acquire_base_branch_lock(
                     waited,
                     base_branch,
                 )
-            yield
+            yield Deadline.under_lock(timeout, lock="wt base-branch merge")
     except filelock.Timeout as exc:
         raise WorktreeLockError(
             f"base-branch merge lock for '{base_branch}' held by another "
@@ -282,7 +283,7 @@ def _lifecycle_lock_path(state_path: Path) -> Path:
 @contextmanager
 def _acquire_lifecycle_lock(
     state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT
-) -> Iterator[None]:
+) -> Iterator[Deadline]:
     """Serialize destructive lifecycle ops (merge/discard) on one wt branch.
 
     HATS-480 closes R-03: ``wt merge`` and ``wt discard`` (or two parallel
@@ -325,7 +326,7 @@ def _acquire_lifecycle_lock(
                     waited,
                     state_path.name,
                 )
-            yield
+            yield Deadline.under_lock(timeout, lock="wt lifecycle")
     except filelock.Timeout as exc:
         raise WorktreeLockError(
             f"wt lifecycle lock for '{state_path.stem}' held by another "

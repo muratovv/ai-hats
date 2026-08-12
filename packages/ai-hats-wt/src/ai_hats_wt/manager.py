@@ -22,6 +22,7 @@ from typing import Any, Callable, Protocol
 
 
 from ai_hats_core import scrubbed_git_env
+from ai_hats_core.deadline import Deadline
 
 from .locks import (  # noqa: F401  -- re-export preserves the import surface (HATS-715)
     BASE_LOCK_TIMEOUT,
@@ -575,6 +576,9 @@ class LifecycleContext:
     carry: dict[str, list[dict[str, Any]]]
     skip_hooks: bool
     legacy: bool
+    #: Budget of the lock this site holds (HATS-1593). The bundle draws every
+    #: hook timeout through it, so N hooks share one ceiling.
+    deadline: Deadline
 
 
 class WorktreeLifecycle(Protocol):
@@ -878,15 +882,19 @@ class WorktreeManager:
                     except subprocess.CalledProcessError:
                         pass  # branch may not have been created — fine
                 raise WorktreeCreateError(_format_git_create_error(exc, self.branch_name)) from exc
-            # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
-            # ADR-0013: fire the create extension-point (ai-hats runs wt_in here).
-            self._fire_on_created()
-            logger.info(
-                "Created worktree %s on branch %s",
-                self.worktree_path,
-                self.branch_name,
-            )
-            return self.worktree_path
+        # HATS-823: wt_in runs AFTER add (git refuses a non-empty dir).
+        # HATS-1593: and outside the repo-wide create lock, whose budget is a
+        # quarter of the hook's. Acquired after that lock is released, so no
+        # L3+L1 co-hold arises (ADR-0006).
+        state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
+        with _acquire_lifecycle_lock(state_path) as deadline:
+            self._fire_on_created(deadline)
+        logger.info(
+            "Created worktree %s on branch %s",
+            self.worktree_path,
+            self.branch_name,
+        )
+        return self.worktree_path
 
     def merge(
         self,
@@ -927,7 +935,7 @@ class WorktreeManager:
             return
 
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path):
+        with _acquire_lifecycle_lock(state_path) as deadline:
             # HATS-480 idempotency re-check: a peer (parallel discard or
             # another merge) finishing first would have run _remove_worktree
             # (dir gone) AND _clear_state (state.json gone). The worktree
@@ -978,7 +986,7 @@ class WorktreeManager:
                     if not force:
                         self._check_clean()
                     # HATS-823: short-circuit still destroys the dir → harvest first.
-                    self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+                    self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
                     self._remove_worktree()
                     self._delete_branch()
                     self._clear_state()
@@ -1004,7 +1012,7 @@ class WorktreeManager:
                         )
                     if not force:
                         self._check_clean()
-                    self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+                    self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
                     self._remove_worktree()
                     self._delete_branch()
                     self._clear_state()
@@ -1061,10 +1069,10 @@ class WorktreeManager:
             # regardless of the caller: suppressing it for the FSM automerge
             # would be caller-aware coupling, and the FSM path is one of the two
             # roads into master this point exists to hold.
-            self._fire_before_merge(skip_hooks=skip_hooks)
+            self._fire_before_merge(deadline, skip_hooks=skip_hooks)
 
             if self._original_branch and not self._branch_exists(self._original_branch):
-                self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+                self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
                 self._remove_worktree()
                 self._clear_state()
                 raise OriginalBranchMissingError(
@@ -1119,7 +1127,7 @@ class WorktreeManager:
 
             # HATS-823: harvest before teardown. On failure the branch survives,
             # so a retry hits the HATS-596 short-circuit and re-runs the hook.
-            self._fire_before_teardown("merge", skip_hooks=skip_hooks)
+            self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
             self._remove_worktree()
             self._delete_branch()
             self._clear_state()
@@ -1159,7 +1167,7 @@ class WorktreeManager:
             return
 
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path):
+        with _acquire_lifecycle_lock(state_path) as deadline:
             # HATS-480 idempotency re-check — see merge() for the rationale.
             if not self.worktree_path.exists():
                 logger.info(
@@ -1171,7 +1179,7 @@ class WorktreeManager:
             if not force:
                 self._check_clean()
             # HATS-823: discard != "accept data loss" — harvest fail-closed (D4).
-            self._fire_before_teardown("discard", skip_hooks=skip_hooks)
+            self._fire_before_teardown("discard", deadline, skip_hooks=skip_hooks)
             self._remove_worktree(force_rmtree=force_remove)
             self._delete_branch()
             self.worktree_path = None
@@ -1227,7 +1235,7 @@ class WorktreeManager:
             return
 
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path):
+        with _acquire_lifecycle_lock(state_path) as deadline:
             # HATS-480 idempotency re-check — see merge() / discard().
             if not self.worktree_path.exists():
                 logger.info(
@@ -1262,7 +1270,7 @@ class WorktreeManager:
             # core stays hook-agnostic: it logs the abort message verbatim (the
             # ai-hats bundle authored the wt_out-specific recovery recipe into it).
             try:
-                self._fire_before_teardown("cleanup", skip_hooks=skip_hooks)
+                self._fire_before_teardown("cleanup", deadline, skip_hooks=skip_hooks)
             except WorktreeTeardownAborted as exc:
                 logger.warning(
                     "Teardown aborted at cleanup of '%s' — worktree preserved: %s",
@@ -1291,7 +1299,7 @@ class WorktreeManager:
     # Lifecycle extension-point firing (ADR-0013 D2/D3; hooks run ai-hats-side)
     # ------------------------------------------------------------------
 
-    def _lifecycle_ctx(self, *, skip_hooks: bool = False) -> LifecycleContext:
+    def _lifecycle_ctx(self, deadline: Deadline, *, skip_hooks: bool = False) -> LifecycleContext:
         """Snapshot the hook-agnostic context the extension-point bundle reads.
 
         ``carry`` is the opaque persisted hook record (D5); ``legacy`` lets the
@@ -1305,18 +1313,19 @@ class WorktreeManager:
             carry=self._wt_hooks,
             skip_hooks=skip_hooks,
             legacy=self._wt_hooks_legacy,
+            deadline=deadline,
         )
 
-    def _fire_on_created(self) -> None:
+    def _fire_on_created(self, deadline: Deadline) -> None:
         """Fire the create extension-point (ADR-0013 D2/D3).
 
         Warn-continue: the bundle never raises here, so a create-time hook
         failure is friction, not an aborted create. A bare core (no-op bundle)
         runs nothing.
         """
-        self._lifecycle.on_created(self._lifecycle_ctx())
+        self._lifecycle.on_created(self._lifecycle_ctx(deadline))
 
-    def _fire_before_merge(self, *, skip_hooks: bool = False) -> None:
+    def _fire_before_merge(self, deadline: Deadline, *, skip_hooks: bool = False) -> None:
         """Fire the pre-merge extension-point (HATS-1540).
 
         A raised :class:`WorktreeMergeAborted` propagates: nothing below it has
@@ -1324,16 +1333,20 @@ class WorktreeManager:
         ``discard`` publishes nothing to a base branch and deliberately has no
         pre-operation point of its own.
         """
-        self._lifecycle.before_merge(self._lifecycle_ctx(skip_hooks=skip_hooks))
+        self._lifecycle.before_merge(self._lifecycle_ctx(deadline, skip_hooks=skip_hooks))
 
-    def _fire_before_teardown(self, event: str, *, skip_hooks: bool = False) -> None:
+    def _fire_before_teardown(
+        self, event: str, deadline: Deadline, *, skip_hooks: bool = False
+    ) -> None:
         """Fire a teardown extension-point before ``_remove_worktree`` (D3).
 
         A raised :class:`WorktreeTeardownAborted` aborts the route fail-closed;
         per-route handling (merge/discard propagate, ``cleanup`` suppresses) is
         owned by the calling teardown method, not by the bundle.
         """
-        self._lifecycle.before_teardown(event, self._lifecycle_ctx(skip_hooks=skip_hooks))
+        self._lifecycle.before_teardown(
+            event, self._lifecycle_ctx(deadline, skip_hooks=skip_hooks)
+        )
 
     # ------------------------------------------------------------------
     # State persistence

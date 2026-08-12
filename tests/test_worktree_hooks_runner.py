@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ai_hats_core.deadline import Deadline
+
 from ai_hats.worktree_hooks import (
     WT_HOOK_TIMEOUT_S,
     resolve_hook_timeout,
@@ -30,6 +32,7 @@ def _run(script: Path, tmp_path: Path, **kw):
         project_dir=kw.get("proj", tmp_path),
         branch_name=kw.get("branch", "task/x"),
         timeout=kw.get("timeout"),
+        deadline=kw.get("deadline", Deadline.without_lock(60.0, why="unit test")),
         log_path=kw.get("log"),
     )
 
