@@ -222,38 +222,46 @@ the `apps.<app>` key. So a point is now identified by two things — the app key
 sits under, and its `at:` name — and the three columns that matter are who
 validates the name, who fires it, and whether a row there can veto.
 
-| `apps.<app>` | `at:`                               | when                                                                                          | may veto           | name validated by                   | fired by                      |
-| ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------- | ----------------------------- |
-| `rack`       | `edge:<from>--<to>`                 | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes                | rack, against the topology it runs  | `CheckSubscriber` (HATS-1141) |
-| `rack`       | `card:pre-create`                   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | —                  | **nobody**                          | **nobody** (HATS-1578)        |
-| `wt`         | `pre-merge`                         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes                | ai-hats, `check_points.wt_points()` | `wt_lifecycle.py` (HATS-1540) |
-| `wt`         | `create`                            | after `git worktree add`                                                                      | no (warn-continue) | ai-hats, `check_points.wt_points()` | **nobody** (HATS-1577)        |
-| `wt`         | `teardown[merge\|discard\|cleanup]` | before `_remove_worktree`                                                                     | yes (fail-closed)  | ai-hats, `check_points.wt_points()` | **nobody** (HATS-1577)        |
-| `wt`         | `pre-reclaim`                       | before a worktree is reclaimed                                                                | yes                | **nobody** — not in `wt_points()`   | **nobody** (HATS-1145)        |
+| `apps.<app>` | `at:`               | when                                                                                          | may veto | name validated by                   | fired by                      |
+| ------------ | ------------------- | --------------------------------------------------------------------------------------------- | -------- | ----------------------------------- | ----------------------------- |
+| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes      | rack, against the topology it runs  | `CheckSubscriber` (HATS-1141) |
+| `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | —        | **nobody**                          | **nobody** (HATS-1578)        |
+| `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes      | ai-hats, `check_points.wt_points()` | `wt_lifecycle.py` (HATS-1540) |
+| `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                | yes      | **nobody** — not in `wt_points()`   | **nobody** (HATS-1145)        |
+
+`wt` `create` and `teardown[merge|discard|cleanup]` were rows of this table until
+HATS-1577. Both were validated by `wt_points()` and fired by nobody, so a role
+could arm one and be told nothing — the very defect the table is drawn to expose.
+They are not recorded here as *planned*, because the lesson is that a name in the
+catalog is a promise: HATS-1146 adds them back together with the call site.
 
 Two independent facts the table separates, because conflating them is how a gate
 goes silently missing:
 
-**Who validates the name.** ai-hats validates `at:` names for the one app it
-fires itself — `wt`, via `check_points.wt_points()`, where a typo is refused at
-composition and `on_error: warn` is refused at the data-protection points. Every
-other app's names are opaque cargo: `edge:` and `card:pre-create` are the rack's,
-and ai-hats does not look at them (`owns_app` is `app == "wt"`). The rack in turn
+**Who validates the name.** ai-hats validates `at:` names for the apps it fires
+itself — `wt` via `check_points.wt_points()` and, since HATS-1581, `ai-hats` via
+`ai_hats_points()` — where a typo is refused at composition and `on_error: warn`
+is refused wherever the point protects data. Every other app's names are opaque
+cargo: `edge:` and `card:pre-create` are the rack's, and ai-hats does not look at
+them (`owns_app` is `app in _OWNED_POINTS`). The rack in turn
 validates `edge:` against the topology it is running, but a name its grammar does
 not parse — `card:pre-create` among them — is currently skipped in silence rather
 than named; **HATS-1578 owns that gap.**
 
-**Who fires it.** Of the six rows, **two have a caller**: `edge:` through
+**Who fires it.** Of the four rows, **two have a caller**: `edge:` through
 `CheckSubscriber`, subscribed at `Phase.IN_LOCK` priority 15 to every edge key of
 the topology the kernel runs; and `wt` `pre-merge`, inside `merge()` after the
 cheap local guards and before every mutation, which is where the `maintainer`
-role binds. The other four validate at composition — or, for `card:pre-create`
-and `pre-reclaim`, do not even do that — and then never run. **That is exactly
-the silent no-op this ADR exists to remove**, and it is live today, not
-hypothetical: a role can arm `apps.wt` `at: [create]` and be told nothing.
-Owners: **HATS-1577** (the `wt` points with no caller), **HATS-1578** (the rack
-points whose name nobody rejects), **HATS-1145** (`pre-reclaim`, which needs the
-point before it can have a caller).
+role binds. The other two are callerless in **different** ways, and telling those
+ways apart is what the table is for. `pre-reclaim` is a planned name
+`wt_points()` does not carry, so a row naming it is refused at composition: loud,
+and armable by nobody. `card:pre-create` is the rack's — carried unread by
+ai-hats, skipped in silence by the rack — so a role can arm it and be told
+nothing. **That is exactly the silent no-op this ADR exists to remove**, and it
+is live today, not hypothetical. It was live in a second and worse place until
+HATS-1577: `apps.wt` `at: [create]` validated cleanly, composed, and never ran.
+Owners: **HATS-1578** (the rack point whose name nobody rejects), **HATS-1145**
+(`pre-reclaim`, which needs the point before it can have a caller).
 
 Two roads publish to a base branch without firing `pre-merge`, both by
 **recorded decision** rather than omission, because this ADR's *Risk* section
@@ -275,11 +283,12 @@ per short-circuit flavour and one for the squash road
 `test_the_squash_cleanup_path_does_not_fire_the_point`). The patch-integrated
 flavour had none until HATS-1595: an audit read its bare `return` as an omission
 and filed the unfired gate as a defect, which is what a missing pin costs.
-`pre-reclaim` is the one `wt` name `check_points.wt_points()` does not know at
-all — the other two unfired names, `create` and `teardown[*]`, are in it. It is
-listed above, and in `docs/glossary.md`, so the two agree about what is coming.
-(It is not the only unvalidated name in the table: the rack's two are unvalidated
-by ai-hats *by design*, being another app's cargo.)
+`pre-reclaim` is the one `wt` name `check_points.wt_points()` does not know —
+since HATS-1577 the catalog holds `pre-merge` and nothing else, so every other
+`wt` name is refused rather than silently accepted. It is listed above, and in
+`docs/glossary.md`, so the two agree about what is coming. (It is not the only
+unvalidated name in the table: `card:pre-create` is unvalidated by ai-hats *by
+design*, being another app's cargo.)
 
 `card:pre-create` is not reachable through the FSM dispatcher: card creation is
 not an event at all — the rack's event kinds carry no creation event, and
@@ -323,7 +332,7 @@ outcome — the policy layer a `composition.apps` row adds on top of the primiti
 
 `on_error: refuse | warn`, default **`refuse`** (preserves today's fail-closed
 posture). A consumer opts into `warn` explicitly — but **`on_error: warn` is
-rejected at composition for `apps.wt` at `pre-merge` and `teardown[*]`**: failure
+rejected at composition for `apps.wt` at `pre-merge`**: failure
 policy at a data-protection point belongs to the app that owns the point, not to
 the binding author. That is enforceable only for ai-hats's own app: the authority
 is `check_points.wt_points()`, which maps each `wt` name to whether `warn` is
@@ -350,7 +359,7 @@ corruption earlier, at composition.)*
 Separating "I refuse" from "I broke" is load-bearing: a check that crashes on a
 task with no worktree must not wedge the backlog. The hunk binding declares
 `on_error: warn` — a *policy* gate fails open, while *data protection*
-(`apps.wt` at `teardown[*]`, the harvest) keeps `refuse`.
+(`apps.wt` at `pre-merge`) keeps `refuse`.
 
 ### D5 — Check-point env vocabulary
 
@@ -653,8 +662,9 @@ shipped row an hour after HATS-1137 landed it.
    component that declared it, resolves `run:` to an absolute path and
    proves that path can run (containment, exists, non-empty, shebang, exec bit —
    D6), applies D9's root rule, and hands the row over. It validates the `at:`
-   names of the **one app it fires itself** — `wt`, whose call sites are its own
-   code — against `check_points.wt_points()`. Every other app's cargo it carries
+   names of the **apps it fires itself** — `wt` and, since HATS-1581, `ai-hats`,
+   whose call sites are its own code — against `check_points.wt_points()` and
+   `ai_hats_points()` respectively. Every other app's cargo it carries
    verbatim: what the name means is not its question. *(Rev 9 wrote this clause as
    "`card:`, `wt:`". That was already wrong when rev 10 moved cards under
    `apps.rack`: `card:pre-create` is the rack's, and nothing validates it — see

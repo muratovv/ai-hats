@@ -251,9 +251,9 @@ What that means at run time:
   `on_error` to the strictest of the two — a later `warn` can never relax a gate
   an earlier row declared `refuse`.
 - Binding to a skill the role does not compose is a loud composition error, not
-  an implicit compose. `on_error: warn` is rejected outright at the
-  data-protection points (`apps.wt` at `pre-merge` and `teardown[*]`), whose
-  failure policy `check_points.wt_points()` fixes (ADR-0019 D4).
+  an implicit compose. `on_error: warn` is rejected outright at a data-protection
+  point (`apps.wt` at `pre-merge`), whose failure policy
+  `check_points.wt_points()` fixes (ADR-0019 D4).
 - The field is `at:`, not `on:`. YAML 1.1 resolves a bare `on` key to the boolean
   `True`, and under an opaque cargo block no parser can remap it back — ai-hats
   does not know the key is significant. HATS-1545 removed the trap by choosing a
