@@ -204,3 +204,36 @@ def run_chain(
     return run_tool_chain(
         project, "Bash", {"command": command}, settings=settings, env=env, ack=ack
     )
+
+
+def run_agy_dispatch(
+    project: Path,
+    env: dict,
+    *,
+    event: str = "PreToolUse",
+    tool: str = "Edit",
+    tool_input: dict | None = None,
+    timeout: int = 60,
+) -> subprocess.CompletedProcess[str]:
+    """Run one ``tool`` call through agy's whole hook chain, as agy runs it.
+
+    agy composes on the far side of the boundary: one static command per event
+    (``DISPATCHER_COMMAND``) runs the session manifest's hooks and then the
+    user's, stopping at the first non-zero. So driving the composed chain here
+    means running that one production string through a real shell — the exit
+    code returned is the chain's verdict, not any single hook's.
+    """
+    from ai_hats_agy.global_hook import DISPATCHER_COMMAND
+
+    payload = json.dumps(
+        {"hook_event_name": event, "tool_name": tool, "tool_input": tool_input or {}}
+    )
+    return subprocess.run(  # noqa: S603 - the production dispatcher string, run as agy runs it
+        ["sh", "-c", DISPATCHER_COMMAND, "sh", event, tool],  # noqa: S607 - sh from PATH
+        input=payload,
+        cwd=str(project),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )

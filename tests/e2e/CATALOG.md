@@ -101,6 +101,20 @@ as a claim to check, not as evidence.
 - **expect** — runtime hooks defined in settings.json execute during headless tool invocation
 - **why** — without headless hook execution, safety and quality gates fail to run in non-HITL batch runs
 
+## `test_agy_hook_manifest_vanished.py`
+
+*pins HATS-1339*
+
+- **flow** — an agent keeps editing files in an agy session whose pinned cache dir, hooks manifest and all, a sweep reclaimed under it
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Edit a file"
+  ```
+
+- **expect** — the dispatcher names the vanished manifest on stderr and still exits 0, and the user's own ~/.gemini/config/hooks.json hooks keep firing
+- **why** — a reclaimed cache dir otherwise reads as "no hooks configured" and every guard goes quiet
+
 ## `test_agy_provider_discovery.py`
 
 *pins HATS-1093*
