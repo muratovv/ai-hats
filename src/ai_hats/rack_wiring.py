@@ -290,7 +290,12 @@ class WorktreeExtension:
             # HATS-697: a forced execute is a manual state correction — no
             # fresh worktree (one spun off HEAD orphaned retro work, PROX-287).
             return Delta(work_log=("Forced → execute: no worktree created (manual override)",))
-        wt_path = self._effects.setup(ctx.task.id, ctx.task.role, caller_cwd=ctx.caller_cwd)
+        wt_path = self._effects.setup(
+            ctx.task.id,
+            ctx.task.role,
+            caller_cwd=ctx.caller_cwd,
+            outer_deadline=_rack_lock_deadline(ctx),
+        )
         if wt_path is not None:
             return Delta(work_log=(f"Worktree: {wt_path}",))  # HATS-866/AC5
         return None
@@ -378,6 +383,7 @@ class WorktreeExtension:
             caller_cwd=ctx.caller_cwd,
             force=ctx.force,
             reason=ctx.reason,
+            lock_expires_at=ctx.lock_expires_at,  # HATS-1603: still in-lock here
         )
 
     @staticmethod

@@ -55,9 +55,12 @@ class _Recording:
         self.veto = veto
         self.calls: list[str] = []
         self.seen: LifecycleContext | None = None
+        self.seen_created: LifecycleContext | None = None
+        self.seen_teardown: LifecycleContext | None = None
 
     def on_created(self, ctx: LifecycleContext) -> None:
         self.calls.append("on_created")
+        self.seen_created = ctx
 
     def before_merge(self, ctx: LifecycleContext) -> None:
         self.calls.append("before_merge")
@@ -67,6 +70,7 @@ class _Recording:
 
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         self.calls.append(f"before_teardown[{event}]")
+        self.seen_teardown = ctx
 
 
 def _worktree(repo: Path, lifecycle, *, branch: str = "task/one") -> WorktreeManager:
@@ -292,3 +296,33 @@ def test_merge_without_an_outer_deadline_keeps_its_own_budget(repo: Path):
     assert recorder.seen is not None
     assert "wt lifecycle" in recorder.seen.deadline.origin
     assert recorder.seen.deadline.budget_for(45.0) == pytest.approx(45.0)
+
+
+def test_discard_under_an_outer_deadline_clamps_its_hooks(repo: Path):
+    """HATS-1603: the failed/cancelled edges reach ``discard`` from inside the
+    rack task lock, so its wt_out hooks are bounded by that lock too."""
+    recorder = _Recording()
+    mgr = _worktree(repo, recorder)
+    outer = Deadline.under_lock(5.0, lock="rack task")
+
+    mgr.discard(force=True, outer_deadline=outer)
+
+    assert recorder.seen_teardown is not None
+    assert "rack task" in recorder.seen_teardown.deadline.origin
+    assert recorder.seen_teardown.deadline.budget_for(45.0) <= 5.0
+
+
+def test_create_under_an_outer_deadline_clamps_its_hooks(repo: Path):
+    """The ``-> execute`` edge is in-lock too, so wt_in hooks inherit the same
+    ceiling — the third site of the class HATS-1603 closes."""
+    recorder = _Recording()
+    outer = Deadline.under_lock(5.0, lock="rack task")
+    mgr = WorktreeManager(
+        repo, branch_name="task/two", lifecycle=recorder, state_dir=repo / ".wt-state"
+    )
+
+    mgr.create(outer_deadline=outer)
+
+    assert recorder.seen_created is not None
+    assert "rack task" in recorder.seen_created.deadline.origin
+    assert recorder.seen_created.deadline.budget_for(45.0) <= 5.0

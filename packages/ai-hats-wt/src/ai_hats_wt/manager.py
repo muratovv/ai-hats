@@ -718,9 +718,14 @@ class WorktreeManager:
         self,
         *,
         wt_hooks: dict[str, list[dict[str, Any]]] | None = None,
+        outer_deadline: Deadline | None = None,
     ) -> Path:
         """Create an isolated worktree. Returns project_dir if not a git repo
         or if isolation_mode is NONE (no worktree, runs in project_dir).
+
+        ``outer_deadline`` is the enclosing caller's ceiling, as in :meth:`merge`
+        — the ``-> execute`` edge reaches here in-lock, so the ``wt_in`` hooks
+        are bounded by the rack task lock too (HATS-1603).
 
         ``wt_hooks`` (HATS-823) are the resolved worktree lifecycle hooks the
         caller collected from composition (``collect_worktree_hooks`` →
@@ -887,7 +892,7 @@ class WorktreeManager:
         # quarter of the hook's. Acquired after that lock is released, so no
         # L3+L1 co-hold arises (ADR-0006).
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path) as deadline:
+        with _acquire_lifecycle_lock(state_path, outer=outer_deadline) as deadline:
             self._fire_on_created(deadline)
         logger.info(
             "Created worktree %s on branch %s",
@@ -1152,6 +1157,7 @@ class WorktreeManager:
         force: bool = False,
         force_remove: bool = False,
         skip_hooks: bool = False,
+        outer_deadline: Deadline | None = None,
     ) -> None:
         """Remove worktree and branch without merging.
 
@@ -1173,12 +1179,15 @@ class WorktreeManager:
             the rmtree fallback (HATS-488 / B-03). Independent of
             ``force`` — uncommitted-changes check and on-disk cleanup
             are separate concerns.
+        :param outer_deadline: the enclosing caller's ceiling, as in
+            :meth:`merge` — the failed/cancelled edges reach here from
+            inside the rack task lock (HATS-1603).
         """
         if not self._is_git or self.worktree_path is None:
             return
 
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path) as deadline:
+        with _acquire_lifecycle_lock(state_path, outer=outer_deadline) as deadline:
             # HATS-480 idempotency re-check — see merge() for the rationale.
             if not self.worktree_path.exists():
                 logger.info(

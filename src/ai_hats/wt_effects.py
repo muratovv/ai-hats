@@ -67,12 +67,20 @@ class WtWorktreeEffects:
         _base, merge_target = resolve_worktree_branches(self.project_dir)  # HATS-942
         assert_head_is_canonical_base(self.project_dir, merge_target)
 
-    def setup(self, task_id: str, role: str = "", caller_cwd: Path | None = None) -> Path | None:
+    def setup(
+        self,
+        task_id: str,
+        role: str = "",
+        caller_cwd: Path | None = None,
+        *,
+        outer_deadline: Deadline | None = None,
+    ) -> Path | None:
         """Create or adopt the task's isolated worktree on ``→ execute``.
 
         Returns the worktree path — adopted (caller already inside one,
         HATS-060/840; racing peer's create, HATS-479), the task's existing one
         (HATS-061), or freshly created — or None for non-git projects.
+        ``outer_deadline`` is the caller's ceiling (HATS-1603).
         """
         from ai_hats_wt import (
             WorktreeCreateError,
@@ -114,7 +122,7 @@ class WtWorktreeEffects:
         )
         wt_hooks = collect_carry_for_project(self.project_dir, role)
         try:
-            path = mgr.create(wt_hooks=wt_hooks)
+            path = mgr.create(wt_hooks=wt_hooks, outer_deadline=outer_deadline)
         except WorktreeCreateError:
             existing = WorktreeManager.load_for_task(
                 self.project_dir, task_id, state_dir=wt_state_dir, git_timeout=self._git_timeout
@@ -197,7 +205,8 @@ class WtWorktreeEffects:
                 # caller's ceiling, or wt:pre-merge outlives the rack lock.
                 active.merge(force=force, outer_deadline=outer_deadline)
                 return "merged"
-            active.discard(force=True)  # failed → intentional discard
+            # failed → intentional discard; same ceiling as merge (HATS-1603)
+            active.discard(force=True, outer_deadline=outer_deadline)
             return "discarded"
         except OriginalBranchMissingError as exc:
             # Original branch deleted — work survives on the worktree branch.

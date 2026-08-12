@@ -931,17 +931,24 @@ class Kernel:
         caller_cwd: Path,
         force: bool = False,
         reason: str = "",
+        lock_expires_at: float | None = None,
     ) -> tuple[DispatchRecord, ...]:
         """Extension-facing blocking dispatch for pre-destroy events.
 
         Runs IN_LOCK subscriptions inside the publisher's own operation
         window (no task lock is taken here); an abort propagates so the
         extension cancels the destructive operation. Deltas are journal-only.
+
+        ``lock_expires_at`` is the publisher's ceiling, forwarded so a
+        subscriber is bounded by whatever lock the publisher holds — it knows
+        that lock, this call cannot infer it (HATS-1603).
         """
         task = self._load(event.task_id)
         is_epic = self.is_epic(event.task_id)
         outcomes: list[SubscriberOutcome] = []
-        ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+        ctx = self._ctx_factory(
+            event, task, caller_cwd, is_epic, actor, force, reason, lock_expires_at
+        )
         try:
             self._dispatcher.run_blocking(event, ctx, lambda delta: None, outcomes)
         except Exception:
