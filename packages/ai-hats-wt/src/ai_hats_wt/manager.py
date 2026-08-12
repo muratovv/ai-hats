@@ -986,6 +986,8 @@ class WorktreeManager:
                     if not force:
                         self._check_clean()
                     # HATS-823: short-circuit still destroys the dir → harvest first.
+                    # No `pre-merge`: nothing is published, so the precondition has
+                    # nothing to hold (ADR-0019 D3; test_wt_pre_merge_point.py, HATS-1595).
                     self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
                     self._remove_worktree()
                     self._delete_branch()
@@ -1012,6 +1014,9 @@ class WorktreeManager:
                         )
                     if not force:
                         self._check_clean()
+                    # No `pre-merge` here either, same recorded decision and same
+                    # reason: the merge is skipped, so nothing is published
+                    # (ADR-0019 D3; test_wt_pre_merge_point.py, HATS-1595).
                     self._fire_before_teardown("merge", deadline, skip_hooks=skip_hooks)
                     self._remove_worktree()
                     self._delete_branch()
