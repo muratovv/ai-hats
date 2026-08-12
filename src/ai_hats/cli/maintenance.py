@@ -266,6 +266,26 @@ def _versioned_layout_dormant(project_dir: Path, *, pre_existing_versioned: bool
     return current_run_sha(project_dir) is None  # on .venv despite versioned exists
 
 
+_LAUNCHER_CONTRACT_RE = re.compile(r"^LAUNCHER_CONTRACT=(\d+)", re.MULTILINE)
+
+
+def read_launcher_contract(path: Path) -> int | None:
+    """Contract number stamped in the launcher at ``path`` (HATS-1617).
+
+    ``0`` is a launcher carrying no stamp — every copy older than this task, and
+    genuinely behind. ``None`` is *indeterminate* (unreadable), which callers must
+    treat as "say nothing": conflating it with ``0`` would cry skew at a launcher
+    we never managed to read.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        logger.debug("launcher contract unreadable at %s", path, exc_info=exc)
+        return None
+    m = _LAUNCHER_CONTRACT_RE.search(text)
+    return int(m.group(1)) if m else 0
+
+
 def _installed_launcher_path() -> Path:
     """Best-effort path to the host launcher, for an accurate advisory hint.
 

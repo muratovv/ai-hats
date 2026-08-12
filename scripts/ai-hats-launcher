@@ -15,6 +15,10 @@
 # probed via `bin/python` + a deep import probe (HATS-895) rather than the proxy.
 set -euo pipefail
 
+# HATS-1617: resolution contract this launcher implements. Bump ONLY when the
+# resolution behaviour changes; a drift lock holds it equal to the package constant.
+LAUNCHER_CONTRACT=1
+
 PROJECT="$(pwd)"
 # HATS-1306: linked git worktree resolution — hop to main checkout root when inside a linked worktree,
 # provided that main checkout is an onboarded ai-hats project (.agent/ or ai-hats.yaml).
