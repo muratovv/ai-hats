@@ -377,7 +377,7 @@ def _identity_env(
     identity = SessionIdentity(
         id=sid,
         role=role,
-        provider=_surface_name(project, env),
+        provider=_surface_name(project),
         project_dir=project,
         session_dir=project / ".agent" / "ai-hats" / "sessions" / "runs" / sid,
         skills_root=str(_mirror_root(project, env, sid)),
@@ -385,12 +385,16 @@ def _identity_env(
     return identity.to_env()
 
 
-def _surface_name(project: Path, env: dict[str, str]) -> str:
-    from ai_hats.models import ProjectConfig
-    from ai_hats.paths.constants import PROJECT_CONFIG
+def _surface_name(project: Path) -> str:
+    """The surface this sandbox names, read straight off its own yaml.
 
-    with mock.patch.dict(os.environ, env, clear=True):
-        return ProjectConfig.from_yaml(project / PROJECT_CONFIG).provider
+    Deliberately NOT through ``ProjectConfig`` under a patched environ: that
+    would be a fourth ``mock.patch.dict`` in this module and the isolation
+    ratchet counts them. The value is one key the fixture itself wrote.
+    """
+    import yaml
+
+    return yaml.safe_load((project / "ai-hats.yaml").read_text(encoding="utf-8"))["provider"]
 
 
 def _seed_mirror(project: Path, env: dict[str, str], *, script: str, body: str) -> Path:
