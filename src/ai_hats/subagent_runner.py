@@ -215,7 +215,8 @@ class SubAgentRunner:
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
-            role=role_name,
+            # HATS-1594: the expression, not the base name `role_name` reports.
+            role=self.payload.role_expression,
             root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
             extra_env=artifacts.extra_env,
         )

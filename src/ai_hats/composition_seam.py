@@ -262,10 +262,17 @@ def build_composition_payload(
         result=result,
     )
 
+    from .role_spec import format_role_spec
+
     return CompositionPayload(
         result=result,
         provider=provider,
         effective_role=effective_role,
+        role_expression=format_role_spec(
+            effective_role,
+            spec.adds if spec else (),
+            spec.removes if spec else (),
+        ),
         snapshot=_composition_snapshot(
             asm, effective_role, result, runtime_overlay=runtime_overlay, spec=spec
         ),

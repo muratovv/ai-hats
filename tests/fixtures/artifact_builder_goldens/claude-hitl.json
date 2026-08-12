@@ -8,6 +8,7 @@
     "AI_HATS_ROLE",
     "AI_HATS_ROOT_PID",
     "AI_HATS_SESSION_ID",
+    "AI_HATS_SESSION_IDENTITY",
     "TRACE_LOG_PATH"
   ],
   "escapes": [],

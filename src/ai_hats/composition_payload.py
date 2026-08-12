@@ -28,6 +28,10 @@ class CompositionPayload:
     result: CompositionResult
     provider: "Provider"
     effective_role: str
+    # HATS-1594: what the session composed, operators included. `effective_role`
+    # stays the base name reports carry; a gate needs the whole expression, or a
+    # check from a runtime-added trait silently never fires.
+    role_expression: str = ""
     snapshot: dict = field(default_factory=dict)
     hooks: "HooksManager | None" = None
     static_cost_analyzer: "Callable[[str], dict | None] | None" = None

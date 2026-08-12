@@ -506,7 +506,9 @@ class WrapRunner:
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
-            role=active_role,
+            # HATS-1594: the expression, not the base name — a check bound by a
+            # runtime-added trait must resolve for the gate too.
+            role=payload.role_expression,
             root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
             extra_env=session_env,
         )
