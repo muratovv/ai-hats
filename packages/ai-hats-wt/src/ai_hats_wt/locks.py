@@ -16,6 +16,10 @@ deadlock is reachable by construction:
 3. ``<state_dir>/.git-worktree-create.lock`` — HATS-479 (repo-wide, create-only)
 4. ``<state>.json.lock``                     — HATS-121 (per state JSON, I/O only)
 
+Each acquisition yields a :class:`~ai_hats_core.deadline.Deadline` carrying that
+lock's own budget (HATS-1593), so work run under it — hooks above all — is bounded
+by the lock in hand instead of a constant that cannot know which lock is held.
+
 The lock directory ``<state_dir>`` **must reside on a local filesystem** —
 ``filelock.FileLock`` (``fcntl`` advisory) is unreliable on NFS / SMB.
 """
@@ -300,7 +304,9 @@ def _acquire_lifecycle_lock(
     Lock ordering hierarchy (no inversion → no deadlock). The full 4-tier
     model lives in the module docstring + ADR-0006; locally we co-hold layers
     1, 2, and 4 — layer 3 (create-lock) is never co-held with the lifecycle
-    layer because ``create()`` runs before any persisted state exists.
+    layer. ``create()`` takes both (HATS-1593 runs ``wt_in`` under this lock, not
+    the create lock) but strictly in sequence: the create lock is released before
+    this one is acquired, so the pair never overlaps and the order cannot invert.
       1. ``<state>.json.lifecycle.lock`` — this lock (HATS-480, per wt branch)
       2. ``<state_dir>/.base-<base>.lock``     — HATS-481 (per base ref)
       4. ``<state>.json.lock``                 — HATS-121 (per state JSON)
