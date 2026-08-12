@@ -64,6 +64,18 @@ def parse_role_spec(raw: str) -> RoleSpec:
     )
 
 
+def format_role_spec(role: str, adds: tuple[str, ...] = (), removes: tuple[str, ...] = ()) -> str:
+    """The canonical expression for a composed role, readable back by the parser.
+
+    Every operator is spaced because only ``+`` is padded before the split, so
+    ``judge -foo`` would parse as a dangling operand (HATS-1594).
+    """
+    parts = [role]
+    parts.extend(f"+ {name}" for name in adds)
+    parts.extend(f"- {name}" for name in removes)
+    return " ".join(parts)
+
+
 def has_operators(raw: str) -> bool:
     if not raw or not raw.strip():
         return False

@@ -727,22 +727,25 @@ def _mirror_root(project_dir: Path, session_id: str) -> Path:
     return session_cache_dir(project_dir, session_id) / "mirror"
 
 
-@pytest.fixture(autouse=True)
-def _mirroring_surface(monkeypatch):
-    """A surface whose skill mirror is one named dir — HATS-1540 resolves there.
+def _identity(project_dir: Path, session_id: str, skills_root: Path | None = None):
+    """The envelope a session carries — where the root now comes from (HATS-1594).
 
-    Autouse so every in-session case in this module reads one root; the real
-    surfaces each scan a different relative path, which is exactly why the root
-    is asked of the provider rather than guessed here.
+    Through HATS-1593 an autouse fixture stubbed ``providers.get_provider`` here,
+    because the channel asked the registry for the root on every resolve. It no
+    longer does: the surface answers once at launch and the answer rides the
+    envelope, so the root is stated by the test instead of stubbed behind it.
     """
-    from ai_hats import providers
+    from ai_hats.session_identity import SessionIdentity
 
-    class _Mirroring:
-        def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
-            return _mirror_root(project_dir, session_id)
-
-    monkeypatch.setattr(providers, "get_provider", lambda _name: _Mirroring())
-    yield
+    root = _mirror_root(project_dir, session_id) if skills_root is None else skills_root
+    return SessionIdentity(
+        id=session_id,
+        role="gate-role",
+        provider="stub",
+        project_dir=project_dir,
+        session_dir=project_dir / ".agent" / "runs" / f"session_{session_id}",
+        skills_root=str(root),
+    )
 
 
 def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
@@ -754,10 +757,27 @@ def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         check_resolve,
         "_compose_role",
-        lambda _p: pytest.fail("composed a project that declares no checks"),
+        lambda _p, _identity=None: pytest.fail("composed a project that declares no checks"),
     )
+    # HATS-1594: and it must not be REFUSED either. Reading the envelope before
+    # the probe made a half-identified session abort every transition of a
+    # project that never asked for a gate.
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "an-older-builds-session")
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
 
     assert check_resolve.resolve_carried_checks(tmp_path, "rack") == ()
+
+
+def test_a_declared_binding_refuses_a_half_identified_session(tmp_path, monkeypatch):
+    """The other side of it: once a binding IS in reach it has to be rooted, and
+    rooting it against a session nobody can name is the silence this channel
+    exists to remove. Nothing is patched on purpose — this repository's own
+    builtin library declares bindings, so the probe answers True for real."""
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "an-older-builds-session")
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
+
+    with pytest.raises(CheckResolutionError, match="too old to say what it is"):
+        check_resolve.resolve_carried_checks(tmp_path, "rack")
 
 
 def test_a_declared_binding_is_detected_by_the_byte_probe(tmp_path, monkeypatch):
@@ -779,7 +799,7 @@ def test_a_broken_composition_refuses_instead_of_passing_quietly(tmp_path, monke
     monkeypatch.setattr(
         check_resolve,
         "_compose_role",
-        lambda _p: (_ for _ in ()).throw(RuntimeError("library schema is newer")),
+        lambda _p, _identity=None: (_ for _ in ()).throw(RuntimeError("library schema is newer")),
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
@@ -795,7 +815,9 @@ def test_a_composition_error_list_is_a_refusal_not_a_warning(tmp_path, monkeypat
         check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=True)]
     )
     monkeypatch.setattr(
-        check_resolve, "_compose_role", lambda _p: _composition(errors=["Role 'ghost' not found"])
+        check_resolve,
+        "_compose_role",
+        lambda _p, _identity=None: _composition(errors=["Role 'ghost' not found"]),
     )
 
     with pytest.raises(CheckResolutionError) as exc_info:
@@ -817,7 +839,9 @@ def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_pat
         check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=True)]
     )
     monkeypatch.setattr(
-        check_resolve, "_compose_role", lambda _p: _composition(checks=(stray, live))
+        check_resolve,
+        "_compose_role",
+        lambda _p, _identity=None: _composition(checks=(stray, live)),
     )
 
     carried = check_resolve.resolve_carried_checks(tmp_path, "rack")
@@ -862,7 +886,7 @@ def test_in_session_a_binding_resolves_from_the_session_mirror(tmp_path):
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
         "rack",
-        session_id="sess-a",
+        identity=_identity(tmp_path, "sess-a"),
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
@@ -877,7 +901,7 @@ def test_in_session_a_missing_mirror_never_falls_back_to_the_live_path(tmp_path)
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
         "rack",
-        session_id="sess-a",
+        identity=_identity(tmp_path, "sess-a"),
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
@@ -910,24 +934,19 @@ def test_a_linked_worktree_is_never_a_resolution_root(tmp_path):
 @pytest.mark.parametrize(
     "layout", ["plugin/skills", "rules/.agents/skills", "skills", "somewhere/else"]
 )
-def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeypatch, layout):
+def test_the_mirror_root_is_followed_verbatim_never_guessed(tmp_path, layout):
     """R3.1 / D9: each surface materializes skills where its own binary scans —
     ``<sid>/plugin/skills``, ``<sid>/rules/.agents/skills``, ``<sid>/skills``.
 
-    HATS-1540 made that difference the ONLY thing the resolver asks a provider
-    for, so the answer must follow whatever root the surface declares — a
-    resolver keyed on one layout does nothing under the other two. The fourth
-    case is a layout no shipped surface uses: an out-of-tree one is served too.
-    """
-    from ai_hats import providers
+    A resolver keyed on one layout does nothing under the other two, so the root
+    must be followed exactly as given. The fourth case is a layout no shipped
+    surface uses: an out-of-tree one is served too.
 
+    HATS-1594 moved WHO answers, not the invariant: the surface is asked once at
+    launch (pinned in ``test_session_identity_launch.py``) and the answer rides
+    the envelope. What is proven here is that the channel adds nothing to it.
+    """  # comment-length: allow — which half of the invariant lives where
     root = session_cache_dir(tmp_path, "sess-a") / layout
-
-    class _Elsewhere:
-        def session_skills_root(self, project_dir, session_id):
-            return root
-
-    monkeypatch.setattr(providers, "get_provider", lambda _n: _Elsewhere())
     live = _script(tmp_path, "exit 0")
     mirrored_dir = root / "quality::gates"
     mirrored_dir.mkdir(parents=True)
@@ -936,7 +955,7 @@ def test_the_mirror_root_is_asked_of_the_surface_never_guessed(tmp_path, monkeyp
     resolved = check_resolve.resolve_carried_checks(
         tmp_path,
         "rack",
-        session_id="sess-a",
+        identity=_identity(tmp_path, "sess-a", skills_root=root),
         compose=lambda _p: _composition(checks=(_check(live),)),
     )
 
@@ -1047,7 +1066,7 @@ def test_in_session_a_source_inside_a_worktree_is_refused_before_rebasing(tmp_pa
         check_resolve.resolve_carried_checks(
             main,
             "rack",
-            session_id="sess-a",
+            identity=_identity(tmp_path, "sess-a"),
             compose=lambda _p: _composition(checks=(_check(branch_copy),)),
         )
 

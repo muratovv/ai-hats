@@ -59,14 +59,16 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env() -> dict[str, str]:
+def env(project: Path) -> dict[str, str]:
+    """Takes ``project`` because a session envelope names the tree it composed
+    against, and a bare id is not a session any launch produces (HATS-1594)."""
     from _helpers.env import checkout_pythonpath
+    from _helpers.sessions import stand_in_session
 
     e = os.environ.copy()
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
-    e["AI_HATS_SESSION_ID"] = "e2e-rack-wired-probe"
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    return e
+    return stand_in_session(e, project, "e2e-rack-wired-probe")
 
 
 def test_shim_tier_create_refreshes_state_md(project: Path, env: dict[str, str]):

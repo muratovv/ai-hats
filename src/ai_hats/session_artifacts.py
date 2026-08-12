@@ -90,8 +90,22 @@ def assemble_launch_env(
     """  # comment-length: allow — the omission it fixes was invisible for a reason
     from ai_hats_observe.session import session_env
 
-    from .constants import ENV_ROLE, ENV_ROOT_PID
+    from .constants import ENV_ROOT_PID
+    from .session_identity import SessionIdentity
 
+    # HATS-1594: the ONE place a session's identity is produced. Gates running in
+    # the processes this launches used to re-derive it from ai-hats.yaml, which
+    # does not hold it whenever --role/-p override.
+    identity = SessionIdentity(
+        id=session_id,
+        role=role,
+        provider=provider.name,
+        project_dir=project_dir,
+        session_dir=session_dir,
+        # Resolved where the provider object is in hand, so no consumer takes a
+        # second surface lookup that could answer differently.
+        skills_root=str(provider.session_skills_root(project_dir, session_id) or ""),
+    )
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
     # depended on the mode would be the reporting defect, moved (HATS-1554).
@@ -100,7 +114,9 @@ def assemble_launch_env(
         **provider.get_env(session_dir, project_dir),
         **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),
         **extra_env,
-        ENV_ROLE: role,
+        # Last on purpose: the scalars are projections of the envelope, so the
+        # identity overrides anything upstream spelled differently.
+        **identity.to_env(),
         ENV_ROOT_PID: root_pid,
     }
 

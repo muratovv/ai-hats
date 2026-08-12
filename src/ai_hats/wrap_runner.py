@@ -26,6 +26,7 @@ from .pipeline.keys import PIPELINE_FINALIZE_HITL
 from .pty_shutdown import bounded_proc_shutdown, emit_terminal_reset
 from .pty_tap import NullPtyTap
 from .check_snapshot import describe_checks, legacy_launch_notices, surface_skew_notice
+from .session_identity import SessionIdentity
 from .session_artifacts import (
     BuiltArtifacts,
     RunMode,
@@ -506,7 +507,9 @@ class WrapRunner:
             session.session_dir,
             session_id=session.session_id,
             trace_path=str(session.trace_path),
-            role=active_role,
+            # HATS-1594: the expression, not the base name — a check bound by a
+            # runtime-added trait must resolve for the gate too.
+            role=payload.role_expression,
             root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
             extra_env=session_env,
         )
@@ -567,8 +570,12 @@ class WrapRunner:
             run_startup_checks(
                 self.project_dir,
                 session_dir=session.session_dir,
-                session_id=session.session_id,
+                # HATS-1594: parsed back out of the env just written, so the gate
+                # is judged by the very bytes the children will read — and the
+                # composition is handed over rather than composed a second time.
+                identity=SessionIdentity.from_env(env_map),
                 extra_env=env_map,
+                compose=lambda _project_dir: result,
             )
         )
 

@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**226 of 226 files catalogued — 233 flows.**
+**227 of 227 files catalogued — 234 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -780,6 +780,21 @@ as a claim to check, not as evidence.
 
 - **expect** — commits succeed gracefully when ai-hats binaries are unreachable and linked worktrees execute the same gate suite as the main checkout
 - **why** — git hooks must fail open to avoid wedging developer commits when tools are unreachable while ensuring linked worktrees enforce consistent quality gates
+
+## `test_githooks_session_identity.py`
+
+*pins HATS-1594*
+
+- **flow** — an agent runs `ai-hats --role judge` in a project whose ai-hats.yaml still says `active_role: maintainer`, then commits from inside that session
+- **cmds**
+
+  ```console
+  ai-hats self init -p claude -r bare-role --no-wizard
+  AI_HATS_SESSION_IDENTITY='{"v":1,...,"role":"gated-role",...}' git commit -m x
+  ```
+
+- **expect** — the git gates that run are the ones the SESSION's role declares — the gated role's hook fires under the bare active_role, and the bare role's (none) fire under a gated active_role
+- **why** — the dispatcher read `cfg.active_role or cfg.default_role`, so every commit inside a session launched with `--role` ran another role's gates. This also proves the envelope survives into `.githooks/<event>`, which git spawns with an environment ai-hats never touches — the transport assumption the whole task rests on
 
 ## `test_golden_path.py`
 

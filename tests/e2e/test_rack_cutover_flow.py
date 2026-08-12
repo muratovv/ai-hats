@@ -23,6 +23,7 @@ why:    rack must provision isolated worktrees on execute and resolve the main
 
 from __future__ import annotations
 from _helpers.git import git as _git
+from _helpers.sessions import stand_in_session
 
 import os
 import subprocess
@@ -70,9 +71,10 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     _init_project(main)
     env = {
         **base_env,
-        "AI_HATS_SESSION_ID": "e2e-rack-cutover",
         "AI_HATS_ROOT_PID": str(os.getpid()),
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    stand_in_session(env, main, "e2e-rack-cutover")
 
     # --- C1a: the wired kernel refreshes STATE.md after create (bare does not) ---
     created = _rack(rack, "create", "wired flow", "--role", "assistant", cwd=main, env=env)

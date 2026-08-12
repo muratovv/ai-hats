@@ -242,6 +242,10 @@ def gate_project(shared_launcher, tmp_path: Path):
             "AI_HATS_CACHE_HOME": str(tmp_path / f"cache{counter['n']}"),
             "AI_HATS_SESSION_ID": f"e2e-checks-{counter['n']}",
         }
+        # HATS-1594: a session is its envelope, not a bare id. Standing in for a
+        # session with the id alone now reads as one launched by an older build
+        # and is refused, which is the point — so say what the session IS.
+        env.update(_identity_env(project, env, role))
         return project, env
 
     return make
@@ -255,8 +259,15 @@ def gate_project(shared_launcher, tmp_path: Path):
 def _rack(
     rack: Path, *args: str, cwd: Path, env: dict[str, str], unset: str = ""
 ) -> subprocess.CompletedProcess[str]:
-    """One real ``rack`` invocation; ``unset`` drops a var via real ``env -u``."""
-    argv = ["env", "-u", unset] if unset else []
+    """One real ``rack`` invocation; ``unset`` drops vars via real ``env -u``.
+
+    Comma-separated, because leaving a session out means dropping BOTH the id
+    and the envelope beside it (HATS-1594) — one without the other is a state no
+    launch produces.
+    """
+    argv = []
+    for name in filter(None, unset.split(",")):
+        argv += ["env", "-u", name] if not argv else ["-u", name]
     return subprocess.run(  # noqa: S603 - binary from the shared-launcher fixture
         [*argv, str(rack), *args],
         cwd=str(cwd),
@@ -336,9 +347,10 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
 
     Asked of the real accessor (``Provider.session_skills_root``, HATS-1540) with
     the surface read back out of the sandbox's own ``ai-hats.yaml`` — the two
-    steps ``composition_seam.session_skills_root_for_checks`` takes. Hard-coding
-    a root here would let a test plant where the child never reads and still go
-    green on some other surface's tree.
+    steps the LAUNCH takes before it writes the root into the session envelope
+    (HATS-1594; the seam helper that used to take them at resolve time is gone).
+    Hard-coding a root here would let a test plant where the child never reads
+    and still go green on some other surface's tree.
     """
     from ai_hats.models import ProjectConfig
     from ai_hats.paths.constants import PROJECT_CONFIG
@@ -349,6 +361,41 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
         return get_provider(surface).session_skills_root(
             project, session_id or env["AI_HATS_SESSION_ID"]
         )
+
+
+def _identity_env(
+    project: Path, env: dict[str, str], role: str, session_id: str = ""
+) -> dict[str, str]:
+    """The envelope the launch would hand the child (HATS-1594).
+
+    Built from the same accessor ``_mirror_root`` uses, so a test that plants in
+    one root and declares another cannot pass: both halves come from the
+    surface the sandbox's own ``ai-hats.yaml`` names.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    sid = session_id or env["AI_HATS_SESSION_ID"]
+    identity = SessionIdentity(
+        id=sid,
+        role=role,
+        provider=_surface_name(project),
+        project_dir=project,
+        session_dir=project / ".agent" / "ai-hats" / "sessions" / "runs" / sid,
+        skills_root=str(_mirror_root(project, env, sid)),
+    )
+    return identity.to_env()
+
+
+def _surface_name(project: Path) -> str:
+    """The surface this sandbox names, read straight off its own yaml.
+
+    Deliberately NOT through ``ProjectConfig`` under a patched environ: that
+    would be a fourth ``mock.patch.dict`` in this module and the isolation
+    ratchet counts them. The value is one key the fixture itself wrote.
+    """
+    import yaml
+
+    return yaml.safe_load((project / "ai-hats.yaml").read_text(encoding="utf-8"))["provider"]
 
 
 def _seed_mirror(project: Path, env: dict[str, str], *, script: str, body: str) -> Path:
@@ -470,7 +517,7 @@ def test_out_of_session_the_same_binding_refuses_from_the_live_library(gate_proj
         "--json",
         cwd=project,
         env=env,
-        unset="AI_HATS_SESSION_ID",
+        unset="AI_HATS_SESSION_ID,AI_HATS_SESSION_IDENTITY",
     )
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
@@ -549,7 +596,12 @@ def _live_session_gate(
     """  # comment-length: allow — why the root is discovered, not computed
     tree = SURFACE_SKILL_TREES[surface]
     task_id = _create(rack, project, env)
-    live_env = {k: v for k, v in env.items() if k != "AI_HATS_SESSION_ID"}
+    # Both session keys go, not just the id: the fixture's envelope names a sid
+    # this child will not mint, and half an identity is a state no launch
+    # produces (HATS-1594).
+    live_env = {
+        k: v for k, v in env.items() if k not in ("AI_HATS_SESSION_ID", "AI_HATS_SESSION_IDENTITY")
+    }
     sessions = _sessions_root(project, env)
 
     child = subprocess.Popen(  # noqa: S603 - launcher from the shared fixture
@@ -588,7 +640,9 @@ def _live_session_gate(
             "plan",
             "--json",
             cwd=project,
-            env={**live_env, "AI_HATS_SESSION_ID": session_dir.name},
+            # The envelope is rebuilt for the sid the CHILD minted, off the same
+            # accessor that just confirmed the writer's root.
+            env={**live_env, **_identity_env(project, env, "refusing", session_dir.name)},
         )
         assert refused.returncode == 1, refused.stdout + refused.stderr
         assert _reason(refused) == "drain the review notes first"

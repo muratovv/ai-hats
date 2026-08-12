@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
     from ..materialize import compose_for_role
     from ..paths import builtin_library_hooks
+    from ..session_identity import SessionIdentity, SessionIdentityError
 
     parser = argparse.ArgumentParser(prog="ai_hats.cli.githooks_hook")
     parser.add_argument("event")
@@ -59,8 +60,19 @@ def main(argv: list[str] | None = None) -> int:
 
     project_dir: Path = args.project_dir
     assembler = Assembler(project_dir)
-    cfg = assembler.project_config
-    role = cfg.active_role or cfg.default_role
+    # HATS-1594: in a session the role is what THAT session composed; the config
+    # is the answer only outside one. Reading it unconditionally ran maintainer's
+    # git gates inside a judge session, which never declared them.
+    try:
+        identity = SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        print(f"ai-hats: git gates SKIPPED (fail-open) — {exc}", file=sys.stderr)
+        return 0
+    if identity is not None:
+        role = identity.role
+    else:
+        cfg = assembler.project_config
+        role = cfg.active_role or cfg.default_role
 
     # Resolved BEFORE composition (HATS-1597): it needs only the project, and a
     # composition that refuses is itself a fail-open worth recording.

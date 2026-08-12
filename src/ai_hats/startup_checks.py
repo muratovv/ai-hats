@@ -23,6 +23,8 @@ from .startup_notices import StartupNotice, show_fatal_notice_and_exit
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from ai_hats_core import CompositionResult, ResolvedCheck
 
+    from .session_identity import SessionIdentity
+
 #: Exit code for a launch a startup gate refused. Deliberately none of the codes
 #: already spoken for: 1 is any generic failure, 2 is click's UsageError (a
 #: malformed command line), and 130 is the SIGINT default preset before the
@@ -34,7 +36,7 @@ def run_startup_checks(
     project_dir: Path,
     *,
     session_dir: Path,
-    session_id: str = "",
+    identity: SessionIdentity | None = None,
     extra_env: Mapping[str, str] | None = None,
     compose: Callable[[Path], CompositionResult | None] | None = None,
 ) -> list[StartupNotice]:
@@ -48,12 +50,17 @@ def run_startup_checks(
     optional dressing: a gate judging a DIFFERENT environment than the session
     will get is the "green at startup, red at the first transition" split this
     point exists to close.
-    """
+
+    ``compose`` is the same argument in composition form, and the caller here is
+    in-process: it hands over the composition the session was built from rather
+    than letting the channel compose a second one. It went unpassed through
+    HATS-1594, which is how a launch died on a gate belonging to another role.
+    """  # comment-length: allow — both arguments exist to stop the same split
     from .check_resolve import CheckResolutionError, resolve_checks_at
 
     try:
         checks = resolve_checks_at(
-            project_dir, AI_HATS_APP, STARTUP_POINT, session_id=session_id, compose=compose
+            project_dir, AI_HATS_APP, STARTUP_POINT, identity=identity, compose=compose
         )
     except CheckResolutionError as exc:
         # Resolution failing is not "nothing is declared": a row may exist and be
