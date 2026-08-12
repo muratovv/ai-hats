@@ -95,7 +95,7 @@ for?" is the tell: these grew one incident at a time, not from a model.
 ```python
 class Composition(_YamlModel):
     traits: list[str]
-    rules: list[str]
+    rules:  list[str]
     skills: list[str]
 ```
 
