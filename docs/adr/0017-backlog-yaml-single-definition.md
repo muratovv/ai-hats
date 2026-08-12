@@ -469,7 +469,6 @@ current constructor shape, definition-first:
 ExtensionFactory = Callable[[BacklogDefinition, Path, Mapping[str, Any]], Subscriber]
 #                            definition          catalog dir   config block
 
-
 def build_extensions(defn, catalog, factories) -> list[Subscriber]:
     return [factories[e.name](defn, catalog, e.config) for e in defn.extensions]
 ```

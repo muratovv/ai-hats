@@ -122,10 +122,8 @@ runs no hooks — hook-agnostic by default). Two methods at rev 1; a third,
 class WorktreeLifecycle(Protocol):
     def on_created(self, ctx: LifecycleContext) -> None:
         """Never raises (warn-continue, D8); a create-time failure is friction."""
-
     def before_merge(self, ctx: LifecycleContext) -> None:
         """Raises core-owned WorktreeMergeAborted; nothing has mutated yet."""
-
     def before_teardown(self, event: str, ctx: LifecycleContext) -> None:
         """Raises core-owned WorktreeTeardownAborted to abort the route (D3/D8)."""
 ```
@@ -314,11 +312,10 @@ The core distinguishes two callback outcomes — **returned** (proceed) vs
 
 ```python
 # core (wt/), hook-agnostic:
-class WorktreeTeardownAborted(Exception): ...  # "a before_teardown extension-point vetoed teardown"
-
+class WorktreeTeardownAborted(Exception): ...   # "a before_teardown extension-point vetoed teardown"
 
 # ai-hats callback, on a fail-closed hook failure:
-raise WorktreeTeardownAborted(...) from WorktreeHookError(...)  # hook detail is the __cause__
+raise WorktreeTeardownAborted(...) from WorktreeHookError(...)   # hook detail is the __cause__
 ```
 
 **Why a generic core exception (A′), not reusing `WorktreeHookError` in core
