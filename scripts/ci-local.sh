@@ -90,6 +90,13 @@ ci_dependency_floor() {
     "$PY" scripts/check_dependency_floor.py
 }
 
+# Offline and instant, like the others. HATS-1599: a ratchet, so it is green
+# only while the tree patches its own units no more than the recorded baseline.
+ci_test_isolation() {
+    echo "[ci-local] test-isolation (patching of code under test vs the baseline)" >&2
+    "$PY" scripts/check_test_isolation.py
+}
+
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
@@ -152,6 +159,7 @@ case "$stage" in
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
     silent-fallback) ci_silent_fallback ;;
+    test-isolation) ci_test_isolation ;;
     e2e-catalog) ci_e2e_catalog ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
@@ -160,6 +168,7 @@ case "$stage" in
         ci_lint
         ci_dependency_floor
         ci_silent_fallback
+        ci_test_isolation
         ci_e2e_catalog
         ci_unit
         ci_coverage
@@ -168,7 +177,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | done-gate | dependency-floor | silent-fallback | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | done-gate | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
         exit 2
         ;;
 esac
