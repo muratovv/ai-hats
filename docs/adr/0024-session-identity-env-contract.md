@@ -74,15 +74,35 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
 **Идентичность сессии — семь ключей.** Каждый отвечает на вопрос «чья это
 сессия и где она живёт», а не «как выполнить эту операцию».
 
-| Ключ                        | Что заявляет                                            | Кто пишет                                                                                                                                                  |
-| --------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AI_HATS_SESSION_ID`        | идентификатор сессии                                    | `ai_hats_observe.session:369-378` (`session_env`); спеллинг — `ai_hats_observe/trace.py:12`                                                                |
-| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                  | `provider.get_env` (единственный производственный вызывающий — `session_artifacts.py:100`), `scripts/ai-hats-launcher:159`, `src/ai_hats/hook_exec.py:215` |
-| `AI_HATS_DIR`               | база фреймворка этой сессии                             | `provider.get_env` (`src/ai_hats/surfaces/claude/provider.py:395`)                                                                                         |
-| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn) | `scripts/ai-hats-launcher:155`, `src/ai_hats/cli/maintenance.py:682`                                                                                       |
-| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности     | `packages/surfaces/agy/src/ai_hats_agy/provider.py:214`                                                                                                    |
-| `AI_HATS_ROLE`              | роль, под которой сессия поднята                        | `src/ai_hats/session_artifacts.py:103`                                                                                                                     |
-| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости        | `src/ai_hats/session_artifacts.py:104`, из `wrap_runner.py:510` / `subagent_runner.py:219`                                                                 |
+| Ключ                        | Что заявляет                                                                              | Кто пишет                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_HATS_SESSION_ID`        | идентификатор сессии                                                                      | `ai_hats_observe.session:369-378` (`session_env`); спеллинг — `ai_hats_observe/trace.py:12`                                                                |
+| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                                                    | `provider.get_env` (единственный производственный вызывающий — `session_artifacts.py:100`), `scripts/ai-hats-launcher:159`, `src/ai_hats/hook_exec.py:215` |
+| `AI_HATS_DIR`               | база фреймворка этой сессии                                                               | `provider.get_env` (`src/ai_hats/surfaces/claude/provider.py:395`)                                                                                         |
+| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn)                                   | `scripts/ai-hats-launcher:155`, `src/ai_hats/cli/maintenance.py:682`                                                                                       |
+| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности                                       | `packages/surfaces/agy/src/ai_hats_agy/provider.py:214`                                                                                                    |
+| `AI_HATS_ROLE`              | роль, под которой сессия поднята                                                          | `src/ai_hats/session_artifacts.py:103`                                                                                                                     |
+| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости                                          | `src/ai_hats/session_artifacts.py:104`, из `wrap_runner.py:510` / `subagent_runner.py:219`                                                                 |
+| `AI_HATS_SESSION_IDENTITY`  | конверт: `id`, `role`, `provider`, `project_dir`, `session_dir`, `skills_root` одним JSON | `SessionIdentity.to_env` (`src/ai_hats/session_identity.py`), через `assemble_launch_env`                                                                  |
+
+**Восьмой ключ приехал во время написания этого документа, и это его лучшее
+подтверждение.** HATS-1594 (done, 2026-08-12) завёл `AI_HATS_SESSION_IDENTITY` —
+конверт, чтобы гейты перестали перевыводить роль и провайдера из `ai-hats.yaml`,
+который их не хранит при `--role`/`-p`. Он написан со **своим** правилом
+членства, потому что общего списка ещё не существовало: ровно тот механизм, что
+описан выше, сработавший в тот же день. Здесь конверт вносится в набор, а его
+правило членства («поле входит, только если потребителю нельзя его вывести
+самому») принимается как уточнение D1 для полей *внутри* конверта — оно не
+конкурирует с этим ADR, а детализирует одну его строку.
+
+Конверт — **носитель части набора, а не его замена**: `AI_HATS_SESSION_ID` и
+`AI_HATS_ROLE` он отдаёт проекциями из того же сериализатора, а `AI_HATS_DIR`,
+`AI_HATS_VENV`, `AI_HATS_SESSION_CACHE_DIR` и `AI_HATS_ROOT_PID` не несёт вовсе.
+`project_dir` при этом едет дважды — полем конверта и скаляром от
+`provider.get_env`. Сегодня они совпадают по построению (оба собираются из
+одного аргумента в `assemble_launch_env`), и это единственное, что их держало;
+теперь держит тест
+(`tests/test_env_contract.py::test_the_envelope_and_its_scalars_agree_in_one_launch_env`).
 
 **У каждого ключа ровно один объявленный дом.** Двенадцать из тринадцати
 (семь идентичности + шесть точки хука) живут в `src/ai_hats/env.py`; остальные

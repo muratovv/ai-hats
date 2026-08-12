@@ -146,3 +146,55 @@ def test_tasks_dir_near_name_is_not_the_racks_own_variable() -> None:
         "the hook-point AI_HATS_TASKS_DIR and the rack CLI's own RACK_TASKS_DIR "
         "share a Python symbol name but are different contracts"
     )
+
+
+class _Surface:
+    """Only what ``assemble_launch_env`` touches, but spelling the pin like a real
+    provider does (`surfaces/claude/provider.py:get_env`)."""
+
+    name = "stub"
+
+    def session_skills_root(self, project_dir, session_id):
+        del project_dir, session_id
+        return None
+
+    def get_env(self, session_dir, project_dir):
+        del session_dir
+        from ai_hats.env import AI_HATS_PROJECT_DIR_ENV
+
+        return {AI_HATS_PROJECT_DIR_ENV: str(project_dir)}
+
+    def claim_launch_env(self, session_dir, project_dir):
+        del session_dir, project_dir
+        return {}
+
+
+def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
+    """The envelope (HATS-1594) restates three values the scalars also carry.
+
+    They agree today because ``assemble_launch_env`` is one composition root and
+    builds both from the same arguments — but nothing said so, and a second
+    writer is how every divergence in ADR-0024's context table began.
+    """
+    import json
+
+    from ai_hats.session_artifacts import assemble_launch_env
+    from ai_hats.session_identity import ENV_SESSION_IDENTITY
+
+    env = assemble_launch_env(
+        _Surface(),
+        tmp_path,
+        tmp_path / "session",
+        session_id="20260812-101500-3-4242",
+        trace_path=str(tmp_path / "trace.log"),
+        role="maintainer",
+        root_pid="4242",
+        extra_env={},
+    )
+    envelope = json.loads(env[ENV_SESSION_IDENTITY])
+
+    from ai_hats.env import AI_HATS_PROJECT_DIR_ENV
+
+    assert envelope["project_dir"] == env[AI_HATS_PROJECT_DIR_ENV]
+    assert envelope["id"] == env["AI_HATS_SESSION_ID"]
+    assert envelope["role"] == env["AI_HATS_ROLE"]
