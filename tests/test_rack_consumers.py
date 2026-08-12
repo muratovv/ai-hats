@@ -759,22 +759,9 @@ def test_a_project_without_declarations_never_composes(tmp_path, monkeypatch):
         "_compose_role",
         lambda _p, _identity=None: pytest.fail("composed a project that declares no checks"),
     )
-
-    assert check_resolve.resolve_carried_checks(tmp_path, "rack") == ()
-
-
-def test_a_project_with_no_declarations_is_not_refused_over_a_session_envelope(
-    tmp_path, monkeypatch
-):
-    """HATS-1594: the probe runs BEFORE the identity is read, and must.
-
-    Reading the envelope eagerly made a project that declares no gate refuse
-    every transition of an in-flight session — a cost paid by consumers who do
-    not use this channel at all, for information nothing was going to consume.
-    """
-    monkeypatch.setattr(
-        check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=False)]
-    )
+    # HATS-1594: and it must not be REFUSED either. Reading the envelope before
+    # the probe made a half-identified session abort every transition of a
+    # project that never asked for a gate.
     monkeypatch.setenv("AI_HATS_SESSION_ID", "an-older-builds-session")
     monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
 
@@ -782,12 +769,10 @@ def test_a_project_with_no_declarations_is_not_refused_over_a_session_envelope(
 
 
 def test_a_declared_binding_refuses_a_half_identified_session(tmp_path, monkeypatch):
-    """The other side of it: once a binding IS in reach, the root has to be
-    rooted, and rooting it against a session nobody can name is the silence
-    this channel exists to remove."""
-    monkeypatch.setattr(
-        check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=True)]
-    )
+    """The other side of it: once a binding IS in reach it has to be rooted, and
+    rooting it against a session nobody can name is the silence this channel
+    exists to remove. Nothing is patched on purpose — this repository's own
+    builtin library declares bindings, so the probe answers True for real."""
     monkeypatch.setenv("AI_HATS_SESSION_ID", "an-older-builds-session")
     monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
 
