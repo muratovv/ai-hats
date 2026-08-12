@@ -72,7 +72,17 @@ if [[ "$cmd" =~ $runner_rx ]]; then
         pipe_rx='\|[[:space:]]*(tail|head|grep|rg|tee)'
         semi_rx=';[[:space:]]*(echo|true|exit[[:space:]]+0)'
         or_rx='\|\|[[:space:]]*(echo|true|exit[[:space:]]+0)'
-        if [[ "$cmd" =~ $pipe_rx || "$cmd" =~ $semi_rx || "$cmd" =~ $or_rx ]]; then
+        # `; echo $? > file` is the rule's own prescribed form: the status is
+        # captured for the agent to read, not printed and lost. Only the chain
+        # grounds are excused — a pipe still masks (HATS-1436 heir).
+        capture_rx=';[[:space:]]*echo[[:space:]]+\$\?[[:space:]]*>'
+        masked=""
+        if [[ "$cmd" =~ $pipe_rx ]]; then
+            masked=1
+        elif [[ ! "$cmd" =~ $capture_rx ]] && [[ "$cmd" =~ $semi_rx || "$cmd" =~ $or_rx ]]; then
+            masked=1
+        fi
+        if [[ -n "$masked" ]]; then
             msg="exit code masking detected in test runner command — dev_rule_exit_code_provenance: piped/chained runner commands mask non-zero exit codes. Use set -o pipefail, \${PIPESTATUS[0]}, or run without exit code masking."
             printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
             exit 0
