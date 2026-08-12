@@ -237,7 +237,7 @@ def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
 
     good = WELL_FORMED.replace(
         "rack transition HATS-1 done",
-        "ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py",
+        "ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_venv_strict_mode.py",
     )
     rows_good = mod.parse_rows(good, "test_x.py")
     assert mod.check_plumbing(rows_good) == []

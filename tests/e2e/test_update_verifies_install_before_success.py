@@ -22,7 +22,8 @@ import pytest
 from ai_hats.constants import ENV_REPO_URL
 from ai_hats.paths import ENV_AI_HATS_VENV
 
-pytestmark = pytest.mark.install_heavy  # own launcher venv + real uv install
+# own launcher venv + real uv install
+pytestmark = [pytest.mark.integration, pytest.mark.install_heavy]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _MISSING_SYMBOL = 'PROVIDER_CLAUDE = "claude"'

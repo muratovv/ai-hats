@@ -1,14 +1,9 @@
-"""e2e (HATS-685, HATS-876)
+"""The e2e harness's env scrub (HATS-685, HATS-876).
 
-flow:   a developer running sub-agent execution or worktree commands with ambient
-        PYTHONPATH or GIT_* set expecting clean subprocess environment scrubbing
-cmds:
-    ai-hats wt exec task/hats-1 -- pytest tests/e2e/test_env_scrub.py
-expect: subprocess environment strips inherited PYTHONPATH and GIT_* variables while
-        preserving PATH and HOME
-why:    ambient environment variable leakage redirects launcher imports to workspace
-        source or leaks git repository state; pure unit tests in this module also check
-        helper functions and are candidates for relocation (HATS-1499)
+Subject: ``_helpers.env`` plus the two harness call sites that must not inherit
+an ambient env — ``Project.run`` and ``build_launcher_venv``. An inherited
+``PYTHONPATH`` redirects a launcher subprocess back at the source tree, so the
+run stops testing the packaged artefact; ``GIT_*`` leaks the outer repo.
 """
 
 from __future__ import annotations
