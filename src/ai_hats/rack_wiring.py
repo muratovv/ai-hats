@@ -44,6 +44,7 @@ from ai_hats_rack.extensions import (
 )
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
+from ai_hats_core.deadline import Deadline
 from ai_hats_observe.trace import ENV_SESSION_ID
 
 from . import ownership
@@ -57,6 +58,18 @@ TERMINAL_STATES = ("done", "failed", "cancelled")
 # a hung worktree shell-out can't hold the task lock forever — kill → in-lock error
 # → abort + journal (existing path). Config-overridable via WorktreeExtension(budget=).
 WORKTREE_BUDGET = 60.0
+
+
+def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
+    """The kernel's task-lock instant as a budget (HATS-1603).
+
+    The rack publishes a bare float — it is built without ai-hats-core, so it
+    cannot mint the type. Binding the two is this module's job, and doing it
+    here means the comparison stays in ``Deadline`` instead of at a call site.
+    """
+    if ctx.lock_expires_at is None:
+        return None
+    return Deadline(ctx.lock_expires_at, "rack task lock")
 
 
 def _all_edge_keys(topology: Topology) -> list[str]:
@@ -310,7 +323,9 @@ class WorktreeExtension:
                 )
             self._publish_pre_destroy(ctx, "worktree-merge" if merge else "worktree-discard")
 
-        outcome = self._effects.teardown(task_id, merge=merge, force=ctx.force)
+        outcome = self._effects.teardown(
+            task_id, merge=merge, force=ctx.force, outer_deadline=_rack_lock_deadline(ctx)
+        )
         if outcome is not None:
             return Delta(work_log=(f"Worktree {outcome}",))
         return None

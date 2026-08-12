@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats_core.deadline import Deadline
 from ai_hats_wt import (
     NOOP_LIFECYCLE,
     LifecycleContext,
@@ -263,3 +264,31 @@ def test_the_squash_cleanup_path_does_not_fire_the_point(repo: Path):
         "precondition: this path must actually publish to the base branch, "
         "otherwise the decision it records is about nothing"
     )
+
+
+def test_merge_under_an_outer_deadline_clamps_the_point_to_it(repo: Path):
+    """HATS-1603: the FSM road calls ``merge`` from inside rack's 30s task lock,
+    so the point's budget must come from THAT lock, not from the wt lifecycle
+    lock's own 60s — which is what let a 45s check outlive its caller."""
+    recorder = _Recording()
+    mgr = _worktree(repo, recorder)
+    outer = Deadline.under_lock(5.0, lock="rack task")
+
+    mgr.merge(outer_deadline=outer)
+
+    assert recorder.seen is not None
+    assert recorder.seen.deadline.expires_at == pytest.approx(outer.expires_at)
+    assert "rack task" in recorder.seen.deadline.origin
+    assert recorder.seen.deadline.budget_for(45.0) <= 5.0
+
+
+def test_merge_without_an_outer_deadline_keeps_its_own_budget(repo: Path):
+    """``ai-hats wt merge`` direct: no enclosing lock, so 45s stays legal."""
+    recorder = _Recording()
+    mgr = _worktree(repo, recorder)
+
+    mgr.merge()
+
+    assert recorder.seen is not None
+    assert "wt lifecycle" in recorder.seen.deadline.origin
+    assert recorder.seen.deadline.budget_for(45.0) == pytest.approx(45.0)

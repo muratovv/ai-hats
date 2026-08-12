@@ -286,7 +286,7 @@ def _lifecycle_lock_path(state_path: Path) -> Path:
 
 @contextmanager
 def _acquire_lifecycle_lock(
-    state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT
+    state_path: Path, *, timeout: float = LIFECYCLE_LOCK_TIMEOUT, outer: Deadline | None = None
 ) -> Iterator[Deadline]:
     """Serialize destructive lifecycle ops (merge/discard) on one wt branch.
 
@@ -317,6 +317,11 @@ def _acquire_lifecycle_lock(
         :data:`LIFECYCLE_LOCK_TIMEOUT` (60 s — covers ``fetch origin`` +
         merge + remove + ``branch -D`` end-to-end). Tests override with a
         small value to provoke the timeout path deterministically.
+    :param outer: deadline of an enclosing lock, when a caller holds one (the
+        rack task lock on the FSM road). The yielded deadline is clamped to it,
+        so nested work cannot outlive its caller — ``None`` on the direct
+        ``ai-hats wt merge`` road, where this lock is the only ceiling
+        (HATS-1603).
     :raises WorktreeLockError: lock not acquired within ``timeout`` seconds.
     """
     lock_path = _lifecycle_lock_path(state_path)
@@ -332,7 +337,7 @@ def _acquire_lifecycle_lock(
                     waited,
                     state_path.name,
                 )
-            yield Deadline.under_lock(timeout, lock="wt lifecycle")
+            yield Deadline.under_lock(timeout, lock="wt lifecycle").clamped_to(outer)
     except filelock.Timeout as exc:
         raise WorktreeLockError(
             f"wt lifecycle lock for '{state_path.stem}' held by another "

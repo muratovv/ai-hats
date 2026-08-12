@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai_hats_core.deadline import Deadline
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +41,22 @@ class WtWorktreeEffects:
     propagate to the caller (the CLI translates them to red exits).
     """
 
-    def __init__(self, project_dir: Path, *, git_timeout: float | None = None) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        *,
+        git_timeout: float | None = None,
+        lifecycle: object | None = None,
+    ) -> None:
         self.project_dir = project_dir
         # HATS-1015 liveness budget: the per-git wall-clock ceiling threaded into
         # every worktree shell-out (default None = unbounded — behaviour unchanged).
         self._git_timeout = git_timeout
+        if lifecycle is None:  # resolved once here, not re-imported per method
+            from .wt_lifecycle import HOOK_LIFECYCLE
+
+            lifecycle = HOOK_LIFECYCLE
+        self._lifecycle = lifecycle
 
     def assert_canonical_base(self) -> None:
         """HATS-518 guard for the forced-execute path (no worktree is created)."""
@@ -66,7 +81,6 @@ class WtWorktreeEffects:
         )
 
         from .paths import worktrees_dir
-        from .wt_lifecycle import HOOK_LIFECYCLE
 
         # Probe order: adopt the worktree the caller is in (HATS-060/840) → reuse
         # the task's existing one (HATS-061) → guard canonical base (HATS-518) →
@@ -94,7 +108,7 @@ class WtWorktreeEffects:
             branch_name=branch,
             base_branch=base_branch,
             merge_target=merge_target,
-            lifecycle=HOOK_LIFECYCLE,
+            lifecycle=self._lifecycle,
             state_dir=wt_state_dir,
             git_timeout=self._git_timeout,
         )
@@ -118,14 +132,22 @@ class WtWorktreeEffects:
             return path
         return None
 
-    def teardown(self, task_id: str, *, merge: bool = True, force: bool = False) -> str | None:
+    def teardown(
+        self,
+        task_id: str,
+        *,
+        merge: bool = True,
+        force: bool = False,
+        outer_deadline: Deadline | None = None,
+    ) -> str | None:
         """Merge (``merge=True``) or discard the task's worktree.
 
         Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5),
         or None when no worktree action actually happened. Merge failures
         re-raise so the transition aborts fail-loud (HATS-481); ``force``
         bypasses only the clean-tree merge gate (HATS-596); discard failures
-        on an admin close are swallowed.
+        on an admin close are swallowed. ``outer_deadline`` is the caller's
+        ceiling (the rack task lock on the FSM road) — HATS-1603.
         """
         from ai_hats_wt import (
             OriginalBranchMissingError,
@@ -134,7 +156,6 @@ class WtWorktreeEffects:
         )
 
         from .paths import worktrees_dir
-        from .wt_lifecycle import HOOK_LIFECYCLE
 
         # Manager rebuilt with the hook bundle + injected state-dir (ADR-0013 D3/D4).
         # State lost: branch already merged → finalize without re-merge (HATS-697),
@@ -142,7 +163,7 @@ class WtWorktreeEffects:
         active = WorktreeManager.load_for_task(
             self.project_dir,
             task_id,
-            lifecycle=HOOK_LIFECYCLE,
+            lifecycle=self._lifecycle,
             state_dir=worktrees_dir(self.project_dir),
             git_timeout=self._git_timeout,
         )
@@ -172,7 +193,9 @@ class WtWorktreeEffects:
 
         try:
             if merge:
-                active.merge(force=force)  # HATS-596: force reaches merge guards
+                # HATS-596: force reaches merge guards. HATS-1603: so does the
+                # caller's ceiling, or wt:pre-merge outlives the rack lock.
+                active.merge(force=force, outer_deadline=outer_deadline)
                 return "merged"
             active.discard(force=True)  # failed → intentional discard
             return "discarded"
@@ -209,12 +232,11 @@ class WtWorktreeEffects:
         from ai_hats_wt import WorktreeManager
 
         from .paths import worktrees_dir
-        from .wt_lifecycle import HOOK_LIFECYCLE
 
         active = WorktreeManager.load_for_task(
             self.project_dir,
             task_id,
-            lifecycle=HOOK_LIFECYCLE,
+            lifecycle=self._lifecycle,
             state_dir=worktrees_dir(self.project_dir),
             git_timeout=self._git_timeout,
         )

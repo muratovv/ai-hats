@@ -22,6 +22,7 @@ from ai_hats_rack import OperationAborted
 from ai_hats_rack.dispatch import AbortOperation, Phase, Subscription
 from ai_hats.paths import worktrees_dir
 from ai_hats.rack_wiring import build_rack_kernel
+from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeBaseBranchError, WorktreeManager, WorktreeStateLostError
 
 pytestmark = pytest.mark.integration
@@ -399,8 +400,9 @@ class _SpyMergeManager:
     def __init__(self, captured: dict) -> None:
         self._captured = captured
 
-    def merge(self, *, force: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         self._captured["force"] = force
+        self._captured["outer_deadline"] = outer_deadline
 
     def discard(self, *, force: bool = False) -> None:  # pragma: no cover
         pass
@@ -428,7 +430,7 @@ class _FailingMergeManager:
     branch_name = "task/t-1"
     worktree_path = Path("/nonexistent-failing-worktree")
 
-    def merge(self, *, force: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         raise subprocess.CalledProcessError(
             returncode=128,
             cmd=["git", "merge", "--no-ff", self.branch_name],
@@ -655,3 +657,48 @@ def test_repo_aware_done_guard_finalizes_merged_task_repo(tmp_path, project):
     assert not WorktreeManager.branch_exists(repo, "task/t-1")  # cleaned up there
     logs = [e.message for e in kernel.get("T-1").work_log]
     assert any("task repo" in m for m in logs)
+
+
+class _DeadlineSpy:
+    """A lifecycle bundle that records the budget the merge point is handed."""
+
+    def __init__(self) -> None:
+        self.seen = None
+
+    def on_created(self, ctx) -> None:
+        pass
+
+    def before_merge(self, ctx) -> None:
+        self.seen = ctx.deadline
+
+    def before_teardown(self, event: str, ctx) -> None:
+        pass
+
+
+def test_done_hands_the_merge_point_the_rack_lock_budget(project):
+    """HATS-1603, the whole chain: kernel mints the instant, the integrator turns
+    it into a Deadline, wt clamps its own against it. Three green units cannot
+    show this — only the far end of the chain can say whose lock is bounding the
+    point, so this asserts on the deadline that actually arrived there.
+    """
+    spy = _DeadlineSpy()
+    kernel = _kernel(
+        project,
+        lock_timeout=17.0,
+        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+    )
+    _to_execute(kernel, project)
+    wt = _active(project, "T-1").worktree_path
+    (wt / "new_file.txt").write_text("hello")
+    _commit_all(wt, "add file")
+
+    _tr(kernel, "T-1", "document", "review", "done", cwd=project)
+
+    assert spy.seen is not None, "wt:pre-merge never fired — the chain is not under test"
+    assert "rack task lock" in spy.seen.origin, (
+        f"the merge point is bounded by {spy.seen.origin!r}, not by the lock it "
+        "actually runs inside — the enclosing deadline did not reach wt"
+    )
+    # The kernel's 17s ceiling, not the wt lifecycle lock's 60s.
+    assert spy.seen.remaining() <= 17.0
+    assert spy.seen.budget_for(45.0) <= 17.0

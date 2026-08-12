@@ -904,8 +904,14 @@ class WorktreeManager:
         accept_drift: bool = False,
         skip_hooks: bool = False,
         expected_tip: str | None = None,
+        outer_deadline: Deadline | None = None,
     ) -> None:
         """Merge worktree changes back into the original branch and clean up.
+
+        HATS-1603: ``outer_deadline`` is the enclosing caller's ceiling (the rack
+        task lock, when the FSM automerges) — every budget drawn inside is
+        clamped to it. ``None`` is the direct ``ai-hats wt merge`` road: no
+        enclosing lock, so the lifecycle lock's own deadline stands.
 
         Raises WorktreeDirtyError if the worktree has uncommitted changes
         unless force=True (HATS-062).
@@ -935,7 +941,7 @@ class WorktreeManager:
             return
 
         state_path = self._state_dir / f"{_state_key(self.branch_name)}.json"
-        with _acquire_lifecycle_lock(state_path) as deadline:
+        with _acquire_lifecycle_lock(state_path, outer=outer_deadline) as deadline:
             # HATS-480 idempotency re-check: a peer (parallel discard or
             # another merge) finishing first would have run _remove_worktree
             # (dir gone) AND _clear_state (state.json gone). The worktree
