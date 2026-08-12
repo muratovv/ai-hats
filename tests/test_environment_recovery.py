@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from ai_hats.environment_recovery import (
 from ai_hats.session_liveness import (
     LivenessSnapshot,
     anchor_path,
-    session_owner,
+    session_owners,
     write_session_anchor,
 )
 from ai_hats_observe import SessionManager
@@ -363,6 +364,35 @@ class _CountingCapture:
         return self._snapshot if self._snapshot is not None else LivenessSnapshot.capture()
 
 
+@pytest.fixture
+def zombie_proc():
+    """A child that has exited and is deliberately NOT reaped until teardown.
+
+    The mirror of ``live_proc`` and the state a SIGKILLed wrapper leaves behind
+    whenever its own parent is slow to ``wait()``: ``os.kill(pid, 0)`` succeeds
+    and ``ps`` still lists the pid with its original ``lstart``, so every cheap
+    test for life says yes. Reaping in teardown is what keeps the pid from
+    leaking into the rest of the session as a phantom owner.
+    """  # comment-length: allow — the fixture IS the defect being reproduced
+    proc = subprocess.Popen([sys.executable, "-c", ""])
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        # Read the state straight from ``ps`` — asking the code under test
+        # whether its own subject exists yet would make the setup circular.
+        state = subprocess.run(
+            ["ps", "-p", str(proc.pid), "-o", "state="], capture_output=True, text=True
+        ).stdout.strip()
+        if state.startswith("Z"):
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail(f"pid {proc.pid} never became a zombie; last ps state {state!r}")
+    try:
+        yield proc
+    finally:
+        proc.wait()
+
+
 def _session_dir(project_dir, pid, *, age_hours=0.0, counter=1):
     """A session cache dir named the way ``create_session`` names one."""
     entry = session_cache_root(project_dir) / f"20260101-000000-{counter}-{pid}"
@@ -450,16 +480,122 @@ def test_reused_pid_reads_as_dead_through_the_lazy_gate(live_proc):
 
 
 @pytest.mark.parametrize("baseline", [None, "Mon Jan  1 00:00:00 2001"])
-def test_the_cheap_gate_never_answers_differently_from_the_snapshot(live_proc, baseline):
+def test_the_cheap_gate_never_answers_differently_from_the_snapshot(
+    live_proc, zombie_proc, baseline
+):
     """The gate exists to SKIP the table, never to disagree with it.
 
     Every row of the truth table, cheap path against full snapshot: our own pid,
-    a live child, and a pid that is certainly gone. Only the sub-millisecond
-    exit race between ``os.kill`` and the capture can part them.
+    a live child, a zombie, and a pid that is certainly gone. Only the
+    sub-millisecond exit race between ``os.kill`` and the capture can part them.
     """
     snapshot = LivenessSnapshot.capture()
-    for pid in (os.getpid(), live_proc.pid, _dead_pid()):
+    for pid in (os.getpid(), live_proc.pid, zombie_proc.pid, _dead_pid()):
         assert _LazyLiveness().is_live(pid, baseline) is snapshot.is_live(pid, baseline)
+
+
+# ----- The mirror of a dead owner: one that never gets reaped (HATS-1339 D3) -----
+
+
+@pytest.mark.parametrize("baseline", [None, "Mon Jan  1 00:00:00 2001"])
+def test_a_zombie_owner_is_dead_to_both_paths(zombie_proc, baseline):
+    """A zombie holds a ``ps`` row and answers ``os.kill`` — and owns nothing.
+
+    Both readings had to change together. The snapshot could not see it (its
+    row carries the pid and the original ``lstart``, so it matched the recorded
+    baseline exactly), and the cheap gate never asked, so an unreaped wrapper
+    pinned its cache for as long as its parent declined to ``wait()`` — where
+    the pre-HATS-1339 TTL reclaimed the dir at 24h.
+    """  # comment-length: allow — the two readings are the two halves of the fix
+    assert _LazyLiveness().is_live(zombie_proc.pid, baseline) is False
+    assert LivenessSnapshot.capture().is_live(zombie_proc.pid, baseline) is False
+
+
+def test_a_zombie_wrapper_costs_no_process_table_read(tmp_path, zombie_proc):
+    """And it is settled on the cheap path, so the sweep pays nothing for it."""
+    orphan = _session_dir(tmp_path, zombie_proc.pid)
+    write_session_anchor(orphan)
+    _rewrite_anchor(orphan, root_pid=zombie_proc.pid)
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert not orphan.exists(), "an unreaped wrapper pinned its cache dir"
+    assert spy.calls == 0
+
+
+def _rewrite_anchor(entry, **fields) -> None:
+    """Overwrite the anchor's fields, keeping the rest of the record."""
+    target = anchor_path(entry)
+    payload = json.loads(target.read_text(encoding="utf-8")) if target.is_file() else {}
+    payload.update(fields)
+    target.write_text(json.dumps(payload), encoding="utf-8")
+
+
+# ----- The surface child is the cache's real reader (HATS-1339 D3) -----
+
+
+def test_a_dir_whose_wrapper_died_but_whose_surface_lives_is_kept(tmp_path, live_proc):
+    """The measured defect: the sweep asked only about the WRAPPER.
+
+    On the sub-agent path the surface is spawned over pipes with no controlling
+    tty, so a SIGKILL of the wrapper hangs nothing up — a real ``agy`` was still
+    running 45s later, reparented to init. Reaping on the wrapper's death alone
+    deletes the skills and ``hooks.json`` of a process still reading them.
+    """
+    entry = _session_dir(tmp_path, _dead_pid())
+    write_session_anchor(entry)
+    _rewrite_anchor(entry, root_pid=_dead_pid(), start_time=None, child_pid=live_proc.pid)
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert entry.exists(), "the cache of a LIVE surface child was reclaimed"
+    assert (entry / "hooks.json").exists()
+
+
+def test_both_owners_gone_reaps_and_names_the_surface_child(tmp_path, caplog):
+    """The other half: a recorded child is not a licence to keep the dir."""
+    entry = _session_dir(tmp_path, _dead_pid())
+    dead_wrapper, dead_child = _dead_pid(), _dead_pid()
+    write_session_anchor(entry)
+    _rewrite_anchor(entry, root_pid=dead_wrapper, start_time=None, child_pid=dead_child)
+
+    with caplog.at_level(logging.WARNING):
+        _sweep_orphan_session_caches(tmp_path)
+
+    assert not entry.exists()
+    assert f"owner pid {dead_wrapper} is gone" in caplog.text
+    assert f"surface child {dead_child}" in caplog.text
+
+
+def test_an_anchor_written_before_the_child_field_reads_as_wrapper_only(tmp_path):
+    """Every anchor already on disk lacks ``child_pid``; that is not a reader.
+
+    A missing field must mean "nobody else recorded", never "a second owner we
+    cannot resolve" — the latter would pin every pre-upgrade dir forever, which
+    is the growth this card exists to bound.
+    """
+    entry = _session_dir(tmp_path, _dead_pid())
+    anchor_path(entry).write_text(
+        json.dumps({"root_pid": _dead_pid(), "start_time": None}), encoding="utf-8"
+    )
+
+    _sweep_orphan_session_caches(tmp_path)
+
+    assert not entry.exists()
+
+
+def test_a_live_wrapper_never_asks_about_the_child(tmp_path, live_proc):
+    """Wrapper first, and ``any()`` stops there — the common case pays nothing."""
+    entry = _session_dir(tmp_path, os.getpid())
+    write_session_anchor(entry)
+    _rewrite_anchor(entry, child_pid=live_proc.pid, child_start_time="Mon Jan  1 00:00:00 2001")
+    spy = _CountingCapture()
+
+    _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
+
+    assert entry.exists()
+    assert spy.calls == 1, "one memoized capture for our own baseline, none for the child"
 
 
 def test_a_dir_whose_owner_pid_was_reused_is_reaped(tmp_path, live_proc):
@@ -629,13 +765,15 @@ def test_recovery_expires_aged_bulk_run_artifacts(tmp_path):
 
 
 def test_claim_marks_the_cache_dir_with_this_process(tmp_path):
-    """The runners' session-start seam; ``session_owner`` reads it back."""
+    """The runners' session-start seam; ``session_owners`` reads it back."""
     from ai_hats.runtime_common import _claim_session_cache
 
     _claim_session_cache(tmp_path, "20260101-000000-1-999999")
 
     cache_dir = session_cache_dir(tmp_path, "20260101-000000-1-999999")
-    assert session_owner(cache_dir)[0] == os.getpid()
+    ((pid, start_time),) = session_owners(cache_dir)
+    assert pid == os.getpid()
+    assert start_time, "the claim must record a reuse baseline"
 
 
 def test_claimed_cache_survives_a_sweep_by_a_peer(tmp_path):

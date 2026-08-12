@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import time
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -34,6 +35,7 @@ from .runtime_common import (
     SUBAGENT_EXIT_TIMEOUT,
     SUBAGENT_EXIT_ERROR,
     _claim_session_cache,
+    _claim_surface_child,
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
@@ -44,6 +46,47 @@ if TYPE_CHECKING:
     from .pipeline.harness_policy import HarnessPolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _run_surface(
+    launch: Sequence[str],
+    *,
+    work_dir: Path,
+    env: dict[str, str],
+    timeout_s: float,
+    on_spawn: Callable[[int], None],
+) -> subprocess.CompletedProcess:
+    """``subprocess.run(capture_output=True, text=True, timeout=…)``, plus the pid.
+
+    Spelled out because ``run`` never exposes the child's pid, and the pid is
+    what the session-cache sweep needs: this child is what READS the cache, and
+    with pipes and no controlling tty nothing hangs it up when its parent is
+    SIGKILLed — a real ``agy`` was measured still running 45s later, reparented
+    to init (HATS-1339 D3). The timeout path mirrors ``run``'s exactly — kill,
+    drain, re-raise carrying the output captured so far — because the caller
+    reports ``exc.stdout`` / ``exc.stderr`` on a timeout.
+    """  # comment-length: allow — a stdlib call re-spelled needs its reason
+    with subprocess.Popen(  # noqa: S603 — argv comes from the provider, not a shell
+        list(launch),
+        cwd=str(work_dir),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as proc:
+        on_spawn(proc.pid)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raise subprocess.TimeoutExpired(
+                proc.args, timeout_s, output=stdout, stderr=stderr
+            ) from exc
+        except BaseException:
+            proc.kill()
+            raise
+    return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
 
 
 class SubAgentRunner:
@@ -348,22 +391,15 @@ class SubAgentRunner:
                     # The reported argv IS the executed one — this used to
                     # re-derive it from materialize_runtime_skills, and matched
                     # what was reported only by coincidence (HATS-1552).
-                    #
-                    # KNOWN GAP (HATS-1339 D3): pipes, no pty, so a SIGKILL of
-                    # THIS process hangs nothing up — a real `agy` was measured
-                    # still running 45s later, reparented to init, while the
-                    # next run's sweep reclaims its cache the moment this pid
-                    # goes. The HITL path is safe only by _pty_spawn's carrier
-                    # drop; nothing here reproduces it.
-                    # comment-length: allow — an unclosed hole, not a design
                     with provider.execution_context(self.project_dir):
-                        proc = subprocess.run(
+                        proc = _run_surface(
                             described.launch,
-                            cwd=str(work_dir),
+                            work_dir=work_dir,
                             env=env,
-                            capture_output=True,
-                            text=True,
-                            timeout=timeout_s,
+                            timeout_s=timeout_s,
+                            on_spawn=lambda pid: _claim_surface_child(
+                                self.project_dir, session.session_id, pid
+                            ),
                         )
                     session.log_res(f"Exit code: {proc.returncode}")
                     stdout_str = proc.stdout or ""

@@ -42,7 +42,7 @@ from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
 from .paths import ai_hats_dir, cache_home, cache_root, session_cache_root, versions_root
 from .runs_retention import sweep_runs
-from .session_liveness import LivenessSnapshot, _pid_alive, session_owner
+from .session_liveness import LivenessSnapshot, _pid_alive, session_owners
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
 from .version_recovery import (
     reclaim_legacy_venv,
@@ -70,7 +70,9 @@ class _LazyLiveness:
     answer (plan Q3). Gating that on ``os.kill`` first, as this class did until
     HATS-1339, made the reuse branch unreachable in production. The read still
     happens at the first query that needs it, hence after the candidate list was
-    taken, and :meth:`LivenessSnapshot.is_live` still owns the verdict.
+    taken, and :meth:`LivenessSnapshot.is_live` still owns the verdict. Both
+    no-table answers hold only because ``_pid_alive`` rules out a zombie, which
+    ``os.kill`` alone reads as living — see its own contract.
     """  # comment-length: allow — the hot-path contract is the reason S1 exists
 
     def __init__(self, capture: Callable[[], LivenessSnapshot] = LivenessSnapshot.capture) -> None:
@@ -132,14 +134,22 @@ def _expire_session_dirs(root: Path, cutoff: float, liveness: _LazyLiveness) -> 
 
 
 def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | None:
-    """Why ``entry`` may be dropped, or ``None`` to keep it."""
-    root_pid, start_time = session_owner(entry)
+    """Why ``entry`` may be dropped, or ``None`` to keep it.
+
+    Every process the anchor names must be gone, not just the wrapper: the
+    wrapper owns the dir but the surface CLI is what READS it, and on the
+    sub-agent path (pipes, no tty) the surface outlives a SIGKILLed wrapper
+    indefinitely — measured at 45s and reparented to init (HATS-1339 D3).
+    """
+    owners = session_owners(entry)
     try:
-        if root_pid is None:
+        if not owners:
             aged = entry.stat().st_mtime < cutoff
             return "no owner recorded and older than the TTL" if aged else None
-        if not liveness.is_live(root_pid, start_time):
-            return f"owner pid {root_pid} is gone"
+        if any(liveness.is_live(pid, start_time) for pid, start_time in owners):
+            return None
+        reason = f"owner pid {owners[0][0]} is gone"
+        return reason if len(owners) == 1 else f"{reason}, and so is surface child {owners[1][0]}"
     except OSError as exc:
         logger.warning("session-cache sweep skipped %s: %s", entry.name, exc)
     return None
@@ -235,8 +245,7 @@ def _live_session_in(key_dir: Path, liveness: _LazyLiveness) -> str | None:
     if not sessions.is_dir():
         return None
     for entry in sorted(child for child in sessions.iterdir() if child.is_dir()):
-        root_pid, start_time = session_owner(entry)
-        if root_pid is not None and liveness.is_live(root_pid, start_time):
+        if any(liveness.is_live(pid, start_time) for pid, start_time in session_owners(entry)):
             return entry.name
     return None
 

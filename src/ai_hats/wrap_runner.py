@@ -41,6 +41,7 @@ from .runtime_common import (
     _ESCAPE_NOTICE,
     _scan_escape,
     _claim_session_cache,
+    _claim_surface_child,
     _cleanup_session_cache,
     _print_session_start,
     _print_session_end,
@@ -815,6 +816,12 @@ class WrapRunner:
         except OSError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
+
+        # HATS-1339: name the cache's real READER in the anchor. Redundant here
+        # — the hangup contract above already binds the child's life to ours —
+        # but it costs one ps per session and makes the sweep's rule ("keep
+        # while EITHER owner lives") hold on every runner, not just one.
+        _claim_surface_child(self.project_dir, tracer.session.session_id, proc.pid)
 
         # Use raw fd constants (not sys.stdin/stdout.fileno()) so test harnesses
         # that wrap sys.stdin/stdout still pass through to the real terminal —

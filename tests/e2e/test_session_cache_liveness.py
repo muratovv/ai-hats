@@ -18,7 +18,9 @@ why:    age alone reaped 12 live maintainer sessions' skills and hooks mid-fligh
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import time
 from pathlib import Path
 
@@ -145,6 +147,67 @@ def test_a_killed_wrappers_surface_child_goes_with_it(two_sessions) -> None:
         f"the surface child (pid {surface_pid}) outlived its SIGKILLed wrapper "
         f"(pid {doomed.pid}) by more than {ORPHAN_GRACE_S:.0f}s — the next run's "
         f"sweep will reap {doomed.cache_dir} out from under a live reader"
+    )
+
+
+@pytest.fixture
+def orphaned_subagent(tmp_project, tmp_path: Path, repo_root: Path):
+    """A sub-agent whose wrapper is SIGKILLed while its surface keeps running.
+
+    The AUTOMATE path spawns the surface over pipes with no controlling tty, so
+    unlike the HITL path nothing hangs it up — this stages the orphan that a
+    real ``agy`` was measured to become (alive 45s on, reparented to init),
+    rather than simulating one.
+    """
+    surface = install(tmp_project, tmp_path, repo_root)
+    session = surface.start_held("subagent", automate=True)
+    child = session.surface_pid
+    session.kill_and_reap()
+    yield surface, session, child
+    if not _pid_gone(child):
+        os.kill(child, signal.SIGKILL)
+
+
+def test_a_dead_wrappers_cache_is_kept_while_its_surface_still_reads_it(
+    orphaned_subagent,
+) -> None:
+    """The wrapper owns the dir; the surface is what READS it (HATS-1339 D3).
+
+    Fail-under-revert: ask only about ``root_pid`` and the very next run deletes
+    this dir — the skills mirror and ``settings.json`` of a process still
+    reading them, with none of the 24h the pre-HATS-1339 TTL bought. The kill is
+    one pid, never ``killpg``, precisely so the surface survives it.
+    """
+    surface, session, child = orphaned_subagent
+    assert not _pid_gone(child), (
+        "precondition: the surface child died with its wrapper, so there is no "
+        "orphan here to strand — the AUTOMATE path grew a teardown it never had"
+    )
+    anchor = json.loads((session.cache_dir / ANCHOR_NAME).read_text())
+    assert anchor.get("child_pid") == child, f"the anchor never learned the surface pid: {anchor}"
+
+    done = surface.run_once()
+
+    assert session.cache_dir.is_dir(), (
+        f"a RUNNING surface child lost its cache to a peer's sweep: {session.cache_dir}"
+    )
+    assert (session.cache_dir / "settings.json").is_file(), "its hooks manifest went with it"
+    assert f"reclaimed session cache {session.sid}" not in done.stderr
+
+
+def test_and_that_cache_is_reclaimed_once_the_surface_is_gone_too(orphaned_subagent) -> None:
+    """The other half — a recorded child must not pin the dir forever."""
+    surface, session, child = orphaned_subagent
+    os.kill(child, signal.SIGKILL)
+    assert _await_pid_gone(child, timeout_s=ORPHAN_GRACE_S) is not None
+
+    done = surface.run_once()
+
+    assert not session.cache_dir.exists(), (
+        f"both owners are gone and the cache stayed: {session.cache_dir}"
+    )
+    assert f"surface child {child}" in done.stderr, (
+        f"the reclaim did not name the second owner; stderr:\n{done.stderr[-2000:]}"
     )
 
 

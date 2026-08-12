@@ -333,11 +333,14 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
 
     spawned: dict[str, Any] = {}
 
-    def _capture(cmd, **kwargs):
-        spawned["cmd"] = list(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    def _capture(launch, **kwargs):
+        spawned["cmd"] = list(launch)
+        return subprocess.CompletedProcess(list(launch), 0, stdout="", stderr="")
 
-    monkeypatch.setattr("ai_hats.subagent_runner.subprocess.run", _capture)
+    # The spawn seam, not ``subprocess.run``: patching the stdlib name reaches
+    # the whole process, so the anchor's own ``ps`` (HATS-1339 D3) ran later and
+    # overwrote the capture with its argv.
+    monkeypatch.setattr("ai_hats.subagent_runner._run_surface", _capture)
 
     payload = build_composition_payload(proj, role_override="maintainer")
     session = SubAgentRunner(

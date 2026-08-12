@@ -51,6 +51,19 @@ class HoldfastProvider(ClaudeProvider):
 
     def get_cli_command(self, args=None):
         return [sys.executable, os.environ["FAKE_SURFACE_HOLD_SCRIPT"], *(args or [])]
+
+    def engine(self):
+        # None routes ``ai-hats agent`` down SubAgentRunner's legacy subprocess
+        # path — pipes, no pty — which is where the surface child can outlive a
+        # SIGKILLed wrapper (HATS-1339 D3). claude's SDK engine would hide it.
+        return None
+
+    def describe_automate_launch(self, *args, **kwargs):
+        # ClaudeProvider describes SDK options, not an argv. Take the base
+        # class's CLI description, which is what that legacy path executes.
+        from ai_hats.providers import Provider
+
+        return Provider.describe_automate_launch(self, *args, **kwargs)
 '''
 
 #: Waits out its hold and nothing else — no ``getppid() == 1`` self-exit, which
@@ -181,13 +194,26 @@ class FakeSurface:
     def _argv(self, role: str) -> list[str]:
         return [str(self.binary), "-r", role, "-p", SURFACE]
 
-    def start_held(self, name: str, *, role: str = "assistant") -> HeldSession:
-        """Launch a session and wait until its cache dir is fully materialized."""
+    def _agent_argv(self, role: str) -> list[str]:
+        # Default isolation (``discard``): the CLI exposes no "none", and the
+        # worktree is beside the point here — the session cache lives in the
+        # cache home either way.
+        return [str(self.binary), "agent", role, "-p", SURFACE, "--task", "hold"]
+
+    def start_held(self, name: str, *, role: str = "assistant", automate: bool = False):
+        """Launch a session and wait until its cache dir is fully materialized.
+
+        ``automate=True`` drives ``ai-hats agent`` instead of the bare HITL
+        command — the same session cache, but the surface is spawned over pipes
+        with no controlling tty, which is the only path where it can outlive its
+        wrapper (HATS-1339 D3).
+        """
         log = self.tmp / f"fake-surface-{name}.log"
         pid_file = self.tmp / f"fake-surface-{name}.pid"
+        argv = self._agent_argv(role) if automate else self._argv(role)
         with log.open("wb") as sink:
             proc = subprocess.Popen(
-                self._argv(role),
+                argv,
                 cwd=str(self.project),
                 env={
                     **self.env,

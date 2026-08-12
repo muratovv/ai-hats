@@ -241,6 +241,20 @@ def _claim_session_cache(project_dir: Path, session_id: str) -> None:
     write_session_anchor(session_cache_dir(project_dir, session_id))
 
 
+def _claim_surface_child(project_dir: Path, session_id: str, pid: int) -> None:
+    """Name the surface CLI as the cache's second owner (HATS-1339 D3).
+
+    Called by both runners the moment the child has a pid. The wrapper owns the
+    dir; this is the process that reads the skills and hooks OUT of it, and on
+    the sub-agent path (pipes, no tty) it survives a SIGKILLed wrapper — so the
+    sweep must find both gone before it reclaims anything.
+    """
+    from .paths import session_cache_dir
+    from .session_liveness import record_surface_child
+
+    record_surface_child(session_cache_dir(project_dir, session_id), pid)
+
+
 def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
     """Remove the session's per-session cache dir (HATS-294).
 
