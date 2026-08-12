@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback done-gate relay-server relay-client
+.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback test-isolation done-gate relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -66,6 +66,9 @@ dependency-floor: ## Check every pin on a workspace package tracks its version
 
 silent-fallback: ## Check no broad except swallows a failure without reporting it
 	$(CI_LOCAL) silent-fallback
+
+test-isolation: ## Check the suite patches its units no more than the baseline
+	$(CI_LOCAL) test-isolation
 
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
