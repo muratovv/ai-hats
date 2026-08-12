@@ -7,10 +7,12 @@ record, no worktree, no ownership hold, no audit.
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 from pathlib import Path
 
 from .check_snapshot import describe_checks
-from .materialization import ApplyMaterializer, PlanMaterializer
+from .materialization import ApplyMaterializer, Materializer, PlanMaterializer
 from .session_artifacts import (
     AT_LAUNCH,
     BuiltArtifacts,
@@ -53,6 +55,25 @@ def _detect_escapes(cache_dir: Path, before: set[Path]) -> tuple[Path, ...]:
     return escaped
 
 
+@contextlib.contextmanager
+def _exclusive_rebuild(cache_dir: Path, port: Materializer, *, materialize: bool):
+    """Serialise the wipe-and-rebuild of the session-cache dir.
+
+    Only ``--materialize`` writes, and its sid is FIXED, so two concurrent runs
+    share one directory. That is the multi-writer case HATS-1248 argued away for
+    a sid-keyed dir — a fixed sid brings it back, and without this a peer's
+    ``rmtree`` lands in the middle of our build (HATS-1551 review).
+
+    The lock sits BESIDE the target, never inside it: the rebuild begins by
+    removing the directory (HATS-604's reason, same shape). A plan-mode port
+    locks nothing, because it writes nothing.
+    """  # comment-length: allow — why a fixed sid needs a lock at all
+    with port.lock(cache_dir.parent / f"{cache_dir.name}.lock"):
+        if materialize and cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok synthetic sid
+        yield
+
+
 def dry_run_hitl(
     project_dir: Path,
     *,
@@ -63,8 +84,6 @@ def dry_run_hitl(
     materialize: bool = False,
 ) -> SessionReport:
     """Build the HITL session in plan mode and report it."""
-    import shutil
-
     from .composition_seam import build_preview_payload
     from .paths import session_cache_dir
 
@@ -75,21 +94,19 @@ def dry_run_hitl(
 
     sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
     cache_dir = session_cache_dir(project_dir, sid)
-    if materialize and cache_dir.exists():
-        shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok session-cache
-
-    before = _files_under(cache_dir)
     port = ApplyMaterializer() if materialize else PlanMaterializer()
     artifacts = BuiltArtifacts(port=port)
-    with prov.execution_context(project_dir):
-        prov.build_session_artifacts(
-            project_dir,
-            payload.result,
-            sid,
-            run_mode=RunMode.HITL,
-            policy=eff_policy,
-            artifacts=artifacts,
-        )
+    with _exclusive_rebuild(cache_dir, port, materialize=materialize):
+        before = _files_under(cache_dir)
+        with prov.execution_context(project_dir):
+            prov.build_session_artifacts(
+                project_dir,
+                payload.result,
+                sid,
+                run_mode=RunMode.HITL,
+                policy=eff_policy,
+                artifacts=artifacts,
+            )
 
     env = assemble_launch_env(
         prov,
@@ -167,8 +184,6 @@ def dry_run_automate(
     report shows what a sub-agent really gets — including, today, the paths that
     go around the port (see ``escapes``).
     """
-    import shutil
-
     from .composition_seam import build_preview_payload
     from .paths import session_cache_dir
 
@@ -179,21 +194,19 @@ def dry_run_automate(
 
     sid = DRY_RUN_MATERIALIZE_SESSION_ID if materialize else DRY_RUN_SESSION_ID
     cache_dir = session_cache_dir(project_dir, sid)
-    if materialize and cache_dir.exists():
-        shutil.rmtree(cache_dir, ignore_errors=True)  # safe-delete: ok session-cache
-
-    before = _files_under(cache_dir)
     port = ApplyMaterializer() if materialize else PlanMaterializer()
     artifacts = BuiltArtifacts(port=port)
-    with prov.execution_context(project_dir):
-        prov.build_session_artifacts(
-            project_dir,
-            payload.result,
-            sid,
-            run_mode=RunMode.AUTOMATE,
-            policy=eff_policy,
-            artifacts=artifacts,
-        )
+    with _exclusive_rebuild(cache_dir, port, materialize=materialize):
+        before = _files_under(cache_dir)
+        with prov.execution_context(project_dir):
+            prov.build_session_artifacts(
+                project_dir,
+                payload.result,
+                sid,
+                run_mode=RunMode.AUTOMATE,
+                policy=eff_policy,
+                artifacts=artifacts,
+            )
 
     checks, check_notes = describe_checks(
         prov, project_dir, payload.result, sid, artifacts.port.plan

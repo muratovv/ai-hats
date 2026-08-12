@@ -103,6 +103,45 @@ def test_dry_run_materialize_determinism_on_repeated_runs(project: Path):
     assert files1 == files2
 
 
+def test_a_second_materialize_waits_instead_of_wiping_the_first(project: Path, monkeypatch):
+    """A fixed sid means one directory for every run, so the rebuild is locked.
+
+    HATS-1248 dropped the skills-mirror lock because a sid-keyed directory has
+    exactly one writer. ``--materialize`` pins the sid, which brings the second
+    writer back — and its first act is ``rmtree`` on the tree we are building.
+    Asserted by holding the lock and watching the build refuse to proceed.
+    """  # comment-length: allow — the argument this re-opens is worth naming
+    import filelock
+
+    import ai_hats.materialization as materialization
+
+    monkeypatch.setattr(materialization, "LOCK_TIMEOUT", 0.1)
+    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with filelock.FileLock(str(lock_path)):
+        with pytest.raises(RuntimeError, match="materialization blocked"):
+            dry_run_hitl(project, provider="claude", materialize=True)
+
+
+def test_a_held_lock_does_not_stall_a_plain_dry_run(project: Path, monkeypatch):
+    """The default path writes nothing, so it has nothing to serialise against."""
+    import filelock
+
+    import ai_hats.materialization as materialization
+
+    monkeypatch.setattr(materialization, "LOCK_TIMEOUT", 0.1)
+    cache_mat = session_cache_dir(project, DRY_RUN_MATERIALIZE_SESSION_ID)
+    lock_path = cache_mat.parent / f"{cache_mat.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with filelock.FileLock(str(lock_path)):
+        report = dry_run_hitl(project, provider="claude", materialize=False)
+
+    assert report.plan.entries
+
+
 def test_dry_run_materialize_does_not_affect_subsequent_default_dry_run(project: Path):
     """S6 / R3: --materialize followed by default --dry-run leaves default report unchanged."""
     report_clean = dry_run_hitl(project, provider="claude", materialize=False)
