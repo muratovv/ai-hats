@@ -766,6 +766,20 @@ as a claim to check, not as evidence.
 - **expect** — core.hooksPath points to .githooks and both ai-hats guard hooks and the repository's existing hooks execute on git commit and push
 - **why** — overwriting existing repository hook configurations without chaining breaks the repository's pre-existing quality checks
 
+## `test_githooks_dispatcher_env_contract.py`
+
+*pins HATS-1613, HATS-1525*
+
+- **flow** — a developer commits in project A from a shell whose session belongs to project B, so the inherited AI_HATS_VENV / AI_HATS_DIR pair names B
+- **cmds**
+
+  ```console
+  git commit -m "feature"
+  ```
+
+- **expect** — the dispatcher drops the foreign pair and runs A's own gates; a bare override with no pair is still honoured, and a matching pin is silent
+- **why** — honouring a leaked pin runs the commit's gates under another project's interpreter — observed in HATS-1525, where the commit was refused
+
 ## `test_githooks_orchestrator.py`
 
 *pins HATS-1337*
