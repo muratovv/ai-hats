@@ -716,9 +716,10 @@ class WrapRunner:
             except FinalizeAborted:
                 exit_code = 130
 
-            # HATS-294: drop the per-session cache dir (prompt + plugin/).
-            # SIGKILL-orphans are accepted — TTL sweep mops them up on the
-            # next session_start.
+            # HATS-294: drop the per-session cache dir (prompt + plugin/). A
+            # SIGKILL leaves it to the next run's sweep, which since HATS-1339
+            # reclaims on proof this pid is gone rather than after a TTL — safe
+            # only because _pty_spawn's hangup outlives no surface.
             _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
@@ -762,7 +763,15 @@ class WrapRunner:
         programs (e.g. claude → $EDITOR via Ctrl-G) whose pgrp transfer relies on
         kernel-side tcsetpgrp/setpgid against a real ctty. stdlib pty.spawn does
         not call TIOCSCTTY, which broke that path. See HATS-207.
-        """
+
+        That same ctty is load-bearing for HATS-1339: this process is the only
+        holder of the pty master, so a SIGKILL here drops carrier and the kernel
+        hangs up the surface — which is why the sweep may reclaim a dead owner's
+        cache at once without stranding the process that reads it. Spawning over
+        pipes, or handing the master fd to anyone else, silently retires that
+        guarantee; ``test_a_killed_wrappers_surface_child_goes_with_it`` is what
+        notices. Sub-agents get NO such guarantee — see ``subagent_runner``.
+        """  # comment-length: allow — two kernel contracts, one paragraph each
         import select
         import signal
         import termios

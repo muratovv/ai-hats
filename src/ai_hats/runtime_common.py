@@ -246,13 +246,14 @@ def _cleanup_session_cache(project_dir: Path, session_id: str) -> None:
 
     Drops the whole ``<cache_root>/sessions/<session_id>/`` tree
     (prompt.md + plugin/ + anything else providers stashed there).
-    ``ignore_errors`` keeps us robust against repeated cleanup attempts,
-    missing paths, and SIGKILL-orphans (TTL sweep mops those up later).
+    ``ignore_errors`` keeps us robust against repeated cleanup attempts and
+    missing paths. A SIGKILL skips this entirely; since HATS-1339 the next run's
+    sweep reclaims that dir on proof the owner is dead, not after a TTL.
     """
     from .paths import session_cache_dir
 
-    # Per-session cache: ephemeral, swept at session_end + TTL on next start.
-    # Whitelist.
+    # Per-session cache: ephemeral, dropped here and reclaimed on owner death by
+    # the next run's sweep. Whitelist.
     shutil.rmtree(
         session_cache_dir(project_dir, session_id), ignore_errors=True
     )  # safe-delete: ok session-cache

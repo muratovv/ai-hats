@@ -348,6 +348,14 @@ class SubAgentRunner:
                     # The reported argv IS the executed one — this used to
                     # re-derive it from materialize_runtime_skills, and matched
                     # what was reported only by coincidence (HATS-1552).
+                    #
+                    # KNOWN GAP (HATS-1339 D3): pipes, no pty, so a SIGKILL of
+                    # THIS process hangs nothing up — a real `agy` was measured
+                    # still running 45s later, reparented to init, while the
+                    # next run's sweep reclaims its cache the moment this pid
+                    # goes. The HITL path is safe only by _pty_spawn's carrier
+                    # drop; nothing here reproduces it.
+                    # comment-length: allow — an unclosed hole, not a design
                     with provider.execution_context(self.project_dir):
                         proc = subprocess.run(
                             described.launch,

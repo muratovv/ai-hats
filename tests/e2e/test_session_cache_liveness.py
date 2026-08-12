@@ -93,6 +93,61 @@ def test_the_third_run_reaps_only_the_killed_sessions_cache(two_sessions) -> Non
     )
 
 
+def _pid_gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def _await_pid_gone(pid: int, *, timeout_s: float) -> float | None:
+    """Seconds until ``pid`` disappeared, or ``None`` if it outlived the wait."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout_s:
+        if _pid_gone(pid):
+            return time.monotonic() - t0
+        time.sleep(0.1)
+    return None
+
+
+#: Measured on macOS 15: a real ``claude`` is gone ~1s after its wrapper's
+#: SIGKILL, ``agy``'s two-level pty chain within 5-10s. The bound is the window
+#: in which a reaped cache could still have a reader, not a timing preference.
+ORPHAN_GRACE_S = 20.0
+
+
+def test_a_killed_wrappers_surface_child_goes_with_it(two_sessions) -> None:
+    """Reaping a dead owner's cache cannot strand a live reader (HATS-1339 D3).
+
+    The sweep asks whether the WRAPPER is alive, but the process that reads
+    ``plugin/skills`` and ``settings.json`` out of the dir is the surface CLI
+    below it. That gap is only harmless because ``_pty_spawn`` gives the surface
+    a pty whose master nobody but the wrapper holds: the wrapper dies, the
+    kernel drops carrier, and the session leader on the other end is hung up.
+
+    Fail-under-revert: spawn the surface over pipes instead of a pty, or leave a
+    second holder of the master fd open, and the child outlives its owner — the
+    sweep then deletes the skills of a process still reading them, with none of
+    the 24h the TTL used to buy. The kill is one pid on purpose: the surface is
+    a session leader of its own, so ``killpg`` never described what happens.
+    """  # comment-length: allow — the guarantee is the whole point of the test
+    _surface, _live, doomed = two_sessions
+    surface_pid = doomed.surface_pid
+    assert not _pid_gone(surface_pid), (
+        "precondition: the surface child was gone before the wrapper was killed"
+    )
+
+    doomed.kill_and_reap()
+
+    elapsed = _await_pid_gone(surface_pid, timeout_s=ORPHAN_GRACE_S)
+    assert elapsed is not None, (
+        f"the surface child (pid {surface_pid}) outlived its SIGKILLed wrapper "
+        f"(pid {doomed.pid}) by more than {ORPHAN_GRACE_S:.0f}s — the next run's "
+        f"sweep will reap {doomed.cache_dir} out from under a live reader"
+    )
+
+
 def _plant_foreign_key(cache_home: Path, name: str, sid: str, anchor: bytes) -> Path:
     """A sibling project's cache key, untouched past its TTL, holding one session.
 
