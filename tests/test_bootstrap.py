@@ -491,7 +491,9 @@ def test_check_pycache_coherence_reports_failure_when_unlink_fails(tmp_path, mon
         lambda name: DummySpec() if name == "ai_hats" else None,
     )
 
-    def failing_unlink(path):
+    def failing_unlink(path, *, dir_fd=None):
+        # Signature-compatible with os.unlink: the patch below is process-wide,
+        # so a narrower stub raises TypeError inside unrelated callers (rmtree).
         raise OSError("Permission denied")
 
     monkeypatch.setattr(_bootstrap.os, "unlink", failing_unlink)
