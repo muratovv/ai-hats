@@ -155,6 +155,16 @@ class BindingStatus:
     on_error: str
     detail: str = ""
 
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "status": self.status,
+            "backlog": self.backlog,
+            "point": self.point,
+            "binding": self.label,
+            "on_error": self.on_error,
+            "detail": self.detail,
+        }
+
 
 def classify_bindings(
     declarations: Sequence[CheckDeclaration],

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from .cardschema import CardSchema
+from .checks import DEAD, UNADDRESSED, BindingStatus, classify_bindings
+from .fsm import Topology
 from .linked import TargetChecker, _id_key, _kind_ids_readonly, card_exists
 from .models import TaskCard
 from .registry import LinksRegistry
@@ -289,3 +291,98 @@ def diagnose_workspace(workspace) -> list[Finding]:
             backlog=defn.cli_alias or instance.name,
         )
     return findings
+
+
+# ----- the check channel (HATS-1584) -----------------------------------------
+
+#: Which classified status is a finding. ``foreign`` is not: a row aimed at a
+#: sibling backlog is the skip HATS-1545 R10 made legal.
+_BINDING_FINDINGS = {DEAD: "dead-check-point", UNADDRESSED: "unaddressable-check-row"}
+
+
+@dataclass(frozen=True)
+class BindingReport:
+    """What the doctor can say about this project's declared gates.
+
+    ``note`` is why the roster is empty when it is — a state that must never
+    render as "clean", since a channel nobody can read is the silence the
+    channel exists to remove.
+    """
+
+    rows: tuple[BindingStatus, ...] = ()
+    findings: tuple[Finding, ...] = ()
+    note: str = ""
+
+
+def diagnose_bindings(workspace, *, owner: Path | None) -> BindingReport:
+    """Classify every carried row against every topology mounted here.
+
+    Asked ONCE, through the same port a transition runs: the rows come from the
+    project that owns the backlog, so each mounted catalog answers with the same
+    set and asking per catalog would re-compose the role N times over.
+
+    ``owner`` is that project (``RackRoot.backlog_owner``). Without it the port
+    answers "no rows" for a reason that is not "the role declares none", and
+    reporting the two alike would call an unreadable channel clean.
+    """
+    factory = getattr(workspace, "check_port", None)
+    if not callable(factory):
+        return BindingReport(note=_NO_PORT)
+    if owner is None:
+        return BindingReport(note=_NO_OWNER)
+    if not workspace.instances:
+        return BindingReport(note="no backlog is mounted here, so no row can be judged")
+    catalog = next(
+        (i.catalog for i in workspace.instances if i.is_tasks), workspace.instances[0].catalog
+    )
+    try:
+        reader = getattr(factory(catalog), "check_declarations", None)
+        if not callable(reader):
+            return BindingReport(note=_NO_READER)
+        declarations = tuple(reader())
+    except Exception as exc:  # noqa: BLE001 — every failure is a finding, never a traceback
+        return BindingReport(findings=(Finding("unreadable-check-rows", "", str(exc)),))
+    if not declarations:
+        return BindingReport(note="no row is declared under apps.rack by the composed role")
+    rows = classify_bindings(declarations, _mounted_topologies(workspace))
+    return BindingReport(rows=rows, findings=tuple(_binding_findings(rows)))
+
+
+def _mounted_topologies(workspace) -> dict[str, Topology]:
+    """Every selector a mounted backlog answers to → its topology. Both spellings,
+    because either addresses it (ADR-0017 §3) and keying on one would read an
+    aliased row as unaddressed."""
+    topologies: dict[str, Topology] = {}
+    for instance in workspace.instances:
+        for selector in (instance.name, instance.definition.cli_alias):
+            if selector:
+                topologies[selector] = instance.definition.topology
+    return topologies
+
+
+def _binding_findings(rows: tuple[BindingStatus, ...]) -> list[Finding]:
+    """The unhappy statuses as findings, in the classifier's own words: what an
+    ``edge:`` name means is the rack's question, so the recipe is written where
+    the grammar lives."""
+    return [
+        Finding(check, "", row.detail, kind=row.point)
+        for row in rows
+        if (check := _BINDING_FINDINGS.get(row.status))
+    ]
+
+
+_NO_PORT = (
+    "no integrator supplies a check executor here, so no declared gate can be read — "
+    "a bare rack has nothing to declare one with (ADR-0019 D11 clause 5)"
+)
+
+_NO_OWNER = (
+    "no project owns this backlog, so no role composes onto it and nothing can declare a "
+    "gate here — an empty roster below is that, not a role that declares none"
+)
+
+_NO_READER = (
+    "the integrator supplying this project exposes no "
+    "ai_hats_rack.checks.CheckPort.check_declarations — no declared gate can be read, "
+    "so this report cannot tell an armed one from a dead one"
+)
