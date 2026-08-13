@@ -8,7 +8,7 @@ composition:
   traits:
     - trait-base
     - trait-agent
-    # base-judge added per ADR-0007 §П1: tier-symmetric L1 contract
+    # base-judge added per ADR-0007 §D1: tier-symmetric L1 contract
     # with role-judge. The rules/skills it adds dedup against
     # trait-agent (rule_backlog_discipline, dev_rule_tool_call_hygiene,
     # tool-call-hygiene, request-supervisor); the contribution is the

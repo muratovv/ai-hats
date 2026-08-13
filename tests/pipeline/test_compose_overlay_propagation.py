@@ -20,7 +20,7 @@ Three contracts locked here, all under epic HATS-506:
    no pipeline involvement.
 
 Sister to ``test_funnel_value_contract.py`` — same HATS-452 contract
-family (П1 in ADR-0005 / HATS-456 single-derivation-point invariant).
+family (D1 in ADR-0005 / HATS-456 single-derivation-point invariant).
 """
 
 from __future__ import annotations

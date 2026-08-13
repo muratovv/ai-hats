@@ -1,7 +1,7 @@
 """``materialize_system_prompt`` step — render the seeded composition.
 
 The single source of truth for "what would the agent actually see for role X
-under provider Y" (HATS-452 / ADR-0005 П1). HATS-865: the step no longer
+under provider Y" (HATS-452 / ADR-0005 D1). HATS-865: the step no longer
 composes — the integrator builds a preview payload at the compose seam
 (``composition_seam.build_preview_payload``, which owns the no-role /
 no-provider / compose-errors validation) and seeds it as ``composition``;
