@@ -113,8 +113,7 @@ def test_a_gone_session_manifest_still_leaves_the_user_hooks_running(
     )
 
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-gone")
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "project"))
+    _in_session(monkeypatch, "sid-gone", tmp_path / "project")
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(tmp_path / "reclaimed"))
 
     res = dispatch_hook("PreToolUse", tool_name="Edit")
