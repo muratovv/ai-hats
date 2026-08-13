@@ -55,8 +55,8 @@ New rule / skill / trait
 itself was reusable in concept (other projects with CLI surface might want
 the same gate), but its **specific trigger surface** was ai-hats-internal.
 
-User redirect: "выделим отдельный trait `ai-hats-maintainer`" — full rewrite
-of the plan. The corrected split:
+User redirect: "let's split out a separate trait `ai-hats-maintainer`" — full
+rewrite of the plan. The corrected split:
 
 - `<LIB>/core/rules/dev_rule_e2e_gate/` — rule (reusable concept).
 - `<LIB>/usage/traits/ai-hats-maintainer/` — bundles the rule + project-specific framing.
