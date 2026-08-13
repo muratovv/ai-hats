@@ -56,10 +56,17 @@ def _head_sha(repo: Path) -> str:
 
 
 def _lstart(pid: int) -> str:
+    """The baseline as the READER renders it — same pinned TZ/locale.
+
+    ``ps -o lstart=`` renders in the TZ and LC_TIME of the ``ps`` process, so a
+    baseline planted under the ambient environment reads as a reused pid to a
+    reader that pins its own — and the version a live ref pins gets reclaimed.
+    """
     out = subprocess.run(
         ["ps", "-o", "lstart=", "-p", str(pid)],
         capture_output=True,
         text=True,
+        env={**os.environ, "TZ": "UTC", "LC_ALL": "C"},
     )
     return out.stdout.strip()
 

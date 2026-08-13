@@ -167,7 +167,7 @@ def test_the_hitl_anchor_names_the_surface_child_too(two_sessions) -> None:
     assert anchor.get("child_pid") == live.surface_pid, (
         f"the HITL anchor never learned the surface pid: {anchor}"
     )
-    assert anchor.get("child_start_time"), (
+    assert anchor.get("child_start_time_utc"), (
         f"the surface child was recorded without a reuse baseline: {anchor}"
     )
 
