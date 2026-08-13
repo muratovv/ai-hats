@@ -93,11 +93,11 @@ per-section enforcement — the engine gate (HATS-635).
 Three names for one thing, distinguished by layer. Use the one that names the
 layer you mean:
 
-| Name               | Layer                                                        | Where it lives                                       |
-| ------------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
-| **`ai-hats-rack`** | the Python **package** — the backlog kernel                  | `packages/ai-hats-rack/`                             |
-| **`rack`**         | the **CLI** the package ships — the backlog surface you type | on `PATH` after install (`rack --help`)              |
-| **`hatrack`**      | the **skill** that teaches a composed role to drive `rack`   | `core/skills/hatrack/`, composed via `hatrack-trait` |
+| Name               | Layer                                                        | Where it lives                                     |
+| ------------------ | ------------------------------------------------------------ | -------------------------------------------------- |
+| **`ai-hats-rack`** | the Python **package** — the backlog kernel                  | `packages/ai-hats-rack/`                           |
+| **`rack`**         | the **CLI** the package ships — the backlog surface you type | on `PATH` after install (`rack --help`)            |
+| **`hatrack`**      | the **skill** that teaches a composed role to drive `rack`   | `core/skills/hatrack/`, composed via `trait-agent` |
 
 The kernel is a light FSM plus transactional machinery (epic HATS-1014): FSM
 topology declared in `backlog.yaml` (SSOT — [ADR-0017](adr/0017-backlog-yaml-single-definition.md)),
