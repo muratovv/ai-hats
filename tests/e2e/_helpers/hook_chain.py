@@ -141,9 +141,7 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
         decision = str(hso.get("permissionDecision", "")).lower()
         context = str(hso.get("additionalContext", ""))
         if decision in {"deny", "ask"}:
-            return Verdict(
-                decision, str(hso.get("permissionDecisionReason", "")), name, context
-            )
+            return Verdict(decision, str(hso.get("permissionDecisionReason", "")), name, context)
         if context:
             return Verdict("allow", context=context)
 
