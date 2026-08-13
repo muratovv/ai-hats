@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.paths import session_cache_dir
 from ai_hats.runs_retention import (
     BULK_MAX_AGE_DAYS,
     EXPIRABLE_ARTIFACTS,
@@ -22,6 +23,7 @@ from ai_hats.runs_retention import (
     STAMP_NAME,
     sweep_runs,
 )
+from ai_hats.session_liveness import write_session_anchor
 
 DAY = 86400
 OLD_SID = "session_20240101-120000-1-4242"
@@ -101,6 +103,58 @@ def test_unknown_filename_survives(tmp_path):
 def test_retained_names_are_never_expirable():
     """The subtraction at import, not a call-site check, is what enforces this."""
     assert not (EXPIRABLE_ARTIFACTS & RETAINED_ARTIFACTS)
+
+
+def test_the_facts_tier_is_exactly_these_names():
+    """Pinned by LITERAL, because the parametrized survival test above reads the
+    same constant it is meant to guard — moving a name out of the tier keeps that
+    test green while the file it named starts being deleted."""
+    assert RETAINED_ARTIFACTS == frozenset(
+        {"audit.md", "metrics.json", "retro.log", "diagnostics.json"}
+    )
+
+
+# ----- A live session's run is off limits at any age (HATS-1339 review) -----
+
+
+@pytest.fixture
+def _own_cache_home(tmp_path, monkeypatch):
+    """Keep ``session_cache_dir`` inside the test's tmp tree, never the real one."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache_home"))
+
+
+def _claim(project_dir: Path, run_name: str) -> Path:
+    """Give the run's session a live owner — this very test process."""
+    cache = session_cache_dir(project_dir, run_name[len("session_") :])
+    cache.mkdir(parents=True, exist_ok=True)
+    write_session_anchor(cache)
+    return cache
+
+
+def test_a_live_sessions_run_survives_however_far_past_the_bound(tmp_path, _own_cache_home):
+    """The bound cannot protect a RUNNING session: ``meta_prompt.txt`` is written
+    once at start, so its mtime is the session's own age and a long enough run
+    crosses any bound while live. Only the owner check can answer this."""
+    run = _runs(tmp_path) / OLD_SID
+    prompt = _artifact(run, "meta_prompt.txt", age_days=BULK_MAX_AGE_DAYS * 10)
+    _claim(tmp_path, OLD_SID)
+
+    report = _sweep(tmp_path)
+
+    assert prompt.exists(), "a live session lost the prompt it was launched with"
+    assert report.files_removed == 0
+
+
+def test_a_finished_sessions_run_is_still_swept(tmp_path, _own_cache_home):
+    """The control: same file, same age, no cache dir. That is what finished
+    looks like on disk — the session-cache sweep runs first and reaps it."""
+    run = _runs(tmp_path) / OLD_SID
+    prompt = _artifact(run, "meta_prompt.txt", age_days=BULK_MAX_AGE_DAYS * 10)
+
+    report = _sweep(tmp_path)
+
+    assert not prompt.exists()
+    assert report.files_removed == 1
 
 
 def test_report_carries_counts_and_bytes(tmp_path):

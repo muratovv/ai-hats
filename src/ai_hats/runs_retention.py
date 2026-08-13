@@ -23,10 +23,11 @@ The bound is grounded on what actually reads these files rather than on taste:
 ``reflect session`` and ``reflect all`` touch the facts tier only, so no bound
 can break them; the binding consumer is post-hoc forensics over the archive,
 whose longest observed reach is this card's own V1 evidence (a window read 11
-days after the fact). It must also exceed the longest observed session (104.55 h,
-recorded in the HATS-1339 plan) — a long run's ``meta_prompt.txt`` is written
-once at start and never touched again, so a shorter bound would expire a LIVE
-session's own artifacts out from under it.
+days after the fact). The bound is NOT what keeps a live session's own artifacts
+safe, though — a long run's ``meta_prompt.txt`` is written once at start and never
+touched again, so its mtime is the session's age and any bound is eventually
+crossed while running. :func:`_session_is_live` is the guard; the bound only
+decides how long a FINISHED session's bulk survives.
 
 Leaf module: imports ``paths`` and observe's artifact-name schema and nothing
 else, so both ``environment_recovery`` and ``observe`` can call it.
@@ -57,7 +58,8 @@ from ai_hats_observe.artifacts import (
     session_start_dt,
 )
 
-from .paths import runs_dir
+from .paths import runs_dir, session_cache_dir
+from .session_liveness import LazyLiveness, session_owners
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +119,9 @@ def sweep_runs(
     *,
     max_age_days: int = BULK_MAX_AGE_DAYS,
     min_interval_hours: float = SWEEP_MIN_INTERVAL_HOURS,
+    liveness: LazyLiveness | None = None,
 ) -> RetentionReport:
-    """Expire bulk run artifacts older than ``max_age_days``.
+    """Expire bulk run artifacts of FINISHED sessions older than ``max_age_days``.
 
     Filesystem failures are logged and counted into ``errors`` rather than
     raised, so one unreadable run dir costs that dir and nothing else.
@@ -139,10 +142,13 @@ def sweep_runs(
         return report
 
     cutoff = time.time() - max_age_days * 86400
+    liveness = liveness or LazyLiveness()
     try:
         with os.scandir(root) as entries:
             for entry in entries:
-                if _is_sweepable_run(entry, cutoff):
+                if _is_sweepable_run(entry, cutoff) and not _session_is_live(
+                    project_dir, entry.name, liveness
+                ):
                     _sweep_run_dir(Path(entry.path), cutoff, report)
     except OSError as exc:
         logger.warning("runs retention: cannot read %s: %s", root, exc)
@@ -170,6 +176,27 @@ def _touch(stamp: Path, report: RetentionReport) -> None:
     except OSError as exc:
         logger.warning("runs retention: cannot stamp %s: %s", stamp, exc)
         report.errors += 1
+
+
+def _session_is_live(project_dir: Path, run_name: str, liveness: LazyLiveness) -> bool:
+    """Is the session that owns this run dir still going?
+
+    The age bound alone is a guess with the same failure mode this card rejected
+    for the caches: the longest observed session is 104.55 h and the trend is
+    upward, and ``meta_prompt.txt`` is written once at START, so its mtime is the
+    session's own age. A long enough run would have its composed prompt and launch
+    record expired out from under it while live — the same on a forward clock jump.
+    The owner anchor lives in the session's CACHE dir, and the sweep that reaps a
+    dead owner's cache runs before this one in the same pass, so a cache dir still
+    standing means live, or ownerless and inside its own TTL.
+    """  # comment-length: allow — this gate is why the bound is not the only guard
+    cache_dir = session_cache_dir(project_dir, run_name[len(SESSION_PREFIX) :])
+    if not cache_dir.is_dir():
+        return False
+    owners = session_owners(cache_dir)
+    if not owners:
+        return True  # unusable anchor (None) or unresolvable (()): never guess dead
+    return any(liveness.is_live(pid, start_time) for pid, start_time in owners)
 
 
 def _is_sweepable_run(entry: os.DirEntry[str], cutoff: float) -> bool:
