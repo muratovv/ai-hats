@@ -39,10 +39,3 @@ injection: |
   the `dev::python` gear and the engine-internals map in the
   `library-curator` trait. Honor `dev_rule_e2e_gate` for harness paths.
 
-  ## What sets this role apart
-  - Engine code edits permitted under `dev_rule_e2e_gate`; release flow /
-    d2 / branch conventions stay with `maintainer`.
-  - Carries `library-curator` trait — workflow + governance + locations
-    + engine internals map.
-  - Composes `skill-engineer` for primitive formats + review checklist.
-  - Composes `dev::python` for code-edit gear.
