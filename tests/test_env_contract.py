@@ -89,7 +89,11 @@ MIRROR_SPELLINGS = {
 SHIPPED_HOOK_ROOT = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
 # ``git_hooks`` is in scope with ``hooks``: the split is where the file gets
 # installed (.git/hooks vs the surface's hook config), not what it may read.
-SHIPPED_HOOK_DIRS = {"hooks", "git_hooks"}
+# ``lib`` joined them in HATS-1614: a hook's shared body reads the environment
+# on the hook's behalf, so leaving it out let a name walk out of this scan just
+# by being factored out of the script that used to spell it — which is how this
+# very test caught the gate primitive's move.
+SHIPPED_HOOK_DIRS = {"hooks", "git_hooks", "lib"}
 _ENV_NAME = re.compile(r"AI_HATS_[A-Z0-9_]+")
 
 # comment-length: allow — the border this table draws IS the invariant.
