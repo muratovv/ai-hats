@@ -15,16 +15,16 @@ The split is informational — both layers are loaded at runtime. You can overri
 
 When resolving a component by name, ai-hats walks these paths in order; **later paths win** over earlier ones:
 
-| # | Path                                        | Owner              |
-| - | ------------------------------------------- | ------------------ |
-| 1 | `<pkg>/ai_hats_library/core/`               | built-in (shipped) |
-| 2 | `<pkg>/ai_hats_library/usage/`              | built-in (shipped) |
-| 3 | `ai_hats.skills` entry-point packages       | out-of-tree plugins|
-| 4 | `~/.ai-hats/`                               | user-global        |
-| 5 | each path in `~/.ai-hats/library_paths.yaml`| user-global config |
-| 6 | each path in `ai-hats.yaml: library_paths:` | project-config     |
-| 7 | `<project>/libraries/`                      | project-local      |
-| 8 | CLI `--library-path` extras (rarely used)   | session-scoped     |
+| # | Path                                         | Owner               |
+| - | -------------------------------------------- | ------------------- |
+| 1 | `<pkg>/ai_hats_library/core/`                | built-in (shipped)  |
+| 2 | `<pkg>/ai_hats_library/usage/`               | built-in (shipped)  |
+| 3 | `ai_hats.skills` entry-point packages        | out-of-tree plugins |
+| 4 | `~/.ai-hats/`                                | user-global         |
+| 5 | each path in `~/.ai-hats/library_paths.yaml` | user-global config  |
+| 6 | each path in `ai-hats.yaml: library_paths:`  | project-config      |
+| 7 | `<project>/libraries/`                       | project-local       |
+| 8 | CLI `--library-path` extras (rarely used)    | session-scoped      |
 
 So a `~/.ai-hats/roles/my-role/` is visible to every project on your machine; a `<project>/libraries/roles/my-role/` is visible only to that project; both override anything with the same name in the built-in layers.
 
@@ -134,6 +134,12 @@ composition:
 Trait names can use the `<group>::<name>` syntax (e.g. `dev::go-grpc`). On disk, that maps to `traits/dev/go-grpc/config.yaml`.
 
 ## Adding your own rule
+
+Before you do: a rule is the most expensive mechanism available. Its body sits in
+the prompt on every turn of every role that composes it, while a skill keeps only
+its description resident and a hook costs nothing at all. If the invariant can be
+checked by a machine — a PreToolUse hook, a git hook, a CLI gate — write that
+instead. Re-derive the numbers for your own library with `ai-hats list tokens <role>`.
 
 A rule is pure behavioral constraint — no decision logic, no procedure. Two files:
 
