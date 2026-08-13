@@ -121,11 +121,14 @@ esac
 
 # --- emit the non-blocking nudge (fixed text per tool; no command interpolation
 #     so the additionalContext string is always valid JSON) -------------------
+# The payload carries no tool inventory (tool_name / tool_input / cwd only), so
+# the nudge cannot know whether the tool exists in this session — it says "if
+# available" rather than naming a tool that may not be there (HATS-1630).
 case "$tool" in
-    Grep) msg="raw grep/rg search detected — dev_rule_tool_call_hygiene: prefer the Grep tool (native ripgrep, structured paginated output, no shell parse).";;
-    Glob) msg="raw find / ls -R detected — dev_rule_tool_call_hygiene: prefer the Glob tool (pattern matching without a recursive shell walk).";;
-    Read) msg="raw cat/head/tail detected — dev_rule_tool_call_hygiene: prefer the Read tool (numbered lines, safe pagination, no context flood).";;
-    Edit) msg="in-place sed/awk edit detected — dev_rule_tool_call_hygiene: prefer the Edit tool (uniqueness-checked; prevents silent multi-replace).";;
+    Grep) msg="raw grep/rg search detected — dev_rule_tool_call_hygiene: if the Grep tool is available, prefer it (native ripgrep, structured paginated output, no shell parse); if not, batch your searches instead of running them one by one.";;
+    Glob) msg="raw find / ls -R detected — dev_rule_tool_call_hygiene: if the Glob tool is available, prefer it (pattern matching without a recursive shell walk); if not, scope the walk tightly instead of listing broadly.";;
+    Read) msg="raw cat/head/tail detected — dev_rule_tool_call_hygiene: if the Read tool is available, prefer it (numbered lines, safe pagination, no context flood); if not, bound the output instead of dumping whole files.";;
+    Edit) msg="in-place sed/awk edit detected — dev_rule_tool_call_hygiene: if the Edit tool is available, prefer it (uniqueness-checked; prevents silent multi-replace); if not, verify the match is unique before rewriting.";;
 esac
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
 exit 0

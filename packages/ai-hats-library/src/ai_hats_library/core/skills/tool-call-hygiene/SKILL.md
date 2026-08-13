@@ -41,6 +41,11 @@ for `cat`, `fd` for `find`, `eza -R` for `ls -R`, `git grep` for `grep`,
 | `sed -i 's/A/B/' file`             | **Edit** tool                  | Edit checks uniqueness; prevents silent multi-replace |
 | `awk -i ...` / inline rewrite      | **Edit** / **Write**           | See above                                             |
 
+The right column assumes the tool exists in this session. When it does not —
+it is absent from your available set, or calling it returns *no such tool
+available* — the left column is the correct call, and the call budget below
+applies harder, not less.
+
 **Bash is appropriate for:** `git`, `pytest`, build commands, multi-stage pipes that have no dedicated alternative, anything reading shell-only state (env vars, processes, exit codes).
 
 ### Batching and parallelism
