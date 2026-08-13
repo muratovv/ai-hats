@@ -15,6 +15,7 @@ from ai_hats_rack.checks import (
     CheckDeclaration,
     CheckOutcome,
     CheckSubscriber,
+    classify_bindings,
     parse_edge_point,
 )
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
@@ -392,3 +393,114 @@ def test_an_unlocked_firing_ships_no_ceiling():
     CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
 
     assert port.ceilings == [None]
+
+
+# ----- the doctor's classifier (HATS-1584) -----------------------------------
+
+
+def _hyp_topology() -> Topology:
+    """A sibling backlog's topology — no state name in common with _topology()."""
+    return Topology(
+        initial="active",
+        states=("active", "confirmed"),
+        edges={"active": ("confirmed",), "confirmed": ()},
+    )
+
+
+def _mounted() -> dict[str, Topology]:
+    return {"tasks": _topology(), "hyp": _hyp_topology()}
+
+
+def test_a_point_is_armed_foreign_or_dead_against_every_mounted_topology():
+    """The distinction the subscriber cannot make (ADR-0019 D11 clause 2): it
+    holds ONE topology, so a sibling's edge and a typo are the same miss to it.
+    Given every mounted topology, they are three different facts."""
+    rows = classify_bindings(
+        [
+            _row("edge:review--done"),
+            _row("edge:active--confirmed"),
+            _row("edge:reviw--done"),
+        ],
+        _mounted(),
+    )
+
+    assert [(r.status, r.point) for r in rows] == [
+        ("armed", "edge:review--done"),
+        ("foreign", "edge:active--confirmed"),
+        ("dead", "edge:reviw--done"),
+    ]
+
+
+def test_a_row_naming_no_mounted_backlog_is_unaddressed_in_the_subscribers_words():
+    """One recipe, two readers: the doctor prints the sentence the subscriber
+    raises, so the fix an operator is told outside the lock is the one the
+    refusal inside it would have given."""
+    row = _row("edge:review--done", backlog="cards")
+
+    (status,) = classify_bindings([row], _mounted())
+
+    assert (status.status, status.point) == ("unaddressed", "")
+    with pytest.raises(AbortOperation) as exc_info:
+        CheckSubscriber(
+            _Port(row), topology=_topology(), backlog="tasks", known_backlogs=("tasks", "hyp")
+        ).on_event(_ctx())
+    assert status.detail == exc_info.value.reason
+
+
+def test_a_row_at_the_wrong_depth_is_unaddressed_too():
+    """`apps.rack` with no backlog under it names nothing to gate; the point is
+    never examined, because there is no topology to examine it against."""
+    row = CheckDeclaration(
+        path=(),
+        at=("edge:review--done",),
+        cargo={},
+        on_error="refuse",
+        label="deep row",
+        handle=None,
+    )
+
+    (status,) = classify_bindings([row], _mounted())
+
+    assert status.status == "unaddressed"
+    assert "one level down" in status.detail
+
+
+def test_the_alias_spelling_of_a_backlog_addresses_it():
+    """ADR-0017 §3: a backlog answers to its name OR its cli_alias. Keyed on one
+    spelling, the classifier would call an aliased row unaddressed — the loud
+    half of HATS-1545 F4, one layer up."""
+    topologies = {"tasks": _topology(), "cards": _topology(), "hyp": _hyp_topology()}
+
+    (status,) = classify_bindings([_row("edge:review--done", backlog="cards")], topologies)
+
+    assert status.status == "armed"
+
+
+def test_a_row_binding_several_points_gets_a_line_per_point():
+    """The report is per (row, point): one row can be armed here and dead there,
+    and a single verdict for the row would hide whichever half is unhappy."""
+    row = CheckDeclaration(
+        path=("tasks",),
+        at=("edge:review--done", "edge:reviw--done"),
+        cargo={},
+        on_error="warn",
+        label="two-point row",
+        handle=None,
+    )
+
+    rows = classify_bindings([row], _mounted())
+
+    assert [(r.status, r.point) for r in rows] == [
+        ("armed", "edge:review--done"),
+        ("dead", "edge:reviw--done"),
+    ]
+
+
+def test_a_dead_points_detail_names_the_mounted_roster():
+    """What makes it a typo rather than a row for some other project's backlog
+    is the roster — so the sentence carries it (HATS-1584 R2)."""
+    (status,) = classify_bindings([_row("card:pre-create")], _mounted())
+
+    assert status.status == "dead"
+    assert "hyp" in status.detail and "tasks" in status.detail
+    assert "edge:<from>--<to>" in status.detail

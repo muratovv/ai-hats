@@ -713,14 +713,19 @@ shipped row an hour after HATS-1137 landed it.
      instance's topology is skipped, not aborted, because from the carrier's side
      a sibling backlog's row and a typo are the same fact. That was the whole of
      the third silence, and telling the two apart is what the only holder of all
-     the topologies can do — *but does not do today*: the skip also swallows a
-     name the grammar cannot parse at all. **HATS-1578** owns that.
+     the topologies can do — which since HATS-1584 **is done, in `rack doctor`**:
+     `checks.classify_bindings` judges every carried row's points against every
+     mounted topology and calls the miss `foreign` or `dead`, and `dead` is a
+     finding. What is still quiet is the *transition*: the subscriber holds one
+     topology and goes on skipping. Refusing there is **HATS-1578**, and it now
+     has the distinction it was blocked on.
 
-   Two gaps stand behind this clause and are named rather than papered over:
-   a row addressed to a **sibling** backlog reaches no subscriber at all, on
-   either road (**HATS-1575**), and a project that renames its tasks backlog
-   without setting `cli_alias: tasks` turns the loud half into a refusal on every
-   transition (**HATS-1576**).
+   Two gaps stood behind this clause and are **both closed**: a row addressed to
+   a **sibling** backlog reached no subscriber on either road until HATS-1575
+   made the rack build the subscriber from the definition it runs, and a project
+   renaming its tasks backlog without `cli_alias: tasks` turned the loud half
+   into a refusal on every transition until HATS-1576 moved the address check
+   behind the point filter.
 3. **The rack does not execute.** `subprocess` is forbidden in it by an
    AST-level import pin (`packages/ai-hats-rack/tests/test_import_hygiene.py`),
    not merely by a docstring. So the row travels as a declaration and the
@@ -756,16 +761,23 @@ longer true: a name the rack does not recognise surfaces the next time the rack
 runs, which for an unbound point may be never. Validation moved from
 **compose-time to consume-time**, and it bought the three silences above. The
 compensation is introspection — a command that reports what was picked up and in
-what state. **Half of it has since landed** (HATS-1548): `describe_checks`
+what state. **Both halves have since landed.** HATS-1548: `describe_checks`
 resolves every binding the way the session will and reports where each one runs
-from, and it is wired into the launch report and `ai-hats --dry-run`. What is
-still owed is the *live* half — a doctor that reports armed / no-executor /
-foreign-project / stale-session per binding, plus the startup invocation and its
-return-code table — which is **HATS-1546** and deliberately not this rev: it is a
-different risk (a name colliding with the existing `rack doctor`, recursion
-through a startup hook) and must not be proven in the same pass. Until then the
-honest statement is that a typo in an `edge:` point is silent, where before it
-was loud and took an unrelated transition down with it.
+from, wired into the launch report and `ai-hats --dry-run`. HATS-1584: `rack
+doctor` grew a binding section — one line per point of every carried row, with
+the roster read through the same `CheckPort` a transition runs, and `dead` /
+`unaddressed` as findings. It is a *section of the existing verb*, not the
+`rack --doctor` this rev imagined: one character apart from `rack doctor` and a
+different subject. The two statuses this rev asked for and the doctor does not
+carry are `foreign-project` and `stale-session`, and deliberately: it runs
+**outside** a session, where there is no mirror to be stale against — that is
+what `describe_checks` answers at launch.
+
+Honestly stated, what remains: the doctor is a surface an operator must *run*.
+Firing it at session start (**HATS-1583**) is what makes a typo unmissable rather
+than merely findable, and refusing the transition itself is **HATS-1578**. Until
+the first of those, a typo in an `edge:` point is silent on every transition and
+loud only when asked.
 
 **Rejected: teach `known_points()` to resolve the project's topology** *(the
 function no longer exists — this rev deleted it; kept as the rejected shape)*

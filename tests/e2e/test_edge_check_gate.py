@@ -956,3 +956,40 @@ def test_a_row_naming_a_backlog_this_project_does_not_have_is_loud(gate_project,
     assert "cards" in combined, combined
     assert "tasks" in combined, combined
     assert "Traceback" not in combined, combined
+
+
+def test_the_doctor_names_the_dead_point_the_transition_skips(gate_project, rack_bin):
+    """HATS-1584. The transition above passes clean — by design, since a skip is
+    what keeps a sibling backlog's row from bricking this one. The cost was that
+    a typo then had NO surface at all: ADR-0019 wrote "a typo in an `edge:` point
+    is silent" and named this report as what would end it.
+
+    Same sandbox, same role, other verb: the doctor holds every mounted topology
+    and calls it dead — and, being a finding, makes the report red.
+    """  # comment-length: allow — the pairing with the test above IS the point
+    project, env = gate_project("stray")
+
+    report = _rack(rack_bin, "doctor", "--json", cwd=project, env=env)
+
+    assert report.returncode == 1, report.stdout + report.stderr
+    payload = json.loads(report.stdout)
+    assert payload["clean"] is False
+    assert [f["check"] for f in payload["findings"]] == ["dead-check-point"]
+    assert STRAY_EDGE in payload["findings"][0]["detail"]
+    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [
+        ("dead", STRAY_EDGE)
+    ]
+
+
+def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):
+    """The other half, or the section would be a red light nobody can turn off:
+    a row on a real edge of the running topology is listed as armed, and a
+    project whose gates are all armed is still clean (exit 0)."""
+    project, env = gate_project("passing")
+
+    report = _rack(rack_bin, "doctor", "--json", cwd=project, env=env)
+
+    assert report.returncode == 0, report.stdout + report.stderr
+    payload = json.loads(report.stdout)
+    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
+    assert payload["bindings"]["rows"][0]["on_error"] == "refuse"
