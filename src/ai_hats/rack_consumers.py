@@ -33,7 +33,7 @@ from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
 from .check_points import check_failure_reason, check_log_token
-from .check_resolve import CheckResolutionError, resolve_carried_checks
+from .check_resolve import CheckResolutionError, resolve_carried_checks, session_identity_for
 from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
 
@@ -101,7 +101,14 @@ class AiHatsCheckPort:
                 file=sys.stderr,
             )
             return ()
-        return resolve_carried_checks(self.backlog_owner, self.APP)
+        return resolve_carried_checks(
+            self.backlog_owner,
+            self.APP,
+            # Scoped to the backlog's owner: unscoped, another project's session
+            # chose the rows, and one declaring none closed the card ungated
+            # (HATS-1631).
+            identity=session_identity_for(self.backlog_owner),
+        )
 
     def _project(self) -> Path:
         """The owner, proven present: rows only exist when a project declared them."""
