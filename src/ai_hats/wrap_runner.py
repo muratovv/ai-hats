@@ -40,6 +40,8 @@ from .runtime_common import (
     _TERM_RESET_PRELUDE,
     _ESCAPE_NOTICE,
     _scan_escape,
+    _claim_session_cache,
+    _claim_surface_child,
     _cleanup_session_cache,
     _print_session_start,
     _print_session_end,
@@ -474,6 +476,7 @@ class WrapRunner:
                     StartupNotice("warn", text)
                     for text in legacy_launch_notices(provider_name, result, payload.policy)
                 )
+        _claim_session_cache(self.project_dir, session.session_id)
         session.init_audit(
             role=active_role,
             provider=provider_name,
@@ -654,11 +657,17 @@ class WrapRunner:
             # them. Ctrl-C here aborts the launch (caught below → exit 130).
             self._hold_before_launch(startup_notices, env=env)
             with provider.execution_context(self.project_dir):
+                # HATS-1339: the anchor names the cache's real READER. Redundant
+                # here (the pty hangup already ties the child to us), but it makes
+                # "keep while EITHER owner lives" hold on every runner.
                 exit_code = self._pty_spawn(
                     cmd,
                     env,
                     tracer,
                     pty_tap_factory=pty_tap_factory,
+                    on_spawn=lambda pid: _claim_surface_child(
+                        self.project_dir, session.session_id, pid
+                    ),
                 )
         except KeyboardInterrupt:
             exit_code = 130
@@ -714,9 +723,10 @@ class WrapRunner:
             except FinalizeAborted:
                 exit_code = 130
 
-            # HATS-294: drop the per-session cache dir (prompt + plugin/).
-            # SIGKILL-orphans are accepted — TTL sweep mops them up on the
-            # next session_start.
+            # HATS-294: drop the per-session cache dir (prompt + plugin/). A
+            # SIGKILL leaves it to the next run's sweep, which since HATS-1339
+            # reclaims on proof this pid is gone rather than after a TTL — safe
+            # only because _pty_spawn's hangup outlives no surface.
             _cleanup_session_cache(self.project_dir, session.session_id)
 
         return exit_code, session
@@ -752,15 +762,30 @@ class WrapRunner:
         env: dict[str, str],
         tracer: SidecarTracer,
         pty_tap_factory: PtyTapFactory | None = None,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> int:
         """Spawn a process with PTY for interactive terminal passthrough + sidecar trace.
+
+        ``on_spawn`` is called once with the child's pid, the moment there is
+        one — same seam and same spelling as ``subagent_runner._run_surface``,
+        where both runners hand it the surface-child claim and neither spawn
+        primitive learns what a session cache is. Omitted → no callback, which
+        is exactly what an isolated spawn wants.
 
         Uses ptyprocess so the slave-pty becomes the controlling-tty of the child
         session (TIOCSCTTY in child after setsid). This is required for nested
         programs (e.g. claude → $EDITOR via Ctrl-G) whose pgrp transfer relies on
         kernel-side tcsetpgrp/setpgid against a real ctty. stdlib pty.spawn does
         not call TIOCSCTTY, which broke that path. See HATS-207.
-        """
+
+        That same ctty is load-bearing for HATS-1339: this process is the only
+        holder of the pty master, so a SIGKILL here drops carrier and the kernel
+        hangs up the surface — which is why the sweep may reclaim a dead owner's
+        cache at once without stranding the process that reads it. Spawning over
+        pipes, or handing the master fd to anyone else, silently retires that
+        guarantee; ``test_a_killed_wrappers_surface_child_goes_with_it`` is what
+        notices. Sub-agents get NO such guarantee — see ``subagent_runner``.
+        """  # comment-length: allow — one injected seam + two kernel contracts
         import select
         import signal
         import termios
@@ -804,6 +829,15 @@ class WrapRunner:
         except OSError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
+
+        if on_spawn is not None:
+            try:
+                on_spawn(proc.pid)
+            except Exception as exc:
+                # The child already holds the tty; leaving it there because a
+                # bookkeeping callback failed would strand an interactive surface
+                # with nobody draining its pty.
+                logger.warning("session-cache claim skipped for pid %s: %r", proc.pid, exc)
 
         # Use raw fd constants (not sys.stdin/stdout.fileno()) so test harnesses
         # that wrap sys.stdin/stdout still pass through to the real terminal —

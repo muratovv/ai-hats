@@ -43,7 +43,18 @@ def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:
     assert res == 0
 
 
-def test_dispatcher_noop_when_hooks_json_missing(tmp_path: Path, monkeypatch) -> None:
+def test_dispatcher_says_so_when_the_pinned_manifest_is_gone(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """Pin set + no manifest is a reclaimed cache dir, not a hook-less session.
+
+    The builder writes the manifest with every pin, so the two cases are never
+    the same event — and a TTL sweep reclaiming a live session's dir (HATS-1339)
+    silenced every guard while exit 0 kept saying "nothing configured". Exit
+    stays 0 because this gate runs ahead of every tool call on a detached
+    surface (ADR-0020 D1, fail-open): refusing would kill the very session the
+    diagnostic exists to rescue.
+    """
     project = tmp_path / "project"
     project.mkdir()
     cache_dir = tmp_path / "cache"
@@ -53,6 +64,9 @@ def test_dispatcher_noop_when_hooks_json_missing(tmp_path: Path, monkeypatch) ->
 
     res = dispatch_hook("PreToolUse")
     assert res == 0
+    complained = capsys.readouterr().err
+    assert "no hooks manifest at" in complained
+    assert str(cache_dir / "hooks.json") in complained
 
 
 def _seed_manifest(cache_dir: Path, hook_script: Path) -> None:
@@ -85,6 +99,27 @@ def test_dispatcher_executes_hook_from_pinned_cache_dir(tmp_path: Path, monkeypa
     res = dispatch_hook("PreToolUse", tool_name="Edit")
     assert res == 0
     assert marker_file.read_text().strip() == "OK"
+
+
+def test_a_gone_session_manifest_still_leaves_the_user_hooks_running(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The two manifests are separate channels; losing one must not disarm both."""
+    home = tmp_path / "home"
+    (home / ".gemini" / "config").mkdir(parents=True)
+    marker_file, hook_script = _marker_hook(tmp_path)
+    (home / ".gemini" / "config" / "hooks.json").write_text(
+        json.dumps({"PreToolUse": [{"matcher": "*", "command": str(hook_script)}]})
+    )
+
+    monkeypatch.setenv("HOME", str(home))
+    _in_session(monkeypatch, "sid-gone", tmp_path / "project")
+    monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(tmp_path / "reclaimed"))
+
+    res = dispatch_hook("PreToolUse", tool_name="Edit")
+    assert res == 0
+    assert marker_file.read_text().strip() == "OK"
+    assert "no hooks manifest at" in capsys.readouterr().err
 
 
 def test_dispatcher_without_the_pin_says_so_instead_of_exiting_quietly(

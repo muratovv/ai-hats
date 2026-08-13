@@ -114,7 +114,7 @@ def subprocess_project_with_user_rule(tmp_path: Path, ai_hats_shim: Path):
 def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     from ai_hats import runtime as rt
 
-    def _capture(_self, cmd, env, tracer, pty_tap_factory=None):  # noqa: ARG001
+    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):  # noqa: ARG001
         sink["cmd"] = list(cmd)
         for i, tok in enumerate(cmd):
             if tok == "--system-prompt-file" and i + 1 < len(cmd):

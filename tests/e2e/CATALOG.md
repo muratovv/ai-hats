@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**235 of 235 files catalogued — 243 flows.**
+**239 of 239 files catalogued — 247 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -100,6 +100,20 @@ as a claim to check, not as evidence.
 
 - **expect** — runtime hooks defined in settings.json execute during headless tool invocation
 - **why** — without headless hook execution, safety and quality gates fail to run in non-HITL batch runs
+
+## `test_agy_hook_manifest_vanished.py`
+
+*pins HATS-1339*
+
+- **flow** — an agent keeps editing files in an agy session whose pinned cache dir, hooks manifest and all, a sweep reclaimed under it
+- **cmds**
+
+  ```console
+  ai-hats agent assistant --task "Edit a file"
+  ```
+
+- **expect** — the dispatcher names the vanished manifest on stderr and still exits 0, and the user's own ~/.gemini/config/hooks.json hooks keep firing
+- **why** — a reclaimed cache dir otherwise reads as "no hooks configured" and every guard goes quiet
 
 ## `test_agy_provider_discovery.py`
 
@@ -1874,6 +1888,20 @@ as a claim to check, not as evidence.
 - **expect** — the pre-commit hook verifies that all referenced rules exist and blocks the commit with an error if a rule reference is missing
 - **why** — trait configurations must not reference non-existent rules to prevent broken rule pointers in role injections
 
+## `test_runs_retention.py`
+
+*pins HATS-1339*
+
+- **flow** — a developer starts a session in a project whose sessions/runs tree has been accumulating transcripts and traces for months
+- **cmds**
+
+  ```console
+  ai-hats -r maintainer
+  ```
+
+- **expect** — bulk artifacts past the age bound are dropped and the drop is logged with counts and bytes, while every facts-tier file and every run dir stay
+- **why** — runs/ grew 27 MB/day with no GC, and trimming audit.md would blind every retro that links to it
+
 ## `test_runtime_hook_fires.py`
 
 *pins HATS-601, HATS-607*
@@ -2330,6 +2358,20 @@ as a claim to check, not as evidence.
 
 - **expect** — self update builds new versioned venv in versions/<sha>/ and atomically updates current symlink
 - **why** — without versioned venv builds, updates overwrite active venvs mid-session causing tool crashes
+
+## `test_session_cache_liveness.py`
+
+*pins HATS-1339*
+
+- **flow** — a maintainer keeps one long session open past the cache TTL, a peer session crashes, and a third session starts with both caches on disk
+- **cmds**
+
+  ```console
+  ai-hats -r maintainer
+  ```
+
+- **expect** — the crashed session's cache is reclaimed at once and named in the log, while the live session's plugin skills and settings.json survive
+- **why** — age alone reaped 12 live maintainer sessions' skills and hooks mid-flight
 
 ## `test_session_cache_out_of_tree.py`
 
@@ -2963,6 +3005,20 @@ as a claim to check, not as evidence.
 
 - **expect** — transition done is refused before teardown and worktree directory is preserved
 - **why** — transition done from inside a worktree must refuse to avoid removing caller cwd
+
+## `test_worktree_venv_rebuilds_after_a_tmp_sweep.py`
+
+*pins HATS-1339*
+
+- **flow** — a task worktree sits under $TMPDIR long enough for the OS sweeper to empty its venv, and the next worktree create runs the provisioning hook
+- **cmds**
+
+  ```console
+  bash provision-venv.sh        # the real wt_in hook, real uv, real venv
+  ```
+
+- **expect** — the hook rebuilds a venv whose files the sweeper deleted instead of reading the surviving bin/python as "already provisioned"
+- **why** — a gutted venv failed the done-gate with a ModuleNotFoundError naming an unrelated module, and re-running the hook could not heal it
 
 ## `test_write_op_refused_at_non_project_root.py`
 

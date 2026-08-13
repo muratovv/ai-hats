@@ -56,10 +56,17 @@ def _head_sha(repo: Path) -> str:
 
 
 def _lstart(pid: int) -> str:
+    """The baseline as the READER renders it — same pinned TZ/locale.
+
+    ``ps -o lstart=`` renders in the TZ and LC_TIME of the ``ps`` process, so a
+    baseline planted under the ambient environment reads as a reused pid to a
+    reader that pins its own — and the version a live ref pins gets reclaimed.
+    """
     out = subprocess.run(
         ["ps", "-o", "lstart=", "-p", str(pid)],
         capture_output=True,
         text=True,
+        env={**os.environ, "TZ": "UTC", "LC_ALL": "C"},
     )
     return out.stdout.strip()
 
@@ -79,12 +86,12 @@ def _mk_complete(versions: Path, sha: str) -> Path:
     return vdir
 
 
-def _ref(refs: Path, sha: str, pid: int, start_time: str, name: str) -> Path:
+def _ref(refs: Path, sha: str, pid: int, start_time_utc: str, name: str) -> Path:
     import json
 
     f = refs / f"{name}.json"
     f.write_text(
-        json.dumps({"run_id": name, "root_pid": pid, "start_time": start_time, "sha": sha})
+        json.dumps({"run_id": name, "root_pid": pid, "start_time_utc": start_time_utc, "sha": sha})
     )
     return f
 

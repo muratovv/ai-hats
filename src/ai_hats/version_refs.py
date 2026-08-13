@@ -3,21 +3,23 @@
 A run that executes from a managed ``versions/<sha>/`` venv writes a ref tying
 its OS process to the sha it pinned. The orphan-version reclaim
 (:func:`ai_hats.version_recovery.reclaim_orphan_versions`) keeps a version alive
-iff a **live** ref points to it — liveness decided by ``root_pid`` + the
-OS-reported process ``start_time`` (reuse-proof on a single host). Refs are
+iff a **live** ref points to it — liveness decided by ``root_pid`` +
+``start_time_utc`` (reuse-proof on a single host). Refs are
 written at the ``create_session`` chokepoint and cleaned (when dead) by the same
 reclaim pass, so they never leak.
 
 **Reclaim-on-certain-death, no TTL** (HATS-649 supervisor decision): a reused
-pid has a different OS ``start_time`` than the one recorded at write, so a dead
+pid has a different ``start_time_utc`` than the one recorded at write, so a dead
 run is classified as dead *with certainty* — no time-based backstop is needed on
 a single host. Cross-host / shared-FS coordination is out of scope (a ref's
 ``root_pid`` is meaningless on another host).
 
-Stdlib only — process start_time via ``ps -o lstart=`` (POSIX; macOS + Linux),
-with an ``os.kill`` liveness fallback when ``ps`` is unavailable (degrades to
-no-reuse-detection, but stays conservative: keeps disk, never deletes a live
-env).
+Stdlib only — start time via ``ps -o lstart=`` (POSIX; macOS + Linux) under a
+pinned TZ/locale, so the run that writes the ref and the pass that checks it
+render the same instant identically; unpinned, an ambient difference read as pid
+reuse and reclaimed the venv a live run was executing from. An ``os.kill``
+fallback covers an unavailable ``ps`` (degrades to no-reuse-detection, but stays
+conservative: keeps disk, never deletes a live env).
 """
 
 from __future__ import annotations
@@ -78,10 +80,18 @@ def current_run_sha(project_dir: Path) -> str | None:
     return None
 
 
+#: ``lstart`` renders in the TZ/LC_TIME of the ``ps`` process, and one run writes
+#: the baseline while another compares it — unpinned, an ambient difference reads
+#: as pid reuse. Here that reclaims the version a LIVE run executes from. The same
+#: pin lives in ``session_liveness`` and ``ownership``; each has its own TZ test.
+_PS_ENV = {"TZ": "UTC", "LC_ALL": "C"}
+
+
 def _proc_start_time(pid: int) -> str | None:
     """OS-reported start time of ``pid`` as an opaque string, or ``None``.
 
-    Uses ``ps -o lstart= -p <pid>`` (stable within a host; second precision).
+    Uses ``ps -o lstart= -p <pid>`` (stable within a host; second precision)
+    under a pinned TZ/locale, so two processes render the same instant the same.
     ``None`` means "no such process" **or** ``ps`` unavailable — callers treat
     the two cases via the ``os.kill`` fallback in :func:`ref_is_live`. The raw
     ``ps`` string is stored and compared verbatim; we never parse it.
@@ -92,6 +102,7 @@ def _proc_start_time(pid: int) -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
+            env={**os.environ, **_PS_ENV},
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -128,7 +139,11 @@ def ref_is_live(ref: dict) -> bool:
     pid = ref.get("root_pid")
     if not isinstance(pid, int):
         return False
-    recorded = ref.get("start_time")
+    # Only the pinned-env field is a baseline: a legacy ``start_time`` was rendered
+    # in its writer's own TZ/locale, so comparing one would read a LIVE run as a
+    # reused pid and reclaim the version it is executing from. Absent, the os.kill
+    # fallback below keeps the version while the pid lives.
+    recorded = ref.get("start_time_utc")
     current = _proc_start_time(pid)
     if recorded is not None and current is not None:
         return current == recorded
@@ -149,7 +164,7 @@ def write_current_run_ref(project_dir: Path) -> Path | None:
     ref = {
         "run_id": _process_run_id(),
         "root_pid": pid,
-        "start_time": _proc_start_time(pid),
+        "start_time_utc": _proc_start_time(pid),
         "sha": sha,
     }
     dest = refs_dir(project_dir) / f"{pid}.json"

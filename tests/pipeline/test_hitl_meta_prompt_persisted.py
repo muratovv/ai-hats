@@ -96,7 +96,7 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     """
     from ai_hats import runtime as rt
 
-    def _capture(_self, cmd, env, tracer, pty_tap_factory=None):  # noqa: ARG001
+    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):  # noqa: ARG001
         sink["cmd"] = list(cmd)
         return 0
 
@@ -189,7 +189,7 @@ def test_hitl_meta_prompt_matches_system_prompt_file_bytes(
     # Capture the --system-prompt-file content BEFORE cache cleanup.
     from ai_hats import runtime as rt
 
-    def _capture(_self, cmd, env, tracer, pty_tap_factory=None):  # noqa: ARG001
+    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):  # noqa: ARG001
         sink["cmd"] = list(cmd)
         for i, tok in enumerate(cmd):
             if tok == "--system-prompt-file" and i + 1 < len(cmd):

@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import time
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -33,6 +34,8 @@ from .runtime_common import (
     SUBAGENT_SUBPROCESS_TIMEOUT_S,
     SUBAGENT_EXIT_TIMEOUT,
     SUBAGENT_EXIT_ERROR,
+    _claim_session_cache,
+    _claim_surface_child,
     _cleanup_session_cache,
     _session_timed_out,
     _finalize_sub_agent,
@@ -43,6 +46,50 @@ if TYPE_CHECKING:
     from .pipeline.harness_policy import HarnessPolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _run_surface(
+    launch: Sequence[str],
+    *,
+    work_dir: Path,
+    env: dict[str, str],
+    timeout_s: float,
+    on_spawn: Callable[[int], None],
+) -> subprocess.CompletedProcess:
+    """``subprocess.run(capture_output=True, text=True, timeout=…)``, plus the pid.
+
+    Spelled out because ``run`` never exposes the child's pid, and the pid is
+    what the session-cache sweep needs: this child is what READS the cache, and
+    with pipes and no controlling tty nothing hangs it up when its parent is
+    SIGKILLed — a real ``agy`` was measured still running 45s later, reparented
+    to init (HATS-1339 D3). The timeout path mirrors ``run``'s exactly — kill,
+    drain, re-raise carrying the output captured so far — because the caller
+    reports ``exc.stdout`` / ``exc.stderr`` on a timeout.
+    """  # comment-length: allow — a stdlib call re-spelled needs its reason
+    with subprocess.Popen(  # noqa: S603 — argv comes from the provider, not a shell
+        list(launch),
+        cwd=str(work_dir),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as proc:
+        try:
+            # Inside the guard: Popen.__exit__ only closes the pipes and waits, so
+            # a callback that raises out here would block on a surface that runs
+            # for hours instead of killing it.
+            on_spawn(proc.pid)
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raise subprocess.TimeoutExpired(
+                proc.args, timeout_s, output=stdout, stderr=stderr
+            ) from exc
+        except BaseException:
+            proc.kill()
+            raise
+    return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
 
 
 class SubAgentRunner:
@@ -198,6 +245,7 @@ class SubAgentRunner:
             policy=self.payload.policy,
             artifacts=BuiltArtifacts(),
         )
+        _claim_session_cache(self.project_dir, session.session_id)
 
         # The gates this sub-agent runs under. Every AUTOMATE record ever written
         # said `checks: []`, so the reflect loop could not see whether a
@@ -347,13 +395,14 @@ class SubAgentRunner:
                     # re-derive it from materialize_runtime_skills, and matched
                     # what was reported only by coincidence (HATS-1552).
                     with provider.execution_context(self.project_dir):
-                        proc = subprocess.run(
+                        proc = _run_surface(
                             described.launch,
-                            cwd=str(work_dir),
+                            work_dir=work_dir,
                             env=env,
-                            capture_output=True,
-                            text=True,
-                            timeout=timeout_s,
+                            timeout_s=timeout_s,
+                            on_spawn=lambda pid: _claim_surface_child(
+                                self.project_dir, session.session_id, pid
+                            ),
                         )
                     session.log_res(f"Exit code: {proc.returncode}")
                     stdout_str = proc.stdout or ""

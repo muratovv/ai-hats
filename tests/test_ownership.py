@@ -178,8 +178,8 @@ def test_release_session_pid_spares_colliding_peer_pid(reg: Path, live: _Livenes
             {
                 "version": 1,
                 "owners": {
-                    "T-1": {"session_id": "sess-x", "root_pid": 100, "start_time": None},
-                    "T-2": {"session_id": "sess-x", "root_pid": 200, "start_time": None},
+                    "T-1": {"session_id": "sess-x", "root_pid": 100, "start_time_utc": None},
+                    "T-2": {"session_id": "sess-x", "root_pid": 200, "start_time_utc": None},
                 },
             }
         ),
@@ -204,14 +204,33 @@ def test_release_session_pid_noop_without_file(reg: Path) -> None:
     assert not reg.exists()
 
 
+def test_the_baseline_ignores_the_ambient_timezone(monkeypatch) -> None:
+    """One session claims and ANOTHER checks. `ps -o lstart=` renders in the
+    TZ/locale of the ps process, so unpinned the two disagreed and a live owner
+    read as a reused pid — its neighbour then stole the task."""
+    pid = os.getpid()
+    monkeypatch.setenv("TZ", "America/New_York")
+    claimed = ownership._capture_start_time(pid)
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    assert ownership._capture_start_time(pid) == claimed
+    assert ownership.record_is_live({"root_pid": pid, "start_time_utc": claimed}) is True
+
+
+def test_a_legacy_start_time_is_not_read_as_a_baseline() -> None:
+    """Registries already on disk carry a rendering from their writer's locale;
+    comparing one would release a live owner's claim."""
+    record = {"root_pid": os.getpid(), "start_time": "Mon Jan  1 00:00:00 2001"}
+    assert ownership.record_is_live(record) is True
+
+
 def test_record_is_live_real_pids() -> None:
     """The real (un-faked) liveness: this process is live; a reaped pid is dead."""
-    alive = {"root_pid": os.getpid(), "start_time": ownership._capture_start_time(os.getpid())}
+    alive = {"root_pid": os.getpid(), "start_time_utc": ownership._capture_start_time(os.getpid())}
     assert ownership.record_is_live(alive) is True
 
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()
-    dead = {"root_pid": proc.pid, "start_time": "Mon Jan  1 00:00:00 2001"}
+    dead = {"root_pid": proc.pid, "start_time_utc": "Mon Jan  1 00:00:00 2001"}
     assert ownership.record_is_live(dead) is False
 
     assert ownership.record_is_live({"root_pid": None}) is False
