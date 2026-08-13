@@ -170,7 +170,7 @@ check_mode() {
         gate_exit "$CHANNEL" refuse
     fi
 
-    if gate_marker_ok "$GATE_NAME" "$project_dir" "$tree" $stages; then
+    if gate_marker_ok "$project_dir" "$tree" $stages; then
         printf 'done-gate: green marker present for tree %s (%s) — passing.\n' "$tree" "$branch"
         gate_exit "$CHANNEL" pass
     fi
