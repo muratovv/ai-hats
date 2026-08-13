@@ -60,8 +60,42 @@ DENY_REASON = (
 
 
 def _normalise(file_path: str) -> Path:
-    """An absolute path with `~` and `..` resolved."""
-    return Path(os.path.abspath(os.path.expanduser(file_path)))
+    """An absolute path with `~`, `..` and symlinks resolved.
+
+    `realpath` is half of not being fooled by a route: `ln -s` into the backlog
+    costs one command, and a string match never sees it."""
+    return Path(os.path.realpath(os.path.expanduser(file_path)))
+
+
+def _same_dir(a: Path, b: Path) -> bool:
+    """Whether two paths name the same directory ON DISK. False when either is
+    missing — the caller then keeps the lexical answer."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _relpath_under(target: Path, root: Path) -> tuple[str, ...] | None:
+    """`target`'s parts below `root`, or None when it lies outside.
+
+    Lexically first: no syscall, and it answers the ordinary case. The identity
+    walk behind it is the other half of not being fooled — on a case-folding
+    filesystem `.Agent/…` and `.agent/…` are ONE directory (same inode), which
+    no string comparison can know."""
+    if target.is_relative_to(root):
+        return target.relative_to(root).parts
+    if not root.is_dir():
+        return None
+    node, tail = target, []
+    while True:
+        if _same_dir(node, root):
+            return tuple(tail)
+        parent = node.parent
+        if parent == node:
+            return None
+        tail.insert(0, node.name)
+        node = parent
 
 
 def _configured_ai_hats_dir(project: Path) -> Path:
@@ -87,19 +121,24 @@ def _backlog_relpath(target: Path) -> tuple[str, ...] | None:
     for project in target.parents:
         if not (project / _CONFIG_NAME).is_file():
             continue
-        root = _configured_ai_hats_dir(project).joinpath(*_BACKLOG_RELPATH)
-        if target.is_relative_to(root):
-            return target.relative_to(root).parts
+        root = _normalise(str(_configured_ai_hats_dir(project).joinpath(*_BACKLOG_RELPATH)))
+        rel = _relpath_under(target, root)
+        if rel is not None:
+            return rel
     return _default_layout_relpath(target)
 
 
 def _default_layout_relpath(target: Path) -> tuple[str, ...] | None:
     """Fallback for a tracker with no reachable `ai-hats.yaml` — a linked worktree
-    carries none, and a missing config must not quietly disarm the gate."""
-    marker = tuple(Path(_DEFAULT_AI_HATS_DIR).parts) + _BACKLOG_RELPATH
+    carries none, and a missing config must not quietly disarm the gate.
+
+    Case-folded, for the same reason the identity walk exists. It over-reaches
+    (any path literally shaped like the default layout answers here, project or
+    not); deliberately, and recorded as such in the card's plan."""
+    marker = tuple(p.lower() for p in Path(_DEFAULT_AI_HATS_DIR).parts) + _BACKLOG_RELPATH
     parts = target.parts
     for i in range(len(parts) - len(marker) + 1):
-        if parts[i : i + len(marker)] == marker:
+        if tuple(p.lower() for p in parts[i : i + len(marker)]) == marker:
             return parts[i + len(marker) :]
     return None
 

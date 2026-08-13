@@ -81,6 +81,11 @@ def hooked_project(shared_launcher, tmp_path_factory):
     if result.returncode != 0:
         raise AssertionError(f"self init failed:\n{result.stdout}\n{result.stderr}")
     (project / TRACKER / "tasks" / "HATS-1").mkdir(parents=True, exist_ok=True)
+    (project / "src" / "app").mkdir(parents=True, exist_ok=True)
+    # Two routes with the same shape and opposite answers: one lands in the
+    # backlog, one does not. A resolver that follows links must tell them apart.
+    (project / "blink").symlink_to(project / TRACKER)
+    (project / "slink").symlink_to(project / "src")
     return project, env, build_session_settings(project)
 
 
@@ -256,6 +261,50 @@ def test_the_switch_does_not_disarm_the_generic_destructive_guard(hooked_project
     assert KILL_SWITCH not in verdict.reason, (
         f"a deny must not re-offer the switch that is already on; got {verdict}"
     )
+
+
+# --- A path is not a string: the two cheap dodges ---------------------------
+
+
+def test_a_symlinked_route_into_the_backlog_is_denied(hooked_project):
+    """`ln -s` costs one command, and a lexical matcher never sees it."""
+    project, env, settings = hooked_project
+    verdict = _write(project, env, settings, "blink/tasks/HATS-1/task.yaml")
+    assert verdict.denied, f"a symlinked route to the card must be denied; got {verdict}"
+    assert_names_the_hatch(verdict)
+
+
+def test_a_symlinked_route_gets_the_rack_recipe_in_the_shell_too(hooked_project):
+    """Missing the route does worse than let `sed -i` past: the generic in-place
+    deny answers instead, and its text hands out a per-call ack — a refusal that
+    advertises the bypass this rule must not have."""
+    project, env, settings = hooked_project
+    card = project / "blink" / "tasks" / "HATS-1" / "task.yaml"
+    verdict = run_chain(
+        project, f"sed -i '' 's/^state:.*/state: done/' {card}", settings=settings, env=env
+    )
+    assert verdict.denied, f"a symlinked route must be denied in the shell; got {verdict}"
+    assert_names_the_hatch(verdict)
+
+
+def test_a_symlink_that_leads_elsewhere_still_passes(hooked_project):
+    """The counter-test: following links must not turn every link into a deny."""
+    project, env, settings = hooked_project
+    verdict = _write(project, env, settings, "slink/app/config.yaml")
+    assert not verdict.gated, f"a link out of the tracker must pass; got {verdict}"
+
+
+def test_a_case_folded_route_into_the_backlog_is_denied(hooked_project):
+    """On a case-folding filesystem `.Agent/...` is the SAME file as `.agent/...`
+    — confirmed by inode — so a case-sensitive match writes the card it refused."""
+    project, env, settings = hooked_project
+    folded = project / ".Agent" / "ai-hats" / "tracker" / "backlog" / "tasks" / "HATS-1"
+    if not folded.is_dir():
+        pytest.skip("case-sensitive filesystem — the dodge does not exist here")
+
+    verdict = _write(project, env, settings, str(folded.relative_to(project) / "task.yaml"))
+    assert verdict.denied, f"a case-folded route must be denied; got {verdict}"
+    assert_names_the_hatch(verdict)
 
 
 # --- A hostile config must cost this gate only, and only quietly ------------
