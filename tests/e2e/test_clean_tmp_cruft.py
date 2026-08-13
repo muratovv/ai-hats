@@ -1,13 +1,14 @@
-"""e2e (HATS-570)
+"""e2e (HATS-570, HATS-1624)
 
-flow:   a developer running temp cleanup script to remove leftover test worktree
-        directories
+flow:   a developer (and the pre-push gate) sweeping leftover test cruft out of
+        the temp root while other runs and agent sessions are working
 cmds:
-    bash scripts/clean-tmp-cruft.sh --force
-expect: script removes temporary worktree and pytest directories while preserving caller
-        worktree
-why:    without tmp cleanup scripts, interrupted test runs leak temporary worktree
-        directories in /tmp
+    bash scripts/clean-tmp-cruft.sh [--dry-run|--force]
+expect: reaps only what it can prove dead — an unregistered worktree shell, a
+        pytest run dir whose .lock names an exited pid — and keeps live
+        worktrees, live runs, and anything it cannot judge
+why:    the sweeper ran on every gate and deleted nothing (dry-run only),
+        while 145 GB of killed-run residue accumulated in TMPDIR
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "clean-tmp-cruft.sh"
+_ENV = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
 
 
 def _run(sandbox: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -33,57 +35,127 @@ def _run(sandbox: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
         cwd=str(REPO_ROOT),
-        env={"TMPDIR": str(sandbox), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+        env={"TMPDIR": str(sandbox), **_ENV},
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
 
 
+def _run_dir(root: Path, name: str, *, pid: int | None) -> Path:
+    """A pytest run dir, optionally locked by ``pid`` the way pytest locks one."""
+    path = root / "pytest-of-probe" / name
+    path.mkdir(parents=True)
+    (path / "payload").write_text("venv-ish bulk")
+    if pid is not None:
+        (path / ".lock").write_text(str(pid))
+    return path
+
+
 @pytest.fixture
-def sandbox(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    """A fake temp root pre-seeded with both cruft patterns + a keeper."""
+def live_pid():
+    """A real running process, reaped when the test ends."""
+    proc = subprocess.Popen(["sleep", "60"], env=_ENV)
+    try:
+        yield proc.pid
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+@pytest.fixture
+def dead_pid() -> int:
+    """A pid that has exited AND been reaped — no zombie row left behind."""
+    proc = subprocess.Popen(["true"], env=_ENV)
+    proc.wait()
+    return proc.pid
+
+
+@pytest.fixture
+def sandbox(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A fake temp root with a worktree shell, a run dir, and a keeper."""
     root = tmp_path / "fake-tmp"
     wt = root / "ai-hats-wt-task-probe-XXXX"
-    pyt = root / "pytest-of-probe" / "run0"
     keep = root / "keep-me"
-    for d in (wt, pyt, keep):
+    for d in (wt, keep):
         d.mkdir(parents=True)
     (wt / "marker").write_text("leak")
-    return root, wt, root / "pytest-of-probe", keep
+    return root, wt, keep
 
 
 def test_script_exists_and_executable() -> None:
     assert SCRIPT.is_file(), f"sweeper script missing: {SCRIPT}"
 
 
-def test_dry_run_preserves_and_lists(sandbox) -> None:
-    root, wt, pyt, keep = sandbox
-    cp = _run(root)
+def test_dry_run_preserves_and_lists(sandbox, dead_pid) -> None:
+    root, wt, keep = sandbox
+    run = _run_dir(root, "pytest-7", pid=dead_pid)
+    cp = _run(root, "--dry-run")
     assert cp.returncode == 0, cp.stderr
-    # nothing deleted on a dry-run
-    assert wt.exists() and pyt.exists() and keep.exists()
-    # both cruft dirs are listed; the keeper is not
+    assert wt.exists() and run.exists() and keep.exists()
     assert "ai-hats-wt-task-probe-XXXX" in cp.stdout
-    assert "pytest-of-probe" in cp.stdout
+    assert "pytest-7" in cp.stdout
     assert "DRY-RUN" in cp.stdout
     assert "keep-me" not in cp.stdout
 
 
-def test_force_removes_cruft_keeps_others(sandbox) -> None:
-    root, wt, pyt, keep = sandbox
-    cp = _run(root, "--force")
+def test_default_reaps_the_provably_dead(sandbox, dead_pid) -> None:
+    """No flag needed: the gate ran this on every push and freed nothing."""
+    root, wt, keep = sandbox
+    run = _run_dir(root, "pytest-7", pid=dead_pid)
+    cp = _run(root)
     assert cp.returncode == 0, cp.stderr
-    assert not wt.exists(), "ai-hats-wt-* not removed"
-    assert not pyt.exists(), "pytest-of-* not removed"
+    assert not wt.exists(), "unregistered ai-hats-wt-* shell not removed"
+    assert not run.exists(), "run dir with an exited owner not removed"
     assert keep.exists(), "unrelated dir must survive"
 
 
-def test_force_is_idempotent(sandbox) -> None:
-    root, _wt, _pyt, _keep = sandbox
-    first = _run(root, "--force")
+def test_live_run_dir_survives(sandbox, live_pid) -> None:
+    """The 29 GB case: a run dir whose pytest is still working stays put."""
+    root, _wt, _keep = sandbox
+    run = _run_dir(root, "pytest-8", pid=live_pid)
+    cp = _run(root)
+    assert cp.returncode == 0, cp.stderr
+    assert run.exists(), "a run dir owned by a LIVE pytest must not be deleted"
+    assert "LIVE" in cp.stdout
+
+
+def test_pytest_of_root_is_never_a_candidate(sandbox, live_pid) -> None:
+    """Judging the pytest-of-* root instead of its run dirs takes live runs too."""
+    root, _wt, _keep = sandbox
+    live = _run_dir(root, "pytest-8", pid=live_pid)
+    cp = _run(root)
+    assert cp.returncode == 0, cp.stderr
+    assert live.parent.exists(), "the pytest-of-* root must survive as a container"
+
+
+def test_unlocked_run_dir_is_left_to_pytest_then_forced(sandbox) -> None:
+    """An unlocked dir is a clean exit's triage copy — pytest's keep=3 owns it."""
+    root, _wt, _keep = sandbox
+    run = _run_dir(root, "pytest-9", pid=None)
+    assert _run(root).returncode == 0
+    assert run.exists(), "an unlocked run dir must not be reaped by default"
+    cp = _run(root, "--force")
+    assert cp.returncode == 0, cp.stderr
+    assert not run.exists(), "--force must take unlocked run dirs"
+
+
+def test_unreadable_lock_is_not_proof(sandbox) -> None:
+    root, _wt, _keep = sandbox
+    run = root / "pytest-of-probe" / "pytest-10"
+    run.mkdir(parents=True)
+    (run / ".lock").write_text("not-a-pid\n")
+    cp = _run(root)
+    assert cp.returncode == 0, cp.stderr
+    assert run.exists(), "a lock with no pid is not proof of death"
+
+
+def test_is_idempotent(sandbox, dead_pid) -> None:
+    root, _wt, _keep = sandbox
+    _run_dir(root, "pytest-7", pid=dead_pid)
+    first = _run(root)
     assert first.returncode == 0, first.stderr
-    second = _run(root, "--force")
+    second = _run(root)
     assert second.returncode == 0, second.stderr
     assert "nothing to clean" in second.stdout
 
@@ -92,11 +164,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-c", "user.email=t@e.st", "-c", "user.name=t", *args],
         cwd=str(cwd),
-        env={
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-            "GIT_CONFIG_GLOBAL": "/dev/null",
-            "GIT_CONFIG_SYSTEM": "/dev/null",
-        },
+        env={**_ENV, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"},
         capture_output=True,
         text=True,
         timeout=60,
@@ -104,12 +172,12 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_force_spares_a_registered_worktree(tmp_path: Path) -> None:
-    """A LIVE worktree git still tracks survives --force; a pruned shell does not.
+def test_spares_a_registered_worktree(tmp_path: Path) -> None:
+    """A LIVE worktree git still tracks survives; a pruned shell does not.
 
-    The name is all the sweeper had to go on, so ``--force`` would have taken
-    every ``ai-hats-wt-*`` — including the 11 worktrees a developer had open
-    (HATS-1624). Registration is the proof of reachability that separates them.
+    The name is all the sweeper had to go on, so deleting by glob would have
+    taken the 13 worktrees a developer had open (HATS-1624). Registration is
+    the proof of reachability that separates them.
     """
     root = tmp_path / "fake-tmp"
     root.mkdir()
@@ -143,11 +211,16 @@ def test_never_deletes_cwd_worktree(tmp_path: Path) -> None:
     cp = subprocess.run(
         ["bash", str(SCRIPT), "--force"],
         cwd=str(live_wt),  # stand INSIDE the worktree
-        env={"TMPDIR": str(root), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+        env={"TMPDIR": str(root), **_ENV},
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
     assert cp.returncode == 0, cp.stderr
     assert live_wt.exists(), "the in-use worktree must NOT be deleted"
     assert "skip" in cp.stdout
+
+
+def test_rejects_unknown_argument(tmp_path: Path) -> None:
+    cp = _run(tmp_path, "--delete-everything")
+    assert cp.returncode == 2, "an unknown flag must not fall through to a sweep"

@@ -325,13 +325,15 @@ first in that composition and a red one aborts before the ~25-min tier starts
 (HATS-726 — the marker has to mean "everything CI checks is green"). Then it
 sweeps the dev checkout's `build/` directory (HATS-568 —
 stale wheel-build artefacts cause "File exists: build/bdist...dist-info"
-collisions across worktree-tier e2e tests), then previews stale tmp cruft
-(`ai-hats-wt-*`, `pytest-of-*`) via `scripts/clean-tmp-cruft.sh`
-(HATS-731/HATS-570 — keeps APFS metadata ops fast on a loaded host). The
-preview is **dry-run by default** — the sweeper matches every `ai-hats-wt-*` by
-name and cannot tell a leaked test worktree from a live session, so the gate
-never auto-deletes one; opt in to real `--force` deletion with
-`AI_HATS_E2E_CLEAN_TMP=1`. Then it runs the tier as the project's own `e2e`
+collisions across worktree-tier e2e tests), then reaps stale tmp cruft
+(`ai-hats-wt-*`, pytest run dirs) via `scripts/clean-tmp-cruft.sh`
+(HATS-731/HATS-570 — keeps APFS metadata ops fast on a loaded host). The sweep
+**deletes by default**, but only on proof of death (HATS-1624): a worktree git
+no longer tracks, a run dir whose `.lock` names an exited pid. It was a dry-run
+preview for as long as the sweeper judged by name alone — and freed nothing
+while 145 GB accumulated. `AI_HATS_E2E_CLEAN_TMP=1` escalates to `--force`,
+which also takes the unlocked run dirs pytest keeps for triage.
+Then it runs the tier as the project's own `e2e`
 stage — one selection, not a second copy of it (HATS-1604) — carrying the gate's
 own flags in `PYTEST_ADDOPTS`: `--tb=line --no-header -p no:cacheprovider`, plus
 `-n min(cpus,8) --dist=loadgroup` when pytest-xdist is present (HATS-589/592).
