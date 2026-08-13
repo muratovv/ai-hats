@@ -4,7 +4,7 @@
 # commands CI runs (HATS-922/725). Spelling a command out here instead forks the
 # definition of the gate — tests/test_gate_entrypoint_parity.py refuses that.
 
-.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback test-isolation done-gate relay-server relay-client
+.PHONY: help tests unit integration e2e lint check gates coverage security version-skew dependency-floor silent-fallback test-isolation merge-gate done-gate relay-server relay-client
 
 .DEFAULT_GOAL := help
 
@@ -73,18 +73,27 @@ test-isolation: ## Check the suite patches its units no more than the baseline
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
 
-# HATS-1137 — the gate `rack transition <ID> done` demands. Run it in the TASK
-# WORKTREE: the marker is keyed to the tree you run it on, which is the content
-# the check looks up. `ci-local.sh done-gate --stages` names what it runs.
-done-gate: ## Run the review->done gate here and mark this tree green (HATS-1137)
-	@py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
-	libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
-	hook="$$libroot/usage/skills/maintainer-quality-gate/hooks/done-gate.sh"; \
-	if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
-		printf "cannot resolve the done-gate in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
-		exit 1; \
-	fi; \
-	env PYTHON="$$py" bash "$$hook" --run
+# The gates the two roads into master demand. Run one in the TASK WORKTREE: the
+# marker is keyed to the tree you run it on, which is the content the check looks
+# up. `ci-local.sh --stages <gate>` names what each runs.
+#
+# $(1) = gate name, which is also its script's basename
+define run_gate
+@py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
+libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
+hook="$$libroot/usage/skills/maintainer-quality-gate/hooks/$(1).sh"; \
+if [ -z "$$libroot" ] || [ ! -f "$$hook" ]; then \
+	printf "cannot resolve the $(1) in the ai-hats library — install it here first: ai-hats self init\n" >&2; \
+	exit 1; \
+fi; \
+env PYTHON="$$py" bash "$$hook" --run
+endef
+
+merge-gate: ## Run the ->merge gate here and mark this tree green (HATS-1614)
+	$(call run_gate,merge-gate)
+
+done-gate: ## Run the ->done gate here and mark this tree green (HATS-1137)
+	$(call run_gate,done-gate)
 
 relay-server: ## Run local hats-relay server (delegates to relay/Makefile)
 	$(MAKE) -C relay run-server ARGS="$(ARGS)"

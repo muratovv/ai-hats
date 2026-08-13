@@ -105,7 +105,7 @@ check_mode() {
         # The subject is CONTENT: a commit that only re-parents an already-marked
         # tree is the same thing the gate already judged (HATS-1601).
         tree="$(gate_tree "." "$sha")"
-        if [[ -z "$tree" ]] || ! gate_marker_ok "$GATE_NAME" "." "$tree" $stages; then
+        if [[ -z "$tree" ]] || ! gate_marker_ok "." "$tree" $stages; then
             unmarked="${tree:-$sha}"
             break
         fi

@@ -68,7 +68,7 @@ def test_a_marker_does_not_certify_a_stage_it_never_ran(repo: Path):
     written = _bash(f'gate_marker_write done-gate . "{tree}" lint', repo)
     assert written.returncode == 0, written.stdout + written.stderr
 
-    ok = _bash(f'gate_marker_ok done-gate . "{tree}" lint unit', repo)
+    ok = _bash(f'gate_marker_ok . "{tree}" lint unit', repo)
 
     assert ok.returncode != 0, (
         "the marker certifies `lint` alone — a gate demanding `lint unit` must not accept it"
@@ -131,7 +131,7 @@ def test_a_green_run_on_a_dirty_tree_earns_no_marker(repo: Path):
 
     assert stamped.returncode == 0, stamped.stdout + stamped.stderr
     assert "dirty" in stamped.stderr
-    ok = _bash(f'gate_marker_ok done-gate . "{tree}" lint', repo)
+    ok = _bash(f'gate_marker_ok . "{tree}" lint', repo)
     assert ok.returncode != 0, "no marker may exist for a tree that was never committed"
 
 
@@ -161,6 +161,49 @@ def test_a_marker_covers_a_gate_whose_composition_it_includes(repo: Path):
     tree = _tree(repo)
     _bash(f'gate_marker_write done-gate . "{tree}" "lint unit integration"', repo)
 
-    ok = _bash(f'gate_marker_ok done-gate . "{tree}" lint unit', repo)
+    ok = _bash(f'gate_marker_ok . "{tree}" lint unit', repo)
 
     assert ok.returncode == 0, "required ⊆ recorded — the run already covered this gate"
+
+
+def test_a_run_of_one_gate_covers_another_gate_on_the_same_tree(repo: Path):
+    """Absorption ACROSS gate names (HATS-1614) — the half D5 promised and the
+    marker store did not deliver. Markers were read out of one directory per
+    gate, so `done-gate` running a superset of `merge-gate` on the same tree left
+    `merge-gate` refusing, and the card paid for both."""
+    tree = _tree(repo)
+    _bash(f'gate_marker_write done-gate . "{tree}" "lint unit integration merge-smoke"', repo)
+
+    ok = _bash(f'gate_marker_ok . "{tree}" lint unit integration', repo)
+
+    assert ok.returncode == 0, (
+        "`merge-gate`'s stages all ran on this tree under `done-gate` — "
+        "which directory recorded them is not the question a gate asks"
+    )
+
+
+def test_stages_no_gate_ever_ran_are_not_conjured_by_the_union(repo: Path):
+    """The guard against the union degenerating into "some marker exists". Two
+    honest markers for one tree, neither carrying `integration`: the sum of what
+    ran is still not what this gate demands."""
+    tree = _tree(repo)
+    _bash(f'gate_marker_write merge-gate . "{tree}" "lint unit"', repo)
+    _bash(f'gate_marker_write e2e-gate . "{tree}" "lint e2e-catalog"', repo)
+
+    ok = _bash(f'gate_marker_ok . "{tree}" lint unit integration', repo)
+
+    assert ok.returncode != 0, "`integration` ran under no gate — the union must not invent it"
+
+
+def test_a_marker_naming_another_tree_contributes_nothing_to_the_union(repo: Path):
+    """A marker whose filename and recorded `tree=` disagree certifies content it
+    does not name. It drops out of the union rather than failing the whole read:
+    another gate's honest marker for the same tree still counts."""
+    tree = _tree(repo)
+    forged = _bash(f'gate_marker_path done-gate . "{tree}"', repo).stdout.strip()
+    Path(forged).parent.mkdir(parents=True, exist_ok=True)
+    Path(forged).write_text("tree=deadbeef\nstages=lint unit integration\n", encoding="utf-8")
+
+    ok = _bash(f'gate_marker_ok . "{tree}" lint', repo)
+
+    assert ok.returncode != 0, "a marker that names another tree certifies nothing here"
