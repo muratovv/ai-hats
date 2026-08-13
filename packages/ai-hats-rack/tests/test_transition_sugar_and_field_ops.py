@@ -74,7 +74,7 @@ def test_named_edge_resolves_to_its_target_from_the_current_state(tmp_path):
         )
     out = runner.invoke(main, ["transition", "HATS-001", "reopen", *_args(tmp_path), "--json"])
     assert out.exit_code == 0, out.output
-    payload = json.loads(out.output)
+    payload = json.loads(out.stdout)
     assert payload["task"]["state"] == "execute"  # reopen: done -> execute
     assert payload["transitions"] == [
         {"task_id": "HATS-001", "from": "done", "to": "execute", "reason": ""}
@@ -86,7 +86,7 @@ def test_named_edge_from_the_wrong_state_is_invalid_transition(tmp_path):
     _create(runner, tmp_path)  # sits in brainstorm; `reopen` starts at done
     out = runner.invoke(main, ["transition", "HATS-001", "reopen", *_args(tmp_path), "--json"])
     assert out.exit_code == 1
-    error = json.loads(out.output)["error"]
+    error = json.loads(out.stdout)["error"]
     assert error["code"] == "invalid_transition"
     assert error["from_state"] == "brainstorm"
     assert error["legal_edges"] == ["plan", "blocked", "cancelled"]
@@ -97,7 +97,7 @@ def test_unknown_token_is_still_unknown_state(tmp_path):
     _create(runner, tmp_path)
     out = runner.invoke(main, ["transition", "HATS-001", "shipping", *_args(tmp_path), "--json"])
     assert out.exit_code == 1
-    assert json.loads(out.output)["error"]["code"] == "unknown_state"
+    assert json.loads(out.stdout)["error"]["code"] == "unknown_state"
 
 
 # ----- load-time collision: an edge name that equals a state name -------------
@@ -253,7 +253,7 @@ def test_set_writes_a_declared_field_and_bad_choice_is_typed(tmp_path):
         main, ["transition", "HATS-001", "--set", "priority=high", *_args(tmp_path), "--json"]
     )
     assert ok.exit_code == 0, ok.output
-    payload = json.loads(ok.output)
+    payload = json.loads(ok.stdout)
     assert payload["task"]["priority"] == "high"
     assert [o["op"] for o in payload["ops"]] == ["fields"]
 
@@ -261,7 +261,7 @@ def test_set_writes_a_declared_field_and_bad_choice_is_typed(tmp_path):
         main, ["transition", "HATS-001", "--set", "priority=urgent", *_args(tmp_path), "--json"]
     )
     assert bad.exit_code == 1
-    error = json.loads(bad.output)["error"]
+    error = json.loads(bad.stdout)["error"]
     assert error["code"] == "invalid_field" and error["field"] == "priority"
 
 
@@ -272,7 +272,7 @@ def test_append_writes_a_list_field(tmp_path):
         main, ["transition", "HATS-001", "--append", 'tags="urgent"', *_args(tmp_path), "--json"]
     )
     assert out.exit_code == 0, out.output
-    assert json.loads(out.output)["task"]["tags"] == ["urgent"]
+    assert json.loads(out.stdout)["task"]["tags"] == ["urgent"]
 
 
 def test_the_array_form_no_longer_strands_the_card(tmp_path):
@@ -287,12 +287,12 @@ def test_the_array_form_no_longer_strands_the_card(tmp_path):
         ["transition", "HATS-001", "--append", 'tags=["delegate-ok"]', *_args(tmp_path), "--json"],
     )
     assert out.exit_code == 0, out.output
-    assert json.loads(out.output)["task"]["tags"] == ["alpha", "delegate-ok"]
+    assert json.loads(out.stdout)["task"]["tags"] == ["alpha", "delegate-ok"]
 
     # the card is still addressable — the half of the defect that hurt most
     read = runner.invoke(main, ["context", "HATS-001", *_args(tmp_path), "--json"])
     assert read.exit_code == 0, read.output
-    assert json.loads(read.output)["task"]["tags"] == ["alpha", "delegate-ok"]
+    assert json.loads(read.stdout)["task"]["tags"] == ["alpha", "delegate-ok"]
 
 
 def test_a_card_already_broken_on_disk_is_repairable_through_the_cli(tmp_path):
@@ -308,7 +308,7 @@ def test_a_card_already_broken_on_disk_is_repairable_through_the_cli(tmp_path):
     )
 
     assert repair.exit_code == 0, repair.output
-    assert json.loads(repair.output)["task"]["tags"] == ["alpha"]
+    assert json.loads(repair.stdout)["task"]["tags"] == ["alpha"]
 
 
 def test_set_int_field_coerces_end_to_end_over_a_custom_catalog(tmp_path):
@@ -321,10 +321,10 @@ def test_set_int_field_coerces_end_to_end_over_a_custom_catalog(tmp_path):
         main, ["transition", "HATS-001", "--set", "budget=5", *_args(tmp_path), "--json"]
     )
     assert out.exit_code == 0, out.output
-    assert json.loads(out.output)["task"]["budget"] == 5  # coerced to int, not "5"
+    assert json.loads(out.stdout)["task"]["budget"] == 5  # coerced to int, not "5"
 
     bad = runner.invoke(
         main, ["transition", "HATS-001", "--set", "budget=lots", *_args(tmp_path), "--json"]
     )
     assert bad.exit_code == 1
-    assert json.loads(bad.output)["error"]["code"] == "invalid_ops"
+    assert json.loads(bad.stdout)["error"]["code"] == "invalid_ops"

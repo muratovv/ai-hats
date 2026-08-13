@@ -27,6 +27,24 @@ from .rack_wiring import build_rack_kernel
 from .tracker_wiring import tracker_paths
 
 
+#: The conventional backlog tail under ``<ai_hats_dir>`` (see ``paths.tasks_dir``).
+_TASKS_TAIL = ("tracker", "backlog", "tasks")
+
+
+def _state_md_for(root: Any) -> Path:
+    """This backlog's STATE.md — the OWNER's tracker, never the caller's checkout.
+
+    An anchorless backlog indexes itself: at ``<ai_hats_dir>/STATE.md`` when it
+    carries the conventional tail, beside the cards otherwise. Both stay inside
+    the backlog the operator named, which is the whole point (HATS-1573).
+    """
+    if root.backlog_owner is not None:
+        return tracker_paths(root.backlog_owner).state_md_path
+    if root.tasks_dir.parts[-3:] == _TASKS_TAIL:
+        return root.tasks_dir.parents[2] / "STATE.md"
+    return root.tasks_dir.parent / "STATE.md"
+
+
 class CliKernelProvider:
     """The wired-kernel provider handed to ``rack``'s CLI via discovery."""
 
@@ -35,15 +53,22 @@ class CliKernelProvider:
         every stock extension + the consumer add-on pack (the ``checks:``
         runner, subscribed to THIS definition's topology)."""
         defn = resolve_definition(
-            root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+            root.tasks_dir,
+            prefix_alias=root.prefix,
+            project_dir=root.backlog_owner or root.project_dir,
         )
         return build_rack_kernel(
             root.project_dir,
+            backlog_owner=root.backlog_owner,
             tasks_dir=root.tasks_dir,
+            # The SAME file `after_create` writes: a transition indexes the
+            # backlog it moved a card in, never the checkout the operator
+            # happens to stand in, whose index it would replace wholesale.
+            state_md_path=_state_md_for(root),
             prefix=root.prefix,
             journal_sink=JsonlJournalSink(root.tasks_dir),
             extra_subscribers=consumer_subscribers(
-                root.project_dir,
+                root.backlog_owner,
                 definition=defn,
                 catalog=root.tasks_dir,
                 known_backlogs=backlog_selectors_in_root(root),
@@ -58,7 +83,7 @@ class CliKernelProvider:
         pin). Everything else about the channel — topology, selectors, which
         instances get a subscriber — the rack decides from its own definitions.
         """
-        return check_port_factory(root.project_dir)(catalog)
+        return check_port_factory(root.backlog_owner)(catalog)
 
     def after_create(self, root: Any, result: Any) -> None:
         """Refresh STATE.md after a create (fork K3 #7): create takes no FSM
@@ -66,9 +91,9 @@ class CliKernelProvider:
         writing the SAME STATE.md the wired kernel's subscriber would."""
         DerivedViewsExtension(
             root.tasks_dir,
-            tracker_paths(root.project_dir).state_md_path,
+            _state_md_for(root),
             topology=resolve_definition(
-                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.backlog_owner
             ).topology,
         ).refresh()
 

@@ -130,7 +130,11 @@ def test_migrated_cards_are_rack_readable_and_discovered(tmp_path: Path):
     _write_prop(ai / "tracker" / "backlog" / "proposals", "PROP-001")
     migrate_tracker(ai)
 
-    root = RackRoot(project_dir=tmp_path, tasks_dir=ai / "tracker" / "backlog" / "tasks")
+    root = RackRoot(
+        project_dir=tmp_path,
+        tasks_dir=ai / "tracker" / "backlog" / "tasks",
+        backlog_owner=tmp_path,
+    )
     ws = Workspace.discover([root])
     assert {i.name for i in ws.instances} == {"tasks", "hypotheses", "proposals"}
     assert ws.exists("HYP-001") and ws.exists("PROP-001")
@@ -173,7 +177,11 @@ def test_migrate_tracker_discovers_normalized_catalogs(tmp_path: Path):
     _write_hyp(ai / "tracker" / "hypotheses", "HYP-001")
     _write_prop(ai / "tracker" / "backlog" / "proposals", "PROP-001")
     migrate_tracker(ai)
-    root = RackRoot(project_dir=tmp_path, tasks_dir=ai / "tracker" / "backlog" / "tasks")
+    root = RackRoot(
+        project_dir=tmp_path,
+        tasks_dir=ai / "tracker" / "backlog" / "tasks",
+        backlog_owner=tmp_path,
+    )
     ws = Workspace.discover([root])
     # Both normalized catalogs mount exactly once (no duplicate HYP prefix from the
     # old flat dir, which carries no backlog.yaml).

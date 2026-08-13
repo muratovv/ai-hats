@@ -294,7 +294,9 @@ def test_cli_attach_before_state_vs_reverse(tmp_path):
         ],
     )
     assert ok.exit_code == 0, ok.output
-    assert json.loads(ok.output)["task"]["state"] == "execute"
+    # `--json` promises a clean STDOUT; `.output` also carries stderr, where an
+    # unowned scratch backlog announces that no role composes gates onto it.
+    assert json.loads(ok.stdout)["task"]["state"] == "execute"
 
     runner.invoke(main, ["create", "demo2", *args])
     runner.invoke(main, ["transition", "HATS-002", "plan", *args])
@@ -312,4 +314,4 @@ def test_cli_attach_before_state_vs_reverse(tmp_path):
         ],
     )
     assert bad.exit_code == 1
-    assert json.loads(bad.output)["error"]["code"] == "aborted"
+    assert json.loads(bad.stdout)["error"]["code"] == "aborted"

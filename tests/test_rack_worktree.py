@@ -71,6 +71,7 @@ def project(tmp_path):
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
         project,
+        backlog_owner=project,
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",

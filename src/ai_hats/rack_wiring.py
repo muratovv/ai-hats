@@ -384,6 +384,7 @@ class WorktreeExtension:
 def build_rack_kernel(
     project_dir: Path,
     *,
+    backlog_owner: Path | None,
     tasks_dir: Path | None = None,
     state_md_path: Path | None = None,
     prefix: str = "HATS",
@@ -406,11 +407,12 @@ def build_rack_kernel(
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
 
-    # One backlog definition (catalog backlog.yaml or the packaged default)
-    # feeds the kernel AND every subscriber — a single source, no diverging
-    # default-load (HATS-1042, ADR-0017 §1). ``project_dir`` fails a legacy
-    # project-root links.yaml closed, identically to the read path (R6).
-    defn = resolve_definition(tasks_dir, prefix_alias=prefix, project_dir=project_dir)
+    # One definition feeds the kernel AND every subscriber (HATS-1042, ADR-0017
+    # §1). The legacy links.yaml is the OWNER's (HATS-1573); with no owner the
+    # anchor is still probed, so R6 never gets weaker than it was.
+    defn = resolve_definition(
+        tasks_dir, prefix_alias=prefix, project_dir=backlog_owner or project_dir
+    )
     topology = defn.topology
     if links_registry is None:
         links_registry = defn.links_registry

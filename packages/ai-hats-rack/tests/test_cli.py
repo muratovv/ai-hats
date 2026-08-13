@@ -26,7 +26,7 @@ def _create(runner, tmp_path, *extra):
 def test_create_json(runner, tmp_path):
     result = _create(runner, tmp_path)
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["task"]["id"] == "HATS-001"
     assert payload["task"]["state"] == "brainstorm"
     assert payload["transitions"] == []
@@ -37,7 +37,7 @@ def test_create_bad_priority_is_a_typed_field_error(runner, tmp_path):
     # HATS-1035: choices are enforced write-strict (net-new), naming the set.
     result = _create(runner, tmp_path, "--priority", "urgent")
     assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
+    error = json.loads(result.stdout)["error"]
     assert error["code"] == "invalid_field"
     assert error["field"] == "priority"
     assert "medium" in error["choices"]
@@ -46,7 +46,7 @@ def test_create_bad_priority_is_a_typed_field_error(runner, tmp_path):
 def test_create_empty_title_is_a_typed_field_error(runner, tmp_path):
     result = runner.invoke(main, ["create", "", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
+    error = json.loads(result.stdout)["error"]
     assert error["code"] == "invalid_field"
     assert error["field"] == "title"
 
@@ -55,7 +55,7 @@ def test_context_json_and_plain(runner, tmp_path):
     _create(runner, tmp_path)
     result = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 0
-    assert json.loads(result.output)["task"]["title"] == "demo task"
+    assert json.loads(result.stdout)["task"]["title"] == "demo task"
 
     plain = runner.invoke(main, ["context", "HATS-001", *_tasks_args(tmp_path)])
     assert plain.exit_code == 0
@@ -88,7 +88,7 @@ def test_transition_json_carries_deltas_and_journal(runner, tmp_path):
         main, ["transition", "HATS-001", "plan", *_tasks_args(tmp_path), "--json"]
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["task"]["state"] == "plan"
     assert payload["transitions"] == [
         {"task_id": "HATS-001", "from": "brainstorm", "to": "plan", "reason": ""}
@@ -119,7 +119,7 @@ def test_unknown_state_lists_known(runner, tmp_path):
         main, ["transition", "HATS-001", "shipping", *_tasks_args(tmp_path), "--json"]
     )
     assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
+    error = json.loads(result.stdout)["error"]
     assert error["code"] == "unknown_state"
     assert "brainstorm" in error["known_states"]
 
@@ -130,7 +130,7 @@ def test_force_without_reason_is_actionable(runner, tmp_path):
         main, ["transition", "HATS-001", "review", "--force", *_tasks_args(tmp_path), "--json"]
     )
     assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
+    error = json.loads(result.stdout)["error"]
     assert "reason" in error["message"]
 
 
@@ -150,7 +150,7 @@ def test_force_with_reason_relaxes_arrow(runner, tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["task"]["state"] == "review"
+    assert json.loads(result.stdout)["task"]["state"] == "review"
 
 
 def test_log_op_appends_work_log(runner, tmp_path):
@@ -161,14 +161,14 @@ def test_log_op_appends_work_log(runner, tmp_path):
         ["transition", "HATS-001", "--log", "made progress", *_tasks_args(tmp_path), "--json"],
     )
     assert result.exit_code == 0
-    entries = json.loads(result.output)["task"]["work_log"]
+    entries = json.loads(result.stdout)["task"]["work_log"]
     assert any("made progress" in e["message"] for e in entries)
 
 
 def test_unknown_task_exits_nonzero(runner, tmp_path):
     result = runner.invoke(main, ["context", "HATS-404", *_tasks_args(tmp_path), "--json"])
     assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["code"] == "unknown_task"
+    assert json.loads(result.stdout)["error"]["code"] == "unknown_task"
 
 
 def test_create_with_parent_reports_epicify_journal(runner, tmp_path):
@@ -178,7 +178,7 @@ def test_create_with_parent_reports_epicify_journal(runner, tmp_path):
         ["create", "child", "--parent", "HATS-001", *_tasks_args(tmp_path), "--json"],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["task"]["parent_task"] == "HATS-001"
     assert [r["event"] for r in payload["journal"]] == ["epicify"]
 
@@ -197,7 +197,7 @@ def test_foreign_project_pin_cli_refusal(monkeypatch, runner, tmp_path):
     }
     result = runner.invoke(main, ["ls", "--json"], env=env)
     assert result.exit_code == 1
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["error"]["code"] == "foreign_project_pin"
     assert payload["error"]["pin"] == str(other_dir)
     assert payload["error"]["project_dir"] == str(main_dir)

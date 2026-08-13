@@ -1479,6 +1479,22 @@ as a claim to check, not as evidence.
 - **expect** — python security lint hook runs ruff security checks and outputs non-blocking warnings
 - **why** — without security lint hooks, vulnerable python coding patterns land in codebase without warning
 
+## `test_rack_anchor_split.py`
+
+*pins HATS-1573*
+
+- **flow** — a developer running rack from inside a linked worktree against a backlog that belongs to a DIFFERENT project
+- **cmds**
+
+  ```console
+  rack create "sandbox card" --tasks-dir <sandbox>/.agent/ai-hats/tracker/backlog/tasks
+  rack context <id> --tasks-dir <sandbox>/...
+  rack context <main id>
+  ```
+
+- **expect** — ids carry the sandbox project's prefix, the sandbox gets its own STATE.md, the enclosing checkout is not written to, and the same worktree WITHOUT an override still resolves the main tracker
+- **why** — --tasks-dir moves the backlog without moving the operator; everything computed from the anchor used to read a foreign checkout, so one project's gates, prefix and STATE.md reached another project's backlog
+
 ## `test_rack_append_payload_e2e.py`
 
 *pins HATS-1299*

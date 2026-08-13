@@ -98,7 +98,7 @@ def test_tracker_migration_e2e_task_visible(tmp_path: Path) -> None:
     asm = Assembler(tmp_path)
     asm._migrate_layout_v4_tracker()
 
-    kernel = build_rack_kernel(tmp_path, prefix="HATS")
+    kernel = build_rack_kernel(tmp_path, backlog_owner=tmp_path, prefix="HATS")
     task = kernel.get("HATS-001")
     assert task is not None
     assert task.title == "x"

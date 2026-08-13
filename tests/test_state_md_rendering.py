@@ -54,11 +54,16 @@ def project(tmp_path, monkeypatch):
 def _kernel(project: Path):
     """No ``tasks_dir`` / ``state_md_path`` override — the kernel resolves the
     tracker layout itself, exactly as the ``rack`` binary gets it."""
-    return build_rack_kernel(project, prefix="T")
+    return build_rack_kernel(project, backlog_owner=project, prefix="T")
 
 
 def _root(project: Path) -> RackRoot:
-    return RackRoot(project_dir=project, tasks_dir=tracker_paths(project).tasks_dir, prefix="T")
+    return RackRoot(
+        project_dir=project,
+        tasks_dir=tracker_paths(project).tasks_dir,
+        backlog_owner=project,
+        prefix="T",
+    )
 
 
 def test_created_tasks_render_with_priority_and_state(project):

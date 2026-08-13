@@ -23,7 +23,8 @@ is removed (`tests/e2e/test_done_gate.py`).
 It took two attempts. HATS-1137 bound the edge half; HATS-1538 withdrew it an
 hour later, for two reasons this rev closes — see D9 clause 2 (a session that
 predated a binding had no root to resolve from) and D7 (role scope is not
-backlog scope).
+backlog scope — since the 2026-08-11 amendment the two are made to coincide,
+because the role that scopes a binding is now the backlog's own).
 
 **Renumbered from ADR-0018.** This decision was drafted as ADR-0018 in
 `HATS-1139/design.md`. Cross-epic coordination (2026-07-24) assigned **ADR-0018**
@@ -385,12 +386,13 @@ bind to both `edge:` and `wt:` points — the payoff of D2, and it is verified b
 running the same file under each point's env, not by reading the code.
 
 **Backlog context** — *implemented (HATS-1540)*. `AI_HATS_TASKS_DIR` names the
-tasks dir the transition runs against. A role-scoped binding (D7) fires on every
-backlog the rack CLI touches, a scratch `--tasks-dir` included, and without this
-a script cannot tell "this card is not mine" from "`AI_HATS_DIR` leaked" — the
-ambiguity that turned master red in HATS-1538. The engine states the context and
-decides nothing (supervisor ruling 2026-08-08): the scoping policy belongs to
-the script's author, where it is visible and testable. No second variable carries
+tasks dir the transition runs against. A binding fires on every backlog **of the
+project that declared it**, and without this a script cannot tell the tasks
+backlog from a sibling catalog of the same project, nor "this card is not mine"
+from "`AI_HATS_DIR` leaked" — the ambiguity that turned master red in HATS-1538.
+Since HATS-1573 the engine no longer hands a script another project's backlog at
+all (D7, amended 2026-08-11); what it still states rather than decides is which
+catalog *within* the project a card belongs to. No second variable carries
 the prefix; it is derivable from `AI_HATS_TASK_ID`. At `apps.wt` `pre-merge` the
 variable is absent — that point is not a backlog operation — and
 `AI_HATS_BRANCH_NAME` rides instead, this channel's existing spelling.
@@ -497,6 +499,27 @@ unqualified row is no longer writable. Whether a card belongs to **this project'
 tracker at all stays the script's call (`done-gate.sh` compares
 `AI_HATS_TASKS_DIR`), because a scratch catalog can carry the same backlog name.
 A field arrives when a real consumer does.*
+
+*Amended at HATS-1573 (supervisor ruling, 2026-08-11): **which role** is
+role-scoped is now settled by the backlog, not by the caller's checkout. The
+premise of the 2026-08-08 P1 ruling — that the engine cannot tell whose backlog
+it is, so each script must defend itself — no longer holds: `RackRoot` carries
+the backlog's own project, and only that project's composition supplies the
+rows. A backlog nobody owns therefore has no bindings and fires nothing, and the
+channel says so rather than passing in silence. The script's comparison is NOT
+retired: within one project it still separates the tasks backlog from a sibling
+catalog (`hypotheses`, `proposals`), which the engine deliberately does not
+decide. What it no longer has to catch is another project's backlog.*
+
+*Owns, defined (ruling 2026-08-12): a project owns the catalogs **under its own
+tracker** (`<project>/<ai_hats_dir>/tracker/**`) and no others —
+`resolver.find_backlog_owner`. Containment, not proximity: answering "who owns
+this backlog?" with "the nearest project marker above it", the way
+`find_project_root` answers "which project is this cwd in?", made a scratch
+catalog anywhere under a home directory that carries a tracker the property of
+that home — its role composing gates onto a backlog it never declared, this same
+defect one directory further out. A backlog no project owns is a legitimate
+state, not a broken one, and is answered with no bindings plus a notice.*
 
 Implementation consequence — see **D9**, which replaces the obvious-but-wrong
 answer (make `materialize_lifecycle_hooks()` role-aware and add a role-aware

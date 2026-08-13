@@ -287,7 +287,7 @@ class TestTransitionExecute:
         """
         from ai_hats.rack_wiring import build_rack_kernel
 
-        kernel = build_rack_kernel(master_project, prefix="T")
+        kernel = build_rack_kernel(master_project, backlog_owner=master_project, prefix="T")
         kernel.create(
             actor="test", caller_cwd=master_project, task_id="T-1", title="HATS-518 probe"
         )

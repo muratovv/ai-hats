@@ -157,6 +157,21 @@ class BacklogInstance:
 KernelBuilder = Callable[[BacklogInstance], "Kernel | None"]
 
 
+def _root_id(root: RackRoot) -> str:
+    """The routing label: the backlog's project, or the backlog itself.
+
+    Naming an unowned backlog after the CALLER gave two different backlogs one
+    label — the qualified remedy `<root>:<id>` an ambiguous prefix suggests then
+    named both and could not resolve either (HATS-1573).
+    """
+    if root.backlog_owner is not None:
+        return root.backlog_owner.name or str(root.backlog_owner)
+    for part in (root.tasks_dir.parent.name, root.tasks_dir.name):
+        if part:
+            return part
+    return str(root.tasks_dir)
+
+
 @dataclass(frozen=True)
 class Workspace:
     """Thin resolver over N backlog instances (ADR-0017 §2)."""
@@ -186,9 +201,11 @@ class Workspace:
         files. Prefix uniqueness is validated WITHIN each root (fail-closed)."""
         instances: list[BacklogInstance] = []
         for root in roots:
-            root_id = root.project_dir.name or str(root.project_dir)
+            root_id = _root_id(root)
             tasks_defn = resolve_definition(
-                root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+                root.tasks_dir,
+                prefix_alias=root.prefix,
+                project_dir=root.backlog_owner or root.project_dir,
             )
             here = [
                 BacklogInstance(
@@ -541,7 +558,9 @@ def backlog_selectors_in_root(root: RackRoot) -> tuple[str, ...]:
     second walk.
     """
     defn = resolve_definition(
-        root.tasks_dir, prefix_alias=root.prefix, project_dir=root.project_dir
+        root.tasks_dir,
+        prefix_alias=root.prefix,
+        project_dir=root.backlog_owner or root.project_dir,
     )
     siblings = [sibling for _catalog, sibling in _scan_sibling_backlogs(root.tasks_dir)]
     return _selectors_of([defn, *siblings])

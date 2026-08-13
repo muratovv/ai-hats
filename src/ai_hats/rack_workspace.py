@@ -50,7 +50,11 @@ def rack_workspace(project_dir: Path) -> Workspace:
     """  # comment-length: allow — that this road transitions at all is the point
     from .rack_consumers import check_port_factory
 
-    root = RackRoot(project_dir=project_dir, tasks_dir=tasks_dir(project_dir))
+    # Anchor and owner coincide by construction here: the caller named the
+    # project, and the backlog is that project's own (HATS-1573).
+    root = RackRoot(
+        project_dir=project_dir, tasks_dir=tasks_dir(project_dir), backlog_owner=project_dir
+    )
     return Workspace.discover([root], check_port=check_port_factory(project_dir))
 
 

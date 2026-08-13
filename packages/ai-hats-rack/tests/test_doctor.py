@@ -243,7 +243,9 @@ def _two_backlog_workspace(tmp_path):
     hyp = project / ".agent" / "ai-hats" / "tracker" / "hypotheses"
     hyp.mkdir(parents=True)
     (hyp / "backlog.yaml").write_text(_HYP_DEF, encoding="utf-8")
-    return Workspace.discover([RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")]), (
+    return Workspace.discover(
+        [RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix="HATS")]
+    ), (
         tasks,
         hyp,
     )

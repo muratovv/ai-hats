@@ -43,7 +43,7 @@ def _root(tmp_path: Path, *, prefix: str = "HATS", name: str = "proj") -> RackRo
     project = tmp_path / name
     tasks = project / ".agent" / "ai-hats" / _TASKS_TAIL
     tasks.mkdir(parents=True, exist_ok=True)
-    return RackRoot(project_dir=project, tasks_dir=tasks, prefix=prefix)
+    return RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix=prefix)
 
 
 def _mount_hyp(root: RackRoot, backlog: str = _HYP) -> Path:
@@ -90,7 +90,8 @@ def test_override_tasks_dir_does_not_scan(tmp_path):
     # A non-conventional --tasks-dir override never walks an arbitrary tree.
     tasks = tmp_path / "somewhere" / "tasks"
     tasks.mkdir(parents=True)
-    root = RackRoot(project_dir=tmp_path, tasks_dir=tasks, prefix="HATS")
+    # No marker stands above it, so nothing owns this backlog (HATS-1573).
+    root = RackRoot(project_dir=tmp_path, tasks_dir=tasks, backlog_owner=None, prefix="HATS")
     ws = Workspace.discover([root])
     assert len(ws.instances) == 1  # only the tasks instance; no sibling scan
 

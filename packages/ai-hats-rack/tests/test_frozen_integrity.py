@@ -51,7 +51,7 @@ def test_modified_pin_blocks_any_transition_with_digests_and_recipe(runner, tmp_
 
     result = runner.invoke(main, ["transition", "HATS-001", "plan", *_args(tmp_path), "--json"])
     assert result.exit_code == 1
-    error = json.loads(result.output)["error"]
+    error = json.loads(result.stdout)["error"]
     assert error["code"] == "aborted" and error["subscriber"] == "frozen-integrity"
     reason = error["reason"]
     assert "evidence.log" in reason
@@ -68,7 +68,7 @@ def test_missing_pinned_file_blocks_with_recipe(runner, tmp_path):
 
     result = runner.invoke(main, ["transition", "HATS-001", "plan", *_args(tmp_path), "--json"])
     assert result.exit_code == 1
-    reason = json.loads(result.output)["error"]["reason"]
+    reason = json.loads(result.stdout)["error"]["reason"]
     assert "evidence.log" in reason and pinned in reason and "missing" in reason
     assert "rack transition HATS-001 --rm evidence.log --ack-frozen" in reason
 
@@ -90,7 +90,7 @@ def test_force_does_not_bypass_the_guard(runner, tmp_path):
         ],
     )
     assert result.exit_code == 1
-    assert json.loads(result.output)["error"]["subscriber"] == "frozen-integrity"
+    assert json.loads(result.stdout)["error"]["subscriber"] == "frozen-integrity"
 
 
 # ----- clean / absent pins pass ---------------------------------------------------
@@ -154,7 +154,7 @@ def test_one_composite_refreeze_and_state_passes_the_guard(runner, tmp_path):
         ],
     )
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["task"]["state"] == "plan"
     assert [op["op"] for op in payload["ops"]] == ["freeze", "state"]
 

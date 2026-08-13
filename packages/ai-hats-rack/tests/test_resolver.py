@@ -124,7 +124,140 @@ def test_override_anchors_project_dir_at_real_root(tmp_path):
     root = resolve_root(sub, override)
     assert root.tasks_dir == override
     assert root.project_dir == tmp_path  # gap #3: not `sub`
-    assert root.prefix == "SBX"  # read from the found root's config
+    # The ANCHOR is this project; the backlog is not. A catalog outside the
+    # project's tracker is not one of the backlogs it declares, so nothing owns
+    # it and its ids are not stamped with this project's prefix (HATS-1573,
+    # ruling 2026-08-12).
+    assert root.backlog_owner is None
+    assert root.prefix == DEFAULT_PREFIX
+
+
+# ----- HATS-1573: the anchor and the backlog's owner are two different roles --
+
+
+def test_without_an_override_the_owner_is_the_anchor(tmp_path):
+    # They agree by construction: load_root derives tasks_dir FROM project_dir.
+    main, wt = _make_linked_worktree(tmp_path)
+    root = resolve_root(wt)
+    assert root.project_dir == main
+    assert root.backlog_owner == main
+
+
+def test_an_explicit_override_names_the_backlogs_own_project(tmp_path):
+    main, wt = _make_linked_worktree(tmp_path)
+    sandbox = tmp_path / "sbx"
+    sandbox.mkdir()
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    override = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main  # C2: the anchor still hops to the main checkout
+    assert root.backlog_owner == sandbox  # the composition follows the backlog
+
+
+def test_the_owner_walk_up_never_hops_the_gitlink(tmp_path):
+    # The sharpest shape: one input, the two roles answer differently. The hop is
+    # cwd semantics; applied to a backlog path it would hand the sandbox's gates
+    # to the enclosing checkout — the HATS-1573 defect itself.
+    main, wt = _make_linked_worktree(tmp_path)
+    (wt / "ai-hats.yaml").write_text("task_prefix: STRAY\n")
+    override = wt / "custom" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main
+    # Not the enclosing checkout, which is the whole point — and not the stray
+    # marker beside it either: neither declares a tracker holding this catalog.
+    assert root.backlog_owner is None
+
+
+def test_an_anchorless_backlog_has_no_owner(tmp_path):
+    # No marker above the scratch backlog: nothing owns it, and we do not guess
+    # (HATS-197 / HATS-839 — a mis-resolved root is how stray trackers are born).
+    main, wt = _make_linked_worktree(tmp_path)
+    override = tmp_path / "scratch" / "tasks"
+    root = resolve_root(wt, override)
+    assert root.project_dir == main
+    assert root.backlog_owner is None
+
+
+def test_the_prefix_comes_from_the_backlogs_own_project(tmp_path):
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    sandbox = tmp_path / "sbx"
+    sandbox.mkdir()
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    override = sandbox / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    assert resolve_root(caller, override).prefix == "SBX"
+
+
+def test_an_anchorless_backlog_does_not_inherit_the_callers_prefix(tmp_path):
+    # Ids in a throwaway backlog must not be stamped with the caller project's
+    # prefix — the backlog is not that project's, and nothing owns it.
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    root = resolve_root(caller, tmp_path / "scratch" / "tasks")
+    assert root.backlog_owner is None
+    assert root.prefix == DEFAULT_PREFIX
+
+
+def test_a_relative_override_is_resolved_against_the_caller(tmp_path):
+    """The answer must not depend on whatever cwd a later reader has: a bare
+    walk-up over a relative path answered ``.``, and that ``.`` then travelled to
+    a gate as ``AI_HATS_PROJECT_DIR``."""
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    sandbox = caller / "sbx"
+    (sandbox / ".agent" / "ai-hats" / "tracker" / "backlog").mkdir(parents=True)
+    (sandbox / "ai-hats.yaml").write_text("task_prefix: SBX\n")
+    relative = Path("sbx/.agent/ai-hats/tracker/backlog/tasks")
+
+    root = resolve_root(caller, relative)
+
+    assert root.tasks_dir == caller / relative
+    assert root.backlog_owner == sandbox
+    assert root.prefix == "SBX"
+
+
+def test_a_leaked_ai_hats_dir_takes_the_prefix_of_the_backlog_it_names(tmp_path):
+    """Same rule as the override road: ids name the backlog's project. The env
+    road kept the caller's prefix, stamping it onto another project's cards."""
+    caller = tmp_path / "caller"
+    (caller / ".agent").mkdir(parents=True)
+    (caller / "ai-hats.yaml").write_text("task_prefix: CALLER\n")
+    other = tmp_path / "other"
+    (other / ".agent" / "ai-hats").mkdir(parents=True)
+    (other / "ai-hats.yaml").write_text("task_prefix: OTHER\n")
+
+    root = resolve_root(caller, None, environ={"AI_HATS_DIR": str(other / ".agent" / "ai-hats")})
+
+    assert root.backlog_owner == other
+    assert root.prefix == "OTHER"
+
+
+def test_a_project_owns_the_backlogs_under_its_tracker_and_no_others(tmp_path):
+    """Ownership is containment, not proximity (ruling 2026-08-12).
+
+    The measured shape: a scratch backlog anywhere under a home directory that
+    happens to carry a tracker became that home's property — its role composed
+    gates onto a backlog it never declared, and the transition rewrote its
+    STATE.md. Both catalogs below sit under the same marker; only one is the
+    project's own.
+    """
+    project = tmp_path / "home"
+    tracker = project / ".agent" / "ai-hats" / "tracker"
+    (tracker / "backlog" / "tasks").mkdir(parents=True)
+    (project / "ai-hats.yaml").write_text("task_prefix: HOME\n")
+    caller = project / "checkout"
+    (caller / ".agent").mkdir(parents=True)
+
+    own = resolve_root(caller, tracker / "backlog" / "tasks")
+    sibling = resolve_root(caller, tracker / "hypotheses")
+    scratch = resolve_root(caller, project / "scratch" / "tasks")
+
+    assert own.backlog_owner == project
+    assert sibling.backlog_owner == project  # a sibling catalog IS the project's
+    assert scratch.backlog_owner is None  # merely underneath it is not
+    assert scratch.prefix == DEFAULT_PREFIX
 
 
 def test_foreign_root_is_typed_error_and_never_mkdirs(tmp_path):
