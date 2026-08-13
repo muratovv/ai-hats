@@ -405,3 +405,69 @@ def test_the_sandbox_scrub_drops_the_whole_identity_too() -> None:
     assert not missing, (
         f"the sandbox scrub leaves {missing} behind — the identity is torn, not removed"
     )
+
+
+# ---- G. stood in for exactly as it is written ----
+
+
+def _plants_a_bare_session_id(source: str) -> bool:
+    """Does this module assign ``AI_HATS_SESSION_ID`` a value?
+
+    By assignment, not by mention: a file that pops the key, reads it, or lists
+    it to scrub is not standing in for a session, and a substring search cannot
+    tell those apart. Two forms plant — a dict literal entry and a subscript
+    assignment; the rest are readers.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == "AI_HATS_SESSION_ID":
+                    return True
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        for target in targets:
+            if (
+                isinstance(target, ast.Subscript)
+                and isinstance(target.slice, ast.Constant)
+                and target.slice.value == "AI_HATS_SESSION_ID"
+            ):
+                return True
+    return False
+
+
+def test_a_sandbox_standing_in_for_a_session_plants_the_whole_envelope() -> None:
+    """Invariant E, read the other way round: written exactly as it is read.
+
+    HATS-1594 made the envelope the only thing that counts as a session, because
+    in production ``assemble_launch_env`` is its sole writer and always emits
+    both keys — so a bare id can only come from an older build, and every reader
+    now refuses it. Five e2e sandboxes kept planting the id alone and were
+    refused for exactly the right reason, asserting nothing for 89 commits while
+    reading as coverage (HATS-1644).
+
+    File-scoped on purpose: proving the same dict receives both keys needs
+    dataflow this cannot afford, and the incident class is a file whose readers
+    migrated while its planting did not — which a file-scoped check does catch.
+    """  # comment-length: allow — why a bare id stopped being a session
+    offenders = []
+    for path in sorted((REPO_ROOT / "tests" / "e2e").rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if not _plants_a_bare_session_id(source):
+            continue
+        if "AI_HATS_SESSION_IDENTITY" in source or "stand_in_session" in source:
+            continue
+        offenders.append(path.relative_to(REPO_ROOT / "tests" / "e2e").as_posix())
+
+    assert not offenders, (
+        f"{offenders} plant a bare AI_HATS_SESSION_ID — a session no launch produces, "
+        f"which every reader refuses. Stand in for one with "
+        f"`_helpers.sessions.stand_in_session` instead."
+    )
