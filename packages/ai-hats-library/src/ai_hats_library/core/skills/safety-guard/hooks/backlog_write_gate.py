@@ -59,6 +59,11 @@ DENY_REASON = (
 )
 
 
+def _normalise(file_path: str) -> Path:
+    """An absolute path with `~` and `..` resolved."""
+    return Path(os.path.abspath(os.path.expanduser(file_path)))
+
+
 def _configured_ai_hats_dir(project: Path) -> Path:
     """`ai_hats_dir` of the project rooted at `project`, absolute.
 
@@ -120,22 +125,47 @@ def _target_path(payload: dict) -> str:
     return ""
 
 
+#: One line per process, and only once something was actually waved through —
+#: `_acked()`'s discipline. Asking on every Edit would spend three git
+#: subprocesses per call and bury the one interesting line.
+_switch_journaled = False
+
+
+def _switch_off() -> bool:
+    """The supervisor's exported hatch. Consulted HERE, where the shared verdict
+    is formed, so both halves of the gate honour the same answer: emergency
+    tracker repair is raw shell, and a switch only the file tools obey points
+    the agent at a wall."""
+    global _switch_journaled
+    if os.environ.get(_KILL_SWITCH) != "1":
+        return False
+    if not _switch_journaled:
+        _switch_journaled = True
+        journal_bypass("hatch", _KILL_SWITCH)
+    return True
+
+
 def verdict_for(file_path: str) -> str:
-    """The deny reason for writing `file_path`, or "" when it is none of our business."""
-    if not file_path:
+    """The deny reason for writing `file_path`, or "" when it is none of our business.
+
+    Never raises: a hostile `ai-hats.yaml` reached through this path would
+    otherwise take down the whole Bash gate with it, and `rm -rf /` alongside."""
+    try:
+        if not file_path:
+            return ""
+        target = _normalise(file_path)
+        rel = _backlog_relpath(target)
+        if rel is None or _is_plan_document(rel):
+            return ""
+        if _switch_off():
+            return ""
+        return DENY_REASON.format(rel="/".join(rel) or target.name)
+    except Exception as exc:
+        journal_bypass("fail-open", f"cannot judge {file_path!r}: {exc!r}")
         return ""
-    target = Path(os.path.abspath(os.path.expanduser(file_path)))
-    rel = _backlog_relpath(target)
-    if rel is None or _is_plan_document(rel):
-        return ""
-    return DENY_REASON.format(rel="/".join(rel) or target.name)
 
 
 def main() -> int:
-    if os.environ.get(_KILL_SWITCH) == "1":
-        journal_bypass("hatch", _KILL_SWITCH, hook=_HOOK)
-        return 0
-
     try:
         payload = json.loads(sys.stdin.read())
     except Exception as exc:
@@ -143,12 +173,7 @@ def main() -> int:
         journal_bypass("fail-open", f"unparsable payload: {exc!r}", hook=_HOOK)
         return 0
 
-    try:
-        reason = verdict_for(_target_path(payload))
-    except Exception as exc:
-        journal_bypass("fail-open", f"path resolution failed: {exc!r}", hook=_HOOK)
-        return 0
-
+    reason = verdict_for(_target_path(payload))
     if reason:
         print(
             json.dumps(

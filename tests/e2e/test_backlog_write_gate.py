@@ -179,6 +179,74 @@ def test_the_sanctioned_writer_and_plain_reads_pass(hooked_project, command):
     assert not verdict.gated, f"{command!r} must pass the chain; got {verdict}"
 
 
+# --- The hatch has to open the door it points at ---------------------------
+
+
+def _switched_off(env):
+    off = dict(env)
+    off[KILL_SWITCH] = "1"
+    return off
+
+
+def test_the_exported_switch_opens_the_file_tools(hooked_project):
+    """The half that already honoured it — kept as the positive control, so a
+    switch that opens nothing is distinguishable from one that opens both."""
+    project, env, settings = hooked_project
+    verdict = run_tool_chain(
+        project,
+        "Write",
+        {"file_path": str(project / TRACKER / "tasks" / "HATS-1" / "task.yaml")},
+        settings=settings,
+        env=_switched_off(env),
+    )
+    assert not verdict.gated, f"the exported switch must open Write; got {verdict}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("echo 'state: done' > {card}", id="redirect"),
+        pytest.param("rm -f {card}", id="rm"),
+        pytest.param("mv {card} {tasks}/HATS-2/task.yaml", id="mv"),
+        pytest.param("mkdir -p {tasks}/HATS-2", id="mkdir"),
+    ],
+)
+def test_the_exported_switch_opens_the_shell_too(hooked_project, command):
+    """Emergency tracker repair IS raw shell. A switch the deny advertises but
+    only the file tools honour points the agent at a wall."""
+    project, env, settings = hooked_project
+    tasks = project / TRACKER / "tasks"
+    verdict = run_chain(
+        project,
+        command.format(card=tasks / "HATS-1" / "task.yaml", tasks=tasks),
+        settings=settings,
+        env=_switched_off(env),
+    )
+    assert not verdict.gated, f"{command!r} must open with the switch; got {verdict}"
+
+
+def test_the_switch_does_not_disarm_the_generic_destructive_guard(hooked_project):
+    """`sed -i` stays gated with the switch on — but by
+    `global_rule_destructive_actions`, whose per-call ack is a real way out.
+    Answering with the backlog text would re-advertise the switch that just
+    failed to help: a hatch pointing at itself."""
+    project, env, settings = hooked_project
+    card = project / TRACKER / "tasks" / "HATS-1" / "task.yaml"
+    verdict = run_chain(
+        project,
+        f"sed -i '' 's/^state:.*/state: done/' {card}",
+        settings=settings,
+        env=_switched_off(env),
+    )
+    assert verdict.gated, f"in-place editing is still destructive; got {verdict}"
+    assert DESTRUCTIVE_ACK in verdict.reason, (
+        f"with the backlog gate off, the generic guard must answer; got {verdict}"
+    )
+    assert KILL_SWITCH not in verdict.reason, (
+        f"a deny must not re-offer the switch that is already on; got {verdict}"
+    )
+
+
 # --- Which tracker? The one that owns the file (HATS-524) -------------------
 
 
