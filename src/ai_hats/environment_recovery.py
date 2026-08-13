@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 import shutil
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 # HATS-948: RecoveryProtocol + NoOpRecovery promoted to core; re-exported here so
@@ -42,7 +41,8 @@ from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol  # noqa: F401
 
 from .paths import ai_hats_dir, cache_home, cache_root, session_cache_root, versions_root
 from .runs_retention import sweep_runs
-from .session_liveness import LivenessSnapshot, _pid_alive, session_owners
+from .session_liveness import LazyLiveness as _LazyLiveness
+from .session_liveness import session_owners
 from .version_lock import GC_LOCK_TIMEOUT, VersionLockError, versions_lock
 from .version_recovery import (
     reclaim_legacy_venv,
@@ -55,38 +55,6 @@ logger = logging.getLogger(__name__)
 
 SESSION_CACHE_TTL_HOURS = 24
 PROJECT_KEY_TTL_DAYS = 9
-
-
-class _LazyLiveness:
-    """The process table, read at most once per run and only if a dir needs it.
-
-    ``capture()`` costs ~21 ms against ~930 processes where the whole key scan
-    costs ~12 ms, so an unconditional read would triple session start for the
-    common case of nothing to reap (plan Q4/Q7). ``os.kill(pid, 0)`` answers the
-    two cases that need no table — an absent pid is dead however it is anchored,
-    and a living pid with no recorded baseline is exactly the snapshot's own
-    verdict — leaving the table to the one case that turns on it: a living pid
-    WITH a baseline, which is the reused-pid question the anchor was written to
-    answer (plan Q3). Gating that on ``os.kill`` first, as this class did until
-    HATS-1339, made the reuse branch unreachable in production. The read still
-    happens at the first query that needs it, hence after the candidate list was
-    taken, and :meth:`LivenessSnapshot.is_live` still owns the verdict. Both
-    no-table answers hold only because ``_pid_alive`` rules out a zombie, which
-    ``os.kill`` alone reads as living — see its own contract.
-    """  # comment-length: allow — the hot-path contract is the reason S1 exists
-
-    def __init__(self, capture: Callable[[], LivenessSnapshot] = LivenessSnapshot.capture) -> None:
-        self._capture = capture
-        self._snapshot: LivenessSnapshot | None = None
-
-    def is_live(self, root_pid: int, start_time: str | None) -> bool:
-        if not _pid_alive(root_pid):
-            return False
-        if start_time is None:
-            return True
-        if self._snapshot is None:
-            self._snapshot = self._capture()
-        return self._snapshot.is_live(root_pid, start_time)
 
 
 def _sweep_orphan_session_caches(
@@ -142,6 +110,8 @@ def _reap_reason(entry: Path, cutoff: float, liveness: _LazyLiveness) -> str | N
     indefinitely — measured at 45s and reparented to init (HATS-1339 D3).
     """
     owners = session_owners(entry)
+    if owners is None:
+        return None  # unusable anchor — already reported; never guess at its owners
     try:
         if not owners:
             aged = entry.stat().st_mtime < cutoff
@@ -211,6 +181,7 @@ def _sweep_orphan_project_keys(
     """
     own_key = cache_root(project_dir).name
     cutoff = time.time() - ttl_days * 86400
+    session_cutoff = time.time() - SESSION_CACHE_TTL_HOURS * 3600
     liveness = liveness or _LazyLiveness()
     try:
         entries = list(cache_home().iterdir())
@@ -225,7 +196,7 @@ def _sweep_orphan_project_keys(
         try:
             if _key_last_touched(entry) >= cutoff:
                 continue
-            live = _live_session_in(entry, liveness)
+            live = _live_session_in(entry, liveness, session_cutoff)
             if live is not None:
                 logger.info("project cache key %s kept: session %s is running", entry.name, live)
                 continue
@@ -235,17 +206,27 @@ def _sweep_orphan_project_keys(
             logger.warning("project-key sweep skipped %s: %s", entry.name, exc)
 
 
-def _live_session_in(key_dir: Path, liveness: _LazyLiveness) -> str | None:
-    """The name of a session under ``key_dir`` still running, else ``None``.
+def _live_session_in(key_dir: Path, liveness: _LazyLiveness, session_cutoff: float) -> str | None:
+    """The name of a session under ``key_dir`` that must not be reclaimed.
 
-    A dir naming no owner is not evidence of life: it is what a ``dry-run``
-    leaves behind, and treating it as live would pin the key forever.
+    An unresolvable owner is not evidence of life — it is what a ``dry-run``
+    leaves behind, and pinning on it would hold the key forever. It is not
+    evidence of death either, so it gets the SAME TTL grace its own sweep gives
+    it: without that, taking the whole key deleted a dir the sibling sweep was
+    still protecting.
     """
     sessions = key_dir / "sessions"
     if not sessions.is_dir():
         return None
     for entry in sorted(child for child in sessions.iterdir() if child.is_dir()):
-        if any(liveness.is_live(pid, start_time) for pid, start_time in session_owners(entry)):
+        owners = session_owners(entry)
+        if owners is None:
+            return entry.name
+        if not owners:
+            if entry.stat().st_mtime >= session_cutoff:
+                return entry.name
+            continue
+        if any(liveness.is_live(pid, start_time) for pid, start_time in owners):
             return entry.name
     return None
 
@@ -277,7 +258,7 @@ class EnvironmentRecovery:
         liveness = _LazyLiveness()
         _sweep_orphan_session_caches(self.project_dir, liveness=liveness)
         _sweep_orphan_project_keys(self.project_dir, liveness=liveness)
-        sweep_runs(self.project_dir)
+        sweep_runs(self.project_dir, liveness=liveness)
 
         # The version GC mutates versions/ — serialize it against a concurrent
         # `self update` (acquire) or a peer GC pass under the crash-safe lock

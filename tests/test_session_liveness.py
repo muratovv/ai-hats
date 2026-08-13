@@ -45,7 +45,7 @@ def test_anchor_records_this_process(tmp_path):
     assert written == tmp_path / ANCHOR_NAME
     data = json.loads(written.read_text())
     assert data["root_pid"] == os.getpid()
-    assert data["start_time"]
+    assert data["start_time_utc"]
 
 
 def test_anchor_unwritable_dir_reports_and_returns_none(tmp_path, caplog):
@@ -185,13 +185,84 @@ def test_no_owner_anywhere_leaves_the_caller_on_ttl(tmp_path, name):
     assert session_liveness.session_owners(session_dir) == ()
 
 
-@pytest.mark.parametrize("body", ["{ not json", '{"root_pid": "58580"}', "[]"])
-def test_malformed_anchor_reports_and_never_invents_a_death(tmp_path, caplog, live_proc, body):
+@pytest.mark.parametrize(
+    "body",
+    [
+        "{ not json",
+        '{"root_pid": "58580"}',
+        "[]",
+        # isinstance(True, int) is True, so this used to resolve to pid 1
+        # (launchd, never exits) and pin the dir forever.
+        '{"root_pid": true}',
+        '{"root_pid": 99999999999}',
+    ],
+)
+def test_an_unusable_anchor_is_unresolvable_never_the_dir_name_pid(
+    tmp_path, caplog, live_proc, body
+):
+    """``None`` — and emphatically not a fallback to the pid in the dir name.
+
+    That pid is structurally the WRAPPER, so degrading to it silently drops a
+    recorded surface child, the one owner that outlives a SIGKILLed wrapper on
+    the sub-agent path. ``None`` tells the caller to keep the dir instead.
+    """
     session_dir = tmp_path / f"20260812-104832-1-{live_proc.pid}"
     session_dir.mkdir()
     (session_dir / ANCHOR_NAME).write_text(body)
     with caplog.at_level(logging.WARNING, logger=session_liveness.__name__):
-        ((pid, start_time),) = session_liveness.session_owners(session_dir)
+        assert session_liveness.session_owners(session_dir) is None
     assert "anchor" in caplog.text
+
+
+@pytest.mark.parametrize("tail", ["99999999999", "0"])
+def test_an_impossible_pid_in_the_dir_name_is_no_owner(tmp_path, tail):
+    """A digit run past a C ``int`` reached ``os.kill`` as an uncaught
+    ``OverflowError`` and broke every session start in the project."""
+    assert session_liveness.session_owners(tmp_path / f"20260812-104832-1-{tail}") == ()
+
+
+def test_a_legacy_start_time_is_not_read_as_a_baseline(tmp_path, live_proc):
+    """Anchors already on disk carry a rendering from their writer's own TZ and
+    locale; comparing one manufactures the very reuse verdict the rename avoids."""
+    (tmp_path / ANCHOR_NAME).write_text(
+        json.dumps({"root_pid": live_proc.pid, "start_time": "Mon Jan  1 00:00:00 2001"})
+    )
+    ((pid, start_time),) = session_liveness.session_owners(tmp_path)
     assert (pid, start_time) == (live_proc.pid, None)
     assert LivenessSnapshot.capture().is_live(pid, start_time) is True
+
+
+# ---------- the baseline must not move with the ambient environment ----------
+
+
+def test_the_recorded_baseline_ignores_the_ambient_timezone(monkeypatch, live_proc):
+    """``ps -o lstart=`` renders in the TZ/locale of the ``ps`` PROCESS."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    east = session_liveness._proc_start_time(live_proc.pid)
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    west = session_liveness._proc_start_time(live_proc.pid)
+    assert east == west
+    assert east[1], "a live process must yield a baseline"
+
+
+def test_an_anchor_written_under_another_timezone_still_reads_live(monkeypatch, tmp_path):
+    """One session writes the baseline and ANOTHER compares it. When the two
+    disagreed about the rendering, the mismatch was indistinguishable from pid
+    reuse — and reaped a live session's cache with no TTL to slow it down."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    session_liveness.write_session_anchor(tmp_path)
+
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    owners = session_liveness.session_owners(tmp_path)
+    assert owners is not None
+    ((pid, start_time),) = owners
+    assert start_time
+    assert session_liveness.LazyLiveness().is_live(pid, start_time) is True
+
+
+def test_a_pid_absent_from_a_stale_snapshot_is_not_a_death(live_proc):
+    """``os.kill`` already proved the pid exists, so absence from the cached
+    table dates the TABLE — one snapshot serves both sweeps."""
+    empty = LivenessSnapshot(start_times={1: "x"}, available=True)
+    lazy = session_liveness.LazyLiveness(capture=lambda: empty)
+    assert lazy.is_live(live_proc.pid, "Wed Jan  1 00:00:00 2000") is True

@@ -2,8 +2,9 @@
 
 Reap a session dir on **proof of death**, never on age alone — the TTL sweep
 deleted 12 live maintainer sessions' skills and ``hooks.json`` mid-flight. The
-owner comes from the anchor written here (``root_pid`` + OS ``start_time``,
-reuse-proof), else from the pid in the dir name. The sweep runs on the
+owner comes from the anchor written here (``root_pid`` + ``start_time_utc``, the
+OS start instant rendered under a pinned TZ/locale so two processes compare the
+same bytes), else from the pid in the dir name. The sweep runs on the
 ``create_session`` hot path over ~1300 candidates, so ONE ``ps`` reads the whole
 process table into :class:`LivenessSnapshot` and queries hit memory.
 Leaf: stdlib + ``ai_hats_core``, importable from ``environment_recovery``.
@@ -20,7 +21,7 @@ import logging
 import os
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,10 +36,36 @@ ANCHOR_NAME = ".session-owner.json"
 
 _PS_TIMEOUT_S = 5
 
+#: ``lstart`` renders in the TZ/LC_TIME of the ``ps`` process, and one session
+#: writes the baseline while another compares it — an ambient difference read as
+#: pid reuse and reaped a LIVE cache. Pinned so both renderings are comparable.
+_PS_ENV = {"TZ": "UTC", "LC_ALL": "C"}
+
 #: The whole process table in one read — a ``ps`` per candidate would add ~1273
 #: subprocesses to session start (plan Q4). ``state`` rides along free, and a
 #: zombie's row is indistinguishable without it: same pid, original ``lstart``.
 PS_TABLE_COMMAND = ("ps", "-A", "-o", "pid=,state=,lstart=")
+
+#: ``os.kill`` marshals to a C ``int``; a larger digit run is not a pid and
+#: raised an uncaught ``OverflowError`` that broke every session start. Rejected
+#: at parse instead, so it reads as "no owner" and the TTL decides.
+_PID_MAX = 2**31 - 1
+
+
+def _ps_env() -> dict[str, str]:
+    return {**os.environ, **_PS_ENV}
+
+
+def _valid_pid(value: object) -> int | None:
+    """``value`` as a usable pid, or ``None``. ``bool`` is not a pid.
+
+    ``isinstance(True, int)`` is True, so an anchor carrying ``"root_pid": true``
+    otherwise resolved to pid 1 (launchd, never exits) and pinned its dir forever.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 < value <= _PID_MAX else None
+
 
 #: ``ps`` state letter for a process that has exited and awaits its parent's
 #: ``wait()``. Matched on the FIRST letter only — the column carries modifiers
@@ -78,6 +105,7 @@ def _proc_start_time(pid: int) -> tuple[bool, str | None]:
             capture_output=True,
             text=True,
             timeout=_PS_TIMEOUT_S,
+            env=_ps_env(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.debug("ps unavailable for pid %s: %s", pid, exc)
@@ -91,15 +119,16 @@ def _proc_start_time(pid: int) -> tuple[bool, str | None]:
 def write_session_anchor(cache_dir: Path) -> Path | None:
     """Record this process as the owner of ``cache_dir``; ``None`` if not written.
 
-    Written before the dir is populated, so a sweep that races a starting
-    session sees either the anchor or an empty dir the TTL cannot reach. A
-    ``start_time`` of ``None`` (``ps`` unusable at write) costs reuse detection,
-    not correctness — the pid alone still reads as live. The surface child is
-    added later by :func:`record_surface_child`, once it has a pid.
-    """
+    Lands AFTER the artifact builder populated the dir (see
+    ``runtime_common._claim_session_cache`` for why neither earlier seam works);
+    the window before it is covered by the pid in the session id, which names the
+    same wrapper. A ``start_time_utc`` of ``None`` (``ps`` unusable at write)
+    costs reuse detection, not correctness — the pid alone still reads as live.
+    The surface child is added by :func:`record_surface_child`, once it has a pid.
+    """  # comment-length: allow — the ordering claim here was wrong once already
     pid = os.getpid()
     determined, start_time = _proc_start_time(pid)
-    payload = {"root_pid": pid, "start_time": start_time if determined else None}
+    payload = {"root_pid": pid, "start_time_utc": start_time if determined else None}
     target = anchor_path(cache_dir)
     try:
         atomic_write_text(target, json.dumps(payload, indent=2) + "\n")
@@ -132,7 +161,7 @@ def record_surface_child(cache_dir: Path, pid: int) -> Path | None:
         return None
     determined, start_time = _proc_start_time(pid)
     payload["child_pid"] = pid
-    payload["child_start_time"] = start_time if determined else None
+    payload["child_start_time_utc"] = start_time if determined else None
     try:
         atomic_write_text(target, json.dumps(payload, indent=2) + "\n")
     except OSError as exc:
@@ -167,6 +196,7 @@ class LivenessSnapshot:
                 capture_output=True,
                 text=True,
                 timeout=_PS_TIMEOUT_S,
+                env=_ps_env(),
             )
         except (OSError, subprocess.SubprocessError) as exc:
             logger.warning("process table unavailable, liveness falls back to os.kill: %s", exc)
@@ -233,7 +263,44 @@ def _pid_alive(pid: int) -> bool:
         return True  # alive, just not ours
     except OSError:
         return True  # uncertain → conservative keep
+    except OverflowError:
+        # Unreachable via _valid_pid; kept so a future caller cannot crash the GC.
+        logger.warning("pid %r is out of range for os.kill; keeping the dir", pid)
+        return True
     return not _pid_is_zombie(pid)
+
+
+class LazyLiveness:
+    """The process table, read at most once per run and only if a dir needs it.
+
+    ``capture()`` costs ~21 ms against ~930 processes where the whole key scan
+    costs ~12 ms, so an unconditional read would triple session start for the
+    common case of nothing to reap (plan Q4/Q7). ``os.kill(pid, 0)`` answers the
+    two cases that need no table — an absent pid is dead however it is anchored,
+    and a living pid with no recorded baseline is exactly the snapshot's own
+    verdict — leaving the table to the one case that turns on it: a living pid
+    WITH a baseline, which is the reused-pid question the anchor answers. Both
+    no-table answers hold only because ``_pid_alive`` rules out a zombie.
+    """  # comment-length: allow — the hot-path contract is the reason S1 exists
+
+    def __init__(self, capture: Callable[[], LivenessSnapshot] = LivenessSnapshot.capture) -> None:
+        self._capture = capture
+        self._snapshot: LivenessSnapshot | None = None
+
+    def is_live(self, root_pid: int, start_time: str | None) -> bool:
+        if not _pid_alive(root_pid):
+            return False
+        if start_time is None:
+            return True
+        if self._snapshot is None:
+            self._snapshot = self._capture()
+        snapshot = self._snapshot
+        if snapshot.available and root_pid not in snapshot.start_times:
+            # ``os.kill`` just proved this pid exists, so absence from the table
+            # dates the TABLE, not the process — one snapshot serves both sweeps,
+            # so a session started after the capture would read as certainly dead.
+            return True
+        return snapshot.is_live(root_pid, start_time)
 
 
 @functools.cache
@@ -314,26 +381,24 @@ def _pid_from_dirname(name: str) -> int | None:
         return None
     if not (counter.isdigit() and pid.isdigit()):
         return None
-    value = int(pid)
-    return value if value > 0 else None
+    return _valid_pid(int(pid))
 
 
-def session_owners(session_dir: Path) -> tuple[Owner, ...]:
+def session_owners(session_dir: Path) -> tuple[Owner, ...] | None:
     """Every process whose life keeps ``session_dir`` in use — wrapper first.
 
-    ``()`` = nobody could be resolved (no anchor, no pid in the name) and the
-    caller must fall back to TTL. One entry = the wrapper alone, which is what
-    an anchor written before HATS-1339's ``child_pid`` field carries and what a
-    dir-name pid can ever say; a missing field is a silent reader, never a
-    death. An unreadable anchor degrades to the dir-name pid with no baseline —
-    that reads as live while the process exists, so corrupt bytes never become a
-    death signal.
-    """  # comment-length: allow — one sentence per arity the caller can get
+    ``None`` = an anchor is present but unusable: the caller must KEEP the dir.
+    Degrading to the dir-name pid here would be worse than knowing nothing, because
+    that pid is structurally the wrapper and so silently drops a recorded surface
+    child — the one owner that outlives a SIGKILLed wrapper on the sub-agent path.
+    ``()`` = nothing resolvable at all (no anchor, no pid in the name), so the TTL
+    decides. One entry = the wrapper alone, which is what a pre-``child_pid``
+    anchor carries and all a dir name can ever say; a missing field is a silent
+    reader, never a death.
+    """  # comment-length: allow — one paragraph per arity the caller can get
     target = anchor_path(session_dir)
     if target.is_file():
-        owners = _read_anchor(target)
-        if owners is not None:
-            return owners
+        return _read_anchor(target)
     root_pid = _pid_from_dirname(session_dir.name)
     return () if root_pid is None else ((root_pid, None),)
 
@@ -345,14 +410,17 @@ def _read_anchor(target: Path) -> tuple[Owner, ...] | None:
     except (OSError, ValueError) as exc:
         logger.warning("session-owner anchor unreadable at %s: %s", target, exc)
         return None
-    pid = data.get("root_pid") if isinstance(data, dict) else None
-    if not isinstance(pid, int) or pid <= 0:
-        logger.warning("session-owner anchor at %s carries no root_pid", target)
+    pid = _valid_pid(data.get("root_pid")) if isinstance(data, dict) else None
+    if pid is None:
+        logger.warning("session-owner anchor at %s carries no usable root_pid", target)
         return None
-    start_time = data.get("start_time")
+    # Only the pinned-env field is a baseline: a legacy ``start_time`` was rendered
+    # in its writer's own TZ/locale, so reading it would manufacture the pid-reuse
+    # verdict this rename prevents. Dropped, those dirs live while their pid does.
+    start_time = data.get("start_time_utc")
     owners: list[Owner] = [(pid, start_time if isinstance(start_time, str) else None)]
-    child = data.get("child_pid")
-    if isinstance(child, int) and child > 0:
-        child_start = data.get("child_start_time")
+    child = _valid_pid(data.get("child_pid"))
+    if child is not None:
+        child_start = data.get("child_start_time_utc")
         owners.append((child, child_start if isinstance(child_start, str) else None))
     return tuple(owners)

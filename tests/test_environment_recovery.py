@@ -545,7 +545,7 @@ def test_a_dir_whose_wrapper_died_but_whose_surface_lives_is_kept(tmp_path, live
     """
     entry = _session_dir(tmp_path, _dead_pid())
     write_session_anchor(entry)
-    _rewrite_anchor(entry, root_pid=_dead_pid(), start_time=None, child_pid=live_proc.pid)
+    _rewrite_anchor(entry, root_pid=_dead_pid(), start_time_utc=None, child_pid=live_proc.pid)
 
     _sweep_orphan_session_caches(tmp_path)
 
@@ -558,7 +558,7 @@ def test_both_owners_gone_reaps_and_names_the_surface_child(tmp_path, caplog):
     entry = _session_dir(tmp_path, _dead_pid())
     dead_wrapper, dead_child = _dead_pid(), _dead_pid()
     write_session_anchor(entry)
-    _rewrite_anchor(entry, root_pid=dead_wrapper, start_time=None, child_pid=dead_child)
+    _rewrite_anchor(entry, root_pid=dead_wrapper, start_time_utc=None, child_pid=dead_child)
 
     with caplog.at_level(logging.WARNING):
         _sweep_orphan_session_caches(tmp_path)
@@ -577,7 +577,7 @@ def test_an_anchor_written_before_the_child_field_reads_as_wrapper_only(tmp_path
     """
     entry = _session_dir(tmp_path, _dead_pid())
     anchor_path(entry).write_text(
-        json.dumps({"root_pid": _dead_pid(), "start_time": None}), encoding="utf-8"
+        json.dumps({"root_pid": _dead_pid(), "start_time_utc": None}), encoding="utf-8"
     )
 
     _sweep_orphan_session_caches(tmp_path)
@@ -589,7 +589,7 @@ def test_a_live_wrapper_never_asks_about_the_child(tmp_path, live_proc):
     """Wrapper first, and ``any()`` stops there — the common case pays nothing."""
     entry = _session_dir(tmp_path, os.getpid())
     write_session_anchor(entry)
-    _rewrite_anchor(entry, child_pid=live_proc.pid, child_start_time="Mon Jan  1 00:00:00 2001")
+    _rewrite_anchor(entry, child_pid=live_proc.pid, child_start_time_utc="Mon Jan  1 00:00:00 2001")
     spy = _CountingCapture()
 
     _sweep_orphan_session_caches(tmp_path, liveness=_LazyLiveness(capture=spy))
@@ -602,7 +602,7 @@ def test_a_dir_whose_owner_pid_was_reused_is_reaped(tmp_path, live_proc):
     """The same, end to end through the sweep."""
     entry = _session_dir(tmp_path, live_proc.pid)
     anchor_path(entry).write_text(
-        json.dumps({"root_pid": live_proc.pid, "start_time": "Mon Jan  1 00:00:00 2001"}),
+        json.dumps({"root_pid": live_proc.pid, "start_time_utc": "Mon Jan  1 00:00:00 2001"}),
         encoding="utf-8",
     )
 
@@ -615,7 +615,7 @@ def test_anchor_overrides_a_reused_dir_name_pid(tmp_path):
     """The dir name says our (live) pid; the anchor says a dead one and wins."""
     entry = _session_dir(tmp_path, os.getpid())
     anchor_path(entry).write_text(
-        json.dumps({"root_pid": _dead_pid(), "start_time": None}), encoding="utf-8"
+        json.dumps({"root_pid": _dead_pid(), "start_time_utc": None}), encoding="utf-8"
     )
 
     _sweep_orphan_session_caches(tmp_path)
@@ -661,6 +661,24 @@ def test_reclaim_says_what_it_dropped_and_why(tmp_path, caplog):
 
     assert orphan.name in caplog.text
     assert f"owner pid {dead} is gone" in caplog.text
+
+
+def test_every_deletion_line_is_loud_enough_to_survive_no_handler(tmp_path, caplog):
+    """Nothing in this product configures logging, so a record below WARNING dies
+    at ``logging.lastResort``'s threshold and the deletion is never seen. Asserting
+    the TEXT alone cannot catch that — a handler installed by the test (or by an
+    e2e harness) makes INFO and WARNING read identically.
+    """  # comment-length: allow — the level IS the behaviour under test
+    _session_dir(tmp_path, _dead_pid())
+
+    with caplog.at_level("INFO"):
+        _sweep_orphan_session_caches(tmp_path)
+
+    reclaimed = [r for r in caplog.records if "reclaimed session cache" in r.message]
+    assert reclaimed, "the sweep must say what it deleted"
+    assert all(r.levelno >= logging.WARNING for r in reclaimed), [
+        (r.levelname, r.message) for r in reclaimed
+    ]
 
 
 def test_nothing_to_reap_never_reads_the_process_table(tmp_path):
