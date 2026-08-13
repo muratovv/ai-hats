@@ -208,6 +208,44 @@ def test_a_foreign_envelope_without_the_pin_does_not_disarm_the_rack_gate(
     assert [d.at for d in _declared(gated_project)] == [("edge:review--done",)]
 
 
+#: The two channel entries whose ``identity`` defaults to reading the ambient
+#: environment. Every production caller must say which project it is gating.
+_SCOPED_RESOLVERS = ("resolve_checks_at", "resolve_carried_checks")
+
+
+def _production_calls():
+    """Every call to a scoped resolver outside the channel and outside tests."""
+    import ast
+
+    root = Path(__file__).resolve().parents[1]
+    trees = [*(root / "src").rglob("*.py"), *root.glob("packages/*/src/**/*.py")]
+    for path in trees:
+        if path.name == "check_resolve.py":  # the channel declares them
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name in _SCOPED_RESOLVERS:
+                yield path.relative_to(root), name, {kw.arg for kw in node.keywords}
+
+
+def test_no_production_caller_leaves_the_identity_to_the_ambient_environment():
+    """The ratchet. Both roads were fixed by passing ``identity=``; a third
+    caller that forgets it is the same defect again, and nothing else would
+    catch it — the default is silent and resolves to *some* answer."""
+    ambient = [
+        f"{path}:{name}" for path, name, kwargs in _production_calls() if "identity" not in kwargs
+    ]
+
+    assert ambient == [], f"these resolve gates under whatever session ran them: {ambient}"
+
+
+def test_the_ratchet_is_looking_at_something():
+    """A scan that finds nothing passes vacuously forever."""
+    assert len(list(_production_calls())) >= 3
+
+
 def test_the_point_name_is_the_bare_one(gated_project):
     """Guard against the card's own typo: the card cites ``wt:pre-merge`` and
     with that spelling nothing resolves for an unrelated reason, so a repro
