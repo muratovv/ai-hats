@@ -29,6 +29,7 @@ import subprocess
 
 import pytest
 
+from _helpers.git import git, init_repo
 from _helpers.hook_chain import build_session_settings, run_chain, run_tool_chain
 
 pytestmark = pytest.mark.integration
@@ -171,17 +172,6 @@ def test_the_sanctioned_writer_and_plain_reads_pass(hooked_project, command):
 # --- Which tracker? The one that owns the file (HATS-524) -------------------
 
 
-def _git(cwd, *args):
-    subprocess.run(  # noqa: S603 - literal argv
-        ["git", "-c", "user.email=e2e@example.org", "-c", "user.name=e2e", *args],  # noqa: S607
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=60,
-    )
-
-
 @pytest.fixture(scope="module")
 def linked_worktree(tmp_path_factory):
     """A second checkout carrying its own tracker, plus a real linked worktree.
@@ -194,11 +184,11 @@ def linked_worktree(tmp_path_factory):
     (main / TRACKER / "tasks" / "HATS-9").mkdir(parents=True)
     (main / "src").mkdir()
     (main / "src" / "app.py").write_text("x = 1\n")
-    _git(main, "init", "-b", "master")
-    _git(main, "add", "-A")
-    _git(main, "commit", "-m", "seed")
+    init_repo(main, branch="master")
+    git(main, "add", "-A")
+    git(main, "commit", "-m", "seed")
     worktree = tmp_path_factory.mktemp("other-worktrees") / "wt"
-    _git(main, "worktree", "add", str(worktree), "-b", "task/x")
+    git(main, "worktree", "add", str(worktree), "-b", "task/x")
     return main, worktree
 
 

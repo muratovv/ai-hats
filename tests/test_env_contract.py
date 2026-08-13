@@ -109,6 +109,7 @@ NON_CONTRACT_HOOK_KEYS = {
     "AI_HATS_BYPASS_JOURNAL",
     "AI_HATS_HOOK_EVENT",
     # Kill switches and acknowledgements: a human standing one gate down.
+    "AI_HATS_BACKLOG_GATE_OFF",
     "AI_HATS_COMMENT_LINT_OFF",
     "AI_HATS_DESTRUCTIVE_ACK",
     "AI_HATS_DOCS_INDEX_ACK",

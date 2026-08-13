@@ -94,7 +94,7 @@ def _top_level_import_roots(tree: ast.Module) -> set[str]:
 
 #: Not a dependency — PreToolUse hooks are FLATTENED into one directory at
 #: install time, so this resolves to a sibling file, never a distribution.
-FLATTENED_HOOK_SIBLINGS = {"bypass_journal"}
+FLATTENED_HOOK_SIBLINGS = {"bypass_journal", "backlog_write_gate"}
 
 
 def _boundary_offenders(src: Path, allowed: set[str]) -> dict[str, list[str]]:
