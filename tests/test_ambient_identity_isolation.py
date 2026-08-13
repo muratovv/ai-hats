@@ -48,8 +48,12 @@ def test_the_drop_is_what_makes_the_guard_pass(pytester, monkeypatch):
     """Strip the drop and the child inherits it — without this, the assertion
     above could pass on a suite that never received the variable at all."""
     monkeypatch.setenv("AI_HATS_SESSION_IDENTITY", _IDENTITY)
+    # Both spellings: the drop moved from a literal pop to `drop_identity`, and a
+    # mutation that no longer removes it would silently stop testing anything.
     stripped = "\n".join(
-        line for line in _root_conftest().splitlines() if "AI_HATS_SESSION_IDENTITY" not in line
+        line
+        for line in _root_conftest().splitlines()
+        if "AI_HATS_SESSION_IDENTITY" not in line and "drop_identity" not in line
     )
     pytester.makeconftest(stripped)
     pytester.makepyfile(test_inner=_INNER)

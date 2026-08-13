@@ -198,9 +198,13 @@ ts, event, detail — edge from/to / epicify child / pre-destroy operation —, 
 force+reason, per-subscriber outcomes, `result: persisted|aborted`, identity block) to
 `tasks/<ID>/audit.jsonl`, size-rotated into `audit-NNN.jsonl` segments. Lossless by
 contract (PROP-004): nothing is truncated or deleted. The identity block carries the
-writing process's `AI_HATS_SESSION_ID` + `AI_HATS_ROOT_PID`, a verdict against the
-claimed actor (`verified`/`mismatch`/`unverified` — blind zones are marked, PROP-080),
-and an ownership-holder cross-check when `ownership.json` exists (PROP-076). Journal
+writing process's `AI_HATS_SESSION_ID` + `AI_HATS_ROOT_PID`, a verdict on the claimed
+actor (`verified`/`mismatch`/`unverified` — blind zones are marked, PROP-080), and an
+ownership-holder cross-check when `ownership.json` exists (PROP-076). A `session:<sid>`
+claim is checked for self-consistency — the minting pid the id embeds against
+`AI_HATS_ROOT_PID` — and never against `AI_HATS_SESSION_ID`, the variable that produced
+the claim; an actor claiming no session (`rack:reflect`) is outside the check, not a
+mismatch (ADR-0025 D4). Journal
 write failures are loud on stderr but never break the already-persisted operation.
 `rack context <ID> --attr audit` (`--event/--since/--actor`) is the query surface; it
 warns when a task moved states with an empty journal (zero-events, PROP-005/076).

@@ -28,14 +28,15 @@ PIPELINES_SUBPATH = ("core", "pipelines")
 # Project config filename (moved from ai_hats.constants, HATS-917)
 PROJECT_CONFIG = "ai-hats.yaml"
 
-# Env override for the builtin-library root (validated both-core-and-usage).
-ENV_LIBRARY_ROOT = "AI_HATS_LIBRARY_ROOT"
-
-# Env-var names read inside the paths leaf (HATS-917, HATS-1414)
-ENV_AI_HATS_USER_HOME = "AI_HATS_USER_HOME"
-ENV_AI_HATS_DIR = "AI_HATS_DIR"
-ENV_AI_HATS_VENV = "AI_HATS_VENV"
-AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
+# HATS-1613: re-exported from the env leaf, not re-declared — one spelling, one
+# home (ADR-0025 D1). Kept importable from here so existing callers are unchanged.
+from ..env import (  # noqa: E402
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_AI_HATS_DIR,
+    ENV_AI_HATS_USER_HOME,
+    ENV_AI_HATS_VENV,
+    ENV_LIBRARY_ROOT,
+)
 
 __all__ = [
     "LIBRARY_PKG",
