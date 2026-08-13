@@ -44,11 +44,12 @@ from ai_hats_rack.extensions import (
 )
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
-from ai_hats_observe.trace import ENV_SESSION_ID
+from ai_hats_core.deadline import Deadline
 
 from . import ownership
 from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
+from .session_identity import SessionIdentity, SessionIdentityError
 from .wt_effects import WtWorktreeEffects
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
@@ -57,6 +58,18 @@ TERMINAL_STATES = ("done", "failed", "cancelled")
 # a hung worktree shell-out can't hold the task lock forever — kill → in-lock error
 # → abort + journal (existing path). Config-overridable via WorktreeExtension(budget=).
 WORKTREE_BUDGET = 60.0
+
+
+def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
+    """The kernel's task-lock instant as a budget (HATS-1603).
+
+    The rack publishes a bare float — it is built without ai-hats-core, so it
+    cannot mint the type. Binding the two is this module's job, and doing it
+    here means the comparison stays in ``Deadline`` instead of at a call site.
+    """
+    if ctx.lock_expires_at is None:
+        return None
+    return Deadline(ctx.lock_expires_at, "rack task lock")
 
 
 def _all_edge_keys(topology: Topology) -> list[str]:
@@ -86,7 +99,18 @@ def _keys_leaving_execute_or_terminal(topology: Topology) -> list[str]:
 
 
 def _session_id() -> str:
-    return os.environ.get(ENV_SESSION_ID, "")
+    """The launching session's id, or ``""`` outside one (HATS-1613).
+
+    Through the identity, not the scalar beside it: a torn envelope read as
+    absence would disarm the single-slot guard silently, and two live agents
+    then share a slot. Single-slot runs first on every edge, so the refusal
+    always lands where nothing has been written yet.
+    """
+    try:
+        identity = SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        raise AbortOperation(f"ownership cannot name this session: {exc}") from exc
+    return identity.id if identity is not None else ""
 
 
 def _root_pid() -> int:
@@ -277,7 +301,12 @@ class WorktreeExtension:
             # HATS-697: a forced execute is a manual state correction — no
             # fresh worktree (one spun off HEAD orphaned retro work, PROX-287).
             return Delta(work_log=("Forced → execute: no worktree created (manual override)",))
-        wt_path = self._effects.setup(ctx.task.id, ctx.task.role, caller_cwd=ctx.caller_cwd)
+        wt_path = self._effects.setup(
+            ctx.task.id,
+            ctx.task.role,
+            caller_cwd=ctx.caller_cwd,
+            outer_deadline=_rack_lock_deadline(ctx),
+        )
         if wt_path is not None:
             return Delta(work_log=(f"Worktree: {wt_path}",))  # HATS-866/AC5
         return None
@@ -310,7 +339,9 @@ class WorktreeExtension:
                 )
             self._publish_pre_destroy(ctx, "worktree-merge" if merge else "worktree-discard")
 
-        outcome = self._effects.teardown(task_id, merge=merge, force=ctx.force)
+        outcome = self._effects.teardown(
+            task_id, merge=merge, force=ctx.force, outer_deadline=_rack_lock_deadline(ctx)
+        )
         if outcome is not None:
             return Delta(work_log=(f"Worktree {outcome}",))
         return None
@@ -363,6 +394,7 @@ class WorktreeExtension:
             caller_cwd=ctx.caller_cwd,
             force=ctx.force,
             reason=ctx.reason,
+            lock_expires_at=ctx.lock_expires_at,  # HATS-1603: still in-lock here
         )
 
     @staticmethod
@@ -384,6 +416,7 @@ class WorktreeExtension:
 def build_rack_kernel(
     project_dir: Path,
     *,
+    backlog_owner: Path | None,
     tasks_dir: Path | None = None,
     state_md_path: Path | None = None,
     prefix: str = "HATS",
@@ -406,11 +439,12 @@ def build_rack_kernel(
         tasks_dir = tasks_dir if tasks_dir is not None else paths.tasks_dir
         state_md_path = state_md_path if state_md_path is not None else paths.state_md_path
 
-    # One backlog definition (catalog backlog.yaml or the packaged default)
-    # feeds the kernel AND every subscriber — a single source, no diverging
-    # default-load (HATS-1042, ADR-0017 §1). ``project_dir`` fails a legacy
-    # project-root links.yaml closed, identically to the read path (R6).
-    defn = resolve_definition(tasks_dir, prefix_alias=prefix, project_dir=project_dir)
+    # One definition feeds the kernel AND every subscriber (HATS-1042, ADR-0017
+    # §1). The legacy links.yaml is the OWNER's (HATS-1573); with no owner the
+    # anchor is still probed, so R6 never gets weaker than it was.
+    defn = resolve_definition(
+        tasks_dir, prefix_alias=prefix, project_dir=backlog_owner or project_dir
+    )
     topology = defn.topology
     if links_registry is None:
         links_registry = defn.links_registry

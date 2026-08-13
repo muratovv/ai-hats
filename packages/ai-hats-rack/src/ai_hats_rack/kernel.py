@@ -8,6 +8,7 @@ FSM — the explicit contract inherited from HATS-866/AC4.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence
@@ -598,6 +599,7 @@ class Kernel:
         final_state: str | None,
         outcomes: list[SubscriberOutcome],
         events: list[EdgeEvent],
+        lock_expires_at: float | None = None,
     ) -> str:
         """In-lock edge application: guard/force → mutate → blocking dispatch.
 
@@ -630,7 +632,9 @@ class Kernel:
 
         event = EdgeEvent(from_state, to_state, self._edge_names.get((from_state, to_state), ""))
         events.append(event)
-        ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+        ctx = self._ctx_factory(
+            event, task, caller_cwd, is_epic, actor, force, reason, lock_expires_at
+        )
         self._dispatcher.run_blocking(event, ctx, self._delta_applier(task, actor), outcomes)
         return from_state
 
@@ -734,6 +738,10 @@ class Kernel:
         lock = self._task_lock(task_id)
         try:
             with lock:
+                # HATS-1603: in-lock work inherits this ceiling, so a nested
+                # budget (a wt hook under the wt lifecycle lock) computes from
+                # who called instead of trusting its own lock alone.
+                lock_expires_at = time.monotonic() + self._lock_timeout
                 task = self._load(task_id)
                 old_parent = task.parent_task
                 before = self._gate_values(task)
@@ -748,7 +756,15 @@ class Kernel:
                     ack_frozen=ack_frozen,
                     dispatched=dispatched,
                     dispatch_link=self._link_dispatcher(
-                        task, task_id, caller_cwd, actor, force, reason, dispatched, outcomes
+                        task,
+                        task_id,
+                        caller_cwd,
+                        actor,
+                        force,
+                        reason,
+                        dispatched,
+                        outcomes,
+                        lock_expires_at,
                     ),
                     exists=self.target_exists,
                 )
@@ -766,6 +782,7 @@ class Kernel:
                             final_state=final_state,
                             outcomes=outcomes,
                             events=dispatched,
+                            lock_expires_at=lock_expires_at,
                         )
                         transitions.append(TaskTransition(task_id, from_state, to_state, reason))
                         entered.append(to_state)
@@ -805,6 +822,8 @@ class Kernel:
         records: list[DispatchRecord] = []
         for event in dispatched:
             if isinstance(event, EdgeEvent):  # link events have no post-lock phase here
+                # No lock_expires_at: the lock is released above, so a reaction
+                # is bounded by nothing of ours (HATS-1603).
                 ctx = self._ctx_factory(
                     event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
                 )
@@ -836,6 +855,7 @@ class Kernel:
         reason: str,
         dispatched: list[Event],
         outcomes: list[SubscriberOutcome],
+        lock_expires_at: float | None = None,
     ) -> Callable[[str, str, bool], None]:
         """Build the in-lock link/unlink dispatch hook for a composite txn.
 
@@ -851,7 +871,7 @@ class Kernel:
             if not self._dispatcher.subscribers_for(event.key, Phase.IN_LOCK):
                 return
             ctx = self._ctx_factory(
-                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason
+                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason, lock_expires_at
             )
             self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
 
@@ -911,17 +931,24 @@ class Kernel:
         caller_cwd: Path,
         force: bool = False,
         reason: str = "",
+        lock_expires_at: float | None = None,
     ) -> tuple[DispatchRecord, ...]:
         """Extension-facing blocking dispatch for pre-destroy events.
 
         Runs IN_LOCK subscriptions inside the publisher's own operation
         window (no task lock is taken here); an abort propagates so the
         extension cancels the destructive operation. Deltas are journal-only.
+
+        ``lock_expires_at`` is the publisher's ceiling, forwarded so a
+        subscriber is bounded by whatever lock the publisher holds — it knows
+        that lock, this call cannot infer it (HATS-1603).
         """
         task = self._load(event.task_id)
         is_epic = self.is_epic(event.task_id)
         outcomes: list[SubscriberOutcome] = []
-        ctx = self._ctx_factory(event, task, caller_cwd, is_epic, actor, force, reason)
+        ctx = self._ctx_factory(
+            event, task, caller_cwd, is_epic, actor, force, reason, lock_expires_at
+        )
         try:
             self._dispatcher.run_blocking(event, ctx, lambda delta: None, outcomes)
         except Exception:
@@ -1003,6 +1030,7 @@ class Kernel:
         actor: str,
         force: bool,
         reason: str,
+        lock_expires_at: float | None = None,
     ):
         def make_ctx() -> DispatchContext:
             return DispatchContext(
@@ -1013,6 +1041,7 @@ class Kernel:
                 actor=actor,
                 force=force,
                 reason=reason,
+                lock_expires_at=lock_expires_at,
             )
 
         return make_ctx

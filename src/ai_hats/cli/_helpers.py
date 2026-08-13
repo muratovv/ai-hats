@@ -267,8 +267,12 @@ def catch_broken_install():
         raise
 
 
-def _project_dir() -> Path:
-    """Resolve the project root by walking up from CWD.
+def _project_dir(*, start: Path | None = None) -> Path:
+    """Resolve the project root by walking up from ``start`` (default: CWD).
+
+    ``start`` is the injection seam (HATS-1613): a caller that already knows
+    where to look says so, instead of a test having to `chdir` the process to
+    tell it — `scripts/check_test_isolation.py` exit 1.
 
     Order of preference:
       1. Nearest ancestor (incl. CWD itself) that contains `.agent/` —
@@ -295,10 +299,14 @@ def _project_dir() -> Path:
     # Path.cwd() raises FileNotFoundError) or silently resurrecting a phantom
     # tracker (Linux: os.getcwd() may return a stale path string for a removed
     # directory). A non-existent-but-returned path is treated the same.
-    try:
-        cwd = Path.cwd()
-    except FileNotFoundError as exc:
-        raise DeadCwdError() from exc
+    cwd = start
+    if cwd is None:
+        try:
+            cwd = Path.cwd()
+        except FileNotFoundError as exc:
+            raise DeadCwdError() from exc
+    # Outside the branch on purpose: an injected `start` must not opt out of the
+    # guard, or a dead path walks up to a stray ancestor `.agent/` (HATS-788).
     if not cwd.exists():
         raise DeadCwdError()
     candidates = [cwd, *cwd.parents]

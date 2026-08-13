@@ -11,6 +11,7 @@ import json
 import os
 import stat
 import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -90,7 +91,12 @@ def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "r
     )
 
 
-def _ctx(event_key: str = "edge:review--done", *, task_id: str = "T-1") -> DispatchContext:
+def _ctx(
+    event_key: str = "edge:review--done",
+    *,
+    task_id: str = "T-1",
+    lock_expires_at: float | None = None,
+) -> DispatchContext:
     src, dst = event_key.removeprefix("edge:").split("--")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
@@ -98,6 +104,7 @@ def _ctx(event_key: str = "edge:review--done", *, task_id: str = "T-1") -> Dispa
         caller_cwd=Path.cwd(),
         is_epic=False,
         actor="test",
+        lock_expires_at=lock_expires_at,
     )
 
 
@@ -127,6 +134,41 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15
+
+
+def test_an_unowned_backlog_composes_nothing_and_says_so(tmp_path, capsys):
+    """A backlog nobody owns declares nothing, so nothing fires — said out loud,
+    or a gate that is not there reads as a gate that passed."""
+    tasks_dir = tmp_path / "scratch" / "tasks"
+    port = AiHatsCheckPort(None, catalog=tasks_dir)
+
+    assert port.check_declarations() == ()
+
+    said = capsys.readouterr().err
+    assert "no project owns" in said
+    assert str(tasks_dir) in said
+
+
+def test_a_bound_check_on_an_unowned_backlog_refuses_in_words(tmp_path):
+    """The guard on the road an injected resolver can still reach: no owner means
+    no project declared these rows, and this channel says so in its own typed
+    refusal — a traceback out of an in-lock subscriber is a defect, not a message.
+    """
+    script = _script(tmp_path, "exit 0")
+    runner = _extension(
+        None,
+        tasks_dir=tmp_path / "tasks",
+        topology=_topology(),
+        resolve=lambda: (_check(script),),
+    )
+
+    with pytest.raises(CheckResolutionError) as exc_info:
+        runner.on_event(_ctx())
+
+    assert str(tmp_path / "tasks") in str(exc_info.value)
+    assert "no project owns" in str(exc_info.value) or "which no project owns" in str(
+        exc_info.value
+    )
 
 
 def _wt_state(project_dir: Path, task_id: str, worktree: Path) -> Path:
@@ -354,8 +396,10 @@ def test_corrupt_is_not_softened_by_on_error_warn(tmp_path):
     with pytest.raises(AbortOperation) as exc_info:
         runner.on_event(_ctx())
 
-    assert "hook script missing" in exc_info.value.reason
-    assert "quality::gates/vanished.sh" in exc_info.value.reason
+    reason = exc_info.value.reason
+    assert "the check did not run" in reason  # class (b): no bytes, so no verdict
+    assert "quality::gates/vanished.sh" in reason
+    assert "hook" not in reason, "a binding line is not a hook channel (HATS-1572)"
 
 
 def test_broke_under_warn_proceeds_and_leaves_a_work_log_trace(tmp_path):
@@ -1140,3 +1184,25 @@ def test_an_unreadable_component_tree_is_loud_not_a_silent_false(tmp_path, monke
         (root / "traits").chmod(0o755)
 
     assert "traits" in str(exc_info.value)
+
+
+def test_a_check_cannot_outlive_the_task_lock_it_fires_in(tmp_path):
+    """HATS-1603: the edge check used to mint a fresh EDGE_CHECK_TIMEOUT_S at its
+    own t0, so a lock already spent still bought it a full budget past the lock's
+    end. With the kernel's instant shipped, an exhausted lock leaves no budget."""
+    script = _script(tmp_path, "exit 0")
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(lock_expires_at=time.monotonic() - 1.0))
+
+    assert "had no time left" in exc_info.value.reason
+    assert "rack task lock" in exc_info.value.reason  # names the lock, not a constant
+
+
+def test_a_check_under_a_live_lock_still_runs(tmp_path):
+    """The clamp only shrinks: a lock with room left leaves the check its budget."""
+    script = _script(tmp_path, "exit 0")
+    runner = _runner(tmp_path, _check(script))
+
+    assert runner.on_event(_ctx(lock_expires_at=time.monotonic() + 300.0)) is None

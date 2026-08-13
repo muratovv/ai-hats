@@ -721,8 +721,7 @@ def test_read_current_sha_no_sentinel(tmp_path, monkeypatch):
 def test_read_current_sha_broken_python(tmp_path, monkeypatch):
     """HATS-657: complete (sentinel present) but bin/python gone (a host python
     upgrade dangles the interpreter symlink) → None. The venv is complete but NOT
-    runnable, so self update must NOT see already_current and must rebuild it; the
-    HATS-655 dormancy advisory must not false-fire."""
+    runnable, so self update must NOT see already_current and must rebuild it."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     _seed_version(tmp_path, "deadbeef", complete=True, sentinel=True, python=False)
     assert read_current_sha(tmp_path) is None

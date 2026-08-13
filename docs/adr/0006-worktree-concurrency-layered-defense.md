@@ -76,6 +76,13 @@ outer one, so deadlock is unreachable by construction. A new layer
 is introduced only after justifying its position in this hierarchy —
 the module docstring of `wt/locks.py` is the canonical in-code reference.
 
+Layer 1 is the outermost lock **this package owns**, which is not always
+the outermost lock held. The FSM road reaches `merge()` from inside the
+rack's task lock, so `merge()` accepts that caller's deadline and layer 1
+clamps its own against it — work nested under a foreign lock cannot
+outlive it (HATS-1603). No wt lock is ordered above layer 1, so the
+hierarchy itself is unchanged.
+
 ### П3 — Two contention sources, two strategies
 
 Internal contention (ai-hats vs ai-hats, same machine) is closed by

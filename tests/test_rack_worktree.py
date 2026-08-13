@@ -14,6 +14,7 @@ done-guard (PROP-056/057), and the HATS-979/818 pending-hunk-review reclaim.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from ai_hats_rack import OperationAborted
 from ai_hats_rack.dispatch import AbortOperation, Phase, Subscription
 from ai_hats.paths import worktrees_dir
 from ai_hats.rack_wiring import build_rack_kernel
+from ai_hats.wt_effects import WtWorktreeEffects
 from ai_hats_wt import WorktreeBaseBranchError, WorktreeManager, WorktreeStateLostError
 
 pytestmark = pytest.mark.integration
@@ -71,6 +73,7 @@ def project(tmp_path):
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
         project,
+        backlog_owner=project,
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",
@@ -398,8 +401,9 @@ class _SpyMergeManager:
     def __init__(self, captured: dict) -> None:
         self._captured = captured
 
-    def merge(self, *, force: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         self._captured["force"] = force
+        self._captured["outer_deadline"] = outer_deadline
 
     def discard(self, *, force: bool = False) -> None:  # pragma: no cover
         pass
@@ -427,7 +431,7 @@ class _FailingMergeManager:
     branch_name = "task/t-1"
     worktree_path = Path("/nonexistent-failing-worktree")
 
-    def merge(self, *, force: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         raise subprocess.CalledProcessError(
             returncode=128,
             cmd=["git", "merge", "--no-ff", self.branch_name],
@@ -654,3 +658,115 @@ def test_repo_aware_done_guard_finalizes_merged_task_repo(tmp_path, project):
     assert not WorktreeManager.branch_exists(repo, "task/t-1")  # cleaned up there
     logs = [e.message for e in kernel.get("T-1").work_log]
     assert any("task repo" in m for m in logs)
+
+
+class _DeadlineSpy:
+    """A lifecycle bundle that records the budget each point is handed."""
+
+    def __init__(self) -> None:
+        self.seen = None
+        self.seen_created = None
+        self.seen_teardown = None
+
+    def on_created(self, ctx) -> None:
+        self.seen_created = ctx.deadline
+
+    def before_merge(self, ctx) -> None:
+        self.seen = ctx.deadline
+
+    def before_teardown(self, event: str, ctx) -> None:
+        self.seen_teardown = ctx.deadline
+
+
+def test_done_hands_the_merge_point_the_rack_lock_budget(project):
+    """HATS-1603, the whole chain: kernel mints the instant, the integrator turns
+    it into a Deadline, wt clamps its own against it. Three green units cannot
+    show this — only the far end of the chain can say whose lock is bounding the
+    point, so this asserts on the deadline that actually arrived there.
+    """
+    spy = _DeadlineSpy()
+    kernel = _kernel(
+        project,
+        lock_timeout=17.0,
+        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+    )
+    _to_execute(kernel, project)
+    wt = _active(project, "T-1").worktree_path
+    (wt / "new_file.txt").write_text("hello")
+    _commit_all(wt, "add file")
+
+    _tr(kernel, "T-1", "document", "review", "done", cwd=project)
+
+    assert spy.seen is not None, "wt:pre-merge never fired — the chain is not under test"
+    assert "rack task lock" in spy.seen.origin, (
+        f"the merge point is bounded by {spy.seen.origin!r}, not by the lock it "
+        "actually runs inside — the enclosing deadline did not reach wt"
+    )
+    # The kernel's 17s ceiling, not the wt lifecycle lock's 60s.
+    assert spy.seen.remaining() <= 17.0
+    assert spy.seen.budget_for(45.0) <= 17.0
+
+
+class _LockCeilingProbe:
+    """Records the lock ceiling a pre-destroy subscriber is handed."""
+
+    name = "lock-ceiling-probe"
+
+    def __init__(self) -> None:
+        self.seen: list[float | None] = []
+
+    def subscriptions(self):
+        return [Subscription("pre-destroy", Phase.IN_LOCK, 10)]
+
+    def on_event(self, ctx):
+        self.seen.append(ctx.lock_expires_at)
+        return None
+
+
+def test_pre_destroy_subscriber_sees_the_publishers_lock_ceiling(project):
+    """HATS-1603: pre-destroy runs in-lock, so its subscribers get the ceiling
+    too — without it a hook here is bounded by nothing the kernel knows."""
+    probe = _LockCeilingProbe()
+    kernel = _kernel(project, extra_subscribers=[probe], lock_timeout=17.0)
+    _to_execute(kernel, project)
+
+    _tr(kernel, "T-1", "failed", cwd=project)
+
+    assert probe.seen and probe.seen[0] is not None, (
+        "pre-destroy subscriber was handed no lock ceiling — the publisher "
+        "dropped it on the way through kernel.publish"
+    )
+    assert probe.seen[0] - time.monotonic() <= 17.0
+
+
+def test_failed_hands_the_teardown_point_the_rack_lock_budget(project):
+    """The discard road (failed/cancelled) is nested exactly like merge."""
+    spy = _DeadlineSpy()
+    kernel = _kernel(
+        project,
+        lock_timeout=17.0,
+        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+    )
+    _to_execute(kernel, project)
+
+    _tr(kernel, "T-1", "failed", cwd=project)
+
+    assert spy.seen_teardown is not None
+    assert "rack task lock" in spy.seen_teardown.origin
+    assert spy.seen_teardown.budget_for(45.0) <= 17.0
+
+
+def test_execute_hands_the_create_point_the_rack_lock_budget(project):
+    """The ``-> execute`` edge: wt_in hooks are nested the same way."""
+    spy = _DeadlineSpy()
+    kernel = _kernel(
+        project,
+        lock_timeout=17.0,
+        worktree_effects=WtWorktreeEffects(project, lifecycle=spy),
+    )
+
+    _to_execute(kernel, project)
+
+    assert spy.seen_created is not None
+    assert "rack task lock" in spy.seen_created.origin
+    assert spy.seen_created.budget_for(45.0) <= 17.0

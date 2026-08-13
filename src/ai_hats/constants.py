@@ -7,7 +7,12 @@ cycle. Keeping the names in a leaf with **no internal imports** lets every layer
 share them without any cycle. ``assembler`` re-imports them, so
 ``from ai_hats.assembler import AGENT_DIR`` keeps working unchanged.
 HATS-948: ``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
-"""
+HATS-1613: the one exception to "no internal imports" is the ``env`` leaf, which
+the leaf gate exempts by name — ``ENV_ROLE``/``ENV_ROOT_PID`` are re-exported
+from there rather than re-declared (ADR-0025 D1).
+"""  # comment-length: allow — the leaf's import contract is the point of the module
+
+from .env import ENV_ROLE as ENV_ROLE, ENV_ROOT_PID as ENV_ROOT_PID
 
 AGENT_DIR = ".agent"
 GITIGNORE_FILE = ".gitignore"
@@ -16,6 +21,11 @@ GITIGNORE_FILE = ".gitignore"
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
+# HATS-1617: resolution contract the host launcher must implement. Bump only when
+# the launcher's resolution behaviour changes — never for comments or a release.
+# Paired with the `LAUNCHER_CONTRACT=` literal in scripts/ai-hats-launcher.
+LAUNCHER_CONTRACT = 1
+LAUNCHER_CONTRACT_FILE = "launcher-contract"
 
 
 # Env-var names shared across modules (HATS-917); single-file knobs stay local.
@@ -24,10 +34,6 @@ ENV_REPO_URL = "AI_HATS_REPO_URL"
 # HATS-938: launcher → `self init` channel for the editable host source, so init
 # seeds `harness.channel: local` without depending on which interpreter it runs under.
 ENV_AI_HATS_INIT_SRC = "AI_HATS_INIT_SRC"
-ENV_ROLE = "AI_HATS_ROLE"
-# HATS-955: this durable session process's pid, exported to the child so the
-# ephemeral `rack` subprocess can anchor ownership liveness on it.
-ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 ENV_LAUNCHER_DEST = "AI_HATS_LAUNCHER_DEST"
 ENV_SKIP_RETRO = "HATS_SKIP_RETRO"
 ENV_AI_HATS_DEBUG = "AI_HATS_DEBUG"

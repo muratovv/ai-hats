@@ -10,6 +10,9 @@ from __future__ import annotations
 
 # Session-id env var — the sidecar/runtime handshake for the active session.
 ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+#: Where this session's trace is written — session-scoped, so it travels
+#: with the id rather than being re-derived downstream.
+ENV_TRACE_LOG_PATH = "TRACE_LOG_PATH"
 
 
 class TraceTag:

@@ -14,6 +14,7 @@ the integrator can do — compose the role, resolve the script
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -31,10 +32,22 @@ from ai_hats_rack.checks import (
 from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
-from .check_points import check_log_token
+from .check_points import check_failure_reason, check_log_token
 from .check_resolve import CheckResolutionError, resolve_carried_checks
-from .hook_exec import HookRun, HookVerdict, run_hook
+from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
+
+
+def _shipped_deadline(request: CheckRequest) -> Deadline:
+    """The ceiling a check runs under (HATS-1603).
+
+    The rack forbids itself a core dependency, so it ships the moment its task
+    lock expires and the type is minted here. Without one — a road that holds no
+    task lock — the check is bounded by its own budget, declared as such.
+    """
+    if request.lock_expires_at is None:
+        return Deadline.without_lock(request.timeout, why="rack check, no task lock")
+    return Deadline(request.lock_expires_at, "rack task lock")
 
 
 class AiHatsCheckPort:
@@ -50,12 +63,15 @@ class AiHatsCheckPort:
 
     def __init__(
         self,
-        project_dir: Path,
+        backlog_owner: Path | None,
         *,
         catalog: Path,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
     ) -> None:
-        self.project_dir = project_dir
+        #: The backlog's own project — the ONLY one this channel knows (HATS-1573):
+        #: it composes the role, it is the gate's cwd, and it is the
+        #: ``AI_HATS_PROJECT_DIR`` the gate reads as "this project".
+        self.backlog_owner = backlog_owner
         # The catalog of the backlog being gated, not the project's tasks dir:
         # a sibling's check log belongs under the sibling, and the gate reads
         # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
@@ -76,7 +92,25 @@ class AiHatsCheckPort:
         return tuple(_declaration(check) for check in resolved)
 
     def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
-        return resolve_carried_checks(self.project_dir, self.APP)
+        if self.backlog_owner is None:
+            # A backlog nobody owns declares nothing, so nothing fires. Said out
+            # loud: a gate that is not there must not read as a gate that passed.
+            print(
+                f"checks: no project owns the backlog at {self._catalog} — no role "
+                f"composes onto it, so no bound check runs on this transition",
+                file=sys.stderr,
+            )
+            return ()
+        return resolve_carried_checks(self.backlog_owner, self.APP)
+
+    def _project(self) -> Path:
+        """The owner, proven present: rows only exist when a project declared them."""
+        if self.backlog_owner is None:
+            raise CheckResolutionError(
+                f"checks: a bound check was requested for the backlog at {self._catalog}, "
+                f"which no project owns — nothing could have declared it"
+            )
+        return self.backlog_owner
 
     def run_check(self, request: CheckRequest) -> CheckOutcome:
         check: ResolvedCheck = request.declaration.handle
@@ -84,11 +118,8 @@ class AiHatsCheckPort:
             check.script_path,
             point=request.event,
             budget=request.timeout,
-            # The rack forbids itself a core dependency, so it ships a number and
-            # not a deadline; minting here still shares one ceiling across the
-            # checks of one transition. Moving t0 to the lock: follow-up.
-            deadline=Deadline.without_lock(request.timeout, why="rack task lock (shipped)"),
-            project_dir=self.project_dir,
+            deadline=_shipped_deadline(request),
+            project_dir=self._project(),
             force=request.force,
             task_id=request.task_id,
             worktree_path=self._worktree_path(request.task_id),
@@ -97,7 +128,7 @@ class AiHatsCheckPort:
         )
         return CheckOutcome(
             ok=run.ok,
-            reason=_refusal(check, run),
+            reason=check_failure_reason(check, run),
             downgradable=run.downgradable,
         )
 
@@ -122,8 +153,9 @@ class AiHatsCheckPort:
         from .paths import worktrees_dir
 
         try:
+            project = self._project()
             path = WorktreeManager.peek_worktree_path(
-                self.project_dir, task_id, state_dir=worktrees_dir(self.project_dir)
+                project, task_id, state_dir=worktrees_dir(project)
             )
         except (OSError, ValueError) as exc:
             # "Cannot tell" is not "no worktree". Handing a gate an absent
@@ -171,17 +203,7 @@ def _binding(check: ResolvedCheck) -> str:
     return f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
 
 
-def _refusal(check: ResolvedCheck, run: HookRun) -> str:
-    """A refusal that spoke stands alone — R3.3 wants the child's tail verbatim
-    in ``--json``. Everything else is the substrate failing, so it is named."""
-    if run.ok:
-        return ""
-    if run.verdict is HookVerdict.REFUSE:
-        return run.reason
-    return f"checks: {_binding(check)} — {run.reason}"
-
-
-def check_port_factory(project_dir: Path) -> CheckPortFactory:
+def check_port_factory(backlog_owner: Path | None) -> CheckPortFactory:
     """This integrator's ``CheckPortFactory``: one executor per gated catalog.
 
     The whole of what ai-hats contributes to the channel since HATS-1575. Which
@@ -191,11 +213,11 @@ def check_port_factory(project_dir: Path) -> CheckPortFactory:
     them here meant every road that did not repeat the derivation — the sibling
     backlogs, the workspace the reflect consumers mount — silently had no gate.
     """  # comment-length: allow — the boundary this draws IS the fix
-    return lambda catalog: AiHatsCheckPort(project_dir, catalog=catalog)
+    return lambda catalog: AiHatsCheckPort(backlog_owner, catalog=catalog)
 
 
 def consumer_subscribers(
-    project_dir: Path,
+    backlog_owner: Path | None,
     *,
     definition: BacklogDefinition,
     catalog: Path,
@@ -210,7 +232,7 @@ def consumer_subscribers(
     return [
         check_subscriber(
             definition,
-            port=check_port_factory(project_dir)(catalog),
+            port=check_port_factory(backlog_owner)(catalog),
             known_backlogs=known_backlogs,
         )
     ]

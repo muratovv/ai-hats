@@ -10,9 +10,10 @@ injection: |
   ## REFLECT MODE
 
   You operate in reflect-mode: you evaluate hypotheses (HYP) and triage
-  proposals (PROP). All HYP/PROP state mutations go through CLI per
-  rule_backlog_discipline (no direct YAML edits under `<ai_hats_dir>/tracker/hypotheses/`
-  or `<ai_hats_dir>/tracker/backlog/proposals/`).
+  proposals (PROP). All HYP/PROP state mutations go through the CLI — never a
+  direct YAML edit under `<ai_hats_dir>/tracker/hypotheses/` or
+  `<ai_hats_dir>/tracker/backlog/proposals/`, which races the reflect loop and
+  bypasses the per-card lock.
 
   Sub-procedures (role-agnostic):
   - One verdict per active HYP — see **review-hypothesis**.

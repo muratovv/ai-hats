@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**228 of 228 files catalogued — 235 flows.**
+**232 of 232 files catalogued — 239 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -736,6 +736,21 @@ as a claim to check, not as evidence.
 - **expect** — command exits with code 2 explaining that explicit role specification is required for batch
 - **why** — without role validation in batch mode, execution runs under uninitialized default roles
 
+## `test_gate_primitive.py`
+
+*pins HATS-1604, HATS-1601*
+
+- **flow** — a gate script asking whether this tree already earned a marker
+- **cmds**
+
+  ```console
+  bash -c '. lib/gate-marker.sh; gate_marker_write done-gate . <tree> ...'
+  bash -c '. lib/gate.sh; gate_exit checks refuse'
+  ```
+
+- **expect** — the marker keys on the TREE, carries the composition it certifies, and one primitive maps an outcome onto each channel's exit codes
+- **why** — the discipline was hand-written twice with a diverging exit contract, and a commit-keyed marker made every --no-ff merge pay twice
+
 ## `test_githooks_argv_contract.py`
 
 *pins HATS-1519*
@@ -765,6 +780,20 @@ as a claim to check, not as evidence.
 
 - **expect** — core.hooksPath points to .githooks and both ai-hats guard hooks and the repository's existing hooks execute on git commit and push
 - **why** — overwriting existing repository hook configurations without chaining breaks the repository's pre-existing quality checks
+
+## `test_githooks_dispatcher_env_contract.py`
+
+*pins HATS-1613, HATS-1525*
+
+- **flow** — a developer commits in project A from a shell whose session belongs to project B, so the inherited AI_HATS_VENV / AI_HATS_DIR pair names B
+- **cmds**
+
+  ```console
+  git commit -m "feature"
+  ```
+
+- **expect** — the dispatcher drops the foreign pair and runs A's own gates; a bare override with no pair is still honoured, and a matching pin is silent
+- **why** — honouring a leaked pin runs the commit's gates under another project's interpreter — observed in HATS-1525, where the commit was refused
 
 ## `test_githooks_orchestrator.py`
 
@@ -987,6 +1016,20 @@ as a claim to check, not as evidence.
 
 - **expect** — wheel build produces standalone package wheels for all workspace sub-packages
 - **why** — without proper wheel build configuration, sub-packages fail to package required package data
+
+## `test_launcher_contract_skew.py`
+
+*pins HATS-1617*
+
+- **flow** — a developer whose host launcher is an older copy than the project's package, hitting any ai-hats command on the path where the venv cannot be resolved
+- **cmds**
+
+  ```console
+  ai-hats config status
+  ```
+
+- **expect** — the failure names the launcher skew and prints the refresh command, instead of advising a self init / self update that a stale launcher cannot act on
+- **why** — the launcher is a copy that never self-updates, and it dies before any interpreter runs — so nothing on the Python side can report the skew. Without this the only symptom is a misdirecting hint (HATS-1600 paid a session for it)
 
 ## `test_launcher_env_pair_isolation.py`
 
@@ -1465,6 +1508,22 @@ as a claim to check, not as evidence.
 - **expect** — python security lint hook runs ruff security checks and outputs non-blocking warnings
 - **why** — without security lint hooks, vulnerable python coding patterns land in codebase without warning
 
+## `test_rack_anchor_split.py`
+
+*pins HATS-1573*
+
+- **flow** — a developer running rack from inside a linked worktree against a backlog that belongs to a DIFFERENT project
+- **cmds**
+
+  ```console
+  rack create "sandbox card" --tasks-dir <sandbox>/.agent/ai-hats/tracker/backlog/tasks
+  rack context <id> --tasks-dir <sandbox>/...
+  rack context <main id>
+  ```
+
+- **expect** — ids carry the sandbox project's prefix, the sandbox gets its own STATE.md, the enclosing checkout is not written to, and the same worktree WITHOUT an override still resolves the main tracker
+- **why** — --tasks-dir moves the backlog without moving the operator; everything computed from the anchor used to read a foreign checkout, so one project's gates, prefix and STATE.md reached another project's backlog
+
 ## `test_rack_append_payload_e2e.py`
 
 *pins HATS-1299*
@@ -1561,22 +1620,6 @@ as a claim to check, not as evidence.
 
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
-
-## `test_rack_race_condition.py`
-
-*pins HATS-1466*
-
-- **flow** — several agents log work against the SAME card at once — parallel sub-agents on one ticket, or a session racing its own hooks
-- **cmds**
-
-  ```console
-  rack create race-target-task --description "..."
-  rack transition <ID> --log "<message>"
-  rack doctor
-  ```
-
-- **expect** — every entry survives — the card holds exactly as many work_log lines as calls made, the YAML still parses, and `rack doctor` reports the backlog intact
-- **why** — without the card lock a losing writer's read-modify-write drops the winner's entry, or leaves half-serialised YAML — both invisible until someone looks for a log line that was never there. The Kernel-API tier is covered by test_card_lock_concurrency.py (HATS-1264); this drives the CLI, the surface agents actually call.
 
 ## `test_rack_reparent_e2e.py`
 
@@ -2111,17 +2154,17 @@ as a claim to check, not as evidence.
 
 ## `test_self_update_launcher_skew_advisory.py`
 
-*pins HATS-647, HATS-655*
+*pins HATS-647, HATS-655, HATS-1617*
 
-- **flow** — a developer running self update when host launcher binary is older than installed framework
+- **flow** — a developer running self update when the host launcher binary is older than the installed framework
 - **cmds**
 
   ```console
   ai-hats self update
   ```
 
-- **expect** — self update displays advisory warning detailing launcher upgrade instructions
-- **why** — without launcher skew advisories, outdated host launchers miss versioned venv resolution features
+- **expect** — self update names the contract skew and prints the launcher refresh command
+- **why** — the launcher is a copy that never self-updates. This is the SUCCESS-path contour — the update completes, so the failure-path check inside the launcher (tests/e2e/test_launcher_contract_skew.py) never runs here
 
 ## `test_self_update_legacy_venv_reclaim.py`
 
@@ -2806,6 +2849,21 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_worktree_library_edit_visible.py`
+
+*pins HATS-1501*
+
+- **flow** — someone edits a library trait inside a linked worktree and asks for a read-only composition from that worktree, expecting their own edit to be the one that composes
+- **cmds**
+
+  ```console
+  git worktree add --detach <wt>
+  python -m ai_hats config show-prompt --role role-curator
+  ```
+
+- **expect** — stdout carries the trait as edited in the WORKTREE, not the main checkout's copy of it — asserted on content, never status, because the failure mode is exit 0 with the block present and carrying the wrong text
+- **why** — the defect was silent, which is why it needs a real subprocess: in process ``_detect_source_library_root(cwd)`` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset here — setting it is the manual workaround this test exists to remove
 
 ## `test_worktree_lifecycle_robustness_matrix.py`
 

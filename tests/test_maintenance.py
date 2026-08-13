@@ -800,50 +800,8 @@ def test_is_managed_override_venv_is_false(tmp_path, monkeypatch):
     assert _is_managed_install(tmp_path) is False
 
 
-# ---- HATS-655: dormant-versioned-layout advisory ----
-
-
-def _on_venv(tmp_path, monkeypatch):
-    """Make sys.prefix the legacy default .venv (managed, current_run_sha None)."""
-    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    monkeypatch.setattr(_mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
-
-
-def test_dormant_true_when_versioned_exists_but_run_from_venv(tmp_path, monkeypatch):
-    _on_venv(tmp_path, monkeypatch)
-    assert _mnt._versioned_layout_dormant(tmp_path, pre_existing_versioned=True) is True
-
-
-def test_dormant_false_on_first_migration(tmp_path, monkeypatch):
-    """No versioned install pre-existed → running from .venv is expected."""
-    _on_venv(tmp_path, monkeypatch)
-    assert _mnt._versioned_layout_dormant(tmp_path, pre_existing_versioned=False) is False
-
-
-def test_dormant_false_when_running_from_versioned(tmp_path, monkeypatch):
-    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    monkeypatch.setattr(
-        _mnt.sys,
-        "prefix",
-        str(tmp_path / ".agent" / "ai-hats" / "versions" / "deadbeef"),
-    )
-    assert _mnt._versioned_layout_dormant(tmp_path, pre_existing_versioned=True) is False
-
-
-def test_dormant_false_on_override(tmp_path, monkeypatch):
-    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    monkeypatch.setattr(_mnt.sys, "prefix", str(tmp_path / "user-owned"))
-    assert _mnt._versioned_layout_dormant(tmp_path, pre_existing_versioned=True) is False
-
-
-def test_dormant_false_on_editable(tmp_path, monkeypatch):
-    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (True, "file:///src"))
-    monkeypatch.setattr(_mnt.sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
-    assert _mnt._versioned_layout_dormant(tmp_path, pre_existing_versioned=True) is False
+# HATS-1617 replaced the HATS-655 dormant-versioned-layout advisory with a
+# contract-skew check; its unit coverage lives in tests/test_launcher_contract.py.
 
 
 def test_installed_launcher_path_resolution(tmp_path, monkeypatch):
@@ -1047,17 +1005,14 @@ def test_managed_update_already_current_skips_install(tmp_path, monkeypatch):
 
 
 def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
-    """HATS-657 (both consequences): current → a COMPLETE versioned venv whose
-    bin/python is gone (a host python upgrade dangled the interpreter), and this
-    update runs from the healed legacy .venv.
+    """HATS-657: current → a COMPLETE versioned venv whose bin/python is gone (a
+    host python upgrade dangled the interpreter), and this update runs from the
+    healed legacy .venv.
 
-    #1 The broken dir must be REBUILT, not reused: read_current_sha returns None
-       (not usable) → already_current False, and the reuse gate also requires
-       bin/python → the dir falls through to the rmtree+rebuild branch instead of
-       being reused with a dead interpreter (which would crash _version_string).
-    #2 The HATS-655 dormancy advisory must NOT false-fire: pre_existing_versioned
-       is False (the pre-existing versioned was not usable), so the heal is silent
-       — the launcher correctly skipped a BROKEN venv, it is not stale."""
+    The broken dir must be REBUILT, not reused: read_current_sha returns None
+    (not usable) → already_current False, and the reuse gate also requires
+    bin/python → the dir falls through to the rmtree+rebuild branch instead of
+    being reused with a dead interpreter (which would crash _version_string)."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
@@ -1072,7 +1027,7 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
     complete_sentinel(tmp_path, "cafef00d").write_text("", encoding="utf-8")
     _flip_current(tmp_path, "cafef00d")
     assert read_current_sha(tmp_path) is None  # broken venv is not usable
-    printed = _capture_prints(monkeypatch)
+    _capture_prints(monkeypatch)
 
     # Record every subprocess call while delegating to the real fake (which
     # rebuilds bin/python on `uv venv` — HATS-790: no bin/ai-hats console script).
@@ -1093,14 +1048,12 @@ def test_managed_update_rebuilds_broken_python_versioned(tmp_path, monkeypatch):
             migrate_force=False,
             check_branches=False,
         )
-    # #1 REBUILT (not reused): a venv create + pip install ran for the target sha.
+    # REBUILT (not reused): a venv create + pip install ran for the target sha.
     assert any("venv" in c and "uv" in c for c in calls)
     assert any("pip" in c for c in calls)
     # The interpreter is restored and the sha is usable / current again.
     assert (version_dir(tmp_path, "cafef00d") / "bin" / "python").exists()
     assert read_current_sha(tmp_path) == "cafef00d"
-    # #2 No false dormancy advisory — the broken versioned was correctly skipped.
-    assert not any("host launcher is not using" in p for p in printed)
 
 
 def test_managed_update_sweeps_incomplete_residue_before_build(tmp_path, monkeypatch):
@@ -1229,24 +1182,17 @@ def _capture_prints(monkeypatch):
     return printed
 
 
-def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
-    """HATS-655: a versioned install pre-existed AND this update ran from the
-    legacy .venv → the dormant-layout hint fires."""
+def _update_with_launcher(tmp_path, monkeypatch, stamp):
+    """Run a managed update against an installed launcher carrying ``stamp``."""
     monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
     monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
     monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
     monkeypatch.setattr(sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
-    # A USABLE versioned install already exists → pre_existing_versioned True.
-    # HATS-657: must carry bin/python too, else read_current_sha treats it as
-    # unusable and pre_existing_versioned would be False — that is the python-
-    # broken case (correctly silent), NOT the genuine stale-launcher dormancy
-    # this test exercises.
-    vbin = version_dir(tmp_path, "0ldc0de0") / "bin"
-    vbin.mkdir(parents=True, exist_ok=True)
-    (vbin / "ai-hats").write_text("#!/bin/sh\n")
-    (vbin / "python").write_text("#!/bin/sh\n")
-    complete_sentinel(tmp_path, "0ldc0de0").write_text("", encoding="utf-8")
-    _flip_current(tmp_path, "0ldc0de0")
+    launcher = tmp_path / "host-ai-hats"
+    launcher.write_text(
+        "#!/usr/bin/env bash\n" if stamp is None else f"LAUNCHER_CONTRACT={stamp}\n"
+    )
+    monkeypatch.setenv(ENV_LAUNCHER_DEST, str(launcher))
     printed = _capture_prints(monkeypatch)
 
     with patch("subprocess.run", side_effect=_versioned_fake_run()):
@@ -1259,30 +1205,31 @@ def test_managed_update_warns_when_launcher_dormant(tmp_path, monkeypatch):
             migrate_force=False,
             check_branches=False,
         )
-    assert any("host launcher is not using the versioned install" in p for p in printed)
+    return printed
+
+
+def test_managed_update_warns_when_launcher_is_behind(tmp_path, monkeypatch):
+    """HATS-1617: the success-path contour — the update ran fine, but the host
+    launcher resolves by rules this package has moved past."""
+    printed = _update_with_launcher(tmp_path, monkeypatch, stamp=None)  # unstamped ⇒ 0
+
+    assert any("host launcher is behind this install" in p for p in printed)
+    assert any(str(LAUNCHER_CONTRACT) in p for p in printed)
     assert any("install-launcher.sh" in p for p in printed)
 
 
-def test_managed_update_no_dormant_hint_on_first_migration(tmp_path, monkeypatch):
-    """No versioned install pre-existed → running from .venv is expected, no hint."""
-    monkeypatch.delenv(ENV_AI_HATS_DIR, raising=False)
-    monkeypatch.setattr(_mnt, "_get_changelog", lambda: "")
-    monkeypatch.setattr(_mnt, "_is_editable_install", lambda: (False, None))
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".agent" / "ai-hats" / ".venv"))
-    printed = _capture_prints(monkeypatch)
+def test_managed_update_silent_when_launcher_is_level(tmp_path, monkeypatch):
+    printed = _update_with_launcher(tmp_path, monkeypatch, stamp=LAUNCHER_CONTRACT)
 
-    with patch("subprocess.run", side_effect=_versioned_fake_run()):
-        _run_managed_versioned_update(
-            tmp_path,
-            _edge_res("git+ssh://x/ai-hats.git", "cafef00d"),
-            old_version="1.0.0",
-            active_role=None,
-            config_unreadable=False,
-            migrate_force=False,
-            check_branches=False,
-        )
     assert read_current_sha(tmp_path) == "cafef00d"  # update succeeded
-    assert not any("host launcher is not using" in p for p in printed)
+    assert not any("host launcher is behind" in p for p in printed)
+
+
+def test_managed_update_silent_when_launcher_is_ahead(tmp_path, monkeypatch):
+    """One host launcher serves N projects — newer than this one is not skew."""
+    printed = _update_with_launcher(tmp_path, monkeypatch, stamp=LAUNCHER_CONTRACT + 5)
+
+    assert not any("host launcher is behind" in p for p in printed)
 
 
 # ---------- HATS-764: channel routing + per-channel guard ----------
@@ -1291,7 +1238,7 @@ from ai_hats.cli.maintenance import (  # noqa: E402
     _build_managed_resolution,
     _classify_semver_downgrade,
 )
-from ai_hats.constants import ENV_LAUNCHER_DEST  # noqa: E402
+from ai_hats.constants import ENV_LAUNCHER_DEST, LAUNCHER_CONTRACT  # noqa: E402
 from ai_hats.paths import ENV_AI_HATS_DIR  # noqa: E402
 
 

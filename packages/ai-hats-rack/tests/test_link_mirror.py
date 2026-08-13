@@ -64,7 +64,7 @@ def project(tmp_path):
     (beta / "backlog.yaml").write_text(_pair("beta", "BB", "alpha"), encoding="utf-8")
     _seed(alpha, "AA-1")
     _seed(beta, "BB-1")
-    root = RackRoot(project_dir=project, tasks_dir=tasks, prefix="HATS")
+    root = RackRoot(project_dir=project, tasks_dir=tasks, backlog_owner=project, prefix="HATS")
     return Workspace.discover([root]), project, alpha, beta
 
 

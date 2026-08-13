@@ -68,4 +68,4 @@ ai-hats list …                   # library inspections (skills, rules, traits,
 This skill **only** documents task filing. Anything beyond `rack create`
 (transitions, work-log entries, hyp / proposal verbs) is out of
 scope and belongs to **hatrack**. If your role's protocol skill
-permits a wider set of mutations, compose **hatrack-trait** instead.
+permits a wider set of mutations, compose **hatrack** instead.

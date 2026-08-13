@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +43,22 @@ ENV_SESSION_IDENTITY = "AI_HATS_SESSION_IDENTITY"
 #: optional key does NOT bump it — readers ignore what they do not know — so a
 #: mismatch always means something a reader relies on moved under it.
 IDENTITY_VERSION = 1
+
+#: Every key ``to_env`` writes, so the identity can be removed the way it is
+#: written — as a unit. Pinned against ``to_env`` by the contract guard.
+IDENTITY_ENV_KEYS = (ENV_SESSION_IDENTITY, ENV_SESSION_ID, ENV_ROLE)
+
+
+def drop_identity(environ: MutableMapping[str, str]) -> list[str]:
+    """Remove the session identity from ``environ``; return the keys removed.
+
+    Removing a SUBSET tears it: the envelope without its scalars, or scalars
+    without the envelope, is a session that half-exists, and ``from_env`` refuses
+    that rather than reading it as absence. Three call sites each hand-rolled
+    their own key list and each got a different subset, so the list lives here
+    with the writer instead (HATS-1613 review).
+    """
+    return [key for key in IDENTITY_ENV_KEYS if environ.pop(key, None) is not None]
 
 
 class SessionIdentityError(Exception):
@@ -84,6 +101,8 @@ class SessionIdentity:
                 sort_keys=True,
             ),
             ENV_SESSION_ID: self.id,
+            # Nothing in this repo reads it — it is published for shells and
+            # user hooks, so "unused" here is not evidence it is dead.
             ENV_ROLE: self.role,
         }
 
@@ -163,7 +182,9 @@ class SessionIdentity:
 
 __all__ = [
     "ENV_SESSION_IDENTITY",
+    "IDENTITY_ENV_KEYS",
     "IDENTITY_VERSION",
     "SessionIdentity",
     "SessionIdentityError",
+    "drop_identity",
 ]

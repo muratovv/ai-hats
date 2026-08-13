@@ -22,6 +22,7 @@ from ai_hats.assembler import (
     USER_RULES_SUBDIR,
     Assembler,
 )
+from ai_hats.constants import LAUNCHER_CONTRACT, LAUNCHER_CONTRACT_FILE
 from ai_hats.paths import PROJECT_CONFIG
 
 
@@ -99,6 +100,16 @@ def test_write_canonical_emits_no_framework_files(project_with_library: Path) ->
     assert not (canonical / "rules").exists()
 
 
+def test_write_canonical_stamps_launcher_contract(project_with_library: Path) -> None:
+    """HATS-1617: the bash launcher has no venv to ask on its failure path, so the
+    contract it must match is left on disk for it to read."""
+    asm, _ = _compose(project_with_library)
+    asm.write_canonical()
+
+    stamp = _canonical(project_with_library) / LAUNCHER_CONTRACT_FILE
+    assert stamp.read_text().strip() == str(LAUNCHER_CONTRACT)
+
+
 def test_write_canonical_creates_empty_user_rules_dir(project_with_library: Path) -> None:
     """``user-rules/`` is always created — it is the landing zone the composed
     prompt reads at session time."""
@@ -115,12 +126,13 @@ def test_write_canonical_manifest_tracks_nothing(project_with_library: Path) -> 
 
 
 def test_write_canonical_leaves_only_user_rules_and_manifest(project_with_library: Path) -> None:
-    """The whole canonical root: ``user-rules/`` + the MANAGED manifest."""
+    """The whole canonical root: ``user-rules/``, the MANAGED manifest, and the
+    launcher-contract stamp (HATS-1617)."""
     asm, _ = _compose(project_with_library)
     asm.write_canonical()
 
     on_disk = {p.name for p in _canonical(project_with_library).iterdir()}
-    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST}
+    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST, LAUNCHER_CONTRACT_FILE}
 
 
 def test_write_canonical_does_not_aggregate_user_rules(project_with_library: Path) -> None:
@@ -241,8 +253,10 @@ def test_write_canonical_ignores_priorities_role_traits_rules_skills(
 
     asm.write_canonical()
 
+    # The launcher stamp is install metadata, not composition output — it is the
+    # only non-composition file this root gained (HATS-1617).
     on_disk = {p.name for p in _canonical(project_with_library).iterdir()}
-    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST}
+    assert on_disk == {USER_RULES_SUBDIR, CANONICAL_MANIFEST, LAUNCHER_CONTRACT_FILE}
 
 
 def test_set_role_writes_canonical(project_with_library: Path) -> None:

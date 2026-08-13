@@ -14,14 +14,22 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
 from ai_hats_core.deadline import Deadline
 
-from .paths import AI_HATS_PROJECT_DIR_ENV
+from .env import (
+    AI_HATS_PROJECT_DIR_ENV,
+    ENV_FORCE,
+    ENV_HOOK_POINT,
+    ENV_IN_HOOK,
+    ENV_TASK_ID,
+    ENV_TASKS_DIR,
+    ENV_WORKTREE_PATH,
+)
 
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
@@ -40,6 +48,29 @@ class HookVerdict(Enum):
     CORRUPT = "corrupt"
 
 
+class HookOutcomeKind(Enum):
+    """What happened to the child, apart from how this module words it.
+
+    ``HookVerdict`` says how a channel must TREAT a run; this says WHY, so a
+    channel can phrase it in its own vocabulary. The checks channel needs that:
+    "hook" names a real channel there, and calling a binding line one misleads
+    (HATS-1572). Matching on ``reason`` would work today and rot on the first
+    rewording, so the fact travels as a value.
+    """  # comment-length: allow — why this sits beside HookVerdict is the contract
+
+    PASSED = "passed"
+    REFUSED = "refused"
+    EXITED = "exited"
+    TIMED_OUT = "timed_out"
+    SIGNALLED = "signalled"
+    SCRIPT_MISSING = "script_missing"
+    NOT_EXECUTABLE = "not_executable"
+    NO_TIME_LEFT = "no_time_left"
+    COMMAND_NOT_FOUND = "command_not_found"
+    EXEC_FAILED = "exec_failed"
+    LOG_UNUSABLE = "log_unusable"
+
+
 @dataclass(frozen=True)
 class HookRun:
     """One hook's governed outcome."""
@@ -47,9 +78,20 @@ class HookRun:
     verdict: HookVerdict
     exit_code: int | None
     reason: str
+    #: The fact behind the verdict — see :class:`HookOutcomeKind`.
+    kind: HookOutcomeKind = field(kw_only=True)
+    #: The child's own stdout tail, apart from the named outcome ``reason`` joins
+    #: it to, so a channel can reword the second and keep the first verbatim.
+    said: str = ""
+    #: The FACT behind the outcome — a path, an errno, a signal, a budget — with
+    #: none of this module's vocabulary in it. A channel that rewords the outcome
+    #: keeps the fact; without this it could only reword by discarding (HATS-1572).
+    detail: str = ""
     stderr: str = ""
     log_path: Path | None = None
     truncated: bool = False
+    #: Bytes the child wrote, for the truncation note a channel appends itself.
+    output_size: int = 0
 
     @property
     def ok(self) -> bool:
@@ -94,9 +136,19 @@ def run_hook(
     constant against a lock (HATS-1593).
     """  # comment-length: allow — the D2 execution contract itself
     if not script.is_file():
-        return _corrupt(f"hook script missing: {script}", None)
+        return _corrupt(
+            f"hook script missing: {script}",
+            None,
+            HookOutcomeKind.SCRIPT_MISSING,
+            detail=str(script),
+        )
     if not os.access(script, os.X_OK):
-        return _corrupt(f"hook script not executable: {script}", None)
+        return _corrupt(
+            f"hook script not executable: {script}",
+            None,
+            HookOutcomeKind.NOT_EXECUTABLE,
+            detail=str(script),
+        )
 
     timeout = deadline.budget_for(budget)
     if timeout <= 0.0:
@@ -104,6 +156,8 @@ def run_hook(
             verdict=HookVerdict.BROKE,
             exit_code=None,
             reason=f"hook broke: no time left under {deadline.origin}: {script}",
+            kind=HookOutcomeKind.NO_TIME_LEFT,
+            detail=deadline.origin,
         )
 
     header = f"# hook point={point} script={script} timeout={timeout}s under {deadline.origin}"
@@ -113,7 +167,12 @@ def run_hook(
         # Fail closed and name the path: the caller asked for a log there, and
         # running the gate while silently dropping its evidence is the absence
         # this channel exists to make loud.
-        return _corrupt(f"hook log path unusable ({type(exc).__name__}): {exc}", None)
+        return _corrupt(
+            f"hook log path unusable ({type(exc).__name__}): {exc}",
+            None,
+            HookOutcomeKind.LOG_UNUSABLE,
+            detail=f"({type(exc).__name__}): {exc}",
+        )
     err_sink, err_path = _open_scratch_sink()
     expired: subprocess.TimeoutExpired | None = None
     proc: subprocess.CompletedProcess[bytes] | None = None
@@ -133,7 +192,12 @@ def run_hook(
         except subprocess.TimeoutExpired as exc:
             expired = exc
         except OSError as exc:
-            return _corrupt(f"hook could not be executed ({type(exc).__name__}): {exc}", log_path)
+            return _corrupt(
+                f"hook could not be executed ({type(exc).__name__}): {exc}",
+                log_path,
+                HookOutcomeKind.EXEC_FAILED,
+                detail=f"({type(exc).__name__}): {exc}",
+            )
         finally:
             sink.close()
             err_sink.close()
@@ -154,9 +218,13 @@ def run_hook(
                     size,
                     log_path,
                 ),
+                kind=HookOutcomeKind.TIMED_OUT,
+                said=said,
+                detail=f"after {timeout:g}s",
                 stderr=stderr,
                 log_path=log_path,
                 truncated=truncated,
+                output_size=size,
             )
 
         assert proc is not None  # noqa: S101 — the three exits above are exhaustive
@@ -168,9 +236,13 @@ def run_hook(
             reason=_note_truncation(
                 _reason(verdict, named, said, stderr), truncated, size, log_path
             ),
+            kind=_kind(proc.returncode),
+            said=said,
+            detail=_detail(proc.returncode),
             stderr=stderr,
             log_path=log_path,
             truncated=truncated,
+            output_size=size,
         )
     finally:
         # In a finally so the OSError return and a propagating KeyboardInterrupt
@@ -203,19 +275,19 @@ def _hook_env(
     for forcing in ("FORCE_COLOR", "CLICOLOR_FORCE", "CLICOLOR"):
         env.pop(forcing, None)
     env["NO_COLOR"] = "1"
-    env["AI_HATS_HOOK_POINT"] = point
+    env[ENV_HOOK_POINT] = point
     env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
     # A check must not re-enter the per-task lock from a subprocess (D5).
-    env["AI_HATS_IN_HOOK"] = "1"
-    _put(env, "AI_HATS_FORCE", "1" if force else None)
-    _put(env, "AI_HATS_TASK_ID", task_id)
-    _put(env, "AI_HATS_WORKTREE_PATH", str(worktree_path) if worktree_path else None)
+    env[ENV_IN_HOOK] = "1"
+    _put(env, ENV_FORCE, "1" if force else None)
+    _put(env, ENV_TASK_ID, task_id)
+    _put(env, ENV_WORKTREE_PATH, str(worktree_path) if worktree_path else None)
     # HATS-1540: the primitive OWNS this one too, so a point that does not resolve
     # a backlog (`wt:pre-merge`) removes it rather than inheriting whatever the
     # ambient environment carries. Left to `extra`, which can only add, a stale
     # value reached the gate and a script comparing it to its own tracker read
     # "not my backlog" and waved the merge through — measured, not feared.
-    _put(env, "AI_HATS_TASKS_DIR", str(tasks_dir) if tasks_dir else None)
+    _put(env, ENV_TASKS_DIR, str(tasks_dir) if tasks_dir else None)
     env.update(extra or {})
     return env
 
@@ -225,6 +297,31 @@ def _put(env: dict[str, str], name: str, value: str | None) -> None:
         env.pop(name, None)
     else:
         env[name] = value
+
+
+def _kind(code: int) -> HookOutcomeKind:
+    """Exit status → the fact behind it — the sibling of :func:`_classify`, which
+    maps the same status to how a channel must treat it."""
+    if code == 0:
+        return HookOutcomeKind.PASSED
+    if code == 2:
+        return HookOutcomeKind.REFUSED
+    if code == 126:
+        return HookOutcomeKind.NOT_EXECUTABLE
+    if code == 127:
+        return HookOutcomeKind.COMMAND_NOT_FOUND
+    if code < 0 or code > 128:
+        return HookOutcomeKind.SIGNALLED
+    return HookOutcomeKind.EXITED
+
+
+def _detail(code: int) -> str:
+    """The fact a channel would otherwise have to re-derive from the status."""
+    if code < 0:
+        return f"signal {-code}"
+    if code > 128:
+        return f"signal {code - 128}"
+    return ""
 
 
 def _classify(code: int) -> HookVerdict:
@@ -304,9 +401,18 @@ def _append_stderr(log_path: Path | None, err_path: Path) -> None:
         print(f"WARN: could not append hook stderr to {log_path}: {exc}", file=sys.stderr)
 
 
-def _corrupt(reason: str, log_path: Path | None) -> HookRun:
+def _corrupt(
+    reason: str, log_path: Path | None, kind: HookOutcomeKind, *, detail: str = ""
+) -> HookRun:
     """Infrastructure corruption — never downgradable (ADR-0019 D4)."""
-    return HookRun(verdict=HookVerdict.CORRUPT, exit_code=None, reason=reason, log_path=log_path)
+    return HookRun(
+        verdict=HookVerdict.CORRUPT,
+        exit_code=None,
+        reason=reason,
+        kind=kind,
+        detail=detail,
+        log_path=log_path,
+    )
 
 
 def _open_stdout_sink(log_path: Path | None, header: str | None = None):
@@ -351,9 +457,19 @@ def _tail(path: Path, tail_bytes: int, *, start: int = 0) -> tuple[str, bool, in
             fh.seek(start + max(0, size - tail_bytes))
             raw = fh.read()
     except OSError as exc:
-        return f"(hook output unreadable: {exc})", False, 0
+        return f"(output unreadable: {exc})", False, 0
     text, _ = _decode_tail(raw, tail_bytes)
     return text, size > tail_bytes, size
+
+
+def with_truncation_note(reason: str, run: HookRun) -> str:
+    """``reason``, plus where the rest of the output is when the tail was cut.
+
+    Public because a channel that words the outcome itself still owes the
+    operator this: a partial verdict read as a whole one is the silent
+    truncation HATS-1137 already paid for once.
+    """
+    return _note_truncation(reason, run.truncated, run.output_size, run.log_path)
 
 
 def _note_truncation(reason: str, truncated: bool, size: int, log_path: Path | None) -> str:

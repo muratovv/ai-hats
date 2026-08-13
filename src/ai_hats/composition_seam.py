@@ -115,16 +115,21 @@ def _runtime_overlay(resolver, spec: RoleSpec) -> OverlayConfig | None:
     )
 
 
-def _project_context(project_dir: Path, role_override: str | None):
+def _project_context(project_dir: Path, role_override: str | None, *, prefer_cwd: bool = False):
     """Assembler + cfg + THE role-fallback chain (override → active → default) + runtime overlay.
 
     The single home for the chain — build / preview / carry all resolve
     through here instead of growing copies (review 2026-07-04).
+
+    ``prefer_cwd`` belongs to read-only callers alone (HATS-1501): letting a
+    worktree's own library win is correct only when nothing is written.
     """
     from .assembler import Assembler
+    from .library_paths import build_library_paths
     from .role_spec import parse_role_spec
 
-    asm = Assembler(project_dir)
+    library_paths = build_library_paths(project_dir, prefer_cwd=True) if prefer_cwd else None
+    asm = Assembler(project_dir, library_paths=library_paths)
     cfg = asm.project_config
     spec = parse_role_spec(role_override) if role_override else None
     effective_role = (spec.role if spec else None) or cfg.active_role or cfg.default_role
@@ -306,7 +311,9 @@ def build_preview_payload(
     from .materialize import compose_for_role
     from .providers import get_provider
 
-    asm, cfg, eff_role, runtime_overlay, _spec = _project_context(project_dir, role)
+    asm, cfg, eff_role, runtime_overlay, _spec = _project_context(
+        project_dir, role, prefer_cwd=True
+    )
     if not eff_role:
         raise RuntimeError(
             "materialize_system_prompt: no role to materialize "

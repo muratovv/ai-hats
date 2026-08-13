@@ -32,6 +32,25 @@ def _git(cwd: Path, *args: str) -> None:
     )
 
 
+def _be_session(monkeypatch, session_id: str, project: Path) -> None:
+    """Stand in for a session the way a launch writes one — envelope included.
+
+    A bare ``AI_HATS_SESSION_ID`` stands in for a session no launch produces
+    (HATS-1594), and ownership refuses it rather than reading it as absence.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    identity = SessionIdentity(
+        id=session_id,
+        role="maintainer",
+        provider="claude",
+        project_dir=project,
+        session_dir=project / ".agent" / "runs" / f"session_{session_id}",
+    )
+    for key, value in identity.to_env().items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture
 def project(tmp_path):
     p = tmp_path / "project"
@@ -49,6 +68,7 @@ def project(tmp_path):
 def _kernel(project: Path, **kwargs):
     return build_rack_kernel(
         project,
+        backlog_owner=project,
         tasks_dir=project / ".agent" / "tasks",
         state_md_path=project / ".agent" / "STATE.md",
         prefix="T",
@@ -102,7 +122,7 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     """Ratification of fix #1 with the real extensions: the plan-gate fires
     before ownership claim and worktree setup, so its abort leaves zero
     side effects — no registry record, no worktree, zero bytes on the card."""
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", project)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     sink = _Sink()
     kernel = _kernel(project, journal_sink=sink)
@@ -128,6 +148,35 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     outcomes = {o.subscriber: o.outcome for o in refusal.outcomes}
     assert outcomes["plan-gate"] == "abort"
     assert "ownership" not in outcomes, "claim must not have run after the gate abort"
+
+
+def test_ownership_follows_the_backlog_while_worktrees_follow_the_anchor(tmp_path):
+    """HATS-1573: the asymmetry is deliberate, and pinned so it stays deliberate.
+
+    Who owns a card is a fact about the BACKLOG; where its code is checked out
+    is a fact about the CHECKOUT. An explicit --tasks-dir puts those in two
+    different projects, and each side must stay where it belongs.
+    """
+    anchor = tmp_path / "anchor"
+    (anchor / ".agent").mkdir(parents=True)
+    backlog = tmp_path / "sbx"
+    tasks_dir = backlog / ".agent" / "ai-hats" / "tracker" / "backlog" / "tasks"
+    tasks_dir.mkdir(parents=True)
+
+    kernel = build_rack_kernel(
+        anchor,
+        backlog_owner=backlog,
+        tasks_dir=tasks_dir,
+        state_md_path=backlog / "STATE.md",
+        prefix="T",
+    )
+    on_execute = kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+    claim = next(s for s in on_execute if s.name == "ownership")
+    worktree = next(s for s in on_execute if s.name == "worktree")
+
+    assert claim.registry_path == tasks_dir.parent / "ownership.json"  # backlog side
+    assert worktree.project_dir == anchor  # checkout side
+    assert worktrees_dir(anchor).is_relative_to(anchor)
 
 
 def test_in_lock_order_reproduces_the_tracker_sequence(project):
@@ -184,7 +233,7 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
 def test_check_refusal_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     """R2 with the REAL extensions: slot 15 sits before the claim, so a refused
     check leaves no registry record, no worktree and an unchanged card."""
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", project)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     script = project / "gate.sh"
     script.write_text("#!/bin/sh\necho 'plan not signed off'\nexit 2\n")
