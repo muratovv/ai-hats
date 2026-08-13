@@ -11,11 +11,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
 
 from .env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+from .session_identity import drop_identity
 
 #: Git events that deliver a protocol on stdin every hook must see.
 STDIN_PROTOCOL_EVENTS = frozenset(
@@ -127,7 +129,7 @@ def record_fail_open(
         )
 
 
-def _drop_foreign_pin(env: dict[str, str], project_dir: Path) -> None:
+def _drop_foreign_pin(env: MutableMapping[str, str], project_dir: Path) -> None:
     """Strip a session pin naming another project before the children see it.
 
     ADR-0025 D3. The current stub unsets ``AI_HATS_VENV``/``AI_HATS_DIR`` but not
@@ -140,6 +142,9 @@ def _drop_foreign_pin(env: dict[str, str], project_dir: Path) -> None:
     if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
         return
     dropped = [name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if env.pop(name, None)]
+    # The identity names the OTHER project, so re-pinning around it would leave a
+    # gate composing under that session's role — the same leak, identity axis.
+    drop_identity(env)
     # Re-pin rather than leave the lie: a gate reading it must get this project.
     env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
     if dropped:

@@ -331,7 +331,17 @@ def test_build_session_artifacts_automate_materializes_hooks_and_fires(
     # 3. Acceptance proof: agy global dispatcher fires the session hook in AUTOMATE session.
     #    The env comes from the builder, so the pin the dispatcher reads is the one the
     #    session actually exports (HATS-1398) — not a value this test invented.
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-auto")
+    from ai_hats.session_identity import SessionIdentity
+
+    identity = SessionIdentity(
+        id="sid-auto",
+        role="hook-role",
+        provider="agy",
+        project_dir=project,
+        session_dir=project / "session",
+    )
+    for key, value in identity.to_env().items():
+        monkeypatch.setenv(key, value)
     monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
     for key, value in artifacts.extra_env.items():
         monkeypatch.setenv(key, value)

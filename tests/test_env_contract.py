@@ -1,12 +1,14 @@
 """Session-identity env contract: one key set, one home, sanctioned mirrors only (HATS-1613).
 
-The contract itself is ADR-0025; this is its guard. Four invariants:
+The contract itself is ADR-0025; this is its guard. Five invariants:
 
 A. each contract key is *defined* exactly once inside the integrator;
 B. ``ai_hats.env`` exposes all of them (re-export is fine — one import surface);
 C. the mirrors that may not import the home (rack) carry the same spellings;
 D. ``ENV_TASKS_DIR`` in the home is NOT rack's ``RACK_TASKS_DIR`` — a near-name
-   whose accidental unification would splice two unrelated contracts.
+   whose accidental unification would splice two unrelated contracts;
+E. the identity is REMOVED exactly as it is written — a subset tears it, and the
+   three sites that hand-rolled their own key list each tore it differently.
 """  # comment-length: allow — the invariant set is the contract
 
 from __future__ import annotations
@@ -62,6 +64,9 @@ SANCTIONED_MIRRORS = {
         "ENV_SESSION_ID",
         "ENV_AI_HATS_PROJECT_DIR",
         "ENV_SESSION_CACHE_DIR",
+        # It reads the envelope whole (json.loads, no ai-hats import) rather than
+        # reassembling the session from scalars that may not belong together.
+        "ENV_SESSION_IDENTITY",
     ),
 }
 # Spelling each mirror attribute must carry. Derived from the contract, plus the
@@ -207,3 +212,56 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
     assert envelope["project_dir"] == env[AI_HATS_PROJECT_DIR_ENV]
     assert envelope["id"] == env["AI_HATS_SESSION_ID"]
     assert envelope["role"] == env["AI_HATS_ROLE"]
+
+
+# ---- E. removed exactly as written ----
+
+
+def test_the_identity_is_removed_exactly_as_it_is_written(tmp_path):
+    """``drop_identity`` and ``to_env`` must name the same key set.
+
+    A remover that knows a SUBSET leaves a half-session behind, which ``from_env``
+    refuses rather than reads as absence. Three sites hand-rolled this list and
+    each got a different subset — the pin is what stops the fourth.
+    """
+    from ai_hats.session_identity import IDENTITY_ENV_KEYS, SessionIdentity, drop_identity
+
+    written = SessionIdentity(
+        id="20260812-101500-3-4242",
+        role="maintainer",
+        provider="claude",
+        project_dir=tmp_path,
+        session_dir=tmp_path / "session",
+    ).to_env()
+
+    assert set(IDENTITY_ENV_KEYS) == set(written), (
+        "the drop list and the write list disagree — one of them is the tear"
+    )
+
+    env = {**written, "UNRELATED": "kept"}
+    removed = drop_identity(env)
+
+    assert env == {"UNRELATED": "kept"}, "the whole identity leaves, and nothing else does"
+    assert set(removed) == set(written)
+    assert SessionIdentity.from_env(env) is None, "what is left must read as 'no session'"
+
+
+def test_the_sandbox_scrub_drops_the_whole_identity_too() -> None:
+    """The experiments sandbox is bash, so it cannot call ``drop_identity``.
+
+    It scrubbed five scalars and left the envelope, so a sandboxed run inherited
+    the parent session while its scalars were gone — the same tear as the git
+    path, in the other direction. Conformance rather than dedup (ADR-0023).
+    """
+    import re
+
+    from ai_hats.session_identity import IDENTITY_ENV_KEYS
+
+    scrub = (REPO_ROOT / "experiments" / "_lib" / "common.sh").read_text(encoding="utf-8")
+    block = scrub.split("SCRUB=(", 1)[1].split(")", 1)[0]
+    unset = set(re.findall(r"-u\s+(\w+)", block))
+
+    missing = sorted(set(IDENTITY_ENV_KEYS) - unset)
+    assert not missing, (
+        f"the sandbox scrub leaves {missing} behind — the identity is torn, not removed"
+    )

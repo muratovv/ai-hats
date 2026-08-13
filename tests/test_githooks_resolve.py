@@ -199,6 +199,66 @@ def test_the_hook_entry_point_composes_and_runs_the_declared_gate(tmp_path: Path
 
 
 @pytest.mark.integration
+def test_a_foreign_sessions_role_never_composes_this_projects_gates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Committing in project A from a shell owned by a session of project B.
+
+    The role must come from A's config, not from B's envelope: the identity is
+    read before the foreign pin is dropped, so without the early drop the gates
+    of A compose under B's role — HATS-1525's leak on the identity axis
+    (HATS-1613 review).
+    """
+    from ai_hats.cli.githooks_hook import main
+    from ai_hats.models import ProjectConfig
+    from ai_hats.paths import PROJECT_CONFIG
+    from ai_hats.session_identity import SessionIdentity
+
+    project = tmp_path / "project"
+    (project / ".githooks").mkdir(parents=True)
+    lib = tmp_path / "lib"
+    _skill(lib, "hook_skill", event="pre-commit", scripts=["git_hooks/check.sh"])
+    marker = project / "ran.txt"
+    (lib / "skills" / "hook_skill" / "git_hooks" / "check.sh").write_text(
+        f'#!/usr/bin/env bash\necho "$AI_HATS_HOOK_EVENT" > "{marker}"\nexit 0\n'
+    )
+    (lib / "skills" / "hook_skill" / "git_hooks" / "check.sh").chmod(0o755)
+    (lib / "traits" / "trait-base").mkdir(parents=True)
+    (lib / "traits" / "trait-base" / "config.yaml").write_text(
+        "name: trait-base\ncomposition:\n  skills:\n    - hook_skill\ninjection: Base.\n"
+    )
+    (lib / "roles" / "test-role").mkdir(parents=True)
+    (lib / "roles" / "test-role" / "config.yaml").write_text(
+        "name: test-role\npriorities: [Quality]\n"
+        "composition:\n  traits:\n    - trait-base\ninjection: Role.\n"
+    )
+    ProjectConfig(provider="agy", library_paths=[str(lib)], default_role="test-role").save(
+        project / PROJECT_CONFIG
+    )
+
+    theirs = tmp_path / "theirs"
+    their_session = SessionIdentity(
+        id="sid-theirs",
+        role="a-role-this-project-never-declared",
+        provider="claude",
+        project_dir=theirs,
+        session_dir=theirs / "s",
+    )
+    for key, value in their_session.to_env().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(theirs))
+
+    rc = main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    assert rc == 0
+    assert marker.is_file(), (
+        "this project's own gate did not run — the foreign session's role composed instead"
+    )
+
+
+@pytest.mark.integration
 def test_a_project_with_no_role_runs_no_gates_and_passes(tmp_path: Path) -> None:
     from ai_hats.cli.githooks_hook import main
     from ai_hats.models import ProjectConfig
