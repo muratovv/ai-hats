@@ -5,11 +5,16 @@ depends_on of the motivating sweep were invisible to every existing tool."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ai_hats_rack.cardschema import build_card_schema
 from ai_hats_rack.definition import load_backlog
-from ai_hats_rack.doctor import diagnose_catalog
+from ai_hats_rack.checks import CheckDeclaration
+from ai_hats_rack.dispatch import AbortOperation
+from ai_hats_rack.doctor import diagnose_bindings, diagnose_catalog
+from ai_hats_rack.fsm import Topology
 from ai_hats_rack.models import TaskCard
 
 # A trivially valid fsm block so the custom kinds are the only variable
@@ -263,3 +268,156 @@ def test_workspace_scan_labels_backlogs_and_routes_cross_refs(tmp_path):
         ("tasks", "HATS-1", "dangling-link", "HATS-404"),
         ("hyp", "HYP-2", "dangling-link", "HATS-404"),
     }
+
+
+# ----- the check channel (HATS-1584) -----------------------------------------
+
+
+class _Defn:
+    def __init__(self, topology, cli_alias: str = "") -> None:
+        self.topology = topology
+        self.cli_alias = cli_alias
+
+
+class _Instance:
+    def __init__(self, name, definition, catalog, is_tasks=False) -> None:
+        self.name = name
+        self.definition = definition
+        self.catalog = catalog
+        self.is_tasks = is_tasks
+
+
+class _Workspace:
+    """Only what :func:`diagnose_bindings` reads: the mounted instances and the
+    integrator's per-catalog port factory."""
+
+    def __init__(self, *instances, check_port=None) -> None:
+        self.instances = instances
+        self.check_port = check_port
+
+
+class _Port:
+    def __init__(self, *rows, error: Exception | None = None) -> None:
+        self._rows = rows
+        self._error = error
+        self.asked = 0
+
+    def check_declarations(self):
+        self.asked += 1
+        if self._error is not None:
+            raise self._error
+        return self._rows
+
+
+def _tasks_topology() -> Topology:
+    return Topology(
+        initial="open",
+        states=("open", "review", "done"),
+        edges={"open": ("review",), "review": ("done",), "done": ()},
+    )
+
+
+def _hyp_topology() -> Topology:
+    return Topology(
+        initial="active",
+        states=("active", "confirmed"),
+        edges={"active": ("confirmed",), "confirmed": ()},
+    )
+
+
+def _workspace(port=None, tmp_path: Path = Path("/nowhere")) -> _Workspace:
+    return _Workspace(
+        _Instance("tasks", _Defn(_tasks_topology()), tmp_path / "tasks", is_tasks=True),
+        _Instance("hypotheses", _Defn(_hyp_topology(), "hyp"), tmp_path / "hyp"),
+        check_port=(lambda _catalog: port) if port is not None else None,
+    )
+
+
+def _row(point: str, *, backlog: str = "tasks") -> CheckDeclaration:
+    return CheckDeclaration(
+        path=(backlog,),
+        at=(point,),
+        cargo={},
+        on_error="refuse",
+        label="'role' binds skill/gate.sh under apps.rack",
+        handle=None,
+    )
+
+
+def _report(*rows, owner: Path | None = Path("/proj"), error: Exception | None = None, port=...):
+    used = _Port(*rows, error=error) if port is ... else port
+    return diagnose_bindings(_workspace(used), owner=owner)
+
+
+def test_a_dead_point_is_a_finding_the_report_carries():
+    """The whole reason this section exists: a point no mounted topology has is
+    a gate that never fires, and until now nothing said so anywhere."""
+    report = _report(_row("edge:reviw--done"))
+
+    assert [(r.status, r.point) for r in report.rows] == [("dead", "edge:reviw--done")]
+    assert [f.check for f in report.findings] == ["dead-check-point"]
+    assert "edge:reviw--done" in report.findings[0].detail
+
+
+def test_a_sibling_backlogs_point_is_listed_and_is_not_a_finding():
+    """HATS-1545 R10 made the cross-backlog skip legal; the report says the row
+    is there without calling the project broken."""
+    report = _report(_row("edge:active--confirmed"))
+
+    assert [r.status for r in report.rows] == ["foreign"]
+    assert report.findings == ()
+
+
+def test_a_row_no_mounted_backlog_answers_to_is_a_finding():
+    report = _report(_row("edge:review--done", backlog="cards"))
+
+    assert [r.status for r in report.rows] == ["unaddressed"]
+    assert [f.check for f in report.findings] == ["unaddressable-check-row"]
+
+
+def test_rows_that_cannot_be_read_become_a_finding_not_an_exception():
+    """A role whose row is broken is exactly what this section reports, so the
+    failure to resolve one must not take the report down with it."""
+    report = _report(error=AbortOperation("checks: script not found at /nope/gate.sh"))
+
+    assert [f.check for f in report.findings] == ["unreadable-check-rows"]
+    assert "/nope/gate.sh" in report.findings[0].detail
+    assert report.rows == ()
+
+
+def test_the_port_is_asked_once_for_the_whole_project():
+    """Every mounted catalog answers with the same rows — they come from the
+    project that owns the backlog — so asking per catalog would re-compose the
+    role once per backlog for one identical answer."""
+    port = _Port(_row("edge:review--done"))
+
+    diagnose_bindings(_workspace(port), owner=Path("/proj"))
+
+    assert port.asked == 1
+
+
+def test_an_integrator_with_no_check_port_is_said_out_loud():
+    """A bare rack has nothing to declare a gate with (ADR-0019 D11 clause 5).
+    Not a defect — but not an armed gate either, so the roster says why it is
+    empty instead of reading as "nothing declared"."""
+    report = _report(port=None)
+
+    assert report.rows == () and report.findings == ()
+    assert "no integrator supplies a check executor" in report.note
+
+
+def test_an_ownerless_backlog_says_that_rather_than_no_rows():
+    """The port answers "no rows" for a backlog nobody owns, which is a
+    different fact from a role that declares none — and only one of the two is
+    about the role."""
+    report = _report(_row("edge:review--done"), owner=None)
+
+    assert report.rows == ()
+    assert "no project owns this backlog" in report.note
+
+
+def test_a_role_that_declares_nothing_says_so_too():
+    report = _report()
+
+    assert report.rows == ()
+    assert "no row is declared under apps.rack" in report.note

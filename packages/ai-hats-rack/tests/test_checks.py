@@ -451,7 +451,11 @@ def test_a_row_at_the_wrong_depth_is_unaddressed_too():
     """`apps.rack` with no backlog under it names nothing to gate; the point is
     never examined, because there is no topology to examine it against."""
     row = CheckDeclaration(
-        path=(), at=("edge:review--done",), cargo={}, on_error="refuse", label="deep row",
+        path=(),
+        at=("edge:review--done",),
+        cargo={},
+        on_error="refuse",
+        label="deep row",
         handle=None,
     )
 

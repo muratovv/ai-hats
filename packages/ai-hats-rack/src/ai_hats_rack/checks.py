@@ -190,7 +190,12 @@ def classify_bindings(
         if len(row.path) != 1 or row.path[0] not in points_of:
             rows.append(
                 BindingStatus(
-                    UNADDRESSED, address, "", row.label, row.on_error, unaddressed_reason(row, mounted)
+                    UNADDRESSED,
+                    address,
+                    "",
+                    row.label,
+                    row.on_error,
+                    unaddressed_reason(row, mounted),
                 )
             )
             continue
