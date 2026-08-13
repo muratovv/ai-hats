@@ -383,6 +383,30 @@ def test_a_marker_that_never_ran_a_demanded_stage_does_not_clear_the_gate(gate_p
     assert _state(project, task_id)["state"] == "review"
 
 
+def test_the_composition_is_read_from_the_tree_under_judgement(gate_project, rack_bin):
+    """A card that CHANGES the gate must be judged by the composition it carries.
+
+    Read from the main checkout instead, the gate judges one tree by another
+    tree's rules — which is how HATS-1604 refused its own merge: the branch was
+    the only place that knew the new contract.
+    """
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    # The branch changes what its gate runs; master's dispatcher never hears of it.
+    branch_stage = "a-stage-only-this-branch-declares"
+    (Path(wt) / "scripts" / "ci-local.sh").write_text(
+        _CI_LOCAL_STUB.replace(_STUB_STAGE, branch_stage), encoding="utf-8"
+    )
+    git(Path(wt), "add", "-A")
+    git(Path(wt), "commit", "-m", "change what the gate runs")
+    _write_marker(project, _tree(Path(wt)), stages=branch_stage)
+
+    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+
+    assert taken.returncode == 0, taken.stdout + taken.stderr
+    assert json.loads(taken.stdout)["task"]["state"] == "done"
+
+
 # ---------------------------------------------------------------------------
 # 3. the key is content, not time — R4
 # ---------------------------------------------------------------------------

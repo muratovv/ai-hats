@@ -102,30 +102,13 @@ check_mode() {
         gate_exit "$CHANNEL" pass
     fi
 
-    # A gate that cannot verify must not pass. No dispatcher here means this
-    # project has no done-gate stage to run, so no marker could ever be earned
-    # honestly — that is a misconfigured binding, and it says so on the first
-    # transition rather than on the first card that ships code.
-    local dispatcher="$project_dir/scripts/ci-local.sh" stages
-    stages="$(gate_stages "$dispatcher" "$GATE_NAME")"
-    if [[ -z "$stages" ]]; then
-        printf 'done-gate: %s names no %s composition, so no marker could ever be\n' \
-               "$dispatcher" "$GATE_NAME"
-        printf 'earned honestly. A gate that cannot verify must not pass. Fix one of the two:\n\n'
-        printf '  * have the dispatcher answer `%s --stages` with the stages this\n' "$GATE_NAME"
-        printf '    project wants the gate to run, or\n'
-        printf '  * unbind the gate: drop the maintainer-quality-gate/hooks/done-gate.sh\n'
-        printf "    row from 'composition.checks' in the role that composes this skill.\n"
-        gate_exit "$CHANNEL" refuse
-    fi
-
     # HATS-1540 R2/H: the tree under judgement arrives in the environment, at
     # BOTH bound points. This used to re-derive the state path from the task id
     # and sed the JSON open — the same lookup ai-hats already owns, open-coded in
     # shell, and the one place a gate can silently end up judging another
     # worktree. The absence of that block is what makes one script serve
     # `edge:review--done` and `wt:pre-merge` without a branch between them.
-    local wt branch tree
+    local wt branch tree dispatcher stages
     wt="${AI_HATS_WORKTREE_PATH:-}"
     # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
     # FSM edge the branch is rack's own convention. For messages only.
@@ -165,6 +148,25 @@ check_mode() {
         printf 'done-gate: could not resolve the tree of the worktree %s (branch %s). The\n' \
                "$wt" "$branch"
         printf 'gate cannot name the content it is meant to judge, so it refuses.\n'
+        gate_exit "$CHANNEL" refuse
+    fi
+
+    # The composition comes from the dispatcher IN THE TREE UNDER JUDGEMENT, not
+    # from the main checkout's. The marker certifies stages that were run there,
+    # so asking anywhere else judges one tree by another tree's rules — which is
+    # exactly what refused this very card's merge while the branch was the only
+    # place that knew the contract. A card that changes the gate carries the
+    # change and its own verdict together, and the diff is what review reads.
+    dispatcher="$wt/scripts/ci-local.sh"
+    stages="$(gate_stages "$dispatcher" "$GATE_NAME")"
+    if [[ -z "$stages" ]]; then
+        printf 'done-gate: %s names no %s composition, so no marker could ever be\n' \
+               "$dispatcher" "$GATE_NAME"
+        printf 'earned honestly. A gate that cannot verify must not pass. Fix one of the two:\n\n'
+        printf '  * have the dispatcher answer `--stages %s` with the stages this\n' "$GATE_NAME"
+        printf '    project wants the gate to run, or\n'
+        printf '  * unbind the gate: drop the maintainer-quality-gate/hooks/done-gate.sh\n'
+        printf "    row from 'composition.checks' in the role that composes this skill.\n"
         gate_exit "$CHANNEL" refuse
     fi
 

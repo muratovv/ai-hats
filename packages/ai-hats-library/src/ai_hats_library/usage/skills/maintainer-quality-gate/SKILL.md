@@ -119,20 +119,19 @@ In the script's real order; every branch below is an explicit `exit`:
    The comparison reads `ai-hats.yaml` and the documented default, never
    `AI_HATS_DIR`: that variable is the leaky one, and whose tracker this is is
    the whole question. Absent at `pre-merge`, which resolves no backlog.
-2. The dispatcher names no `done-gate` composition → **refuse (2)**. Nothing to
-   run means no marker could ever be earned honestly. A gate that cannot verify
-   must not pass; the message names both fixes (answer `--stages`, or drop the
-   binding row).
-3. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
+2. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
    code entering master through this card; a doc/research card brings none. The
    runner refuses on its own when it could not TELL, so absent means absent here,
    never unknown.
-4. The path gone from disk → **pass (0)**. Rack's
+3. The path gone from disk → **pass (0)**. Rack's
    own teardown either finalizes an already-merged branch or refuses the merge
    itself, so there is no live branch content to gate.
-5. `git -C <wt> rev-parse HEAD^{tree}` — the **task branch's tree**, never the
+4. `git -C <wt> rev-parse HEAD^{tree}` — the **task branch's tree**, never the
    main checkout's: at priority 15 the merge has not happened, so the content
    under judgement is what the branch holds. Unresolvable → **refuse (2)**.
+5. The composition, asked of the dispatcher **in that worktree** — not the main
+   checkout's. The marker certifies stages that ran there, so asking elsewhere
+   judges one tree by another tree's rules. Empty → **refuse (2)**.
 6. A marker for that tree covering every demanded stage → **pass (0)**. Missing
    → **refuse (2)** with the copy-pasteable `cd <wt> && make done-gate`.
 
