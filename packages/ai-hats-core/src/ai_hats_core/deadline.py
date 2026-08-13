@@ -41,6 +41,15 @@ class Deadline:
     def expired(self) -> bool:
         return self.remaining() <= 0.0
 
+    def clamped_to(self, outer: Deadline | None) -> Deadline:
+        """This deadline, unable to outlive ``outer`` — the earlier of the two,
+        keeping the origin of whichever binds. A lock taken inside another lock
+        yields its own deadline through here, so nesting is computed from who
+        called rather than assumed by each side (HATS-1603)."""
+        if outer is None or self.expires_at <= outer.expires_at:
+            return self
+        return outer
+
     def budget_for(self, requested: float) -> float:
         """``requested``, capped by what is left. Only ever shrinks — which is
         what closes the ``AI_HATS_WT_HOOK_TIMEOUT_S`` override on the ceiling."""

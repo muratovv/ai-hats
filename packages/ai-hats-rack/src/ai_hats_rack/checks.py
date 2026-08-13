@@ -83,6 +83,11 @@ class CheckRequest:
     force: bool
     timeout: float
     event: str = ""
+    #: ``time.monotonic()`` instant the enclosing task lock runs out, None when
+    #: none is declared. Untyped for the same reason as on ``DispatchContext``:
+    #: the rack ships a number and the executor mints the budget type from it,
+    #: so a check is bounded by the lock it runs in (HATS-1603).
+    lock_expires_at: float | None = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +185,7 @@ class CheckSubscriber:
                     force=ctx.force,
                     timeout=self._timeout,
                     event=ctx.event.key,
+                    lock_expires_at=ctx.lock_expires_at,
                 )
             )
             if outcome.ok:

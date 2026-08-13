@@ -110,7 +110,12 @@ class DispatchContext:
     the store; ``caller_cwd`` is mandatory (no subscriber reads Path.cwd(),
     HATS-840); ``is_epic`` is recomputed from the child-set on every dispatch
     (HATS-794/977/979); ``force`` is FSM-guard information, not a safety-off
-    switch for subscribers (HATS-518/596/697)."""
+    switch for subscribers (HATS-518/596/697).
+
+    ``lock_expires_at`` is a ``time.monotonic()`` instant, untyped on purpose:
+    the kernel builds standalone (no ai-hats-core), so it publishes the raw
+    moment its task lock runs out and a package depending on both mints the
+    budget type from it. ``None`` — no enclosing lock declared (HATS-1603)."""
 
     event: Event
     task: TaskCard
@@ -119,6 +124,7 @@ class DispatchContext:
     actor: str
     force: bool = False
     reason: str = ""
+    lock_expires_at: float | None = None
 
 
 @runtime_checkable

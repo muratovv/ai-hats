@@ -32,7 +32,9 @@ def _topology() -> Topology:
     )
 
 
-def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
+def _ctx(
+    event_key: str = "edge:review--done", *, lock_expires_at: float | None = None
+) -> DispatchContext:
     src, dst = event_key.removeprefix("edge:").split("--")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
@@ -40,6 +42,7 @@ def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
         caller_cwd=__import__("pathlib").Path.cwd(),
         is_epic=False,
         actor="test",
+        lock_expires_at=lock_expires_at,
     )
 
 
@@ -62,6 +65,7 @@ class _Port:
         self._outcome = outcome or CheckOutcome(ok=True)
         self.ran: list[str] = []
         self.budgets: list[float] = []
+        self.ceilings: list[float | None] = []
 
     def check_declarations(self):
         return self._rows
@@ -69,6 +73,7 @@ class _Port:
     def run_check(self, request):
         self.ran.append(request.event or request.declaration.points()[0])
         self.budgets.append(request.timeout)
+        self.ceilings.append(request.lock_expires_at)
         return self._outcome
 
 
@@ -366,3 +371,24 @@ def test_a_row_addressed_by_the_backlogs_cli_alias_fires(tmp_path):
 
     assert delta is None
     assert port.ran == ["edge:review--done"], "the aliased row must actually run"
+
+
+def test_the_request_carries_the_lock_ceiling_the_kernel_minted():
+    """HATS-1603: the executor cannot bound a check by a lock it cannot see, so
+    the ceiling rides the request. A bare float — the rack has no Deadline."""
+    port = _Port(_row("edge:review--done"))
+
+    CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(
+        _ctx(lock_expires_at=1234.5)
+    )
+
+    assert port.ceilings == [1234.5]
+
+
+def test_an_unlocked_firing_ships_no_ceiling():
+    """No enclosing lock declared -> the executor bounds by its own budget."""
+    port = _Port(_row("edge:review--done"))
+
+    CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
+
+    assert port.ceilings == [None]

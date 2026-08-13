@@ -36,10 +36,10 @@ class _RecordingEffects:
     def __init__(self) -> None:
         self.reclaimed: list[str] = []
 
-    def setup(self, task_id, role="", caller_cwd=None):
+    def setup(self, task_id, role="", caller_cwd=None, *, outer_deadline=None):
         return None  # non-git: no worktree path logged
 
-    def teardown(self, task_id, *, merge=True, force=False):
+    def teardown(self, task_id, *, merge=True, force=False, outer_deadline=None):
         return None
 
     def assert_canonical_base(self):
