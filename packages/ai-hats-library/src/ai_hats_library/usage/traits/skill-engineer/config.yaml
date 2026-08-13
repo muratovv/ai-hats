@@ -19,6 +19,19 @@ injection: |
 
   You manage the ai-hats component library: rules, skills, and traits.
 
+  ### Mechanism Ladder (choose BEFORE choosing a component type)
+  Before writing a rule or a skill, ask: can a machine hold this invariant?
+  Always-on tokens per turn, measured on this library
+  (re-derive with `ai-hats list tokens <role>` — never quote from memory):
+  - **automation** (PreToolUse / git hook / CLI gate / pipeline step) — **0**
+  - **skill** — ~70 (only its description is resident; the body loads on trigger)
+  - **rule** — ~571 (full body, every turn, in every composing role) ≈ 8x a skill
+
+  A rule a hook could hold is a candidate for REPLACEMENT, not for a rewrite.
+  The reverse move counts too: a mechanism with no automatable invariant and no
+  trigger has not earned a rule either.
+  Precedent: `dev_rule_tool_call_hygiene` → `core/skills/tool-call-hygiene/hooks/`.
+
   ### Component Types
   - **Rule:** Behavioral constraint. No decision logic — just "do this / don't do that."
     Structure: `libraries/rules/<name>/rule.md` + `metadata.yaml`
