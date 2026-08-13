@@ -11,6 +11,16 @@ expect: writes under `<ai_hats_dir>/tracker/backlog/**` are denied and the
 why:    `rule_backlog_discipline` §1 has no automation behind it — a hand-edited
         task.yaml desynchronises the FSM, its locks and its audit trail, and the
         rule text alone has never stopped it
+
+flow:   an agent working inside a linked worktree reaches back into the main
+        checkout's tracker, its shell still carrying another checkout's AI_HATS_DIR
+cmds:
+    rack context HATS-1647
+expect: the write is denied all the same, and by this gate — `ai_hats_dir` is
+        resolved from the TARGET path's own ai-hats.yaml
+why:    a worktree's project dir points at MAIN (HATS-524) and an inherited
+        AI_HATS_DIR names a tracker of its own, so an env-based resolver would
+        guard the wrong backlog while reporting success
 """
 
 from __future__ import annotations
@@ -156,3 +166,78 @@ def test_the_sanctioned_writer_and_plain_reads_pass(hooked_project, command):
         env=env,
     )
     assert not verdict.gated, f"{command!r} must pass the chain; got {verdict}"
+
+
+# --- Which tracker? The one that owns the file (HATS-524) -------------------
+
+
+def _git(cwd, *args):
+    subprocess.run(  # noqa: S603 - literal argv
+        ["git", "-c", "user.email=e2e@example.org", "-c", "user.name=e2e", *args],  # noqa: S607
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+
+@pytest.fixture(scope="module")
+def linked_worktree(tmp_path_factory):
+    """A second checkout carrying its own tracker, plus a real linked worktree.
+
+    `.agent/` is gitignored as in a real project — which is why `wt_gate` waves
+    a tracker write through and this gate is the only contour left on it."""
+    main = tmp_path_factory.mktemp("other-checkout")
+    (main / "ai-hats.yaml").write_text("ai_hats_dir: .agent/ai-hats\n")
+    (main / ".gitignore").write_text(".agent/\n")
+    (main / TRACKER / "tasks" / "HATS-9").mkdir(parents=True)
+    (main / "src").mkdir()
+    (main / "src" / "app.py").write_text("x = 1\n")
+    _git(main, "init", "-b", "master")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-m", "seed")
+    worktree = tmp_path_factory.mktemp("other-worktrees") / "wt"
+    _git(main, "worktree", "add", str(worktree), "-b", "task/x")
+    return main, worktree
+
+
+def test_a_worktree_session_still_cannot_touch_the_main_tracker(hooked_project, linked_worktree):
+    """The session sits in the worktree and its AI_HATS_DIR names yet another
+    checkout — the verdict follows the file, so it is denied anyway."""
+    project, env, settings = hooked_project
+    main, worktree = linked_worktree
+    leaky = dict(env)
+    leaky["AI_HATS_DIR"] = str(project / ".agent" / "ai-hats")
+    leaky["CLAUDE_PROJECT_DIR"] = str(worktree)
+
+    verdict = run_tool_chain(
+        worktree,
+        "Write",
+        {"file_path": str(main / TRACKER / "tasks" / "HATS-9" / "task.yaml")},
+        settings=settings,
+        env=leaky,
+    )
+    assert verdict.denied, f"the main checkout's card must be denied; got {verdict}"
+    assert verdict.hook == "backlog_write_gate.py", (
+        f"a deny from another hook would prove nothing about this one; got {verdict}"
+    )
+    assert_names_the_hatch(verdict)
+
+
+def test_ordinary_work_inside_the_worktree_is_untouched(hooked_project, linked_worktree):
+    """The same session editing its own code — nothing to do with the tracker."""
+    project, env, settings = hooked_project
+    _main, worktree = linked_worktree
+    leaky = dict(env)
+    leaky["AI_HATS_DIR"] = str(project / ".agent" / "ai-hats")
+    leaky["CLAUDE_PROJECT_DIR"] = str(worktree)
+
+    verdict = run_tool_chain(
+        worktree,
+        "Write",
+        {"file_path": str(worktree / "src" / "app.py")},
+        settings=settings,
+        env=leaky,
+    )
+    assert not verdict.gated, f"work inside the worktree must pass; got {verdict}"

@@ -48,7 +48,7 @@ DENY_REASON = (
     "GUARDRAIL (safety-guard): blocked — {rel} sits under the tracker backlog, and "
     "`rack` is its only sanctioned writer (rule_backlog_discipline §1): a hand-edited "
     "card desynchronises the state machine from its locks and audit trail. Move the "
-    "card with `rack transition <ID> <state> --log \"...\"`, edit a field with "
+    'card with `rack transition <ID> <state> --log "..."`, edit a field with '
     "`rack transition <ID> --set <field>=<value>`, and read it with `rack context <ID>`. "
     "`tasks/<ID>/plan.md` is the one file here you may write directly. If the tracker "
     "itself is broken and only a raw edit can repair it, the supervisor exports "
