@@ -16,6 +16,8 @@ Resolution order under test (highest first):
 
 from __future__ import annotations
 
+import warnings
+
 from pathlib import Path
 
 from ai_hats.paths import (
@@ -370,3 +372,76 @@ def test_skill_search_roots_and_assembler_parity(tmp_path, monkeypatch):
     paths_wt = _skill_search_roots(project_dir, worktree_path=None)
 
     assert paths_direct == paths_wt
+
+
+# ---- prefer_cwd: read-only composition follows cwd (HATS-1501) --------------
+
+
+def _fake_worktree(main_repo: Path, wt: Path) -> None:
+    """Link ``wt`` to ``main_repo`` the way ``git worktree add`` does."""
+    (main_repo / ".git" / "worktrees" / wt.name).mkdir(parents=True)
+    (wt / ".git").write_text(f"gitdir: {main_repo / '.git' / 'worktrees' / wt.name}\n")
+
+
+def test_prefer_cwd_resolves_worktree_library_over_project(tmp_path, monkeypatch):
+    """The false green: project_dir points at main, the edit lives in the worktree."""
+    main_lib = _make_monorepo_lib(tmp_path / "main")
+    wt_lib = _make_monorepo_lib(tmp_path / "wt")
+    _fake_worktree(tmp_path / "main", tmp_path / "wt")
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path / "wt")
+
+    assert builtin_library_root(tmp_path / "main", prefer_cwd=True) == wt_lib
+    assert builtin_library_root(tmp_path / "main") == main_lib
+
+
+def test_prefer_cwd_silent_for_sibling_worktree(tmp_path, monkeypatch):
+    """A worktree diverges from its main checkout by construction — not news."""
+    _make_monorepo_lib(tmp_path / "main")
+    _make_monorepo_lib(tmp_path / "wt")
+    _fake_worktree(tmp_path / "main", tmp_path / "wt")
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path / "wt")
+    libmod._warn_library_divergence.cache_clear()
+    libmod._git_common_dir.cache_clear()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        builtin_library_root(tmp_path / "main", prefer_cwd=True)
+
+    assert [str(w.message) for w in caught] == []
+
+
+def test_warns_when_cwd_checkout_shadows_unrelated_project(tmp_path, monkeypatch):
+    """Two unrelated checkouts: cwd's library is NOT the one the project meant."""
+    _make_monorepo_lib(tmp_path / "one")
+    _make_monorepo_lib(tmp_path / "two")
+    (tmp_path / "one" / ".git").mkdir()
+    (tmp_path / "two" / ".git").mkdir()
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path / "one")
+    libmod._warn_library_divergence.cache_clear()
+    libmod._git_common_dir.cache_clear()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        builtin_library_root(tmp_path / "two", prefer_cwd=True)
+
+    assert len(caught) == 1
+    assert "HATS-1501" in str(caught[0].message)
+
+
+def test_no_warn_when_no_project_named(tmp_path, monkeypatch):
+    """cwd as the only signal is the HATS-826 fallback, not a divergence."""
+    _make_monorepo_lib(tmp_path / "solo")
+    monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
+    monkeypatch.chdir(tmp_path / "solo")
+    libmod._warn_library_divergence.cache_clear()
+    libmod._git_common_dir.cache_clear()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        builtin_library_root()
+
+    assert [str(w.message) for w in caught] == []

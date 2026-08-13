@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import warnings
 from contextlib import ExitStack
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -87,38 +88,123 @@ def _importlib_library_root() -> Path | None:
     return root if root.is_dir() else None
 
 
-def builtin_library_root(project_dir: Path | None = None) -> Path | None:
-    """Resolve the builtin ``library/`` source root (worktree-aware).
+@functools.lru_cache(maxsize=None)
+def _git_common_dir(start: Path) -> Path | None:
+    """The git dir shared by a checkout and every worktree linked to it.
 
-    Resolution order (HATS-826 / HATS-1127), highest precedence first:
+    A linked worktree's ``.git`` is a file pointing at
+    ``<main>/.git/worktrees/<name>``; trimming at ``worktrees`` yields the same
+    dir the main checkout reports, which is what makes "same repo" cheap to
+    decide without spawning git.
+    """
+    for d in (start, *start.parents):
+        dot = d / ".git"
+        if dot.is_dir():
+            return dot.resolve()
+        if not dot.is_file():
+            continue
+        try:
+            text = dot.read_text().strip()
+        except OSError as exc:
+            warnings.warn(f"unreadable gitlink at {dot}: {exc}", stacklevel=1)
+            return None
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text.split(":", 1)[1].strip())
+        parts = gitdir.parts
+        if "worktrees" in parts:
+            gitdir = Path(*parts[: parts.index("worktrees")])
+        return gitdir.resolve()
+    return None
+
+
+def _is_surprising_divergence(
+    cwd_root: Path, pinned_root: Path | None, project_named: bool
+) -> bool:
+    """True when cwd's library shadows a project that meant a different one.
+
+    Silent by design in the two everyday cases: no project named at all (cwd is
+    then the only signal — the HATS-826 fallback), and worktrees of one repo,
+    which diverge by construction. What remains is a checkout shadowing an
+    unrelated project — the surprise worth a line (HATS-1501).
+    """
+    if not project_named:
+        return False
+    if pinned_root is None:
+        return True
+    common = _git_common_dir(cwd_root)
+    return common is None or common != _git_common_dir(pinned_root)
+
+
+@functools.lru_cache(maxsize=None)
+def _warn_library_divergence(cwd_root: Path, pinned_root: Path | None, used: bool) -> None:
+    """Report a surprising cwd/project split once per process."""
+    verb = "resolved from" if used else "available in"
+    warnings.warn(
+        f"builtin library {verb} cwd ({cwd_root}) differs from the project's "
+        f"({pinned_root or 'installed package'}) — HATS-1501. Set "
+        f"AI_HATS_LIBRARY_ROOT to choose explicitly.",
+        stacklevel=1,
+    )
+
+
+def _pinned_source_library_root(project_dir: Path | None) -> Path | None:
+    """The source library the PROJECT points at — ``project_dir``, else the env pin."""
+    if project_dir is not None:
+        return _detect_source_library_root(project_dir)
+    env_proj = env.project_dir_pin()
+    if env_proj:
+        return _detect_source_library_root(Path(env_proj))
+    return None
+
+
+def builtin_library_root(
+    project_dir: Path | None = None, *, prefer_cwd: bool = False
+) -> Path | None:
+    """Resolve the builtin ``library/`` source root.
+
+    Resolution order (HATS-826 / HATS-1127 / HATS-1501), highest precedence first:
 
     1. ``AI_HATS_LIBRARY_ROOT`` env override — explicit, greppable seam
        (tests, power users), validated against the full manifest or rejected.
-    2. **project_dir or AI_HATS_PROJECT_DIR source auto-detection** — keys off
-       ``project_dir`` if passed, or ``AI_HATS_PROJECT_DIR`` env if set.
-    3. **cwd auto-detection** of an ai-hats source checkout (only when no
-       project_dir is provided) — keys off ``Path.cwd()`` so a command run
-       *inside* a worktree resolves THAT worktree's ``library/``.
+    2. cwd auto-detection of an ai-hats source checkout — **only under
+       ``prefer_cwd``** (read-only composition; see below).
+    3. ``project_dir`` or ``AI_HATS_PROJECT_DIR`` source auto-detection.
     4. ``importlib.resources`` — the installed package (downstream / default).
+
+    ``prefer_cwd`` splits two questions that need opposite answers. Composing
+    to WRITE must key off ``project_dir``: composing checkout A's library while
+    materializing into project B's ``.agent`` is how HATS-1123 shipped one
+    worktree's hook bytes into another project, and HATS-1127 closed it by
+    pinning both to ``project_dir`` — that is the default here, unchanged.
+    Composing to READ (``config show-prompt`` and friends) must key off cwd, or
+    a library edit inside a linked worktree is invisible: ``_project_dir`` hops
+    a worktree to the MAIN checkout by design so tracker ops reach the one live
+    backlog (HATS-524), and reusing that answer rendered master's text at exit 0
+    while you edited the worktree's (HATS-1501). Nothing is written on that
+    path, so cwd cannot contaminate a target.
 
     Returns the root dir whose children are ``core``/``usage``/``hooks``/… or
     ``None`` on a broken install. All builtin-library subpaths derive from here.
-    """
+    """  # comment-length: allow — the read/write split IS the contract
     root = _validated_library_root(env.library_root_override())
     if root is not None:
         return root
 
-    if project_dir is not None:
-        root = _detect_source_library_root(project_dir)
-    else:
-        env_proj = env.project_dir_pin()
-        if env_proj:
-            root = _detect_source_library_root(Path(env_proj))
-        if root is None:
-            root = _detect_source_library_root(Path.cwd())
+    pinned_root = _pinned_source_library_root(project_dir)
+    cwd_root = _detect_source_library_root(Path.cwd())
+    project_named = project_dir is not None or bool(env.project_dir_pin())
 
-    if root is not None and is_library_root(root):
-        return root
+    if cwd_root is not None and cwd_root != pinned_root:
+        if _is_surprising_divergence(cwd_root, pinned_root, project_named):
+            _warn_library_divergence(cwd_root, pinned_root, prefer_cwd)
+
+    # cwd is the fallback when the project names no source library (HATS-826);
+    # prefer_cwd promotes it above one that does (HATS-1501).
+    order = (cwd_root, pinned_root) if prefer_cwd else (pinned_root, cwd_root)
+    for root in order:
+        if root is not None and is_library_root(root):
+            return root
     return _importlib_library_root()
 
 
@@ -134,14 +220,20 @@ def _importlib_library_layers() -> list[Path]:
     return [root / layer for layer in LIBRARY_LAYERS if (root / layer).is_dir()]
 
 
-def builtin_library_layers(project_dir: Path | None = None) -> list[Path]:
+def builtin_library_layers(
+    project_dir: Path | None = None, *, prefer_cwd: bool = False
+) -> list[Path]:
     """The builtin ``[core, usage]`` layers (core first = lowest priority).
 
-    Derived from :func:`builtin_library_root`; both layers must exist under the
-    resolved root, else we fall through to the installed package (never a
-    partial builtin).
+    Derived from :func:`builtin_library_root` (see it for ``prefer_cwd``); both
+    layers must exist under the resolved root, else we fall through to the
+    installed package (never a partial builtin).
     """
-    root = builtin_library_root(project_dir) if project_dir is not None else builtin_library_root()
+    root = (
+        builtin_library_root(project_dir, prefer_cwd=prefer_cwd)
+        if project_dir is not None
+        else builtin_library_root(prefer_cwd=prefer_cwd)
+    )
     if root is None:
         return []
     layers = [root / layer for layer in LIBRARY_LAYERS]
