@@ -92,21 +92,53 @@ def _source_dir(key: str, root: Path, max_depth: int = 5) -> Path | None:
     return None
 
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_protocol(item, nextitem):
-    """Attribute each new real-cache key to the test that produced it (HATS-1473).
+_KEYS_BEFORE = pytest.StashKey[set]()
 
-    Attribution happens here, not at session end, because the source directory a
-    key is matched against is usually deleted by the time the session finishes.
+
+def _attribute_new_keys(item) -> None:
+    """Match this test's new cache keys to a source dir, first writer wins.
+
+    ``setdefault`` is what makes the double call safe: the teardown-time pass
+    below runs first and carries the source dir, so the protocol-time pass can
+    only add keys it did not already see.
     """
-    before = _cache_keys()
-    yield
+    before = item.stash.get(_KEYS_BEFORE, None)
+    if before is None:
+        return
     new = _cache_keys() - before
     if not new:
         return
     basetemp = item.config._tmp_path_factory.getbasetemp()
     for key in new:
         _leaked_keys.setdefault(key, (item.nodeid, _source_dir(key, basetemp)))
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Attribute BEFORE any finalizer runs — both readers of the evidence die here.
+
+    A key is only reportable while its source dir is on disk and while something
+    is still left to report to, and teardown is where both end (HATS-1624):
+    ``tmp_path_retention_policy=failed`` rmtrees the source dir in its finalizer,
+    and on the LAST test the session-scoped tripwire is finalized here too, so an
+    attribution written after the protocol arrives past its only reader.
+    """  # comment-length: allow — the ordering IS the contract this hook enforces
+    _attribute_new_keys(item)
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Attribute each new real-cache key to the test that produced it (HATS-1473).
+
+    Attribution happens here, not at session end, because the source directory a
+    key is matched against is usually deleted by the time the session finishes.
+    This pass is the backstop for keys born during teardown, after the hook
+    above has run; the source dir may already be gone for those.
+    """
+    item.stash[_KEYS_BEFORE] = _cache_keys()
+    yield
+    _attribute_new_keys(item)
 
 
 @pytest.fixture(scope="session", autouse=True)
