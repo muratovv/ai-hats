@@ -26,12 +26,15 @@ state.**
 
 1. **Registry.** One local JSON file (`<tasks_dir>/../ownership.json`, gitignored)
    guarded by one `filelock`, keyed by task id → `{session_id, root_pid,
-   start_time, claimed_at}`. Every op takes the lock, loads the whole registry,
+   start_time_utc, claimed_at}`. Every op takes the lock, loads the whole registry,
    sweeps dead records, decides in RAM, atomic-writes; **reads take the lock too**
    (`filelock` has no shared mode). `owner_of` is O(1).
 
-2. **Reclaim-on-certain-death, no TTL.** Liveness = owner `root_pid` + OS
-   `start_time` (`ps -o lstart=`, reuse-proof; `os.kill` fallback), the same
+2. **Reclaim-on-certain-death, no TTL.** Liveness = owner `root_pid` +
+   `start_time_utc` (`ps -o lstart=` under a pinned `TZ=UTC`/`LC_ALL=C` so the
+   claiming and the checking session render one instant identically — unpinned,
+   an ambient difference read as reuse and stole a live owner's task, HATS-1339;
+   reuse-proof, `os.kill` fallback), the same
    technique as the version-GC liveness ref (ADR precedent). `record_is_live` is
    **biased to True on any uncertainty** — a transient `ps` error must never read
    as death, or a working neighbour's task gets stolen. `False` only on positive

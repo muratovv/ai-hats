@@ -79,12 +79,12 @@ def _mk_complete(versions: Path, sha: str) -> Path:
     return vdir
 
 
-def _ref(refs: Path, sha: str, pid: int, start_time: str, name: str) -> Path:
+def _ref(refs: Path, sha: str, pid: int, start_time_utc: str, name: str) -> Path:
     import json
 
     f = refs / f"{name}.json"
     f.write_text(
-        json.dumps({"run_id": name, "root_pid": pid, "start_time": start_time, "sha": sha})
+        json.dumps({"run_id": name, "root_pid": pid, "start_time_utc": start_time_utc, "sha": sha})
     )
     return f
 
