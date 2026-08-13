@@ -161,8 +161,12 @@ def _wt_error_shape(exc: Exception, task_id: str) -> tuple[str, str, list[str]]:
             f"Refused (review consent required) — cannot merge for {tid}. {exc}",
             [
                 "The task is ready for review — STOP and hand it off to the supervisor.",
-                "Once review passes (diff seen, notes resolved, explicit go), merge and retry:",
-                f"  AI_HATS_MERGE_ACK=1 ai-hats wt merge {branch}",
+                "Consent is the supervisor's to give, from the environment that launched",
+                "this session — an inline prefix on the agent's own command is refused as",
+                "a self-grant (HATS-1639). Once review passes (diff seen, notes resolved,",
+                "explicit go):",
+                "  export AI_HATS_MERGE_ACK=1",
+                f"  ai-hats wt merge {branch}",
                 f"  rack transition {tid} --state done",
             ],
         )
