@@ -360,6 +360,40 @@ def test_no_hook_dies_on_a_hostile_config(hooked_project, hostile_checkout, tool
         assert "Traceback" not in proc.stderr, f"{name} crashed:\n{proc.stderr}"
 
 
+def test_a_broken_config_falls_back_to_the_default_layout(hooked_project, hostile_checkout):
+    """No config -> protected, broken config -> hole is the wrong way round.
+
+    The failure happens AFTER the config is found, so a blanket catch upstream
+    answers "not our business" for a card sitting in plain sight — inverting the
+    intent the fallback was written for."""
+    project, env, settings = hooked_project
+    card = hostile_checkout / TRACKER / "tasks" / "HATS-9" / "task.yaml"
+
+    verdict = _write(project, env, settings, str(card))
+
+    assert verdict.denied, f"a card is a card even with the config broken; got {verdict}"
+    assert_names_the_hatch(verdict)
+
+
+def test_the_fallback_keeps_the_plan_carve_out(hooked_project, hostile_checkout):
+    """Degrading to the default layout must not degrade into a blanket deny."""
+    project, env, settings = hooked_project
+    plan = hostile_checkout / TRACKER / "tasks" / "HATS-9" / "plan.md"
+
+    verdict = _write(project, env, settings, str(plan))
+
+    assert not verdict.gated, f"plan.md stays the agent's own file; got {verdict}"
+
+
+def test_a_broken_config_does_not_deny_ordinary_files(hooked_project, hostile_checkout):
+    """The counter-test: an unreadable config is not a reason to deny a checkout."""
+    project, env, settings = hooked_project
+
+    verdict = _write(project, env, settings, str(hostile_checkout / "src" / "app.py"))
+
+    assert not verdict.gated, f"a file outside the tracker must pass; got {verdict}"
+
+
 def test_a_hostile_config_does_not_take_the_rest_of_the_gate_with_it(
     hooked_project, hostile_checkout
 ):

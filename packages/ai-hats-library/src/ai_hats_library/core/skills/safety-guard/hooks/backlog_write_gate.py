@@ -106,7 +106,7 @@ def _configured_ai_hats_dir(project: Path) -> Path:
     aim the gate at another tracker (same reasoning as done-gate.sh)."""
     try:
         text = (project / _CONFIG_NAME).read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, ValueError):  # unreadable, or not text at all
         text = ""
     match = _AI_HATS_DIR_RE.search(text)
     configured = Path(match.group(1)).expanduser() if match else Path(_DEFAULT_AI_HATS_DIR)
@@ -121,7 +121,12 @@ def _backlog_relpath(target: Path) -> tuple[str, ...] | None:
     for project in target.parents:
         if not (project / _CONFIG_NAME).is_file():
             continue
-        root = _normalise(str(_configured_ai_hats_dir(project).joinpath(*_BACKLOG_RELPATH)))
+        try:
+            root = _normalise(str(_configured_ai_hats_dir(project).joinpath(*_BACKLOG_RELPATH)))
+        except Exception:  # noqa: S112 # silent-ok: a config this gate cannot read is
+            # not a licence to stop guarding — the default layout answers below, and
+            # "no config -> protected, broken config -> open" is the wrong way round.
+            continue
         rel = _relpath_under(target, root)
         if rel is not None:
             return rel
