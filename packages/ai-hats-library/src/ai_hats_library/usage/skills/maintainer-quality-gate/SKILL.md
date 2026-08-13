@@ -1,6 +1,6 @@
 ---
 name: maintainer-quality-gate
-description: Maintainer-only quality gates — pre-push e2e+smoke to master, and the review→done quality gate
+description: Maintainer-only quality gates — pre-push e2e+smoke to master, plus the ->merge and ->done gates on the two roads a card takes into it
 ai_hats:
   # HATS-550 / HATS-686 — hook-carrier skill. Since HATS-1337 the gate is NOT
   # copied anywhere: `ai-hats self init` installs one dispatcher per event in
@@ -23,47 +23,62 @@ decision logic.
 
 ## What it ships
 
-Two gates and the mechanism they share:
+Three gates and the mechanism they share:
 
 - `git_hooks/pre-push-e2e-master.sh` — the dual-mode **pre-push** gate on
   pushes to master (HATS-550 / HATS-686), plus its wrapper
   `scripts/run-e2e-gate.sh`.
-- `hooks/done-gate.sh` — the dual-mode gate bound to **both roads into
-  master**: `edge:review--done` under `apps.rack.tasks` (the FSM automerge) and
-  `pre-merge` under `apps.wt` (a direct `ai-hats wt merge`) — HATS-1137, both
-  points since HATS-1540. Its `--check`
-  mode is what the binding runs; its `--run` mode is what
-  `make done-gate` invokes.
+- `hooks/merge-gate.sh` — the **`->merge`** gate, bound to `pre-merge` under
+  `apps.wt` (a direct `ai-hats wt merge`). It asks: is this branch fit to enter
+  master. The agent is alone at that refusal, so only what the agent can fix
+  without an arbiter belongs to it (HATS-1614, ADR-0023 D3).
+- `hooks/done-gate.sh` — the **`->done`** gate, bound to `edge:review--done`
+  under `apps.rack.tasks` (the FSM automerge). It asks: is master green after
+  this card — the one question no earlier gate can ask, since two independently
+  green branches make a red master. The supervisor is present at this edge.
 - `lib/gate.sh` — **the gate primitive** (HATS-1604, ADR-0023 D6): the discipline
-  itself. It resolves the project's dispatcher and asks what this gate is made
-  of, runs that composition stopping at the first red, applies "green AND a clean
-  tree → marker", looks the marker up, renders the refusal, and maps the outcome
-  onto the calling channel's exit codes (git 0/1, checks 0/2/126/127). A gate
-  script keeps two decisions: **which tree** it judges and **what runs** on it.
-- `lib/gate-marker.sh` — the pass-marker store, parameterised by gate name.
+  itself, including both whole modes (HATS-1614). It resolves the project's
+  dispatcher and asks what this gate is made of, runs that composition stopping
+  at the first red, applies "green AND a clean tree → marker", looks the marker
+  up, renders the refusal, and maps the outcome onto the calling channel's exit
+  codes (git 0/1, checks 0/2/126/127). A gate script keeps two decisions:
+  **which tree** it judges and **what runs** on it.
+- `lib/gate-marker.sh` — the pass-marker store, written per gate, read across
+  them.
 
-Both gates follow the same shape: the expensive run happens **out of band** and
+Every gate follows the same shape: the expensive run happens **out of band** and
 leaves a marker; the gate on the critical path only looks it up, so it is
 instant. The marker is keyed to a **tree** and records the **stages** that earned
 it, so it cannot go stale in either direction — different content is a different
-key, and a gate that grew a stage stops honouring markers that never ran it. A
-run also covers any gate whose composition it contains (absorption, D5).
+key, and a gate that grew a stage stops honouring markers that never ran it.
 
-**The composition belongs to the project, never to this skill.** Both gates ask
-`scripts/ci-local.sh --stages <gate>` and refuse when the answer is empty: a
+A run also covers any gate whose composition it contains (**absorption**,
+ADR-0023 D5): the lookup unions what *every* gate recorded for that tree, so
+`make done-gate` also clears `->merge` on the same content and a typical card
+costs one run instead of two. That is why `merge-gate` must stay a **subset** of
+`done-gate` — `tests/test_gate_entrypoint_parity.py` refuses a composition that
+breaks the nesting.
+
+**The composition belongs to the project, never to this skill.** Every gate asks
+`scripts/ci-local.sh --stages <gate>` and refuses when the answer is empty: a
 library file that restated project content drifted from it within days
 (ADR-0023 D7).
 
-## The review→done gate (HATS-1137)
+## The two card gates (HATS-1137, HATS-1614)
 
 ### Who runs what, and when
 
 **The agent**, once the work is finished and committed, in its task worktree:
 
-    cd <task worktree> && make done-gate
+    cd <task worktree> && make done-gate     # clears BOTH edges
+    cd <task worktree> && make merge-gate    # clears the merge only
 
-That is the only step invoked by hand. It runs the whole `done-gate` stage
-(minutes) and, on green, leaves a marker behind.
+That is the only step invoked by hand. It runs the named composition (minutes)
+and, on green and a clean tree, leaves a marker behind.
+
+Prefer `make done-gate`: it is the superset, so its marker clears the merge too
+(absorption). `make merge-gate` is for merging now and closing the card later —
+it saves `merge-smoke`, and the card will need the fuller run before `done`.
 
 **The harness**, with nobody involved, when the card is moved:
 
@@ -78,7 +93,8 @@ That is the only step invoked by hand. It runs the whole `done-gate` stage
    own skill mirror, outside one from the live library (ADR-0019 D9) — keeps the
    rows whose point is an edge of the topology this kernel runs (ADR-0019 D11),
    and finds the `maintainer` role's rows — two since HATS-1545, one per app,
-   binding this script to both points.
+   binding one gate script per point (`done-gate.sh` here, `merge-gate.sh` on
+   `apps.wt` since HATS-1614).
 5. `hook_exec.run_hook` spawns the script with **no argv at all**, `stdin`
    `/dev/null`, `cwd` = the project dir, a 20s budget
    (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`), and `AI_HATS_TASK_ID` in the env. The script's own
@@ -132,27 +148,34 @@ In the script's real order; every branch below is an explicit `exit`:
 5. The composition, asked of the dispatcher **in that worktree** — not the main
    checkout's. The marker certifies stages that ran there, so asking elsewhere
    judges one tree by another tree's rules. Empty → **refuse (2)**.
-6. A marker for that tree covering every demanded stage → **pass (0)**. Missing
-   → **refuse (2)** with the copy-pasteable `cd <wt> && make done-gate`.
+6. A marker for that tree covering every demanded stage — **from any gate that
+   ran on it** (absorption) → **pass (0)**. Missing → **refuse (2)** with the
+   copy-pasteable `cd <wt> && make <this gate>`.
 
-**One script, two points, no branch between them.** The tree under judgement
-arrives as `AI_HATS_WORKTREE_PATH` at *both*, resolved once by the runner
+**Two scripts, one body.** Both gates run the same `gate_check_task_worktree`
+out of `lib/gate.sh` and differ only in the name they ask the dispatcher about
+and the command their refusal prints. They are separate FILES rather than one
+script with a flag because the checks channel has no argv: `run:` is
+`<skill>/<script>` and the runner spawns it bare. The tree under judgement
+arrives as `AI_HATS_WORKTREE_PATH` at *both* points, resolved once by the runner
 (HATS-1540 R2) instead of each gate re-deriving
 `sessions/worktrees/task-<id>.json` and parsing the JSON by hand. The primitive
 *removes* an unresolved value from the inherited environment rather than letting
 an ambient one through — that applies to `AI_HATS_TASKS_DIR` too, so a stale one
 cannot reach the script at `pre-merge` and read as "not my backlog".
 
-### `--run` — `make done-gate`, and where the marker lands
+### `--run` — `make done-gate` / `make merge-gate`, and where the marker lands
 
-Asks the dispatcher for the `done-gate` composition and runs those stages,
-stopping at the first red, from `git rev-parse --show-toplevel`. On green **and a
-clean tree** it writes
+Asks the dispatcher for that gate's composition and runs those stages, stopping
+at the first red, from `git rev-parse --show-toplevel`. On green **and a clean
+tree** it writes
 
-    <git-common-dir>/ai-hats/done-gate/<HEAD tree>
+    <git-common-dir>/ai-hats/<gate>/<HEAD tree>
 
 carrying `tree=`, `timestamp=` and `stages=` — the composition it actually ran.
-Two things about that path:
+Written per gate, read across gates: the directory records which gate earned it,
+while a lookup unions every gate's marker for that tree (absorption). Two more
+things about that path:
 
 - **`--git-common-dir`, never `--git-dir`.** The common dir is the main
   checkout's `.git`, shared by every linked worktree — which is exactly what
@@ -195,12 +218,12 @@ including the `--no-ff` merge commit that re-parents it unchanged (HATS-1601:
 Refuse is `2` and not `1` because `1` is what a shell script produces **by
 accident**: under `set -e` any stray non-zero command — a failed `grep`, a
 missing file — ends the script with 1. Reserving 1 for "the check broke" keeps
-an accident from reading as a verdict. That is also why `hooks/done-gate.sh`
-runs under `set -uo pipefail` with **no** `-e`, and spells out every exit.
+an accident from reading as a verdict. That is also why both card gates run
+under `set -uo pipefail` with **no** `-e`, and spell out every exit.
 
 ### Why two steps and not one
 
-The `done-gate` stage takes minutes. The rack task lock times out at 30s and
+Either composition takes minutes. The rack task lock times out at 30s and
 the per-check budget is 20s (`ai_hats_rack.checks.EDGE_CHECK_TIMEOUT_S`, `< LOCK_TIMEOUT`
 at import time), so the heavy work cannot run in the lock at all: it would be
 killed at 20s, and a peer waiting on the lock would mis-blame a concurrent
@@ -232,7 +255,7 @@ composition:
           at: [edge:review--done, edge:execute--review]
           on_error: warn
     wt: # ai-hats's own app: rows sit directly under the key
-      - run: maintainer-quality-gate/hooks/done-gate.sh
+      - run: maintainer-quality-gate/hooks/merge-gate.sh
         at: [pre-merge]
         on_error: refuse
 ```
@@ -383,7 +406,8 @@ consuming project.
 - E2e tests: `tests/e2e/test_prepush_e2e_master_gate.py`,
   `tests/e2e/test_done_gate.py`
 - Wrapper: `scripts/run-e2e-gate.sh`
-- Gate composition: `scripts/ci-local.sh` → `done-gate` stage
+- Gate compositions: `scripts/ci-local.sh` → `gate_composition`, one line per
+  gate; `--stages <gate>` prints one
 - Binding shape and outcome policy: ADR-0019 D2 / D4; exit contract: ADR-0020 D2
 - Check runner and log path: `src/ai_hats/rack_consumers.py`; in-lock ladder:
   `src/ai_hats/rack_wiring.py` → `build_rack_kernel`
