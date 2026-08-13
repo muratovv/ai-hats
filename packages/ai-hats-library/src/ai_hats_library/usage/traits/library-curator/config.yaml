@@ -66,18 +66,25 @@ injection: |
     extras. **Last-wins precedence.**
   - `src/ai_hats/paths.py` — agent / library / tracker path resolution.
 
-  ### Verifying compositions in-process (worktree-safe)
-  Since HATS-826 `_builtin_library_layers()` auto-detects an ai-hats
-  source checkout from the **process cwd** (a dir holding `library/core`
-  + `src/ai_hats`) and honours `AI_HATS_LIBRARY_ROOT`. So builtin
-  core/usage resolve from the worktree you RUN IN — a bare `ai-hats …`
-  from inside the worktree already sees its `library/` edits, and
-  in-process you construct the Assembler with cwd in the worktree:
+  ### Verifying compositions from a worktree
+  **Before any `ai-hats` command, set `AI_HATS_LIBRARY_ROOT` — the CLI
+  does not find your worktree's library on its own (HATS-1501, measured):**
+
+      export AI_HATS_LIBRARY_ROOT=<wt>/packages/ai-hats-library/src/ai_hats_library
+
+  Without it a bare `ai-hats …` run from inside a worktree composes the
+  MAIN checkout's library, and says nothing: it exits 0 and renders the
+  block you edited, carrying master's text. Your edit is simply absent —
+  a false green, not a refusal. Cause: `_project_dir()` hops a linked
+  worktree to the main checkout by design (tracker routing, HATS-524) and
+  library resolution consumes that same answer.
+
+  In-process, construct the Assembler with cwd in the worktree:
 
       from pathlib import Path
       from ai_hats.assembler import Assembler
       wt = Path('.').resolve()        # run this FROM inside the worktree
-      a = Assembler(wt)               # builtin core/usage auto-detected from cwd
+      a = Assembler(wt)               # wt passed explicitly IS what resolves the library
       # ALWAYS pass overlays — without them, user-global customizations
       # (~/.ai-hats/customizations.yaml) and project ai-hats.yaml overlays
       # are silently skipped, leading to false "rule absent" diagnoses.
@@ -85,11 +92,10 @@ injection: |
       result = a.composer.compose('role-curator', overlays=overlays)
       assert result.errors == []
 
-  If you cannot run from the worktree cwd, set
-  `AI_HATS_LIBRARY_ROOT=<wt>/library` (or pass an explicit
-  `library_paths=[<wt>/library/core, <wt>/library/usage]`). The old
-  "editable installs always read main, edit-in-main or symlink to
-  validate" workaround is obsolete — do not reintroduce it.
+  That in-process form is sound on its own (measured): you hand
+  `Assembler` the worktree path explicitly, so the worktree's library
+  wins. The env var is what the **CLI** needs, because there nobody
+  passes the worktree — `_project_dir()` computes the main checkout.
 
   **Positive-control discipline.** When verifying that a NEW rule/skill
   is now present, also assert that an EXISTING rule/skill from the same
