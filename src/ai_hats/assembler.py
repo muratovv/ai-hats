@@ -56,6 +56,8 @@ from .constants import (
     CANONICAL_DIR,
     CANONICAL_MANIFEST,
     GITIGNORE_FILE,
+    LAUNCHER_CONTRACT,
+    LAUNCHER_CONTRACT_FILE,
     USER_RULES_SUBDIR,
     PROVIDER_CLAUDE,
 )
@@ -1143,6 +1145,13 @@ class Assembler:
                 parent = parent.parent
 
         self._write_canonical_manifest(canonical / CANONICAL_MANIFEST, sorted(new_paths))
+
+        # HATS-1617: the bash launcher fails before any interpreter runs when the
+        # venv is missing, so the contract it must match is left here for it to read.
+        # Untracked by the manifest, like versions/ and library/ beside it.
+        self._atomic_write_if_changed(
+            canonical / LAUNCHER_CONTRACT_FILE, f"{LAUNCHER_CONTRACT}\n".encode()
+        )
 
     @staticmethod
     def _atomic_write_if_changed(path: Path, content: bytes) -> bool:

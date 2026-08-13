@@ -1,12 +1,13 @@
-"""e2e (HATS-647, HATS-655)
+"""e2e (HATS-647, HATS-655, HATS-1617)
 
-flow:   a developer running self update when host launcher binary is older than installed
-        framework
+flow:   a developer running self update when the host launcher binary is older than
+        the installed framework
 cmds:
     ai-hats self update
-expect: self update displays advisory warning detailing launcher upgrade instructions
-why:    without launcher skew advisories, outdated host launchers miss versioned venv
-        resolution features
+expect: self update names the contract skew and prints the launcher refresh command
+why:    the launcher is a copy that never self-updates. This is the SUCCESS-path
+        contour — the update completes, so the failure-path check inside the
+        launcher (tests/e2e/test_launcher_contract_skew.py) never runs here
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import pytest
 from _helpers.project import pin_edge_channel
 from _helpers.workspace import build_workspace_member_wheels
 from ai_hats.paths import ENV_AI_HATS_VENV
-from ai_hats.constants import ENV_REPO_URL
+from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
 pytestmark = (
     pytest.mark.install_heavy
@@ -74,15 +75,8 @@ def _head_sha(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _advance(src_repo: Path, marker: str) -> str:
-    (src_repo / marker).write_text("hats-655 e2e\n")
-    git(src_repo, "add", marker)
-    git(src_repo, "commit", "--quiet", "-m", f"test: advance HEAD ({marker})")
-    return _head_sha(src_repo)
-
-
 @pytest.mark.integration
-def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
+def test_e2e_stale_launcher_contract_advisory(tmp_path: Path) -> None:
     src_repo = tmp_path / "src-repo"
     launcher = tmp_path / "bin" / "ai-hats"
     project = tmp_path / "project"
@@ -106,6 +100,9 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env[ENV_REPO_URL] = str(src_repo)
+    # HATS-1617: name the shim as THE installed launcher — the skew check reads
+    # this file's stamp, so leaving it to `which` would test the host's launcher.
+    env[ENV_LAUNCHER_DEST] = str(launcher)
     env["AI_HATS_TRASH_DIR"] = str(tmp_path / "trash")
     env.pop(ENV_AI_HATS_VENV, None)
     env.pop("PYTHONPATH", None)
@@ -117,28 +114,17 @@ def test_e2e_stale_launcher_dormancy_advisory(tmp_path: Path) -> None:
 
     versions = project / ".agent" / "ai-hats" / "versions"
 
-    # --- Update 1: migration. No versioned install pre-existed → no hint. ---
+    # HATS-1617: the shim carries no LAUNCHER_CONTRACT stamp, so it reads as
+    # contract 0 and the advisory fires on the FIRST update — the old check had to
+    # wait for a versioned install to exist before any symptom appeared.
     r1 = _run([str(launcher), "self", "update"], cwd=project, env=env, timeout=300)
-    assert r1.returncode == 0, f"update 1 failed:\n{r1.stdout}\n{r1.stderr}"
+    assert r1.returncode == 0, f"update failed:\n{r1.stdout}\n{r1.stderr}"
     assert (versions / "current").read_text().strip() == sha_a
     out1 = r1.stdout + r1.stderr
-    assert "host launcher is not using the versioned install" not in out1, (
-        "first migration update must NOT warn (running from .venv is expected)"
+    assert "host launcher is behind this install" in out1, (
+        f"contract-skew advisory did not fire.\nstdout:\n{r1.stdout}\nstderr:\n{r1.stderr}"
     )
-
-    # --- Update 2: versioned install pre-exists, stale shim still runs from
-    #     .venv → dormancy hint fires. ---
-    sha_b = _advance(src_repo, "E2E_655_M1.txt")
-    assert sha_b != sha_a
-    r2 = _run([str(launcher), "self", "update"], cwd=project, env=env, timeout=300)
-    assert r2.returncode == 0, f"update 2 failed:\n{r2.stdout}\n{r2.stderr}"
-    assert (versions / "current").read_text().strip() == sha_b
-    out2 = r2.stdout + r2.stderr
-    assert "host launcher is not using the versioned install" in out2, (
-        "dormancy hint must fire once a versioned install is ignored by the "
-        f"stale launcher.\nstdout:\n{r2.stdout}\nstderr:\n{r2.stderr}"
-    )
-    assert "install-launcher.sh" in out2  # actionable fix surfaced
+    assert "install-launcher.sh" in out1  # actionable fix surfaced
 
     # --- Non-mutation invariant: the launcher file was never touched. ---
     assert launcher.read_bytes() == launcher_bytes_before, (

@@ -16,6 +16,11 @@ GITIGNORE_FILE = ".gitignore"
 CANONICAL_DIR = "ai-hats"
 CANONICAL_MANIFEST = "MANAGED"
 USER_RULES_SUBDIR = "user-rules"
+# HATS-1617: resolution contract the host launcher must implement. Bump only when
+# the launcher's resolution behaviour changes — never for comments or a release.
+# Paired with the `LAUNCHER_CONTRACT=` literal in scripts/ai-hats-launcher.
+LAUNCHER_CONTRACT = 1
+LAUNCHER_CONTRACT_FILE = "launcher-contract"
 
 
 # Env-var names shared across modules (HATS-917); single-file knobs stay local.

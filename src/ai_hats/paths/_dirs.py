@@ -558,8 +558,7 @@ def is_usable_version(project_dir: Path, sha: str) -> bool:
     The ``bin/python`` clause is HATS-657: a host python upgrade leaves a venv
     *complete* (sentinel present) yet *unrunnable* — its ``bin/python`` symlink
     dangles to the removed interpreter. Treating such a venv as current would
-    make ``self update`` see ``already_current`` and skip the heal (#1) and
-    false-fire the HATS-655 dormancy advisory (#2).
+    make ``self update`` see ``already_current`` and skip the heal.
 
     HATS-790 (Alt 5) removed the ``[project.scripts] ai-hats`` console script,
     so a managed venv no longer materialises ``bin/ai-hats``; the entry point is
