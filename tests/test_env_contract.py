@@ -54,7 +54,7 @@ HOOK_POINT_KEYS = {
 CONTRACT_KEYS = {**IDENTITY_KEYS, **HOOK_POINT_KEYS}
 
 # Mirrors that may NOT import the home (rack's import-hygiene pin forbids every
-# candidate), so ADR-0023 binds them to "reconcile behaviour, not remove
+# candidate), so ADR-0026 binds them to "reconcile behaviour, not remove
 # duplication" — conformance-checked here rather than deduplicated.
 SANCTIONED_MIRRORS = {
     "ai_hats_rack.journal": ("ENV_SESSION_ID", "ENV_ROOT_PID"),
@@ -207,7 +207,7 @@ def test_sanctioned_mirror_spellings_match_the_home(module_name: str) -> None:
         assert getattr(module, attr) == MIRROR_SPELLINGS[attr], (
             f"{module_name}.{attr} drifted from the home spelling "
             f"{MIRROR_SPELLINGS[attr]!r}; rack may not import the home "
-            f"(ADR-0023: reconcile behaviour, not remove duplication)"
+            f"(ADR-0026: reconcile behaviour, not remove duplication)"
         )
 
 
@@ -383,7 +383,7 @@ def test_the_sandbox_scrub_drops_the_whole_identity_too() -> None:
 
     It scrubbed five scalars and left the envelope, so a sandboxed run inherited
     the parent session while its scalars were gone — the same tear as the git
-    path, in the other direction. Conformance rather than dedup (ADR-0023).
+    path, in the other direction. Conformance rather than dedup (ADR-0026).
     """
     import re
 
