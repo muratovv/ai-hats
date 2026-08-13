@@ -19,11 +19,29 @@ import subprocess
 
 import pytest
 
-from _helpers.hook_chain import build_session_settings, run_tool_chain
+from _helpers.hook_chain import build_session_settings, run_chain, run_tool_chain
 
 pytestmark = pytest.mark.integration
 
 TRACKER = ".agent/ai-hats/tracker/backlog"
+KILL_SWITCH = "AI_HATS_BACKLOG_GATE_OFF"
+DESTRUCTIVE_ACK = "AI_HATS_DESTRUCTIVE_ACK"
+
+
+def assert_names_the_hatch(verdict):
+    """HATS-1253 P4, in this gate's terms: the way through is `rack`, and the
+    only override is exported by the supervisor for the whole session.
+
+    ``Verdict.names_ack_flag`` cannot judge this one — its regex reads the
+    letters `...B/ACK/LOG...` in the switch name as a consent flag."""
+    assert "rack transition" in verdict.reason, f"deny must name the writer; got {verdict}"
+    assert KILL_SWITCH in verdict.reason, f"deny must name the kill switch; got {verdict}"
+    assert DESTRUCTIVE_ACK not in verdict.reason, (
+        f"the backlog has no per-call consent flag; got {verdict}"
+    )
+    assert "=1 <command>" not in verdict.reason, (
+        f"a per-call override is a guard the agent switches off; got {verdict}"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -68,13 +86,7 @@ def test_writing_a_task_card_by_hand_is_denied(hooked_project):
     project, env, settings = hooked_project
     verdict = _write(project, env, settings, f"{TRACKER}/tasks/HATS-1/task.yaml")
     assert verdict.denied, f"a hand-written task.yaml must be denied; got {verdict}"
-    assert "rack transition" in verdict.reason, f"deny must name the writer; got {verdict}"
-    assert "AI_HATS_BACKLOG_GATE_OFF" in verdict.reason, (
-        f"deny must name the kill switch; got {verdict}"
-    )
-    assert "AI_HATS_BACKLOG_GATE_OFF=1 <command>" not in verdict.reason, (
-        "the switch is export-only — a per-call form is a guard the agent turns off"
-    )
+    assert_names_the_hatch(verdict)
 
 
 def test_plan_md_stays_writable(hooked_project):
@@ -90,3 +102,57 @@ def test_a_file_outside_the_tracker_is_untouched(hooked_project):
     project, env, settings = hooked_project
     verdict = _write(project, env, settings, "src/app/config.yaml")
     assert not verdict.gated, f"a file outside the tracker must pass; got {verdict}"
+
+
+# --- The Bash side: closing the file tools alone just moves the hand ---------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("echo 'state: done' > {card}", id="redirect"),
+        pytest.param("mkdir -p {tasks}/HATS-2", id="mkdir"),
+        pytest.param("mv {card} {tasks}/HATS-2/task.yaml", id="mv"),
+        pytest.param("cp /tmp/card.yaml {card}", id="cp"),  # noqa: S108 - payload string only
+        pytest.param("rm -f {card}", id="rm"),
+        pytest.param("sed -i '' 's/^state:.*/state: done/' {card}", id="sed-inplace"),
+    ],
+)
+def test_raw_shell_mutation_of_the_tracker_is_denied(hooked_project, command):
+    """Same rule, other hand. `sed -i` was already denied — but as ordinary
+    in-place editing, whose refusal hands out a per-call ack. For the backlog
+    there is no per-call form, so the tracker predicate has to answer first."""
+    project, env, settings = hooked_project
+    tasks = project / TRACKER / "tasks"
+    verdict = run_chain(
+        project,
+        command.format(card=tasks / "HATS-1" / "task.yaml", tasks=tasks),
+        settings=settings,
+        env=env,
+    )
+    assert verdict.denied, f"{command!r} mutates the tracker and must be denied; got {verdict}"
+    assert_names_the_hatch(verdict)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("rack transition HATS-1 execute --log 'moved'", id="sanctioned-writer"),
+        pytest.param("cat {card}", id="read-with-cat"),
+        pytest.param("grep -n '^state:' {card}", id="read-with-grep"),
+        pytest.param("cp {card} /tmp/card-backup.yaml", id="copy-out-is-a-read"),  # noqa: S108 - payload string only
+        pytest.param("mkdir -p {plan_dir}", id="mkdir-outside"),
+    ],
+)
+def test_the_sanctioned_writer_and_plain_reads_pass(hooked_project, command):
+    """Deliberately narrow: denying reads would cost more in false positives
+    than a read of the backlog costs in tracker state (plan, Approach & counter)."""
+    project, env, settings = hooked_project
+    tasks = project / TRACKER / "tasks"
+    verdict = run_chain(
+        project,
+        command.format(card=tasks / "HATS-1" / "task.yaml", plan_dir=project / "docs"),
+        settings=settings,
+        env=env,
+    )
+    assert not verdict.gated, f"{command!r} must pass the chain; got {verdict}"
