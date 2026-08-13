@@ -77,12 +77,21 @@ def _columns(rows: list[list[str]], indent: str = "  ") -> list[str]:
     ]
 
 
-def echo_documents(card_dir: Path, docs: list[DocInfo], indent: str = "  ") -> None:
+def echo_documents(
+    card_dir: Path, docs: list[DocInfo], indent: str = "  ", card_id: str = "<ID>"
+) -> None:
     """The documents block: name + ABSOLUTE path + mtime + frozen mark. Content
-    is never inlined — the agent Reads by the printed path (discovery model)."""
+    is never inlined — the agent Reads by the printed path (discovery model).
+
+    The empty hint names `--attach`, not the directory: since HATS-1647 a raw
+    write into the card dir is denied, so advertising it teaches the one move
+    that cannot work."""
     click.echo(f"{indent}Documents ({card_dir.absolute()}):")
     if not docs:
-        click.echo(f"{indent}  (none — write files into this directory to add)")
+        click.echo(
+            f"{indent}  (none — add one with "
+            f"`rack transition {card_id} --attach <src>:<name>`)"
+        )
         return
     rows = [[d.name, str(d.path), _mtime_human(d.mtime), _frozen_mark(d)] for d in docs]
     for line in _columns(rows, indent + "  "):
@@ -148,7 +157,7 @@ def _echo_context(pkg: ContextPackage, tasks_dir: Path) -> None:
         for entry in card.work_log[-5:]:
             click.echo(f"    {entry.timestamp} {entry.message}")
     click.echo("")
-    echo_documents(tasks_dir / card.id, list(pkg.documents))
+    echo_documents(tasks_dir / card.id, list(pkg.documents), card_id=card.id)
     _echo_links(dict(pkg.links))
     for contrib in pkg.enrichments:
         click.echo("")
