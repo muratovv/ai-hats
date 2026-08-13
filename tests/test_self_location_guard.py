@@ -1,6 +1,6 @@
 """Unit tests for the runtime self-location guard (HATS-791).
 
-Two surfaces:
+Three surfaces:
 
 1. :func:`ai_hats.self_location.classify_invocation` — the PURE sanctioned/
    foreign decision. Full truth table: every sanctioned shape (managed default
@@ -13,8 +13,14 @@ Two surfaces:
    whole CliRunner-driven suite bypasses it for free. If a future refactor
    moves the guard onto ``main``, this test fails before the suite does.
 
+3. The guard's RESOLUTION of the venv it compares against — it must go through
+   :func:`ai_hats.paths.venv_path`, so a foreign-pinned ``AI_HATS_VENV`` is
+   dropped per ADR-0025 D3 while a bare one still wins (HATS-1621).
+
 Fail-under-revert: drop the ``"foreign"`` branch in ``classify_invocation`` and
-:func:`test_foreign_app_venv_is_foreign` flips to ``"sanctioned"``.
+:func:`test_foreign_app_venv_is_foreign` flips to ``"sanctioned"``; restore the
+raw ``os.environ`` read in the guard and
+:func:`test_a_foreign_pin_does_not_become_the_guards_target` exits 3.
 """
 
 from __future__ import annotations
@@ -175,3 +181,73 @@ def test_skip_env_only_honours_exact_1(skip_val: str, tmp_path: Path):
     skip = skip_val == "1"  # the wiring's exact comparison
     expected = "sanctioned" if skip else "foreign"
     assert classify_invocation(running, resolved, is_editable_install=False, skip=skip) == expected
+
+
+# --------------------------------------------------------------------------
+# The guard's RESOLUTION of its target venv (HATS-1621)
+# --------------------------------------------------------------------------
+
+
+def test_a_foreign_pin_does_not_become_the_guards_target(monkeypatch, tmp_path):
+    """A leaked session pin must not redirect what the guard compares against.
+
+    ADR-0025 D3 drops a foreign-pinned ``AI_HATS_VENV``, as do the launcher
+    (HATS-944) and :func:`ai_hats.paths.venv_path`. Reading it raw disagreed
+    with both: the guard then called this project's own venv foreign and exited
+    3, telling the user to uninstall from the venv that was correct all along.
+    """
+    from ai_hats.cli import _resolve_guard_target
+
+    proj = tmp_path / "proj"
+    (proj / ".agent").mkdir(parents=True)
+    own_venv = proj / "customvenv"
+    own_venv.mkdir()
+    (proj / "ai-hats.yaml").write_text("venv_path: customvenv\n")
+
+    other = tmp_path / "other"
+    other_venv = other / "venv"
+    other_venv.mkdir(parents=True)
+
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(other))
+    monkeypatch.setenv("AI_HATS_VENV", str(other_venv))
+
+    assert _resolve_guard_target(proj) == str(own_venv)
+
+
+def test_an_unpaired_venv_override_still_wins(monkeypatch, tmp_path):
+    """``AI_HATS_VENV`` with no pin beside it stays an explicit human override.
+
+    D3 keeps bare env-wins deliberately. Routing the guard through
+    :func:`venv_path` must not cost that: the override, not the yaml value, is
+    what this project resolves to.
+    """
+    from ai_hats.cli import _resolve_guard_target
+
+    proj = tmp_path / "proj"
+    (proj / ".agent").mkdir(parents=True)
+    (proj / "customvenv").mkdir()
+    (proj / "ai-hats.yaml").write_text("venv_path: customvenv\n")
+
+    override = tmp_path / "override"
+    override.mkdir()
+
+    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
+    monkeypatch.setenv("AI_HATS_VENV", str(override))
+
+    assert _resolve_guard_target(proj) == str(override)
+
+
+def test_an_absent_resolved_venv_reads_as_unknown(tmp_path, monkeypatch):
+    """Nothing to shadow when the resolved venv does not exist (HATS-791).
+
+    The caller fails open on ``None``; returning a path that isn't there would
+    make every project without a managed install look foreign.
+    """
+    from ai_hats.cli import _resolve_guard_target
+
+    proj = tmp_path / "proj"
+    (proj / ".agent").mkdir(parents=True)
+    monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
+    monkeypatch.delenv("AI_HATS_VENV", raising=False)
+
+    assert _resolve_guard_target(proj) is None

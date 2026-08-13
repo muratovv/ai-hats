@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import click
 
 from .. import __version__
-from ..paths import ENV_AI_HATS_VENV
 from ._helpers import console
 
 
@@ -471,6 +471,23 @@ def _is_guard_exempt_invocation(argv: list[str]) -> bool:
     return any(a in _GUARD_EXEMPT_FLAGS for a in argv)
 
 
+def _resolve_guard_target(project_dir: Path) -> str | None:
+    """The venv this project resolves to, or ``None`` when there is none.
+
+    ``venv_path`` IS the precedence chain, ``AI_HATS_VENV`` first and pair-scoped
+    (ADR-0025 D3) — reading the pin separately honoured one that the launcher and
+    ``venv_path`` both drop, refusing this project's own venv (HATS-1621).
+
+    Only a venv that ACTUALLY EXISTS can be shadowed (HATS-791): an absent one
+    means no managed install for this project, so there is nothing to shadow and
+    the caller fails open on ``None``.
+    """
+    from ..paths import venv_path
+
+    resolved = venv_path(project_dir)
+    return str(resolved) if resolved.exists() else None
+
+
 def _guard_self_location() -> None:
     """Refuse-and-instruct when running from a FOREIGN (non-managed) venv.
 
@@ -505,23 +522,9 @@ def _guard_self_location() -> None:
     resolved_venv: str | None = None
     is_editable = False
     try:
-        from pathlib import Path
-
-        from ..paths import venv_path
         from ._helpers import _project_dir
 
-        # The launcher pins the resolved venv via AI_HATS_VENV (HATS-647
-        # pin-at-spawn); honour it verbatim so launcher and guard agree. Else
-        # resolve from the project (venv_path already reads AI_HATS_VENV first).
-        pinned = os.environ.get(ENV_AI_HATS_VENV)
-        resolved_path = Path(pinned) if pinned else venv_path(_project_dir())
-        # HATS-791 refinement: only a managed venv that ACTUALLY EXISTS can be
-        # "shadowed". If the resolved venv is absent (no managed install for this
-        # project), there is nothing to shadow — fail open (treat as unknown).
-        # This keeps the guard to its true scope (a real managed venv exists but
-        # we are running from a DIFFERENT one) and clears false-positives for
-        # standalone / by-name installs in projects with no managed venv.
-        resolved_venv = str(resolved_path) if resolved_path.exists() else None
+        resolved_venv = _resolve_guard_target(_project_dir())
     except Exception:  # silent-ok: fail open on ANY resolution error, per docstring
         resolved_venv = None
     try:
