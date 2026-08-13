@@ -32,9 +32,9 @@ from ai_hats_rack.checks import (
 from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
-from .check_points import check_log_token
+from .check_points import check_failure_reason, check_log_token
 from .check_resolve import CheckResolutionError, resolve_carried_checks
-from .hook_exec import HookRun, HookVerdict, run_hook
+from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
 
 
@@ -119,7 +119,7 @@ class AiHatsCheckPort:
         )
         return CheckOutcome(
             ok=run.ok,
-            reason=_refusal(check, run),
+            reason=check_failure_reason(check, run),
             downgradable=run.downgradable,
         )
 
@@ -192,16 +192,6 @@ def _declaration(check: ResolvedCheck) -> CheckDeclaration:
 
 def _binding(check: ResolvedCheck) -> str:
     return f"{check.declared_by!r} binds {check.run} under apps.{check.app}"
-
-
-def _refusal(check: ResolvedCheck, run: HookRun) -> str:
-    """A refusal that spoke stands alone — R3.3 wants the child's tail verbatim
-    in ``--json``. Everything else is the substrate failing, so it is named."""
-    if run.ok:
-        return ""
-    if run.verdict is HookVerdict.REFUSE:
-        return run.reason
-    return f"checks: {_binding(check)} — {run.reason}"
 
 
 def check_port_factory(backlog_owner: Path | None) -> CheckPortFactory:
