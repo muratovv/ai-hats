@@ -181,7 +181,7 @@ def _write_dispatcher(repo: Path, *, stages: str = "e2e") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "#!/usr/bin/env bash\n"
-        f'if [[ "${{2:-}}" == "--stages" ]]; then echo "{stages}"; exit 0; fi\n'
+        f'if [[ "$1" == "--stages" ]]; then echo "{stages}"; exit 0; fi\n'
         'if [[ "$1" == "e2e" ]]; then\n'
         '  exec pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q\n'
         "fi\n"
@@ -438,7 +438,7 @@ def _commit_dispatcher(
     # gate withholds the marker on a dirty tree, masking what these cases assert.
     dispatcher.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "${2:-}" == "--stages" ]]; then echo "lint unit e2e-catalog e2e"; exit 0; fi\n'
+        'if [[ "$1" == "--stages" ]]; then echo "lint unit e2e-catalog e2e"; exit 0; fi\n'
         f'printf "%s\\n" "$1" >> "{repo.parent / "stages_run"}"\n'
         'case "$1" in\n'
         f"  lint) exit {lint_rc} ;;\n"

@@ -50,7 +50,7 @@ key, and a gate that grew a stage stops honouring markers that never ran it. A
 run also covers any gate whose composition it contains (absorption, D5).
 
 **The composition belongs to the project, never to this skill.** Both gates ask
-`scripts/ci-local.sh <gate> --stages` and refuse when the answer is empty: a
+`scripts/ci-local.sh --stages <gate>` and refuse when the answer is empty: a
 library file that restated project content drifted from it within days
 (ADR-0023 D7).
 

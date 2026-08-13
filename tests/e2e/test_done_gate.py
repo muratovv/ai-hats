@@ -77,7 +77,7 @@ injection: |
 _STUB_STAGE = "stub-stage"
 _CI_LOCAL_STUB = (
     "#!/usr/bin/env bash\n"
-    f'if [[ "${{2:-}}" == "--stages" ]]; then echo "{_STUB_STAGE}"; exit 0; fi\n'
+    f'if [[ "$1" == "--stages" ]]; then echo "{_STUB_STAGE}"; exit 0; fi\n'
     'echo "[stub] stage=${1:-}" >&2\nexit 0\n'
 )
 

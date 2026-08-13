@@ -31,10 +31,16 @@ gate_tree() {
 
 # The composition, from the project's dispatcher — never a literal here. The
 # library owns the discipline, the project owns what its gate runs (ADR-0023 D7).
+#
+# `--stages` goes FIRST, and that position is load-bearing: a dispatcher that
+# predates this contract sees an unknown stage name and refuses in milliseconds.
+# Asked the other way round it would read `--stages` as a trailing argument to a
+# gate it does know — and RUN it, inside a 20s in-lock budget (measured: a
+# 2-minute hang against the pre-1604 dispatcher).
 gate_stages() {
     local dispatcher="$1" gate="$2"
     [[ -f "$dispatcher" ]] || return 1
-    bash "$dispatcher" "$gate" --stages 2>/dev/null || return 1
+    bash "$dispatcher" --stages "$gate" 2>/dev/null || return 1
 }
 
 # Run the composition, stopping at the first red; rc is that stage's rc. With a

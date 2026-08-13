@@ -149,17 +149,21 @@ case "$stage" in
     unit) ci_unit ${@+"$@"} ;;
     integration) ci_integration ${@+"$@"} ;;
     coverage) ci_coverage ${@+"$@"} ;;
-    done-gate|push-gate)
-        # A gate is not a stage: it is a NAME for a set of them. Running it is
-        # the primitive's job (it owns the marker), so the only question the
-        # dispatcher answers about a gate is what it consists of.
-        if [[ "${1:-}" != "--stages" ]]; then
-            echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
-            echo "  its composition:  scripts/ci-local.sh $stage --stages" >&2
-            echo "  run it (marks the tree on green):  make done-gate | scripts/run-e2e-gate.sh" >&2
+    # A gate is not a stage: it is a NAME for a set of them, and running it is
+    # the primitive's job (it owns the marker). `--stages` comes FIRST so a
+    # dispatcher that does not know the flag refuses instantly instead of
+    # mistaking it for an argument to a gate it does know (HATS-1604).
+    --stages)
+        gate_composition "${1:-}" || {
+            echo "[ci-local] no such gate: ${1:-<none>} (gates: done-gate | push-gate)" >&2
             exit 2
-        fi
-        gate_composition "$stage"
+        }
+        ;;
+    done-gate|push-gate)
+        echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
+        echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
+        echo "  run it (marks the tree on green):  make done-gate | scripts/run-e2e-gate.sh" >&2
+        exit 2
         ;;
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;

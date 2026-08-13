@@ -80,13 +80,32 @@ def _dispatcher(repo: Path, *, red: str = "") -> Path:
     path = repo / "dispatch.sh"
     path.write_text(
         "#!/usr/bin/env bash\n"
-        'if [[ "${2:-}" == "--stages" ]]; then echo "one two three"; exit 0; fi\n'
+        'if [[ "$1" == "--stages" ]]; then echo "one two three"; exit 0; fi\n'
         'touch "$(dirname "$0")/ran-$1"\n'
         f'[[ "$1" == "{red}" ]] && exit 3\n'
         "exit 0\n",
         encoding="utf-8",
     )
     return path
+
+
+def test_asking_a_dispatcher_that_predates_the_flag_runs_nothing(repo: Path):
+    """MEASURED (HATS-1604): asked as `<gate> --stages`, a pre-1604 dispatcher
+    read the flag as a trailing argument to a gate it DID know and ran the whole
+    thing — a 2-minute hang inside a 20s in-lock budget. `--stages` goes first,
+    where an unknown flag is just an unknown stage and refuses in milliseconds."""
+    old = repo / "old-dispatch.sh"
+    old.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "done-gate" ]]; then touch "$(dirname "$0")/RAN_THE_GATE"; exit 0; fi\n'
+        'echo "unknown stage: $1" >&2\nexit 2\n',
+        encoding="utf-8",
+    )
+
+    asked = _bash(f'gate_stages "{old}" done-gate', repo, lib=GATE_LIB)
+
+    assert asked.returncode != 0, "a dispatcher that names no composition must answer no"
+    assert not (repo / "RAN_THE_GATE").exists(), "asking what a gate IS must never RUN it"
 
 
 def test_the_run_stops_at_the_first_red_stage(repo: Path):
