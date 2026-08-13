@@ -152,6 +152,7 @@ def test_a_file_outside_the_tracker_is_untouched(hooked_project):
         pytest.param("mv {card} {tasks}/HATS-2/task.yaml", id="mv"),
         pytest.param("cp /tmp/card.yaml {card}", id="cp"),  # noqa: S108 - payload string only
         pytest.param("rm -f {card}", id="rm"),
+        pytest.param("ln -s /tmp/x {tasks}/HATS-2/task.yaml", id="ln-into-the-tracker"),  # noqa: S108 - payload string only
         pytest.param("sed -i '' 's/^state:.*/state: done/' {card}", id="sed-inplace"),
     ],
 )
@@ -178,6 +179,8 @@ def test_raw_shell_mutation_of_the_tracker_is_denied(hooked_project, command):
         pytest.param("cat {card}", id="read-with-cat"),
         pytest.param("grep -n '^state:' {card}", id="read-with-grep"),
         pytest.param("cp {card} /tmp/card-backup.yaml", id="copy-out-is-a-read"),  # noqa: S108 - payload string only
+        # Same asymmetry as `cp`: naming the card as the SOURCE writes nothing.
+        pytest.param("ln {card} /tmp/card-hardlink", id="link-out-is-a-read"),  # noqa: S108 - payload string only
         pytest.param("mkdir -p {plan_dir}", id="mkdir-outside"),
     ],
 )

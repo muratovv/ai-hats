@@ -214,9 +214,12 @@ def check_self_grant(args) -> str:
 
 
 #: Binaries that mutate whatever path they are handed. `sed` counts only with
-#: `-i`; without it sed reads. `cp` is judged on its destination alone — copying
-#: a card out is a read, which this gate deliberately leaves open.
+#: `-i`; without it sed reads.
 BACKLOG_MUTATORS = ("mkdir", "rmdir", "mv", "cp", "rm", "touch", "tee", "ln", "sed")
+#: …except these two, judged on their DESTINATION alone: naming the card as the
+#: source writes nothing, and reading a card out is what this gate leaves open.
+#: `mv` is not among them — it empties the source as well.
+DESTINATION_ONLY = ("cp", "ln")
 #: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
 #: operator over as ONE token, so `>|` (the noclobber escape) and `&>` are simply
 #: not reachable by looking for `>`.
@@ -231,7 +234,7 @@ def check_backlog_write(cmd_bin: str, args) -> str:
     targets = [args[i + 1] for i, tok in enumerate(args) if tok in REDIRECTS and i + 1 < len(args)]
     if cmd_bin in BACKLOG_MUTATORS and (cmd_bin != "sed" or check_sed_inplace(args)):
         paths = _paths(args)
-        targets.extend(paths[-1:] if cmd_bin == "cp" else paths)
+        targets.extend(paths[-1:] if cmd_bin in DESTINATION_ONLY else paths)
     for target in targets:
         reason = _backlog_verdict(target)
         if reason:
