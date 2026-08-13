@@ -61,6 +61,30 @@ def drop_identity(environ: MutableMapping[str, str]) -> list[str]:
     return [key for key in IDENTITY_ENV_KEYS if environ.pop(key, None) is not None]
 
 
+def identity_for_project(
+    project_dir: Path, environ: dict[str, str] | None = None
+) -> SessionIdentity | None:
+    """The session that governs ``project_dir``, or ``None`` when none does.
+
+    A session of ANOTHER project is not a degraded session here — for this
+    project it is no session at all, and outside one the config is the answer
+    (HATS-1594). Hence ``None`` and not a refusal: it restores this project's
+    own gates rather than blocking the operator who ran the command.
+
+    Foreignness is judged by the envelope's own ``project_dir``, never by the
+    scalar pin — without an envelope there is no identity to scope, which is why
+    the pin-keyed ``githooks_run._drop_foreign_pin`` walks past a bare one. Both
+    sides must already have taken the worktree-hop: a pin naming the main
+    checkout while the caller stands in a linked worktree is designed, and
+    reading THAT as foreign is what ``test_pin_in_linked_worktree`` forbids.
+    """  # comment-length: allow — why None rather than a refusal is the contract
+    identity = SessionIdentity.from_env(environ)
+    if identity is None:
+        return None
+    here = project_dir.expanduser().resolve()
+    return identity if identity.project_dir.expanduser().resolve() == here else None
+
+
 class SessionIdentityError(Exception):
     """The envelope is present but cannot be trusted — never a skip.
 
@@ -187,4 +211,5 @@ __all__ = [
     "SessionIdentity",
     "SessionIdentityError",
     "drop_identity",
+    "identity_for_project",
 ]
