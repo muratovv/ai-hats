@@ -138,6 +138,11 @@ def test_a_file_outside_the_tracker_is_untouched(hooked_project):
     "command",
     [
         pytest.param("echo 'state: done' > {card}", id="redirect"),
+        pytest.param("echo 'state: done' >> {card}", id="redirect-append"),
+        # `>|` is what the hand reaches for under `set -o noclobber`, and `&>`
+        # is the everyday "and stderr too" — shlex hands both over as one token.
+        pytest.param("echo 'state: done' >| {card}", id="redirect-clobber"),
+        pytest.param("echo 'state: done' &> {card}", id="redirect-both-streams"),
         pytest.param("mkdir -p {tasks}/HATS-2", id="mkdir"),
         pytest.param("mv {card} {tasks}/HATS-2/task.yaml", id="mv"),
         pytest.param("cp /tmp/card.yaml {card}", id="cp"),  # noqa: S108 - payload string only

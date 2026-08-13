@@ -217,7 +217,10 @@ def check_self_grant(args) -> str:
 #: `-i`; without it sed reads. `cp` is judged on its destination alone — copying
 #: a card out is a read, which this gate deliberately leaves open.
 BACKLOG_MUTATORS = ("mkdir", "rmdir", "mv", "cp", "rm", "touch", "tee", "ln", "sed")
-REDIRECTS = (">", ">>")
+#: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
+#: operator over as ONE token, so `>|` (the noclobber escape) and `&>` are simply
+#: not reachable by looking for `>`.
+REDIRECTS = (">", ">>", ">|", "&>", "&>>", ">&")
 
 
 def check_backlog_write(cmd_bin: str, args) -> str:
