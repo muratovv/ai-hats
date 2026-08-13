@@ -1,6 +1,6 @@
-"""Contract guard: CompositionResult is immutable (HATS-452 / П1).
+"""Contract guard: CompositionResult is immutable (HATS-452 / D1).
 
-ADR-0005 П1 — composition is an immutable first-class object: fields
+ADR-0005 D1 — composition is an immutable first-class object: fields
 cannot be reassigned after construction; modifications go through
 explicit ``with_*`` methods that return new instances. This file locks
 the contract at the type level so a refactor cannot silently regress
@@ -41,7 +41,7 @@ def test_composition_result_is_frozen():
 
 def test_resolved_component_is_frozen():
     """ResolvedComponent is also frozen — composer outputs are immutable
-    end-to-end (П1 applies to the components too)."""
+    end-to-end (D1 applies to the components too)."""
     c = ResolvedComponent(
         name="rule_x",
         component_type=ComponentKind.RULE,
@@ -53,7 +53,7 @@ def test_resolved_component_is_frozen():
 
 
 def test_resolved_check_is_frozen_and_defaults_empty(tmp_path):
-    """HATS-1140: a resolved binding is a composer output, so П1 covers it too —
+    """HATS-1140: a resolved binding is a composer output, so D1 covers it too —
     and a role that declares nothing carries an empty tuple, not None."""
     assert _make_minimal_result().checks == ()
 
@@ -73,7 +73,7 @@ def test_resolved_check_is_frozen_and_defaults_empty(tmp_path):
 
 def test_with_injection_override_returns_new_instance():
     """``with_injection_override`` returns a new CompositionResult; the
-    original's injections list is unchanged. Locks the П1 method API."""
+    original's injections list is unchanged. Locks the D1 method API."""
     original = _make_minimal_result(injections=["one", "two"])
     derived = original.with_injection_override("override text")
 

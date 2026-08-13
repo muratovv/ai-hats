@@ -85,7 +85,7 @@ class CompositionResult:
     ``role_injection`` / ``overlay_injection`` carry the same data with
     provenance for layered writers (HATS-282). Frozen (HATS-452): derive
     variants ONLY via the ``with_*`` methods — re-composing the same
-    (role, overlays) pair for a variant is forbidden (ADR-0005 П1).
+    (role, overlays) pair for a variant is forbidden (ADR-0005 D1).
     """
 
     name: str
@@ -113,7 +113,7 @@ class CompositionResult:
         """Return a copy whose ``injections`` is exactly ``[text]``.
 
         Sub-agent (Automate) path only — HITL has no override channel
-        (ADR-0005 П2).
+        (ADR-0005 D2).
         """
         return replace(self, injections=[text])
 

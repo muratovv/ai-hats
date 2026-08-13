@@ -1,7 +1,7 @@
 """Integrator compose seam — composes ONCE, returns a CompositionPayload (HATS-865).
 
 The single place launch paths derive a composition for prompt delivery
-(ADR-0005 П1): effective-role resolution, role-existence validation, the HITL
+(ADR-0005 D1): effective-role resolution, role-existence validation, the HITL
 first-run ``set_role`` side effect, the audit snapshot (walking assembler
 internals is legal HERE, never in bricks), and provider resolution. Bricks
 receive the ready payload; they never import the composition layer.

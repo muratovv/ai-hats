@@ -6,7 +6,7 @@ ai_hats:
   # copied anywhere: `ai-hats self init` installs one dispatcher per event in
   # `.githooks/`, and the script below is resolved from this skill directory and
   # run in place at push time. Default (git pre-push): INSTANT pass-marker check
-  # keyed to the pushed master local_sha. `--run` (scripts/run-e2e-gate.sh):
+  # keyed to the tree of the pushed master commit. `--run` (run-e2e-gate.sh):
   # runs the ~27-min suite out of band, marker on pass + clean tree.
   # Hard gate: no env-var bypass; `git push --no-verify` is the only escape.
   git_hooks:
@@ -34,13 +34,25 @@ Two gates and the mechanism they share:
   points since HATS-1540. Its `--check`
   mode is what the binding runs; its `--run` mode is what
   `make done-gate` invokes.
-- `lib/gate-marker.sh` — the SHA pass-marker store both read and write,
-  parameterised by gate name.
+- `lib/gate.sh` — **the gate primitive** (HATS-1604, ADR-0023 D6): the discipline
+  itself. It resolves the project's dispatcher and asks what this gate is made
+  of, runs that composition stopping at the first red, applies "green AND a clean
+  tree → marker", looks the marker up, renders the refusal, and maps the outcome
+  onto the calling channel's exit codes (git 0/1, checks 0/2/126/127). A gate
+  script keeps two decisions: **which tree** it judges and **what runs** on it.
+- `lib/gate-marker.sh` — the pass-marker store, parameterised by gate name.
 
-Both gates follow the same shape: the expensive run happens **out of band**
-and leaves a marker keyed to a commit SHA; the gate on the critical path only
-looks that marker up, so it is instant. A marker cannot go stale — its key is
-the content it certifies, so a new commit is simply a commit with no marker.
+Both gates follow the same shape: the expensive run happens **out of band** and
+leaves a marker; the gate on the critical path only looks it up, so it is
+instant. The marker is keyed to a **tree** and records the **stages** that earned
+it, so it cannot go stale in either direction — different content is a different
+key, and a gate that grew a stage stops honouring markers that never ran it. A
+run also covers any gate whose composition it contains (absorption, D5).
+
+**The composition belongs to the project, never to this skill.** Both gates ask
+`scripts/ci-local.sh --stages <gate>` and refuse when the answer is empty: a
+library file that restated project content drifted from it within days
+(ADR-0023 D7).
 
 ## The review→done gate (HATS-1137)
 
@@ -107,22 +119,21 @@ In the script's real order; every branch below is an explicit `exit`:
    The comparison reads `ai-hats.yaml` and the documented default, never
    `AI_HATS_DIR`: that variable is the leaky one, and whose tracker this is is
    the whole question. Absent at `pre-merge`, which resolves no backlog.
-2. No `<project>/scripts/ci-local.sh` → **refuse (2)**. No dispatcher means no
-   `done-gate` stage, so no marker could ever be earned honestly. A gate that
-   cannot verify must not pass; the message names both fixes (add the stage, or
-   drop the binding row).
-3. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
+2. `AI_HATS_WORKTREE_PATH` empty → **pass (0)**. The subject of the gate is the
    code entering master through this card; a doc/research card brings none. The
    runner refuses on its own when it could not TELL, so absent means absent here,
    never unknown.
-4. The path gone from disk → **pass (0)**. Rack's
+3. The path gone from disk → **pass (0)**. Rack's
    own teardown either finalizes an already-merged branch or refuses the merge
    itself, so there is no live branch content to gate.
-5. `git -C <wt> rev-parse HEAD` — the **task branch's tip**, never the main
-   checkout's HEAD: at priority 15 the merge has not happened, so the content
+4. `git -C <wt> rev-parse HEAD^{tree}` — the **task branch's tree**, never the
+   main checkout's: at priority 15 the merge has not happened, so the content
    under judgement is what the branch holds. Unresolvable → **refuse (2)**.
-6. Marker for that exact SHA → **pass (0)**. Missing → **refuse (2)** with the
-   copy-pasteable `cd <wt> && make done-gate`.
+5. The composition, asked of the dispatcher **in that worktree** — not the main
+   checkout's. The marker certifies stages that ran there, so asking elsewhere
+   judges one tree by another tree's rules. Empty → **refuse (2)**.
+6. A marker for that tree covering every demanded stage → **pass (0)**. Missing
+   → **refuse (2)** with the copy-pasteable `cd <wt> && make done-gate`.
 
 **One script, two points, no branch between them.** The tree under judgement
 arrives as `AI_HATS_WORKTREE_PATH` at *both*, resolved once by the runner
@@ -134,13 +145,14 @@ cannot reach the script at `pre-merge` and read as "not my backlog".
 
 ### `--run` — `make done-gate`, and where the marker lands
 
-Runs `scripts/ci-local.sh done-gate` (`e2e-catalog → lint → unit → integration →
-merge-smoke`, stopping at the first red) from `git rev-parse --show-toplevel`.
-On green **and a clean tree** it writes
+Asks the dispatcher for the `done-gate` composition and runs those stages,
+stopping at the first red, from `git rev-parse --show-toplevel`. On green **and a
+clean tree** it writes
 
-    <git-common-dir>/ai-hats/done-gate/<HEAD sha>
+    <git-common-dir>/ai-hats/done-gate/<HEAD tree>
 
-carrying `sha=`, `timestamp=` and `stage=done-gate`. Two things about that path:
+carrying `tree=`, `timestamp=` and `stages=` — the composition it actually ran.
+Two things about that path:
 
 - **`--git-common-dir`, never `--git-dir`.** The common dir is the main
   checkout's `.git`, shared by every linked worktree — which is exactly what
@@ -149,14 +161,14 @@ carrying `sha=`, `timestamp=` and `stage=done-gate`. Two things about that path:
   `.git/worktrees/<id>/` and the check would never see it.
 - It lives under `.git/`, so it is never committed. Markers are tiny; no GC.
 
-A marker counts only when its filename and its recorded `sha=` line agree
-(`gate_marker_ok`) — a half-written or hand-copied file names a commit it does
+A marker counts only when its filename and its recorded `tree=` line agree
+(`gate_marker_ok`) — a half-written or hand-copied file names content it does
 not certify.
 
 A **dirty tree** runs the suite and writes nothing (exit 0, loudly): the gate
 ran against the working tree, so what passed is not what the branch tip holds.
 Commit, then re-run. Run it **in the task worktree** — the marker is keyed to
-that branch's tip, which is the commit the check looks up.
+that branch's tree, which is the content the check looks up.
 
 The composition lives in `scripts/ci-local.sh`, not here: changing what "green
 enough to be done" means is a project-side edit, and the gate script never
@@ -164,10 +176,12 @@ moves.
 
 ### Why the marker cannot go stale
 
-Its key is the **content** it certifies. A new commit is a new SHA and simply
-has no marker, so the gate refuses again by construction. There is no expiry
-and no invalidation step, and none is needed — while one run covers every card
-sitting on that same commit.
+Its key is the **content** it certifies, and its body is the **composition** it
+ran. Different content is a different key; a gate that grew a stage no longer
+matches markers that never ran it. There is no expiry and no invalidation step,
+and none is needed — while one run covers every card sitting on that same tree,
+including the `--no-ff` merge commit that re-parents it unchanged (HATS-1601:
+18 of the last 20 merges), and every gate whose composition it contains.
 
 ### The exit contract it obeys (ADR-0020 D2)
 
@@ -274,18 +288,19 @@ client-side `ServerAliveInterval` (tried 60 **and** 15) did **not** fix it
 re-attempt it). So the slow suite must run **out of band**, not while git
 holds the connection open.
 
-The fix decouples the run from the push via a pass-marker keyed to the
-commit SHA, preserving the HATS-550 "no-broken-master, no-bypass" contract.
+The fix decouples the run from the push via a pass-marker keyed to the pushed
+content, preserving the HATS-550 "no-broken-master, no-bypass" contract.
 
 ## How the pre-push gate works
 
 ### Run mode — `scripts/run-e2e-gate.sh` (or `… --run`)
 
 Run this **before** pushing master. From the repo root the hook requires
-`pytest` on PATH (absent → ABORT, no marker), then runs the `lint` and `unit`
-stages of `scripts/ci-local.sh` as a preamble (HATS-726 — the marker has to
-mean "everything CI checks is green"; a red stage aborts before the ~25-min
-tier starts). Then it sweeps the dev checkout's `build/` directory (HATS-568 —
+`pytest` on PATH (absent → ABORT, no marker) and a dispatcher that names a
+`push-gate` composition (absent → ABORT, no marker). The cheap stages come
+first in that composition and a red one aborts before the ~25-min tier starts
+(HATS-726 — the marker has to mean "everything CI checks is green"). Then it
+sweeps the dev checkout's `build/` directory (HATS-568 —
 stale wheel-build artefacts cause "File exists: build/bdist...dist-info"
 collisions across worktree-tier e2e tests), then previews stale tmp cruft
 (`ai-hats-wt-*`, `pytest-of-*`) via `scripts/clean-tmp-cruft.sh`
@@ -293,31 +308,28 @@ collisions across worktree-tier e2e tests), then previews stale tmp cruft
 preview is **dry-run by default** — the sweeper matches every `ai-hats-wt-*` by
 name and cannot tell a leaked test worktree from a live session, so the gate
 never auto-deletes one; opt in to real `--force` deletion with
-`AI_HATS_E2E_CLEAN_TMP=1`. Then runs:
-
-    pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ \
-           -q --tb=line --no-header -p no:cacheprovider
-
-(parallelised with pytest-xdist when present — `-n min(cpus,8) --dist=loadgroup`
-— HATS-589/592; `AI_HATS_E2E_REQUIRE_VENV=1` armed so the tier-2 venv fixture
-fails-closed — HATS-645; `@pytest.mark.quarantine` known-flaky tests deselected
-— HATS-676).
+`AI_HATS_E2E_CLEAN_TMP=1`. Then it runs the tier as the project's own `e2e`
+stage — one selection, not a second copy of it (HATS-1604) — carrying the gate's
+own flags in `PYTEST_ADDOPTS`: `--tb=line --no-header -p no:cacheprovider`, plus
+`-n min(cpus,8) --dist=loadgroup` when pytest-xdist is present (HATS-589/592).
+`AI_HATS_E2E_REQUIRE_VENV=1` is armed so the tier-2 venv fixture fails closed
+(HATS-645); quarantined known-flaky tests are deselected by the selection itself
+(HATS-676).
 
 On **pass** AND a **clean working tree**, it writes a marker keyed to
-`git rev-parse HEAD`:
+`git rev-parse HEAD^{tree}`:
 
 | condition                             |         marker         | exit |
 | ------------------------------------- | :--------------------: | :--: |
-| pytest rc 0, clean tree               |       ✅ written       |  0   |
-| pytest rc 5 (no tests), clean tree    | ✅ written (defensive) |  0   |
-| pytest rc 0 but **dirty** tree        |        ❌ none         |  0   |
-| HEAD unresolvable / marker unwritable |        ❌ none         |  0   |
-| pytest failure (other rc)             |        ❌ none         |  1   |
-| `lint` or `unit` preamble red         |     ❌ none, ABORT     |  1   |
-| pytest not on PATH                    |     ❌ none, ABORT     |  1   |
+| every stage green, clean tree         |       ✅ written       |  0   |
+| tier rc 5 (nothing collected), clean  | ✅ written (defensive) |  0   |
+| green but **dirty** tree              |        ❌ none         |  0   |
+| tree unresolvable / marker unwritable |        ❌ none         |  0   |
+| a stage failed (other rc)             |        ❌ none         |  1   |
+| pytest absent / no composition named  |     ❌ none, ABORT     |  1   |
 
 The clean-tree invariant matters: the gate builds wheels from the *working
-tree*, so a marker is only honest when tree == HEAD == the SHA you will push.
+tree*, so a marker is only honest when the working tree is the tree you push.
 A dirty tree runs the suite but writes no marker (commit first, re-run).
 
 ### Check mode — the pre-push hook (default)
@@ -327,11 +339,11 @@ When you `git push`, git invokes the hook with the standard protocol on stdin:
     <local_ref> <local_sha> <remote_ref> <remote_sha>
 
 For every line targeting `refs/heads/master` with a non-zero `local_sha`
-(i.e. not a deletion), the hook requires a valid marker for that `local_sha`
-under `<git-common-dir>/ai-hats/e2e-gate/`. All present → allow (exit 0,
-**instant** — no pytest, no network). Any missing → block (exit 1) with the
-run command. Pushes to other branches, master deletions, and empty stdin are
-fast-path no-ops.
+(i.e. not a deletion), the hook resolves that commit's **tree** and requires a
+marker for it under `<git-common-dir>/ai-hats/e2e-gate/` covering every stage
+the composition names. All present → allow (exit 0, **instant** — no pytest, no
+network). Any missing → block (exit 1) with the run command. Pushes to other
+branches, master deletions, and empty stdin are fast-path no-ops.
 
 Markers live under `.git/` (never committed, shared across worktrees via
 `git rev-parse --git-common-dir`). They are tiny; no GC is performed.
@@ -346,8 +358,8 @@ Markers live under `.git/` (never committed, shared across worktrees via
 You **can't** in the normal flow via env-var: there is no `AI_HATS_E2E_SKIP=1`
 and no `--ack` override (HATS-550 intent).
 
-Forging a marker (`touch <git-common-dir>/ai-hats/e2e-gate/<sha>` with a
-matching `sha=` line) *is* a bypass, but it is the moral equivalent of
+Forging a marker (`touch <git-common-dir>/ai-hats/e2e-gate/<tree>` with a
+matching `tree=` line) *is* a bypass, but it is the moral equivalent of
 `git push --no-verify`: a deliberate local act by the trusted maintainer, not
 an accidental normal-flow skip. The contract guarded here is "no green without
 a real run **or** an explicit override".

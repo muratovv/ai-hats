@@ -56,7 +56,7 @@ attack surface the previous one left, and the policy biases hard toward
 fail-open / fail-loud-with-recovery rather than toward a clever-but-brittle
 re-exec.
 
-### П1 — Remove the shadow generator at the source (Alt 5, HATS-790)
+### D1 — Remove the shadow generator at the source (Alt 5, HATS-790)
 
 Delete `[project.scripts]` from `pyproject.toml`. With the generator gone, a
 managed venv no longer materialises a shadowable `bin/ai-hats` proxy — the
@@ -72,7 +72,7 @@ The host launcher is *still named* `ai-hats` and still on `$PATH` — only the
 world worth invoking: the HOST launcher at `~/.local/bin/ai-hats`
 (`AI_HATS_LAUNCHER_DEST`). No `<venv>/bin/ai-hats` console script exists anywhere.
 
-### П2 — Refuse-and-instruct backstop for the residual case (Alt 3, HATS-791)
+### D2 — Refuse-and-instruct backstop for the residual case (Alt 3, HATS-791)
 
 Removing the generator closes shadows born from the console script. It does not
 cover someone running `python -m ai_hats` directly from a foreign venv (e.g. a
@@ -85,7 +85,7 @@ function returning `"sanctioned"` or `"foreign"`; `_guard_self_location` in
 Design constraints that make this safe to ship:
 
 - **Defense-in-depth, not a primary gate.** The shadow generator is already
-  gone (П1). A *missed* foreign venv merely reproduces pre-guard behaviour; a
+  gone (D1). A *missed* foreign venv merely reproduces pre-guard behaviour; a
   *false positive* would brick a perfectly good CLI. So `classify_invocation`
   biases HARD toward fail-open: it returns `"foreign"` only when positively
   certain the running interpreter is a real venv that is **none** of the
@@ -109,7 +109,7 @@ Design constraints that make this safe to ship:
 (`~/.local/bin/ai-hats`), re-bootstrap out-of-band, or uninstall ai-hats from
 the offending venv.
 
-### П3 — Out-of-band recovery that is paradox-immune (HATS-791)
+### D3 — Out-of-band recovery that is paradox-immune (HATS-791)
 
 When a managed venv is broken badly enough (deleted site-packages, dangling
 interpreter, a foreign shadow), in-band `ai-hats self update` cannot heal
@@ -120,7 +120,7 @@ itself — it runs *from* the thing it must fix. `scripts/bootstrap.sh` is the
    is never the stale on-disk copy.
 2. **Drives the launcher by ABSOLUTE path** — `"$LAUNCHER_DEST"`, never the
    on-`$PATH` `ai-hats`. A stray shadow cannot intercept an absolute-path
-   invocation (see П5). This is the **absolute-path-immunity** insight: PATH
+   invocation (see D5). This is the **absolute-path-immunity** insight: PATH
    resolution is the entire attack surface, and an absolute path does not
    consult PATH.
 
@@ -136,7 +136,7 @@ WARNs. It **never deletes** (destructive-actions rule) — it instructs. The bas
 twin exists so detection works even when the managed venv (and thus the python
 detector) is unrunnable.
 
-### П4 — Config: preserve unknowns, fail loud on a newer schema (HATS-792)
+### D4 — Config: preserve unknowns, fail loud on a newer schema (HATS-792)
 
 Two complementary rules in `ai_hats.models.ProjectConfig`, keyed off
 `KNOWN_SCHEMA_VERSION` (currently 4 — the highest `schema_version` this binary
@@ -164,16 +164,16 @@ Preserve covers *same-version* skew (forward-safe round-trip); fail-loud covers
 *newer-schema* skew (refuse rather than corrupt). The two never overlap: a
 newer schema fails loud before it can reach the preserve seam.
 
-### П5 — The absolute-path-immunity insight
+### D5 — The absolute-path-immunity insight
 
 The common thread under C1 and the recovery design: **a shadow is only ever a
 PATH-resolution outcome.** A stray `bin/ai-hats` wins only because bare `ai-hats`
 consults `$PATH` and finds the stray first. Every layer leans on this:
 
-- П1 removes the artifact that *gets onto* a venv's `bin/`.
-- П3's `bootstrap.sh` invokes `"$LAUNCHER_DEST"` by absolute path, so no PATH
+- D1 removes the artifact that *gets onto* a venv's `bin/`.
+- D3's `bootstrap.sh` invokes `"$LAUNCHER_DEST"` by absolute path, so no PATH
   lookup happens and no shadow can intercept the recovery.
-- The guard (П2) and detector (П3) compare *resolved absolute paths*
+- The guard (D2) and detector (D3) compare *resolved absolute paths*
   (`Path.resolve`) against the sanctioned launcher, so symlinks and `..` cannot
   disguise a shadow as the real thing.
 
@@ -221,7 +221,7 @@ Rejected).
   that users must ensure the host launcher precedes any venv `bin/` on `$PATH`.
   Rejected: it pushes a global invariant onto every user's shell config,
   `direnv` re-prepends per-directory after the fact, and it does nothing for the
-  `python -m ai_hats`-from-a-foreign-venv case. П5 shows PATH order is the
+  `python -m ai_hats`-from-a-foreign-venv case. D5 shows PATH order is the
   *attack surface*, not a knob to settle the fight on.
 - **Config: `extra="ignore"` (silently drop unknowns) (REJECTED for C2).** The
   pre-HATS-792 behaviour. Drops a newer binary's same-version field on the next

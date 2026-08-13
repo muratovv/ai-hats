@@ -17,10 +17,12 @@ import pytest
 
 sys.dont_write_bytecode = True
 
-# HATS-1622: dropped at import, before any module reads it — an inherited session
-# identity hands a throwaway tmp project the developer's role, whose bindings then
-# refuse every transition (D9 clause 4). Tests that need one set it themselves.
-os.environ.pop("AI_HATS_SESSION_IDENTITY", None)
+# HATS-1622: an inherited identity hands a throwaway tmp project the developer's
+# role, whose bindings then refuse every transition (D9 clause 4). Dropped at
+# import, as a unit — the envelope alone leaves a half-session `from_env` rejects.
+from ai_hats.session_identity import drop_identity  # noqa: E402
+
+drop_identity(os.environ)
 
 
 # Enables `pytester` for test_tmp_hygiene.py; pytest refuses this in a

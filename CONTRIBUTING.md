@@ -101,12 +101,12 @@ the CI job of the same name cannot disagree — `tests/test_gate_entrypoint_pari
 fails the build if either spells a check command out itself.
 
 - `make check` — the fast inner loop: `lint` + `unit` only.
-- `make gates` — everything CI runs locally: lint, unit, coverage, merge-smoke.
-  This is the parity gate; `check` is a subset of it.
+- `make gates` — everything CI runs locally, the `all` bundle in
+  `scripts/ci-local.sh`. This is the parity gate; `check` is a subset of it.
 - `make unit` (or `make tests`) — the unit stage, bounded by timeout (default 300s).
 - `make lint` — `ruff check .` plus the formatter check on `src/ tests/`.
-- `make e2e` — the maintainer tier, the same selection the master pre-push gate
-  runs, bounded by timeout (default 3600s).
+- `make e2e` — the maintainer tier, and the very stage the master pre-push gate
+  runs (HATS-1604 — one selection, not a copy), bounded by timeout (default 3600s).
 - `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
 - `make help` — display available Makefile targets.
 

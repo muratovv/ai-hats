@@ -29,7 +29,7 @@ when an `active` HYP accumulates a **quorum of K independent `refuted` verdicts*
 **Never** auto-confirm / auto-accept — those imply downstream action and stay
 HITL.
 
-### П1 — Asymmetric-risk rationale
+### D1 — Asymmetric-risk rationale
 
 The automation is licensed by an asymmetry, not by certainty:
 
@@ -44,7 +44,7 @@ asymmetry true: (a) close direction only, (b) every closure is appended to
 `validation_log` as a synthetic `auto-quorum` entry naming the contributing
 sessions, (c) one-command reversal.
 
-### П2 — Placement: a deterministic step, not the L0 auditor, not a cron
+### D2 — Placement: a deterministic step, not the L0 auditor, not a cron
 
 The mutation runs as a deterministic pipeline step (`quorum_autoclose`) at the
 tail of `finalize-hitl`, the post-user-session pipeline invoked from
@@ -64,7 +64,7 @@ tail of `finalize-hitl`, the post-user-session pipeline invoked from
   and session finalization still completes cleanly (mirror of `make_audit` /
   `compute_usage`).
 
-### П3 — Independence and the sentinel
+### D3 — Independence and the sentinel
 
 "Independent" means distinct `session_id`. Entries without a `session_id` cannot
 establish independence and are not counted. The synthetic closure entry carries
@@ -105,7 +105,7 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
 
 - A `refuted` verdict means "this session did not observe the behaviour" —
   absence of evidence, not proof of absence. Three independent non-observations
-  can in principle still be a flaky miss. Accepted under П1: the close is cheap
+  can in principle still be a flaky miss. Accepted under D1: the close is cheap
   to reverse and fully logged. If false-closes are observed, the first lever is
   raising K or adding `observation_window` enforcement, both already designed
   for.

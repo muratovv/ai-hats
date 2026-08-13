@@ -19,6 +19,7 @@ E2E_DIR = Path(__file__).resolve().parent.parent / "e2e"
 # R8: Per-file explicit justification for remaining raw subprocess git helpers.
 # Any module-level git helper that spawns raw subprocesses must be documented here with its reason.
 _GIT_EXEMPTIONS: dict[str, str] = {
+    "test_githooks_dispatcher_env_contract.py": "Drives git commit under deliberately foreign AI_HATS_* pins; the shared helper takes no env.",
     "test_githooks_coexistence.py": "Tests git hook coexistence with custom env overrides and non-zero exit validation.",
     "test_githooks_orchestrator.py": "Tests git hook orchestration with isolated environment variables.",
     "test_no_raw_destructive_multiline_marker.py": "Tests raw destructive marker scanning capturing stderr/stdout output.",

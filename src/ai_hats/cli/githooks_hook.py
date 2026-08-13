@@ -12,6 +12,7 @@ raising is the fail-open path.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     from ..assembler import Assembler
     from ..githooks_resolve import resolve_git_gates
-    from ..githooks_run import record_fail_open, run_chain
+    from ..githooks_run import _drop_foreign_pin, record_fail_open, run_chain
     from ..hooks_manager import GITHOOKS_BYPASS_JOURNAL
     from ..materialize import compose_for_role
     from ..paths import builtin_library_hooks
@@ -59,12 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     project_dir: Path = args.project_dir
+    # A cleaned COPY, never os.environ: a foreign pin makes the whole envelope
+    # foreign, and mutating the process env would leak into every later caller.
+    scoped_env = dict(os.environ)
+    _drop_foreign_pin(scoped_env, project_dir)
     assembler = Assembler(project_dir)
     # HATS-1594: in a session the role is what THAT session composed; the config
     # is the answer only outside one. Reading it unconditionally ran maintainer's
     # git gates inside a judge session, which never declared them.
     try:
-        identity = SessionIdentity.from_env()
+        identity = SessionIdentity.from_env(scoped_env)
     except SessionIdentityError as exc:
         print(f"ai-hats: git gates SKIPPED (fail-open) — {exc}", file=sys.stderr)
         return 0

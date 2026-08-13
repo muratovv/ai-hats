@@ -41,6 +41,24 @@ for `cat`, `fd` for `find`, `eza -R` for `ls -R`, `git grep` for `grep`,
 | `sed -i 's/A/B/' file`             | **Edit** tool                  | Edit checks uniqueness; prevents silent multi-replace |
 | `awk -i ...` / inline rewrite      | **Edit** / **Write**           | See above                                             |
 
+### When the right column is not on offer
+
+The right column assumes the tool exists in this session. Not every session
+carries every tool, and a tool you do not have is not a tool you are refusing
+to use — there the left column is the correct call.
+
+**Establish absence, never assume it.** It counts as absent when it is missing
+from your available tool set, or when calling it comes back *no such tool
+available*. It does NOT count as absent because a search returned nothing, the
+pattern got awkward, or the shell felt faster — those are reasons to fix the
+query, not to abandon the tool.
+
+**A fallback tightens the budget.** Raw output arrives unstructured and costs
+the context a dedicated tool would have saved, so batch what you would have
+issued singly, scope each command tighter than the tool call it replaces, and
+treat a run of one-off shell searches as the smell **Batching and parallelism**
+below already names.
+
 **Bash is appropriate for:** `git`, `pytest`, build commands, multi-stage pipes that have no dedicated alternative, anything reading shell-only state (env vars, processes, exit codes).
 
 ### Batching and parallelism

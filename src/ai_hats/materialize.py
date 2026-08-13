@@ -1,6 +1,6 @@
 """Materialization facade — single derivation point for "compose for role X".
 
-HATS-456 (Phase 2 closure of HATS-452 ADR-0005 П1). Before this module,
+HATS-456 (Phase 2 closure of HATS-452 ADR-0005 D1). Before this module,
 multiple sites inlined the same ``composer.compose(role,
 overlays=_get_overlays(role))`` sequence (HITL runner, sub-agent runner,
 the on-disk Assembler writer, the ``MaterializeSystemPrompt`` pipeline

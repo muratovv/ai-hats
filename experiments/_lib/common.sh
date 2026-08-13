@@ -5,10 +5,14 @@
 # Ambient session env leaks the parent project into the sandbox: sessions land in
 # the wrong project dir, ownership checks read the wrong actor, git plumbing hits
 # the real repo (HATS-897 / 944 / 955 / 982 / 886). Prefix every sandbox command.
+# The identity half is the set `SessionIdentity.to_env` writes; scrubbing a
+# SUBSET left the sandbox inheriting the envelope while its scalars were gone.
+# Held against the home by tests/test_env_contract.py (HATS-1613 review).
 SCRUB=(env
   -u AI_HATS_DIR -u AI_HATS_PROJECT_DIR
   -u AI_HATS_SESSION_ID -u AI_HATS_ROOT_PID
   -u AI_HATS_VENV
+  -u AI_HATS_SESSION_IDENTITY -u AI_HATS_ROLE -u AI_HATS_SESSION_CACHE_DIR
   -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE
 )
 

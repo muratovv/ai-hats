@@ -130,6 +130,120 @@ def parse_edge_point(point: str) -> tuple[str, str] | None:
     return src, dst
 
 
+#: What a report says about one point of one carried row (HATS-1584). ``dead``
+#: is the miss no topology of this project answers — the one HATS-1578 refuses.
+ARMED = "armed"
+FOREIGN = "foreign"
+DEAD = "dead"
+UNADDRESSED = "unaddressed"
+
+
+@dataclass(frozen=True)
+class BindingStatus:
+    """One line of the binding report: a row's point, judged.
+
+    ``detail`` carries this package's own words for an unhappy status and is
+    empty for a happy one. What an ``edge:`` name means is the rack's question,
+    so the sentence explaining a miss is written here rather than by whoever
+    prints it.
+    """
+
+    status: str
+    backlog: str
+    point: str
+    label: str
+    on_error: str
+    detail: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "status": self.status,
+            "backlog": self.backlog,
+            "point": self.point,
+            "binding": self.label,
+            "on_error": self.on_error,
+            "detail": self.detail,
+        }
+
+
+def classify_bindings(
+    declarations: Sequence[CheckDeclaration],
+    topologies: Mapping[str, Topology],
+) -> tuple[BindingStatus, ...]:
+    """Every carried row's points, judged against EVERY mounted topology.
+
+    A subscriber holds one topology, so from where it stands a sibling backlog's
+    edge and a typo are the same fact — a name it does not have (ADR-0019 D11
+    clause 2). Given all of them the two separate: ``foreign`` is the skip
+    HATS-1545 R10 made legal, ``dead`` is a gate that fires nowhere, ever.
+
+    ``topologies`` is keyed by every selector a backlog answers to — its name
+    AND its ``cli_alias``, since either addresses it (ADR-0017 §3); keying on
+    one spelling would read an aliased row as unaddressed.
+    """  # comment-length: allow — which miss is which is the whole contract
+    points_of = {name: frozenset(all_edge_keys(t)) for name, t in topologies.items()}
+    anywhere: frozenset[str] = frozenset().union(*points_of.values()) if points_of else frozenset()
+    mounted = sorted(points_of)
+    rows: list[BindingStatus] = []
+    for row in declarations:
+        address = ".".join(row.path)
+        if len(row.path) != 1 or row.path[0] not in points_of:
+            rows.append(
+                BindingStatus(
+                    UNADDRESSED,
+                    address,
+                    "",
+                    row.label,
+                    row.on_error,
+                    unaddressed_reason(row, mounted),
+                )
+            )
+            continue
+        here = points_of[row.path[0]]
+        for point in row.points():
+            status = ARMED if point in here else FOREIGN if point in anywhere else DEAD
+            detail = dead_point_reason(row, point, mounted) if status == DEAD else ""
+            rows.append(BindingStatus(status, address, point, row.label, row.on_error, detail))
+    return tuple(rows)
+
+
+def unaddressed_reason(row: CheckDeclaration, mounted: Sequence[str]) -> str:
+    """Why a row addresses no mounted backlog — ONE spelling for both readers.
+
+    The subscriber raises it inside the lock and a report prints it outside one.
+    Two copies of a recipe drift, and here the recipe is the whole value.
+    """
+    if len(row.path) != 1:
+        return (
+            f"checks: {row.label} sits at apps.rack{''.join('.' + p for p in row.path)}, but a "
+            f"rack row is declared one level down, under the backlog it gates "
+            f"(apps.rack.<backlog>) — this one names "
+            f"{'no backlog' if not row.path else 'a deeper path'}"
+        )
+    name = row.path[0]
+    return (
+        f"checks: {row.label} is declared under apps.rack.{name}, but no backlog of this "
+        f"project answers to {name!r} (mounted: {', '.join(mounted)}) — "
+        f"a gate on a backlog that does not exist would never fire. "
+        f"Give the backlog it means `cli_alias: {name}` in its backlog.yaml, so it "
+        f"answers to both selectors — that is the fix when the row ships with a role "
+        f"you do not own. Otherwise re-address the row to one of: "
+        f"{', '.join('apps.rack.' + s for s in mounted)}."
+    )
+
+
+def dead_point_reason(row: CheckDeclaration, point: str, mounted: Sequence[str]) -> str:
+    """Why a point fires nowhere. Said with the mounted roster, because that is
+    what makes it a typo rather than a row aimed at a backlog of some other
+    project — the distinction only a holder of every topology can draw."""
+    return (
+        f"checks: {row.label} binds {point!r} under apps.rack.{'.'.join(row.path)}, but no "
+        f"topology mounted in this project has that point (backlogs: {', '.join(mounted)}) — "
+        f"the gate can never fire, on that edge or any other. A rack point is spelled "
+        f"`edge:<from>--<to>` with the state names of the backlog it gates."
+    )
+
+
 class CheckSubscriber:
     """Runs the carried bindings whose point is an edge of THIS topology.
 
@@ -237,26 +351,14 @@ class CheckSubscriber:
         return False
 
     def _addresses_me(self, row: CheckDeclaration) -> bool:
-        """Whether ``row`` is addressed to THIS backlog. Loud on a name nothing has."""
-        if len(row.path) != 1:
-            raise AbortOperation(
-                f"checks: {row.label} sits at apps.rack{''.join('.' + p for p in row.path)}, but a "
-                f"rack row is declared one level down, under the backlog it gates "
-                f"(apps.rack.<backlog>) — this one names {'no backlog' if not row.path else 'a deeper path'}"
-            )
-        name = row.path[0]
-        if name not in self._known:
-            mounted = sorted(self._known)
-            raise AbortOperation(
-                f"checks: {row.label} is declared under apps.rack.{name}, but no backlog of this "
-                f"project answers to {name!r} (mounted: {', '.join(mounted)}) — "
-                f"a gate on a backlog that does not exist would never fire. "
-                f"Give the backlog it means `cli_alias: {name}` in its backlog.yaml, so it "
-                f"answers to both selectors — that is the fix when the row ships with a role "
-                f"you do not own. Otherwise re-address the row to one of: "
-                f"{', '.join('apps.rack.' + s for s in mounted)}."
-            )
-        return name in self._mine
+        """Whether ``row`` is addressed to THIS backlog. Loud on a name nothing has.
+
+        The words are :func:`unaddressed_reason`'s — the same ones the doctor
+        prints for the same miss, so the recipe cannot drift between them.
+        """
+        if len(row.path) != 1 or row.path[0] not in self._known:
+            raise AbortOperation(unaddressed_reason(row, sorted(self._known)))
+        return row.path[0] in self._mine
 
     def _declarations(self) -> Sequence[CheckDeclaration]:
         """Ask the port, and turn any trouble into this channel's own refusal —
@@ -331,6 +433,7 @@ def _oneline(reason: str) -> str:
 
 
 __all__ = [
+    "ARMED",
     "CHECK_PRIORITY",
     "EDGE_CHECK_TIMEOUT_S",
     "EDGE_PREFIX",
@@ -340,6 +443,13 @@ __all__ = [
     "CheckPortFactory",
     "CheckRequest",
     "CheckSubscriber",
+    "DEAD",
+    "FOREIGN",
+    "UNADDRESSED",
+    "BindingStatus",
     "check_subscriber",
+    "classify_bindings",
+    "dead_point_reason",
     "parse_edge_point",
+    "unaddressed_reason",
 ]

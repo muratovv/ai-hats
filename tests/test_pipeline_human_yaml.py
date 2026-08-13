@@ -6,7 +6,7 @@ threads state correctly through compose_role → provider → post steps
 without exercising real PTY. HATS-865: the pipeline no longer composes;
 the integrator seeds a ready ``composition`` payload into the initial
 state, ``compose_role`` projects it, and ``provider`` hands the SAME
-object to the runner (funnel/runner identity — ADR-0005 П1).
+object to the runner (funnel/runner identity — ADR-0005 D1).
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def test_human_pipeline_e2e(tmp_path: Path):
 
     # HATS-865 identity assert: the funnel-seeded payload object IS the
     # object the runner receives — no second composition anywhere in the
-    # pipeline (ADR-0005 П1). HATS-867: observe handles injected alongside.
+    # pipeline (ADR-0005 D1). HATS-867: observe handles injected alongside.
     wrap_cls.assert_called_once_with(
         tmp_path,
         payload,
@@ -95,14 +95,14 @@ def test_human_pipeline_e2e(tmp_path: Path):
     )
     fake_runner.run.assert_called_once()
     call_kwargs = fake_runner.run.call_args.kwargs
-    # HATS-452 (П2 in ADR-0005): WrapRunner has NO system_prompt_override
+    # HATS-452 (D2 in ADR-0005): WrapRunner has NO system_prompt_override
     # channel — composition reaches the agent via build_session_prompt.
     assert "system_prompt_override" not in call_kwargs
 
 
 def test_human_pipeline_e2e_empty_injection_omits_system_prompt(tmp_path: Path):
     """A payload with an empty merged injection omits the funnel key
-    entirely (HATS-452 П3: never emit ``""`` as absent)."""
+    entirely (HATS-452 D3: never emit ``""`` as absent)."""
     pipeline = load_pipeline(_BUILTIN)
 
     fake_session = _fake_session(tmp_path)

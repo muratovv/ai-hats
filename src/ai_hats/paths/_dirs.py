@@ -42,16 +42,15 @@ import yaml
 
 from .. import env
 from .constants import (
+    # Pair var pinned alongside AI_HATS_DIR at spawn (HATS-897); spelling homed
+    # in the env leaf since HATS-1613.
+    AI_HATS_PROJECT_DIR_ENV as AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR as ENV_AI_HATS_DIR,
     ENV_AI_HATS_VENV as ENV_AI_HATS_VENV,
     PROJECT_CONFIG,
 )
 
 LegacyClass = Literal["sessions", "tracker", "library", "root"]
-
-# Pair var pinned alongside AI_HATS_DIR at session spawn — scopes the pin
-# to the project it was resolved for (HATS-897).
-AI_HATS_PROJECT_DIR_ENV = "AI_HATS_PROJECT_DIR"
 
 # ---------- Base resolver ----------
 
@@ -141,26 +140,35 @@ class NotAnAiHatsProjectError(Exception):
         )
 
 
-def _env_ai_hats_dir(project_dir: Path) -> Path | None:
-    """``AI_HATS_DIR`` env override, scoped by its ``AI_HATS_PROJECT_DIR`` pair.
+def _scoped_override(raw: str | None, project_dir: Path, var: str) -> Path | None:
+    """An env override, honoured only while its ``AI_HATS_PROJECT_DIR`` pair agrees.
 
-    HATS-897: wrap pins both vars at spawn; a pair leaked into another
-    project's shell must not redirect that project's writes — on pin mismatch
-    the override is ignored (+warn). A bare ``AI_HATS_DIR`` without the pair
-    keeps its historical env-wins semantics.
-    """
-    raw = env.ai_hats_dir_override()
+    The one trust procedure of ADR-0025 D3, shared by every key that travels with
+    the pin. Three states: no pin at all — env-wins, an explicit human override;
+    pin agrees — honoured; pin names another project — a leaked session pin, so
+    the override is dropped (+warn) rather than allowed to redirect this
+    project's writes (HATS-897, HATS-944, HATS-1525).
+
+    The caller's ``project_dir`` is its *structural* answer and must already be
+    worktree-hopped — ADR-0025 D2. Resolving before the hop makes a sub-agent's
+    own legitimate pin read as foreign.
+    """  # comment-length: allow — this docstring IS the shared procedure's contract
     if not raw:
         return None
     pin = env.project_dir_pin()
     if pin and Path(pin).expanduser().resolve() != project_dir.resolve():
         warnings.warn(
-            f"AI_HATS_DIR={raw!r} is pinned to project {pin!r} — foreign to "
+            f"{var}={raw!r} is pinned to project {pin!r} — foreign to "
             f"{project_dir}; ignoring the leaked session pin (HATS-897).",
             stacklevel=1,
         )
         return None
     return Path(raw).expanduser()
+
+
+def _env_ai_hats_dir(project_dir: Path) -> Path | None:
+    """``AI_HATS_DIR`` env override under the shared trust procedure."""
+    return _scoped_override(env.ai_hats_dir_override(), project_dir, ENV_AI_HATS_DIR)
 
 
 def _resolve_ai_hats_base(project_dir: Path) -> Path:
@@ -452,7 +460,9 @@ def venv_path(project_dir: Path) -> Path:
 
     Precedence chain:
       1. ``AI_HATS_VENV`` env var — absolute path, runtime override (tests,
-         sandbox, CI shared cache). ``~`` is expanded.
+         sandbox, CI shared cache). ``~`` is expanded. Pair-scoped by
+         :func:`_scoped_override` since HATS-1613: a venv pinned to another
+         project is a leaked session pin, not an override.
       2. yaml ``venv_path`` — relative (resolved against ``project_dir``)
          or absolute. Validated by :func:`normalize_venv_path`.
       3. Default ``<ai_hats_dir>/.venv``.
@@ -460,9 +470,9 @@ def venv_path(project_dir: Path) -> Path:
     Returns the absolute path without ``mkdir`` — venv creation is owned
     by ``bash bootstrap`` / ``self update`` (HATS-339), not by callers.
     """
-    raw_env = env.venv_override()
-    if raw_env:
-        return Path(raw_env).expanduser()
+    scoped = _scoped_override(env.venv_override(), project_dir, ENV_AI_HATS_VENV)
+    if scoped:
+        return scoped
     raw_yaml = _read_venv_path_from_yaml(project_dir)
     if raw_yaml:
         p = Path(raw_yaml).expanduser()

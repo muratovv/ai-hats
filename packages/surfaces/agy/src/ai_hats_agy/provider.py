@@ -332,11 +332,12 @@ class AgyProvider(Provider):
 
     def get_env(self, session_dir: Path, project_dir: Path) -> dict[str, str]:
         import sys
+        from ai_hats.env import ENV_AI_HATS_PYTHON
         from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR
         from ai_hats.paths import ai_hats_dir
 
         return {
             ENV_AI_HATS_DIR: str(ai_hats_dir(project_dir)),
             AI_HATS_PROJECT_DIR_ENV: str(project_dir),
-            "AI_HATS_PYTHON": sys.executable,
+            ENV_AI_HATS_PYTHON: sys.executable,
         }

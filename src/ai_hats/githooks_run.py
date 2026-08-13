@@ -11,9 +11,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from ai_hats_core import scrubbed_git_env
+
+from .env import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
+from .session_identity import drop_identity
 
 #: Git events that deliver a protocol on stdin every hook must see.
 STDIN_PROTOCOL_EVENTS = frozenset(
@@ -125,6 +129,33 @@ def record_fail_open(
         )
 
 
+def _drop_foreign_pin(env: MutableMapping[str, str], project_dir: Path) -> None:
+    """Strip a session pin naming another project before the children see it.
+
+    ADR-0025 D3. The current stub unsets ``AI_HATS_VENV``/``AI_HATS_DIR`` but not
+    the pin itself, so the usual path here is the silent re-pin: the children are
+    told this project rather than the one the pin names. The warn branch means
+    the INSTALLED stub predates the guard — the delivery window between two
+    ``self …`` runs — so that window announces itself.
+    """  # comment-length: allow — the branch only fires in a window worth naming
+    pin = env.get(AI_HATS_PROJECT_DIR_ENV)
+    if not pin or Path(pin).expanduser().resolve() == project_dir.resolve():
+        return
+    dropped = [name for name in (ENV_AI_HATS_VENV, ENV_AI_HATS_DIR) if env.pop(name, None)]
+    # The identity names the OTHER project, so re-pinning around it would leave a
+    # gate composing under that session's role — the same leak, identity axis.
+    drop_identity(env)
+    # Re-pin rather than leave the lie: a gate reading it must get this project.
+    env[AI_HATS_PROJECT_DIR_ENV] = str(project_dir)
+    if dropped:
+        print(
+            f"ai-hats: dropped {', '.join(dropped)} pinned to {pin} — foreign to "
+            f"{project_dir}. The installed git-hook stub predates this guard; "
+            f"run `ai-hats self update` to refresh it.",
+            file=sys.stderr,
+        )
+
+
 def run_chain(
     *,
     event: str,
@@ -146,6 +177,7 @@ def run_chain(
         return 0
 
     env = dict(os.environ)
+    _drop_foreign_pin(env, project_dir)
     # A gate's own $0 is its library path, so it cannot recover the event from it.
     env["AI_HATS_HOOK_EVENT"] = event
     if journal is not None:

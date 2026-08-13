@@ -69,9 +69,29 @@ def _kernel(tmp_path: Path, effects=None) -> tuple[Kernel, Path]:
     return kernel, registry
 
 
+def _be_session(monkeypatch, session_id: str, project: Path) -> None:
+    """Stand in for a session the way a launch writes one — envelope included.
+
+    A bare ``AI_HATS_SESSION_ID`` stands in for a session no launch produces
+    (HATS-1594): ``assemble_launch_env`` is the only writer and always writes
+    both halves.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    identity = SessionIdentity(
+        id=session_id,
+        role="maintainer",
+        provider="claude",
+        project_dir=project,
+        session_dir=project / ".agent" / "runs" / f"session_{session_id}",
+    )
+    for key, value in identity.to_env().items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture
-def as_agent_a(monkeypatch):
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+def as_agent_a(monkeypatch, tmp_path):
+    _be_session(monkeypatch, "sess-a", tmp_path)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))  # this process = live owner
 
 
@@ -151,6 +171,25 @@ def test_ownership_inert_without_session(tmp_path, monkeypatch):
     assert not reg.exists()  # no registry written at all
 
 
+def test_a_half_identified_session_refuses_the_transition(tmp_path, monkeypatch):
+    """HATS-1613: a torn identity must not read as "no session".
+
+    Absence disarms the single-slot guard, and a disarmed guard hands two live
+    agents the same slot — silently, whereas this refusal costs one restart.
+    """
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "an-older-builds-session")
+    kernel, reg = _kernel(tmp_path)
+    _create(kernel, tmp_path, "T-1")
+
+    with pytest.raises(OperationAborted) as exc_info:
+        _tr(kernel, "T-1", "plan", cwd=tmp_path)
+
+    assert exc_info.value.subscriber == "ownership-single-slot"
+    assert "Restart the session" in exc_info.value.reason
+    assert not reg.exists()
+    assert kernel.get("T-1").state == "brainstorm"  # refused before any side effect
+
+
 def test_execute_self_loop_idempotent_for_owner(tmp_path, as_agent_a):
     kernel, reg = _kernel(tmp_path)
     t1 = _to_execute(kernel, tmp_path, "T-1")
@@ -161,12 +200,12 @@ def test_execute_self_loop_idempotent_for_owner(tmp_path, as_agent_a):
 
 def test_reclaim_dead_owner_via_execute_self_loop(tmp_path, monkeypatch):
     kernel, reg = _kernel(tmp_path)
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", tmp_path)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     t1 = _to_execute(kernel, tmp_path, "T-1")
     ownership.take(reg, t1, "sess-a", _dead_pid())  # A crashed → record is dead
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")  # B, live
+    _be_session(monkeypatch, "sess-b", tmp_path)  # B, live
     result = _tr(kernel, t1, "execute", cwd=tmp_path)  # reclaim self-loop (non-force)
     assert result.task.state == "execute"
     assert ownership.owner_of(reg, t1)["session_id"] == "sess-b"
@@ -174,11 +213,11 @@ def test_reclaim_dead_owner_via_execute_self_loop(tmp_path, monkeypatch):
 
 def test_live_owner_blocks_reclaim(tmp_path, monkeypatch):
     kernel, reg = _kernel(tmp_path)
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", tmp_path)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     t1 = _to_execute(kernel, tmp_path, "T-1")  # A owns, live (this process)
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")  # B, also live
+    _be_session(monkeypatch, "sess-b", tmp_path)  # B, also live
     with pytest.raises(OperationAborted) as exc_info:
         _tr(kernel, t1, "execute", cwd=tmp_path)  # cannot steal a live owner
     assert "held by a live agent" in exc_info.value.reason
@@ -191,11 +230,11 @@ def test_force_cannot_steal_a_live_owner(tmp_path, monkeypatch):
     """Reclaim is the plain non-force self-loop; a forced same-state execute
     is rejected outright and the live owner keeps the task."""
     kernel, reg = _kernel(tmp_path)
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", tmp_path)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     t1 = _to_execute(kernel, tmp_path, "T-1")
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-b")
+    _be_session(monkeypatch, "sess-b", tmp_path)
     with pytest.raises(ValueError, match="already in state"):
         _tr(kernel, t1, "execute", cwd=tmp_path, force=True, reason="try to steal")
     assert ownership.owner_of(reg, t1)["session_id"] == "sess-a"

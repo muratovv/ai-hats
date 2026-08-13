@@ -58,10 +58,10 @@ def test_judge_auditor_composes_base_auditor() -> None:
     )
     trait_names = list(role.composition.traits)
     assert "base-auditor" in trait_names, (
-        "judge-auditor must compose base-auditor (L0 baseline) per ADR-0007 §П1"
+        "judge-auditor must compose base-auditor (L0 baseline) per ADR-0007 §D1"
     )
     assert "base-judge" not in trait_names, (
-        "judge-auditor must NOT compose base-judge (L0, not L1) — ADR-0007 §П1"
+        "judge-auditor must NOT compose base-judge (L0, not L1) — ADR-0007 §D1"
     )
 
 
@@ -91,7 +91,7 @@ def test_judge_auditor_protocol_skill_exists() -> None:
 
 def test_judge_role_composes_base_judge() -> None:
     """HATS-513 issue #1: judge inherits base-judge L1 contract,
-    symmetric with role-judge (ADR-0007 §П1)."""
+    symmetric with role-judge (ADR-0007 §D1)."""
     role = _load("packages/ai-hats-library/src/ai_hats_library/core/roles/judge/config.yaml")
     assert "base-judge" in list(role.composition.traits), (
         "judge must now compose base-judge (fixes asymmetry with role-judge; HATS-513 issue #1)"
