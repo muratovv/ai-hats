@@ -96,12 +96,28 @@ def test_hook_provisions_the_worktree_not_the_project_dir(tmp_path: Path) -> Non
     assert not (project_dir / ".venv").exists(), "provisioned the main checkout"
 
 
+def _make_venv(worktree: Path, *, gutted: bool = False) -> Path:
+    """A venv the readiness probe accepts, or the skeleton a tmp sweep leaves.
+
+    The OS sweeper deletes FILES and keeps directories, so the gutted form is a
+    live ``bin/python`` symlink over a ``*.dist-info`` with no ``RECORD`` in it.
+    """
+    venv = worktree / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "bin" / "python").chmod(0o755)
+    (venv / "pyvenv.cfg").write_text("home = /usr\n")
+    dist_info = venv / "lib" / "python3.13" / "site-packages" / "root-1.0.dist-info"
+    dist_info.mkdir(parents=True)
+    if not gutted:
+        (dist_info / "RECORD").write_text("root/__init__.py,,\n")
+    return venv
+
+
 def test_hook_is_idempotent(tmp_path: Path) -> None:
-    """A worktree that already has a venv is left alone — re-runs are free."""
+    """A worktree that already has a usable venv is left alone — re-runs are free."""
     worktree = _make_worktree(tmp_path)
-    (worktree / ".venv" / "bin").mkdir(parents=True)
-    (worktree / ".venv" / "bin" / "python").write_text("#!/bin/sh\nexit 0\n")
-    (worktree / ".venv" / "bin" / "python").chmod(0o755)
+    _make_venv(worktree)
     project_dir = tmp_path / "main"
     project_dir.mkdir()
     calls = tmp_path / "uv-calls.txt"
@@ -111,6 +127,25 @@ def test_hook_is_idempotent(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert not calls.exists(), f"uv was invoked despite an existing venv: {calls.read_text()}"
+
+
+def test_hook_rebuilds_a_venv_the_tmp_sweeper_gutted(tmp_path: Path) -> None:
+    """`-x bin/python` alone read a gutted venv as present, so the hook skipped it
+    and the damage surfaced later as a ModuleNotFoundError from whatever ran next."""
+    worktree = _make_worktree(tmp_path)
+    _make_venv(worktree, gutted=True)
+    project_dir = tmp_path / "main"
+    project_dir.mkdir()
+    calls = tmp_path / "uv-calls.txt"
+    _install_uv_stub(tmp_path / "bin", calls)
+
+    result = _run_hook(worktree, path_dir=tmp_path / "bin", project_dir=project_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "unusable" in result.stdout, result.stdout
+    recorded = calls.read_text().splitlines()
+    assert any(line.startswith("venv") for line in recorded), recorded
+    assert not (worktree / ".venv" / "lib").exists(), "the gutted tree was reused"
 
 
 def test_hook_declines_without_uv(tmp_path: Path) -> None:

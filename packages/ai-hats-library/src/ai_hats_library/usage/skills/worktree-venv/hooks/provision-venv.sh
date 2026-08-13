@@ -25,9 +25,22 @@ if [[ ! -f "$WORKTREE/pyproject.toml" ]]; then
     exit 0
 fi
 
-if [[ -x "$WORKTREE/.venv/bin/python" ]]; then
-    echo "[worktree-venv] .venv already present — nothing to do"
+# Worktrees live under $TMPDIR, which the OS sweeps by deleting FILES and leaving
+# the directory skeleton: a reaped venv keeps an executable bin/python pointing at
+# a live interpreter while every installed .py is gone. `-x bin/python` alone said
+# "present", so the hook skipped the worktree and the damage surfaced much later
+# as a ModuleNotFoundError from whatever ran next. A RECORD inside a *.dist-info
+# is the cheapest proof files survived, and stays project-agnostic (HATS-1339).
+if [[ -x "$WORKTREE/.venv/bin/python" && -f "$WORKTREE/.venv/pyvenv.cfg" ]] \
+    && compgen -G "$WORKTREE/.venv/lib/python*/site-packages/*.dist-info/RECORD" >/dev/null; then
+    echo "[worktree-venv] .venv already usable — nothing to do"
     exit 0
+fi
+
+if [[ -e "$WORKTREE/.venv" ]]; then
+    # Gutted or half-built: `uv venv` reuses the shell and would inherit the damage.
+    echo "[worktree-venv] .venv present but unusable — rebuilding it"
+    rm -rf "$WORKTREE/.venv"
 fi
 
 if ! command -v uv &>/dev/null; then

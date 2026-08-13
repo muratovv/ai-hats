@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**237 of 237 files catalogued — 244 flows.**
+**238 of 238 files catalogued — 245 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -2980,6 +2980,20 @@ as a claim to check, not as evidence.
 
 - **expect** — transition done is refused before teardown and worktree directory is preserved
 - **why** — transition done from inside a worktree must refuse to avoid removing caller cwd
+
+## `test_worktree_venv_rebuilds_after_a_tmp_sweep.py`
+
+*pins HATS-1339*
+
+- **flow** — a task worktree sits under $TMPDIR long enough for the OS sweeper to empty its venv, and the next worktree create runs the provisioning hook
+- **cmds**
+
+  ```console
+  bash provision-venv.sh        # the real wt_in hook, real uv, real venv
+  ```
+
+- **expect** — the hook rebuilds a venv whose files the sweeper deleted instead of reading the surviving bin/python as "already provisioned"
+- **why** — a gutted venv failed the done-gate with a ModuleNotFoundError naming an unrelated module, and re-running the hook could not heal it
 
 ## `test_write_op_refused_at_non_project_root.py`
 
