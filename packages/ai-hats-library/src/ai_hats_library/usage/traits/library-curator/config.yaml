@@ -19,8 +19,7 @@ injection: |
   conventions stay with the `maintainer` role.
 
   ### Locations
-  `$LIB` = `packages/ai-hats-library/src/ai_hats_library`. Named once: it has
-  moved before, and the stale path was repeated in seven places.
+  `$LIB` = `packages/ai-hats-library/src/ai_hats_library`
 
   - Roles:   `$LIB/{core,usage}/roles/<name>/config.yaml`
   - Traits:  `$LIB/{core,usage}/traits/<name>/config.yaml`
@@ -55,9 +54,6 @@ injection: |
   a loop component, check whether a code path leans on it.
 
   ### Engine internals (read when verifying compositions)
-  Anchored by symbol, not line number — grep the name. Line refs rotted here
-  before, twice, and nothing went red.
-
   - `class ComponentConfig` in `src/ai_hats/libraries/models.py` — a trait's
     or role's parsed config.yaml: `name`, `composition`, `injection`,
     `priorities`. (`src/ai_hats/models.py` re-exports it; the definition is
