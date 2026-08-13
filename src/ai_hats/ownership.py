@@ -3,8 +3,8 @@
 Lets a second agent safely reclaim a task left mid-flight: detect abandonment,
 and guarantee the previous owner can't silently re-take it. Keyed by task id;
 every op reads the whole registry under the lock, sweeps dead records, decides in
-RAM, atomic-writes. Liveness = reclaim-on-certain-death (owner ``root_pid`` + OS
-``start_time``, reuse-proof), no TTL, single-host; the inline liveness helpers
+RAM, atomic-writes. Liveness = reclaim-on-certain-death (owner ``root_pid`` +
+``start_time_utc``, reuse-proof), no TTL, single-host; the inline liveness helpers
 deliberately copy ``version_refs`` (one consumer). Full rationale: HATS-955 plan.
 """
 
@@ -38,12 +38,21 @@ class OwnershipRefused(Exception):
 # --------------------------------------------------------------------------- #
 # Inline liveness (deliberate copy of version_refs; see module docstring).
 # --------------------------------------------------------------------------- #
+
+#: ``lstart`` renders in the TZ/LC_TIME of the ``ps`` process, and one session
+#: writes the baseline while another compares it — unpinned, an ambient difference
+#: reads as pid reuse and a live owner's claim is stolen. The same pin lives in
+#: ``session_liveness`` and ``version_refs``; each has its own TZ test.
+_PS_ENV = {"TZ": "UTC", "LC_ALL": "C"}
+
+
 def _proc_start_time(pid: int) -> tuple[bool, str | None]:
     """OS start time of ``pid`` as ``(determined, value)`` — errors must not read
     as death, so "no such process" and "couldn't tell" stay distinct:
     ``(True, "<lstart>")`` exists; ``(True, None)`` ps ran, gone → dead;
     ``(False, None)`` ps errored → undetermined (caller must not reclaim).
-    ``ps -o lstart=`` (POSIX); the raw string is stored/compared verbatim.
+    ``ps -o lstart=`` (POSIX); the raw string is stored/compared verbatim, under
+    a pinned TZ/locale so two processes render the same instant the same.
     """
     try:
         out = subprocess.run(
@@ -51,6 +60,7 @@ def _proc_start_time(pid: int) -> tuple[bool, str | None]:
             capture_output=True,
             text=True,
             timeout=5,
+            env={**os.environ, **_PS_ENV},
         )
     except (OSError, subprocess.SubprocessError):
         return (False, None)  # ps unavailable → undetermined
@@ -60,7 +70,7 @@ def _proc_start_time(pid: int) -> tuple[bool, str | None]:
 
 
 def _capture_start_time(pid: int) -> str | None:
-    """The ``start_time`` to store at claim time, or ``None`` if unknown."""
+    """The ``start_time_utc`` to store at claim time, or ``None`` if unknown."""
     if not isinstance(pid, int) or pid <= 0:
         return None
     determined, value = _proc_start_time(pid)
@@ -84,12 +94,12 @@ def _pid_alive(pid: int) -> bool:
 def record_is_live(record: dict) -> bool:
     """Whether ``record``'s owner process is still alive.
 
-    ``record`` = a registry entry ``{session_id, root_pid, start_time, ...}``.
+    ``record`` = a registry entry ``{session_id, root_pid, start_time_utc, ...}``.
     ``True`` = owner alive → task NOT reclaimable; ``False`` = certainly dead →
     safe to reclaim/sweep. **Biased to True on uncertainty**: a transient ``ps``
     failure must never read as death (else a neighbour's task gets stolen).
     ``False`` only on proof — no ``root_pid``, ``ps`` says no such process, or a
-    reused pid (``start_time`` mismatch). ``ps`` unavailable ⇒ ``os.kill``.
+    reused pid (``start_time_utc`` mismatch). ``ps`` unavailable ⇒ ``os.kill``.
     """
     pid = record.get("root_pid")
     if not isinstance(pid, int) or pid <= 0:
@@ -99,7 +109,10 @@ def record_is_live(record: dict) -> bool:
         return _pid_alive(pid)  # ps unavailable → conservative os.kill
     if current is None:
         return False  # ps ran, process gone → certainly dead
-    recorded = record.get("start_time")
+    # Only the pinned-env field is a baseline: a legacy ``start_time`` was rendered
+    # in its writer's own TZ/locale, so comparing one reads a live owner as a
+    # reused pid and steals the claim. Absent → the claim stands while the pid does.
+    recorded = record.get("start_time_utc")
     if recorded is None:
         return True  # process exists, no baseline to compare → assume live
     return current == recorded
@@ -177,7 +190,7 @@ def take(
         owners[task_id] = {
             "session_id": session_id,
             "root_pid": root_pid,
-            "start_time": _capture_start_time(root_pid),
+            "start_time_utc": _capture_start_time(root_pid),
             "claimed_at": _now(),
         }
         reg["owners"] = owners

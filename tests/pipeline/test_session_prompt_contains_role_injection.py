@@ -90,7 +90,7 @@ def _install_pty_capture(monkeypatch, sink: dict[str, Any]) -> None:
     """
     from ai_hats import runtime as rt
 
-    def _capture(_self, cmd, env, tracer, pty_tap_factory=None):  # noqa: ARG001 (mirror real sig)
+    def _capture(_self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None):  # noqa: ARG001 (mirror real sig)
         sink["cmd"] = list(cmd)
         # Find --system-prompt-file <path> in argv and read content NOW.
         for i, tok in enumerate(cmd):

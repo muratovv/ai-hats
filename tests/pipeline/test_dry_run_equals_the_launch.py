@@ -79,7 +79,9 @@ def _launch_for_real(monkeypatch, project: Path) -> dict:
     monkeypatch.setattr(
         rt.WrapRunner,
         "_pty_spawn",
-        lambda _self, cmd, env, tracer, pty_tap_factory=None: sink.update(env=dict(env)) or 0,
+        lambda _self, cmd, env, tracer, pty_tap_factory=None, on_spawn=None: (
+            sink.update(env=dict(env)) or 0
+        ),
     )
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 
@@ -90,12 +92,22 @@ def _launch_for_real(monkeypatch, project: Path) -> dict:
     (sdir,) = [d for d in runs.iterdir() if d.name.startswith("session_")]
     payload = json.loads((sdir / ROLE_MATERIALIZATION_JSON).read_text())
     payload["_child_env"] = sink["env"]
+    payload["_sid"] = sdir.name[len("session_") :]
     return payload
 
 
 def _sid_of(launched: dict) -> str:
-    (sid,) = _SESSION_DIR.findall(json.dumps(launched))[:1] or [""]
-    assert sid, "the launch record must carry its own session id somewhere"
+    """The sid of the run dir this launch actually wrote, carried explicitly.
+
+    It used to be the first ``session_<sid>`` match in ``json.dumps(launched)``,
+    which includes ``_child_env`` — the real launch environment. A session
+    started from inside another ai-hats session inherits that parent's
+    ``AI_HATS_SESSION_IDENTITY`` and ``TRACE_LOG_PATH``, both carrying the OUTER
+    sid, so the fold rewrote the wrong id and the comparison failed. The record
+    itself never carries one, which is why the search reached the env at all.
+    """  # comment-length: allow — the flake is invisible outside an ai-hats run
+    sid = launched.get("_sid", "")
+    assert sid, "the launcher must record which run dir it wrote"
     return sid
 
 
@@ -122,6 +134,7 @@ def _strip_provider_session_id(launch: list[str]) -> list[str]:
 def _comparable(payload: dict, sid: str) -> dict:
     d = _normalize(payload, sid)
     d.pop("_child_env", None)
+    d.pop("_sid", None)
     d["launch"] = _strip_provider_session_id(d["launch"])
     for entry in d["materialized"]:
         if Path(entry["target"]).name in SID_IN_CONTENT:
@@ -333,11 +346,14 @@ def test_a_cli_surface_executes_the_argv_it_reported(tmp_path: Path, monkeypatch
 
     spawned: dict[str, Any] = {}
 
-    def _capture(cmd, **kwargs):
-        spawned["cmd"] = list(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    def _capture(launch, **kwargs):
+        spawned["cmd"] = list(launch)
+        return subprocess.CompletedProcess(list(launch), 0, stdout="", stderr="")
 
-    monkeypatch.setattr("ai_hats.subagent_runner.subprocess.run", _capture)
+    # The spawn seam, not ``subprocess.run``: patching the stdlib name reaches
+    # the whole process, so the anchor's own ``ps`` (HATS-1339 D3) ran later and
+    # overwrote the capture with its argv.
+    monkeypatch.setattr("ai_hats.subagent_runner._run_surface", _capture)
 
     payload = build_composition_payload(proj, role_override="maintainer")
     session = SubAgentRunner(

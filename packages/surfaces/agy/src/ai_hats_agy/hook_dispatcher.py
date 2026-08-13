@@ -96,17 +96,28 @@ def _kill_group(running: subprocess.Popen) -> None:
 def _session_hooks_file() -> Path | None:
     """This session's hooks manifest, from the dir the builder pinned (HATS-1398).
 
-    An ai-hats session without the pin predates the cache move; say so rather
-    than exit 0, which reads exactly like "no hooks configured".
+    Two ways to have none, both reported: no pin at all, and a pin whose
+    manifest is gone. Exit 0 reads exactly like "no hooks configured", so
+    silence here would pass unreachable guards off as an unguarded session.
     """
     pinned = os.environ.get(ENV_SESSION_CACHE_DIR)
-    if pinned:
-        return Path(pinned) / "hooks.json"
-    sys.stderr.write(
-        "ai-hats-hook-dispatcher: AI_HATS_SESSION_CACHE_DIR unset — this session "
-        "predates HATS-1398 and its hooks are unreachable; restart it.\n"
-    )
-    return None
+    if not pinned:
+        sys.stderr.write(
+            "ai-hats-hook-dispatcher: AI_HATS_SESSION_CACHE_DIR unset — this session "
+            "predates HATS-1398 and its hooks are unreachable; restart it.\n"
+        )
+        return None
+
+    hooks_file = Path(pinned) / "hooks.json"
+    if not hooks_file.is_file():
+        # The builder writes it with every pin, so absence is a reclaimed dir.
+        sys.stderr.write(
+            f"ai-hats-hook-dispatcher: no hooks manifest at {hooks_file} — the builder "
+            f"writes one whenever it pins the dir, so this session's hooks, safety "
+            f"guards included, have stopped firing; restart it.\n"
+        )
+        return None
+    return hooks_file
 
 
 def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
@@ -144,11 +155,15 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
     hooks_file = _session_hooks_file()
 
     data: dict = {}
-    if hooks_file and hooks_file.is_file():
+    if hooks_file:
         try:
             data = json.loads(hooks_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
+        except (OSError, ValueError) as err:
+            sys.stderr.write(
+                f"ai-hats-hook-dispatcher: hooks manifest unusable at {hooks_file}: "
+                f"{err} — this session's hooks, safety guards included, are not "
+                f"firing; restart it.\n"
+            )
 
     event_hooks: list[dict] = []
     if isinstance(data, dict):

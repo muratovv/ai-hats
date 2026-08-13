@@ -95,19 +95,37 @@ def test_proc_start_time_dead_pid_is_none():
 
 def test_ref_is_live_self():
     pid = os.getpid()
-    ref = {"root_pid": pid, "start_time": version_refs._proc_start_time(pid)}
+    ref = {"root_pid": pid, "start_time_utc": version_refs._proc_start_time(pid)}
     assert version_refs.ref_is_live(ref) is True
 
 
 def test_ref_is_live_reused_pid_mismatch(live_proc):
     # Same live pid, but a start_time that cannot match → pid-reuse → dead.
-    ref = {"root_pid": live_proc.pid, "start_time": "Wed Jan  1 00:00:00 2000"}
+    ref = {"root_pid": live_proc.pid, "start_time_utc": "Wed Jan  1 00:00:00 2000"}
     assert version_refs.ref_is_live(ref) is False
 
 
 def test_ref_is_live_gone_pid():
-    ref = {"root_pid": _dead_pid(), "start_time": "Wed Jan  1 00:00:00 2000"}
+    ref = {"root_pid": _dead_pid(), "start_time_utc": "Wed Jan  1 00:00:00 2000"}
     assert version_refs.ref_is_live(ref) is False
+
+
+def test_the_baseline_ignores_the_ambient_timezone(monkeypatch, live_proc):
+    """One run writes the ref and ANOTHER checks it. `ps -o lstart=` renders in
+    the TZ/locale of the ps process, so unpinned the two disagreed and a LIVE run
+    read as a reused pid — reclaiming the version it is executing from."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    written = version_refs._proc_start_time(live_proc.pid)
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    assert version_refs._proc_start_time(live_proc.pid) == written
+    assert version_refs.ref_is_live({"root_pid": live_proc.pid, "start_time_utc": written}) is True
+
+
+def test_a_legacy_start_time_is_not_read_as_a_baseline(live_proc):
+    """Refs already on disk were rendered in an unknown locale; reading one would
+    reclaim a live run's version. Absent baseline → the os.kill fallback keeps it."""
+    ref = {"root_pid": live_proc.pid, "start_time": "Wed Jan  1 00:00:00 2000"}
+    assert version_refs.ref_is_live(ref) is True
 
 
 def test_ref_is_live_malformed_is_dead():
@@ -118,13 +136,13 @@ def test_ref_is_live_malformed_is_dead():
 def test_ref_is_live_psless_fallback_alive(monkeypatch, live_proc):
     """`ps` unavailable (start_time None) → conservative os.kill liveness."""
     monkeypatch.setattr(version_refs, "_proc_start_time", lambda pid: None)
-    ref = {"root_pid": live_proc.pid, "start_time": None}
+    ref = {"root_pid": live_proc.pid, "start_time_utc": None}
     assert version_refs.ref_is_live(ref) is True
 
 
 def test_ref_is_live_psless_fallback_dead(monkeypatch):
     monkeypatch.setattr(version_refs, "_proc_start_time", lambda pid: None)
-    ref = {"root_pid": _dead_pid(), "start_time": None}
+    ref = {"root_pid": _dead_pid(), "start_time_utc": None}
     assert version_refs.ref_is_live(ref) is False
 
 

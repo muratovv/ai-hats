@@ -123,13 +123,15 @@ def test_sweep_mixed(tmp_path):
 # ---------- reclaim_orphan_versions (HATS-649 / R2) ----------
 
 
-def _write_ref(project_dir, sha, *, pid, start_time, name=None):
+def _write_ref(project_dir, sha, *, pid, start_time_utc, name=None):
     """Plant a liveness ref pointing at versions/<sha> for a given pid."""
     d = versions_root(project_dir) / ".refs"
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{name or pid}.json"
     f.write_text(
-        json.dumps({"run_id": "test", "root_pid": pid, "start_time": start_time, "sha": sha}),
+        json.dumps(
+            {"run_id": "test", "root_pid": pid, "start_time_utc": start_time_utc, "sha": sha}
+        ),
         encoding="utf-8",
     )
     return f
@@ -173,7 +175,7 @@ def test_reclaim_removes_dead_ref_and_cleans_ref(tmp_path):
     _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
     orphan = _mk_version(tmp_path, "0ld0c0de", complete=True)
-    ref = _write_ref(tmp_path, "0ld0c0de", pid=_dead_pid(), start_time="old")
+    ref = _write_ref(tmp_path, "0ld0c0de", pid=_dead_pid(), start_time_utc="old")
     removed = version_recovery.reclaim_orphan_versions(tmp_path)
     assert removed == [orphan]
     assert not orphan.exists()
@@ -189,7 +191,7 @@ def test_reclaim_keeps_live_ref(tmp_path, live_proc):
         tmp_path,
         "0ld0c0de",
         pid=live_proc.pid,
-        start_time=version_refs._proc_start_time(live_proc.pid),
+        start_time_utc=version_refs._proc_start_time(live_proc.pid),
     )
     removed = version_recovery.reclaim_orphan_versions(tmp_path)
     assert removed == []
@@ -232,7 +234,7 @@ def test_reclaim_never_touches_refs_dir(tmp_path, live_proc):
         tmp_path,
         "0ld0c0de",
         pid=live_proc.pid,
-        start_time=version_refs._proc_start_time(live_proc.pid),
+        start_time_utc=version_refs._proc_start_time(live_proc.pid),
     )
     version_recovery.reclaim_orphan_versions(tmp_path)
     assert (versions_root(tmp_path) / ".refs").is_dir()
@@ -243,7 +245,7 @@ def test_reclaim_dead_ref_to_current_cleans_ref_keeps_current(tmp_path):
     """A dead ref pointing at `current` is cleaned; current is never reclaimed."""
     cur = _mk_version(tmp_path, "cafef00d", complete=True)
     _set_current(tmp_path, "cafef00d")
-    ref = _write_ref(tmp_path, "cafef00d", pid=_dead_pid(), start_time="old")
+    ref = _write_ref(tmp_path, "cafef00d", pid=_dead_pid(), start_time_utc="old")
     assert version_recovery.reclaim_orphan_versions(tmp_path) == []
     assert cur.exists()
     assert not ref.exists()
