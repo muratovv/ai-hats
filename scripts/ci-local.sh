@@ -119,24 +119,19 @@ ci_e2e() {
     "$PY" -B -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
-# HATS-1137: the composition of the `edge:review--done` quality gate, and the
-# ONE place it is configured. `maintainer-quality-gate/hooks/done-gate.sh --run`
-# executes this stage and marks the SHA on green; changing what "green enough to
-# be done" means is an edit HERE, never in the gate script.
+# HATS-1137/HATS-1604 — what each gate is made of, and the ONE place it is
+# configured. A gate script asks with `<gate> --stages` and runs the stages
+# through the shared primitive, so "green enough to be done" is an edit HERE and
+# the library never restates it (ADR-0023 D7).
 #
-# Excluded from `all`: `all` is the pre-push bundle and already runs `coverage`,
-# which collects the same non-e2e integration tests without a marker filter.
-ci_done_gate() {
-    echo "[ci-local] done-gate (e2e-catalog -> lint -> unit -> integration -> merge-smoke)" >&2
-    local stage rc
-    for stage in e2e-catalog lint unit integration merge-smoke; do
-        "ci_${stage//-/_}" || {
-            rc=$?
-            echo "[ci-local] done-gate: stage '$stage' FAILED (rc=$rc) — stopping here" >&2
-            return "$rc"
-        }
-    done
-    echo "[ci-local] done-gate: every stage green" >&2
+# Neither gate joins `all`: `all` is the pre-push bundle and already runs
+# `coverage`, which collects the same non-e2e integration tests unfiltered.
+gate_composition() {
+    case "$1" in
+        done-gate) echo "e2e-catalog lint unit integration merge-smoke" ;;
+        push-gate) echo "lint unit e2e-catalog e2e" ;;
+        *) return 1 ;;
+    esac
 }
 
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
@@ -154,7 +149,22 @@ case "$stage" in
     unit) ci_unit ${@+"$@"} ;;
     integration) ci_integration ${@+"$@"} ;;
     coverage) ci_coverage ${@+"$@"} ;;
-    done-gate) ci_done_gate ;;
+    # A gate is not a stage: it is a NAME for a set of them, and running it is
+    # the primitive's job (it owns the marker). `--stages` comes FIRST so a
+    # dispatcher that does not know the flag refuses instantly instead of
+    # mistaking it for an argument to a gate it does know (HATS-1604).
+    --stages)
+        gate_composition "${1:-}" || {
+            echo "[ci-local] no such gate: ${1:-<none>} (gates: done-gate | push-gate)" >&2
+            exit 2
+        }
+        ;;
+    done-gate|push-gate)
+        echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
+        echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
+        echo "  run it (marks the tree on green):  make done-gate | scripts/run-e2e-gate.sh" >&2
+        exit 2
+        ;;
     security) ci_security ${@+"$@"} ;;
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
@@ -177,7 +187,8 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | done-gate | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
+        echo "  gates (--stages prints their composition): done-gate | push-gate" >&2
         exit 2
         ;;
 esac

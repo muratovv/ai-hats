@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**231 of 231 files catalogued — 238 flows.**
+**232 of 232 files catalogued — 239 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -735,6 +735,21 @@ as a claim to check, not as evidence.
 
 - **expect** — command exits with code 2 explaining that explicit role specification is required for batch
 - **why** — without role validation in batch mode, execution runs under uninitialized default roles
+
+## `test_gate_primitive.py`
+
+*pins HATS-1604, HATS-1601*
+
+- **flow** — a gate script asking whether this tree already earned a marker
+- **cmds**
+
+  ```console
+  bash -c '. lib/gate-marker.sh; gate_marker_write done-gate . <tree> ...'
+  bash -c '. lib/gate.sh; gate_exit checks refuse'
+  ```
+
+- **expect** — the marker keys on the TREE, carries the composition it certifies, and one primitive maps an outcome onto each channel's exit codes
+- **why** — the discipline was hand-written twice with a diverging exit contract, and a commit-keyed marker made every --no-ff merge pay twice
 
 ## `test_githooks_argv_contract.py`
 

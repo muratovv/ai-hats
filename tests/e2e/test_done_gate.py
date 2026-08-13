@@ -71,10 +71,15 @@ injection: |
   # ROLE: UNGATED
 """
 
-#: A `ci-local.sh` the gate can find. `--check` only proves it EXISTS (a project
-#: with no done-gate stage could never earn a marker honestly); it is never run
-#: from inside the lock, so a stub is the honest shape here.
-_CI_LOCAL_STUB = '#!/usr/bin/env bash\necho "[stub] stage=${1:-}" >&2\nexit 0\n'
+#: A `ci-local.sh` the gate can find. `--check` only proves the project NAMES a
+#: composition (one that names none could never earn a marker honestly); the
+#: stages never run from inside the lock, so a stub is the honest shape here.
+_STUB_STAGE = "stub-stage"
+_CI_LOCAL_STUB = (
+    "#!/usr/bin/env bash\n"
+    f'if [[ "$1" == "--stages" ]]; then echo "{_STUB_STAGE}"; exit 0; fi\n'
+    'echo "[stub] stage=${1:-}" >&2\nexit 0\n'
+)
 
 
 def shipped_apps() -> dict:
@@ -260,12 +265,19 @@ def _to_review(
     return task_id, str(wt)
 
 
-def _write_marker(project: Path, sha: str) -> Path:
-    """Plant a marker the way ``lib/gate-marker.sh`` writes one."""
+def _tree(repo: Path, rev: str = "HEAD") -> str:
+    return git(repo, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
+
+
+def _write_marker(project: Path, tree: str, stages: str = _STUB_STAGE) -> Path:
+    """Plant a marker the way ``lib/gate-marker.sh`` writes one: keyed by the
+    TREE, and carrying the composition that earned it (HATS-1601)."""
     marker_dir = project / GATE_MARKER_DIR
     marker_dir.mkdir(parents=True, exist_ok=True)
-    marker = marker_dir / sha
-    marker.write_text(f"sha={sha}\ntimestamp=2026-01-01T00:00:00Z\nstage=done-gate\n", "utf-8")
+    marker = marker_dir / tree
+    marker.write_text(
+        f"tree={tree}\ntimestamp=2026-01-01T00:00:00Z\nstages={stages}\n", encoding="utf-8"
+    )
     return marker
 
 
@@ -324,9 +336,12 @@ def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
 
     as_json = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
     reason = _reason(as_json)
-    assert "no green quality-gate marker" in reason
+    assert "no green marker for tree" in reason
     # R6: an action, not a diagnosis — the exact command, in the right directory.
     assert f"cd {wt} && make done-gate" in reason
+    # HATS-1604 / ADR-0023 D7: the refusal RENDERS the composition from the
+    # project's dispatcher. A library file that restated it drifted within days.
+    assert _STUB_STAGE in reason, "the refusal names what this project's gate runs"
     assert _card(project, task_id).read_bytes() == before
 
     # The merge never happened: no work.txt on master.
@@ -346,8 +361,7 @@ def test_a_marker_for_the_branch_tip_lets_the_transition_through(gate_project, r
     blocked = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
     assert blocked.returncode == 1, "positive control: unmarked must refuse first"
 
-    tip = git(Path(wt), "rev-parse", "HEAD").stdout.strip()
-    _write_marker(project, tip)
+    _write_marker(project, _tree(Path(wt)))
 
     taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
 
@@ -356,24 +370,61 @@ def test_a_marker_for_the_branch_tip_lets_the_transition_through(gate_project, r
     assert "green marker present" in _check_log(project, task_id).read_text(encoding="utf-8")
 
 
+def test_a_marker_that_never_ran_a_demanded_stage_does_not_clear_the_gate(gate_project, rack_bin):
+    """HATS-1601: add a stage to the gate and every marker on disk kept letting
+    transitions through — the check compared the key and nothing else."""
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    _write_marker(project, _tree(Path(wt)), stages="some-other-stage")
+
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert _state(project, task_id)["state"] == "review"
+
+
+def test_the_composition_is_read_from_the_tree_under_judgement(gate_project, rack_bin):
+    """A card that CHANGES the gate must be judged by the composition it carries.
+
+    Read from the main checkout instead, the gate judges one tree by another
+    tree's rules — which is how HATS-1604 refused its own merge: the branch was
+    the only place that knew the new contract.
+    """
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    # The branch changes what its gate runs; master's dispatcher never hears of it.
+    branch_stage = "a-stage-only-this-branch-declares"
+    (Path(wt) / "scripts" / "ci-local.sh").write_text(
+        _CI_LOCAL_STUB.replace(_STUB_STAGE, branch_stage), encoding="utf-8"
+    )
+    git(Path(wt), "add", "-A")
+    git(Path(wt), "commit", "-m", "change what the gate runs")
+    _write_marker(project, _tree(Path(wt)), stages=branch_stage)
+
+    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+
+    assert taken.returncode == 0, taken.stdout + taken.stderr
+    assert json.loads(taken.stdout)["task"]["state"] == "done"
+
+
 # ---------------------------------------------------------------------------
 # 3. the key is content, not time — R4
 # ---------------------------------------------------------------------------
 
 
-def test_a_marker_for_a_different_sha_does_not_clear_the_gate(gate_project, rack_bin):
-    """R4: a marker earned on an earlier commit stops applying the moment the
-    branch moves — no expiry mechanism exists because none is needed."""
+def test_a_marker_for_a_different_tree_does_not_clear_the_gate(gate_project, rack_bin):
+    """R4: a marker earned on earlier content stops applying the moment the tree
+    changes — no expiry mechanism exists because none is needed."""
     project, env = gate_project("gated")
     task_id, wt = _to_review(rack_bin, project, env, worktree=True)
 
-    stale = git(Path(wt), "rev-parse", "HEAD").stdout.strip()
+    stale = _tree(Path(wt))
     _write_marker(project, stale)
     # The branch moves on: the marker now describes content that is not the tip.
     (Path(wt) / "more.txt").write_text("second thought", encoding="utf-8")
     git(Path(wt), "add", "-A")
     git(Path(wt), "commit", "-m", "more work")
-    tip = git(Path(wt), "rev-parse", "HEAD").stdout.strip()
+    tip = _tree(Path(wt))
     assert tip != stale
 
     refused = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
@@ -502,7 +553,7 @@ def test_a_marker_lets_the_direct_wt_merge_through(gate_project, rack_bin, share
     project, env = gate_project("gated")
     task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
     branch = f"task/{task_id.lower()}"
-    _write_marker(project, git(Path(worktree), "rev-parse", "HEAD").stdout.strip())
+    _write_marker(project, _tree(Path(worktree)))
 
     merged = _ai_hats(
         launcher, "wt", "merge", branch, cwd=project, env={**env, "AI_HATS_MERGE_ACK": "1"}
@@ -589,22 +640,27 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
 
 
 def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog():
-    """HATS-1562: `ci-local.sh done-gate` runs `e2e-catalog` first.
-
-    A stale CATALOG.md makes done-gate exit non-zero immediately at the e2e-catalog
-    stage without reaching later expensive stages (lint, unit, integration).
-    """
+    """HATS-1562/HATS-1604: the composition names `e2e-catalog` first and the
+    primitive stops at the first red, so a stale CATALOG.md refuses before the
+    expensive stages (lint, unit, integration) are ever started."""
     catalog_path = REPO_ROOT / "tests/e2e/CATALOG.md"
     original_bytes = catalog_path.read_bytes()
     try:
         catalog_path.write_bytes(original_bytes + b"\n")
 
         proc = subprocess.run(
-            ["bash", "scripts/ci-local.sh", "done-gate"],
+            [
+                "bash",
+                "-c",
+                f'. "{SKILL_SRC}/lib/gate-marker.sh"; . "{SKILL_SRC}/lib/gate.sh"; '
+                'gate_run "$1" done-gate',
+                "_",
+                str(REPO_ROOT / "scripts/ci-local.sh"),
+            ],
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
         assert proc.returncode != 0, (
             f"stale CATALOG.md must fail done-gate:\n{proc.stdout}\n{proc.stderr}"

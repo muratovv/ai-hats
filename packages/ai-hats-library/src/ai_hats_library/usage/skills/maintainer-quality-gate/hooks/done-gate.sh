@@ -8,12 +8,15 @@
 #
 #   --check (DEFAULT — what the `composition.checks` binding runs). Take the
 #     given worktree's branch tip and require a green marker for that exact
-#     commit. Instant: a few `git rev-parse` and one file read, because it runs
-#     INSIDE the per-task rack lock (priority 15, budget 20s vs a 30s lock).
-#     The suite itself can never run here — it takes minutes.
+#     TREE, covering every stage this project's dispatcher names. Instant: a few
+#     `git rev-parse` and one file read, because it runs INSIDE the per-task rack
+#     lock (priority 15, budget 20s vs a 30s lock). The suite can never run here.
 #
-#   --run (`make done-gate`). Run `scripts/ci-local.sh done-gate` and, on green
-#     AND a clean tree, write the marker for HEAD.
+#   --run (`make done-gate`). Run the composition and, on green AND a clean
+#     tree, mark it.
+#
+# HATS-1604: the discipline of both modes lives in ../lib/gate.sh, and the
+# composition comes from the project's dispatcher — this file states neither.
 #
 # A SEPARATE script from pre-push-e2e-master.sh on purpose. That one's default
 # mode reads git's pre-push protocol from stdin, and the check runner gives its
@@ -34,11 +37,12 @@ set -uo pipefail
 
 GATE_NAME='done-gate'
 RUN_CMD='make done-gate'
+CHANNEL='checks'
 
 _self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if ! . "$_self_dir/../lib/gate-marker.sh"; then
-    printf 'done-gate: cannot load %s/../lib/gate-marker.sh — the gate cannot look\n' "$_self_dir"
-    printf 'up any marker, so it cannot let this transition through.\n'
+if ! . "$_self_dir/../lib/gate-marker.sh" || ! . "$_self_dir/../lib/gate.sh"; then
+    printf 'done-gate: cannot load %s/../lib/ — the gate cannot look up any marker,\n' "$_self_dir"
+    printf 'so it cannot let this transition through.\n'
     exit 2
 fi
 
@@ -95,23 +99,7 @@ check_mode() {
         printf '(%s). This gate guards what enters THIS repo, so it has no\n' \
                "$(own_tasks_dir "$project_dir")"
         printf 'opinion here. Passing.\n'
-        exit 0
-    fi
-
-    # A gate that cannot verify must not pass. No dispatcher here means this
-    # project has no done-gate stage to run, so no marker could ever be earned
-    # honestly — that is a misconfigured binding, and it says so on the first
-    # transition rather than on the first card that ships code.
-    local dispatcher="$project_dir/scripts/ci-local.sh"
-    if [[ ! -f "$dispatcher" ]]; then
-        printf 'done-gate: %s does not exist, so this project has no\n' "$dispatcher"
-        printf "'done-gate' stage to run and no marker could ever be earned. A gate that\n"
-        printf 'cannot verify must not pass. Fix one of the two:\n\n'
-        printf '  * add a done-gate stage to scripts/ci-local.sh (ai-hats composes it as\n'
-        printf '    e2e-catalog -> lint -> unit -> integration -> merge-smoke), or\n'
-        printf '  * unbind the gate: drop the maintainer-quality-gate/hooks/done-gate.sh\n'
-        printf "    row from 'composition.checks' in the role that composes this skill.\n"
-        exit 2
+        gate_exit "$CHANNEL" pass
     fi
 
     # HATS-1540 R2/H: the tree under judgement arrives in the environment, at
@@ -120,7 +108,7 @@ check_mode() {
     # shell, and the one place a gate can silently end up judging another
     # worktree. The absence of that block is what makes one script serve
     # `edge:review--done` and `wt:pre-merge` without a branch between them.
-    local wt branch sha
+    local wt branch tree dispatcher stages
     wt="${AI_HATS_WORKTREE_PATH:-}"
     # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
     # FSM edge the branch is rack's own convention. For messages only.
@@ -134,7 +122,7 @@ check_mode() {
         printf 'done-gate: %s has no worktree — it contributes no commits, so there is\n' \
                "$task_id"
         printf 'nothing to gate. Passing.\n'
-        exit 0
+        gate_exit "$CHANNEL" pass
     fi
 
     if [[ ! -d "$wt" ]]; then
@@ -149,34 +137,46 @@ check_mode() {
                "$task_id" "$wt"
         printf 'branch content to gate (rack refuses the merge itself if that branch is\n'
         printf 'unmerged). Passing.\n'
-        exit 0
+        gate_exit "$CHANNEL" pass
     fi
 
-    # F-13: the TASK BRANCH's tip, never the main checkout's HEAD. At priority 15
-    # the merge has not happened yet, so the content under judgement is what the
-    # branch holds.
-    sha="$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)"
-    if [[ -z "$sha" ]]; then
-        printf 'done-gate: could not resolve HEAD of the worktree %s (branch %s). The gate\n' \
+    # F-13: the TASK BRANCH's tree, never the main checkout's. At priority 15 the
+    # merge has not happened yet, so the content under judgement is what the
+    # branch holds — and content, not the commit naming it, is the subject.
+    tree="$(gate_tree "$wt" HEAD)"
+    if [[ -z "$tree" ]]; then
+        printf 'done-gate: could not resolve the tree of the worktree %s (branch %s). The\n' \
                "$wt" "$branch"
-        printf 'cannot name the content it is meant to judge, so it refuses.\n'
-        exit 2
+        printf 'gate cannot name the content it is meant to judge, so it refuses.\n'
+        gate_exit "$CHANNEL" refuse
     fi
 
-    if gate_marker_ok "$GATE_NAME" "$project_dir" "$sha"; then
-        printf 'done-gate: green marker present for %s (%s) — passing.\n' "$sha" "$branch"
-        exit 0
+    # The composition comes from the dispatcher IN THE TREE UNDER JUDGEMENT, not
+    # from the main checkout's. The marker certifies stages that were run there,
+    # so asking anywhere else judges one tree by another tree's rules — which is
+    # exactly what refused this very card's merge while the branch was the only
+    # place that knew the contract. A card that changes the gate carries the
+    # change and its own verdict together, and the diff is what review reads.
+    dispatcher="$wt/scripts/ci-local.sh"
+    stages="$(gate_stages "$dispatcher" "$GATE_NAME")"
+    if [[ -z "$stages" ]]; then
+        printf 'done-gate: %s names no %s composition, so no marker could ever be\n' \
+               "$dispatcher" "$GATE_NAME"
+        printf 'earned honestly. A gate that cannot verify must not pass. Fix one of the two:\n\n'
+        printf '  * have the dispatcher answer `--stages %s` with the stages this\n' "$GATE_NAME"
+        printf '    project wants the gate to run, or\n'
+        printf '  * unbind the gate: drop the maintainer-quality-gate/hooks/done-gate.sh\n'
+        printf "    row from 'composition.checks' in the role that composes this skill.\n"
+        gate_exit "$CHANNEL" refuse
     fi
 
-    # R6: the refusal is an action, not a diagnosis. One copy-pasteable command,
-    # and the second attempt is instant because the marker is already there.
-    printf 'done-gate: no green quality-gate marker for %s (branch %s).\n\n' "$sha" "$branch"
-    printf 'Run the gate on that exact commit, then retry the transition:\n\n'
-    printf '    cd %s && %s\n\n' "$wt" "$RUN_CMD"
-    printf 'On green and a clean tree it marks that commit and this transition passes\n'
-    printf 'instantly. The marker keys on content, not on time: a new commit needs a\n'
-    printf 'new run, and one run covers every card sitting on the same commit.\n'
-    exit 2
+    if gate_marker_ok "$GATE_NAME" "$project_dir" "$tree" $stages; then
+        printf 'done-gate: green marker present for tree %s (%s) — passing.\n' "$tree" "$branch"
+        gate_exit "$CHANNEL" pass
+    fi
+
+    gate_refusal "$GATE_NAME" "$tree" "branch $branch" "cd $wt && $RUN_CMD" "$stages"
+    gate_exit "$CHANNEL" refuse
 }
 
 # --- run mode (`--run`) ----------------------------------------------------
@@ -189,45 +189,25 @@ run_mode() {
         exit 1
     fi
 
-    local dispatcher="$repo_root/scripts/ci-local.sh"
-    if [[ ! -f "$dispatcher" ]]; then
-        echo "[done-gate] no $dispatcher — nothing to run, no marker written" >&2
+    local dispatcher="$repo_root/scripts/ci-local.sh" stages
+    stages="$(gate_stages "$dispatcher" "$GATE_NAME")"
+    if [[ -z "$stages" ]]; then
+        echo "[done-gate] $dispatcher names no $GATE_NAME composition — nothing to run" >&2
         exit 1
     fi
 
-    echo "[done-gate] running the done-gate stage in $repo_root (HATS-1137)" >&2
-    local rc
-    bash "$dispatcher" done-gate || {
-        rc=$?
-        echo "[done-gate] the done-gate stage FAILED (rc=$rc) — NO marker written." >&2
-        exit 1
-    }
+    echo "[done-gate] running $GATE_NAME in $repo_root: $stages" >&2
+    gate_run "$dispatcher" "$GATE_NAME" || exit 1
 
-    local head_sha
-    head_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
-    if [[ -z "$head_sha" ]]; then
-        echo "[done-gate] stage passed but HEAD does not resolve — NO marker written" >&2
+    local tree
+    tree="$(gate_tree "$repo_root" HEAD)"
+    if [[ -z "$tree" ]]; then
+        echo "[done-gate] green but HEAD's tree does not resolve — NO marker written" >&2
         exit 1
     fi
 
-    # F-14: a marker describes COMMITTED content. The gate ran against the working
-    # tree, so on a dirty tree what passed is not what the branch tip holds.
-    if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-        cat >&2 <<EOF
-[done-gate] stage passed BUT the working tree is dirty — NO marker written.
-The marker must describe the committed content the transition will judge.
-Commit (or stash), then re-run so the marker matches HEAD ($head_sha).
-EOF
-        exit 0
-    fi
-
-    local marker
-    marker="$(gate_marker_write "$GATE_NAME" "$repo_root" "$head_sha" 'stage=done-gate')" || {
-        echo "[done-gate] stage passed but the marker could not be written" >&2
-        exit 1
-    }
-    echo "[done-gate] green — wrote $marker" >&2
-    echo "[done-gate] 'rack transition <ID> done' on this commit now passes instantly." >&2
+    gate_stamp "$GATE_NAME" "$repo_root" "$tree" "$stages" || exit 1
+    echo "[done-gate] 'rack transition <ID> done' on this content now passes instantly." >&2
     exit 0
 }
 

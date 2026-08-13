@@ -49,7 +49,7 @@ lint: ## Run the lint stage (ruff check + formatter check)
 
 check: lint unit ## Fast inner loop: lint + unit only — full parity gate is `make gates`
 
-gates: ## Run every stage CI runs locally (lint, unit, coverage, merge-smoke)
+gates: ## Run every stage CI runs locally (the `all` bundle in scripts/ci-local.sh)
 	$(CI_LOCAL) all
 
 coverage: ## Run the coverage stage (unit + non-e2e integration, --cov-fail-under=78)
@@ -73,12 +73,10 @@ test-isolation: ## Check the suite patches its units no more than the baseline
 e2e: ## Run the e2e stage — the same selection the master pre-push gate runs
 	$(call timed_stage,e2e,$(TIMEOUT_E2E))
 
-# HATS-1137 — the gate `rack transition <ID> done` demands. The stage composition
-# is `ci-local.sh done-gate`; this target reaches it through the library's
-# done-gate.sh, which is what writes the SHA marker the in-lock check reads. The
-# gate runs where you invoke it, so run it in the TASK WORKTREE — the marker is
-# keyed to that branch's tip, and the check looks up exactly that commit.
-done-gate: ## Run the review->done gate here and mark this commit green (HATS-1137)
+# HATS-1137 — the gate `rack transition <ID> done` demands. Run it in the TASK
+# WORKTREE: the marker is keyed to the tree you run it on, which is the content
+# the check looks up. `ci-local.sh done-gate --stages` names what it runs.
+done-gate: ## Run the review->done gate here and mark this tree green (HATS-1137)
 	@py="$(PYTHON)"; [ -x "$(CURDIR)/.venv/bin/python3" ] && py="$(CURDIR)/.venv/bin/python3"; \
 	libroot="$$("$$py" -c 'import ai_hats_library, pathlib; print(pathlib.Path(ai_hats_library.__file__).parent)' 2>/dev/null || true)"; \
 	hook="$$libroot/usage/skills/maintainer-quality-gate/hooks/done-gate.sh"; \
