@@ -414,7 +414,7 @@ class WrapRunner:
         Returns (exit_code, session) so callers that need the session
         artefacts (transcript_path, audit, etc.) get them directly.
 
-        HATS-452 (П2 in ADR-0005). ``WrapRunner`` is the **HITL** runner —
+        HATS-452 (D2 in ADR-0005). ``WrapRunner`` is the **HITL** runner —
         a human is at the keyboard and the role's full composition reaches
         the agent through ``build_session_prompt``. It deliberately has
         **no** ``system_prompt_override`` channel: prompt injection in HITL
@@ -441,7 +441,7 @@ class WrapRunner:
         # session.session_id (HATS-294).
         session = self.session_mgr.create_session()
 
-        # HATS-452 (П2): no override channel on WrapRunner — the payload's
+        # HATS-452 (D2): no override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
         with provider.execution_context(self.project_dir):

@@ -40,7 +40,7 @@ Codify a **four-layer model** with a fixed lock-ordering hierarchy.
 Each layer is keyed at the granularity matching its actual contention
 surface; layers compose without inversion, so no deadlock is reachable.
 
-### П1 — Layered granularity, NOT a single repo-wide lock
+### D1 — Layered granularity, NOT a single repo-wide lock
 
 Each subsystem gets its own lock keyed at the right scope:
 
@@ -57,7 +57,7 @@ file, but it degrades parallelism unacceptably: two merges into
 no reason. The chosen keying matches bors / Kodiak / Mergify
 consensus for the merge layer, and the natural sharding for the others.
 
-### П2 — Lock ordering hierarchy is fixed; future layers justify their position
+### D2 — Lock ordering hierarchy is fixed; future layers justify their position
 
 When more than one lock is held simultaneously, acquisition is
 **always outer → inner** by layer number above:
@@ -83,7 +83,7 @@ clamps its own against it — work nested under a foreign lock cannot
 outlive it (HATS-1603). No wt lock is ordered above layer 1, so the
 hierarchy itself is unchanged.
 
-### П3 — Two contention sources, two strategies
+### D3 — Two contention sources, two strategies
 
 Internal contention (ai-hats vs ai-hats, same machine) is closed by
 `filelock.FileLock` (`fcntl.flock` advisory locks). External
@@ -105,7 +105,7 @@ fails fast for ai-hats vs ai-hats (we want determinism + readable
 error); retry absorbs external transient noise (we want the user's
 `git commit` not to break our merge).
 
-### П4 — Idempotency at the lifecycle layer, fail-loud at the integrity layer
+### D4 — Idempotency at the lifecycle layer, fail-loud at the integrity layer
 
 When a parallel peer completes destructive lifecycle ops (`merge` or
 `discard` on the same branch) before this caller acquires the
@@ -124,7 +124,7 @@ prevents the "GitHub Merge Queue April-2026" silent-loss class (DONE
 without verified merge). Fail-loud above, idempotency below — never
 the other way around.
 
-### П5 — All lock files under `<ai_hats_dir>`
+### D5 — All lock files under `<ai_hats_dir>`
 
 Every worktree-subsystem lock lives under
 `<ai_hats_dir>/sessions/worktrees/`, resolved through
@@ -249,7 +249,7 @@ flags HATS-481 already passes).
 - HATS-486 — stale-index.lock observability (v1, warn-only).
 - HATS-488 — teardown hardening (B-03/R-04/B-06).
 - `src/ai_hats/wt/locks.py` module docstring — canonical
-  in-code reference; mirror this ADR's П2 hierarchy.
+  in-code reference; mirror this ADR's D2 hierarchy.
 - `packages/ai-hats-tracker/src/ai_hats_tracker/state.py:_teardown_worktree` — site of L4' re-raise
   (data-integrity gate).
 - `tests/test_worktree_concurrency.py` — TC-N1..N20 fail-under-revert

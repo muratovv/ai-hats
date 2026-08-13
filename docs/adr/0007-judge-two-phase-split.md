@@ -17,7 +17,7 @@ The pragmatic forcing function was a real workflow shift requested by HATS-499: 
 
 Replace the runtime mode-switch with structural pipeline composition. Two roles, two pipeline phases, two baseline traits — one per privilege tier.
 
-### П1 — Tier-symmetric baseline composition
+### D1 — Tier-symmetric baseline composition
 
 | Role            | Baseline trait    | Tier | Allowed writes                  | Allowed CLI                                |
 | --------------- | ----------------- | ---- | ------------------------------- | ------------------------------------------ |
@@ -26,7 +26,7 @@ Replace the runtime mode-switch with structural pipeline composition. Two roles,
 
 `judge-auditor` is forbidden by its L0 baseline from invoking `ai-hats` CLI verbs or editing source files — the read-only contract is enforced by composition, not by inline protocol prose. `judge` inherits L1 from `base-judge` symmetrically with `role-judge`.
 
-### П2 — Mode-switch becomes pipeline composition
+### D2 — Mode-switch becomes pipeline composition
 
 `ai-hats reflect hypothesis` orchestrates two phase-pipelines sequentially:
 
@@ -35,11 +35,11 @@ Replace the runtime mode-switch with structural pipeline composition. Two roles,
 
 Mid-pipeline runner-switching in a single YAML was rejected: the `provider` step reads `interactive: bool` from the funnel as one value per run (`src/ai_hats/pipeline/steps/launch.py:88`). Two separate pipelines orchestrated by CLI (same pattern as `finalize-hitl` / `finalize-subagent` from HATS-535) is the minimal-mechanism solution — no new step types, no per-step `interactive` override.
 
-### П3 — Headless mode contract
+### D3 — Headless mode contract
 
 `ai-hats reflect hypothesis --headless` runs only Phase 1. The contract is **read-only by construction**: `judge-auditor` cannot mutate state through CLI (L0), and the pipeline does not invoke Phase 2. This makes the headless mode safe for CI / cron without a separate "dry-run" flag at the protocol level.
 
-### П4 — Draft → report flow
+### D4 — Draft → report flow
 
 CLI orchestration is explicit:
 
@@ -78,7 +78,7 @@ Empty draft (only `(none)` sections) is **not** a special case — Phase 2 still
 
 - HATS-499 — parent task introducing the two-phase workflow request.
 - HATS-535 — `launch_provider` split and `finalize-hitl` / `finalize-subagent` precedent for sub-pipeline orchestration.
-- HATS-452 / ADR-0005 — composition value contract; П2 (HITL vs Automate hard split) is the axis along which the two phases now live.
+- HATS-452 / ADR-0005 — composition value contract; D2 (HITL vs Automate hard split) is the axis along which the two phases now live.
 - HATS-514 / HYP-014 — symmetric attachment of hygiene rules in `trait-analyst-base`, anchoring the L0/L1 baselines.
 - `src/ai_hats/pipeline/steps/launch.py` — `provider` step runner dispatch.
 - `src/ai_hats/pipeline/steps/save.py` — `save_artifact` `saved_path` producer key.

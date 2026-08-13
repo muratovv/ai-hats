@@ -8,7 +8,7 @@ composition:
   # Tier-symmetric with role-judge: trait-analyst-base bundles global
   # hygiene + analyst baseline injection (English reports, no source edits
   # by default); base-auditor adds the L0 contract (no CLI, no dialogue,
-  # single artifact). HATS-513 / ADR-0007 §П1.
+  # single artifact). HATS-513 / ADR-0007 §D1.
   traits:
     - trait-analyst-base
     - base-auditor

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CompositionPayload:
-    """One composition per execution path (ADR-0005 П1) — built by the compose
+    """One composition per execution path (ADR-0005 D1) — built by the compose
     seam (:mod:`ai_hats.composition_seam`), consumed by runners and pipeline."""
 
     result: CompositionResult

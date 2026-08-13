@@ -61,7 +61,7 @@ distinguishes a timeout internally.
 ### Cleanup hook
 `Step` gains an optional `on_cancel(**inputs) -> dict | None` (default
 no-op). On timeout the runner invokes it and merges the returned partial-
-result delta via the None-filter rule (ADR-0005 П3); keys outside the step's
+result delta via the None-filter rule (ADR-0005 D3); keys outside the step's
 declared `produces` are dropped, and a raising `on_cancel` is logged and
 swallowed (cleanup must never crash the cancellation path). This is the
 channel for releasing resources — e.g. a process-group kill — and surfacing
@@ -105,7 +105,7 @@ pattern at the subprocess boundary.
 ## References
 - ADR-0001 (pipelines as typed dataflow — `Step` = `run(**inputs) -> dict` +
   `StepIO` projection; pipeline = step recursion)
-- ADR-0005 (composition & pipeline value contract — None-filter funnel, П3)
+- ADR-0005 (composition & pipeline value contract — None-filter funnel, D3)
 - HATS-274 (pipeline trace hooks)
 - HATS-378 (harness reliability policy — sub-agent subprocess timeout/retry)
 - HATS-585 (follow-up — cancel-aware `SubAgentRunner`)

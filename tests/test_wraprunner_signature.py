@@ -1,6 +1,6 @@
 """Contract guard: WrapRunner.run has NO ``system_prompt_override`` parameter.
 
-HATS-452 / П2 in ADR-0005: ``WrapRunner`` is the HITL runner — prompt
+HATS-452 / D2 in ADR-0005: ``WrapRunner`` is the HITL runner — prompt
 injection is meaningless here (the user types into the terminal) and
 the previously-exposed Optional override was the literal trap that
 caused HATS-452. The trap is physically removed; this test prevents a
@@ -28,7 +28,7 @@ def test_wraprunner_run_has_no_system_prompt_override():
         "HATS-452 regression: WrapRunner.run grew a "
         "system_prompt_override parameter again. HITL has no override "
         "channel — composition flows via build_session_prompt inside "
-        "run_session. See ADR-0005 §П2."
+        "run_session. See ADR-0005 §D2."
     )
 
 
@@ -40,6 +40,6 @@ def test_subagentrunner_run_keeps_system_prompt_override():
     params = inspect.signature(SubAgentRunner.run).parameters
     assert "system_prompt_override" in params, (
         "SubAgentRunner.run lost the system_prompt_override parameter — "
-        "HATS-267 sub-agent custom-prompt use case requires it. The П2 "
+        "HATS-267 sub-agent custom-prompt use case requires it. The D2 "
         "split is HITL-loses, Automate-keeps."
     )

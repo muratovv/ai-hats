@@ -27,7 +27,7 @@ from ai_hats_observe.artifacts import RETRO_LOG
 
 
 def test_compose_role_omits_key_when_no_composition(tmp_path: Path):
-    """HATS-452 / П3 + HATS-865: without a seeded ``composition`` payload the
+    """HATS-452 / D3 + HATS-865: without a seeded ``composition`` payload the
     step OMITS ``system_prompt`` entirely (rather than emitting ``""``)."""
     step = ComposeRole()
     out = step.run(project_dir=tmp_path, role=None)
@@ -47,7 +47,7 @@ def test_compose_role_projects_seeded_payload():
 
 
 def test_compose_role_empty_injection_omits_key():
-    """П3: empty merged injection → key omitted (None-filtered), never ""."""
+    """D3: empty merged injection → key omitted (None-filtered), never ""."""
     payload = MagicMock(name="composition_payload")
     payload.result.merged_injection = ""
     out = ComposeRole().run(composition=payload)

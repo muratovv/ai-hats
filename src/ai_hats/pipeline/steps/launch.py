@@ -117,7 +117,7 @@ class Provider(Step):
             eff_extra = list(extra_args or [])
             if prompt_text:
                 eff_extra = [prompt_text, *eff_extra]
-            # HATS-452 (П2 in ADR-0005): WrapRunner is HITL — no override
+            # HATS-452 (D2 in ADR-0005): WrapRunner is HITL — no override
             # channel; the payload's composition reaches the agent via
             # ``build_session_prompt`` inside ``run``.
             runner = WrapRunner(

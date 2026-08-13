@@ -19,17 +19,17 @@ The architectural smell behind these mechanics: **composition was computed twice
 
 Four principles govern composition and pipeline value semantics across the framework. The fix lands at four layers (mechanism > convention > reminder > test) — partial delivery leaves the class of bug recurrent.
 
-### П1 — Composition is an immutable first-class object
+### D1 — Composition is an immutable first-class object
 
 `CompositionResult` and `ResolvedComponent` are `@dataclass(frozen=True)`. Field reassignment is forbidden. Transformations that derive a *modified* result go through explicit `with_*` methods (`with_injection_override(text) -> CompositionResult`) that return new instances. Re-composing the same `(role, overlays)` pair in a second layer to obtain a "modified" variant is forbidden — that's re-derivation of the same logical entity in two places.
 
-### П2 — HITL vs Automate as the primary runtime-API axis
+### D2 — HITL vs Automate as the primary runtime-API axis
 
 `WrapRunner` (HITL, PTY-proxied — a human types at the keyboard) **has no `system_prompt_override` channel**. Role composition reaches the agent through `composer.compose(...)` + `build_session_prompt` inside `run_session`. Prompt injection is meaningless in HITL; the Optional override was the literal trap that caused HATS-452.
 
 `SubAgentRunner` (Automate, subprocess — the HATS-267 use case) accepts an explicit prompt via the existing parameter. Sub-agents that need a caller-supplied prompt go through this surface.
 
-### П3 — Pipeline funnel value contract
+### D3 — Pipeline funnel value contract
 
 Producer-emits / consumer-may-ignore funnel semantics stay — they enable custom pipelines. But values in the funnel are unambiguous:
 
@@ -38,7 +38,7 @@ Producer-emits / consumer-may-ignore funnel semantics stay — they enable custo
 
 Custom-pipeline authors inherit this contract for free — no per-step boilerplate.
 
-### П4 — Audit/visibility lives in a separate channel
+### D4 — Audit/visibility lives in a separate channel
 
 Composition snapshots for session audit (`_composition_snapshot` → `Session.init_audit`) are emitted by dedicated audit infrastructure, not as a side effect of a data-producing pipeline step. A producer step does not piggyback composition data into its `produces` set so a downstream consumer can route on it.
 
@@ -56,9 +56,9 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 **New artifacts**
 
 - `library/core/rules/rule_composition_value_contract/` — agent-facing reminder; attached to `trait-agent` so the rule body materializes in every agent session prompt (~600-char budget).
-- `tests/test_composer_immutable.py` — П1 invariants.
-- `tests/test_wraprunner_signature.py` — П2 invariants.
-- `tests/pipeline/test_funnel_value_contract.py` — П3 invariant.
+- `tests/test_composer_immutable.py` — D1 invariants.
+- `tests/test_wraprunner_signature.py` — D2 invariants.
+- `tests/pipeline/test_funnel_value_contract.py` — D3 invariant.
 - `tests/e2e/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes.
 
 **What does NOT change**
@@ -71,16 +71,16 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 ## Alternatives considered
 
 **V1 (audit-only): turn `compose_role` into an audit-snapshot step, leave the override channel alone.**
-Closes this instance of the bug but leaves П2 unsatisfied — the `Optional[str]` override pattern on `WrapRunner.run` is still there for a future call-site to misuse. Rejected: doesn't prevent the class.
+Closes this instance of the bug but leaves D2 unsatisfied — the `Optional[str]` override pattern on `WrapRunner.run` is still there for a future call-site to misuse. Rejected: doesn't prevent the class.
 
 **V3 (sentinel-type override): keep dual composition, replace `Optional[str]` with `NoOverride | UseText(text)` algebraic type.**
-Self-documenting at the type level; mechanical bug fixed. But П1 stays unsatisfied (composition computed twice) and the architectural duplication that made the Optional necessary remains. Rejected: pastes a label on the smell rather than removing it.
+Self-documenting at the type level; mechanical bug fixed. But D1 stays unsatisfied (composition computed twice) and the architectural duplication that made the Optional necessary remains. Rejected: pastes a label on the smell rather than removing it.
 
 **Chosen — full four-layer fix.** Mechanism prevents the bug class at the type / API / framework-behavior layer; convention (this ADR) documents intent; reminder (new rule) keeps agents aware; test (e2e + three unit guards) catches regressions early.
 
-## Phase 2 — П1-meta closure (HATS-456, 2026-05-23)
+## Phase 2 — D1-meta closure (HATS-456, 2026-05-23)
 
-П1 above forbids *re-composition* of the same `(role, overlays)` pair in two layers — that's re-derivation of the same logical entity. Phase 1 (the HATS-452 fix) closed the **acute** instance: composition was no longer computed twice across `ComposeRole` step and `WrapRunner.run_session`.
+D1 above forbids *re-composition* of the same `(role, overlays)` pair in two layers — that's re-derivation of the same logical entity. Phase 1 (the HATS-452 fix) closed the **acute** instance: composition was no longer computed twice across `ComposeRole` step and `WrapRunner.run_session`.
 
 But the same logical operation — `composer.compose(role, overlays=assembler._get_overlays(role))` — was still inlined at multiple sites:
 
@@ -91,11 +91,11 @@ But the same logical operation — `composer.compose(role, overlays=assembler._g
 - Several compose-only sites in `Assembler` (init / set_default_role / status / bump / tier2 lookup / mirror-dir setup)
 - One site in `cli/maintenance.py` (composition snapshot for self-update)
 
-The sites were *accidentally* aligned — they all spelled the call the same way — but the alignment was a coincidence of code review, not a structural guarantee. A future change adding an extra overlay (or skipping `_get_overlays`) in any single site would silently produce a different composition for that path, reproducing the П1-meta problem at the catalog level.
+The sites were *accidentally* aligned — they all spelled the call the same way — but the alignment was a coincidence of code review, not a structural guarantee. A future change adding an extra overlay (or skipping `_get_overlays`) in any single site would silently produce a different composition for that path, reproducing the D1-meta problem at the catalog level.
 
 **Phase-2 closure.** New module `src/ai_hats/materialize.py` exposes one function — `compose_for_role(assembler, role) -> CompositionResult` — which is the sole place in `src/ai_hats/` where the with-overlays compose call appears. Every consumer above now routes through it. A grep-style guard (`tests/test_no_direct_compose_outside_facade.py`) makes future drift fail at test time.
 
-The build surface stays runtime-specific per П2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
+The build surface stays runtime-specific per D2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
 
 One pattern was intentionally **not** migrated to the facade:
 
@@ -103,13 +103,13 @@ One pattern was intentionally **not** migrated to the facade:
 
 This has a different semantic from "compose role X for this project" and would change behavior if force-fitted onto the facade. The Phase-2 drift guard's regex narrowed accordingly: it matches the `overlays=` form only.
 
-> **HATS-501 retrospective (2026-05-25):** `pipeline/steps/compose.py` was *also* on this list as "audit-only, П4" — that classification was wrong. The step's funnel output (`system_prompt`) was a *production* role-delivery value consumed by `LaunchProvider` on the sub-agent path, which fed it into `SubAgentRunner.run` as `system_prompt_override`. The no-overlay form silently dropped global + project overlay content from the SDK system_prompt (HATS-501). HATS-501 routed the step through the facade; HATS-505 then removed the redundant pipeline-side override pass-through entirely (override channel reserved for explicit HATS-267 callers — see Phase-3 below).
+> **HATS-501 retrospective (2026-05-25):** `pipeline/steps/compose.py` was *also* on this list as "audit-only, D4" — that classification was wrong. The step's funnel output (`system_prompt`) was a *production* role-delivery value consumed by `LaunchProvider` on the sub-agent path, which fed it into `SubAgentRunner.run` as `system_prompt_override`. The no-overlay form silently dropped global + project overlay content from the SDK system_prompt (HATS-501). HATS-501 routed the step through the facade; HATS-505 then removed the redundant pipeline-side override pass-through entirely (override channel reserved for explicit HATS-267 callers — see Phase-3 below).
 
 ### Phase 3 — pipeline-scoped drift guard + override-channel discipline (HATS-505)
 
 The Phase-2 drift guard caught the *with-overlays* drift outside the facade. It missed the *no-overlays* drift inside the pipeline subtree — exactly the shape HATS-501 took. HATS-505 adds a second guard test, `test_no_direct_compose_inside_pipeline_subtree`, that flags any `composer.compose(...)` call (with or without `overlays=`) inside `src/ai_hats/pipeline/`. The whitelist is a `dict[Path, str]` requiring a justification per entry; empty by design today. The `cli/reflect.py` exception lives outside `pipeline/` and is not affected.
 
-HATS-505 also tightened П2's Automate-side reading. The override channel on `SubAgentRunner.run` is reserved for **explicit caller use** — HATS-267 sub-agent callers (future direct API consumers). The pipeline does **not** pre-fill it: the runner's own `compose_for_role(self.assembler, role_name)` call applies overlays. A pipeline-side pre-fill is, at best, a redundant re-composition; at worst (HATS-501 shape) a partial composition that silently replaces the runner's correctly-composed `injections` list via `with_injection_override`. A warning comment at the runtime call site tells future HATS-267 callers to *augment*, not *replace*.
+HATS-505 also tightened D2's Automate-side reading. The override channel on `SubAgentRunner.run` is reserved for **explicit caller use** — HATS-267 sub-agent callers (future direct API consumers). The pipeline does **not** pre-fill it: the runner's own `compose_for_role(self.assembler, role_name)` call applies overlays. A pipeline-side pre-fill is, at best, a redundant re-composition; at worst (HATS-501 shape) a partial composition that silently replaces the runner's correctly-composed `injections` list via `with_injection_override`. A warning comment at the runtime call site tells future HATS-267 callers to *augment*, not *replace*.
 
 > **Superseded in part (HATS-865, Phase 5 below).** "The runner's own
 > `compose_for_role` call applies overlays" is no longer how delivery works —
@@ -122,7 +122,7 @@ HATS-505 also tightened П2's Automate-side reading. The override channel on `Su
 
 ### Phase 4 — silent-key sibling (HATS-515)
 
-П3 names *silent-None*: emitting `""` to mean "absent" is a trap because
+D3 names *silent-None*: emitting `""` to mean "absent" is a trap because
 consumer guards on `is not None`. HATS-515 surfaced the sibling class —
 *silent-key*: pydantic's default `extra="ignore"` on `_YamlModel` (the
 common base for all YAML round-trippable models) means a typo'd key in
@@ -183,7 +183,7 @@ Composition rule violation). HATS-865 inverts the direction:
   `system_prompt`); `MaterializeSystemPrompt` renders the seeded payload; the
   `provider` step hands the SAME object to the runner — the funnel object IS
   the runner object (identity pinned in `tests/test_pipeline_human_yaml.py`).
-- **П1 sharpened.** No second composition of the same `(role, overlays)` for
+- **D1 sharpened.** No second composition of the same `(role, overlays)` for
   prompt delivery per execution path. `Assembler.set_role` still composes
   internally for its on-disk write and `HooksManager`'s result-less resync
   edge may compose (carve-out #2) — neither is prompt delivery.
@@ -212,12 +212,12 @@ explicit ALLOWED set from referencing the composition layer at any level.
 
 - HATS-294 — per-session cache + override mechanism (introduced the HATS-267 channel that was later misused).
 - HATS-267 — sub-agent custom prompt (legitimate use of the override channel, on the Automate path).
-- HATS-442 — record role composition snapshot per session (existing audit-side surface that П4 preserves).
-- HATS-456 — П1-meta closure: the materialization facade described in Phase 2 above.
-- HATS-501 — Automate-path regression of the П1-meta class (`pipeline/steps/compose.py` was direct-composing without overlays; routed through the facade).
+- HATS-442 — record role composition snapshot per session (existing audit-side surface that D4 preserves).
+- HATS-456 — D1-meta closure: the materialization facade described in Phase 2 above.
+- HATS-501 — Automate-path regression of the D1-meta class (`pipeline/steps/compose.py` was direct-composing without overlays; routed through the facade).
 - HATS-505 — Phase-3 closure: pipeline-scoped no-overlay drift guard + override-channel discipline (pipeline no longer pre-fills `system_prompt_override`).
 - HATS-515 — Phase-4 closure: silent-key sibling; `HooksConfig` validates lifecycle event keys at parse, `_merge_hooks` derives event list from `LifecycleEvent`.
 - HATS-506 — umbrella epic for role-delivery harness contracts (sister to HATS-499 which owns library / content side).
-- HATS-523 — П4 application: HITL audit-persistence symmetry. `WrapRunner` now saves the materialized system prompt to `<session_dir>/meta_prompt.txt` (already done by `SubAgentRunner`). `Provider.build_session_prompt` extended to 3-tuple to surface the bytes through to the runner. Contracts П1–П4 unchanged.
+- HATS-523 — D4 application: HITL audit-persistence symmetry. `WrapRunner` now saves the materialized system prompt to `<session_dir>/meta_prompt.txt` (already done by `SubAgentRunner`). `Provider.build_session_prompt` extended to 3-tuple to surface the bytes through to the runner. Contracts D1–D4 unchanged.
 - HATS-865 — Phase-5 closure: composition inverted; the integrator composes once (`composition_seam`), the `CompositionPayload` is funnel-seeded and injected into runners; bricks never import the composition layer (deny-by-default lint).
-- ADR-0001 / ADR-0002 — pipeline / step contracts. П3 is a refinement of the existing funnel semantics, not a new mechanism.
+- ADR-0001 / ADR-0002 — pipeline / step contracts. D3 is a refinement of the existing funnel semantics, not a new mechanism.

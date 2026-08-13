@@ -1,6 +1,6 @@
 """Contract guard: pipeline funnel drops ``None`` at the merge boundary.
 
-HATS-452 / П3 in ADR-0005: the pipeline funnel value contract says
+HATS-452 / D3 in ADR-0005: the pipeline funnel value contract says
 ``None``-valued keys are equivalent to "key absent" — and the framework
 enforces it by filtering ``None`` out of every step's delta before
 merging into the shared context. This makes the empty-Optional-as-absent
@@ -76,7 +76,7 @@ def test_funnel_drops_none_values_from_step_delta(tmp_path):
     """None-valued producer keys are filtered at the merge boundary;
     consumer sees them as absent (default value kicks in).
 
-    Falsy non-None values (``""``) survive — П3 explicitly preserves
+    Falsy non-None values (``""``) survive — D3 explicitly preserves
     them as legitimate values whose semantics differ from "absent".
     """
     del tmp_path
@@ -87,7 +87,7 @@ def test_funnel_drops_none_values_from_step_delta(tmp_path):
     # State view: absent_key dropped, present_key + empty_string_key kept.
     assert "absent_key" not in final, (
         "HATS-452 regression: None-valued key leaked into context "
-        "(should be dropped at funnel merge per П3)"
+        "(should be dropped at funnel merge per D3)"
     )
     assert final["present_key"] == "hello"
     assert final["empty_string_key"] == ""  # falsy but NOT absent

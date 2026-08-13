@@ -183,7 +183,7 @@ class SubAgentRunner:
         # *augmented* (not replacement) string. Layered ``result`` is above.
         if system_prompt_override is not None:
             # HATS-452: explicit immutable transformation via the typed
-            # ``with_*`` API on ``CompositionResult`` (П1 in ADR-0005).
+            # ``with_*`` API on ``CompositionResult`` (D1 in ADR-0005).
             result = result.with_injection_override(system_prompt_override)
         provider = self.payload.provider
         provider_name = provider.name
