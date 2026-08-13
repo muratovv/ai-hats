@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**240 of 240 files catalogued — 248 flows.**
+**241 of 241 files catalogued — 249 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1266,6 +1266,20 @@ as a claim to check, not as evidence.
 
 - **expect** — session initialization materializes runtime tool hooks while skipping retired lifecycle hooks
 - **why** — without lifecycle hook retirement, deprecated hook types generate unnecessary settings.json noise
+
+## `test_lint_scope_covers_packages.py`
+
+*pins HATS-1651*
+
+- **flow** — a maintainer running the local lint gate over a tree whose one unformatted file sits outside src/ and tests/
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh lint
+  ```
+
+- **expect** — the gate exits non-zero and names that file, instead of reporting green
+- **why** — `ruff check` walked the whole tree while `ruff format --check` walked only src/ and tests/, so a file under packages/ earned a green gate
 
 ## `test_list_rules_survives_broken_metadata.py`
 

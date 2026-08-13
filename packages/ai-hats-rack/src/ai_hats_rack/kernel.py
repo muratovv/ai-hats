@@ -871,7 +871,14 @@ class Kernel:
             if not self._dispatcher.subscribers_for(event.key, Phase.IN_LOCK):
                 return
             ctx = self._ctx_factory(
-                event, task, caller_cwd, self.is_epic(task_id), actor, force, reason, lock_expires_at
+                event,
+                task,
+                caller_cwd,
+                self.is_epic(task_id),
+                actor,
+                force,
+                reason,
+                lock_expires_at,
             )
             self._dispatcher.run_blocking(event, ctx, apply_delta, outcomes)
 
