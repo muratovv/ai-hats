@@ -74,8 +74,11 @@ def _run_surface(
         stderr=subprocess.PIPE,
         text=True,
     ) as proc:
-        on_spawn(proc.pid)
         try:
+            # Inside the guard: Popen.__exit__ only closes the pipes and waits, so
+            # a callback that raises out here would block on a surface that runs
+            # for hours instead of killing it.
+            on_spawn(proc.pid)
             stdout, stderr = proc.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
             proc.kill()

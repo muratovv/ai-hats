@@ -831,7 +831,13 @@ class WrapRunner:
             return 1
 
         if on_spawn is not None:
-            on_spawn(proc.pid)
+            try:
+                on_spawn(proc.pid)
+            except Exception as exc:
+                # The child already holds the tty; leaving it there because a
+                # bookkeeping callback failed would strand an interactive surface
+                # with nobody draining its pty.
+                logger.warning("session-cache claim skipped for pid %s: %r", proc.pid, exc)
 
         # Use raw fd constants (not sys.stdin/stdout.fileno()) so test harnesses
         # that wrap sys.stdin/stdout still pass through to the real terminal —

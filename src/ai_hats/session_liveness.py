@@ -243,6 +243,11 @@ class LivenessSnapshot:
             return False
         if start_time is None:
             return True
+        if not current:
+            # The row exists — so the pid does — but carries no rendering to
+            # compare. Every other unknown here keeps the dir; comparing against
+            # "" would answer "reused" and reap a live session on a malformed row.
+            return True
         return current == _normalize(start_time)
 
 

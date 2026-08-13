@@ -806,3 +806,22 @@ def test_claimed_cache_survives_a_sweep_by_a_peer(tmp_path):
     _sweep_orphan_session_caches(tmp_path)
 
     assert cache_dir.exists(), "an anchored dir is never decided by age"
+
+
+def test_a_raising_spawn_callback_never_strands_the_surface(tmp_path, monkeypatch):
+    """``on_spawn`` is an injected seam, and a raising one used to leave the child
+    running: ``Popen.__exit__`` closes the pipes and then waits, so the runner
+    blocked on a surface that can run for hours instead of killing it."""
+    from ai_hats.subagent_runner import _run_surface
+
+    def _boom(_pid):
+        raise RuntimeError("claim exploded")
+
+    with pytest.raises(RuntimeError, match="claim exploded"):
+        _run_surface(
+            [sys.executable, "-c", "import time; time.sleep(600)"],
+            work_dir=tmp_path,
+            env=dict(os.environ),
+            timeout_s=30,
+            on_spawn=_boom,
+        )

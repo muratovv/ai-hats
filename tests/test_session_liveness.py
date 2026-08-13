@@ -108,6 +108,18 @@ def test_the_pid_and_state_columns_are_stripped_and_padding_normalized():
     assert snapshot.is_live(123, "Wed Jun  9 18:02:29 2026") is True
 
 
+def test_a_row_with_no_lstart_column_keeps_the_dir():
+    """The pid is IN the table, so it exists — there is just nothing to compare.
+
+    Comparing the stored ``""`` against a real baseline answers "reused" and
+    reaps a live session; every other unknown in this module keeps the dir.
+    """
+    snapshot = LivenessSnapshot.capture(command=["echo", "123 Ss"])
+    assert snapshot.start_times == {123: ""}
+    assert snapshot.is_live(123, "Wed Jun  9 18:02:29 2026") is True
+    assert snapshot.is_live(123, None) is True
+
+
 def test_a_zombie_row_is_read_as_death_even_when_its_baseline_matches():
     """The row is otherwise perfect: same pid, the ``lstart`` it was born with.
 
