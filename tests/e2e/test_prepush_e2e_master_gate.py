@@ -206,7 +206,11 @@ def _write_marker(repo: Path, tree: str, stages: str = "e2e") -> Path:
 
 def _tree(repo: Path, rev: str = "HEAD") -> str:
     return subprocess.run(
-        ["git", "rev-parse", f"{rev}^{{tree}}"], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "rev-parse", f"{rev}^{{tree}}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -475,7 +479,7 @@ def test_run_mode_lint_failure_blocks_before_the_e2e_tier(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1, res.stderr
-    assert "stage \'lint\' FAILED" in res.stderr
+    assert "stage 'lint' FAILED" in res.stderr
     assert "NO marker written" in res.stderr
     assert not _tier_ran(bindir), "e2e tier ran despite a red preamble"
     assert not _marker_dir(repo).exists() or not any(_marker_dir(repo).iterdir())
@@ -492,7 +496,7 @@ def test_run_mode_unit_failure_blocks_and_names_the_stage(tmp_path: Path):
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1, res.stderr
-    assert "stage \'unit\' FAILED" in res.stderr
+    assert "stage 'unit' FAILED" in res.stderr
     assert _stages_run(repo) == ["lint", "unit"]
     assert not _tier_ran(bindir)
 
@@ -512,7 +516,7 @@ def test_run_mode_e2e_catalog_failure_blocks_and_names_the_stage(tmp_path: Path)
     res = _run(bindir, cwd=repo)
 
     assert res.returncode == 1, res.stderr
-    assert "stage \'e2e-catalog\' FAILED" in res.stderr
+    assert "stage 'e2e-catalog' FAILED" in res.stderr
     assert "NO marker written" in res.stderr
     assert _stages_run(repo) == ["lint", "unit", "e2e-catalog"], "stops at the first red"
     assert not _tier_ran(bindir), "e2e tier ran despite a red e2e-catalog stage"
