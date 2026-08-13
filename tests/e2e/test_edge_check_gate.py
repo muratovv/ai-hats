@@ -1040,8 +1040,7 @@ def test_a_foreign_sessions_envelope_does_not_disarm_this_projects_gate(
     refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=foreign_env)
 
     assert refused.returncode == 1, (
-        "project A's gate was chosen by project B's session\n"
-        f"{refused.stdout}{refused.stderr}"
+        f"project A's gate was chosen by project B's session\n{refused.stdout}{refused.stderr}"
     )
     assert f"{EDGE} aborted by 'checks'" in refused.stderr
     # The script's own words: proof it RAN, not merely that something refused.
