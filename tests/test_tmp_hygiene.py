@@ -3,9 +3,11 @@
 Two contracts of the autouse ``_wt_sandbox`` session fixture (the
 repo-root ``conftest.py``):
 
-1. **Redirect is live** — ``tempfile.gettempdir()`` (and therefore every
-   ``ai-hats-wt-*`` ``mkdtemp`` in ``worktree.py``) points at a
-   pytest-owned ``wt-sandbox`` dir, NOT the real temp root.
+1. **Redirect is live** — ``tempfile.gettempdir()`` (and therefore any
+   ``ai-hats-wt-*`` ``mkdtemp`` that still reaches it) points at a
+   pytest-owned ``wt-sandbox`` dir, NOT the real temp root. Since HATS-1632
+   that is the bare-core fallback only — the ai-hats road mints under
+   ``worktree_checkouts_dir``, guarded by the cache-home sandbox instead.
 2. **Pass-only gate** — a GREEN session sweeps the sandbox; a session
    with failures PRESERVES it for triage. Exercised via ``pytester``
    running the REAL (copied-verbatim) conftest in an isolated subprocess

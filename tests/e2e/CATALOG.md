@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**242 of 242 files catalogued — 250 flows.**
+**243 of 243 files catalogued — 251 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3106,6 +3106,21 @@ as a claim to check, not as evidence.
 
 - **expect** — both creates succeed; neither is refused by the create lock
 - **why** — wt_in is documented at 45s but ran inside the repo-wide create lock, whose budget is 10s — a peer on an unrelated branch was refused.
+
+## `test_wt_create_lands_outside_tmpdir.py`
+
+*pins HATS-1632*
+
+- **flow** — an agent taking a card into execute, which mints the worktree
+- **cmds**
+
+  ```console
+  rack transition <ID> execute      # the FSM road, via wt_effects
+  ai-hats wt merge <branch>         # teardown from the new root
+  ```
+
+- **expect** — the tree lands under <cache_home>/<project-key>/worktrees/, never in the temp root, and merge still tears it down leaving no admin entry
+- **why** — macOS reaps $TMPDIR by access time (dirhelper, 3 days) and a uv-materialized venv arrives pre-aged from the uv cache, so a worktree born there loses its cold half at the next sweep
 
 ## `test_wt_entry_gate_hook.py`
 
