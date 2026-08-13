@@ -77,6 +77,10 @@ def agy_chain(tmp_path: Path) -> SimpleNamespace:
     env = {
         **os.environ,
         "HOME": str(user_config.parents[1]),
+        # The envelope IS how a session reaches the dispatcher since HATS-1594, and
+        # the e2e conftest scrubs it from os.environ — so it has to be planted here
+        # or the dispatcher exits early as a standalone agy run and nothing fires.
+        "AI_HATS_SESSION_IDENTITY": json.dumps({"id": SESSION_ID, "project_dir": str(project)}),
         "AI_HATS_SESSION_ID": SESSION_ID,
         "AI_HATS_PROJECT_DIR": str(project),
         "AI_HATS_SESSION_CACHE_DIR": str(cache),
