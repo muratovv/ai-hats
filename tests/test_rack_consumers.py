@@ -11,6 +11,7 @@ import json
 import os
 import stat
 import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -90,7 +91,12 @@ def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "r
     )
 
 
-def _ctx(event_key: str = "edge:review--done", *, task_id: str = "T-1") -> DispatchContext:
+def _ctx(
+    event_key: str = "edge:review--done",
+    *,
+    task_id: str = "T-1",
+    lock_expires_at: float | None = None,
+) -> DispatchContext:
     src, dst = event_key.removeprefix("edge:").split("--")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
@@ -98,6 +104,7 @@ def _ctx(event_key: str = "edge:review--done", *, task_id: str = "T-1") -> Dispa
         caller_cwd=Path.cwd(),
         is_epic=False,
         actor="test",
+        lock_expires_at=lock_expires_at,
     )
 
 
@@ -1177,3 +1184,25 @@ def test_an_unreadable_component_tree_is_loud_not_a_silent_false(tmp_path, monke
         (root / "traits").chmod(0o755)
 
     assert "traits" in str(exc_info.value)
+
+
+def test_a_check_cannot_outlive_the_task_lock_it_fires_in(tmp_path):
+    """HATS-1603: the edge check used to mint a fresh EDGE_CHECK_TIMEOUT_S at its
+    own t0, so a lock already spent still bought it a full budget past the lock's
+    end. With the kernel's instant shipped, an exhausted lock leaves no budget."""
+    script = _script(tmp_path, "exit 0")
+    runner = _runner(tmp_path, _check(script))
+
+    with pytest.raises(AbortOperation) as exc_info:
+        runner.on_event(_ctx(lock_expires_at=time.monotonic() - 1.0))
+
+    assert "had no time left" in exc_info.value.reason
+    assert "rack task lock" in exc_info.value.reason  # names the lock, not a constant
+
+
+def test_a_check_under_a_live_lock_still_runs(tmp_path):
+    """The clamp only shrinks: a lock with room left leaves the check its budget."""
+    script = _script(tmp_path, "exit 0")
+    runner = _runner(tmp_path, _check(script))
+
+    assert runner.on_event(_ctx(lock_expires_at=time.monotonic() + 300.0)) is None

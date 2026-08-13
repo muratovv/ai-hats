@@ -38,6 +38,18 @@ from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
 
 
+def _shipped_deadline(request: CheckRequest) -> Deadline:
+    """The ceiling a check runs under (HATS-1603).
+
+    The rack forbids itself a core dependency, so it ships the moment its task
+    lock expires and the type is minted here. Without one — a road that holds no
+    task lock — the check is bounded by its own budget, declared as such.
+    """
+    if request.lock_expires_at is None:
+        return Deadline.without_lock(request.timeout, why="rack check, no task lock")
+    return Deadline(request.lock_expires_at, "rack task lock")
+
+
 class AiHatsCheckPort:
     """``ai_hats_rack.checks.CheckPort``: where rows come from, and who runs one.
 
@@ -106,10 +118,7 @@ class AiHatsCheckPort:
             check.script_path,
             point=request.event,
             budget=request.timeout,
-            # The rack forbids itself a core dependency, so it ships a number and
-            # not a deadline; minting here still shares one ceiling across the
-            # checks of one transition. Moving t0 to the lock: follow-up.
-            deadline=Deadline.without_lock(request.timeout, why="rack task lock (shipped)"),
+            deadline=_shipped_deadline(request),
             project_dir=self._project(),
             force=request.force,
             task_id=request.task_id,
