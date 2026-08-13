@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**232 of 232 files catalogued — 239 flows.**
+**233 of 233 files catalogued — 240 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -1620,6 +1620,22 @@ as a claim to check, not as evidence.
 
 - **expect** — card artifacts are created inside the directory specified by AI_HATS_DIR and the current project directory remains unmodified
 - **why** — rack must respect explicit AI_HATS_DIR overrides to allow sandboxed operation without polluting project repositories
+
+## `test_rack_race_condition.py`
+
+*pins HATS-1466*
+
+- **flow** — several agents log work against the SAME card at once — parallel sub-agents on one ticket, or a session racing its own hooks
+- **cmds**
+
+  ```console
+  rack create race-target-task --description "..."
+  rack transition <ID> --log "<message>"
+  rack doctor
+  ```
+
+- **expect** — every entry survives — the card holds exactly as many work_log lines as calls made, the YAML still parses, and `rack doctor` reports the backlog intact
+- **why** — without the card lock a losing writer's read-modify-write drops the winner's entry, or leaves half-serialised YAML — both invisible until someone looks for a log line that was never there. The Kernel-API tier is covered by test_card_lock_concurrency.py (HATS-1264); this drives the CLI, the surface agents actually call.
 
 ## `test_rack_reparent_e2e.py`
 
