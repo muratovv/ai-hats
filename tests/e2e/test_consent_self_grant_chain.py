@@ -25,8 +25,8 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-#: Read by the rack PROCESS, so an inline prefix reaches them (unlike the
-#: hook-read AI_HATS_SHARED_STATE_ACK, where the prefix cannot work by construction).
+#: Read by the rack PROCESS, so an inline prefix reaches them (unlike the hook-read
+#: AI_HATS_SHARED_STATE_ACK, where the prefix cannot work by construction) — HATS-1639.
 PROCESS_READ_ACKS = ["AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK"]
 
 

@@ -34,9 +34,12 @@ class PlanConsentExtension:
             raise AbortOperation(
                 f"Transition 'plan -> execute' for '{ctx.task.id}' requires supervisor approval. "
                 "AI_HATS_PLAN_ACK=1 is not set in environment.\n"
-                "1. Present plan.md to the supervisor in chat.\n"
-                "2. After receiving explicit approval, re-run with:\n"
-                f"   AI_HATS_PLAN_ACK=1 rack transition {ctx.task.id} execute"
+                "1. Present plan.md to the supervisor in chat and STOP.\n"
+                "2. Consent is the supervisor's to give, from the environment that\n"
+                "   launched this session — an inline prefix on the agent's own command\n"
+                "   is refused as a self-grant (HATS-1639):\n"
+                "     export AI_HATS_PLAN_ACK=1\n"
+                f"   then: rack transition {ctx.task.id} execute"
             )
         return None
 

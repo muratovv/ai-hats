@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**232 of 232 files catalogued — 239 flows.**
+**234 of 234 files catalogued — 241 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -562,6 +562,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
 - **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
+
+## `test_consent_self_grant_chain.py`
+
+*pins HATS-1639*
+
+- **flow** — an agent granting itself supervisor consent inline, in the same Bash call
+- **cmds**
+
+  ```console
+  AI_HATS_PLAN_ACK=1 rack transition HATS-1 execute
+  ```
+
+- **expect** — the composed PreToolUse chain refuses it; consent set in the ENVIRONMENT still works, and an unprefixed transition still passes
+- **why** — rack reads these two acks itself, so unlike hook-read AI_HATS_SHARED_STATE_ACK an inline prefix reaches them and the agent approves its own transition
 
 ## `test_customize_parallel_writes.py`
 
@@ -2678,6 +2692,21 @@ as a claim to check, not as evidence.
 
 - **expect** — the PreToolUse hook emits additionalContext suggesting dedicated tools without blocking or modifying command permissions
 - **why** — tool hygiene guidance encourages efficient tool choices while remaining non-blocking to preserve execution flow
+
+## `test_tool_hygiene_nudge_tool_agnostic.py`
+
+*pins HATS-1630*
+
+- **flow** — an agent running a raw grep/find in a session whose tool set may not include the dedicated Grep/Glob tools
+- **cmds**
+
+  ```console
+  grep -rn PATTERN src/
+  find . -name '*.py'
+  ```
+
+- **expect** — the hygiene nudge conditions its advice on the tool being available and still never gates the call
+- **why** — the PreToolUse payload carries no tool inventory, so a nudge that names a tool outright can advise one that does not exist — and a Grep-less session must keep its only search path open
 
 ## `test_transition_execute_adopts_worktree.py`
 
