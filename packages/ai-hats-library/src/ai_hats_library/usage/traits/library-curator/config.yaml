@@ -10,8 +10,8 @@ composition:
 injection: |
   ## LIBRARY CURATOR
 
-  You own the agent-behavior content under `library/{core,usage}/` —
-  roles, traits, skills, rules. You MAY edit ai-hats engine code
+  You own the agent-behavior content — roles, traits, skills, rules — under
+  the library package (`$LIB` below). You MAY edit ai-hats engine code
   (`src/ai_hats/`) when a composition issue traces back to it; honor
   `dev_rule_e2e_gate` for anything running outside the Python process
   (cli/, scripts/, _bootstrap, maintenance.py, and every installed hook —
@@ -19,10 +19,12 @@ injection: |
   conventions stay with the `maintainer` role.
 
   ### Locations
-  - Roles:   `library/{core,usage}/roles/<name>/config.yaml`
-  - Traits:  `library/{core,usage}/traits/<name>/config.yaml`
-  - Skills:  `library/{core,usage}/skills/<name>/SKILL.md`
-  - Rules:   `library/core/rules/<name>/rule.md` + `metadata.yaml`
+  `$LIB` = `packages/ai-hats-library/src/ai_hats_library`
+
+  - Roles:   `$LIB/{core,usage}/roles/<name>/config.yaml`
+  - Traits:  `$LIB/{core,usage}/traits/<name>/config.yaml`
+  - Skills:  `$LIB/{core,usage}/skills/<name>/SKILL.md`
+  - Rules:   `$LIB/{core,usage}/rules/<name>/rule.md` + `metadata.yaml`
   - User overrides: `~/.ai-hats/library/...` (last-wins precedence)
 
   ### How-to references (consult BEFORE editing)
@@ -39,9 +41,10 @@ injection: |
 
   ### The reflexive loop is YOUR content
   Every component of the contour is a library artifact in your remit:
-  `core/roles/{session-reviewer,judge,judge-auditor,role-judge,
+  `$LIB/core/roles/{session-reviewer,judge,judge-auditor,role-judge,
   hypothesis-intake}`, their `review-*` / `judge*-protocol` /
-  `role-coherence-protocol` skills, and `core/initial_injections/reflect-*.md`.
+  `role-coherence-protocol` skills, and
+  `$LIB/core/initial_injections/reflect-*.md`.
 
   **Some of that prose is executable contract, not commentary.** The Write
   instruction inside `role-judge`'s injection is the only thing that
@@ -51,20 +54,33 @@ injection: |
   a loop component, check whether a code path leans on it.
 
   ### Engine internals (read when verifying compositions)
-  - `src/ai_hats/models.py` — `ComponentConfig` schema:
-    `name`, `composition` (traits/rules/skills/hooks), `injection`,
-    `priorities`. `extra="ignore"` — unknown YAML keys silently dropped.
-  - `src/ai_hats/composer.py` — `Composer.compose()` returns
-    `CompositionResult` (rules, skills, traits, injections,
-    `merged_injection`, errors). Dedup happens by component name.
-  - `src/ai_hats/assembler.py` — `_builtin_library_layers()` resolves
-    builtin core/usage by precedence (HATS-826): `AI_HATS_LIBRARY_ROOT`
-    env → cwd auto-detect of an ai-hats source checkout (worktree-aware)
-    → `importlib.resources` (installed package). Full layer order
-    (lowest → highest): builtin/core, builtin/usage, `~/.ai-hats`,
-    project config-specified, project-local `libraries/`, explicit
-    extras. **Last-wins precedence.**
-  - `src/ai_hats/paths.py` — agent / library / tracker path resolution.
+  - `class ComponentConfig` in `src/ai_hats/libraries/models.py` — a trait's
+    or role's parsed config.yaml: `name`, `composition`, `injection`,
+    `priorities`. (`src/ai_hats/models.py` re-exports it; the definition is
+    not there.)
+  - `class Composition`, same file — the four keys under `composition:` are
+    `traits`, `rules`, `skills`, `apps`. It is `extra="forbid"`, and an
+    unknown key is stripped with one stderr WARN each
+    (`_strip_unknown_composition_keys`) — not silently.
+  - `class CompositionResult` in
+    `packages/ai-hats-core/src/ai_hats_core/composition.py` — what
+    `Composer.compose()` returns (`Composer` itself lives in
+    `src/ai_hats/composer.py`). There is **no `traits` field**: trait text is
+    `trait_injections`, a dict keyed by trait name. Rules and skills dedup by
+    name, but injections dedup by **text** — two traits carrying identical
+    injection prose contribute it once, silently.
+    `merged_injection` joins the injections — skill **descriptions** (SKILL.md
+    frontmatter), rule injection text, trait injection bullets — and NOT
+    SKILL.md bodies; to verify a body, read the file or `ResolvedComponent`.
+  - `builtin_library_root` / `builtin_library_layers` in
+    `src/ai_hats/paths/library.py` (`paths` is a package, not `paths.py`;
+    `assembler.py` only imports the layers helper under an alias). Precedence:
+    `AI_HATS_LIBRARY_ROOT` → cwd source-checkout **only under `prefer_cwd`,
+    which read-only composition passes and writers never do (HATS-1501)** →
+    `project_dir` → `importlib.resources`. Full layer order (lowest → highest):
+    builtin/core, builtin/usage, `~/.ai-hats`, project config-specified,
+    project-local `libraries/`, explicit extras — first-wins when searching for
+    a component, last-wins when a layer overrides one (`build_library_paths`).
 
   ### Verifying compositions from a worktree
   A **read-only** command run from inside a worktree composes THAT
@@ -124,7 +140,7 @@ injection: |
     under `core/` — any component type (rule, skill), any core trait.
   - Putting workflow logic into a rule (rules are constraints; workflow → skills).
   - Creating a new trait when an existing one would extend cleanly.
-  - Editing `library/` without consulting `docs/how-to-extend.md`.
+  - Editing `$LIB/` without consulting `docs/how-to-extend.md`.
   - Touching anything that runs outside the Python process — cli/, scripts/,
     `_bootstrap.py`, `cli/maintenance.py`, `[project.scripts]`, any installed
     hook — without honoring `dev_rule_e2e_gate`.

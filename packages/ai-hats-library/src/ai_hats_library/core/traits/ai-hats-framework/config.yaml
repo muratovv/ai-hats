@@ -10,11 +10,13 @@ composition:
 injection: |
   ## AI-HATS FRAMEWORK
 
-  This project (or its tooling) is composed via ai-hats. The library is layered:
+  This project (or its tooling) is composed via ai-hats. The library ships as a
+  package — `packages/ai-hats-library/src/ai_hats_library/` (below `<LIB>`) — and
+  is layered:
 
-  - **`library/core/`** — engine fundament. System roles, base traits, global
+  - **`<LIB>/core/`** — engine fundament. System roles, base traits, global
     rules, foundational skills, pipelines. Universal across consumers.
-  - **`library/usage/`** — opinionated content catalog. Domain roles, dev::/env::
+  - **`<LIB>/usage/`** — opinionated content catalog. Domain roles, dev::/env::
     traits, opt-in skills. Project- or domain-specific.
 
   When creating a new rule / skill / trait, first ask: **universal or

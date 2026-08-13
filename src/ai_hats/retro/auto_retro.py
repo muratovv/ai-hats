@@ -26,7 +26,7 @@ from ..models import FeedbackPolicy, ProjectConfig
 from ai_hats_observe.artifacts import METRICS_JSON, RETRO_LOG, is_measured, session_dirname
 from ..paths import PROJECT_CONFIG
 from ..constants import ENV_SKIP_RETRO
-from ai_hats_observe.trace import ENV_SESSION_ID
+from ..session_identity import SessionIdentity, SessionIdentityError
 
 logger = logging.getLogger(__name__)
 
@@ -242,18 +242,26 @@ def write_retro_log(
         pass
 
 
-def main() -> None:
-    """Entrypoint for the shell hook.
+def main(project_dir: Path | None = None) -> None:
+    """Entrypoint for the shell hook; the project defaults to the caller's cwd.
 
     Recursion guard (HATS-252): when ``HATS_SKIP_RETRO=1`` is set in the env we
     are running inside the session-reviewer's own sub-Claude process. Returning
     early breaks the otherwise unbounded spawn loop.
     """
-    session_id = os.environ.get(ENV_SESSION_ID, "")
-    if not session_id:
+    try:
+        identity = SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        # HATS-1613: soft, because a session end must not raise at the shell hook
+        # — but named, because the id this would log under cannot be vouched for.
+        logger.warning("session retro skipped — %s", exc)
         return
+    if identity is None:
+        return
+    session_id = identity.id
 
-    project_dir = Path.cwd()
+    if project_dir is None:
+        project_dir = Path.cwd()
 
     if os.environ.get(ENV_SKIP_RETRO) == "1":
         write_retro_log(

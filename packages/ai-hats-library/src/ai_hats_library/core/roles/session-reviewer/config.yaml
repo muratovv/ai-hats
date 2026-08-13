@@ -100,6 +100,7 @@ injection: |
 
   ## Scope (read-only direct mutations)
 
-  You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly.
-  All side effects go through `rack hyp append-verdict` /
-  `rack proposal *` CLIs (per **rule_backlog_discipline**).
+  You DO NOT mutate `<ai_hats_dir>/tracker/backlog/tasks/*` or other project state directly —
+  a hand-edit races the reflect loop and bypasses the per-card lock.
+  All side effects go through the `rack hyp append-verdict` /
+  `rack proposal *` CLIs.

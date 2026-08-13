@@ -10,7 +10,32 @@ import pytest
 from ai_hats_agy.hook_dispatcher import HOOK_TIMEOUT_S, _hook_timeout, dispatch_hook
 
 
+def _in_session(monkeypatch, session_id: str, project: Path) -> None:
+    """A session as its launcher writes it — the envelope AND its scalars.
+
+    Written out rather than imported from ``SessionIdentity``: the dispatcher
+    reads the wire, so its tests describe the wire (ADR-0025 D1).
+    """
+    monkeypatch.setenv(
+        "AI_HATS_SESSION_IDENTITY",
+        json.dumps(
+            {
+                "v": 1,
+                "id": session_id,
+                "role": "maintainer",
+                "provider": "agy",
+                "project_dir": str(project),
+                "session_dir": str(project / "session"),
+                "skills_root": "",
+            }
+        ),
+    )
+    monkeypatch.setenv("AI_HATS_SESSION_ID", session_id)
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+
+
 def test_dispatcher_noop_when_session_id_missing(monkeypatch) -> None:
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
     monkeypatch.delenv("AI_HATS_SESSION_ID", raising=False)
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
 
@@ -23,8 +48,7 @@ def test_dispatcher_noop_when_hooks_json_missing(tmp_path: Path, monkeypatch) ->
     project.mkdir()
     cache_dir = tmp_path / "cache"
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-test")
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    _in_session(monkeypatch, "sid-test", project)
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache_dir))
 
     res = dispatch_hook("PreToolUse")
@@ -55,8 +79,7 @@ def test_dispatcher_executes_hook_from_pinned_cache_dir(tmp_path: Path, monkeypa
     marker_file, hook_script = _marker_hook(tmp_path)
     _seed_manifest(cache_dir, hook_script)
 
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-exec")
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(project))
+    _in_session(monkeypatch, "sid-exec", project)
     monkeypatch.setenv("AI_HATS_SESSION_CACHE_DIR", str(cache_dir))
 
     res = dispatch_hook("PreToolUse", tool_name="Edit")
@@ -72,8 +95,7 @@ def test_dispatcher_without_the_pin_says_so_instead_of_exiting_quietly(
     Exit 0 alone is what "this session has no hooks" looks like, so silence here
     would hide unreachable hooks rather than report them.
     """
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sid-stale")
-    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "project"))
+    _in_session(monkeypatch, "sid-stale", tmp_path / "project")
     monkeypatch.delenv("AI_HATS_SESSION_CACHE_DIR", raising=False)
 
     res = dispatch_hook("PreToolUse", tool_name="Edit")

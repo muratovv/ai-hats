@@ -23,6 +23,46 @@ from pathlib import Path
 HOOK_TIMEOUT_S = 60.0
 _TIMEOUT_ENV = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
+# Sanctioned mirror of the env contract (ADR-0025 D5): this process must not
+# import ai-hats (see the module docstring), so the spellings are declared here
+# and held against the home by ``tests/test_env_contract.py``.
+ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
+ENV_SESSION_ID = "AI_HATS_SESSION_ID"
+ENV_AI_HATS_PROJECT_DIR = "AI_HATS_PROJECT_DIR"
+ENV_SESSION_IDENTITY = "AI_HATS_SESSION_IDENTITY"
+
+
+def _session_identity() -> dict | None:
+    """This session, from the one envelope its launcher wrote (ADR-0025 D1).
+
+    Read whole rather than reassembled from scalars: the scalars are projections
+    of this value, and a reader taking them separately can be handed a pair that
+    never belonged together. Parsed with stdlib ``json`` rather than
+    ``SessionIdentity.from_env`` because this process runs on every tool call and
+    must not import ai-hats (module docstring); the two are held equal by
+    ``tests/test_env_contract.py``.
+    """  # comment-length: allow — why this reader is hand-rolled is the contract
+    raw = os.environ.get(ENV_SESSION_IDENTITY)
+    if not raw:
+        if os.environ.get(ENV_SESSION_ID):
+            sys.stderr.write(
+                "ai-hats-hook-dispatcher: session carries no AI_HATS_SESSION_IDENTITY "
+                "— it predates HATS-1594 and its hooks are unreachable; restart it.\n"
+            )
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        sys.stderr.write("ai-hats-hook-dispatcher: AI_HATS_SESSION_IDENTITY is not readable JSON\n")
+        return None
+    if not isinstance(data, dict):
+        sys.stderr.write(
+            f"ai-hats-hook-dispatcher: AI_HATS_SESSION_IDENTITY holds "
+            f"{type(data).__name__}, not an object — hooks are unreachable\n"
+        )
+        return None
+    return data
+
 
 def _hook_timeout() -> float:
     """The effective budget: ``AI_HATS_AGY_HOOK_TIMEOUT_S`` or the default.
@@ -59,7 +99,7 @@ def _session_hooks_file() -> Path | None:
     An ai-hats session without the pin predates the cache move; say so rather
     than exit 0, which reads exactly like "no hooks configured".
     """
-    pinned = os.environ.get("AI_HATS_SESSION_CACHE_DIR")
+    pinned = os.environ.get(ENV_SESSION_CACHE_DIR)
     if pinned:
         return Path(pinned) / "hooks.json"
     sys.stderr.write(
@@ -71,10 +111,8 @@ def _session_hooks_file() -> Path | None:
 
 def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
     """Read session hooks manifest and execute matching hooks for this event."""
-    session_id = os.environ.get("AI_HATS_SESSION_ID")
-    project_dir_str = os.environ.get("AI_HATS_PROJECT_DIR")
-
-    if not session_id or not project_dir_str:
+    identity = _session_identity()
+    if not identity or not identity.get("id") or not identity.get("project_dir"):
         # Standalone agy run outside ai-hats session — no-op exit 0
         return 0
 

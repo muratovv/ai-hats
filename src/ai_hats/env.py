@@ -19,6 +19,22 @@ ENV_AI_HATS_CACHE_HOME = "AI_HATS_CACHE_HOME"
 ENV_XDG_CACHE_HOME = "XDG_CACHE_HOME"
 ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 
+# Session identity written at spawn (ADR-0025 D1). `AI_HATS_SESSION_ID` is
+# absent on purpose — its home is `ai_hats_observe.trace` (HATS-948).
+ENV_ROLE = "AI_HATS_ROLE"
+ENV_ROOT_PID = "AI_HATS_ROOT_PID"
+#: The session process's own interpreter. A second pin beside ENV_AI_HATS_VENV
+#: because the agy global hook is invoked by the surface, not by our launcher.
+ENV_AI_HATS_PYTHON = "AI_HATS_PYTHON"
+
+# Hook-point vocabulary, owned by ADR-0020 D2; named here so it has one home.
+ENV_HOOK_POINT = "AI_HATS_HOOK_POINT"
+ENV_IN_HOOK = "AI_HATS_IN_HOOK"
+ENV_FORCE = "AI_HATS_FORCE"
+ENV_TASK_ID = "AI_HATS_TASK_ID"
+ENV_WORKTREE_PATH = "AI_HATS_WORKTREE_PATH"
+ENV_TASKS_DIR = "AI_HATS_TASKS_DIR"  # NOT rack's own RACK_TASKS_DIR
+
 
 def _read(name: str) -> str | None:
     """Read environment variable; empty string is treated as unset (None)."""
@@ -113,6 +129,15 @@ __all__ = [
     "ENV_AI_HATS_CACHE_HOME",
     "ENV_XDG_CACHE_HOME",
     "ENV_SESSION_CACHE_DIR",
+    "ENV_ROLE",
+    "ENV_ROOT_PID",
+    "ENV_AI_HATS_PYTHON",
+    "ENV_HOOK_POINT",
+    "ENV_IN_HOOK",
+    "ENV_FORCE",
+    "ENV_TASK_ID",
+    "ENV_WORKTREE_PATH",
+    "ENV_TASKS_DIR",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",

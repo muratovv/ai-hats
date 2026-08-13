@@ -176,8 +176,11 @@ def test_ai_hats_framework_injection_mentions_layered_library() -> None:
         "packages/ai-hats-library/src/ai_hats_library/core/traits/ai-hats-framework/config.yaml"
     )
     inj = trait.injection
-    assert "library/core/" in inj
-    assert "library/usage/" in inj
+    # HATS-1629: assert the layering, not the pre-packages `library/` spelling —
+    # pinning the literal is what let the retired path survive in the injection.
+    assert "ai_hats_library/" in inj
+    assert "/core/" in inj
+    assert "/usage/" in inj
     assert "universal" in inj.lower()
 
 

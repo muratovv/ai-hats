@@ -45,11 +45,11 @@ from ai_hats_rack.extensions import (
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
-from ai_hats_observe.trace import ENV_SESSION_ID
 
 from . import ownership
 from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
+from .session_identity import SessionIdentity, SessionIdentityError
 from .wt_effects import WtWorktreeEffects
 
 TERMINAL_STATES = ("done", "failed", "cancelled")
@@ -99,7 +99,18 @@ def _keys_leaving_execute_or_terminal(topology: Topology) -> list[str]:
 
 
 def _session_id() -> str:
-    return os.environ.get(ENV_SESSION_ID, "")
+    """The launching session's id, or ``""`` outside one (HATS-1613).
+
+    Through the identity, not the scalar beside it: a torn envelope read as
+    absence would disarm the single-slot guard silently, and two live agents
+    then share a slot. Single-slot runs first on every edge, so the refusal
+    always lands where nothing has been written yet.
+    """
+    try:
+        identity = SessionIdentity.from_env()
+    except SessionIdentityError as exc:
+        raise AbortOperation(f"ownership cannot name this session: {exc}") from exc
+    return identity.id if identity is not None else ""
 
 
 def _root_pid() -> int:

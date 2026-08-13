@@ -249,3 +249,101 @@ def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
 
     assert _run(project, gates=[broken, good]) == 0
     assert ran.exists(), "a later gate was skipped along with the broken one"
+
+
+# ---- foreign session pin, dropped for the children (HATS-1613, ADR-0025 D3) ----
+
+
+def test_a_foreign_pin_is_dropped_and_repinned_for_the_chain(tmp_path, capsys):
+    """The delivery window: a stub predating the guard passes the pair through."""
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {
+        "AI_HATS_PROJECT_DIR": str(tmp_path / "theirs"),
+        "AI_HATS_VENV": "/somewhere/else/.venv",
+        "AI_HATS_DIR": "/somewhere/else/.agent/ai-hats",
+    }
+
+    _drop_foreign_pin(env, project)
+
+    assert "AI_HATS_VENV" not in env
+    assert "AI_HATS_DIR" not in env
+    assert env["AI_HATS_PROJECT_DIR"] == str(project), "a gate must be told the truth"
+    err = capsys.readouterr().err
+    assert "self update" in err, "a silent window is the defect this branch exists for"
+
+
+def test_a_foreign_pin_takes_the_whole_identity_with_it(tmp_path, capsys):
+    """Dropping the pin but keeping the envelope leaves the identity TORN.
+
+    The pin is re-pinned to this project while the envelope still names the other
+    one, so a gate reading the envelope composes under the FOREIGN session's role
+    — HATS-1525's cross-project leak, surviving on the identity axis after the
+    venv/dir axes were closed. The identity travels as one unit or not at all.
+    """
+    from ai_hats.githooks_run import _drop_foreign_pin
+    from ai_hats.session_identity import SessionIdentity
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    theirs = tmp_path / "theirs"
+    env = {
+        "AI_HATS_PROJECT_DIR": str(theirs),
+        **SessionIdentity(
+            id="sid-theirs",
+            role="judge",
+            provider="claude",
+            project_dir=theirs,
+            session_dir=theirs / "s",
+        ).to_env(),
+    }
+
+    _drop_foreign_pin(env, project)
+
+    assert SessionIdentity.from_env(env) is None, (
+        "a foreign session's identity must not survive into this project's gates"
+    )
+    assert env["AI_HATS_PROJECT_DIR"] == str(project)
+
+
+def test_a_matching_pin_is_left_alone(tmp_path, capsys):
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {"AI_HATS_PROJECT_DIR": str(project), "AI_HATS_VENV": "/mine/.venv"}
+
+    _drop_foreign_pin(env, project)
+
+    assert env["AI_HATS_VENV"] == "/mine/.venv"
+    assert capsys.readouterr().err == ""
+
+
+def test_no_pin_at_all_is_left_alone(tmp_path, capsys):
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    env = {"AI_HATS_VENV": "/bare/override/.venv"}
+    _drop_foreign_pin(env, tmp_path)
+
+    assert env == {"AI_HATS_VENV": "/bare/override/.venv"}, "env-wins survives"
+    assert capsys.readouterr().err == ""
+
+
+def test_the_usual_path_is_a_silent_repin_not_a_warning(tmp_path, capsys):
+    """A current stub already unset the pair, so only the pin itself arrives.
+
+    Nothing was dropped, so nothing is announced — but the children must still be
+    told this project rather than the one the pin names (HATS-1613 review).
+    """
+    from ai_hats.githooks_run import _drop_foreign_pin
+
+    project = tmp_path / "mine"
+    project.mkdir()
+    env = {"AI_HATS_PROJECT_DIR": str(tmp_path / "theirs")}
+
+    _drop_foreign_pin(env, project)
+
+    assert env["AI_HATS_PROJECT_DIR"] == str(project)
+    assert capsys.readouterr().err == "", "nothing was dropped, so nothing to announce"

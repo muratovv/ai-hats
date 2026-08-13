@@ -56,14 +56,18 @@ zero='0000000000000000000000000000000000000000'
 # The gate's name IS its marker directory. Renaming it invalidates every marker
 # on every maintainer's disk at once, so it does not change.
 GATE_NAME='e2e-gate'
+#: The composition the project names for this gate — asked, never stated here.
+COMPOSITION='push-gate'
+CHANNEL='githook'
+RUN_CMD='scripts/run-e2e-gate.sh'
 
 # --- shared helpers --------------------------------------------------------
 
 # HATS-1337 runs gates in place from the library rather than copying them into
 # `.githooks/`, so the sibling lib is reachable from $0's own directory.
 _self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if ! . "$_self_dir/../lib/gate-marker.sh"; then
-    echo "[e2e-gate] cannot load $_self_dir/../lib/gate-marker.sh — push to master BLOCKED" >&2
+if ! . "$_self_dir/../lib/gate-marker.sh" || ! . "$_self_dir/../lib/gate.sh"; then
+    echo "[e2e-gate] cannot load $_self_dir/../lib/ — push to master BLOCKED" >&2
     exit 1
 fi
 
@@ -92,33 +96,33 @@ check_mode() {
         exit 1
     }
 
-    local sha missing=0
+    local stages
+    stages="$(gate_stages "$(git rev-parse --show-toplevel)/scripts/ci-local.sh" "$COMPOSITION")"
+
+    local sha tree unmarked=''
     while IFS= read -r sha; do
         [[ -z "$sha" ]] && continue
-        if ! gate_marker_ok "$GATE_NAME" "." "$sha"; then
-            missing=1
+        # The subject is CONTENT: a commit that only re-parents an already-marked
+        # tree is the same thing the gate already judged (HATS-1601).
+        tree="$(gate_tree "." "$sha")"
+        if [[ -z "$tree" ]] || ! gate_marker_ok "$GATE_NAME" "." "$tree" $stages; then
+            unmarked="${tree:-$sha}"
             break
         fi
     done <<< "$need"
 
-    if [[ $missing -eq 0 ]]; then
+    if [[ -z "$unmarked" ]]; then
         echo "[e2e-gate] green e2e marker present for the master HEAD — push allowed (HATS-686)" >&2
-        exit 0
+        gate_exit "$CHANNEL" pass
     fi
 
-    cat >&2 <<EOF
-[e2e-gate] No green e2e marker for the master commit you are pushing — BLOCKED.
-
-The e2e+smoke suite now runs OUT OF BAND (HATS-686): GitHub closes the push
-SSH connection ~30s in, so a ~27-min suite can no longer run inside pre-push.
-Run the gate on this exact HEAD, then push:
-
-    scripts/run-e2e-gate.sh        # (or: bash "$0" --run)
-
-On green it writes a marker keyed to HEAD's SHA and this push passes instantly.
-To knowingly skip every pre-push hook: git push --no-verify.
-EOF
-    exit 1
+    # The suite runs OUT OF BAND (HATS-686): GitHub closes the push SSH
+    # connection ~30s in, so a ~27-min suite cannot run inside pre-push.
+    echo "[e2e-gate] push to master BLOCKED." >&2
+    gate_refusal "$GATE_NAME" "$unmarked" "the master commit you are pushing" \
+                 "$RUN_CMD" "$stages" >&2
+    echo "To knowingly skip every pre-push hook: git push --no-verify." >&2
+    gate_exit "$CHANNEL" refuse
 }
 
 # --- run mode (`--run`) ----------------------------------------------------
@@ -141,26 +145,17 @@ EOF
     fi
 
     # HATS-726: the marker has to mean "everything CI checks is green". Before
-    # this preamble the gate ran only the e2e tier, so a ruff error passed the
-    # most expensive gate in the repo and turned master red minutes later.
-    local dispatcher="$repo_root/scripts/ci-local.sh"
-    if [[ -f "$dispatcher" ]]; then
-        local stage
-        for stage in lint unit e2e-catalog; do
-            if ! bash "$dispatcher" "$stage"; then
-                cat >&2 <<EOF
-
-[e2e-gate] the '$stage' stage FAILED — gate ABORTED, no marker written.
-Fix it and re-run; the e2e tier was not started (it takes ~25 min).
-EOF
-                exit 1
-            fi
-        done
-    else
-        echo "[e2e-gate] no scripts/ci-local.sh here — preamble skipped, marker covers the e2e tier only" >&2
+    # the cheap stages joined the composition the gate ran only the e2e tier, so
+    # a ruff error passed the most expensive gate in the repo and turned master
+    # red minutes later.
+    local dispatcher="$repo_root/scripts/ci-local.sh" stages
+    stages="$(gate_stages "$dispatcher" "$COMPOSITION")"
+    if [[ -z "$stages" ]]; then
+        echo "[e2e-gate] $dispatcher names no $COMPOSITION composition — gate ABORTED" >&2
+        exit 1
     fi
 
-    echo "[e2e-gate] running e2e+smoke suite out of band (HATS-686, no bypass)" >&2
+    echo "[e2e-gate] running $stages out of band (HATS-686, no bypass)" >&2
 
     # HATS-568: clean stale wheel-build artefacts (worktree-tier e2e tests
     # `pip install` against the repo and write to build/; a leftover dist-info
@@ -191,8 +186,10 @@ EOF
     fi
 
     # HATS-589/592: opt into pytest-xdist when present, adaptive worker count
-    # `min(logical_cpus, ceiling)`. bash-3.2-safe empty-array expansion.
-    local -a xdist_args=()
+    # `min(logical_cpus, ceiling)`. These are the GATE's flags over the project's
+    # selection — PYTEST_ADDOPTS carries them without forking the selection, which
+    # lived in two copies until HATS-1604.
+    local addopts='--tb=line --no-header -p no:cacheprovider'
     if pytest -VV 2>/dev/null | grep -qi xdist; then
         local cores ceiling n
         cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null \
@@ -204,29 +201,24 @@ EOF
         n=$(( cores < ceiling ? cores : ceiling ))
         (( n < 1 )) && n=1
         echo "[e2e-gate] pytest-xdist detected — running -n$n --dist=loadgroup (cores=$cores, cap=$ceiling)" >&2
-        xdist_args=(-n"$n" --dist=loadgroup)
+        addopts="$addopts -n$n --dist=loadgroup"
     else
         echo "[e2e-gate] pytest-xdist absent — running serial" >&2
     fi
+    export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }$addopts"
 
     # HATS-645: arm the tier-2 venv fixture's fail-closed mode.
     export AI_HATS_E2E_REQUIRE_VENV=1
 
-    # HATS-676: deselect quarantined known-flaky tests (they still run under a
-    # normal/solo `pytest`; excluded only under the gate's contention).
-    local output rc
-    output=$(
-        cd "$repo_root" && \
-        pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ \
-               ${xdist_args[@]+"${xdist_args[@]}"} \
-               -q --tb=line --no-header -p no:cacheprovider 2>&1
-    )
+    local log rc
+    log="$(mktemp -t e2e-gate)" || log=''
+    gate_run "$dispatcher" "$COMPOSITION" "$log"
     rc=$?
 
+    # rc 5 is pytest's "nothing collected". Defensive since HATS-550: a renamed
+    # marker or an empty folder must not permanently brick `git push master`.
     if [[ $rc -ne 0 && $rc -ne 5 ]]; then
-        echo "[e2e-gate] pytest FAILED (rc=$rc) — NO marker written:" >&2
-        echo "$output" | tail -40 >&2
-        if echo "$output" | grep -q "AI_HATS_E2E_REQUIRE_VENV"; then
+        if [[ -n "$log" ]] && grep -q "AI_HATS_E2E_REQUIRE_VENV" "$log" 2>/dev/null; then
             cat >&2 <<'EOF'
 
 [e2e-gate] The failure above is a FAIL-CLOSED venv-tier skip (HATS-645): the
@@ -235,6 +227,7 @@ could not actually run those tests. Restore network / warm the pip cache and
 re-run the gate.
 EOF
         fi
+        rm -f "$log" 2>/dev/null || true
         cat >&2 <<'EOF'
 
 Fix the failing tests, then re-run the gate. (To push without any gate:
@@ -242,38 +235,19 @@ git push --no-verify — disables every pre-push hook too.)
 EOF
         exit 1
     fi
-
-    if [[ $rc -eq 5 ]]; then
-        # No tests collected. Defensive: a renamed marker or empty folder must
-        # not permanently brick `git push origin master` (HATS-550 invariant).
-        echo "[e2e-gate] no tests collected (rc=5) — treating as pass (defensive)" >&2
-    fi
+    [[ $rc -eq 5 ]] && echo "[e2e-gate] nothing collected (rc=5) — treating as pass (defensive)" >&2
+    rm -f "$log" 2>/dev/null || true
 
     # --- marker write (clean tree only) ------------------------------------
-    local head_sha
-    head_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
-    if [[ -z "$head_sha" ]]; then
-        echo "[e2e-gate] suite passed but could not resolve HEAD — NO marker written" >&2
+    local tree
+    tree="$(gate_tree "$repo_root" HEAD)"
+    if [[ -z "$tree" ]]; then
+        echo "[e2e-gate] suite passed but HEAD's tree does not resolve — NO marker written" >&2
         exit 0
     fi
 
-    if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-        cat >&2 <<EOF
-[e2e-gate] suite passed BUT the working tree is dirty — NO marker written.
-The marker must reflect the exact committed content you will push. Commit (or
-stash) your changes and re-run the gate so the marker matches HEAD ($head_sha).
-EOF
-        exit 0
-    fi
-
-    local marker
-    marker="$(gate_marker_write "$GATE_NAME" "$repo_root" "$head_sha" \
-                  "pytest_rc=$rc" "$(printf '%s\n' "$output" | tail -1)")" || {
-        echo "[e2e-gate] suite passed but could not write the marker — NO marker written" >&2
-        exit 0
-    }
-    echo "[e2e-gate] green — wrote marker $marker (HATS-686)." >&2
-    echo "[e2e-gate] 'git push origin master' on this HEAD will now pass instantly." >&2
+    gate_stamp "$GATE_NAME" "$repo_root" "$tree" "$stages" "pytest_rc=$rc" || exit 0
+    echo "[e2e-gate] 'git push origin master' on this content will now pass instantly." >&2
     exit 0
 }
 

@@ -34,7 +34,13 @@ _FILLED_PLAN = (
 )
 
 
-def _session_env(session: str) -> dict[str, str]:
+#: Real id shape (``ai_hats_observe.session``) paired with the root pid its tail
+#: names — the identity check reads that pair, not the id alone (ADR-0025 D4).
+SESSION = "20260812-101500-3-4242"
+ROOT_PID = "4242"
+
+
+def _session_env(session: str = SESSION) -> dict[str, str]:
     """A session as the wire contract spells it (ADR-0024, ai-hats HATS-1594).
 
     Written out rather than imported: the rack does not depend on the integrator
@@ -42,11 +48,13 @@ def _session_env(session: str) -> dict[str, str]:
     third-party consumer, which is a feature — if the envelope cannot be
     produced without importing ai-hats, it is not a public format.
 
-    The id alone is no longer a session: an ai-hats gate bound to an FSM edge
-    reads the envelope beside it and refuses when only half is there.
+    The id alone is no longer a session, twice over: an ai-hats gate bound to an
+    FSM edge reads the envelope beside it and refuses when only half is there,
+    and the journal checks the id against the root pid its tail names.
     """  # comment-length: allow — why this is duplicated, not imported
     return {
         ENV_SESSION_ID: session,
+        ENV_ROOT_PID: session.rsplit("-", 1)[-1],
         "AI_HATS_SESSION_IDENTITY": json.dumps(
             {
                 "v": 1,
@@ -61,7 +69,7 @@ def _session_env(session: str) -> dict[str, str]:
     }
 
 
-def _drive(runner, tmp_path, session="s1"):
+def _drive(runner, tmp_path, session=SESSION):
     """create HATS-001 and walk brainstorm→plan→execute through the CLI."""
     env = _session_env(session)
     runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)], env=env)
@@ -89,7 +97,7 @@ def test_attr_audit_human_feed(runner, tmp_path):
     assert "audit:" in result.output
     assert "edge:brainstorm--plan" in result.output
     assert "[plan → execute]" in result.output
-    assert "actor=session:s1" in result.output
+    assert f"actor=session:{SESSION}" in result.output
     assert "result=persisted" in result.output
     assert "warning:" not in result.output
 
@@ -122,6 +130,18 @@ def test_attr_audit_json_schema_is_stable(runner, tmp_path):
     assert record["identity"]["verdict"] == "verified"
 
 
+def test_forged_session_pin_is_caught_on_the_cli_road(runner, tmp_path):
+    # `cli_common.actor` derives the claim from AI_HATS_SESSION_ID, so the old
+    # comparison against that variable could never fail here (ADR-0025 D4).
+    env = {**_session_env(SESSION), ENV_ROOT_PID: "9999"}
+    runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)], env=env)
+    plan = runner.invoke(main, ["transition", "HATS-001", "plan", *_tasks_args(tmp_path)], env=env)
+    assert plan.exit_code == 0, plan.output
+
+    audit = json.loads(_audit(runner, tmp_path, as_json=True).output)["attrs"]["audit"]
+    assert audit["records"][0]["identity"]["verdict"] == "mismatch"
+
+
 def test_attr_audit_filters_narrow_the_feed(runner, tmp_path):
     _drive(runner, tmp_path)
 
@@ -131,7 +151,7 @@ def test_attr_audit_filters_narrow_the_feed(runner, tmp_path):
 
     assert len(records()) == 2
     assert [r["event"] for r in records("--event", "edge:plan--execute")] == ["edge:plan--execute"]
-    assert len(records("--actor", "session:s1")) == 2
+    assert len(records("--actor", f"session:{SESSION}")) == 2
     assert records("--actor", "session:nobody") == []
     assert records("--since", "9999-01-01T00:00:00Z") == []
     assert len(records("--since", "2000-01-01T00:00:00Z")) == 2

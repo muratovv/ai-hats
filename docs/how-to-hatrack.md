@@ -8,11 +8,11 @@ installed ai-hats and wants to drive the backlog from the shell.
 
 Three names show up around this tool. They name three different layers:
 
-| Name               | Layer                                                      | You meet it as                                   |
-| ------------------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| **`ai-hats-rack`** | the Python package — the backlog kernel                    | a dependency; `packages/ai-hats-rack/`           |
-| **`rack`**         | the CLI it ships                                           | what you type: `rack ls`, `rack transition …`    |
-| **`hatrack`**      | the skill that teaches a role to drive `rack` in a session | composed via `hatrack-trait`; the agent reads it |
+| Name               | Layer                                                      | You meet it as                                 |
+| ------------------ | ---------------------------------------------------------- | ---------------------------------------------- |
+| **`ai-hats-rack`** | the Python package — the backlog kernel                    | a dependency; `packages/ai-hats-rack/`         |
+| **`rack`**         | the CLI it ships                                           | what you type: `rack ls`, `rack transition …`  |
+| **`hatrack`**      | the skill that teaches a role to drive `rack` in a session | composed via `trait-agent`; the agent reads it |
 
 This doc is about the middle row. Concept definitions — [1]. State-machine
 diagrams — [2]. Full flag reference — `rack --help` and `rack <verb> --help`,
@@ -40,13 +40,13 @@ riding the one mutating call.
 
 When executing `rack` commands or running `ai-hats wait`, the project root and target backlog are resolved via a strict precedence ladder:
 
-| Precedence | Level | Resolution Rule |
-| ---------- | ----- | --------------- |
-| 1 | Explicit CLI / Env Override | `--tasks-dir <path>` flag or `RACK_TASKS_DIR=<path>` environment variable. |
-| 2 | `AI_HATS_DIR` Override | Points to `<ai_hats_dir>`. Cards resolve under `<ai_hats_dir>/tracker/backlog/tasks`. If `AI_HATS_PROJECT_DIR` is set and does not match the project directory resolved for the current invocation (walk-up from cwd), `rack` refuses execution with exit code 1 (`foreign_project_pin`). |
-| 3 | Walk-up Resolution | Searches current directory and parent directories for `.agent/` (directory) or `ai-hats.yaml` (file in project root). From inside a linked task worktree (where neither marker is present), resolution hops via gitlink to the main checkout. |
+| Precedence | Level                       | Resolution Rule                                                                                                                                                                                                                                                                           |
+| ---------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1          | Explicit CLI / Env Override | `--tasks-dir <path>` flag or `RACK_TASKS_DIR=<path>` environment variable.                                                                                                                                                                                                                |
+| 2          | `AI_HATS_DIR` Override      | Points to `<ai_hats_dir>`. Cards resolve under `<ai_hats_dir>/tracker/backlog/tasks`. If `AI_HATS_PROJECT_DIR` is set and does not match the project directory resolved for the current invocation (walk-up from cwd), `rack` refuses execution with exit code 1 (`foreign_project_pin`). |
+| 3          | Walk-up Resolution          | Searches current directory and parent directories for `.agent/` (directory) or `ai-hats.yaml` (file in project root). From inside a linked task worktree (where neither marker is present), resolution hops via gitlink to the main checkout.                                             |
 
-> **Note**: Explicit root resolutions (e.g. `--root <dir>` or cross-project roots registry) target the specified root directly and skip Step 2.  
+> **Note**: Explicit root resolutions (e.g. `--root <dir>` or cross-project roots registry) target the specified root directly and skip Step 2.\
 > **Warning on Residual Leak**: `ai-hats.yaml` is always read from the project root (`project_dir`). Therefore, `AI_HATS_DIR` alone does not provide full project config isolation — complete isolation requires a sandbox project root.
 
 ### Executable Sandbox Recipe & Fail-Safe Write Probe
@@ -97,7 +97,7 @@ the *write* verbs are grouped, under `rack hyp` / `rack proposal`.
 
 ## In a session: the `hatrack` skill
 
-You rarely run these commands by hand. A role composed with `hatrack-trait`
+You rarely run these commands by hand. A role composed with `trait-agent`
 drives the backlog on your behalf in natural language; the skill [6] carries the
 verbs, the per-edge policy, and the work-log cadence.
 

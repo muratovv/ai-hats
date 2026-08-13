@@ -25,6 +25,13 @@ SCHEMA_VERSION = 1
 ENV_SESSION_ID = "AI_HATS_SESSION_ID"
 ENV_ROOT_PID = "AI_HATS_ROOT_PID"
 
+#: an actor claiming to BE a session; anything else claims no session at all.
+SESSION_CLAIM = "session:"
+
+#: pid of the minting process, tail of every session id (``…-<counter>-<pid>``);
+#: the sub-agent form ``<parent>_<base>-<counter>-<pid>`` ends the same way.
+_MINTING_PID_RE = re.compile(r"-([0-9]+)$")
+
 ACTIVE_NAME = "audit.jsonl"
 _SEGMENT_RE = re.compile(r"^audit-(\d+)\.jsonl$")
 
@@ -100,33 +107,69 @@ def _ownership_holder(tasks_dir: Path, task_id: str) -> str:
         return ""
 
 
+def _minting_pid(session_id: str) -> int:
+    """Pid the minting process embedded in a session id's tail, or ``0``."""
+    match = _MINTING_PID_RE.search(session_id)
+    return int(match.group(1)) if match else 0
+
+
+def _claim_verdict(actor: str, root_pid: int) -> dict[str, Any]:
+    """Verdict on the actor's claim: self-consistency, not an env echo (D4).
+
+    A ``session:<sid>`` claim is checked against ``AI_HATS_ROOT_PID`` and never
+    against ``AI_HATS_SESSION_ID`` — ``cli_common.actor`` builds the claim from
+    that same variable, so the comparison was tautological: ``mismatch`` was
+    unreachable for a forgery and fired only on the framework's own literal
+    actors, which claim no session and are outside the check entirely.
+    """
+    if not actor.startswith(SESSION_CLAIM):
+        return {
+            "verdict": "unverified",
+            "note": f"actor '{actor}' claims no session — nothing to check",
+        }
+    claimed = actor[len(SESSION_CLAIM) :]
+    minting_pid = _minting_pid(claimed)
+    if not minting_pid:
+        return {
+            "verdict": "unverified",
+            "note": f"session id '{claimed}' embeds no minting pid to check",
+        }
+    if root_pid <= 0:
+        return {
+            "verdict": "unverified",
+            "note": f"no usable {ENV_ROOT_PID} to check session id '{claimed}' against",
+        }
+    if minting_pid == root_pid:
+        return {"verdict": "verified"}
+    return {
+        "verdict": "mismatch",
+        "note": (
+            f"session id '{claimed}' was minted by pid {minting_pid}, "
+            f"but {ENV_ROOT_PID} is {root_pid}"
+        ),
+    }
+
+
 def build_identity(actor: str, tasks_dir: Path, task_id: str) -> dict[str, Any]:
-    """Verifiable identity block for one record (PROP-080/076).
+    """Verifiable identity block for one record (PROP-080/076, ADR-0025 D4).
 
     ``session_id``/``root_pid`` describe the *writing process* (env contract),
     independently of the claimed ``actor``. The verdict says whether the claim
-    could be checked: ``verified`` / ``mismatch`` / ``unverified`` (no env
-    identity — an explicitly marked blind zone, never a silent one).
+    could be checked: ``verified`` / ``mismatch`` / ``unverified`` (nothing to
+    check it against — an explicitly marked blind zone, never a silent one).
     """
     session = os.environ.get(ENV_SESSION_ID, "")
     try:
         root_pid = int(os.environ.get(ENV_ROOT_PID, "") or 0)
     except ValueError:
-        root_pid = 0
+        root_pid = 0  # reported, not swallowed: the verdict below says "no usable"
     identity: dict[str, Any] = {"session_id": session, "root_pid": root_pid}
-    if not session:
-        identity["verdict"] = "unverified"
-        identity["note"] = f"no {ENV_SESSION_ID} in the environment to verify the claim"
-    elif actor == f"session:{session}":
-        identity["verdict"] = "verified"
-    else:
-        identity["verdict"] = "mismatch"
-        identity["note"] = f"claimed '{actor}' but the environment says 'session:{session}'"
+    identity.update(_claim_verdict(actor, root_pid))
 
     holder = _ownership_holder(tasks_dir, task_id)
     if holder:
         identity["holder"] = holder
-        claimed_session = actor.removeprefix("session:") if actor.startswith("session:") else ""
+        claimed_session = actor[len(SESSION_CLAIM) :] if actor.startswith(SESSION_CLAIM) else ""
         if claimed_session != holder:
             identity["holder_mismatch"] = True
     return identity

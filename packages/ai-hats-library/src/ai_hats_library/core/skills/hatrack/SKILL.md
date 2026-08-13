@@ -1,6 +1,6 @@
 ---
 name: hatrack
-description: Backlog lifecycle on the rack CLI (hatrack) — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use when a session composes the `hatrack-trait` (rack is the selected backlog manager) for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal.
+description: Backlog lifecycle on the `rack` CLI — create / ls / context / transition / plan-extract, with field edits via `--set` and hypotheses/proposals on the `rack hyp` / `rack proposal` groups. Use for any task lifecycle transition, backlog read, field edit, document, link, hypothesis, or proposal.
 ai_hats:
   # ADR-0016: this skill drives the ai-hats-rack `rack` CLI for the whole backlog
   # surface — lifecycle, fields, documents, links, hypotheses, proposals. One
@@ -27,7 +27,11 @@ read it before advancing any card.
 
 ## When to Use
 
-This is the **rack** backlog manager — composed via `hatrack-trait`.
+This is the **rack** backlog manager, delivered by `trait-agent`. The boundary
+against its two siblings: **backlog-create** covers `rack create` alone, for
+roles that may file a card but never drive a lifecycle; **rack-advanced** covers
+authoring a new backlog and cross-project roots. Everything else — lifecycle,
+fields, documents, links, hypotheses, proposals — is here.
 
 ## Backlog operations — the `rack` CLI
 

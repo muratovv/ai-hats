@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**229 of 229 files catalogued — 236 flows.**
+**232 of 232 files catalogued — 239 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -736,6 +736,21 @@ as a claim to check, not as evidence.
 - **expect** — command exits with code 2 explaining that explicit role specification is required for batch
 - **why** — without role validation in batch mode, execution runs under uninitialized default roles
 
+## `test_gate_primitive.py`
+
+*pins HATS-1604, HATS-1601*
+
+- **flow** — a gate script asking whether this tree already earned a marker
+- **cmds**
+
+  ```console
+  bash -c '. lib/gate-marker.sh; gate_marker_write done-gate . <tree> ...'
+  bash -c '. lib/gate.sh; gate_exit checks refuse'
+  ```
+
+- **expect** — the marker keys on the TREE, carries the composition it certifies, and one primitive maps an outcome onto each channel's exit codes
+- **why** — the discipline was hand-written twice with a diverging exit contract, and a commit-keyed marker made every --no-ff merge pay twice
+
 ## `test_githooks_argv_contract.py`
 
 *pins HATS-1519*
@@ -765,6 +780,20 @@ as a claim to check, not as evidence.
 
 - **expect** — core.hooksPath points to .githooks and both ai-hats guard hooks and the repository's existing hooks execute on git commit and push
 - **why** — overwriting existing repository hook configurations without chaining breaks the repository's pre-existing quality checks
+
+## `test_githooks_dispatcher_env_contract.py`
+
+*pins HATS-1613, HATS-1525*
+
+- **flow** — a developer commits in project A from a shell whose session belongs to project B, so the inherited AI_HATS_VENV / AI_HATS_DIR pair names B
+- **cmds**
+
+  ```console
+  git commit -m "feature"
+  ```
+
+- **expect** — the dispatcher drops the foreign pair and runs A's own gates; a bare override with no pair is still honoured, and a matching pin is silent
+- **why** — honouring a leaked pin runs the commit's gates under another project's interpreter — observed in HATS-1525, where the commit was refused
 
 ## `test_githooks_orchestrator.py`
 
@@ -2820,6 +2849,21 @@ as a claim to check, not as evidence.
 
 - **expect** — repeated init commands execute idempotently and reuse shared launcher venvs across tests
 - **why** — without venv fixture reuse across tests, e2e test suites spend excessive time building duplicate virtual environments
+
+## `test_worktree_library_edit_visible.py`
+
+*pins HATS-1501*
+
+- **flow** — someone edits a library trait inside a linked worktree and asks for a read-only composition from that worktree, expecting their own edit to be the one that composes
+- **cmds**
+
+  ```console
+  git worktree add --detach <wt>
+  python -m ai_hats config show-prompt --role role-curator
+  ```
+
+- **expect** — stdout carries the trait as edited in the WORKTREE, not the main checkout's copy of it — asserted on content, never status, because the failure mode is exit 0 with the block present and carrying the wrong text
+- **why** — the defect was silent, which is why it needs a real subprocess: in process ``_detect_source_library_root(cwd)`` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset here — setting it is the manual workaround this test exists to remove
 
 ## `test_worktree_lifecycle_robustness_matrix.py`
 

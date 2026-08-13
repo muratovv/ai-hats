@@ -1,15 +1,21 @@
-"""HATS-1501: a library edit in a linked worktree must reach read-only composition.
+"""e2e (HATS-1501)
 
-The defect this pins was silent, which is why it needs a real subprocess: in
-process ``_detect_source_library_root(cwd)`` already returned the worktree, so
-every in-process probe agreed with the fix while the shipped CLI still composed
-master. Only a real ``git worktree`` + a real interpreter run with a real cwd
-reproduces it — and the failure mode is exit 0 with the edited block present and
-carrying the WRONG text, so the assertion has to be on content, never status.
-
-``AI_HATS_LIBRARY_ROOT`` is deliberately unset here: setting it is exactly the
-manual workaround whose necessity this test exists to remove.
+flow:   someone edits a library trait inside a linked worktree and asks for a
+        read-only composition from that worktree, expecting their own edit to be
+        the one that composes
+cmds:
+    git worktree add --detach <wt>
+    python -m ai_hats config show-prompt --role role-curator
+expect: stdout carries the trait as edited in the WORKTREE, not the main
+        checkout's copy of it — asserted on content, never status, because the
+        failure mode is exit 0 with the block present and carrying the wrong text
+why:    the defect was silent, which is why it needs a real subprocess: in
+        process ``_detect_source_library_root(cwd)`` already returned the
+        worktree, so every in-process probe agreed with the fix while the shipped
+        CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset
+        here — setting it is the manual workaround this test exists to remove
 """
+# comment-length: allow — the four-field catalog block, schema in gen_e2e_catalog.py
 
 from __future__ import annotations
 
@@ -23,7 +29,9 @@ import pytest
 from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
-TRAIT = Path("packages/ai-hats-library/src/ai_hats_library/usage/traits/library-curator/config.yaml")
+TRAIT = Path(
+    "packages/ai-hats-library/src/ai_hats_library/usage/traits/library-curator/config.yaml"
+)
 SENTINEL = "SENTINEL_HATS_1501_WORKTREE_EDIT"
 
 

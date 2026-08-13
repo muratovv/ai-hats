@@ -172,17 +172,39 @@ def test_the_delegate_exit_code_reaches_git(tmp_path: Path):
 
 
 def test_a_leaked_ai_hats_dir_from_another_project_is_ignored(tmp_path: Path):
-    """A session elsewhere exports AI_HATS_DIR; honouring it would send the stub
-    hunting for an interpreter under a foreign checkout (HATS-897)."""
+    """A session elsewhere exports its pin; honouring it would send the stub
+    hunting for an interpreter under a foreign checkout (HATS-897).
+
+    The PAIR is what marks it as somebody else's: ai-hats never writes
+    ``AI_HATS_DIR`` alone — it has exactly one producer,
+    ``provider.get_env`` (``surfaces/claude/provider.py:394-397``), and that one
+    writes it beside ``AI_HATS_PROJECT_DIR`` (ADR-0025 D3). The launcher and
+    ``_hook_env`` pin the project without producing ``AI_HATS_DIR`` at all.
+    """
     project = _project(tmp_path)
-    foreign = tmp_path / "foreign" / ".agent" / "ai-hats" / ".venv" / "bin"
-    foreign.mkdir(parents=True)
-    (foreign / "python").write_text("#!/usr/bin/env bash\nexit 3\n")
-    (foreign / "python").chmod(0o755)
+    foreign = _foreign_checkout(tmp_path)
 
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
-    env["AI_HATS_DIR"] = str(tmp_path / "foreign" / ".agent" / "ai-hats")
-    result = subprocess.run(
+    env["AI_HATS_DIR"] = str(foreign)
+    env["AI_HATS_PROJECT_DIR"] = str(tmp_path / "foreign")
+    result = _run_stub(project, env)
+
+    assert result.returncode == 0, "the foreign interpreter must not be used"
+    assert "fail-open" in result.stderr
+
+
+def _foreign_checkout(tmp_path: Path) -> Path:
+    """Another project whose interpreter announces itself by exiting 3."""
+    base = tmp_path / "foreign" / ".agent" / "ai-hats"
+    (base / ".venv" / "bin").mkdir(parents=True)
+    python = base / ".venv" / "bin" / "python"
+    python.write_text("#!/usr/bin/env bash\nexit 3\n")
+    python.chmod(0o755)
+    return base
+
+
+def _run_stub(project: Path, env: dict[str, str]):
+    return subprocess.run(
         ["/bin/bash", str(project / ".githooks" / "pre-commit")],
         cwd=str(project),
         env=env,
@@ -190,5 +212,67 @@ def test_a_leaked_ai_hats_dir_from_another_project_is_ignored(tmp_path: Path):
         text=True,
     )
 
-    assert result.returncode == 0, "the foreign interpreter must not be used"
+
+def test_an_out_of_tree_ai_hats_dir_is_refused_even_when_the_pin_agrees(tmp_path: Path):
+    """The pin guard answers "whose session"; this answers "inside my tree at all".
+
+    A pin naming THIS project passes the first check, so only the narrower prefix
+    test stops the stub exec'ing an interpreter from outside the tree it gates —
+    which is why the stub keeps both (HATS-1613 review).
+    """
+    project = _project(tmp_path)
+    foreign = _foreign_checkout(tmp_path)
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["AI_HATS_DIR"] = str(foreign)
+    env["AI_HATS_PROJECT_DIR"] = str(project)
+    result = _run_stub(project, env)
+
+    assert result.returncode == 0, (
+        f"an out-of-tree interpreter ran despite the pin agreeing:\n{result.stderr}"
+    )
     assert "fail-open" in result.stderr
+
+
+def test_a_bare_out_of_tree_ai_hats_dir_is_refused(tmp_path: Path):
+    """Unpaired too: the launcher never reads AI_HATS_DIR for resolution at all
+    (`scripts/ai-hats-launcher:36`), so honouring it here would converge nothing."""
+    project = _project(tmp_path)
+    foreign = _foreign_checkout(tmp_path)
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["AI_HATS_DIR"] = str(foreign)
+    result = _run_stub(project, env)
+
+    assert result.returncode == 0, f"the foreign interpreter must not be used:\n{result.stderr}"
+    assert "fail-open" in result.stderr
+
+
+def test_a_pinned_session_without_HOME_still_fails_open(tmp_path: Path):
+    """`set -u` plus `${VAR/#~/$HOME}` at top level exits 1 — and git aborts.
+
+    The pin is set on every commit from an ai-hats session, and a HOME-less
+    environment is ordinary (`env -i`, a systemd unit, a container entrypoint),
+    so an unguarded `$HOME` turns the stub's one promise inside out. Caught in
+    review after the guard shipped with a bare `$HOME` (HATS-1613).
+    """
+    project = _project(tmp_path)
+
+    result = subprocess.run(
+        [
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            f"AI_HATS_PROJECT_DIR={tmp_path / 'elsewhere'}",
+            "bash",
+            str(project / ".githooks" / "pre-commit"),
+        ],
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, (
+        f"the stub must never wedge a commit, HOME or no HOME:\n{result.stderr}"
+    )
+    assert "unbound variable" not in result.stderr, result.stderr

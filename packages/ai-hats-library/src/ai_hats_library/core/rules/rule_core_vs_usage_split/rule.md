@@ -1,16 +1,18 @@
 # Rule: Core vs Usage Library Split
 
+Below, `<LIB>` = `packages/ai-hats-library/src/ai_hats_library/`.
+
 When creating a new component (rule / skill / trait), the first question is:
 **is this universal or project-specific?**
 
-- **Universal** — any project on ai-hats would want this. Lives in `library/core/`.
+- **Universal** — any project on ai-hats would want this. Lives in `<LIB>/core/`.
   Attached to a base trait (`trait-base`, `trait-agent`, …).
 - **Project-specific** — only the ai-hats codebase itself (or a similar single
-  domain) needs this. The reusable rule/skill still goes in `library/core/`
+  domain) needs this. The reusable rule/skill still goes in `<LIB>/core/`
   if the **concept** transfers (e.g., `dev_rule_e2e_gate`), but it's
   **NOT attached to a base trait** — instead, attach via a dedicated trait
-  in `library/usage/traits/<role>-<discipline>/`, then wire the trait into
-  a role via `library/usage/roles/<role>/config.yaml`.
+  in `<LIB>/usage/traits/<role>-<discipline>/`, then wire the trait into
+  a role via `<LIB>/usage/roles/<role>/config.yaml`.
 
 ## Decision tree
 
@@ -56,8 +58,8 @@ the same gate), but its **specific trigger surface** was ai-hats-internal.
 User redirect: "выделим отдельный trait `ai-hats-maintainer`" — full rewrite
 of the plan. The corrected split:
 
-- `library/core/rules/dev_rule_e2e_gate/` — rule (reusable concept).
-- `library/usage/traits/ai-hats-maintainer/` — bundles the rule + project-specific framing.
+- `<LIB>/core/rules/dev_rule_e2e_gate/` — rule (reusable concept).
+- `<LIB>/usage/traits/ai-hats-maintainer/` — bundles the rule + project-specific framing.
 - Roles like `maintainer` opt in via composition; other roles don't.
 
 ## Source

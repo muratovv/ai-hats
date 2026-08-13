@@ -231,28 +231,62 @@ def test_write_failure_is_loud_but_transaction_survives(tasks_dir, cwd, capsys):
 
 # ----- identity (PROP-080/076) --------------------------------------------------
 
+#: Real id shape minted by ``ai_hats_observe.session``: ``<ts>-<counter>-<pid>``.
+LIVE_SESSION = "20260812-101500-7-4242"
+LIVE_ROOT_PID = "4242"
 
-def test_identity_verified_against_environment(tasks_dir, cwd, monkeypatch):
-    monkeypatch.setenv(ENV_SESSION_ID, "s1")
-    monkeypatch.setenv(ENV_ROOT_PID, "4242")
+
+def test_forged_session_claim_is_a_mismatch(tasks_dir, cwd, monkeypatch):
+    # ADR-0025 D4: a shell exporting a foreign session id carries a root pid the
+    # id contradicts — the branch the old env comparison could never reach.
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    monkeypatch.setenv(ENV_ROOT_PID, "9999")
     kernel = journaled_kernel(tasks_dir)
     task_id = create(kernel, cwd)
-    kernel.transition(task_id, "plan", actor="session:s1", caller_cwd=cwd)
-
-    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
-    assert identity == {"session_id": "s1", "root_pid": 4242, "verdict": "verified"}
-
-
-def test_identity_mismatch_is_marked(tasks_dir, cwd, monkeypatch):
-    monkeypatch.setenv(ENV_SESSION_ID, "s1")
-    kernel = journaled_kernel(tasks_dir)
-    task_id = create(kernel, cwd)
-    kernel.transition(task_id, "plan", actor="session:imposter", caller_cwd=cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{LIVE_SESSION}", caller_cwd=cwd)
 
     identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
     assert identity["verdict"] == "mismatch"
-    assert "session:imposter" in identity["note"]
-    assert "session:s1" in identity["note"]
+    assert "4242" in identity["note"]
+    assert "9999" in identity["note"]
+
+
+def test_framework_actor_is_not_a_session_claim(tasks_dir, cwd, monkeypatch):
+    # ADR-0025 D4: rack:reflect claims no session, so it is outside the check.
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    kernel.transition(task_id, "plan", actor="rack:reflect", caller_cwd=cwd)
+
+    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
+    assert identity["verdict"] == "unverified"
+    assert "rack:reflect" in identity["note"]
+
+
+def test_identity_verified_when_claim_and_root_pid_agree(tasks_dir, cwd, monkeypatch):
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{LIVE_SESSION}", caller_cwd=cwd)
+
+    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
+    assert identity == {"session_id": LIVE_SESSION, "root_pid": 4242, "verdict": "verified"}
+
+
+def test_subagent_session_id_verifies_on_its_own_minting_pid(tasks_dir, cwd, monkeypatch):
+    # The sub-agent form is `<parent>_<base>-<counter>-<pid>`: the tail pid is
+    # the sub-agent runner's, and that is the one AI_HATS_ROOT_PID carries.
+    child = f"{LIVE_SESSION}_20260812-102000-1-4310"
+    monkeypatch.setenv(ENV_SESSION_ID, child)
+    monkeypatch.setenv(ENV_ROOT_PID, "4310")
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{child}", caller_cwd=cwd)
+
+    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
+    assert identity["verdict"] == "verified"
 
 
 def test_identity_without_env_is_an_explicit_blind_zone(tasks_dir, cwd):
@@ -264,34 +298,62 @@ def test_identity_without_env_is_an_explicit_blind_zone(tasks_dir, cwd):
     assert identity["verdict"] == "unverified"
     assert identity["session_id"] == ""
     assert identity["root_pid"] == 0
+    assert "human:someone" in identity["note"]
+
+
+def test_session_claim_without_root_pid_is_a_blind_zone(tasks_dir, cwd, monkeypatch):
+    # A missing anchor is no evidence of a lie: unverified, never mismatch.
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{LIVE_SESSION}", caller_cwd=cwd)
+
+    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
+    assert identity["verdict"] == "unverified"
+    assert ENV_ROOT_PID in identity["note"]
+
+
+def test_session_id_without_a_minting_pid_is_a_blind_zone(tasks_dir, cwd, monkeypatch):
+    # An id from outside the minting contract carries no pid to check.
+    monkeypatch.setenv(ENV_SESSION_ID, "handmade")
+    monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
+    kernel = journaled_kernel(tasks_dir)
+    task_id = create(kernel, cwd)
+    kernel.transition(task_id, "plan", actor="session:handmade", caller_cwd=cwd)
+
+    identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
+    assert identity["verdict"] == "unverified"
+    assert "handmade" in identity["note"]
 
 
 def test_ownership_holder_mismatch_is_marked(tasks_dir, cwd, monkeypatch):
-    monkeypatch.setenv(ENV_SESSION_ID, "s1")
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
     kernel = journaled_kernel(tasks_dir)
     task_id = create(kernel, cwd)
     registry = {"owners": {task_id: {"session_id": "someone-else"}}, "version": 1}
     (tasks_dir.parent / "ownership.json").write_text(json.dumps(registry), encoding="utf-8")
 
-    kernel.transition(task_id, "plan", actor="session:s1", caller_cwd=cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{LIVE_SESSION}", caller_cwd=cwd)
 
     identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
-    assert identity["verdict"] == "verified"  # env check is independent
+    assert identity["verdict"] == "verified"  # the claim check is independent
     assert identity["holder"] == "someone-else"
     assert identity["holder_mismatch"] is True
 
 
 def test_ownership_holder_match_carries_no_mark(tasks_dir, cwd, monkeypatch):
-    monkeypatch.setenv(ENV_SESSION_ID, "s1")
+    monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
+    monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
     kernel = journaled_kernel(tasks_dir)
     task_id = create(kernel, cwd)
-    registry = {"owners": {task_id: {"session_id": "s1"}}, "version": 1}
+    registry = {"owners": {task_id: {"session_id": LIVE_SESSION}}, "version": 1}
     (tasks_dir.parent / "ownership.json").write_text(json.dumps(registry), encoding="utf-8")
 
-    kernel.transition(task_id, "plan", actor="session:s1", caller_cwd=cwd)
+    kernel.transition(task_id, "plan", actor=f"session:{LIVE_SESSION}", caller_cwd=cwd)
 
     identity = read_journal(tasks_dir, task_id)[0][0]["identity"]
-    assert identity["holder"] == "s1"
+    assert identity["holder"] == LIVE_SESSION
     assert "holder_mismatch" not in identity
 
 
@@ -310,3 +372,13 @@ def test_torn_line_is_reported_never_dropped(tasks_dir, cwd):
     assert len(corrupt) == 1
     assert corrupt[0].raw == '{"v": 1, "ts": "2026-'
     assert corrupt[0].line_no == 2
+
+
+def test_an_unusable_root_pid_is_a_blind_zone_not_a_contradiction(tmp_path, monkeypatch):
+    """A negative pid is nothing to check against, so it cannot refute a claim."""
+    from ai_hats_rack.journal import _claim_verdict
+
+    assert _claim_verdict("session:20260812-101500-3-4242", -1)["verdict"] == "unverified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 0)["verdict"] == "unverified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 4242)["verdict"] == "verified"
+    assert _claim_verdict("session:20260812-101500-3-4242", 9999)["verdict"] == "mismatch"

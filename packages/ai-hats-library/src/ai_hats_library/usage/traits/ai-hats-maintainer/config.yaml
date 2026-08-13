@@ -3,6 +3,8 @@ composition:
   traits: []
   rules:
     - dev_rule_e2e_gate
+    # HATS-1629: the injection cites this rule; without it the pointer is undeliverable.
+    - rule_core_vs_usage_split
   skills:
     - doc-protocol
 injection: |
@@ -117,8 +119,8 @@ injection: |
 
   ### Library split (see rule `rule_core_vs_usage_split` + trait `ai-hats-framework`)
   - New component → universal vs project-specific question FIRST.
-  - Universal → `library/core/`. Project-specific → `core/` rule (if reusable
-    concept) + dedicated `usage/` trait + role wiring.
+  - Universal → the library's `core/`. Project-specific → `core/` rule (if
+    reusable concept) + dedicated `usage/` trait + role wiring.
   - Never attach a component whose trigger surface names this repo to a trait
     under `core/` — any component type, any core trait, not just a rule on
     `trait-agent`/`trait-base`. It pollutes universal traits with narrow
