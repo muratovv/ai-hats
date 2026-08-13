@@ -8,6 +8,7 @@ is asserted here.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -256,6 +257,32 @@ def test_a_foreign_sessions_role_never_composes_this_projects_gates(
     assert marker.is_file(), (
         "this project's own gate did not run — the foreign session's role composed instead"
     )
+
+
+@pytest.mark.integration
+def test_the_entry_point_leaves_the_process_environment_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dropping the foreign pin must not reach ``os.environ`` (HATS-1613 review).
+
+    ``main`` is the hook binary AND a unit under test. Dropping in place worked
+    for the binary and silently rewrote the process env for every later caller —
+    with a randomised suite order, a flake generator rather than a failure.
+    """
+    from ai_hats.cli.githooks_hook import main
+
+    project = tmp_path / "project"
+    (project / ".githooks").mkdir(parents=True)
+    monkeypatch.setenv("AI_HATS_PROJECT_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("AI_HATS_DIR", str(tmp_path / "elsewhere" / ".agent" / "ai-hats"))
+    monkeypatch.setenv("AI_HATS_VENV", str(tmp_path / "elsewhere" / ".venv"))
+    before = dict(os.environ)
+
+    main(
+        ["pre-commit", "--project-dir", str(project), "--githooks-dir", str(project / ".githooks")]
+    )
+
+    assert dict(os.environ) == before, "the hook entry point rewrote the process environment"
 
 
 @pytest.mark.integration

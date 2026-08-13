@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import yaml
 
@@ -225,6 +226,25 @@ def _setup_project(tmp_path, session_id="SID", **config_kwargs):
     return metrics
 
 
+def _be_session(monkeypatch, session_id, project):
+    """Stand in for a session the way a launch writes one — envelope included.
+
+    The hook reads the identity, not the scalar beside it (HATS-1613), and a
+    bare id stands in for a session no launch produces.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    identity = SessionIdentity(
+        id=session_id,
+        role="maintainer",
+        provider="claude",
+        project_dir=project,
+        session_dir=runs_dir(project) / session_dirname(session_id),
+    )
+    for key, value in identity.to_env().items():
+        monkeypatch.setenv(key, value)
+
+
 class TestWriteRetroLog:
     def test_creates_file_and_session_dir(self, tmp_path):
         from ai_hats.retro.auto_retro import write_retro_log
@@ -400,7 +420,7 @@ class TestMainHookWritesLog:
         metrics.write_text(json.dumps({"measured": True, "turns": 0, "tool_calls": 0}))
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv(ENV_SESSION_ID, "SID")
+        _be_session(monkeypatch, "SID", tmp_path)
         auto_retro.main()
 
         log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
@@ -417,7 +437,7 @@ class TestMainHookWritesLog:
         metrics.write_text(json.dumps({"turns": 10, "tool_calls": 20}))
 
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv(ENV_SESSION_ID, "SID")
+        _be_session(monkeypatch, "SID", tmp_path)
         auto_retro.main()
 
         log = runs_dir(tmp_path) / "session_SID" / RETRO_LOG
@@ -439,6 +459,43 @@ class TestMainHookWritesLog:
         assert spawned == [(tmp_path, "SID")]
 
 
+class TestMainReadsTheIdentity:
+    """HATS-1613: the hook reads the session through one reader, not the scalar.
+
+    Session end is observability, so a torn identity stays soft — but it is
+    reported: the id it would have logged under cannot be vouched for.
+    """
+
+    def test_a_half_identified_session_is_reported_and_not_worked_on(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        from ai_hats.retro import auto_retro
+
+        _setup_project(tmp_path)
+        monkeypatch.setenv(ENV_SESSION_ID, "SID")  # the scalar alone: no launch writes that
+
+        with caplog.at_level(logging.WARNING):
+            auto_retro.main(tmp_path)
+
+        # Any step past the guard logs its outcome, so an empty session dir is
+        # the proof nothing was decided under an id nobody can vouch for.
+        assert not (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).exists()
+        assert "AI_HATS_SESSION_IDENTITY" in caplog.text
+
+    def test_no_session_is_inert_and_silent(self, tmp_path, monkeypatch, caplog):
+        """An operator in a plain terminal is a legitimate state, not a fault."""
+        from ai_hats.retro import auto_retro
+
+        _setup_project(tmp_path)
+        monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
+
+        with caplog.at_level(logging.WARNING):
+            auto_retro.main(tmp_path)
+
+        assert not (runs_dir(tmp_path) / "session_SID" / RETRO_LOG).exists()
+        assert caplog.text == ""
+
+
 class TestRecursionGuard:
     def test_main_returns_early_with_breadcrumb(self, tmp_path, monkeypatch):
         """HATS_SKIP_RETRO=1 → main() exits early and logs `recursion-guard`."""
@@ -446,7 +503,7 @@ class TestRecursionGuard:
 
         # No config / metrics — the guard fires before policy logic runs.
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv(ENV_SESSION_ID, "SID")
+        _be_session(monkeypatch, "SID", tmp_path)
         monkeypatch.setenv(ENV_SKIP_RETRO, "1")
 
         # Sentinel — should_run must NOT be reached.

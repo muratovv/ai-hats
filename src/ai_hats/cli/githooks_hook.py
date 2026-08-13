@@ -60,15 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     project_dir: Path = args.project_dir
-    # Before anything reads the identity: a pin naming another project makes its
-    # whole envelope foreign, and the role below would be that session's.
-    _drop_foreign_pin(os.environ, project_dir)
+    # A cleaned COPY, never os.environ: a foreign pin makes the whole envelope
+    # foreign, and mutating the process env would leak into every later caller.
+    scoped_env = dict(os.environ)
+    _drop_foreign_pin(scoped_env, project_dir)
     assembler = Assembler(project_dir)
     # HATS-1594: in a session the role is what THAT session composed; the config
     # is the answer only outside one. Reading it unconditionally ran maintainer's
     # git gates inside a judge session, which never declared them.
     try:
-        identity = SessionIdentity.from_env()
+        identity = SessionIdentity.from_env(scoped_env)
     except SessionIdentityError as exc:
         print(f"ai-hats: git gates SKIPPED (fail-open) — {exc}", file=sys.stderr)
         return 0

@@ -101,6 +101,8 @@ class SessionIdentity:
                 sort_keys=True,
             ),
             ENV_SESSION_ID: self.id,
+            # Nothing in this repo reads it — it is published for shells and
+            # user hooks, so "unused" here is not evidence it is dead.
             ENV_ROLE: self.role,
         }
 

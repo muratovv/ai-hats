@@ -55,7 +55,13 @@ def _session_identity() -> dict | None:
     except ValueError:
         sys.stderr.write("ai-hats-hook-dispatcher: AI_HATS_SESSION_IDENTITY is not readable JSON\n")
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        sys.stderr.write(
+            f"ai-hats-hook-dispatcher: AI_HATS_SESSION_IDENTITY holds "
+            f"{type(data).__name__}, not an object — hooks are unreachable\n"
+        )
+        return None
+    return data
 
 
 def _hook_timeout() -> float:

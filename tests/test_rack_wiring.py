@@ -32,6 +32,25 @@ def _git(cwd: Path, *args: str) -> None:
     )
 
 
+def _be_session(monkeypatch, session_id: str, project: Path) -> None:
+    """Stand in for a session the way a launch writes one — envelope included.
+
+    A bare ``AI_HATS_SESSION_ID`` stands in for a session no launch produces
+    (HATS-1594), and ownership refuses it rather than reading it as absence.
+    """
+    from ai_hats.session_identity import SessionIdentity
+
+    identity = SessionIdentity(
+        id=session_id,
+        role="maintainer",
+        provider="claude",
+        project_dir=project,
+        session_dir=project / ".agent" / "runs" / f"session_{session_id}",
+    )
+    for key, value in identity.to_env().items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture
 def project(tmp_path):
     p = tmp_path / "project"
@@ -103,7 +122,7 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     """Ratification of fix #1 with the real extensions: the plan-gate fires
     before ownership claim and worktree setup, so its abort leaves zero
     side effects — no registry record, no worktree, zero bytes on the card."""
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", project)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     sink = _Sink()
     kernel = _kernel(project, journal_sink=sink)
@@ -214,7 +233,7 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
 def test_check_refusal_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     """R2 with the REAL extensions: slot 15 sits before the claim, so a refused
     check leaves no registry record, no worktree and an unchanged card."""
-    monkeypatch.setenv("AI_HATS_SESSION_ID", "sess-a")
+    _be_session(monkeypatch, "sess-a", project)
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     script = project / "gate.sh"
     script.write_text("#!/bin/sh\necho 'plan not signed off'\nexit 2\n")

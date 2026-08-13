@@ -1,6 +1,6 @@
 """Session-identity env contract: one key set, one home, sanctioned mirrors only (HATS-1613).
 
-The contract itself is ADR-0025; this is its guard. Five invariants:
+The contract itself is ADR-0025; this is its guard. Six invariants:
 
 A. each contract key is *defined* exactly once inside the integrator;
 B. ``ai_hats.env`` exposes all of them (re-export is fine — one import surface);
@@ -8,12 +8,15 @@ C. the mirrors that may not import the home (rack) carry the same spellings;
 D. ``ENV_TASKS_DIR`` in the home is NOT rack's ``RACK_TASKS_DIR`` — a near-name
    whose accidental unification would splice two unrelated contracts;
 E. the identity is REMOVED exactly as it is written — a subset tears it, and the
-   three sites that hand-rolled their own key list each tore it differently.
+   three sites that hand-rolled their own key list each tore it differently;
+F. the hook scripts shipped into user projects spell every ``AI_HATS_*`` they
+   read either as a contract key or as a name this file admits is not one.
 """  # comment-length: allow — the invariant set is the contract
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -74,6 +77,57 @@ SANCTIONED_MIRRORS = {
 MIRROR_SPELLINGS = {
     **CONTRACT_KEYS,
     "ENV_AI_HATS_PROJECT_DIR": "AI_HATS_PROJECT_DIR",
+}
+
+# comment-length: allow — why the shipped hooks get their own regime.
+# Hook scripts are DATA materialised into arbitrary user projects and run by the
+# SYSTEM interpreter, where ``ai_hats`` may not be importable at all (and the
+# library declares zero dependencies — packages/ai-hats-library/tests/
+# test_library_boundary.py). So they cannot import the home, and they do not even
+# name a constant SANCTIONED_MIRRORS could resolve: the spellings are inline
+# literals. Same regime as C, one level lower — conformance, not dedup.
+SHIPPED_HOOK_ROOT = REPO_ROOT / "packages" / "ai-hats-library" / "src" / "ai_hats_library"
+# ``git_hooks`` is in scope with ``hooks``: the split is where the file gets
+# installed (.git/hooks vs the surface's hook config), not what it may read.
+SHIPPED_HOOK_DIRS = {"hooks", "git_hooks"}
+_ENV_NAME = re.compile(r"AI_HATS_[A-Z0-9_]+")
+
+# comment-length: allow — the border this table draws IS the invariant.
+# The AI_HATS_* names a shipped hook legitimately reads that are NOT contract
+# keys. ADR-0025 D1 draws this border itself — the caller's point-specific
+# vocabulary and the tuning knobs are outside the identity set by construction —
+# and names it explicitly because "an unnamed neighbour is the mechanism by which
+# the set later drifts". Enumerating them here is what closes the vocabulary, and
+# a closed vocabulary is the only thing that can tell a typo from a new key.
+NON_CONTRACT_HOOK_KEYS = {
+    # Point-specific vocabulary of the caller: composition of the channel.
+    "AI_HATS_BRANCH_NAME",
+    "AI_HATS_BYPASS_JOURNAL",
+    "AI_HATS_HOOK_EVENT",
+    # Kill switches and acknowledgements: a human standing one gate down.
+    "AI_HATS_COMMENT_LINT_OFF",
+    "AI_HATS_DESTRUCTIVE_ACK",
+    "AI_HATS_DOCS_INDEX_ACK",
+    "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
+    "AI_HATS_PRIVACY_ACK",
+    "AI_HATS_RULE_DELIVERY_ACK",
+    "AI_HATS_SECURITY_LINT_OFF",
+    "AI_HATS_SHARED_STATE_ACK",
+    "AI_HATS_SKILL_LINT_ACK",
+    "AI_HATS_SMOKE_SKIP",
+    "AI_HATS_TOOL_HYGIENE_OFF",
+    "AI_HATS_WT_ENTRY_OFF",
+    "AI_HATS_WT_GATE_OFF",
+    "AI_HATS_YOLO",
+    # Tuning knobs and config overrides: "how much" / "run what", set by a human.
+    "AI_HATS_COMMENT_MAX_LINES",
+    "AI_HATS_DOCSTRING_MAX_CHARS",
+    "AI_HATS_DOCSTRING_MAX_LINES",
+    "AI_HATS_E2E_CLEAN_TMP",
+    "AI_HATS_E2E_REQUIRE_VENV",
+    "AI_HATS_RULE_DELIVERY_CMD",
+    "AI_HATS_SKILL_LINT_CMD",
+    "AI_HATS_WT_GATE_EXTS",
 }
 
 
@@ -146,6 +200,75 @@ def test_sanctioned_mirror_spellings_match_the_home(module_name: str) -> None:
             f"{MIRROR_SPELLINGS[attr]!r}; rack may not import the home "
             f"(ADR-0023: reconcile behaviour, not remove duplication)"
         )
+
+
+def _shipped_hook_env_literals() -> dict[str, list[str]]:
+    """``AI_HATS_* name -> ["relpath:line", ...]`` across every shipped hook script.
+
+    ``.py`` is read with ``ast`` and only WHOLE string constants count, because
+    only those are env reads: ``safety_gate.py:31`` names two ACKs in a comment
+    and ``:178`` holds the prefix ``"AI_HATS_YOLO="``, none of which is a key.
+    Everything else (shell, json) has no cheap AST and is scanned line-wise.
+    The five vendored ``bypass_journal.py`` are symlinks, so resolving collapses
+    them onto the one file a fix must actually edit.
+    """
+    found: dict[str, set[str]] = {}
+    seen: set[Path] = set()
+    for path in sorted(SHIPPED_HOOK_ROOT.rglob("*")):
+        parents = set(path.relative_to(SHIPPED_HOOK_ROOT).parts[:-1])
+        if not path.is_file() or not (SHIPPED_HOOK_DIRS & parents):
+            continue
+        real = path.resolve()
+        if real in seen:
+            continue
+        seen.add(real)
+        try:
+            text = real.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = real.relative_to(REPO_ROOT)
+        hits: list[tuple[str, int]] = []
+        if real.suffix == ".py":
+            for node in ast.walk(ast.parse(text)):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if _ENV_NAME.fullmatch(node.value):
+                        hits.append((node.value, node.lineno))
+        else:
+            for lineno, line in enumerate(text.splitlines(), 1):
+                hits.extend((name, lineno) for name in _ENV_NAME.findall(line))
+        for name, lineno in hits:
+            found.setdefault(name, set()).add(f"{rel}:{lineno}")
+    return {name: sorted(sites) for name, sites in found.items()}
+
+
+def test_shipped_hook_scripts_spell_only_names_the_contract_knows() -> None:
+    """F — an AI_HATS_* literal in a shipped hook is a contract key or a named non-key.
+
+    These scripts run where nothing can check them: no import of the home, no
+    constant to resolve, no failure when the read misses — a typo just yields the
+    default forever. Closing the vocabulary is what turns that into a test.
+    """
+    found = _shipped_hook_env_literals()
+    known = set(CONTRACT_KEYS.values()) | NON_CONTRACT_HOOK_KEYS
+    unknown = {name: sites for name, sites in found.items() if name not in known}
+    assert not unknown, (
+        "shipped hook scripts read AI_HATS_* names the contract does not declare:\n"
+        + "\n".join(f"  {name}  <- {', '.join(sites)}" for name, sites in sorted(unknown.items()))
+        + "\nFix: if it is meant to be a contract key, spell it exactly as its home "
+        "does (CONTRACT_KEYS at the top of this file, ADR-0025 D1) — the hook cannot "
+        "import the home, so this test is the only thing that would ever notice. "
+        "If it is a new kill switch or knob, add it to NON_CONTRACT_HOOK_KEYS."
+    )
+
+    # Doubles as the liveness pin: a scan that stops seeing files passes silently,
+    # but every allowlisted name goes unread at once.
+    unread = sorted(NON_CONTRACT_HOOK_KEYS - set(found))
+    assert not unread, (
+        f"NON_CONTRACT_HOOK_KEYS lists {unread}, which no shipped hook reads any "
+        f"more. Drop them — an allowlist nobody exercises is a rubber stamp — "
+        f"unless the whole list is here, in which case the hook layout moved and "
+        f"SHIPPED_HOOK_ROOT / SHIPPED_HOOK_DIRS need re-pointing."
+    )
 
 
 def test_tasks_dir_near_name_is_not_the_racks_own_variable() -> None:
