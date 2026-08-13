@@ -1,6 +1,6 @@
 """Session-identity env contract: one key set, one home, sanctioned mirrors only (HATS-1613).
 
-The contract itself is ADR-0024; this is its guard. Four invariants:
+The contract itself is ADR-0025; this is its guard. Four invariants:
 
 A. each contract key is *defined* exactly once inside the integrator;
 B. ``ai_hats.env`` exposes all of them (re-export is fine — one import surface);
@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INTEGRATOR_SRC = REPO_ROOT / "src" / "ai_hats"
 HOME_MODULE = INTEGRATOR_SRC / "env.py"
 
-# The 13 keys of the contract (ADR-0024 + ADR-0020 D2), as
+# The 13 keys of the contract (ADR-0025 + ADR-0020 D2), as
 # ``expected attribute name on ai_hats.env`` -> ``env var spelling``.
 IDENTITY_KEYS = {
     "ENV_SESSION_ID": "AI_HATS_SESSION_ID",
@@ -94,7 +94,7 @@ def _integrator_definitions() -> dict[str, list[str]]:
     return sites
 
 
-# Declared home per key (ADR-0024 D1). SESSION_ID is observe's by HATS-948 and
+# Declared home per key (ADR-0025 D1). SESSION_ID is observe's by HATS-948 and
 # `env` cannot re-export it: the leaf-purity exemption runs one way only.
 HOMES = {spelling: "ai_hats.env" for spelling in CONTRACT_KEYS.values()}
 HOMES["AI_HATS_SESSION_ID"] = "ai_hats_observe.trace"
@@ -104,13 +104,13 @@ HOMES["AI_HATS_SESSION_IDENTITY"] = "ai_hats.session_identity"
 
 @pytest.mark.parametrize(("attr", "spelling"), sorted(CONTRACT_KEYS.items()))
 def test_contract_key_is_exposed_by_its_declared_home(attr: str, spelling: str) -> None:
-    """B — every contract key is reachable from its one declared home (ADR-0024 D1)."""
+    """B — every contract key is reachable from its one declared home (ADR-0025 D1)."""
     import importlib
 
     module = importlib.import_module(HOMES[spelling])
     assert hasattr(module, attr), (
         f"{attr} ({spelling}) is not exposed by {HOMES[spelling]} — its declared "
-        f"home (ADR-0024 D1). Six hook-point keys are raw literals in "
+        f"home (ADR-0025 D1). Six hook-point keys are raw literals in "
         f"src/ai_hats/hook_exec.py today."
     )
     assert getattr(module, attr) == spelling
@@ -183,7 +183,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
 
     They agree today because ``assemble_launch_env`` is one composition root and
     builds both from the same arguments — but nothing said so, and a second
-    writer is how every divergence in ADR-0024's context table began.
+    writer is how every divergence in ADR-0025's context table began.
     """
     import json
 

@@ -204,7 +204,7 @@ ownership-holder cross-check when `ownership.json` exists (PROP-076). A `session
 claim is checked for self-consistency — the minting pid the id embeds against
 `AI_HATS_ROOT_PID` — and never against `AI_HATS_SESSION_ID`, the variable that produced
 the claim; an actor claiming no session (`rack:reflect`) is outside the check, not a
-mismatch (ADR-0024 D4). Journal
+mismatch (ADR-0025 D4). Journal
 write failures are loud on stderr but never break the already-persisted operation.
 `rack context <ID> --attr audit` (`--event/--since/--actor`) is the query surface; it
 warns when a task moved states with an empty journal (zero-events, PROP-005/076).

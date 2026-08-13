@@ -151,7 +151,7 @@ def _claim_verdict(actor: str, root_pid: int) -> dict[str, Any]:
 
 
 def build_identity(actor: str, tasks_dir: Path, task_id: str) -> dict[str, Any]:
-    """Verifiable identity block for one record (PROP-080/076, ADR-0024 D4).
+    """Verifiable identity block for one record (PROP-080/076, ADR-0025 D4).
 
     ``session_id``/``root_pid`` describe the *writing process* (env contract),
     independently of the claimed ``actor``. The verdict says whether the claim

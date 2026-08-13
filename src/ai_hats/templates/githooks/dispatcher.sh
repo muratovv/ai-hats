@@ -22,7 +22,7 @@ GITHOOKS_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 # happens inside a linked worktree — which is what gates every worktree.
 PROJECT_DIR="$(dirname "$GITHOOKS_DIR")"
 
-# ADR-0024 D3. The line above is this stub's OWN answer to "which project", so a
+# ADR-0025 D3. The line above is this stub's OWN answer to "which project", so a
 # pin naming a different one belongs to somebody else's session: drop the keys
 # travelling with it rather than resolve an interpreter under a foreign checkout
 # (HATS-897, HATS-1525). `unset`, not a local blank — `githooks_run` hands this

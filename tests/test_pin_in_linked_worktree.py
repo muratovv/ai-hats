@@ -1,6 +1,6 @@
 """The sub-agent case: cwd is a linked worktree, the pin names the main checkout.
 
-HATS-1613 / ADR-0024 D2. ``subagent_runner`` hands the child ``AI_HATS_PROJECT_DIR``
+HATS-1613 / ADR-0025 D2. ``subagent_runner`` hands the child ``AI_HATS_PROJECT_DIR``
 = the MAIN checkout while the child executes in a worktree, so ``cwd != pin`` is
 designed and permanent. What reconciles them is the worktree-hop — and *because*
 the contract makes the hop load-bearing, these tests exercise the real one rather

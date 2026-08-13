@@ -251,7 +251,7 @@ def test_an_unrunnable_gate_does_not_stop_the_ones_after_it(tmp_path: Path):
     assert ran.exists(), "a later gate was skipped along with the broken one"
 
 
-# ---- foreign session pin, dropped for the children (HATS-1613, ADR-0024 D3) ----
+# ---- foreign session pin, dropped for the children (HATS-1613, ADR-0025 D3) ----
 
 
 def test_a_foreign_pin_is_dropped_and_repinned_for_the_chain(tmp_path, capsys):

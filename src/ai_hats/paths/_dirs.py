@@ -143,14 +143,14 @@ class NotAnAiHatsProjectError(Exception):
 def _scoped_override(raw: str | None, project_dir: Path, var: str) -> Path | None:
     """An env override, honoured only while its ``AI_HATS_PROJECT_DIR`` pair agrees.
 
-    The one trust procedure of ADR-0024 D3, shared by every key that travels with
+    The one trust procedure of ADR-0025 D3, shared by every key that travels with
     the pin. Three states: no pin at all — env-wins, an explicit human override;
     pin agrees — honoured; pin names another project — a leaked session pin, so
     the override is dropped (+warn) rather than allowed to redirect this
     project's writes (HATS-897, HATS-944, HATS-1525).
 
     The caller's ``project_dir`` is its *structural* answer and must already be
-    worktree-hopped — ADR-0024 D2. Resolving before the hop makes a sub-agent's
+    worktree-hopped — ADR-0025 D2. Resolving before the hop makes a sub-agent's
     own legitimate pin read as foreign.
     """  # comment-length: allow — this docstring IS the shared procedure's contract
     if not raw:

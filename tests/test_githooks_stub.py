@@ -176,8 +176,10 @@ def test_a_leaked_ai_hats_dir_from_another_project_is_ignored(tmp_path: Path):
     hunting for an interpreter under a foreign checkout (HATS-897).
 
     The PAIR is what marks it as somebody else's: ai-hats never writes
-    ``AI_HATS_DIR`` alone — the launcher, ``provider.get_env`` and ``_hook_env``
-    all put it beside ``AI_HATS_PROJECT_DIR`` (ADR-0024 D3).
+    ``AI_HATS_DIR`` alone — it has exactly one producer,
+    ``provider.get_env`` (``surfaces/claude/provider.py:394-397``), and that one
+    writes it beside ``AI_HATS_PROJECT_DIR`` (ADR-0025 D3). The launcher and
+    ``_hook_env`` pin the project without producing ``AI_HATS_DIR`` at all.
     """
     project = _project(tmp_path)
     foreign = _foreign_checkout(tmp_path)
@@ -257,9 +259,14 @@ def test_a_pinned_session_without_HOME_still_fails_open(tmp_path: Path):
     project = _project(tmp_path)
 
     result = subprocess.run(
-        ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin",
-         f"AI_HATS_PROJECT_DIR={tmp_path / 'elsewhere'}",
-         "bash", str(project / ".githooks" / "pre-commit")],
+        [
+            "/usr/bin/env",
+            "-i",
+            "PATH=/usr/bin:/bin",
+            f"AI_HATS_PROJECT_DIR={tmp_path / 'elsewhere'}",
+            "bash",
+            str(project / ".githooks" / "pre-commit"),
+        ],
         cwd=str(project),
         capture_output=True,
         text=True,

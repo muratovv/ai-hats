@@ -35,7 +35,7 @@ _FILLED_PLAN = (
 
 
 #: Real id shape (``ai_hats_observe.session``) paired with the root pid its tail
-#: names — the identity check reads that pair, not the id alone (ADR-0024 D4).
+#: names — the identity check reads that pair, not the id alone (ADR-0025 D4).
 SESSION = "20260812-101500-3-4242"
 ROOT_PID = "4242"
 
@@ -132,7 +132,7 @@ def test_attr_audit_json_schema_is_stable(runner, tmp_path):
 
 def test_forged_session_pin_is_caught_on_the_cli_road(runner, tmp_path):
     # `cli_common.actor` derives the claim from AI_HATS_SESSION_ID, so the old
-    # comparison against that variable could never fail here (ADR-0024 D4).
+    # comparison against that variable could never fail here (ADR-0025 D4).
     env = {**_session_env(SESSION), ENV_ROOT_PID: "9999"}
     runner.invoke(main, ["create", "demo", *_tasks_args(tmp_path)], env=env)
     plan = runner.invoke(main, ["transition", "HATS-001", "plan", *_tasks_args(tmp_path)], env=env)

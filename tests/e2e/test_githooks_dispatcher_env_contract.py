@@ -100,9 +100,23 @@ def _project(tmp_path: Path) -> Path:
     (project / PROJECT_CONFIG).write_text(f"provider: claude\nlibrary_paths:\n  - {lib}\n")
 
     cp = subprocess.run(
-        [str(AI_HATS_PYTHON), "-m", "ai_hats", "self", "init", "-p", "claude",
-         "-r", "guard-role", "--no-wizard"],
-        cwd=str(project), env=_pinned_env(), capture_output=True, text=True, timeout=180,
+        [
+            str(AI_HATS_PYTHON),
+            "-m",
+            "ai_hats",
+            "self",
+            "init",
+            "-p",
+            "claude",
+            "-r",
+            "guard-role",
+            "--no-wizard",
+        ],
+        cwd=str(project),
+        env=_pinned_env(),
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     assert cp.returncode == 0, f"self init failed:\n{cp.stdout}\n{cp.stderr}"
     assert (project / ".githooks" / "pre-commit").is_file(), "dispatcher not installed"

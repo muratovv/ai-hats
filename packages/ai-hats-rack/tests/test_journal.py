@@ -237,7 +237,7 @@ LIVE_ROOT_PID = "4242"
 
 
 def test_forged_session_claim_is_a_mismatch(tasks_dir, cwd, monkeypatch):
-    # ADR-0024 D4: a shell exporting a foreign session id carries a root pid the
+    # ADR-0025 D4: a shell exporting a foreign session id carries a root pid the
     # id contradicts — the branch the old env comparison could never reach.
     monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
     monkeypatch.setenv(ENV_ROOT_PID, "9999")
@@ -252,7 +252,7 @@ def test_forged_session_claim_is_a_mismatch(tasks_dir, cwd, monkeypatch):
 
 
 def test_framework_actor_is_not_a_session_claim(tasks_dir, cwd, monkeypatch):
-    # ADR-0024 D4: rack:reflect claims no session, so it is outside the check.
+    # ADR-0025 D4: rack:reflect claims no session, so it is outside the check.
     monkeypatch.setenv(ENV_SESSION_ID, LIVE_SESSION)
     monkeypatch.setenv(ENV_ROOT_PID, LIVE_ROOT_PID)
     kernel = journaled_kernel(tasks_dir)

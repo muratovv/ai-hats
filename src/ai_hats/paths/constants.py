@@ -29,7 +29,7 @@ PIPELINES_SUBPATH = ("core", "pipelines")
 PROJECT_CONFIG = "ai-hats.yaml"
 
 # HATS-1613: re-exported from the env leaf, not re-declared — one spelling, one
-# home (ADR-0024 D1). Kept importable from here so existing callers are unchanged.
+# home (ADR-0025 D1). Kept importable from here so existing callers are unchanged.
 from ..env import (  # noqa: E402
     AI_HATS_PROJECT_DIR_ENV,
     ENV_AI_HATS_DIR,

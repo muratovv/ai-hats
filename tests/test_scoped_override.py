@@ -1,6 +1,6 @@
 """The one trust procedure, exercised through both keys that travel with the pin.
 
-ADR-0024 D3. The point is the *shared* function: before HATS-1613 `AI_HATS_DIR`
+ADR-0025 D3. The point is the *shared* function: before HATS-1613 `AI_HATS_DIR`
 was pair-scoped while `AI_HATS_VENV` was taken raw — the Python mirror of the
 `dispatcher.sh:28-30` bug behind HATS-1525. Parametrising one table over both
 keys is what makes a future third key inherit the answer instead of inventing one.

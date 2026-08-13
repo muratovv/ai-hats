@@ -9,7 +9,7 @@ share them without any cycle. ``assembler`` re-imports them, so
 HATS-948: ``TraceTag``/``ENV_SESSION_ID`` moved to ``ai_hats_observe.trace``.
 HATS-1613: the one exception to "no internal imports" is the ``env`` leaf, which
 the leaf gate exempts by name — ``ENV_ROLE``/``ENV_ROOT_PID`` are re-exported
-from there rather than re-declared (ADR-0024 D1).
+from there rather than re-declared (ADR-0025 D1).
 """  # comment-length: allow — the leaf's import contract is the point of the module
 
 from .env import ENV_ROLE as ENV_ROLE, ENV_ROOT_PID as ENV_ROOT_PID

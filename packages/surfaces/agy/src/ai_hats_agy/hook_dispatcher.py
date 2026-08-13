@@ -23,7 +23,7 @@ from pathlib import Path
 HOOK_TIMEOUT_S = 60.0
 _TIMEOUT_ENV = "AI_HATS_AGY_HOOK_TIMEOUT_S"
 
-# Sanctioned mirror of the env contract (ADR-0024 D5): this process must not
+# Sanctioned mirror of the env contract (ADR-0025 D5): this process must not
 # import ai-hats (see the module docstring), so the spellings are declared here
 # and held against the home by ``tests/test_env_contract.py``.
 ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
