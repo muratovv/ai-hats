@@ -159,7 +159,7 @@ def _pinned_source_library_root(project_dir: Path | None) -> Path | None:
 
 
 def builtin_library_root(
-    project_dir: Path | None = None, *, prefer_cwd: bool = False
+    project_dir: Path | None = None, *, prefer_cwd: bool = False, cwd: Path | None = None
 ) -> Path | None:
     """Resolve the builtin ``library/`` source root.
 
@@ -171,6 +171,9 @@ def builtin_library_root(
        ``prefer_cwd``** (read-only composition; see below).
     3. ``project_dir`` or ``AI_HATS_PROJECT_DIR`` source auto-detection.
     4. ``importlib.resources`` — the installed package (downstream / default).
+
+    ``cwd`` names the directory whose checkout counts as "here" (default:
+    the process cwd) — injected so callers, and tests, need not chdir.
 
     ``prefer_cwd`` splits two questions that need opposite answers. Composing
     to WRITE must key off ``project_dir``: composing checkout A's library while
@@ -192,7 +195,7 @@ def builtin_library_root(
         return root
 
     pinned_root = _pinned_source_library_root(project_dir)
-    cwd_root = _detect_source_library_root(Path.cwd())
+    cwd_root = _detect_source_library_root(Path.cwd() if cwd is None else cwd)
     project_named = project_dir is not None or bool(env.project_dir_pin())
 
     if cwd_root is not None and cwd_root != pinned_root:

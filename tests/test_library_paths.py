@@ -389,10 +389,10 @@ def test_prefer_cwd_resolves_worktree_library_over_project(tmp_path, monkeypatch
     wt_lib = _make_monorepo_lib(tmp_path / "wt")
     _fake_worktree(tmp_path / "main", tmp_path / "wt")
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
-    monkeypatch.chdir(tmp_path / "wt")
+    here = tmp_path / "wt"
 
-    assert builtin_library_root(tmp_path / "main", prefer_cwd=True) == wt_lib
-    assert builtin_library_root(tmp_path / "main") == main_lib
+    assert builtin_library_root(tmp_path / "main", prefer_cwd=True, cwd=here) == wt_lib
+    assert builtin_library_root(tmp_path / "main", cwd=here) == main_lib
 
 
 def test_prefer_cwd_silent_for_sibling_worktree(tmp_path, monkeypatch):
@@ -401,13 +401,12 @@ def test_prefer_cwd_silent_for_sibling_worktree(tmp_path, monkeypatch):
     _make_monorepo_lib(tmp_path / "wt")
     _fake_worktree(tmp_path / "main", tmp_path / "wt")
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
-    monkeypatch.chdir(tmp_path / "wt")
     libmod._warn_library_divergence.cache_clear()
     libmod._git_common_dir.cache_clear()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        builtin_library_root(tmp_path / "main", prefer_cwd=True)
+        builtin_library_root(tmp_path / "main", prefer_cwd=True, cwd=tmp_path / "wt")
 
     assert [str(w.message) for w in caught] == []
 
@@ -419,13 +418,12 @@ def test_warns_when_cwd_checkout_shadows_unrelated_project(tmp_path, monkeypatch
     (tmp_path / "one" / ".git").mkdir()
     (tmp_path / "two" / ".git").mkdir()
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
-    monkeypatch.chdir(tmp_path / "one")
     libmod._warn_library_divergence.cache_clear()
     libmod._git_common_dir.cache_clear()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        builtin_library_root(tmp_path / "two", prefer_cwd=True)
+        builtin_library_root(tmp_path / "two", prefer_cwd=True, cwd=tmp_path / "one")
 
     assert len(caught) == 1
     assert "HATS-1501" in str(caught[0].message)
@@ -436,12 +434,11 @@ def test_no_warn_when_no_project_named(tmp_path, monkeypatch):
     _make_monorepo_lib(tmp_path / "solo")
     monkeypatch.delenv("AI_HATS_LIBRARY_ROOT", raising=False)
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
-    monkeypatch.chdir(tmp_path / "solo")
     libmod._warn_library_divergence.cache_clear()
     libmod._git_common_dir.cache_clear()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        builtin_library_root()
+        builtin_library_root(cwd=tmp_path / "solo")
 
     assert [str(w.message) for w in caught] == []
