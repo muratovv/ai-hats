@@ -58,8 +58,23 @@ def strip_comments(text: str) -> str:
     return "\n".join(out)
 
 
+def refused_only(text: str) -> set[str]:
+    """Flags whose ONLY code mention is a deny-list entry: naming one there is the
+    opposite of offering a hatch, so there is no bypass to record (HATS-1639).
+
+    A flag named elsewhere too (`AI_HATS_YOLO` — safety_gate both refuses it inline
+    and journals it as its own hatch) stays under the ratchet."""
+    listed = re.search(r"SELF_GRANT_FORBIDDEN\s*=\s*\(([^)]*)\)", text)
+    if not listed:
+        return set()
+    inside = set(re.findall(r"AI_HATS_[A-Z0-9_]+", listed.group(1)))
+    outside = set(re.findall(r"AI_HATS_[A-Z0-9_]+", text.replace(listed.group(0), "")))
+    return inside - outside
+
+
 def hatches_in(text: str) -> set[str]:
-    return {m.group(0) for m in HATCH_RE.finditer(strip_comments(text))} - NOT_A_HATCH
+    stripped = strip_comments(text)
+    return {m.group(0) for m in HATCH_RE.finditer(stripped)} - NOT_A_HATCH - refused_only(stripped)
 
 
 def unjournaled(text: str) -> set[str]:
@@ -97,6 +112,22 @@ def test_a_hatch_named_only_in_a_comment_is_not_reported():
 
 def test_a_configuring_var_is_not_treated_as_a_hatch():
     assert hatches_in('_cmd="${AI_HATS_SKILL_LINT_CMD:-npx agnix}"') == set()
+
+
+def test_a_flag_only_listed_as_refused_is_not_a_hatch():
+    """Refusing a flag is the opposite of offering a bypass (HATS-1639)."""
+    text = 'SELF_GRANT_FORBIDDEN = ("AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK")\ncode = 1'
+    assert hatches_in(text) == set()
+
+
+def test_a_refused_flag_named_elsewhere_too_stays_under_the_ratchet():
+    """The exemption must not launder a real hatch that happens to be deny-listed."""
+    text = (
+        'SELF_GRANT_FORBIDDEN = ("AI_HATS_YOLO",)\n'
+        'if os.environ.get("AI_HATS_YOLO"):\n    sys.exit(0)\n'
+    )
+    assert hatches_in(text) == {"AI_HATS_YOLO"}
+    assert unjournaled(text) == {"AI_HATS_YOLO"}
 
 
 def test_every_hatch_in_every_hook_is_journaled():

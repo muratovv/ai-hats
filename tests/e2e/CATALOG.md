@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**229 of 229 files catalogued — 236 flows.**
+**230 of 231 files catalogued — 237 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -562,6 +562,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
 - **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
+
+## `test_consent_self_grant_chain.py`
+
+*pins HATS-1639*
+
+- **flow** — an agent granting itself supervisor consent inline, in the same Bash call
+- **cmds**
+
+  ```console
+  AI_HATS_PLAN_ACK=1 rack transition HATS-1 execute
+  ```
+
+- **expect** — the composed PreToolUse chain refuses it; consent set in the ENVIRONMENT still works, and an unprefixed transition still passes
+- **why** — rack reads these two acks itself, so unlike hook-read AI_HATS_SHARED_STATE_ACK an inline prefix reaches them and the agent approves its own transition
 
 ## `test_customize_parallel_writes.py`
 
@@ -3386,3 +3400,9 @@ as a claim to check, not as evidence.
 
 - **expect** — a virtual environment is provisioned inside worktree .venv and imports worktree source
 - **why** — worktrees must provision isolated venvs to prevent importing main repository packages
+
+## Not yet catalogued
+
+1 files carry no flow block yet:
+
+- `test_worktree_library_edit_visible.py`

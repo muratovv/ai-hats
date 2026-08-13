@@ -172,14 +172,21 @@ def check_sql(cmd_bin: str, args) -> str:
     return ""
 
 
+# Consent flags the target PROCESS reads, so an inline prefix reaches them. Hook-read
+# flags (AI_HATS_SHARED_STATE_ACK) need no entry — HATS-1639.
+SELF_GRANT_FORBIDDEN = ("AI_HATS_YOLO", "AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK")
+
+
 def check_self_grant(args) -> str:
-    """The agent must not hand itself YOLO inline; exporting it is the user's call."""
+    """The agent must not hand itself consent inline; exporting it is the user's call."""
     for token in args:
-        if token.upper().startswith("AI_HATS_YOLO="):
-            return (
-                "Stopped: AI_HATS_YOLO cannot be granted inline — a guard the agent can "
-                "switch off is not a guard. Export it in the environment instead."
-            )
+        upper = token.upper()
+        for flag in SELF_GRANT_FORBIDDEN:
+            if upper.startswith(f"{flag}="):
+                return (
+                    f"Stopped: {flag} cannot be granted inline — a guard the agent can "
+                    "switch off is not a guard. Export it in the environment instead."
+                )
     return ""
 
 
