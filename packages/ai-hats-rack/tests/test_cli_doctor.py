@@ -69,3 +69,28 @@ def test_doctor_human_output_names_check_kind_and_target(runner, tmp_path):
     assert "dangling-link" in result.output
     assert "HATS-1" in result.output
     assert "parent_task" in result.output
+
+
+# ----- the binding section (HATS-1584) ---------------------------------------
+
+
+def test_the_json_shape_tells_a_finished_run_from_one_that_could_not_start(runner, tmp_path):
+    """I2 (HATS-1546). Findings and a typed failure share exit 1 — every typed
+    refusal in this package leaves through one ``fail()`` with a literal 1 — so
+    the discriminator is the SHAPE, and the startup script of HATS-1583 branches
+    on the ``error`` key rather than on the code.
+    """
+    tasks = _tracker(tmp_path)
+
+    finished = json.loads(_run(runner, tasks, "doctor", "--json").output)
+    with runner.isolated_filesystem():
+        could_not_start = runner.invoke(
+            main,
+            ["doctor", "--json"],
+            env={"RACK_TASKS_DIR": "", "AI_HATS_PROJECT_DIR": "", "AI_HATS_DIR": ""},
+            catch_exceptions=False,
+        )
+
+    assert set(finished) == {"clean", "scanned", "findings", "bindings"}
+    assert could_not_start.exit_code == 1
+    assert set(json.loads(could_not_start.output)) == {"error"}
