@@ -67,19 +67,22 @@ injection: |
   - `src/ai_hats/paths.py` — agent / library / tracker path resolution.
 
   ### Verifying compositions from a worktree
-  **Before any `ai-hats` command, set `AI_HATS_LIBRARY_ROOT` — the CLI
-  does not find your worktree's library on its own (HATS-1501, measured):**
+  A **read-only** command run from inside a worktree composes THAT
+  worktree's library (HATS-1501): `config show-prompt` and friends key off
+  cwd, so your edit is what you see.
+
+  A command that **writes** — init, sync, anything materializing into
+  `.agent/` — deliberately still keys off the project, which for a linked
+  worktree is the MAIN checkout (`_project_dir` hops there so tracker ops
+  reach the one live backlog, HATS-524). Composing one checkout's library
+  into another project's `.agent` is HATS-1123; do not expect a worktree
+  edit to reach a materialized artifact.
+
+  To force either way explicitly:
 
       export AI_HATS_LIBRARY_ROOT=<wt>/packages/ai-hats-library/src/ai_hats_library
 
-  Without it a bare `ai-hats …` run from inside a worktree composes the
-  MAIN checkout's library, and says nothing: it exits 0 and renders the
-  block you edited, carrying master's text. Your edit is simply absent —
-  a false green, not a refusal. Cause: `_project_dir()` hops a linked
-  worktree to the main checkout by design (tracker routing, HATS-524) and
-  library resolution consumes that same answer.
-
-  In-process, construct the Assembler with cwd in the worktree:
+  In-process, construct the Assembler with the worktree path:
 
       from pathlib import Path
       from ai_hats.assembler import Assembler
@@ -92,10 +95,8 @@ injection: |
       result = a.composer.compose('role-curator', overlays=overlays)
       assert result.errors == []
 
-  That in-process form is sound on its own (measured): you hand
-  `Assembler` the worktree path explicitly, so the worktree's library
-  wins. The env var is what the **CLI** needs, because there nobody
-  passes the worktree — `_project_dir()` computes the main checkout.
+  Passing `wt` explicitly is what makes the worktree's library win here —
+  this path never consulted cwd, before the fix or after.
 
   **Positive-control discipline.** When verifying that a NEW rule/skill
   is now present, also assert that an EXISTING rule/skill from the same
