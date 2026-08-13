@@ -25,12 +25,18 @@ why:    a worktree's project dir points at MAIN (HATS-524) and an inherited
 
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
 
 from _helpers.git import git, init_repo
-from _helpers.hook_chain import build_session_settings, run_chain, run_tool_chain
+from _helpers.hook_chain import (
+    build_session_settings,
+    pretooluse_hooks,
+    run_chain,
+    run_tool_chain,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -244,6 +250,76 @@ def test_the_switch_does_not_disarm_the_generic_destructive_guard(hooked_project
     )
     assert KILL_SWITCH not in verdict.reason, (
         f"a deny must not re-offer the switch that is already on; got {verdict}"
+    )
+
+
+# --- A hostile config must cost this gate only, and only quietly ------------
+
+
+@pytest.fixture(scope="module")
+def hostile_checkout(tmp_path_factory):
+    """A checkout whose `ai-hats.yaml` the resolver cannot read to the end.
+
+    `~nosuchuser` makes pathlib's `expanduser` raise RuntimeError — neither an
+    OSError nor anything the resolver used to catch. Its tracker still sits at
+    the documented default location, which is what the fallback is for."""
+    root = tmp_path_factory.mktemp("hostile-checkout")
+    (root / "ai-hats.yaml").write_text("ai_hats_dir: ~nosuchuser/tracker\n")
+    (root / TRACKER / "tasks" / "HATS-9").mkdir(parents=True)
+    (root / "src").mkdir()
+    return root
+
+
+def _run_hook(command: str, project, env, payload: str):
+    """One hook of the composed chain, run as the harness runs it — so the exit
+    code and stderr are visible. `run_chain` reads a crash as `allow`."""
+    run_env = dict(env)
+    run_env.setdefault("CLAUDE_PROJECT_DIR", str(project))
+    return subprocess.run(  # noqa: S603 - command comes from our own settings.json
+        ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
+        input=payload,
+        cwd=str(project),
+        env=run_env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Write"])
+def test_no_hook_dies_on_a_hostile_config(hooked_project, hostile_checkout, tool):
+    """Requirement 4 is a QUIET allow, and quiet is an exit code.
+
+    A hook that dies with a traceback still reads as `allow` to the harness, so
+    the composite verdict cannot see the difference — only the process can."""
+    project, env, settings = hooked_project
+    victim = hostile_checkout / "src" / "app.py"
+    tool_input = {"command": f"rm -f {victim}"} if tool == "Bash" else {"file_path": str(victim)}
+    payload = json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": tool_input}
+    )
+
+    for command in pretooluse_hooks(settings, tool):
+        proc = _run_hook(command, project, env, payload)
+        name = command.rsplit("/", 1)[-1]
+        assert proc.returncode == 0, f"{name} exited {proc.returncode}:\n{proc.stderr}"
+        assert "Traceback" not in proc.stderr, f"{name} crashed:\n{proc.stderr}"
+
+
+def test_a_hostile_config_does_not_take_the_rest_of_the_gate_with_it(
+    hooked_project, hostile_checkout
+):
+    """The blast radius, measured. The tracker predicate runs on every path
+    token of every mutating command, so an exception there stops `check_command`
+    before `rm -rf /` is ever looked at — a regression far outside this card."""
+    project, env, settings = hooked_project
+    victim = hostile_checkout / "src" / "app.py"
+
+    verdict = run_chain(project, f"rm -f {victim} && rm -rf /", settings=settings, env=env)
+
+    assert verdict.denied, f"`rm -rf /` must still be denied alongside; got {verdict}"
+    assert "filesystem root" in verdict.reason, (
+        f"the catastrophic guard must be what answered; got {verdict}"
     )
 
 

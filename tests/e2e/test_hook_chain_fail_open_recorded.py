@@ -93,19 +93,45 @@ def test_an_unparsable_payload_fails_open_across_the_whole_chain(hooked_project)
         )
 
 
-#: tool -> the python hook on that matcher whose payload guard HATS-1373 changed.
-#: Named per tool rather than scanned, so a hook silently dropping off its
-#: matcher fails here instead of vacuously passing. (py_security_lint and
+#: (tool, python hook on that matcher) whose payload guard HATS-1373 changed.
+#: PAIRS, not a tool -> hook map: HATS-1647 put a second python hook on Write,
+#: and a map keyed by tool cannot hold it — the newcomer joined unobserved while
+#: the suite stayed green. Named rather than scanned, so a hook silently dropping
+#: off its matcher fails here instead of vacuously passing; the completeness test
+#: below is what keeps the naming honest. (py_security_lint and
 #: comment_length_lint carry the same change on PostToolUse, a different event.)
-GUARDED = {
-    "Bash": "safety_gate.py",
-    "Write": "wt_gate.py",
-    "EnterWorktree": "wt_entry_gate.py",
-}
+GUARDED = (
+    ("Bash", "safety_gate.py"),
+    ("EnterWorktree", "wt_entry_gate.py"),
+    ("Write", "backlog_write_gate.py"),
+    ("Write", "wt_gate.py"),
+)
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize(("tool", "hook_name"), sorted(GUARDED.items()))
+def test_the_registry_names_every_python_hook_on_those_matchers(hooked_project):
+    """A hand-kept registry guards only what it lists.
+
+    Without this, the next hook to land on an already-listed matcher inherits
+    the green of its neighbour and its own fail-open is never exercised.
+    """
+    _project, _env, settings = hooked_project
+
+    wired = {
+        (tool, command.rsplit("/", 1)[-1])
+        for tool in {t for t, _ in GUARDED}
+        for command in pretooluse_hooks(settings, tool)
+        if command.endswith(".py")
+    }
+
+    assert wired == set(GUARDED), (
+        f"registry drifted from the composed chain; missing={sorted(wired - set(GUARDED))} "
+        f"stale={sorted(set(GUARDED) - wired)}"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("tool", "hook_name"), GUARDED)
 def test_every_guarded_hook_records_its_fail_open(hooked_project, tool, hook_name):
     """Fail-under-revert: drop that hook's journal_bypass call and this goes quiet.
 

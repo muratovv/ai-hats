@@ -294,7 +294,13 @@ def main() -> int:
     if not cmd:
         return 0
 
-    reason = check_command(cmd)
+    try:
+        reason = check_command(cmd)
+    except Exception as exc:
+        # Fail-open, but recorded. A guard that dies mid-sweep also drops every
+        # check it had not reached yet — `rm -rf /` among them (HATS-1647).
+        journal_bypass("fail-open", f"cannot judge {cmd!r}: {exc!r}", hook="safety_gate.py")
+        return 0
 
     if reason:
         print(
