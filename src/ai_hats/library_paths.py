@@ -121,6 +121,7 @@ def build_library_paths(
     config_paths: Sequence[str | Path] = (),
     local_libraries: Path | None = None,
     extra: Sequence[Path] = (),
+    prefer_cwd: bool = False,
 ) -> list[Path]:
     """Build the ordered list of library root paths for component resolution.
 
@@ -130,8 +131,11 @@ def build_library_paths(
     3. Project configured library paths (from ``ai-hats.yaml``)
     4. Project local libraries (``./libraries`` or explicit)
     5. Extra runtime overrides
+
+    ``prefer_cwd`` is for READ-ONLY composition only — see
+    :func:`ai_hats.paths.library.builtin_library_root`.
     """
-    paths: list[Path] = list(builtin_library_layers(project_dir))
+    paths: list[Path] = list(builtin_library_layers(project_dir, prefer_cwd=prefer_cwd))
 
     # HATS-871 / ADR-0016: out-of-tree packages contribute their skills/ via the
     # ``ai_hats.skills`` entry-point (open registry). Shipped tier — ranks above
