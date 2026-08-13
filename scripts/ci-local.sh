@@ -119,16 +119,34 @@ ci_e2e() {
     "$PY" -B -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
-# HATS-1137/HATS-1604 — what each gate is made of, and the ONE place it is
-# configured. A gate script asks with `<gate> --stages` and runs the stages
-# through the shared primitive, so "green enough to be done" is an edit HERE and
+# HATS-1137/HATS-1604/HATS-1614 — what each gate is made of, and the ONE place
+# it is configured. A gate script asks with `--stages <gate>` and runs them
+# through the shared primitive, so "green enough to merge" is an edit HERE and
 # the library never restates it (ADR-0023 D7).
 #
-# Neither gate joins `all`: `all` is the pre-push bundle and already runs
-# `coverage`, which collects the same non-e2e integration tests unfiltered.
+# `merge-gate` MUST stay a subset of `done-gate`. That is what lets one run pay
+# for both (absorption, ADR-0023 D5) — `tests/test_gate_entrypoint_parity.py`
+# refuses a composition that breaks it.
+#
+# `tier` is the linting tier: offline, under eight seconds together. It leads
+# with `e2e-catalog` — the slowest of the five at 7s against under a second each
+# — because the primitive stops at the first red and a stale CATALOG.md is the
+# structural failure worth refusing before anything else starts (HATS-1562).
+#
+# `merge-gate` carries `integration` against ADR-0023 D4, which assigns it to
+# `->done` (supervisor ruling 2026-08-13). Until `->done` can judge the result of
+# a merge (HATS-1602), the edge passes hollow on most cards — measured 8 of 9 —
+# so D4's `->merge` would be the last blocking road those 415 real-subprocess
+# tests outside tests/e2e have. Their only other road is CI's `coverage` job,
+# which runs after the push. HATS-1615 moves it back.
+#
+# No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
+# which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
+    local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation"
     case "$1" in
-        done-gate) echo "e2e-catalog lint unit integration merge-smoke" ;;
+        merge-gate) echo "$tier unit integration" ;;
+        done-gate) echo "$tier unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog e2e" ;;
         *) return 1 ;;
     esac
@@ -155,14 +173,14 @@ case "$stage" in
     # mistaking it for an argument to a gate it does know (HATS-1604).
     --stages)
         gate_composition "${1:-}" || {
-            echo "[ci-local] no such gate: ${1:-<none>} (gates: done-gate | push-gate)" >&2
+            echo "[ci-local] no such gate: ${1:-<none>} (gates: merge-gate | done-gate | push-gate)" >&2
             exit 2
         }
         ;;
-    done-gate|push-gate)
+    merge-gate|done-gate|push-gate)
         echo "[ci-local] '$stage' is a gate, not a stage — it names: $(gate_composition "$stage")" >&2
         echo "  its composition:  scripts/ci-local.sh --stages $stage" >&2
-        echo "  run it (marks the tree on green):  make done-gate | scripts/run-e2e-gate.sh" >&2
+        echo "  run it (marks the tree on green):  make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
         exit 2
         ;;
     security) ci_security ${@+"$@"} ;;
@@ -188,7 +206,7 @@ case "$stage" in
     *)
         echo "[ci-local] unknown stage: $stage" >&2
         echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
-        echo "  gates (--stages prints their composition): done-gate | push-gate" >&2
+        echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
         exit 2
         ;;
 esac

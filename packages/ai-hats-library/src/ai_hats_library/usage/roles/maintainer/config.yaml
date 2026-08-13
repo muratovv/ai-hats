@@ -25,10 +25,17 @@ composition:
     # infrastructure; warn-continue, never blocks worktree creation.
     - worktree-venv
   # HATS-1540 — the live consumer of the bindings channel, on BOTH roads into
-  # master. One script, two rows: `apps.rack.tasks` is the FSM automerge and
-  # `apps.wt` is a direct `ai-hats wt merge`, and a gate that holds only one of
-  # them is the asymmetry that started this epic (HATS-1130). The check is a
-  # marker lookup; the suite runs out of band via `make done-gate`.
+  # master: `apps.rack.tasks` is the FSM automerge and `apps.wt` is a direct
+  # `ai-hats wt merge`, and a gate that holds only one of them is the asymmetry
+  # that started this epic (HATS-1130). Each check is a marker lookup; the suites
+  # run out of band via `make merge-gate` / `make done-gate`.
+  #
+  # TWO GATES since HATS-1614, one per edge, because the two edges ask different
+  # questions (ADR-0023 D3/D4). `->merge`: is this branch fit to enter master —
+  # the agent is alone at that refusal. `->done`: is master green after this card
+  # — the supervisor is present, and only here can a gate see two independently
+  # green branches meeting. `merge-gate`'s composition stays a subset of
+  # `done-gate`'s, so one run pays for both (D5).
   #
   # Two rows rather than one list of points since HATS-1545: the app owns the
   # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
@@ -45,9 +52,9 @@ composition:
   # done-gate.sh), and a session predating the binding had no snapshot to
   # resolve from (there is no separate snapshot any more — HATS-1540 S1).
   #
-  # Role-scoped on purpose (ADR-0019 D7): the gate demands a `done-gate` stage
-  # in scripts/ci-local.sh and refuses a project that has none, so it belongs to
-  # a role only this codebase wears — never to a base trait.
+  # Role-scoped on purpose (ADR-0019 D7): each gate demands a composition of its
+  # own name from scripts/ci-local.sh and refuses a project that names none, so
+  # they belong to a role only this codebase wears — never to a base trait.
   apps:
     rack:
       tasks:
@@ -55,7 +62,7 @@ composition:
           at: [edge:review--done]
           on_error: refuse
     wt:
-      - run: maintainer-quality-gate/hooks/done-gate.sh
+      - run: maintainer-quality-gate/hooks/merge-gate.sh
         at: [pre-merge]
         on_error: refuse
 # Composition rationale (author-facing — NOT injected into the agent prompt).

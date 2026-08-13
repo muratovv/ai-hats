@@ -35,6 +35,9 @@ MAINTAINER_ROLE = (
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "edge:review--done"
 SCRIPT = "hooks/done-gate.sh"
+#: The `->merge` gate, on the other road since HATS-1614. Two edges, two
+#: questions, two compositions (ADR-0023 D3/D4).
+MERGE_SCRIPT = "hooks/merge-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
 #: One log per (task, point, row). The row identity carries the app and the
@@ -286,23 +289,25 @@ def _write_marker(project: Path, tree: str, stages: str = _STUB_STAGE) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_the_maintainer_role_binds_the_gate_to_both_roads_into_master():
+def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     """S4 / the epic's acceptance: a live consumer, bound and proven to refuse.
 
-    One script, TWO rows since HATS-1545 — the app owns the grammar above
-    `run:`, so a row belongs to exactly one app. `apps.rack.tasks` is the FSM
-    automerge and `apps.wt` is a direct `ai-hats wt merge`; a gate holding
-    only one of them is the asymmetry that started the epic, and HATS-1538 left
-    through the unheld one. HATS-1137's tombstone stood here until the two
-    reasons it was withdrawn for were closed (HATS-1540 S1 and S5).
+    TWO rows since HATS-1545 — the app owns the grammar above `run:`, so a row
+    belongs to exactly one app. `apps.rack.tasks` is the FSM automerge and
+    `apps.wt` is a direct `ai-hats wt merge`; a gate holding only one of them is
+    the asymmetry that started the epic, and HATS-1538 left through the unheld
+    one.
+
+    Two DIFFERENT scripts since HATS-1614: the two edges ask different questions
+    (ADR-0023 D3/D4), and one script on both could only ever ask one of them.
     """
     apps = shipped_apps()
     assert apps["rack"]["tasks"] == [
         {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse"}
     ], "the FSM automerge road, qualified by the backlog it gates"
     assert apps["wt"] == [
-        {"run": f"{SKILL}/{SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
-    ], "the direct `ai-hats wt merge` road"
+        {"run": f"{SKILL}/{MERGE_SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
+    ], "the direct `ai-hats wt merge` road, gated by ->merge and not by ->done"
 
 
 def test_the_maintainer_role_is_ai_hats_specific_not_generic():
@@ -540,20 +545,32 @@ def test_a_direct_wt_merge_is_refused_before_it_mutates_anything(
     said = merged.stdout + merged.stderr
     assert merged.returncode != 0, f"the direct merge road is unguarded\n{said}"
     assert "checks" in said.lower(), f"the refusal must name the subsystem\n{said}"
-    assert "make done-gate" in said, f"the refusal must carry the command that clears it\n{said}"
+    # `merge-gate`, not `done-gate`: this road is about entering master, and
+    # handing the agent the wrong command costs it the ~12s of `merge-smoke`
+    # plus a second look at which gate actually refused (HATS-1614).
+    assert "make merge-gate" in said, f"the refusal must carry the command that clears it\n{said}"
     assert git(project, "rev-parse", "master").stdout.strip() == master_before, "master moved"
     assert Path(worktree).is_dir(), "a refused pre-merge destroyed the worktree"
     assert branch in git(project, "branch", "--list", branch).stdout
     assert _state(project, task_id)["state"] == "review"
 
 
-def test_a_marker_lets_the_direct_wt_merge_through(gate_project, rack_bin, shared_launcher):
-    """The same road, satisfied: one script, two points, one marker clears both."""
+def test_a_done_gate_run_clears_the_merge_gate_on_the_same_tree(
+    gate_project, rack_bin, shared_launcher
+):
+    """Absorption on the live road (ADR-0023 D5, HATS-1614).
+
+    The marker is planted under ``done-gate/`` and the road being walked is
+    guarded by ``merge-gate`` — a different gate, a different directory. It
+    clears because the stages it demands all ran on this exact tree, which is the
+    whole point: a card that ran the fuller gate does not pay twice.
+    """
     launcher, _base_env, _venv = shared_launcher
     project, env = gate_project("gated")
     task_id, worktree = _to_review(rack_bin, project, env, worktree=True)
     branch = f"task/{task_id.lower()}"
-    _write_marker(project, _tree(Path(worktree)))
+    marker = _write_marker(project, _tree(Path(worktree)))
+    assert marker.parent.name == "done-gate", "the point is that another gate wrote it"
 
     merged = _ai_hats(
         launcher, "wt", "merge", branch, cwd=project, env={**env, "AI_HATS_MERGE_ACK": "1"}
