@@ -62,6 +62,18 @@ is_in_use() {
     return 1
 }
 
+# True when $1 is a worktree its repo still tracks — a developer's open work,
+# not leak. The name alone cannot tell the two apart, and there were 11 live
+# ones matching the glob when this was written (HATS-1624). An admin dir that
+# no longer exists means the shell was pruned; that one IS leak.
+is_registered_worktree() {
+    [[ -e "$1/.git" ]] || return 1                # no .git ⇒ not a worktree
+    command -v git >/dev/null 2>&1 || return 0    # unknowable ⇒ never proof ⇒ keep
+    local gitdir
+    gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+    [[ -d "$gitdir" ]]
+}
+
 total=0
 freed_kb=0
 for root in "${ROOTS[@]}"; do
@@ -71,6 +83,10 @@ for root in "${ROOTS[@]}"; do
             real="$(cd "$path" 2>/dev/null && pwd -P || echo "$path")"
             if is_in_use "$real"; then
                 printf "  ${YELLOW}skip${RESET} %s ${DIM}(in use — cwd is inside)${RESET}\n" "$path"
+                continue
+            fi
+            if is_registered_worktree "$real"; then
+                printf "  ${YELLOW}skip${RESET} %s ${DIM}(live — git still tracks this worktree)${RESET}\n" "$path"
                 continue
             fi
             sz_kb="$(du -sk "$path" 2>/dev/null | cut -f1 || echo 0)"
