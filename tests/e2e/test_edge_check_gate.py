@@ -993,3 +993,57 @@ def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):
     payload = json.loads(report.stdout)
     assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
     assert payload["bindings"]["rows"][0]["on_error"] == "refuse"
+
+
+# ---------------------------------------------------------------------------
+# 9. the envelope is scoped to a project — HATS-1631
+# ---------------------------------------------------------------------------
+
+
+def test_a_foreign_sessions_envelope_does_not_disarm_this_projects_gate(
+    gate_project, rack_bin, tmp_path
+):
+    """The gate belongs to the project, not to whichever session's shell ran it.
+
+    Unscoped, the envelope of a session belonging to ANOTHER project chose which
+    bindings fired here, and a role declaring none disarmed the edge in silence
+    — exit 0, card moved, nothing on stderr. Real: two sessions of two projects
+    in neighbouring windows is the configuration this repo is developed in.
+
+    Only reachable through a real process: the envelope crosses into ``rack`` by
+    inheritance, which is the boundary an in-process test cannot stand at.
+    """
+    project, env = gate_project("refusing")
+    task_id = _create(rack_bin, project, env)
+    before = _card(project, task_id).read_bytes()
+
+    # A session of project B, under a role that exists and declares no binding
+    # at this edge — the loud half of the defect needs the role to NOT exist.
+    # Built by hand rather than through `_identity_env`: that helper reads the
+    # named project's own ai-hats.yaml, and a foreign session's mirror root is
+    # exactly what must NOT be consulted here.
+    from ai_hats.session_identity import SessionIdentity
+
+    foreign_project = tmp_path / "project-B"
+    foreign = SessionIdentity(
+        id=env["AI_HATS_SESSION_ID"],
+        # ``plain`` resolves and binds nothing — a role that does NOT resolve
+        # aborts on the broken composition instead, which passes this test's
+        # assertions for a reason that has nothing to do with the defect.
+        role="plain",
+        provider="claude",
+        project_dir=foreign_project,
+        session_dir=foreign_project / ".agent" / "ai-hats" / "sessions" / "runs" / "s",
+    )
+    foreign_env = {**env, **foreign.to_env()}
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=foreign_env)
+
+    assert refused.returncode == 1, (
+        "project A's gate was chosen by project B's session\n"
+        f"{refused.stdout}{refused.stderr}"
+    )
+    assert f"{EDGE} aborted by 'checks'" in refused.stderr
+    # The script's own words: proof it RAN, not merely that something refused.
+    assert "drain the review notes first" in refused.stderr
+    assert _card(project, task_id).read_bytes() == before
