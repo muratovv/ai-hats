@@ -50,6 +50,8 @@ DENY_REASON = (
     "card desynchronises the state machine from its locks and audit trail. Move the "
     'card with `rack transition <ID> <state> --log "..."`, edit a field with '
     "`rack transition <ID> --set <field>=<value>`, and read it with `rack context <ID>`. "
+    "A document is written outside the tracker and brought in: "
+    "`rack transition <ID> --attach /tmp/summary.md:summary.md`. "
     "`tasks/<ID>/plan.md` is the one file here you may write directly. If the tracker "
     "itself is broken and only a raw edit can repair it, the supervisor exports "
     f"{_KILL_SWITCH}=1 for the session — there is no per-call override, because a "

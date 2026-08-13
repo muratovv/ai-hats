@@ -100,6 +100,16 @@ def test_writing_a_task_card_by_hand_is_denied(hooked_project):
     assert_names_the_hatch(verdict)
 
 
+def test_a_task_document_is_denied_with_the_attach_recipe(hooked_project):
+    """`summary.md` and its kind are documents, not the plan — `rack` copies
+    them in from outside. A deny that named only `--set` would strand the agent
+    holding a finished summary with nowhere to put it."""
+    project, env, settings = hooked_project
+    verdict = _write(project, env, settings, f"{TRACKER}/tasks/HATS-1/summary.md")
+    assert verdict.denied, f"a document written in place must be denied; got {verdict}"
+    assert "--attach" in verdict.reason, f"deny must name the way in; got {verdict}"
+
+
 def test_plan_md_stays_writable(hooked_project):
     """The carve-out of `rule_backlog_discipline` §1b — the plan is authored by
     the agent, not minted by the FSM. Green before the gate exists and after."""

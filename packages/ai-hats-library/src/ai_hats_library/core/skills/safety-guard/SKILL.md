@@ -40,10 +40,12 @@ coarser one silently wins (HATS-1253).
 `safety_gate.py` (Bash) deny writes under `<ai_hats_dir>/tracker/backlog/**` —
 `rule_backlog_discipline` §1. A hand-edited card desynchronises the state
 machine from its locks and audit trail, so the card moves with
-`rack transition <ID> <state> --log "..."` and fields change with
-`rack transition <ID> --set <field>=<value>`. Reads (`cat`, `grep`) are not
-touched, and `tasks/<ID>/plan.md` stays directly writable (§1b) — it is the
-agent's own deliverable, not FSM-owned state.
+`rack transition <ID> <state> --log "..."`, fields change with
+`rack transition <ID> --set <field>=<value>`, and a document (`summary.md`,
+`audit.md`, …) is written outside the tracker and brought in with
+`rack transition <ID> --attach /tmp/summary.md:summary.md`. Reads (`cat`,
+`grep`) are not touched, and `tasks/<ID>/plan.md` stays directly writable
+(§1b) — it is the agent's own deliverable, not FSM-owned state.
 
 `ai_hats_dir` is resolved from the TARGET path's own `ai-hats.yaml`, never from
 `$AI_HATS_DIR`: that variable leaks between checkouts, and a worktree session
