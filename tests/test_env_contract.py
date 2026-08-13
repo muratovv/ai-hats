@@ -108,6 +108,10 @@ NON_CONTRACT_HOOK_KEYS = {
     "AI_HATS_COMMENT_LINT_OFF",
     "AI_HATS_DESTRUCTIVE_ACK",
     "AI_HATS_DOCS_INDEX_ACK",
+    # Read by the rack process; NAMED in safety_gate because it refuses them as an
+    # inline self-grant rather than reading them (HATS-1639).
+    "AI_HATS_MERGE_ACK",
+    "AI_HATS_PLAN_ACK",
     "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
     "AI_HATS_PRIVACY_ACK",
     "AI_HATS_RULE_DELIVERY_ACK",

@@ -26,7 +26,11 @@ def test_merge_consent_renders_review_handoff(capsys):
     assert handled is True
     err = capsys.readouterr().err
     assert "review consent required" in err
-    assert "AI_HATS_MERGE_ACK=1 ai-hats wt merge task/hats-1" in err
+    # `export`, on its own line: the inline prefix is refused as a self-grant, so a
+    # recipe spelling it that way would send the agent at a wall (HATS-1639).
+    assert "export AI_HATS_MERGE_ACK=1" in err
+    assert "ai-hats wt merge task/hats-1" in err
+    assert "AI_HATS_MERGE_ACK=1 ai-hats wt merge" not in err
     assert "rack transition HATS-1 --state done" in err
 
 
