@@ -167,7 +167,7 @@ gate_composition() {
     case "$1" in
         merge-gate) echo "$tier unit integration" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity e2e" ;;
         *) return 1 ;;
     esac
 }

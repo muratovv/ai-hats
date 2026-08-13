@@ -350,7 +350,7 @@ filter-repo procedure for purging the history.
 ### ADR numbers and decision markers
 
 Two invariants over `docs/adr/`, enforced by `bash scripts/ci-local.sh adr-integrity`
-(part of the `all` bundle):
+(in the `all` bundle and in the master push-gate):
 
 - **A number names exactly one file.** `0023` once named two live ADRs, and the
   ambiguity corrupted an automated check before a human ever noticed. When a
