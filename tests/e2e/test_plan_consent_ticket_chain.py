@@ -257,12 +257,51 @@ def test_the_neighbouring_rack_forms_pass_through_the_chain(project, settings, e
     assert verdict.hook == "safety_gate.py", f"{form} still needs an allow-rule: {verdict}"
 
 
-@pytest.mark.parametrize("form", ["rack transition {task_id} done", "rack create 'x'"])
-def test_the_chain_does_not_wave_through_what_it_must_not(project, settings, env, planned, form):
-    """`done` carries the worktree merge into master — never auto-approved."""
-    task_id = planned("not routine")
-    verdict = run_chain(project, form.format(task_id=task_id), settings=settings, env=env)
-    assert verdict.hook == "", f"{form} was auto-approved by {verdict.hook}"
+def test_the_chain_asks_on_the_edge_that_merges_into_master(project, settings, env, planned):
+    """`→ done` carries the worktree merge into master, and used to be answered
+    by SILENCE — which the ordinary permission flow read as allow, merging a
+    branch with no question asked at all (HATS-1682, measured on HATS-1681).
+    The role declares consent on this edge now, so the guard asks on it."""
+    task_id = planned("into master")
+    verdict = run_chain(project, f"rack transition {task_id} done", settings=settings, env=env)
+
+    assert verdict.decision == "ask", f"the edge into master was not gated: {verdict}"
+    assert verdict.hook == "safety_gate.py", f"another hook answered: {verdict}"
+    assert verdict.updated_input["command"].startswith(f"{TICKET_ENV}="), verdict.updated_input
+
+
+def test_the_edge_into_master_refuses_without_consent_and_moves_with_it(
+    project, settings, env, planned
+):
+    """The whole loop on the edge the live probe walked straight through.
+
+    Before HATS-1682 nothing gated `review → done`: the guard was silent and the
+    rack declared no consent handler on it, so a bare command merged a branch
+    into master and reported success. Now the role declares the edge, the engine
+    refuses it unanswered, and the guard's own ticket is what opens it.
+    """
+    task_id = planned("into master")
+    walk = {**env, "AI_HATS_CONSENT_ACK": "1"}  # only the LAST edge is under test
+    for state in ("execute", "document", "review"):
+        assert _rack(project, "transition", task_id, state, env=walk).returncode == 0
+
+    refused = _rack(project, "transition", task_id, "done", env=env)
+    assert refused.returncode != 0, f"the edge into master was not gated:\n{refused.stdout}"
+    assert "requires supervisor approval" in refused.stdout + refused.stderr
+
+    verdict = run_chain(project, f"rack transition {task_id} done", settings=settings, env=env)
+    nonce = _ticket_from(verdict.updated_input["command"])
+    moved = _rack(project, "transition", task_id, "done", env={**env, TICKET_ENV: nonce})
+
+    assert moved.returncode == 0, f"the answered edge was still refused:\n{moved.stderr}"
+    assert "→ done" in moved.stdout, moved.stdout
+
+
+def test_the_chain_does_not_wave_through_what_it_must_not(project, settings, env):
+    """A verb with no declaration behind it is neither asked about nor allowed —
+    the ordinary permission flow decides, and the guard says nothing."""
+    verdict = run_chain(project, "rack create 'x'", settings=settings, env=env)
+    assert verdict.hook == "", f"rack create was auto-approved by {verdict.hook}"
 
 
 def test_the_chain_reports_an_allow_rule_that_silences_the_question(project, settings, env):

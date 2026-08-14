@@ -9,8 +9,10 @@ from .resolver import LibraryResolver
 from .models import (
     AppBinding,
     ComponentConfig,
+    ConsentPoint,
     OverlayConfig,
     parse_app_bindings,
+    parse_consent_points,
 )
 
 
@@ -97,10 +99,12 @@ class Composer:
         # Traits are single-level (sub-traits are rejected in _resolve_traits),
         # so bindings accumulate in declaration order: traits, then the role.
         declared_checks: list[AppBinding] = []
+        declared_consent: list[ConsentPoint] = []
 
         self._resolve_traits(
             config.composition.traits,
             declared_checks=declared_checks,
+            declared_consent=declared_consent,
             seen_injections=seen_injections,
             seen_rules=seen_rules,
             seen_skills=seen_skills,
@@ -148,6 +152,11 @@ class Composer:
         declared_checks.extend(
             parse_app_bindings(
                 config.composition.apps, declared_by=config.name, source=config.source_path
+            )
+        )
+        declared_consent.extend(
+            parse_consent_points(
+                config.composition.consent, declared_by=config.name, source=config.source_path
             )
         )
 
@@ -203,6 +212,7 @@ class Composer:
             role_injection=role_injection_text,
             overlay_injection=overlay_injection_text,
             checks=resolve_checks(declared_checks, skills, removed_skills=requested_skill_removes),
+            consent=tuple(dict.fromkeys(declared_consent)),
         )
 
     @staticmethod
@@ -256,6 +266,7 @@ class Composer:
         errors: list[str],
         visited: set[str],
         declared_checks: list[AppBinding],
+        declared_consent: list[ConsentPoint],
     ) -> None:
         for trait_name in trait_names:
             if trait_name in visited:
@@ -294,6 +305,11 @@ class Composer:
             declared_checks.extend(
                 parse_app_bindings(
                     config.composition.apps, declared_by=trait_name, source=config.source_path
+                )
+            )
+            declared_consent.extend(
+                parse_consent_points(
+                    config.composition.consent, declared_by=trait_name, source=config.source_path
                 )
             )
 

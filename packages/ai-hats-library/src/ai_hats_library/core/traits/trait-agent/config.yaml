@@ -26,6 +26,23 @@ composition:
     - task-summary
     - tool-call-hygiene
     - design-minimalism
+  # HATS-1682 — where this role needs the supervisor's explicit approval, said
+  # once, on the point. The guard on the tool call reads this and asks exactly
+  # here; the engine reads the same declaration and refuses the move when no
+  # answer arrived, which is what covers a surface that cannot be asked.
+  #
+  # It lives on the TRAIT and not in the packaged `backlog.yaml`, because that
+  # file is the rack's kernel contract and can say nothing about `wt` — and a
+  # merge into master is the other half of the same question. A role that does
+  # not compose this trait declares no consent and gets none.
+  #
+  # `edge:review--done` and `pre-merge` are the two roads into master
+  # (HATS-1130): the FSM automerge and a direct `ai-hats wt merge`. A gate
+  # holding only one of them is the asymmetry that started that epic.
+  consent:
+    rack:
+      tasks: [edge:plan--execute, edge:review--done]
+    wt: [pre-merge]
 injection: |
   ## AGENT BEHAVIOR
 

@@ -559,6 +559,7 @@ class WrapRunner:
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
             checks=reported_checks,
+            consent=result.consent,
             notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())

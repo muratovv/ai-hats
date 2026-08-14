@@ -19,6 +19,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _supervisor_approved(task_id: str) -> bool:
+    """Did the supervisor approve THIS command, ticket in hand (HATS-1682)?
+
+    The merge inside `→ done` is part of the move the supervisor was asked
+    about, so a click there has to be enough — otherwise the guard asks and the
+    engine refuses anyway for want of an env flag. Peek, never spend: the
+    post-lock spender owns that, so a rolled-back move gives the click back.
+    """
+    import sys
+
+    from ai_hats_library.hooks import consent_ticket
+
+    try:
+        return consent_ticket.peek(task_id, argv=sys.argv[1:])
+    except Exception:
+        logger.warning("consent-ticket peek before merge failed", exc_info=True)
+        return False  # unreadable store -> no consent established; the ack still stands
+
+
 def collect_carry_for_project(
     project_dir: Path, role: str = ""
 ) -> dict[str, list[dict[str, object]]]:
@@ -204,7 +223,11 @@ class WtWorktreeEffects:
             if merge:
                 # HATS-596: force reaches merge guards. HATS-1603: so does the
                 # caller's ceiling, or wt:pre-merge outlives the rack lock.
-                active.merge(force=force, outer_deadline=outer_deadline)
+                active.merge(
+                    force=force,
+                    outer_deadline=outer_deadline,
+                    consent=_supervisor_approved(task_id),
+                )
                 return "merged"
             # failed → intentional discard; same ceiling as merge (HATS-1603)
             active.discard(force=True, outer_deadline=outer_deadline)

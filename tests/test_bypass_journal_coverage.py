@@ -87,6 +87,12 @@ def unjournaled(text: str) -> set[str]:
         journaled |= set(re.findall(r'_KILL_SWITCH\s*=\s*"(AI_HATS_[A-Z0-9_]+)"', text))
     if re.search(r"journal_bypass\(\s*\"hatch\"\s*,\s*DESTRUCTIVE_ACK", text):
         journaled |= set(re.findall(r'DESTRUCTIVE_ACK\s*=\s*"(AI_HATS_[A-Z0-9_]+)"', text))
+    # HATS-1682: the consent acks are picked from a small table and journaled
+    # through the loop variable, so neither the literal nor one constant name
+    # appears at the call — the names come from the table instead.
+    if re.search(r'journal_bypass\(\s*"hatch"\s*,\s*flag', text):
+        journaled |= set(re.findall(r'CONSENT_ACK = "(AI_HATS_[A-Z0-9_]+)"', text))
+        journaled |= set(re.findall(r'LEGACY_ACK_BY_TARGET = \{[^}]*"(AI_HATS_[A-Z0-9_]+)"', text))
     return hatches_in(text) - journaled
 
 

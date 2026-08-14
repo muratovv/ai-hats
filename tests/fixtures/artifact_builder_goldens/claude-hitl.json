@@ -1,5 +1,6 @@
 {
   "checks": [],
+  "consent": [],
   "cwd": "<project>",
   "duplicates": [],
   "env_keys": [

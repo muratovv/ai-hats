@@ -26,13 +26,14 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from .session_identity import SessionIdentity
 
 
-#: The binding-channel key in every spelling the YAML parser accepts — ``apps``
-#: and the retired ``checks`` alike, so a config left on the old one still
-#: composes far enough to hear why it is refused (HATS-1545 R11). Anchored
-#: to a line start so ``prechecks:`` is not one. A scan still, not a parse: a
-#: false positive costs one compose, a false negative disarms a gate.
+#: The declaration keys in every spelling the YAML parser accepts — ``apps``,
+#: ``consent`` (HATS-1682) and the retired ``checks`` alike, so a config left on
+#: the old one still composes far enough to hear why it is refused (HATS-1545
+#: R11). Anchored to a line start so ``prechecks:`` is not one. A scan still,
+#: not a parse: a false positive costs one compose, a false negative disarms a
+#: gate.
 _CHECKS_KEY = re.compile(
-    rb"""^[ \t]*(?:apps|"apps"|'apps'|checks|"checks"|'checks')[ \t]*:""", re.MULTILINE
+    rb"""^[ \t]*['"]?(?:apps|checks|consent)['"]?[ \t]*:""", re.MULTILINE
 )
 
 
@@ -323,7 +324,7 @@ def _library_roots(project_dir: Path) -> list[Path]:
 
 
 def declares_checks(project_dir: Path) -> bool:
-    """Whether any trait or role in reach declares ``composition.apps``.
+    """Whether any trait or role in reach declares ``apps`` or ``consent``.
 
     A byte scan, not a parse, so a project with no bindings does not compose on
     every transition (S3). Only traits and roles are read — the two the composer
@@ -338,8 +339,10 @@ def declares_checks(project_dir: Path) -> bool:
                 continue
             for config in _component_configs(base):
                 data = config.read_bytes()
-                # memchr throws out the files with no `checks` at all before the regex
-                if (b"apps" in data or b"checks" in data) and _CHECKS_KEY.search(data):
+                # memchr throws out the files with no declaration at all first
+                if (
+                    b"apps" in data or b"checks" in data or b"consent" in data
+                ) and _CHECKS_KEY.search(data):
                     return True
     return False
 
@@ -431,6 +434,30 @@ def _compose_fail_closed(
             f"checks are declared but the role could not be composed ({type(exc).__name__}): {exc}"
         ) from exc
     return result, identity
+
+
+def resolve_consent_points(
+    project_dir: Path,
+    app: str,
+    *,
+    path: tuple[str, ...] = (),
+    identity: SessionIdentity | None | Any = FROM_ENV,
+    compose: Callable[[Path], CompositionResult | None] | None = None,
+) -> frozenset[str]:
+    """Points of ``app`` this project's role wants the supervisor asked on.
+
+    No re-basing and no worktree clause, unlike its ``resolve_checks_at``
+    sibling: a consent point names no script, so there are no bytes to run from
+    the wrong tree and nothing a linked worktree could poison (HATS-1682).
+    """
+    result, _identity = _composed(project_dir, identity, compose)
+    if result is None:
+        return frozenset()
+    return frozenset(
+        point.point
+        for point in result.consent
+        if point.app == app and (not path or point.path == path)
+    )
 
 
 def _composed(

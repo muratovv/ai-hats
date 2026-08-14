@@ -331,7 +331,51 @@ def check_self_grant(args) -> str:
     return ""
 
 
-# ----- the supervisor's consent for `plan → execute` (HATS-1642) --------------
+# ----- the supervisor's consent, where the ROLE declared it (HATS-1682) -------
+
+#: Point-agnostic pre-approval; where no question can be asked — headless, cron,
+#: a surface without runtime hooks — this is the channel (HATS-1642 fork 2).
+CONSENT_ACK = "AI_HATS_CONSENT_ACK"
+
+#: Kept per state only where the flag already MEANT that edge. `AI_HATS_MERGE_ACK`
+#: is NOT here: it approves `ai-hats wt merge`, and reading it as consent for
+#: `review → done` is exactly how the edge into master went unasked (HATS-1682).
+LEGACY_ACK_BY_TARGET = {"execute": "AI_HATS_PLAN_ACK"}
+
+
+def declared_consent_targets() -> frozenset:
+    """States the session's role declared consent on entering, from the envelope.
+
+    The declaration is a role property, so it reaches the guard the way every
+    other role-derived fact does: `AI_HATS_SESSION_IDENTITY` names the session
+    dir and `role_materialization.json` there carries the composed declaration.
+    Launch-frozen on purpose — the surface asks by the declaration the session
+    was started with, not by whatever the library says a moment later.
+    """
+    envelope = os.environ.get("AI_HATS_SESSION_IDENTITY", "")
+    if not envelope:
+        return frozenset()  # outside a session there is no role, so nothing declared
+    try:
+        session_dir = json.loads(envelope)["session_dir"]
+        report = json.loads(
+            (Path(session_dir) / "role_materialization.json").read_text(encoding="utf-8")
+        )
+        points = report["consent"]
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        # In a session but unable to read what it declared: a gate that stopped
+        # asking looks exactly like one with nothing to ask about (HATS-1373).
+        journal_bypass(
+            "fail-open", f"consent declaration unreadable: {exc!r}", hook="safety_gate.py"
+        )
+        return frozenset()
+    targets = set()
+    for entry in points:
+        if entry.get("app") != "rack":
+            continue
+        head, sep, to = str(entry.get("point", "")).partition("--")
+        if sep and head.startswith("edge:") and to:
+            targets.add(to)
+    return frozenset(targets)
 
 #: `rack transition` op flags that eat the NEXT token as their value. Without
 #: this, `--log "execute"` — a note ABOUT the move — would read as the move.
@@ -345,8 +389,6 @@ RACK_VALUE_FLAGS = frozenset(
 #: `--force` skips the rack's consent gate outright, so a prompt would be theatre.
 RACK_UNGATED_FLAGS = frozenset({"--force"})
 
-EXECUTE_STATE = "execute"
-
 #: Read-only verbs: they move nothing, so a prompt on them is pure friction.
 RACK_READ_VERBS = frozenset({"context", "ls"})
 
@@ -359,8 +401,11 @@ RACK_SAFE_OPS = frozenset({"--log", "--set", "--append", "--attach", "--link", "
 RACK_SAFE_OPTS = frozenset({"--json", "--tasks-dir"})
 
 
-def execute_transition_target(args) -> str:
-    """The task id iff ``args`` is ``rack transition <ID> execute``, else ``""``.
+def transition_target(args):
+    """``(task id, target state)`` for a `rack transition`, else ``("", "")``.
+
+    Which target NEEDS consent is not decided here — that is the role's
+    declaration (HATS-1682). This only reads the move out of the command line.
 
     One pass, because options come before the positional id as readily as after
     it (`rack transition --tasks-dir /t X execute`) — and the refusal tells the
@@ -368,15 +413,15 @@ def execute_transition_target(args) -> str:
     """
     rest = args[1:]
     if not rest or rest[0] != "transition":
-        return ""
-    task_id, wanted, i = "", False, 1
+        return "", ""
+    task_id, target, i = "", "", 1
     while i < len(rest):
         tok = rest[i]
         if tok in RACK_UNGATED_FLAGS:
-            return ""
+            return "", ""  # --force skips the rack's own gate; a prompt would be theatre
         if tok in RACK_VALUE_FLAGS:
-            if tok == "--state" and rest[i + 1 : i + 2] == [EXECUTE_STATE]:
-                wanted = True
+            if tok == "--state" and i + 1 < len(rest):
+                target = rest[i + 1]
             i += 2
             continue
         if tok.startswith("-"):
@@ -384,10 +429,10 @@ def execute_transition_target(args) -> str:
             continue
         if not task_id:
             task_id = tok
-        elif tok == EXECUTE_STATE:
-            wanted = True
+        elif not target:
+            target = tok  # a bare token after the id IS the state op
         i += 1
-    return task_id if wanted else ""
+    return (task_id, target) if task_id and target else ("", "")
 
 
 def auto_allowed(args) -> bool:
@@ -506,20 +551,27 @@ def target_cwd(cmd: str):
 
 
 def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
-    """The `ask` payload for a `plan → execute` transition, or ``{}``.
+    """The `ask` payload for a transition the ROLE declared consent on, or ``{}``.
 
+    Where to ask is not a judgement this hook makes — it reads the role's
+    `composition.apps` rows and asks exactly on the points they name (HATS-1682).
     One hook, one verdict (HATS-1253): the process that mints the ticket is the
     one that refuses a typed one, so the two can never disagree about which is
-    which. Empty means there is nothing to ask — the rack's own gate still runs.
+    which. Empty means there is nothing to ask — the point's own gate still runs.
     """
     calls = []
     for tokens in parse_commands(cmd):
         rack = slice_for(tokens, "rack")
         if rack:
             calls.append(without_shell_redirects(rack))
+    declared = None
     for index, args in enumerate(calls):
-        task_id = execute_transition_target(args)
+        task_id, target = transition_target(args)
         if not task_id:
+            continue
+        if declared is None:
+            declared = declared_consent_targets()  # read once, and only if asked
+        if target not in declared:
             continue
         token = args[0]
         ordinal = sum(1 for a in calls[:index] if a and a[0] == token)
@@ -527,9 +579,10 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
         # The env channel stands in wherever no question can be asked — headless,
         # cron, a surface without runtime hooks. Set there, a prompt is redundant,
         # and in headless an `ask` does not prompt, it blocks.
-        if os.environ.get("AI_HATS_PLAN_ACK") == "1":
-            journal_bypass("hatch", "AI_HATS_PLAN_ACK", hook="safety_gate.py", cmd=cmd)
-            return {}
+        for flag in (CONSENT_ACK, LEGACY_ACK_BY_TARGET.get(target, "")):
+            if flag and os.environ.get(flag) == "1":
+                journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
+                return {}
         where = target_cwd(cmd)
         nonce = None if where is None else _mint_ticket(task_id, start=where, argv=args[1:])
         rewritten = (
@@ -549,10 +602,10 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
         return {
             "permissionDecision": "ask",
             "permissionDecisionReason": (
-                f"{task_id}: plan → execute needs your consent. This command carries a "
+                f"{task_id}: → {target} needs your consent. This command carries a "
                 f"ticket good for one transition of this card, in this session, for this "
-                f"exact command. The question does not expire — answer when you have read "
-                f"the plan."
+                f"exact command. The question does not expire — answer when you have "
+                f"read what you are approving."
             ),
             # Answer in the key the surface spoke in: agy says `CommandLine`, and
             # a rewrite filed under `command` would be dropped in silence.

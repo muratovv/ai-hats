@@ -120,6 +120,9 @@ NON_CONTRACT_HOOK_KEYS = {
     "AI_HATS_CONSENT_TICKET",
     "AI_HATS_MERGE_ACK",
     "AI_HATS_PLAN_ACK",
+    # HATS-1682: the point-agnostic pre-approval for a declared consent point,
+    # for the surfaces where no question can be asked at all.
+    "AI_HATS_CONSENT_ACK",
     "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
     "AI_HATS_PRIVACY_ACK",
     "AI_HATS_RULE_DELIVERY_ACK",

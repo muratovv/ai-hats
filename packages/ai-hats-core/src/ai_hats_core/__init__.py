@@ -9,6 +9,7 @@ from ai_hats_core.atomic_io import atomic_write_bytes, atomic_write_text
 from ai_hats_core.composition import (
     ComponentKind,
     CompositionResult,
+    ConsentPoint,
     ResolvedCheck,
     ResolvedComponent,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "CompositionResult",
     "LockTimeoutError",
     "Migration",
+    "ConsentPoint",
     "ResolvedCheck",
     "ResolvedComponent",
     "YamlModel",

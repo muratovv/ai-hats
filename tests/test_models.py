@@ -277,7 +277,7 @@ def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert "did you mean" not in err
-    assert "known: apps, rules, skills, traits" in err
+    assert "known: apps, consent, rules, skills, traits" in err
 
 
 def test_composition_rejects_unknown_key_when_loader_bypassed():

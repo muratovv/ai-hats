@@ -1,5 +1,6 @@
 {
   "checks": [],
+  "consent": [],
   "cwd": "<worktree, assigned at launch>",
   "duplicates": [],
   "env_keys": [

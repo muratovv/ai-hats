@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 from pydantic import ConfigDict, Field, model_validator
 
+from ai_hats_core import ConsentPoint
 from ai_hats_core import YamlModel as _YamlModel
 
 from ..constants import (
@@ -184,6 +185,69 @@ def _app_row(
     )
 
 
+def parse_consent_points(
+    consent: Mapping[str, Any], *, declared_by: str, source: Path | None = None
+) -> tuple[ConsentPoint, ...]:
+    """Flatten one component's ``composition.consent`` into points.
+
+    The leaf is a LIST OF POINT NAMES, not a row: nothing is spawned here, so
+    there is no script, no ``on_error`` and no cargo — only where this role
+    wants to be asked.
+    """
+    where = f"{source}: " if source is not None else ""
+    if not isinstance(consent, dict):
+        raise CheckBindingError(
+            f"{where}'composition.consent' must be a mapping of <app>: <block>, "
+            f"got {type(consent).__name__}"
+        )
+    points: list[ConsentPoint] = []
+    for app, block in consent.items():
+        _walk_consent_block(
+            block, app=str(app), path=(), declared_by=declared_by, where=where, points=points
+        )
+    return tuple(points)
+
+
+def _walk_consent_block(
+    node: Any,
+    *,
+    app: str,
+    path: tuple[str, ...],
+    declared_by: str,
+    where: str,
+    points: list[ConsentPoint],
+) -> None:
+    label = f"{where}composition.consent.{'.'.join((app, *path))}"
+    if isinstance(node, str):
+        node = [node]
+    if isinstance(node, list):
+        if not node or not all(isinstance(p, str) and p.strip() for p in node):
+            raise CheckBindingError(
+                f"{label}: expected at least one point name; got {node!r} — declaring "
+                f"consent on nothing asks nobody anything"
+            )
+        points.extend(
+            ConsentPoint(declared_by=declared_by, app=app, path=path, point=p.strip())
+            for p in node
+        )
+        return
+    if isinstance(node, dict):
+        for key, child in node.items():
+            _walk_consent_block(
+                child,
+                app=app,
+                path=(*path, str(key)),
+                declared_by=declared_by,
+                where=where,
+                points=points,
+            )
+        return
+    raise CheckBindingError(
+        f"{label}: expected a point name, a list of them, or a mapping of further keys, "
+        f"got {type(node).__name__}"
+    )
+
+
 class Composition(_YamlModel):
     # HATS-1152: guards construction paths that bypass ``from_yaml``; the
     # user-facing channel for a yaml typo is the pre-strip WARN below.
@@ -196,6 +260,11 @@ class Composition(_YamlModel):
     #: value is opaque: ai-hats knows no app's grammar, only that a mapping with
     #: ``run:`` inside it is a row.
     apps: dict[str, Any] = Field(default_factory=dict)
+    #: Where this role needs the supervisor's explicit approval, per application
+    #: and in that application's own point grammar (HATS-1682). A DECLARATION,
+    #: not a binding: nothing is spawned here, so it stays separate from ``apps``
+    #: — the executor is in-process, where a move's argv, actor and force are.
+    consent: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComponentKeyError(ValueError):
