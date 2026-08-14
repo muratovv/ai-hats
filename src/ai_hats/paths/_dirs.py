@@ -389,6 +389,16 @@ def session_cache_dir(project_dir: Path, session_id: str) -> Path:
     return session_cache_root(project_dir) / session_id
 
 
+def worktree_checkouts_dir(project_dir: Path) -> Path:
+    """Where linked worktrees are minted: ``<cache_root>/worktrees/`` (HATS-1632).
+
+    The trees themselves — NOT :func:`worktrees_dir`, which is their metadata.
+    Out of ``$TMPDIR`` because macOS reaps that root by access time (dirhelper,
+    3 days), and a uv-materialized venv is born carrying the cache's atime.
+    """
+    return cache_root(project_dir) / "worktrees"
+
+
 # HATS-1540: `session_checks_dir` is gone. A bound check resolves from the
 # surface's own skill mirror (`Provider.session_skills_root`) — the channel keeps
 # no private copy, so there is no second root to name here.
@@ -718,6 +728,7 @@ __all__ = [
     "retros_dir",
     "audits_dir",
     "handoffs_dir",
+    "worktree_checkouts_dir",
     "worktrees_dir",
     "tracker_dir",
     "backlog_dir",

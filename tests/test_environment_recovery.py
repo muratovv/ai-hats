@@ -292,6 +292,40 @@ def test_key_older_than_ttl_is_reclaimed(tmp_path, monkeypatch):
     assert not stale.exists()
 
 
+def test_key_holding_a_worktree_is_never_reclaimed(tmp_path, monkeypatch):
+    """Worktrees are not regenerable cache — they hold uncommitted work (HATS-1632).
+
+    Age says nothing about a worktree: an agent can leave one untouched for weeks
+    and come back to it. Taking the key would delete the tree AND strand a git
+    admin entry the engine refuses to auto-prune (manager.py, R-04).
+    """
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    stale = cache_home() / "busy-deadbeef"
+    tree = stale / "worktrees" / "ai-hats-wt-task-x-abcd1234"
+    tree.mkdir(parents=True)
+    (tree / "uncommitted.txt").write_text("work nobody has merged yet\n")
+    for path in (tree, stale / "worktrees", stale):
+        _age(path, 30)
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert stale.exists(), "a key holding worktrees must survive any age"
+    assert (tree / "uncommitted.txt").exists()
+
+
+def test_key_with_an_empty_worktrees_dir_is_still_reclaimed(tmp_path, monkeypatch):
+    """The guard keys on trees present, not on the directory existing."""
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
+    stale = cache_home() / "empty-deadbeef"
+    (stale / "worktrees").mkdir(parents=True)
+    for path in (stale / "worktrees", stale):
+        _age(path, 30)
+
+    _sweep_orphan_project_keys(tmp_path)
+
+    assert not stale.exists()
+
+
 def test_fresh_key_and_own_key_survive(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache"))
     fresh = cache_home() / "fresh-deadbeef"

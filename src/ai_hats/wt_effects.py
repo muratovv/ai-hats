@@ -88,7 +88,7 @@ class WtWorktreeEffects:
             assert_head_is_canonical_base,
         )
 
-        from .paths import worktrees_dir
+        from .paths import worktree_checkouts_dir, worktrees_dir
 
         # Probe order: adopt the worktree the caller is in (HATS-060/840) → reuse
         # the task's existing one (HATS-061) → guard canonical base (HATS-518) →
@@ -118,6 +118,7 @@ class WtWorktreeEffects:
             merge_target=merge_target,
             lifecycle=self._lifecycle,
             state_dir=wt_state_dir,
+            worktree_checkouts_dir=worktree_checkouts_dir(self.project_dir),  # HATS-1632
             git_timeout=self._git_timeout,
         )
         wt_hooks = collect_carry_for_project(self.project_dir, role)

@@ -49,6 +49,7 @@ from ai_hats.paths import (
     venv_path,
     version_dir,
     versions_root,
+    worktree_checkouts_dir,
     worktrees_dir,
 )
 from ai_hats.paths import AI_HATS_PROJECT_DIR_ENV, ENV_AI_HATS_DIR, ENV_AI_HATS_VENV, PROJECT_CONFIG
@@ -605,6 +606,27 @@ def test_cache_root_appends_project_key_to_any_base(tmp_path, monkeypatch, _no_c
     b.mkdir()
     assert cache_root(a).parent == tmp_path / "base"
     assert cache_root(a) != cache_root(b)
+
+
+def test_worktree_checkouts_dir_sits_under_the_project_cache_root(
+    tmp_path, monkeypatch, _no_cache_env
+):
+    """Worktrees are minted under the cache root, never in the temp root (HATS-1632).
+
+    macOS reaps ``$TMPDIR`` by access time, and a uv-materialized venv inherits the
+    cache's atime — so a worktree born there is already past the threshold.
+    """
+    monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "base"))
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    root = worktree_checkouts_dir(project)
+
+    assert root.parent == cache_root(project)
+    assert not root.is_relative_to(project)
+    # The metadata dir is a different thing under a different root — same word,
+    # different meaning, which is exactly why the names differ.
+    assert root != worktrees_dir(project)
 
 
 def test_cache_class_lives_outside_the_project(tmp_path, monkeypatch, _no_cache_env):
