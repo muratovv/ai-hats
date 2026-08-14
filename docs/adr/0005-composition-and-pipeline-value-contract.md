@@ -59,13 +59,13 @@ Composition snapshots for session audit (`_composition_snapshot` → `Session.in
 - `tests/test_composer_immutable.py` — D1 invariants.
 - `tests/test_wraprunner_signature.py` — D2 invariants.
 - `tests/pipeline/test_funnel_value_contract.py` — D3 invariant.
-- `tests/e2e/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes.
+- `tests/pipeline/test_session_prompt_contains_role_injection.py` — the HATS-452 regression itself; turns red on a revert of any of the above mechanical changes. (Filed under `tests/e2e/`; moved to the pipeline tier by HATS-1493, `4e6f4e51`.)
 
 **What does NOT change**
 
 - Sub-agent path (HATS-267 prompt injection) — `SubAgentRunner.run` keeps `system_prompt_override`. The bug was on the HITL side; Automate side is the legitimate consumer.
 - Public CLI surface — `ai-hats execute --role X`, `ai-hats` (bare) — behavior is unchanged from the user's POV. The fix restores intended behavior; nothing visible breaks.
-- Gemini provider — `GeminiProvider.build_system_prompt` has identical structure; correctness follows automatically once composition + funnel are corrected upstream.
+- Gemini provider — `GeminiProvider.build_system_prompt` has identical structure; correctness follows automatically once composition + funnel are corrected upstream. *(HATS-1655, 2026-08-13: the Gemini surface was retired and `GeminiProvider` deleted in HATS-1093, `26557c15`. The reasoning generalised as written — the contract binds every provider through the base `Provider`, so today's `agy` / `cline` surfaces inherit it the same way.)*
 - `compose_role` step — still exists, still funnel-producing. We did not delete it.
 
 ## Alternatives considered
@@ -95,7 +95,7 @@ The sites were *accidentally* aligned — they all spelled the call the same way
 
 **Phase-2 closure.** New module `src/ai_hats/materialize.py` exposes one function — `compose_for_role(assembler, role) -> CompositionResult` — which is the sole place in `src/ai_hats/` where the with-overlays compose call appears. Every consumer above now routes through it. A grep-style guard (`tests/test_no_direct_compose_outside_facade.py`) makes future drift fail at test time.
 
-The build surface stays runtime-specific per D2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt`, `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
+The build surface stays runtime-specific per D2: `WrapRunner` builds session argv+env+materialized-text via `build_session_prompt` (3-tuple since HATS-523 — the third element is the exact bytes the provider sees as system-prompt override, persisted by the caller via `Session.save_meta_prompt` to `<session_dir>/meta_prompt.txt` for post-hoc audit, symmetric with the Automate path), `SubAgentRunner` builds a sub-agent meta-prompt via `_build_meta_prompt` (the runner-private builder was later folded into the provider — today it reads `Provider.describe_automate_launch(...).prompt`), `MaterializeSystemPrompt` builds preview text via `build_system_prompt`, `Assembler.set_role` builds the on-disk file via `build_system_prompt` + `expand_path_placeholders`. The facade does not collapse these — only the compose primitive is unified.
 
 One pattern was intentionally **not** migrated to the facade:
 

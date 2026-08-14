@@ -555,7 +555,7 @@ Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hat
 
 ### Never cite a line number (HATS-1655)
 
-**In `docs/adr/**`, a pointer into source names the file and the symbol — never a line number.** `tests/test_adr_references.py` refuses `path.py:29` and `path.py:284-303` alike.
+**In `docs/adr/**`, a pointer into source names the file and the symbol — never a line number.** `tests/test_adr_references.py` refuses every spelling of it. Inside backticks the rule is deliberately blunt: **any token carrying `:<digits>` is treated as a citation**, because enumerating the shapes failed three times in one sweep — `` `:182-191` `` (filename left to a table heading), `scripts/ai-hats-launcher:18` (no extension), `` `0014-…:361-377` `` (no extension, no slash). Adding a form the guard has to learn is the wrong direction; if you need an exception, argue it in the test.
 
 ```markdown
 ✅ `CHECK_PRIORITY` (`checks.py`) ✅ `CheckSubscriber.__init__` (`checks.py`)

@@ -20,6 +20,17 @@ Proposed (HATS-273, 2026-05-09). Дополняет ADR-0001 (не отменя�
 > Decision rationale and forks (A1 vs A2, two-pipelines vs single
 > finalize) are recorded in `<ai_hats_dir>/tracker/backlog/tasks/HATS-535/plan.md`.
 
+> **Divergence note (HATS-1655, 2026-08-13).** §5 and Roadmap step 1 decided a
+> *temporary* decoupling — `ai-hats execute` back on the direct `_do_execute`,
+> pipelines living beside it — explicitly until Phase 5 / HATS-269. HATS-269 then
+> landed and reversed it: `_do_execute` was deleted (`ac15afd0`), `execute_cmd`
+> runs through `PipelineHarness` (`ccbd14c5`), and the "два пути" trade-off in
+> §Consequences is closed — there is one path again. In the same ticket
+> `bare.yaml` became `human.yaml` (`6c59e321`), so the §3 pipeline named `bare` no
+> longer exists under that name; the current spellings are the `PIPELINE_*`
+> constants in `src/ai_hats/pipeline/keys.py`. The decisions above are left as
+> recorded — they describe the intended interim state, which held until Phase 5.
+
 ## Context
 
 ADR-0001 (HATS-261) утвердил **контракт** typed-dataflow pipeline: `StepIO` (frozen), `Step` ABC (`run(**inputs) → dict`), `Pipeline` (build/run с projection-based threading + `failure_policy`). Phase 1 эпика HATS-259 (HATS-265, commit `e92ae6b`) реализовал ядро + `LaunchProvider` (обёртка над `_do_execute`) + лог-стабы; `ai-hats execute` после HATS-265 идёт через `execute_pipeline`.
@@ -210,11 +221,11 @@ ai-hats pipeline show <name>    → cat YAML
 - Brainstorm: `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/brainstorm.md` — 9 открытых вопросов и discussion.
 - Plan (детальный blueprint): `<ai_hats_dir>/tracker/backlog/tasks/HATS-273/plan.md` — step specs, YAML compositions, threading, edge cases.
 - Pipeline Phase 1: commits `90d4f3c` (ADR-0001 landing), `e92ae6b` (core+stubs+preset).
-- Эпик-план: `.claude/plans/moonlit-sprouting-tower.md` — 5-фазный roadmap миграции (Phase 2-5 нуждаются в ревизии после landing'а ADR-0002).
-- Существующий relevant runtime:
-  - `src/ai_hats/cli/execute.py` (`_do_execute`, `_resolve_prompt`)
+- Эпик-план: `.claude/plans/moonlit-sprouting-tower.md` — 5-фазный roadmap миграции (Phase 2-5 нуждаются в ревизии после landing'а ADR-0002). Файл никогда не был в git и с тех пор исчез; планы живут в трекере (`plan-discipline`).
+- Существующий relevant runtime (на момент ADR; актуальные адреса — в скобках):
+  - `src/ai_hats/cli/execute.py` (`_resolve_prompt`; `_do_execute` удалён в HATS-269, `ac15afd0`)
   - `src/ai_hats/cli/reflect.py` (`_spawn_detached`, `_build_handoff`)
   - `src/ai_hats/composer.py` (`Composer.compose` → `CompositionResult.merged_injection`)
-  - `src/ai_hats/observe.py` (`SessionManager.create_session`)
+  - `src/ai_hats/observe.py` (`SessionManager.create_session`) — модуль уехал в пакет: `packages/ai-hats-observe/src/ai_hats_observe/session.py`
   - `src/ai_hats/retro/session_review_runner.py` (`SessionReviewRunner.run`, `REVIEW_DELIM_*`)
-  - `src/ai_hats/runtime.py` (`WrapRunner`, `SubAgentRunner`)
+  - `src/ai_hats/runtime.py` (`WrapRunner`, `SubAgentRunner`) — сегодня re-export hub над `wrap_runner.py` / `subagent_runner.py` / `runtime_common.py` (HATS-715)

@@ -29,13 +29,23 @@ _NAMED_REF = re.compile(
     r"\b[\w./-]+\.(?:py|sh|md|yaml|yml|toml|json|cfg|ini|txt|d2):\d+(?:-\d+)?\b"
 )
 
-#: `` `:182-191` `` — lines with the filename left implicit, scoped by a table
-#: heading somewhere above. Same rot, and worse: the reader cannot even tell
-#: WHICH file went stale. Found in ADR-0021's surface tables (HATS-1655) after
-#: the named form was already gone, which is why the guard covers both.
-#: Anchored to backticks: bare `:12` in prose is a ratio or a time, and matching
-#: it would be the cry-wolf the comment above refuses.
-_BARE_REF = re.compile(r"`:\d+(?:-\d+)?`")
+#: Inside backticks, ANY token carrying `:<digits>` is a citation.
+#:
+#: This one is broad on purpose, and the breadth was earned. Enumerating the
+#: shapes failed three times in a single sweep (HATS-1655): first `` `:182-191` ``
+#: with the filename left to a table heading, then `scripts/ai-hats-launcher:18`
+#: with no extension, then `` `0014-composable-component-decomposition:361-377` ``
+#: — no extension, no slash, and the backtick not adjacent to the colon, so it
+#: slipped all three narrow patterns. Every one was found by someone converting
+#: refs by hand, never by re-reading the regex. So the default is inverted here:
+#: inside backticks, colon-plus-digits is guilty, and a new exception has to be
+#: argued for rather than silently unmatched. Measured at zero false positives
+#: across all 26 ADRs.
+#:
+#: Backticks are what make the breadth safe — bare prose carries ratios ("1:3"),
+#: times ("09:30") and ports, and matching those is the cry-wolf that gets a
+#: guard muted.
+_BACKTICKED_REF = re.compile(r"`[^`\s]*:\d+(?:-\d+)?[^`\s]*`")
 
 #: `scripts/ai-hats-launcher:18` — a real path whose file has no extension, so
 #: the closed list above cannot see it. ADR-0025 carried eleven (HATS-1655).
@@ -44,7 +54,9 @@ _BARE_REF = re.compile(r"`:\d+(?:-\d+)?`")
 #: one citation is not reported twice.
 _UNSUFFIXED_REF = re.compile(r"(?<!/)\b[\w.-]+/[\w./-]+:\d+(?:-\d+)?\b")
 
-_PATTERNS = (_NAMED_REF, _BARE_REF, _UNSUFFIXED_REF)
+#: Backticks first: it is the broad one, so it claims the span and the narrow
+#: two only report what falls outside any backticks.
+_PATTERNS = (_BACKTICKED_REF, _NAMED_REF, _UNSUFFIXED_REF)
 
 #: Fenced code is exempt: a shell transcript or a compiler diagnostic quoted
 #: verbatim is evidence, not a citation the reader is meant to follow.
@@ -54,8 +66,10 @@ _FENCE = re.compile(r"^\s*(?:```|~~~)")
 def _citations(text: str) -> list[tuple[int, str]]:
     """Line-number citations in prose, skipping fenced blocks.
 
-    Deduped by position: `_UNSUFFIXED_REF` deliberately overlaps `_NAMED_REF`,
-    and one citation reported twice inflates the worklist it is meant to be.
+    Deduped by OVERLAP, not by endpoint: the patterns nest — the backticked one
+    swallows the quotes the other two stop short of — so one citation would
+    otherwise be reported two or three times and inflate the worklist it exists
+    to be. Widest first, so the outer span claims the region.
     """
     hits: list[tuple[int, str]] = []
     in_fence = False
@@ -65,12 +79,13 @@ def _citations(text: str) -> list[tuple[int, str]]:
             continue
         if in_fence:
             continue
-        claimed: set[int] = set()
+        claimed: list[tuple[int, int]] = []
         for pattern in _PATTERNS:
             for match in pattern.finditer(line):
-                if match.end() in claimed:
+                start, end = match.span()
+                if any(start < c_end and c_start < end for c_start, c_end in claimed):
                     continue
-                claimed.add(match.end())
+                claimed.append((start, end))
                 hits.append((lineno, match.group(0)))
     return hits
 
@@ -97,8 +112,10 @@ def test_no_adr_cites_a_line_number():
 
 def test_the_matcher_reads_a_citation_and_spares_a_shell_transcript():
     """Guards the guard: too loose and it gets muted, too tight and it is decor."""
-    assert _citations("see `checks.py:29` for the priority") == [(1, "checks.py:29")]
-    assert _citations("the range `checks.py:284-303`") == [(1, "checks.py:284-303")]
+    assert _citations("see `checks.py:29` for the priority") == [(1, "`checks.py:29`")]
+    assert _citations("the range `checks.py:284-303`") == [(1, "`checks.py:284-303`")]
+    # Unbackticked prose still gets caught — that is what the narrow two are for.
+    assert _citations("see checks.py:29 for the priority") == [(1, "checks.py:29")]
     # A symbol reference — the form this test exists to push authors toward.
     assert _citations("`CheckSubscriber.__init__` (`checks.py`)") == []
     # Prose that merely contains a colon and digits.
@@ -112,7 +129,13 @@ def test_the_matcher_reads_a_citation_and_spares_a_shell_transcript():
     assert _citations("a 1:3 ratio at 09:30 on port 8080") == []
     # A path whose file carries no extension — the closed list above is blind to
     # it, so a third pattern covers it. ADR-0025 carried eleven.
-    assert _citations("`scripts/ai-hats-launcher:18`") == [(1, "scripts/ai-hats-launcher:18")]
+    assert _citations("scripts/ai-hats-launcher:18 sets it") == [(1, "scripts/ai-hats-launcher:18")]
     assert _citations("fetch https://example.com:8080/x") == []
     # One citation, two patterns, one report — the dedupe.
-    assert _citations("see `src/ai_hats/checks.py:29`") == [(1, "src/ai_hats/checks.py:29")]
+    assert _citations("see `src/ai_hats/checks.py:29`") == [(1, "`src/ai_hats/checks.py:29`")]
+    # The shape that slipped all three narrow patterns: no extension, no slash,
+    # and the backtick not adjacent to the colon. The broad backticked rule is
+    # what catches it, and catching THIS is why the rule is broad.
+    assert _citations("см. (`0014-composable-component-decomposition:361-377`)") == [
+        (1, "`0014-composable-component-decomposition:361-377`")
+    ]

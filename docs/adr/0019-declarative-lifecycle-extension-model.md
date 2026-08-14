@@ -223,12 +223,19 @@ the `apps.<app>` key. So a point is now identified by two things — the app key
 sits under, and its `at:` name — and the three columns that matter are who
 validates the name, who fires it, and whether a row there can veto.
 
-| `apps.<app>` | `at:`               | when                                                                                          | may veto | name validated by                   | fired by                      |
-| ------------ | ------------------- | --------------------------------------------------------------------------------------------- | -------- | ----------------------------------- | ----------------------------- |
-| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes      | rack, against the topology it runs  | `CheckSubscriber` (HATS-1141) |
-| `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | —        | **nobody**                          | **nobody** (HATS-1578)        |
-| `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes      | ai-hats, `check_points.wt_points()` | `wt_lifecycle.py` (HATS-1540) |
-| `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                | yes      | **nobody** — not in `wt_points()`   | **nobody** (HATS-1145)        |
+| `apps.<app>` | `at:`               | when                                                                                                        | may veto | name validated by                        | fired by                                        |
+| ------------ | ------------------- | ----------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------- | ----------------------------------------------- |
+| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30)               | yes      | rack, against the topology it runs       | `CheckSubscriber` (HATS-1141)                   |
+| `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet                            | —        | **nobody**                               | **nobody** (HATS-1578)                          |
+| `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent                 | yes      | ai-hats, `check_points.wt_points()`      | `wt_lifecycle.py` (HATS-1540)                   |
+| `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                              | yes      | **nobody** — not in `wt_points()`        | **nobody** (HATS-1145)                          |
+| `ai-hats`    | `startup`           | at HITL launch, before the provider binary is spawned — the one owned point where `on_error: warn` is legal | yes      | ai-hats, `check_points.ai_hats_points()` | `startup_checks.run_startup_checks` (HATS-1581) |
+
+The last row arrived after rev 10 and is recorded here for the same reason the
+others are: `ai-hats` is the second app whose points ai-hats fires and therefore
+validates itself (D11 clause 1 names it), and a table that enumerates the owned
+points while omitting one is the catalog-vs-reality gap this section exists to
+close.
 
 `wt` `create` and `teardown[merge|discard|cleanup]` were rows of this table until
 HATS-1577. Both were validated by `wt_points()` and fired by nobody, so a role
@@ -249,12 +256,15 @@ validates `edge:` against the topology it is running, but a name its grammar doe
 not parse — `card:pre-create` among them — is currently skipped in silence rather
 than named; **HATS-1578 owns that gap.**
 
-**Who fires it.** Of the four rows, **two have a caller**: `edge:` through
+**Who fires it.** Of the five rows, **three have a caller**: `edge:` through
 `CheckSubscriber`, subscribed at `Phase.IN_LOCK` priority 15 to every edge key of
-the topology the kernel runs; and `wt` `pre-merge`, inside `merge()` after the
+the topology the kernel runs; `wt` `pre-merge`, inside `merge()` after the
 cheap local guards and before every mutation, which is where the `maintainer`
-role binds. The other two are callerless in **different** ways, and telling those
-ways apart is what the table is for. `pre-reclaim` is a planned name
+role binds; and `ai-hats` `startup`, fired by `run_startup_checks` from the HITL
+launch (`wrap_runner.py`) before the provider is spawned, which never returns on
+a refusal (`STARTUP_REFUSED_EXIT`) so a caller cannot launch past one. The other
+two are callerless in **different** ways, and telling those ways apart is what
+the table is for. `pre-reclaim` is a planned name
 `wt_points()` does not carry, so a row naming it is refused at composition: loud,
 and armable by nobody. `card:pre-create` is the rack's — carried unread by
 ai-hats, skipped in silence by the rack — so a role can arm it and be told
@@ -627,8 +637,12 @@ borrowing the *provider's* cache instead of owning one.
 off the `~99 SKILL.md parses` figure from the HATS-1149 research. That is the
 cost of the **union scan over the whole library**, which **D7 abolishes**: a
 per-role composition touches only the composed set. Measured on this repository:
-**42 ms** for a 35-skill, 13-rule role, against a `HOOK_TIMEOUT` and a rack
-`LOCK_TIMEOUT` of 30 s. No new machinery is owed either — `composition_seam`
+**42 ms** for a 35-skill, 13-rule role, against budgets some five hundred times
+larger: the rack's `LOCK_TIMEOUT` is 30 s and the per-check
+`EDGE_CHECK_TIMEOUT_S` it ships across the port is 20 s. *(The measurement was
+written against a `HOOK_TIMEOUT`, which died with `lifecycle_hooks` in
+HATS-1147; the two live constants above replace it and the comparison is
+unchanged.)* No new machinery is owed either — `composition_seam`
 already composes a role from config for `--dry-run`.
 
 **What is still deleted** — unchanged from rev 5: the copy into `<event>.d/`; the

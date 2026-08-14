@@ -145,6 +145,16 @@ A critical distinction governs hook lifecycle:
 - **Session Wiring**: Per-session hook activation emitted by the builder (`<cache>/settings.json` + `--settings` for Claude, `<cache>/hooks.json` + global dispatcher for Agy). This is gated by `SessionPolicy(hooks=False)`.
 - **Project Installation**: Long-lived project setup performed by `sync_hooks` (copying runtime scripts to `<ai_hats_dir>/library/hooks/`, installing worktree hooks in `library/wt-hooks/`, installing git hooks in `.githooks/`). This installation state is shared across sessions and human runs; a `SessionPolicy` gates session wiring ONLY and must NEVER uninstall shared project installation state.
 
+> **Расхождение, датировано 2026-08-14 (HATS-1655).** Граница «wiring vs
+> installation» в силе; изменился её *installation*-берег. Ни одного из трёх
+> перечисленных выше артефактов больше нет: `library/hooks/` снесена
+> (HATS-1480), `library/wt-hooks/` — (HATS-1269), а сам `sync_hooks` ретайрен
+> вместе с ними — у `HooksManager` такого метода уже нет, имя выживает только в
+> названиях тестов и в комментариях. От installation-берега осталась одна
+> поверхность: по-событийные диспетчеры в `.githooks/` + `core.hooksPath`
+> (`install_git_hooks`, HATS-1337). Карта состояния на сегодня —
+> ADR-0021 S3/S6.
+
 ### 2.2 Core Vocabulary vs Surface Implementation (HATS-1217)
 
 The builder's modules were repeatedly re-litigated as "is this a shared contract
@@ -168,7 +178,7 @@ Applying it to the HATS-1211 module set:
 | `session_artifacts.py` (this section's vocabulary)                  | `providers` (the `Provider` ABC), `wrap_runner`, `dry_run`, `subagent_runner`, `composition_payload` | core contract                      |
 | `session_report.py`                                                 | `dry_run`, `subagent_runner`, `wrap_runner` — and no surface importer at all                         | core contract                      |
 | `skills_dir.py` — the PATH half (skills' `scripts/`+`bin/` on PATH) | `subagent_runner`, `wrap_runner` (+ all three surfaces)                                              | core contract                      |
-| `skills_dir.materialize_skills_dir` — the copier half               | none — one surface calls it                                                                          | movable, not yet moved (HATS-1271) |
+| `skills_dir.materialize_skills_dir` — the copier half               | none — only surfaces call it                                                                         | movable, not yet moved (HATS-1271) |
 
 The last row is the honest one. By the test `materialize_skills_dir` belongs to
 the surface layer, and it has simply not been moved: HATS-1271 first converges
@@ -176,6 +186,16 @@ it with cline's byte-for-byte equivalent, and the converged function is what
 gets a home. A verdict table that reported "core contract" here — bending the
 rule to match today's tree — would be worth nothing. The test earns its keep
 precisely by returning answers the tree has not caught up with.
+
+> **Расхождение, датировано 2026-08-14 (HATS-1655).** Половина этого плана
+> исполнена, половина нет, и порознь. Схождение состоялось: HATS-1271 закрыта,
+> и `skills_dir.materialize_skills_dir` теперь зовут **обе** поверхности —
+> agy (`_materialize_skills`, `_build_skills_automate`) и cline
+> (`_deliver_skills`), — то есть «one surface calls it» верно уже не считается,
+> а вердикт по тесту от этого не меняется: провайдер-агностичных импортёров у
+> копира по-прежнему ноль. Дом сошедшейся функции так и не найден — она
+> осталась в `src/ai_hats/skills_dir.py`, и три пути назначения тоже остались
+> врозь (ADR-0019 D9). Владельца у переезда сейчас нет.
 
 Two structural consequences — the first applied by HATS-1217, the second by
 HATS-1248:

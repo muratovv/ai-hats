@@ -147,6 +147,11 @@ that does not fire, which is the silence this extension point exists to remove.
   `skip_hooks` flag, and `legacy: bool` (state predates wt-hooks — so the ai-hats
   callback can reproduce the warn-not-drop; `legacy` is needed because an absent
   carry key and an empty `{}` are indistinguishable from the dict alone, see D8).
+  Two fields joined `LifecycleContext` after rev 1 and are not in the list above:
+  `state_dir` (HATS-851 — the bundle resolves hook-log paths off the same injected
+  base as state, D4) and `deadline` (HATS-1593 — N hooks share the budget of the
+  lock the firing site holds). Both are context, not policy, so the "nothing
+  hook-policy" rule still holds.
 
 **Why a callback bundle, not an event-bus / observer (rejected).** The
 fail-closed contract (D3) requires synchronous, ordered, exception-**propagating**
@@ -212,6 +217,18 @@ the callback. `__exit__` reaches the callback through `cleanup()`, so it needs n
 separate site — but the inventory lists it so a reviewer confirms the
 context-manager path is covered.
 
+> **Divergence (sites added after the lift).** The inventory was exhaustive at
+> P1; two sites joined it since, so the counts above are the historical ones.
+> HATS-1370 added a **second merge short-circuit** (branch already
+> patch-integrated via rebase) that fires `before_teardown("merge")` exactly like
+> the other three — `merge` therefore has **four** teardown sites today, not
+> three. HATS-1540 added the `before_merge` site inside `merge` (after the local
+> guards, before any mutation — D2); `cleanup(IsolationMode.SQUASH)` publishes to
+> the base branch and deliberately does **not** fire it, a recorded decision
+> rather than a missed route, because `cleanup` suppresses lifecycle vetoes by
+> design (D8) and a gate whose refusal is swallowed looks armed while passing
+> everything.
+
 ### D4 — Path-base injection
 
 Add `state_dir` and `hooks_dir` parameters to `WorktreeManager.__init__`,
@@ -276,6 +293,25 @@ route. Localizing
 a copy would create two definitions of the teardown vocabulary that must agree —
 a drift hazard (a hook validated `on:["cleanup"]` against the models copy must
 match the event the core fires).
+
+> **Divergence (2026-07-03, HATS-863 — the constant moved into the wt package
+> anyway).** The decision above kept `WT_TEARDOWN_EVENTS` ai-hats-side; it is no
+> longer there. `refactor/models: move worktree carry schema to ai_hats_wt`
+> (a5833cd8) lifted the whole `worktree:` frontmatter schema out of `models.py`
+> into `ai_hats_wt.carry` — `WT_TEARDOWN_EVENTS`, `WorktreeHook`,
+> `WorktreeCarry`, and the validator, which is now the free function
+> `parse_worktree_carry` and no longer `SkillMetadata._normalize_worktree` — and
+> re-exported it from `ai_hats_wt/__init__.py` as part of the D9 public surface
+> (ADR-0014 §2: the wt package owns its schema).
+>
+> The drift hazard this D4 rejected did **not** materialize, because HATS-863
+> *relocated* the single definition instead of copying it: `ai_hats.wt_lifecycle`
+> imports `WT_TEARDOWN_EVENTS` from `ai_hats_wt` for its `on`-filtering, so there
+> is still exactly one definition. The engine itself (`ai_hats_wt.manager`)
+> imports nothing from `carry.py` and still fires plain string literals at each
+> route, so the hook-agnostic-*engine* property this section protects is intact.
+> What changed is the meaning of "core": it became a package with a carry-schema
+> module beside the engine, not the engine alone.
 
 ### D5 — Opaque persisted carry (no rename, no migration)
 
@@ -630,7 +666,10 @@ inexpressible as "raise-to-abort + core per-route handling" — none is known
 - **Localize `WT_TEARDOWN_EVENTS` into core.** Rejected: its only core consumer is
   lifted in P1, so there is nothing to "remove"; a core copy would duplicate the
   teardown vocabulary against the `models.py` validator (drift hazard). It stays
-  ai-hats-side; the core fires plain string literals (D4).
+  ai-hats-side; the core fires plain string literals (D4). **Overtaken 2026-07-03
+  (HATS-863):** the constant moved into the wt package with the rest of the carry
+  schema — as a relocation of the one definition, not the duplicate this bullet
+  refused. See the D4 divergence note.
 - **wt CLI moved into the core** (taking `project_dir` as an arg; investigation
   §4). Rejected: drags the tracker redirect (`_project_dir`) and error-recipe
   translation toward the core, or forces the core to re-implement project-dir
@@ -650,32 +689,42 @@ inexpressible as "raise-to-abort + core per-route handling" — none is known
 - `wt-extraction-report.md` — the investigation attached to HATS-841 (coupling
   map, T-shirt sizes, file:line evidence). The supervisor refinement (lines 6–16)
   is the source of the hook-agnostic-core directive.
-- `src/ai_hats/worktree.py` — `WorktreeManager`; the create site
+- `src/ai_hats/worktree.py` (today `packages/ai-hats-wt/src/ai_hats_wt/manager.py`
+  after the HATS-880/882 package move) — `WorktreeManager`; the create site
   (`_run_wt_in_hooks` in `create`) and the teardown sites (the three
   `_run_wt_out_hooks("merge")` calls in `merge`, plus `discard`, `cleanup`, and
   `__exit__` → `cleanup()`); `_run_wt_in_hooks` / `_run_wt_out_hooks`; the
   module-level first-party imports to remove/relocate (`.models`, `.paths`,
   `run_worktree_hook`); `WorktreeHookError` (relocates to ai-hats, D8);
   `save_state` opaque carry.
-- `src/ai_hats/worktree_locks.py` — the L1–L4 lock model (ADR-0006) that stays in
-  core; the module-level `worktrees_dir` import, consumed by `_create_lock_path` /
-  `_base_lock_path` (path-base injection target, D4).
+- `src/ai_hats/worktree_locks.py` (today
+  `packages/ai-hats-wt/src/ai_hats_wt/locks.py`) — the L1–L4 lock model (ADR-0006)
+  that stays in core; the module-level `worktrees_dir` import, consumed by
+  `_create_lock_path` / `_base_lock_path` (path-base injection target, D4).
 - `src/ai_hats/worktree_hooks.py` — `run_worktree_hook` (stays ai-hats, D1/D8);
   `collect_carry_for_role` + `serialize_collected_hooks` (the collection
-  chokepoint lifted in P1).
-- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py` — `_setup_worktree`
-  (the `create` + carry-collect call site) / `_teardown_worktree` (its
-  `load_for_task` reconstruction).
+  chokepoint lifted in P1 — they live in `src/ai_hats/wt_carry.py` today).
+- `src/ai_hats/wt_effects.py` — `WtWorktreeEffects.setup` (the `create` +
+  carry-collect call site) / `.teardown` (its `load_for_task` reconstruction).
+  These were `state._setup_worktree` / `_teardown_worktree` when this ADR was
+  written; HATS-866 moved the bodies verbatim into this `WorktreeEffects`
+  binding and HATS-1262 deleted the `ai_hats_tracker` package this bullet used
+  to point at.
 - `src/ai_hats/cli/worktree.py` — the `wt` Click group; the module-level
   `_helpers` imports that keep the CLI an ai-hats wrapper (D7).
-- `src/ai_hats/models.py` — `WT_TEARDOWN_EVENTS` **stays ai-hats-side**
-  as hook vocabulary (the `SkillMetadata._normalize_worktree` pydantic
-  validator); NOT localized — the core fires plain string literals (D4).
-- `tests/test_import_hygiene.py` — the stdlib import gate (HATS-758) extended with
-  the one-directional rule (D6).
+- `packages/ai-hats-wt/src/ai_hats_wt/carry.py` — `WT_TEARDOWN_EVENTS` +
+  `parse_worktree_carry`, re-exported from `ai_hats_wt/__init__.py`. D4 decided
+  this constant **stays ai-hats-side** in `src/ai_hats/models.py` (validator
+  `SkillMetadata._normalize_worktree`); HATS-863 moved it here — see the D4
+  divergence note. The engine still fires plain string literals.
+- `packages/ai-hats-wt/tests/test_boundary.py` — where the D6 one-directional rule
+  is enforced today: the workspace-boundary allowlist (HATS-882) that superseded
+  the `WT_CORE_MODULES` denylist P2 added to `tests/test_import_hygiene.py`
+  (HATS-758), which carries no wt rule any more.
 - [ADR-0006](0006-worktree-concurrency-layered-defense.md) — the lock model that
   stays in core. [ADR-0012](0012-worktree-data-transfer.md) — the hook layer that
   stays outside it. HATS-715 — extracted locks (the decoupling precedent and the
   regression class the import-lint prevents). HATS-524 — tracker redirect (stays
   ai-hats). HATS-509 — facts-only exception bodies (CLI owns recipes).
-- `docs/glossary.md` — "Worktree core (`wt/`) boundary" entry.
+- `docs/wt/glossary.md` — the "wt core / extraction boundary" entry (the
+  worktree terms left `docs/glossary.md` for the dedicated wt glossary).

@@ -105,6 +105,18 @@ Composition меняется в analyst-ролях:
 
 **Follow-up:** отдельная задача (filed в Phase 9 плана) на сплит `backlog-manager` в `backlog-tasks` / `backlog-hyp` / `backlog-proposal`. После landing'а сплита `backlog-create` deprecate в пользу `backlog-tasks`. Out of scope этого ADR.
 
+> **Divergence note (HATS-1655, 2026-08-13).** The planned split never happened and
+> `backlog-manager` no longer exists: the whole skill tree was deleted under
+> HATS-1261 (`9b590f8d`), by which time zero roles composed it — the backlog surface
+> had moved to the `rack` CLI and its `hatrack` skill. So the "остаётся as-is для
+> `judge` и primary agent" line above is history, and the shim it justified outlived
+> the thing it was a shim for: `backlog-create` is still shipped and still composed
+> by `role-judge`. The §5 trims themselves held — `role-auditor` composes
+> `[trait-analyst-base, base-auditor]` + `role-coherence-protocol` with no rules, and
+> `role-judge` composes `[trait-analyst-base, base-judge]` + `backlog-create`, exactly
+> as decided. Verb spellings in the tables above (`ai-hats task create`) are likewise
+> pre-rack; today's equivalent is `rack create`.
+
 ### §6 Delivery-path decision tree в role-coherence-protocol
 
 `role-coherence-protocol` §Step 3 переписывается так, чтобы вести с двух-строчного дерева:

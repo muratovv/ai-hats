@@ -43,6 +43,15 @@
 общего правила — она совпадение четырёх независимых авторов, и ровно это делает
 её недолговечной.
 
+> **Снимок исполнен (отмечено 2026-08-14).** Таблица выше и оба девианта —
+> состояние дерева **до** реализации HATS-1613, и таким оно здесь и остаётся:
+> без него решение ниже нечитаемо. Сегодня оба сырых чтения `AI_HATS_VENV`
+> закрыты той самой одной процедурой — `venv_path` берёт ключ через
+> `_scoped_override` (`src/ai_hats/paths/_dirs.py`), а `resolve_python` читает
+> окружение, которое парный пин-гвард в шапке `dispatcher.sh` уже почистил
+> (`unset AI_HATS_VENV AI_HATS_DIR` при чужом пине). Префиксный тест
+> `AI_HATS_DIR` сохранён, как и записано ниже.
+
 Три отказа наблюдены, а не предположены:
 
 - **HATS-897** — `bump` с унаследованным чужим `AI_HATS_DIR` переписал
@@ -76,18 +85,18 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
 **Идентичность сессии — десять ключей.** Каждый отвечает на вопрос «чья это
 сессия и где она живёт», а не «как выполнить эту операцию».
 
-| Ключ                        | Что заявляет                                                                                       | Кто пишет                                                                                                                                                                                                           |
-| --------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AI_HATS_SESSION_ID`        | идентификатор сессии                                                                               | `session_env` (`ai_hats_observe/session.py`); спеллинг — `ENV_SESSION_ID` (`ai_hats_observe/trace.py`)                                                                                                              |
-| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                                                             | `provider.get_env` (единственный производственный вызывающий — `assemble_launch_env` в `session_artifacts.py`), `export AI_HATS_PROJECT_DIR` в `scripts/ai-hats-launcher`, `_hook_env` (`src/ai_hats/hook_exec.py`) |
-| `AI_HATS_DIR`               | база фреймворка этой сессии                                                                        | `ClaudeProvider.get_env` (`src/ai_hats/surfaces/claude/provider.py`)                                                                                                                                                |
-| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn)                                            | `export AI_HATS_VENV` в `scripts/ai-hats-launcher`, `_run_managed_versioned_update` (`src/ai_hats/cli/maintenance.py`)                                                                                              |
-| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности                                                | `AgyProvider._deliver_hooks` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`)                                                                                                                                  |
-| `AI_HATS_ROLE`              | роль, под которой сессия поднята                                                                   | проекция конверта: `SessionIdentity.to_env` (`session_identity.py`) через `assemble_launch_env` (`session_artifacts.py`)                                                                                            |
-| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости                                                   | `assemble_launch_env` (`src/ai_hats/session_artifacts.py`), из `WrapRunner.run` (`wrap_runner.py`) / `SubAgentRunner._run_attempt` (`subagent_runner.py`)                                                           |
-| `AI_HATS_SESSION_IDENTITY`  | конверт: `id`, `role`, `provider`, `project_dir`, `session_dir`, `skills_root` одним JSON          | `SessionIdentity.to_env` (`src/ai_hats/session_identity.py`), через `assemble_launch_env`                                                                                                                           |
-| `AI_HATS_PYTHON`            | интерпретатор процесса сессии — **второй** пин, потому что глобальный хук agy зовёт не наш лаунчер | `AgyProvider.get_env` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`); читает `DISPATCHER_COMMAND` (`agy/global_hook.py`)                                                                                     |
-| `TRACE_LOG_PATH`            | куда пишется трасса этой сессии — единственный ключ набора без префикса `AI_HATS_`                 | `session_env` (`ai_hats_observe/session.py`); дом — `ENV_TRACE_LOG_PATH` в `ai_hats_observe/trace.py`                                                                                                               |
+| Ключ                        | Что заявляет                                                                                       | Кто пишет                                                                                                                                                                                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_HATS_SESSION_ID`        | идентификатор сессии                                                                               | `session_env` (`ai_hats_observe/session.py`); спеллинг — `ENV_SESSION_ID` (`ai_hats_observe/trace.py`)                                                                                                                                                                                         |
+| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                                                             | `provider.get_env` (единственный производственный вызывающий — `assemble_launch_env` в `session_artifacts.py`), `export AI_HATS_PROJECT_DIR` в `scripts/ai-hats-launcher`, `_hook_env` (`src/ai_hats/hook_exec.py`)                                                                            |
+| `AI_HATS_DIR`               | база фреймворка этой сессии                                                                        | `get_env` каждого провайдера поверхности — `ClaudeProvider` (`src/ai_hats/surfaces/claude/provider.py`), `AgyProvider` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`), `ClineProvider._env` (`packages/surfaces/cline/src/ai_hats_cline/provider.py`); все три пишут его вместе с пином |
+| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn)                                            | `export AI_HATS_VENV` в `scripts/ai-hats-launcher`, `_run_managed_versioned_update` (`src/ai_hats/cli/maintenance.py`)                                                                                                                                                                         |
+| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности                                                | `AgyProvider._deliver_hooks` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`)                                                                                                                                                                                                             |
+| `AI_HATS_ROLE`              | роль, под которой сессия поднята                                                                   | проекция конверта: `SessionIdentity.to_env` (`session_identity.py`) через `assemble_launch_env` (`session_artifacts.py`)                                                                                                                                                                       |
+| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости                                                   | `assemble_launch_env` (`src/ai_hats/session_artifacts.py`), из `WrapRunner.run` (`wrap_runner.py`) / `SubAgentRunner._run_attempt` (`subagent_runner.py`)                                                                                                                                      |
+| `AI_HATS_SESSION_IDENTITY`  | конверт: `id`, `role`, `provider`, `project_dir`, `session_dir`, `skills_root` одним JSON          | `SessionIdentity.to_env` (`src/ai_hats/session_identity.py`), через `assemble_launch_env`                                                                                                                                                                                                      |
+| `AI_HATS_PYTHON`            | интерпретатор процесса сессии — **второй** пин, потому что глобальный хук agy зовёт не наш лаунчер | `AgyProvider.get_env` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`); читает `DISPATCHER_COMMAND` (`agy/global_hook.py`)                                                                                                                                                                |
+| `TRACE_LOG_PATH`            | куда пишется трасса этой сессии — единственный ключ набора без префикса `AI_HATS_`                 | `session_env` (`ai_hats_observe/session.py`); дом — `ENV_TRACE_LOG_PATH` в `ai_hats_observe/trace.py`                                                                                                                                                                                          |
 
 **Восьмой ключ приехал во время написания этого документа, и это его лучшее
 подтверждение.** HATS-1594 (done, 2026-08-12) завёл `AI_HATS_SESSION_IDENTITY` —
@@ -108,8 +117,10 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
 теперь держит тест
 (`tests/test_env_contract.py::test_the_envelope_and_its_scalars_agree_in_one_launch_env`).
 
-**У каждого ключа ровно один объявленный дом.** Тринадцать из шестнадцати
-(десять идентичности + шесть точки хука, `AI_HATS_PROJECT_DIR` общий) живут в `src/ai_hats/env.py`; остальные
+**У каждого ключа ровно один объявленный дом.** Ключей контракта шестнадцать:
+десять идентичности плюс шесть точки хука — седьмой ключ ADR-0020 D2,
+`AI_HATS_PROJECT_DIR`, общий и уже посчитан в десяти. Тринадцать из шестнадцати
+живут в `src/ai_hats/env.py`; остальные
 модули интегратора их **ре-экспортируют**, а не объявляют заново. Исключений три, все вынужденные:
 `AI_HATS_SESSION_IDENTITY` живёт со своим типом (`src/ai_hats/session_identity.py`),
 `TRACE_LOG_PATH` — рядом с идентификатором, с которым едет, и `AI_HATS_SESSION_ID` объявлен в `ai_hats_observe.trace`
@@ -261,9 +272,13 @@ HATS-1606 параметризует ровно эту процедуру (`on_f
 восьмую.
 
 **Голый override сохранён намеренно** — это не дыра, а явный жест человека.
-У `AI_HATS_DIR` ровно один производитель — `ClaudeProvider.get_env`
-(`src/ai_hats/surfaces/claude/provider.py`), и он пишет ключ **вместе** с
-пином. Остальные писатели идентичности пинят проект, не производя `AI_HATS_DIR`
+`AI_HATS_DIR` производит ровно один **вид** писателя — `get_env` провайдера
+поверхности; реализаций у него три (`ClaudeProvider` в
+`src/ai_hats/surfaces/claude/provider.py`, `AgyProvider` в
+`packages/surfaces/agy/src/ai_hats_agy/provider.py`, `ClineProvider._env` в
+`packages/surfaces/cline/src/ai_hats_cline/provider.py`), и каждая пишет ключ
+**вместе** с пином, одним литералом словаря. Остальные писатели идентичности
+пинят проект, не производя `AI_HATS_DIR`
 вообще (лаунчер экспортирует `AI_HATS_VENV` + `AI_HATS_PROJECT_DIR` подряд;
 `_hook_env` в `src/ai_hats/hook_exec.py` — только
 `AI_HATS_PROJECT_DIR`). Поэтому непарный ключ выставлен не фреймворком.
@@ -295,6 +310,12 @@ chained-хуку — без `unset` чужой пин доезжает до вс
 (`SESSION_REVIEWER_ACTOR` там же), `rack:hyp-autoclose` (`AUTOCLOSE_ACTOR` в
 `packages/ai-hats-rack/src/ai_hats_rack/extensions/quorum.py`). Сигнал
 «кто-то врёт о своей личности» срабатывает на фреймворке и молчит на подделке.
+
+> **Исполнено (отмечено 2026-08-14).** Абзац выше — дефект до HATS-1613, и он
+> здесь остаётся: без него правила ниже читаются как произвол. Сегодня вердикт
+> выносит `_claim_verdict` (`packages/ai-hats-rack/src/ai_hats_rack/journal.py`),
+> выделенный из `build_identity`; `build_identity` собирает блок и зовёт его, а
+> сравнения заявки с `AI_HATS_SESSION_ID` в коде больше нет.
 
 Решение — два правила.
 
@@ -376,12 +397,13 @@ rack не может импортировать дом контракта: ег�
 обязательство ADR-0026 [2] формулирует как «сверять поведение, а не устранять
 дублирование».
 
-Носитель обязательства — `tests/test_env_contract.py`, четыре инварианта:
+Носитель обязательства — `tests/test_env_contract.py`, шесть инвариантов:
 
 - **A** — каждый ключ контракта **объявлен** внутри интегратора ровно один раз;
 - **B** — каждый ключ достижим из своего объявленного дома (D1) под одним
-  именем: двенадцать из `ai_hats.env`, `AI_HATS_SESSION_ID` — из
-  `ai_hats_observe.trace`;
+  именем: тринадцать из `ai_hats.env`, `AI_HATS_SESSION_ID` и `TRACE_LOG_PATH` —
+  из `ai_hats_observe.trace`, `AI_HATS_SESSION_IDENTITY` — из
+  `ai_hats.session_identity` (те же три исключения, что в D1);
 - **C** — санкционированные зеркала, которым дом импортировать нельзя, несут те
   же спеллинги: `ai_hats_rack.journal`, `ai_hats_rack.cli_common`,
   `ai_hats_rack.resolver`, `ai_hats_observe.trace` и
@@ -392,6 +414,13 @@ rack не может импортировать дом контракта: ег�
   rack'а (`RACK_TASKS_DIR` в
   `packages/ai-hats-rack/src/ai_hats_rack/cli_common.py`): один символ
   Python, два разных контракта; унификация по имени символа склеила бы их.
+- **E** — идентичность **снимается** ровно тем же списком, каким пишется (D4a);
+  подмножество — это разрыв, а не частичная очистка;
+- **F** — каждое имя `AI_HATS_*`, которое читает хук, уехавший в чужой проект,
+  — либо ключ контракта, либо имя, которое этот файл явно признаёт не ключом.
+  Такой скрипт не может импортировать дом, не называет константы, которую можно
+  резолвить, и на опечатке не падает — она навсегда отдаёт дефолт; закрытый
+  словарь и есть единственное, что отличает опечатку от нового ключа.
 
 Список санкционированных зеркал — часть контракта: зеркало, которого нет в
 списке, — это дрейф, а не оптимизация.
