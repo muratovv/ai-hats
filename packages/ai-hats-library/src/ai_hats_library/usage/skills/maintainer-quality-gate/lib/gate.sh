@@ -359,8 +359,12 @@ gate_run_and_stamp_rev() {
     # library must not know how — D7. A non-zero rc is REPORTED and the run goes
     # on: the stages are the verdict, and a stage failing for want of a dependency
     # says so loudly, whereas skipping the run here would say nothing.
+    # `cd` and not just the path, for the reason `_gate_run_and_stamp_in`
+    # states at length: a dispatcher re-derives its own root from the cwd, and
+    # this one PROVISIONS that root — asked from the wrong place it would mint a
+    # venv for the checkout the agent is standing in and report it as done.
     local dispatcher="$checkout/scripts/ci-local.sh"
-    if [[ -f "$dispatcher" ]] && ! bash "$dispatcher" --prepare; then
+    if [[ -f "$dispatcher" ]] && ! (cd "$checkout" && bash "$dispatcher" --prepare); then
         printf '[%s] the dispatcher could not prepare this checkout (see above) — running anyway\n' \
                "$gate" >&2
     fi
@@ -419,6 +423,16 @@ _gate_sweep_checkout() {
 # worktree, or a scratch checkout of one commit.
 _gate_run_and_stamp_in() {
     local gate="$1" repo_root="$2" next_step="$3"
+    # MEASURED, on the first real run of the rev road (HATS-1664): naming the
+    # dispatcher by path is not enough. A dispatcher typically re-derives its own
+    # root — `git rev-parse --show-toplevel` — from the CWD IT INHERITS, so the
+    # right file ran the right stages against the tree the agent happened to be
+    # standing in, and reported that as the verdict on the commit. Every mode
+    # here exits, so moving the shell is safe and is the whole fix.
+    cd "$repo_root" || {
+        printf '[%s] cannot enter %s — gate ABORTED, no marker written\n' "$gate" "$repo_root" >&2
+        exit 1
+    }
     local dispatcher="$repo_root/scripts/ci-local.sh" stages
     stages="$(gate_stages "$dispatcher" "$gate")"
     if [[ -z "$stages" ]]; then

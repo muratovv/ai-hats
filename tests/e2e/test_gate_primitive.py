@@ -210,7 +210,7 @@ def _commit_dispatcher(repo: Path, stages: str, msg: str) -> None:
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--stages" ]]; then echo "' + stages + '"; exit 0; fi\n'
         'if [[ "$1" == "--prepare" ]]; then echo "PREPARED $PWD"; exit 0; fi\n'
-        'echo "ran $1"\nexit 0\n',
+        'echo "ran $1 in $PWD"\nexit 0\n',
         msg,
     )
 
@@ -253,6 +253,29 @@ def test_a_run_at_a_rev_marks_that_commit_and_not_where_the_agent_stands(repo: P
     assert earned.returncode == 0, "the commit this card is accountable for is marked"
     here = _bash(f'gate_marker_ok . "{_tree(repo)}" one two', repo)
     assert here.returncode != 0, "and nothing else is — HEAD was never the subject"
+
+
+def test_every_stage_runs_inside_the_checkout_and_not_where_it_was_called_from(repo: Path):
+    """MEASURED on the rev road's first real run (HATS-1664). Naming the
+    dispatcher by path is not enough: a dispatcher re-derives its own root with
+    `git rev-parse --show-toplevel` from the CWD IT INHERITS, so the right file
+    ran the right stages against the caller's tree — and reported that as the
+    verdict on the commit. The gate's own log said "judging commit <sha>" while
+    the venv it prepared belonged to somewhere else entirely.
+    """
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+
+    ran = _bash(
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    said = ran.stdout + ran.stderr
+    assert ran.returncode == 0, said
+    for line in ("PREPARED ", "ran one in ", "ran two in "):
+        where = said.split(line, 1)[1].splitlines()[0].strip()
+        assert "ai-hats-gate-" in where, f"{line.strip()} happened in {where}, not in the checkout"
 
 
 def test_the_scratch_checkout_does_not_outlive_the_run(repo: Path):
