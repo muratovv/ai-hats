@@ -28,6 +28,33 @@ HOOK = (
 )
 
 
+#: Where :func:`_plant_session` puts the envelope's on-disk half, inside the
+#: probe repo so one fixture owns both.
+SESSION_DIRNAME = ".session"
+
+
+def _plant_session(repo: Path, *targets: str) -> None:
+    """Make ``repo`` look like a session whose role declared consent (HATS-1682).
+
+    WHERE the guard asks is the role's declaration, read from
+    ``<session_dir>/role_materialization.json`` — so a probe with no session
+    declares nothing and is asked nothing, which is correct and useless here.
+    """
+    session_dir = repo / SESSION_DIRNAME
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "role_materialization.json").write_text(
+        json.dumps(
+            {
+                "consent": [
+                    {"app": "rack", "path": ["tasks"], "point": f"edge:x--{state}"}
+                    for state in targets
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _decide(
     command: str,
     *,
@@ -36,6 +63,9 @@ def _decide(
 ) -> dict:
     """Run the hook on a Bash payload; return its decision ({} when it allows)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    planted = None if cwd is None else Path(cwd) / SESSION_DIRNAME
+    if planted is not None and (planted / "role_materialization.json").is_file():
+        env["AI_HATS_SESSION_IDENTITY"] = json.dumps({"v": 1, "session_dir": str(planted)})
     env.update(env_extra or {})
     res = subprocess.run(
         [sys.executable, str(HOOK)],
@@ -175,10 +205,15 @@ def test_the_yolo_switch_disables_the_gate():
 
 @pytest.fixture
 def repo(tmp_path):
-    """A git repo — the consent ticket lands in the git dir, beside the journal."""
+    """A git repo — the consent ticket lands in the git dir, beside the journal.
+
+    Carries a planted session too: since HATS-1682 the guard asks where the
+    ROLE declared consent, so a probe with no declaration is asked nothing.
+    """
     subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
         ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
     )
+    _plant_session(tmp_path, "execute", "done")
     return tmp_path
 
 
@@ -335,7 +370,12 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
         text=True,
         timeout=20,
         cwd=str(repo),
-        env={k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")},
+        env={
+            **{k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")},
+            "AI_HATS_SESSION_IDENTITY": json.dumps(
+                {"v": 1, "session_dir": str(repo / SESSION_DIRNAME)}
+            ),
+        },
     )
     out = json.loads(res.stdout)["hookSpecificOutput"]
 
@@ -353,6 +393,7 @@ def test_a_store_that_cannot_mint_records_why_the_question_vanished(tmp_path):
     )
     (tmp_path / ".git" / "ai-hats").mkdir()
     (tmp_path / ".git" / "ai-hats" / "consent").write_text("not a directory", encoding="utf-8")
+    _plant_session(tmp_path, "execute")
 
     assert _decide("rack transition HATS-1 execute", cwd=tmp_path) == {}
     journal = tmp_path / ".git" / "ai-hats" / "bypasses.jsonl"
@@ -408,7 +449,8 @@ def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
     [
         "rack context HATS-1",
         "rack ls",
-        "rack transition HATS-1 done",
+        # `done` is NOT here since HATS-1682 — the role declares consent on that
+        # edge, and its silence was the merge into master nobody was asked about.
         "rack transition HATS-1 review",
         'rack transition HATS-1 --log "note"',
         # The op flag eats its value, so a message SAYING execute is still a note.
