@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,33 @@ drop_identity(os.environ)
 # Enables `pytester` for test_tmp_hygiene.py; pytest refuses this in a
 # non-top-level conftest, so it can only live here (HATS-570).
 pytest_plugins = ["pytester"]
+
+#: Read before any test can chdir away — the one dir known to outlive them all.
+_SESSION_CWD = os.getcwd()
+
+
+@pytest.fixture(autouse=True)
+def _surviving_cwd():
+    """Keep one test's chdir from taking the rest of the session with it.
+
+    A test that chdirs into its own ``tmp_path`` leaves the process standing in
+    a deleted directory once ``tmp_path_retention_policy=failed`` reaps it, and
+    from then on every ``os.getcwd()`` raises ``FileNotFoundError`` — including
+    the one inside ``monkeypatch.chdir``. Measured: 3 such tests cost 59
+    failures and 933 errors, and the first one reported was an unrelated test
+    several files away (HATS-1624). Autouse at the root, so this teardown runs
+    after the per-test finalizers that do the deleting.
+    """  # comment-length: allow — the cascade is why a warning beats a repair
+    yield
+    try:
+        os.getcwd()
+    except OSError:
+        os.chdir(_SESSION_CWD)
+        warnings.warn(
+            "test left the process in a deleted directory; cwd restored to "
+            f"{_SESSION_CWD}. Use `monkeypatch.chdir` rather than `os.chdir`.",
+            stacklevel=1,
+        )
 
 
 def _ambient_cache_home() -> Path:
@@ -92,21 +120,53 @@ def _source_dir(key: str, root: Path, max_depth: int = 5) -> Path | None:
     return None
 
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_protocol(item, nextitem):
-    """Attribute each new real-cache key to the test that produced it (HATS-1473).
+_KEYS_BEFORE = pytest.StashKey[set]()
 
-    Attribution happens here, not at session end, because the source directory a
-    key is matched against is usually deleted by the time the session finishes.
+
+def _attribute_new_keys(item) -> None:
+    """Match this test's new cache keys to a source dir, first writer wins.
+
+    ``setdefault`` is what makes the double call safe: the teardown-time pass
+    below runs first and carries the source dir, so the protocol-time pass can
+    only add keys it did not already see.
     """
-    before = _cache_keys()
-    yield
+    before = item.stash.get(_KEYS_BEFORE, None)
+    if before is None:
+        return
     new = _cache_keys() - before
     if not new:
         return
     basetemp = item.config._tmp_path_factory.getbasetemp()
     for key in new:
         _leaked_keys.setdefault(key, (item.nodeid, _source_dir(key, basetemp)))
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Attribute BEFORE any finalizer runs — both readers of the evidence die here.
+
+    A key is only reportable while its source dir is on disk and while something
+    is still left to report to, and teardown is where both end (HATS-1624):
+    ``tmp_path_retention_policy=failed`` rmtrees the source dir in its finalizer,
+    and on the LAST test the session-scoped tripwire is finalized here too, so an
+    attribution written after the protocol arrives past its only reader.
+    """  # comment-length: allow — the ordering IS the contract this hook enforces
+    _attribute_new_keys(item)
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    """Attribute each new real-cache key to the test that produced it (HATS-1473).
+
+    Attribution happens here, not at session end, because the source directory a
+    key is matched against is usually deleted by the time the session finishes.
+    This pass is the backstop for keys born during teardown, after the hook
+    above has run; the source dir may already be gone for those.
+    """
+    item.stash[_KEYS_BEFORE] = _cache_keys()
+    yield
+    _attribute_new_keys(item)
 
 
 @pytest.fixture(scope="session", autouse=True)

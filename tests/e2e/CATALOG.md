@@ -411,17 +411,17 @@ as a claim to check, not as evidence.
 
 ## `test_clean_tmp_cruft.py`
 
-*pins HATS-570*
+*pins HATS-570, HATS-1624*
 
-- **flow** — a developer running temp cleanup script to remove leftover test worktree directories
+- **flow** — a developer (and the pre-push gate) sweeping leftover test cruft out of the temp root while other runs and agent sessions are working
 - **cmds**
 
   ```console
-  bash scripts/clean-tmp-cruft.sh --force
+  bash scripts/clean-tmp-cruft.sh [--dry-run|--force]
   ```
 
-- **expect** — script removes temporary worktree and pytest directories while preserving caller worktree
-- **why** — without tmp cleanup scripts, interrupted test runs leak temporary worktree directories in /tmp
+- **expect** — reaps only what it can prove dead — an unregistered worktree shell, a pytest run dir whose .lock names an exited pid — and keeps live worktrees, live runs, and anything it cannot judge
+- **why** — the sweeper ran on every gate and deleted nothing (dry-run only), while 145 GB of killed-run residue accumulated in TMPDIR
 
 ## `test_cline_clean_root.py`
 

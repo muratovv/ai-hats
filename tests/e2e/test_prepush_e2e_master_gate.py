@@ -821,12 +821,13 @@ def _seed_sweep_recorder(repo: Path) -> Path:
 
 
 @pytest.mark.integration
-def test_run_mode_tmp_sweep_is_dry_run_by_default(tmp_path: Path):
-    """`--run` invokes scripts/clean-tmp-cruft.sh in DRY-RUN (no ``--force``).
+def test_run_mode_tmp_sweep_reaps_by_default(tmp_path: Path):
+    """`--run` invokes scripts/clean-tmp-cruft.sh bare — which now DELETES.
 
-    Default must never auto-delete: the sweeper cannot tell a leaked test
-    worktree from a live session, so the gate only previews. Fail-under-revert:
-    drop the HATS-731 sweep block → the recorder is never written → red.
+    Same argv as the old dry-run preview, opposite meaning (HATS-1624): the
+    sweeper reaps only on proof of death, so the gate no longer has to choose
+    between deleting a live worktree and freeing nothing. Fail-under-revert:
+    drop the sweep block → the recorder is never written → red.
     """
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
@@ -838,15 +839,17 @@ def test_run_mode_tmp_sweep_is_dry_run_by_default(tmp_path: Path):
     assert res.returncode == 0, res.stderr
     recorded = repo / "sweep_argv"
     assert recorded.exists(), f"sweeper not invoked; stderr:\n{res.stderr}"
-    # invoked with NO args → dry-run preview, not a destructive --force.
-    assert recorded.read_text().strip() == "", "default must be dry-run, not --force"
+    # No args → reap-on-proof. --dry-run here would restore the silent gate.
+    assert recorded.read_text().strip() == "", "the gate must not preview-only"
 
 
 @pytest.mark.integration
 def test_run_mode_tmp_sweep_force_when_opted_in(tmp_path: Path):
     """``AI_HATS_E2E_CLEAN_TMP=1`` → the sweeper is invoked with ``--force``.
 
-    Fail-under-revert: drop the opt-in branch → no ``--force`` recorded → red.
+    The escalation, not the on-switch: --force additionally takes the unlocked
+    run dirs pytest keeps for triage. Fail-under-revert: drop the opt-in branch
+    → no ``--force`` recorded → red.
     """
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"

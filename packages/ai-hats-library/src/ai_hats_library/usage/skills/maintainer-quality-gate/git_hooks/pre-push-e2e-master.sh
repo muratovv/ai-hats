@@ -165,22 +165,24 @@ EOF
         rm -rf "$repo_root/build" 2>/dev/null || true
     fi
 
-    # HATS-731: surface stale ai-hats test cruft (ai-hats-wt-*, pytest-of-*) in
-    # TMPDIR before the heavy run — the leak source scripts/clean-tmp-cruft.sh
-    # (HATS-570) was built to clear, finally wired into the gate it speeds up.
-    # DRY-RUN by default: the sweeper matches every `ai-hats-wt-*` dir by name
-    # and cannot tell a leaked test worktree from a LIVE task session, so the
-    # gate only PREVIEWS what would be freed — it never auto-deletes a sibling
-    # worktree. Opt IN to real deletion with AI_HATS_E2E_CLEAN_TMP=1 (--force).
+    # HATS-731: clear stale ai-hats test cruft (ai-hats-wt-*, pytest run dirs)
+    # from TMPDIR before the heavy run — the leak source scripts/clean-tmp-cruft.sh
+    # (HATS-570) was built to clear, wired into the gate it speeds up.
+    # The sweep DELETES by default (HATS-1624). It was a preview for as long as
+    # the sweeper judged by name alone; now it deletes only on proof of death —
+    # a worktree git no longer tracks, a run dir whose .lock names an exited pid
+    # — so a live sibling worktree or a concurrent run is never a candidate.
+    # AI_HATS_E2E_CLEAN_TMP=1 escalates to --force: also the unlocked run dirs
+    # pytest's own rotation keeps for triage.
     # Guarded on presence so it is a no-op anywhere the script is absent
     # (consumers ship the hook, not scripts/).
     local sweep="$repo_root/scripts/clean-tmp-cruft.sh"
     if [[ -x "$sweep" ]]; then
         if [[ "${AI_HATS_E2E_CLEAN_TMP:-0}" == "1" ]]; then
-            echo "[e2e-gate] sweeping stale tmp cruft --force (HATS-731/HATS-570)" >&2
+            echo "[e2e-gate] sweeping stale tmp cruft --force (HATS-731/HATS-1624)" >&2
             bash "$sweep" --force >&2 || true
         else
-            echo "[e2e-gate] tmp-cruft preview — set AI_HATS_E2E_CLEAN_TMP=1 to delete (HATS-731):" >&2
+            echo "[e2e-gate] reaping provably-dead tmp cruft (HATS-1624):" >&2
             bash "$sweep" >&2 || true
         fi
     fi

@@ -42,6 +42,32 @@ def test_worktree_mkdtemp_lands_in_sandbox() -> None:
 
 
 @pytest.mark.integration
+def test_a_chdir_into_tmp_path_does_not_take_the_session_down(pytester) -> None:
+    """One test standing in its own reaped tmp_path must not fail the next one.
+
+    Under ``tmp_path_retention_policy=failed`` the dir goes at teardown, and a
+    process left inside it gets FileNotFoundError from every later os.getcwd()
+    — 59 failures and 933 errors when it happened for real (HATS-1624).
+    """
+    pytester.makeconftest(_CONFTEST.read_text())
+    pytester.makepyfile(
+        """
+        import os
+
+        def test_a_wanders_off(tmp_path):
+            os.chdir(tmp_path)          # no restore — the shape that cascaded
+
+        def test_b_still_runs(tmp_path, monkeypatch):
+            monkeypatch.chdir(tmp_path)
+        """
+    )
+    result = pytester.runpytest_subprocess(
+        "-p", "no:cacheprovider", "-o", "tmp_path_retention_policy=failed"
+    )
+    result.assert_outcomes(passed=2)
+
+
+@pytest.mark.integration
 def test_failed_session_preserves_sandbox(pytester, tmp_path) -> None:
     pytester.makeconftest(_CONFTEST.read_text())
     rec = tmp_path / "sandbox_path.txt"
