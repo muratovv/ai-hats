@@ -173,24 +173,27 @@ gate_check_task_worktree() {
     # BOTH bound points. This used to re-derive the state path from the task id
     # and sed the JSON open — the one place a gate can silently end up judging
     # another worktree.
-    local wt branch tree dispatcher stages
+    local wt branch tree dispatcher stages merged subject run_where
     wt="${AI_HATS_WORKTREE_PATH:-}"
+    # Set only once the worktree is gone AND its branch reached the base branch,
+    # which is what separates "brought no code" from "already merged" (HATS-1664).
+    merged="${AI_HATS_MERGED_SHA:-}"
     # Named only at `wt:pre-merge`, where the wt engine owns the branch; on an
     # FSM edge the branch is rack's own convention. For messages only.
     branch="${AI_HATS_BRANCH_NAME:-task/$(printf '%s' "$task_id" | tr '[:upper:]' '[:lower:]')}"
 
-    if [[ -z "$wt" ]]; then
+    if [[ -z "$wt" && -z "$merged" ]]; then
         # F-11: the subject is the code entering master through this card. No
-        # worktree means no commits of its own. The runner refuses on its own if
-        # it could not TELL (HATS-1540), so absent here means absent, never
-        # unknown.
+        # worktree AND nothing merged means no commits of its own. The runner
+        # refuses on its own if it could not TELL (HATS-1540), so absent here
+        # means absent, never unknown.
         printf '%s: %s has no worktree — it contributes no commits, so there is\n' \
                "$gate" "$task_id"
         printf 'nothing to gate. Passing.\n'
         gate_exit checks pass
     fi
 
-    if [[ ! -d "$wt" ]]; then
+    if [[ -n "$wt" && ! -d "$wt" ]]; then
         # The record survived its worktree (TMPDIR swept, discarded by hand).
         # Not a hole: rack's own teardown resolves this task to no active
         # worktree and then either finalizes an already-merged branch — nothing
@@ -204,13 +207,29 @@ gate_check_task_worktree() {
         gate_exit checks pass
     fi
 
-    # F-13: the TASK BRANCH's tree, never the main checkout's. At priority 15 the
-    # merge has not happened yet, so the content under judgement is what the
-    # branch holds — and content, not the commit naming it, is the subject.
-    tree="$(gate_tree "$wt" HEAD)"
+    # Two ways to name the content this card puts into master, and the tree is
+    # the subject either way — never the commit naming it.
+    if [[ -n "$wt" ]]; then
+        # F-13: the TASK BRANCH's tree, never the main checkout's. At priority 15
+        # the merge has not happened yet, so what the branch holds IS what lands:
+        # the engine refuses a merge whose branch lacks the base tip
+        # (WorktreeDriftError), and a contained branch merges to its own tree.
+        tree="$(gate_tree "$wt" HEAD)"
+        dispatcher="$wt/scripts/ci-local.sh"
+        subject="branch $branch"
+        run_where="cd $wt"
+    else
+        # HATS-1664: the worktree is gone because the branch already reached the
+        # base branch, so the merge result is on the main checkout — and so is
+        # the dispatcher that must judge it.
+        tree="$(gate_tree "$project_dir" "$merged")"
+        dispatcher="$project_dir/scripts/ci-local.sh"
+        subject="merge commit $merged"
+        run_where="cd $project_dir"
+    fi
+
     if [[ -z "$tree" ]]; then
-        printf '%s: could not resolve the tree of the worktree %s (branch %s). The\n' \
-               "$gate" "$wt" "$branch"
+        printf '%s: could not resolve the tree of %s (%s). The\n' "$gate" "$subject" "$branch"
         printf 'gate cannot name the content it is meant to judge, so it refuses.\n'
         gate_exit checks refuse
     fi
@@ -219,7 +238,6 @@ gate_check_task_worktree() {
     # from the main checkout's. The marker certifies stages that were run there,
     # so asking anywhere else judges one tree by another tree's rules. A card
     # that changes the gate carries the change and its own verdict together.
-    dispatcher="$wt/scripts/ci-local.sh"
     stages="$(gate_stages "$dispatcher" "$gate")"
     if [[ -z "$stages" ]]; then
         printf '%s: %s names no %s composition, so no marker could ever be\n' \
@@ -233,11 +251,11 @@ gate_check_task_worktree() {
     fi
 
     if gate_marker_ok "$project_dir" "$tree" $stages; then
-        printf '%s: green marker present for tree %s (%s) — passing.\n' "$gate" "$tree" "$branch"
+        printf '%s: green marker present for tree %s (%s) — passing.\n' "$gate" "$tree" "$subject"
         gate_exit checks pass
     fi
 
-    gate_refusal "$gate" "$tree" "branch $branch" "cd $wt && $run_cmd" "$stages"
+    gate_refusal "$gate" "$tree" "$subject" "$run_where && $run_cmd" "$stages"
     gate_exit checks refuse
 }
 
