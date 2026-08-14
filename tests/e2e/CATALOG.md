@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**241 of 241 files catalogued — 249 flows.**
+**242 of 242 files catalogued — 250 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -3409,19 +3409,33 @@ as a claim to check, not as evidence.
 - **expect** — merge is refused with an error listing candidate branches
 - **why** — wt merge must require an explicit branch argument when multiple worktrees are active
 
+## `test_wt_merge_conflict_is_atomic.py`
+
+*pins HATS-1651*
+
+- **flow** — a developer merging a worktree branch whose content conflicts with the base, then running the very same command again
+- **cmds**
+
+  ```console
+  ai-hats wt merge task/conflict-probe
+  ```
+
+- **expect** — both runs refuse identically, naming the conflicted path, and the main checkout is left exactly as it was found — no MERGE_HEAD, no markers
+- **why** — the conflict crashed with a traceback, leaving the main checkout mid-merge while reporting the branch "left intact"
+
 ## `test_wt_merge_conflict_preserves_review.py`
 
-*pins HATS-481*
+*pins HATS-481, HATS-1651*
 
-- **flow** — a developer finalizing a task when a git merge conflict occurs
+- **flow** — a developer finalizing a task whose branch diverged from the base
 - **cmds**
 
   ```console
   rack transition TST-001 done
   ```
 
-- **expect** — task state remains in review and worktree branch is preserved for resolution
-- **why** — tasks must not transition to done when git merge fails due to conflicts
+- **expect** — the task stays in review and the worktree branch survives for resolution
+- **why** — a task must not reach done when the merge it needs cannot be performed
 
 ## `test_wt_merge_consent_gate.py`
 

@@ -206,9 +206,8 @@ def check_failure_reason(check: ResolvedCheck, run, *, identity: Any = _FROM_ENV
     # ordinary shell way must not read as one that refused without saying why.
     said = (run.said or run.stderr).strip()
     if run.kind is HookOutcomeKind.REFUSED:
-        return with_truncation_note(
-            said or f"{_label(check)} — it refused (exit 2) without saying why", run
-        )
+        verdict = said or f"{_label(check)} — it refused (exit 2) without saying why"
+        return with_truncation_note(verdict, run) + _stale_mirror_note(check, identity)
     if run.kind is HookOutcomeKind.SCRIPT_MISSING:
         return (
             f"{_label(check)} — the check did not run: {check.script_path} is not there. "
@@ -218,6 +217,34 @@ def check_failure_reason(check: ResolvedCheck, run, *, identity: Any = _FROM_ENV
     if run.detail:
         head += f": {run.detail}"
     return with_truncation_note(f"{head}\n{said}" if said else head, run)
+
+
+def _stale_mirror_note(check: ResolvedCheck, identity: Any) -> str:
+    """Why a refusal may be about the session rather than the tree (HATS-1651).
+
+    A session executes the skill bytes frozen at its launch (ADR-0019 D9), on
+    purpose. The cost is that the gate and whatever writes what the gate checks
+    drift apart as the session ages, and the refusal that follows reads as a
+    broken branch. This says which of the two to fix, and appears ONLY when the
+    two really differ — a notice on every refusal is a notice nobody reads.
+
+    Silent when there is nothing to compare: outside a session nothing was
+    frozen, and an unreadable file is the ``SCRIPT_MISSING`` path's business.
+    """  # comment-length: allow — when it must NOT appear is half the contract
+    live = check.source_path
+    if live is None or identity is None or identity is _FROM_ENV:
+        return ""
+    try:
+        if live.read_bytes() == check.script_path.read_bytes():
+            return ""
+    except OSError as exc:
+        return f"\n\n(whether {check.script_path} is current could not be told: {exc})"
+    return (
+        f"\n\nNOTE: this verdict came from stale bytes. Session {identity.id!r} runs the "
+        f"{identity.provider} mirror {check.script_path}, frozen at launch, and "
+        f"{live} has changed since. The gate and whatever writes what it checks can "
+        f"disagree that way. Restart the session, or run this outside a session."
+    )
 
 
 def _absent_bytes(identity: Any) -> str:

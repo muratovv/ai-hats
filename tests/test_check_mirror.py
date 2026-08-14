@@ -225,6 +225,33 @@ def test_a_bound_check_resolves_to_the_mirrors_copy(tmp_path: Path):
     assert resolved[0].script_path.stat().st_mode & 0o111, "exec bit lost in the mirror"
 
 
+def test_the_rebase_keeps_the_library_path_it_replaced(tmp_path: Path):
+    """HATS-1651: the mirror is what RUNS; the library path is what it replaced.
+
+    Only this rebase ever holds both, so a refusal downstream can ask "are these
+    bytes still current?" only if the pair survives it. Keeping the path is not a
+    second resolution root — nothing reads bytes from it in order to run them.
+    """
+    project = _project(tmp_path)
+    skill = _skill(project)
+    mirrored = _mirrored(project, skill)
+
+    resolved = _resolve(project, skill)
+
+    assert resolved[0].script_path == (mirrored / "check.sh").resolve()
+    assert resolved[0].source_path == skill.source_path / "check.sh"
+
+
+def test_outside_a_session_there_is_no_replaced_path_to_keep(tmp_path: Path):
+    """Live resolution froze nothing, so there is no pair and nothing to compare."""
+    project = _project(tmp_path)
+    skill = _skill(project)
+
+    resolved = _resolve(project, skill, sid="")
+
+    assert resolved[0].source_path is None
+
+
 def test_the_whole_skill_dir_is_there_not_just_the_script(tmp_path: Path):
     """ADR-0019 D-h ``bundle: dir``: a script that reads a sibling still can."""
     project = _project(tmp_path)

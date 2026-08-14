@@ -5,15 +5,16 @@ cmds:
     rack transition TST-001 done
 expect: the task stays in review and the worktree branch survives for resolution
 why:    a task must not reach done when the merge it needs cannot be performed
+"""
 
-HATS-1651 corrected the claim this block used to make ("when a git merge conflict
-occurs"). Conflicting content means the base moved, which IS drift, and this road
-merges with ``accept_drift=False`` (wt_effects.py) — so the refusal comes from the
-drift guard BEFORE any ``git merge`` runs, and a conflict is unreachable here. The
-assertions below are true and worth keeping; they were simply never about a
-conflict, which is how the crash HATS-1651 fixes stayed uncovered. The conflict
-needs ``--accept-drift`` and lives in test_wt_merge_conflict_is_atomic.py.
-"""  # comment-length: allow — the corrected coverage claim IS the point
+# HATS-1651 corrected the claim the block above used to make ("when a git merge
+# conflict occurs"). Conflicting content means the base moved, which IS drift, and
+# this road merges with accept_drift=False (wt_effects.py) — so the refusal comes
+# from the drift guard BEFORE any `git merge` runs, and a conflict is unreachable
+# here. The assertions below are true and worth keeping; they were simply never
+# about a conflict, which is how the crash HATS-1651 fixes stayed uncovered. The
+# conflict needs --accept-drift and lives in test_wt_merge_conflict_is_atomic.py.
+# comment-length: allow — the corrected coverage claim IS the point
 
 from __future__ import annotations
 from _helpers.git import git as _git

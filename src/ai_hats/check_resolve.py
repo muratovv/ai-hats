@@ -236,7 +236,10 @@ def rebase_onto_mirror(check: ResolvedCheck, mirror: _Mirror) -> ResolvedCheck:
             f"checks: {check.declared_by!r} binds {check.skill}/{check.script}, which "
             f"resolves to {script_path} — outside this session's mirror root {root}"
         )
-    return replace(check, script_path=script_path)
+    # HATS-1651: the one place both paths exist at once. Keeping the live one
+    # does not soften R10 — nothing re-resolves against it — it only lets a
+    # refusal say whether the frozen bytes still match the library's.
+    return replace(check, script_path=script_path, source_path=check.script_path)
 
 
 def reject_worktree_root(script_path: Path, check: ResolvedCheck) -> None:
