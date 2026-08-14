@@ -355,6 +355,16 @@ gate_run_and_stamp_rev() {
     fi
 
     printf '[%s] judging commit %s in a checkout of its own: %s\n' "$gate" "$sha" "$checkout" >&2
+    # MEASURED alongside the cwd (HATS-1664): the entry point hands the
+    # dispatcher a `PYTHON` naming the CALLER's interpreter, whose editable
+    # install points at the caller's checkout. That interpreter beats the venv
+    # this road just built, so the tests import the wrong source — the
+    # HATS-1242 guard catches it, but only after paying for the venv. An
+    # interpreter from inside the checkout is kept; anything else is not ours.
+    if [[ -n "${PYTHON:-}" && "$PYTHON" != "$checkout"/* ]]; then
+        printf '[%s] ignoring PYTHON=%s — it belongs to another checkout\n' "$gate" "$PYTHON" >&2
+        unset PYTHON
+    fi
     # The project's own half: make the content runnable (a venv, typically). The
     # library must not know how — D7. A non-zero rc is REPORTED and the run goes
     # on: the stages are the verdict, and a stage failing for want of a dependency

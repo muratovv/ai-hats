@@ -210,7 +210,7 @@ def _commit_dispatcher(repo: Path, stages: str, msg: str) -> None:
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "--stages" ]]; then echo "' + stages + '"; exit 0; fi\n'
         'if [[ "$1" == "--prepare" ]]; then echo "PREPARED $PWD"; exit 0; fi\n'
-        'echo "ran $1 in $PWD"\nexit 0\n',
+        'echo "ran $1 in $PWD with PYTHON=[${PYTHON:-<unset>}]"\nexit 0\n',
         msg,
     )
 
@@ -276,6 +276,29 @@ def test_every_stage_runs_inside_the_checkout_and_not_where_it_was_called_from(r
     for line in ("PREPARED ", "ran one in ", "ran two in "):
         where = said.split(line, 1)[1].splitlines()[0].strip()
         assert "ai-hats-gate-" in where, f"{line.strip()} happened in {where}, not in the checkout"
+
+
+def test_an_interpreter_from_another_checkout_does_not_ride_along(repo: Path):
+    """The other half of the same substitution, measured on the same run
+    (HATS-1664): the entry point hands the dispatcher a `PYTHON` naming the
+    CALLER's interpreter, whose editable install points at the caller's source.
+    It beats the venv this road just built, so the stages import the wrong code
+    — caught only by the HATS-1242 guard, and only after paying for the venv."""
+    merge_sha = _repo_with_a_merge_left_behind(repo)
+
+    ran = _bash(
+        f"export PYTHON=/somewhere/else/.venv/bin/python\n"
+        f'. "{MARKER_LIB}"; gate_run_and_stamp_rev done-gate "{merge_sha}" "next"',
+        repo,
+        lib=GATE_LIB,
+    )
+
+    said = ran.stdout + ran.stderr
+    assert ran.returncode == 0, said
+    assert "PYTHON=[<unset>]" in said, "the stages must resolve the checkout's own interpreter"
+    assert "/somewhere/else" in said, (
+        "and the gate must say what it dropped, not drop it in silence"
+    )
 
 
 def test_the_scratch_checkout_does_not_outlive_the_run(repo: Path):
