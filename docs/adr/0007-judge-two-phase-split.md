@@ -19,10 +19,10 @@ Replace the runtime mode-switch with structural pipeline composition. Two roles,
 
 ### D1 — Tier-symmetric baseline composition
 
-| Role            | Baseline trait    | Tier | Allowed writes                  | Allowed CLI                                |
-| --------------- | ----------------- | ---- | ------------------------------- | ------------------------------------------ |
-| `judge-auditor` | `base-auditor`    | L0   | single declared report path     | none                                       |
-| `judge`         | `base-judge`      | L1   | L0 baseline + ack'd CLI verbs   | `task hyp ...`, `reflect commit`, `task create` |
+| Role            | Baseline trait | Tier | Allowed writes                | Allowed CLI                                     |
+| --------------- | -------------- | ---- | ----------------------------- | ----------------------------------------------- |
+| `judge-auditor` | `base-auditor` | L0   | single declared report path   | none                                            |
+| `judge`         | `base-judge`   | L1   | L0 baseline + ack'd CLI verbs | `task hyp ...`, `reflect commit`, `task create` |
 
 `judge-auditor` is forbidden by its L0 baseline from invoking `ai-hats` CLI verbs or editing source files — the read-only contract is enforced by composition, not by inline protocol prose. `judge` inherits L1 from `base-judge` symmetrically with `role-judge`.
 
@@ -33,7 +33,7 @@ Replace the runtime mode-switch with structural pipeline composition. Two roles,
 - **Phase 1**: `reflect-hypothesis-phase1.yaml` — `provider` step with `interactive: false` → `SubAgentRunner` drives `judge-auditor` headless. Output: draft markdown at `<ai_hats_dir>/sessions/retros/judge/<ts>-draft.md`. No CLI side-effects.
 - **Phase 2**: `reflect-hypothesis-phase2.yaml` — `launch_provider` step with `interactive: true` → `WrapRunner` opens HITL session as `judge`. Supervisor reads the draft, discusses weak spots, ack's mutations; judge executes CLI ops and writes the final report at `<ai_hats_dir>/sessions/retros/judge/<ts>-report.md`.
 
-Mid-pipeline runner-switching in a single YAML was rejected: the `provider` step reads `interactive: bool` from the funnel as one value per run (`src/ai_hats/pipeline/steps/launch.py:88`). Two separate pipelines orchestrated by CLI (same pattern as `finalize-hitl` / `finalize-subagent` from HATS-535) is the minimal-mechanism solution — no new step types, no per-step `interactive` override.
+Mid-pipeline runner-switching in a single YAML was rejected: the `provider` step reads `interactive: bool` from the funnel as one value per run (`Provider.run` in `src/ai_hats/pipeline/steps/launch.py`). Two separate pipelines orchestrated by CLI (same pattern as `finalize-hitl` / `finalize-subagent` from HATS-535) is the minimal-mechanism solution — no new step types, no per-step `interactive` override.
 
 ### D3 — Headless mode contract
 
@@ -53,6 +53,7 @@ Empty draft (only `(none)` sections) is **not** a special case — Phase 2 still
 ## Consequences
 
 **New artifacts**
+
 - `library/core/roles/judge-auditor/config.yaml` — L0 role.
 - `library/core/skills/judge-auditor-protocol/SKILL.md` — extracted non-mutation parts of `judge-protocol`; replaces CLI-mutation blocks with "record proposed verdict in draft".
 - `library/core/pipelines/reflect-hypothesis-phase1.yaml` + `reflect-hypothesis-phase2.yaml`.
@@ -60,17 +61,21 @@ Empty draft (only `(none)` sections) is **not** a special case — Phase 2 still
 - `ai-hats reflect hypothesis [--headless] [--dry-run]` CLI command.
 
 **Modified surfaces**
+
 - `library/core/roles/judge/config.yaml` — Mode-A/B paragraphs removed from injection; references draft input.
 - `library/core/skills/judge-protocol/SKILL.md` — Step 0 (Mode selection) and Mode-A (autopilot) block removed; Step 1 reads draft from handoff instead of prior report directly.
 
 **Markers**
+
 - `BEGIN_JUDGE_DRAFT` / `END_JUDGE_DRAFT` — new, Phase 1 output.
 - `BEGIN_JUDGE` / `END_JUDGE` — unchanged, Phase 2 output (kept for backward-compat with `reflect all`).
 
 **Deprecation**
+
 - `ai-hats reflect all` and `library/core/pipelines/reflect-all.yaml` remain unchanged for one bake cycle. Removal tracked as a follow-up task filed after `reflect hypothesis` ships and parity is confirmed.
 
 **Risks**
+
 - Two-pipeline orchestration moves "this is a single user-facing operation" logic from one YAML into Python CLI code. The CLI is the integration point; the contract between Phase 1 and Phase 2 (draft path + exit code) must be tested explicitly.
 - `--headless` becomes the only CI-suitable variant. Operators currently scripting `reflect all` for non-interactive sweeps must migrate when the legacy command is removed.
 

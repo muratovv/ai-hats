@@ -4,11 +4,40 @@
 
 Accepted (HATS-984, 2026-07-11).
 
-**Amends ADR-0014 §"Engine-owned skills"** (`0014-…:361-377`): that section placed
+**Amends ADR-0014 §"Engine-owned skills"** (the paragraph opening "A skill that drives
+a specific engine lives in that module's `skills/`", in
+`docs/adr/0014-composable-component-decomposition.md`): that section placed
 engine-owned skills *inside* the engine package's `skills/` directory. This ADR
 supersedes the *placement + ownership* half of that decision (the open-registry
 `ai_hats.skills` discovery mechanism from ADR-0014 / HATS-871 is **retained**).
 Triggered by the HATS-871 (T11) review.
+
+> **Divergence note (HATS-1655, 2026-08-13).** Three parts of the Decision below
+> never reached the tree, or were undone after it. The decision text is left as
+> recorded; this note says what actually happened.
+>
+> - **`ai_hats.requires` was never built.** No `requires` field exists on
+>   `SkillMetadata` (`src/ai_hats/libraries/models.py`) and there is no
+>   compose/session-time verifier. The declaration block in Decision §1 and the
+>   `requires.mcp` → per-surface compilation in the mapping table are unshipped
+>   design. What did land on that frontmatter is the `worktree` carry block
+>   (ADR-0012 / HATS-823), which rides opaque for the same reason.
+> - **The engine that was to be "a pure tool" is gone.** `packages/ai-hats-tracker`
+>   was deleted (`710f45d3`, HATS-1262); the backlog surface is now the `rack` CLI
+>   in `packages/ai-hats-rack`. Decision §2 and the `requires.cli: ai-hats-tracker`
+>   example name a package that no longer ships.
+> - **Decision §4 (modernize `GeminiProvider`) is void.** The Gemini surface was
+>   retired rather than modernized — `GeminiProvider` and `paths/gemini.py` were
+>   deleted and the `agy` (Antigravity CLI) surface took its place (`26557c15`,
+>   HATS-1093). The Gemini columns in the cross-surface table are historical.
+>   Surface materialization as it actually works is ADR-0021's subject; the root
+>   `.gemini/skills/` / `.cline/skills/` mirrors the table names were themselves
+>   dropped pre-HATS-1165 (see `plugin_dir.drop_legacy_root_skills_mirrors`).
+>
+> What the decision got right and still holds: the `ai_hats.skills` entry-point
+> registry (§3) is retained — `SKILL_SOURCE_ENTRY_POINT_GROUP` in
+> `src/ai_hats/skill_sources.py` — and `backlog-manager` did return to the content
+> layer before being retired outright (HATS-1261).
 
 ## Context
 
@@ -77,8 +106,9 @@ pure engine that is provided (not owned by the skill, not owning the skill).**
 
 4. **Modernize `GeminiProvider`.** Materialize skills into `.gemini/skills/<name>/`
    the way `ClineProvider` does for `.cline/skills/`, retiring the "Gemini has no
-   native skill registry" text-index workaround (`paths/gemini.py:5-7`,
-   `providers.py:342`) — Gemini CLI now discovers `.gemini/skills/` natively [2].
+   native skill registry" text-index workaround (the `paths/gemini.py` module
+   docstring, `GeminiProvider.build_system_prompt` in `providers.py`) — Gemini
+   CLI now discovers `.gemini/skills/` natively [2].
 
 **Cross-surface mapping (why one abstraction fits all three):**
 

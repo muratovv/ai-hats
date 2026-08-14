@@ -552,3 +552,19 @@ Run `ai-hats reflect all` to start the triage.
 ```
 
 Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
+
+### Never cite a line number (HATS-1655)
+
+**In `docs/adr/**`, a pointer into source names the file and the symbol — never a line number.** `tests/test_adr_references.py` refuses every spelling of it. Inside backticks the rule is deliberately blunt: **any token carrying `:<digits>` is treated as a citation**, because enumerating the shapes failed three times in one sweep — `` `:182-191` `` (filename left to a table heading), `scripts/ai-hats-launcher:18` (no extension), `` `0014-…:361-377` `` (no extension, no slash). Adding a form the guard has to learn is the wrong direction; if you need an exception, argue it in the test.
+
+```markdown
+✅ `CHECK_PRIORITY` (`checks.py`) ✅ `CheckSubscriber.__init__` (`checks.py`)
+✅ the `--no-ff` in `_fast_forward_merge` ✅ the "forget to opt into" comment in `workspace.py`
+❌ `checks.py:29` ❌ `checks.py:284-303`
+```
+
+**Why the form and not the discipline.** A line number rots from any edit *above* it, in a file the citing author never touches — so it decays without anyone doing anything wrong. ADR-0023 stated outright that its `file:line` refs had been re-verified at a named commit; **13 of its 20 were stale**, and the worst had drifted onto unrelated code (`manager.py:2266` landed inside `_squash_merge` while the claim was about `--no-ff` in `_fast_forward_merge`) — a reader following it is misled rather than merely lost. A symbol name survives edits above it and is greppable, which is what a reader does with it anyway.
+
+**No target symbol?** Name the enclosing function, the section, or quote the first words of the comment — all three grep. Reaching for a line number means the anchor has not been found yet.
+
+**Not automatable, which is the point.** A checker can only confirm the file exists and is long enough — both true of every stale ref above. Removing the form is the only fix that holds.
