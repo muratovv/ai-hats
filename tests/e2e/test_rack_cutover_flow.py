@@ -112,6 +112,12 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert "SBX-001" in from_wt.stdout
     assert not (worktree / ".agent").exists(), "resolution must not mkdir a tracker in the worktree"
 
+    # --- HATS-1654: `ls --id` is the positional, on the installed binary ---
+    ls_positional = _rack(rack, "ls", "SBX-001", cwd=main, env=env)
+    ls_flagged = _rack(rack, "ls", "--id", "SBX-001", cwd=main, env=env)
+    assert ls_flagged.returncode == 0, ls_flagged.stderr
+    assert ls_flagged.stdout == ls_positional.stdout
+
     # --- C1d: `done` without merge consent is a typed refusal, not a raw traceback ---
     # The launcher-tier env grants consent by default (AI_HATS_MERGE_ACK=1) so
     # other tests can merge; drop it here to exercise the review-consent gate.
