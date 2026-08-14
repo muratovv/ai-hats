@@ -25,9 +25,7 @@ ADR_DIR = REPO_ROOT / "docs" / "adr"
 #: `path/to/file.ext:12` or `:12-30`, the two spellings the ADRs actually used.
 #: The extension list is closed on purpose: a bare `word:12` matches prose like
 #: "budget:20" and markdown anchors, and a checker that cries wolf gets muted.
-_LINE_REF = re.compile(
-    r"\b[\w./-]+\.(?:py|sh|md|yaml|yml|toml|json|cfg|ini|txt|d2):\d+(?:-\d+)?\b"
-)
+_LINE_REF = re.compile(r"\b[\w./-]+\.(?:py|sh|md|yaml|yml|toml|json|cfg|ini|txt|d2):\d+(?:-\d+)?\b")
 
 #: Fenced code is exempt: a shell transcript or a compiler diagnostic quoted
 #: verbatim is evidence, not a citation the reader is meant to follow.
