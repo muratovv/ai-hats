@@ -133,9 +133,9 @@ def test_a_merged_worktree_leaves_the_merge_commit_behind(bare_repo: Path) -> No
     _commit_in_worktree(wt_path, "shipped.txt", "content that reached the base branch")
     state_dir = bare_repo / ".wt"
 
-    assert (
-        WorktreeManager.peek_merged_sha(bare_repo, "HATS-999", state_dir=state_dir) is None
-    ), "nothing is merged yet, and a record here would be a lie"
+    assert WorktreeManager.peek_merged_sha(bare_repo, "HATS-999", state_dir=state_dir) is None, (
+        "nothing is merged yet, and a record here would be a lie"
+    )
 
     mgr.merge()
 

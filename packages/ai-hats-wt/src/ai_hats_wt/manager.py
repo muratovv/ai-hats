@@ -1682,8 +1682,10 @@ class WorktreeManager:
         for one whose worktree was merged and torn down. A gate cannot tell those
         apart, so it waved the second through (HATS-1664).
         """
-        tomb = _resolve_state_dir(project_dir, state_dir, NOOP_LIFECYCLE) / MERGED_SUBDIR / (
-            f"{_state_key(f'task/{task_id.lower()}')}.json"
+        tomb = (
+            _resolve_state_dir(project_dir, state_dir, NOOP_LIFECYCLE)
+            / MERGED_SUBDIR
+            / (f"{_state_key(f'task/{task_id.lower()}')}.json")
         )
         try:
             raw = tomb.read_text()
