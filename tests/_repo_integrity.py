@@ -112,9 +112,8 @@ def _reading(entries: tuple[str, ...]) -> str:
         )
     if entries:
         return (
-            "No merge among them, so another session landing work does not explain this. "
-            "If nobody else was working in this checkout, a test wrote to the real repo — "
-            "that is the bug to chase."
+            "None of them is a merge landing in this checkout. If nobody else was working "
+            "here, a test wrote to the real repo — that is the bug to chase."
         )
     return (
         "Without reflog evidence both readings stay open: another session landing work in "
