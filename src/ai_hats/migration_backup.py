@@ -83,6 +83,17 @@ EXCLUDED_BASENAMES: frozenset[str] = frozenset(
 )
 
 
+# PEP 405 marks every venv root with this file, whatever the root is called —
+# the managed install's root is ``versions/<sha>/``, which no name list saw
+# (HATS-1662: 44 s of zlib and a 96 MB tarball on every `self init`).
+VENV_MARKER = "pyvenv.cfg"
+
+
+def _is_venv_root(path: Path) -> bool:
+    """True when ``path`` is the root of a Python virtual environment."""
+    return (path / VENV_MARKER).is_file()
+
+
 def _should_exclude(arcname: str) -> bool:
     """True when any path segment of ``arcname`` is in EXCLUDED_BASENAMES
     or matches a bytecode pattern (``*.pyc``).
@@ -244,6 +255,10 @@ def snapshot_pre_bump(
         if info.issym() or info.islnk():
             return None
         if _should_exclude(info.name):
+            return None
+        # Dropping the root is enough: tarfile.add() returns without recursing
+        # when the filter rejects a directory entry.
+        if info.isdir() and _is_venv_root(project_dir / info.name):
             return None
         return info
 
