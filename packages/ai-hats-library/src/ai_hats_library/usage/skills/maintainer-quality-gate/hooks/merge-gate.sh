@@ -40,11 +40,12 @@ fi
 case "${1:---check}" in
     --check) gate_check_task_worktree "$GATE_NAME" "$RUN_CMD" "$FULLER_CMD" ;;
     --run)
-        gate_run_and_stamp_here "$GATE_NAME" \
-            "'ai-hats wt merge' on this content now passes instantly."
+        shift
+        gate_run_mode "$GATE_NAME" \
+            "'ai-hats wt merge' on this content now passes instantly." "$@"
         ;;
     *)
-        echo "usage: merge-gate.sh [--check|--run]" >&2
+        echo "usage: merge-gate.sh [--check|--run [--rev <sha>]]" >&2
         # 64 = EX_USAGE. Never 1 and never 2: a typo at the command line is
         # neither a refusal nor a verdict of any kind.
         exit 64

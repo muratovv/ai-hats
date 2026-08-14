@@ -521,6 +521,22 @@ def test_a_marker_for_the_merge_commit_lets_the_merged_card_through(gate_project
     assert json.loads(taken.stdout)["task"]["state"] == "done"
 
 
+def test_the_refusal_of_a_merged_card_hands_over_a_command_that_can_earn_it(gate_project, rack_bin):
+    """A refusal is an ACTION, not a diagnosis (ADR-0023 D6) — and the plain
+    `make done-gate` it used to hand over could not possibly work here. The
+    card's worktree is gone, so the agent stands in the main checkout: HEAD has
+    moved under other merges and the tree is dirty, so that run would judge the
+    wrong content and then decline to record it. `REV=` names the subject."""
+    project, env = gate_project("gated")
+    task_id, wt = _to_review(rack_bin, project, env, worktree=True)
+    merge_sha = _merge_by_hand(project, task_id, wt)
+
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert f"REV={merge_sha}" in _check_log(project, task_id).read_text(encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # 5. role scope — ADR-0019 D7
 # ---------------------------------------------------------------------------
