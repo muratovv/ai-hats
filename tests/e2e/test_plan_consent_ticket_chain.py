@@ -11,6 +11,7 @@ why:    the whole chain, not one hook: a second hook on the Bash matcher can ove
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -253,6 +254,29 @@ def test_the_neighbouring_rack_forms_pass_through_the_chain(project, settings, e
     task_id = planned("neighbour")
     verdict = run_chain(project, form.format(task_id=task_id), settings=settings, env=env)
     assert not verdict.gated, f"{form} was gated: {verdict}"
+    assert verdict.hook == "safety_gate.py", f"{form} still needs an allow-rule: {verdict}"
+
+
+@pytest.mark.parametrize("form", ["rack transition {task_id} done", "rack create 'x'"])
+def test_the_chain_does_not_wave_through_what_it_must_not(project, settings, env, planned, form):
+    """`done` carries the worktree merge into master — never auto-approved."""
+    task_id = planned("not routine")
+    verdict = run_chain(project, form.format(task_id=task_id), settings=settings, env=env)
+    assert verdict.hook == "", f"{form} was auto-approved by {verdict.hook}"
+
+
+def test_the_chain_reports_an_allow_rule_that_silences_the_question(project, settings, env):
+    """The lint rides the hook, so the whole chain carries it (HATS-1642)."""
+    claude = project / ".claude"
+    claude.mkdir(exist_ok=True)
+    (claude / "settings.local.json").write_text(
+        json.dumps({"permissions": {"allow": ["Bash(rack transition *)"]}}, indent=2)
+    )
+
+    verdict = run_chain(project, "ls -la", settings=settings, env={**env, "HOME": str(project)})
+
+    assert "rack transition" in verdict.context, verdict.context
+    assert not verdict.gated, f"a lint must not gate: {verdict}"
 
 
 @pytest.mark.parametrize("prefix", ["", "cd . && ", "env FOO=1 "])

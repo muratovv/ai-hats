@@ -33,14 +33,25 @@ except ImportError:  # helper absent -> say so; never skip quietly
 
 _backlog_off_journaled = False
 
+# HATS-1642 — the allow-rule lint, carried here because a bound check cannot
+# resolve from a linked worktree (ADR-0019 D9 clause 4).
+try:
+    import consent_permission_lint as _permission_lint
+except ImportError:  # sibling absent -> no warning to raise; every gate still runs
+    _permission_lint = None
+
 # HATS-1642 — the ticket the ask hands to the rack process. Imported, never
 # re-spelled: one module owns the nonce, the directory and the clock.
 try:
     from consent_ticket import TICKET_ENV, TTL_SECONDS as TICKET_TTL
     from consent_ticket import mint as _mint_ticket
+    from consent_ticket import tickets_dir as _tickets_dir
 except ImportError:  # sibling absent -> no question to ask; the refusal still stands
 
     def _mint_ticket(task_id: str, **_kw) -> None:
+        return None
+
+    def _tickets_dir(_start=None) -> None:
         return None
 
     #: The literal is duplicated ONLY on this path, so a missing sibling cannot
@@ -253,6 +264,17 @@ RACK_UNGATED_FLAGS = frozenset({"--force"})
 
 EXECUTE_STATE = "execute"
 
+#: Read-only verbs: they move nothing, so a prompt on them is pure friction.
+RACK_READ_VERBS = frozenset({"context", "ls"})
+
+#: Ops that annotate a card and touch no FSM edge. Enumerated POSITIVELY — the
+#: complement ("everything that is not plan → execute") grows a hole with every
+#: flag the rack gains, and `done` alone carries a merge into master.
+RACK_SAFE_OPS = frozenset({"--log", "--set", "--append", "--attach", "--link", "--rm"})
+
+#: Options that carry no op at all: they shape output or routing.
+RACK_SAFE_OPTS = frozenset({"--json", "--tasks-dir"})
+
 
 def bin_args(tokens, cmd_bin: str):
     """``tokens`` from the binary onward — env assignments and wrappers dropped."""
@@ -291,6 +313,85 @@ def execute_transition_target(args) -> str:
             wanted = True
         i += 1
     return task_id if wanted else ""
+
+
+def auto_allowed(args) -> bool:
+    """True when this rack call is routine enough to spare the supervisor a click.
+
+    Routine means: it annotates, it does not move. A bare token after the task id
+    IS a state op (`transition <ID> done`), and `done` tears the worktree down
+    into master — a shared-state write that `rule_pause_before_shared_state_write`
+    wants paused, never waved through. Anything unrecognised returns False, which
+    is silence rather than allow: the ordinary permission flow still decides.
+    """
+    verb = args[1] if len(args) > 1 else ""
+    if verb in RACK_READ_VERBS:
+        return True
+    if verb != "transition":
+        return False
+    rest, i, task_id, op = args[2:], 0, "", False
+    while i < len(rest):
+        tok = rest[i]
+        if tok in RACK_SAFE_OPS:
+            if i + 1 >= len(rest):
+                return False
+            i, op = i + 2, True
+            continue
+        if tok in RACK_SAFE_OPTS:
+            i += 2 if tok == "--tasks-dir" else 1
+            continue
+        if tok.startswith("-") or task_id:
+            return False  # an unenumerated flag, or a state op after the id
+        task_id, i = tok, i + 1
+    return bool(task_id and op)
+
+
+def allow_verdict(cmd: str) -> dict:
+    """`allow` iff EVERY command in the line is a routine rack call (or a `cd`).
+
+    A chain is only as allowable as its least allowable link: waving through
+    `rack transition X --log y && git push` would auto-approve the push.
+    """
+    commands = parse_commands(cmd)
+    if not commands:
+        return {}
+    for tokens in commands:
+        cmd_bin = get_bin(tokens)
+        if cmd_bin == "cd":
+            continue
+        if cmd_bin != "rack" or not auto_allowed(bin_args(tokens, cmd_bin)):
+            return {}
+    return {
+        "permissionDecision": "allow",
+        "permissionDecisionReason": (
+            "routine rack bookkeeping: this call annotates a card and moves no "
+            "state. The gated moves are answered by this guard, not by a rule."
+        ),
+    }
+
+
+def permission_warning(cmd: str) -> str:
+    """Once per session: say if an allow-rule is silencing a guard (HATS-1642).
+
+    A nudge, never a verdict — it rides ``additionalContext`` so a noisy config
+    cannot cost anyone a tool call. Any failure here is journaled and dropped:
+    the gates above have already decided, and a lint may not undo them.
+    """
+    if _permission_lint is None:
+        return ""
+    try:
+        said = _permission_lint.warning_for()
+        if not said:
+            return ""
+        store = _tickets_dir(Path.cwd())
+        if store is None:
+            return said  # nowhere to remember; better repeated than lost
+        marker = store.parent / "consent-lint.json"
+        session = os.environ.get("AI_HATS_SESSION_ID", "")
+        return "" if _permission_lint.already_warned(marker, session) else said
+    except Exception as exc:
+        journal_bypass("fail-open", f"permission lint failed: {exc!r}", hook="safety_gate.py")
+        return ""
 
 
 def prefixed_command(cmd: str, rack_token: str, ordinal: int, total: int, assignment: str) -> str:
@@ -502,14 +603,18 @@ def main() -> int:
         return 0
 
     try:
-        ask = consent_ask(cmd, tool_input, cmd_key)
+        decision = consent_ask(cmd, tool_input, cmd_key) or allow_verdict(cmd)
     except Exception as exc:
         # A consent path that touches the filesystem must never take the rest of
         # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).
         journal_bypass("fail-open", f"consent ask failed: {exc!r}", hook="safety_gate.py", cmd=cmd)
         return 0
-    if ask:
-        _emit(ask)
+
+    nudge = permission_warning(cmd)
+    if nudge:
+        decision = {**decision, "additionalContext": nudge}
+    if decision:
+        _emit(decision)
     return 0
 
 

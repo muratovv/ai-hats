@@ -44,10 +44,10 @@ dependencies = [
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.3.3",
     "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
-    # 0.5.6 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket with its
+    # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket with its
     # peek/consume pair — imported at module level by rack_wiring — and the
     # startup check trait-base binds against permissions.allow.
-    "ai-hats-library>=0.5.6",
+    "ai-hats-library>=0.5.7",
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",

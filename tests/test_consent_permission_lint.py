@@ -35,47 +35,31 @@ def lint():
     return _load()
 
 
-def test_the_gate_script_is_shipped_and_runnable():
+def test_the_gate_script_is_shipped_beside_the_hook_that_imports_it():
     """Green must mean 'checked and clean', never 'the file moved'."""
-    assert GATE.is_file(), f"the check script is not where the binding points: {GATE}"
-    assert GATE.read_text(encoding="utf-8").startswith("#!"), "a bound check needs a shebang"
+    assert GATE.is_file(), f"the hook's sibling is not where it imports it from: {GATE}"
 
 
-#: The row this check is meant to ship under, held here rather than in a trait
-#: — see `test_the_row_is_not_declared_in_the_library_yet` for why, and
-#: `tests/e2e/test_consent_permission_lint_startup.py`, which drives this exact
-#: shape through a real launch.
-BINDING = {
-    "run": "safety-guard/hooks/consent_permission_lint.py",
-    "at": ["startup"],
-    "on_error": "warn",
-}
+HOOK = GATE.parent / "safety_gate.py"
 
 
-def test_the_row_is_not_declared_in_the_library_yet():
-    """Held back, deliberately, and pinned so the state is a decision not a slip.
+def test_the_lint_is_carried_by_the_hook_not_by_a_bound_check():
+    """Where it lives IS the design (HATS-1642).
 
-    ADR-0019 D9 clause 4 refuses to resolve a check whose skill sits inside a
-    LINKED WORKTREE — "a gate must not run the half-written copy of itself".
-    Sound, but ai-hats is developed from worktrees, so a row on a universal
-    trait makes every such session refuse to start (measured: 14 launch tests).
-    Landing it is a supervisor's call, and one line.
+    ADR-0019 D9 clause 4 will not resolve a check whose skill sits in a linked
+    worktree — "a gate must not run the half-written copy of itself" — and
+    ai-hats is developed from worktrees, so a bound row would refuse to start
+    every such session. The hook runs everywhere; it carries the lint instead.
     """
-    import yaml
-
     library = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
     declared = [
         path
         for path in sorted(library.rglob("config.yaml"))
-        if BINDING["run"] in path.read_text(encoding="utf-8")
+        if "consent_permission_lint" in path.read_text(encoding="utf-8")
     ]
-    assert declared == [], f"the row landed without the worktree question settled: {declared}"
-
-    base = yaml.safe_load(
-        (library / "core/traits/trait-base/config.yaml").read_text(encoding="utf-8")
-    )
-    assert "safety-guard" in base["composition"]["skills"], (
-        "trait-base is the intended home — it already carries the skill this check guards"
+    assert declared == [], f"a bound row would refuse to resolve from a worktree: {declared}"
+    assert "consent_permission_lint" in HOOK.read_text(encoding="utf-8"), (
+        "the hook must carry the lint, or nothing runs it at all"
     )
 
 
@@ -91,6 +75,8 @@ def _settings(rules) -> str:
         "Bash(*)",
         "Bash",
         "Bash(rack transition HATS-1 execute)",
+        # The harness's prefix idiom — this one silences the pre-merge pause.
+        "Bash(ai-hats:*)",
         # The form the guard refuses outright, fossilised into an allow-rule.
         "Bash(AI_HATS_PLAN_ACK=1 rack transition HATS-1193 execute)",
     ],
@@ -132,26 +118,31 @@ def test_unreadable_settings_are_not_a_finding(lint):
     assert lint.findings_in(json.dumps([])) == []
 
 
-def test_it_reports_and_never_refuses(lint, tmp_path, capsys):
-    """`on_error: warn` softens a BROKE run (exit 1), never a REFUSE (exit 2) —
-    so a reporting check must never reach for 2 (ADR-0019 D4)."""
+def test_the_message_names_the_file_the_rule_and_the_pause_it_removes(lint, tmp_path):
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude" / "settings.local.json").write_text(
-        _settings(["Bash(rack transition *)"]), encoding="utf-8"
+        _settings(["Bash(rack transition *)", "Bash(ai-hats:*)"]), encoding="utf-8"
     )
 
-    code = lint.main(roots=[tmp_path])
+    said = lint.warning_for(roots=[tmp_path])
 
-    assert code == 1, "a reporting check exits 1, so on_error: warn can soften it"
-    said = capsys.readouterr().out
-    assert "settings.local.json" in said and "rack transition" in said, said
+    assert "settings.local.json" in said, said
+    assert "rack transition" in said and "ai-hats:*" in said, said
+    assert "consent question" in said and "merge into master" in said, said
 
 
-def test_a_clean_project_says_nothing(lint, tmp_path, capsys):
+def test_a_clean_project_says_nothing(lint, tmp_path):
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude" / "settings.json").write_text(
         _settings(["Bash(rack context *)"]), encoding="utf-8"
     )
 
-    assert lint.main(roots=[tmp_path]) == 0
-    assert capsys.readouterr().out == ""
+    assert lint.warning_for(roots=[tmp_path]) == ""
+
+
+def test_a_session_is_told_once(lint, tmp_path):
+    marker = tmp_path / "consent-lint.json"
+
+    assert lint.already_warned(marker, "sid-1") is False
+    assert lint.already_warned(marker, "sid-1") is True
+    assert lint.already_warned(marker, "sid-2") is False, "a new session hears it again"

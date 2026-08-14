@@ -146,7 +146,9 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
         context = str(hso.get("additionalContext", ""))
         rewritten = hso.get("updatedInput")
         rewritten = rewritten if isinstance(rewritten, dict) else None
-        if decision in {"deny", "ask"}:
+        if decision in {"deny", "ask", "allow"}:
+            # `allow` is a hook DECIDING, not the chain running out of objections:
+            # `hook` names the decider, and stays empty for the default (HATS-1642).
             return Verdict(
                 decision,
                 str(hso.get("permissionDecisionReason", "")),
@@ -194,17 +196,20 @@ def run_tool_chain(
 
     contexts: list[str] = []
     rewritten: dict | None = None
+    allowed_by = ""
     for command_str in hooks:
         verdict = _run_one(command_str, payload, project, base_env)
         if verdict.context:
             contexts.append(verdict.context)
         if verdict.updated_input is not None:
             rewritten = verdict.updated_input
+        if verdict.decision == "allow" and verdict.hook and not allowed_by:
+            allowed_by = verdict.hook
         if verdict.gated:
             return Verdict(
                 verdict.decision, verdict.reason, verdict.hook, "\n".join(contexts), rewritten
             )
-    return Verdict("allow", context="\n".join(contexts), updated_input=rewritten)
+    return Verdict("allow", hook=allowed_by, context="\n".join(contexts), updated_input=rewritten)
 
 
 def run_chain(

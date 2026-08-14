@@ -188,6 +188,102 @@ def test_a_plan_to_execute_transition_asks_the_supervisor(repo):
     assert "HATS-1" in out.get("permissionDecisionReason", ""), out
 
 
+# The hook, not permissions.allow, decides the routine rack calls (HATS-1642):
+# a rule wide enough to spare a click on every work-log entry is wide enough to
+# swallow `plan → execute`. Authority belongs where the EDGE is visible.
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'rack transition HATS-1 --log "impl started"',
+        "rack transition HATS-1 --set role=implementer",
+        "rack transition HATS-1 --attach /tmp/notes.md",
+        "rack transition HATS-1 --link related:HATS-2",
+        'rack transition HATS-1 --log "a" --set priority=high',
+        "rack context HATS-1",
+        "rack ls",
+        "cd sub && rack transition HATS-1 --log 'from a worktree'",
+    ],
+)
+def test_the_routine_rack_ops_are_allowed_by_the_hook(command, repo):
+    out = _decide(command, cwd=repo)
+    assert out.get("permissionDecision") == "allow", f"{command!r} was not allowed: {out}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Carries the worktree teardown-merge into master: a shared-state write,
+        # and `rule_pause_before_shared_state_write` wants the pause HERE.
+        "rack transition HATS-1 done",
+        'rack transition HATS-1 --log "closing" done',
+        # Relaxes the FSM arrow — by definition not routine.
+        'rack transition HATS-1 execute --force --reason "manual"',
+        'rack transition HATS-1 --force --reason "manual" --log "x"',
+        # Not enumerated as safe: the list is positive, so a new flag is silence.
+        "rack transition HATS-1 --unlink related:HATS-2",
+        "rack transition HATS-1 review",
+        "rack create 'new card'",
+        # A chain is only as allowable as its least allowable link.
+        'rack transition HATS-1 --log "x" && git push origin master',
+    ],
+)
+def test_what_the_hook_must_not_wave_through_stays_silent(command, repo):
+    """Silence, not allow: these go back to the ordinary permission flow."""
+    out = _decide(command, cwd=repo)
+    assert out.get("permissionDecision") != "allow", f"{command!r} was auto-approved: {out}"
+
+
+def _with_allow(repo, rules) -> None:
+    (repo / ".claude").mkdir(exist_ok=True)
+    (repo / ".claude" / "settings.local.json").write_text(
+        json.dumps({"permissions": {"allow": rules}}, indent=2), encoding="utf-8"
+    )
+
+
+def test_a_rule_that_silences_a_guard_is_reported_without_blocking(repo):
+    """A bound check cannot resolve from a worktree (ADR-0019 D9 clause 4), so
+    the warning rides the hook — non-gating, on additionalContext."""
+    _with_allow(repo, ["Bash(rack transition *)", "Bash(ai-hats:*)"])
+
+    out = _decide("ls -la", cwd=repo, env_extra={"HOME": str(repo)})
+
+    said = out.get("additionalContext", "")
+    assert "rack transition" in said and "ai-hats:*" in said, out
+    assert "merge into master" in said, "the ai-hats rule silences the merge pause too"
+    assert "settings.local.json" in said, said
+    assert out.get("permissionDecision") is None, f"a lint must not gate: {out}"
+
+
+def test_the_warning_is_said_once_per_session(repo):
+    _with_allow(repo, ["Bash(rack transition *)"])
+    env = {"HOME": str(repo), "AI_HATS_SESSION_ID": "sid-1"}
+
+    assert _decide("ls -la", cwd=repo, env_extra=env).get("additionalContext"), "never said"
+    assert _decide("ls -la", cwd=repo, env_extra=env) == {}, "said twice in one session"
+    other = {**env, "AI_HATS_SESSION_ID": "sid-2"}
+    assert _decide("ls -la", cwd=repo, env_extra=other).get("additionalContext"), "not re-said"
+
+
+def test_a_clean_allow_list_draws_no_comment(repo):
+    """Fail-under-revert: without this, a lint that warns always would pass."""
+    _with_allow(repo, ["Bash(rack context *)", "Bash(git status:*)"])
+
+    assert _decide("ls -la", cwd=repo, env_extra={"HOME": str(repo)}) == {}
+
+
+def test_the_consent_question_does_not_depend_on_the_allow_list(repo):
+    """The whole point of the move: no settings file is consulted to decide it."""
+    (repo / ".claude").mkdir()
+    (repo / ".claude" / "settings.json").write_text(
+        json.dumps({"permissions": {"allow": []}}), encoding="utf-8"
+    )
+
+    out = _decide("rack transition HATS-1 execute", cwd=repo)
+    assert out.get("permissionDecision") == "ask", out
+
+
 def test_typing_a_consent_ticket_is_denied_like_any_other_self_grant(repo):
     """The guard mints the ticket; an agent writing one is forging the answer."""
     forged = f"AI_HATS_CONSENT_TICKET={'a' * 32} rack transition HATS-1 execute"
@@ -322,5 +418,10 @@ def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
     ],
 )
 def test_the_neighbouring_rack_forms_never_prompt(command, repo):
-    """Control (green before the ask existed): only `plan → execute` is a question."""
-    assert _decide(command, cwd=repo) == {}, command
+    """Control (green before the ask existed): only `plan → execute` is a question.
+
+    Not a claim of silence — some of these the hook now allows outright, which
+    is also not a prompt. What must never happen is `ask` or `deny`.
+    """
+    decision = _decide(command, cwd=repo).get("permissionDecision")
+    assert decision not in ("ask", "deny"), f"{command!r} was gated: {decision}"

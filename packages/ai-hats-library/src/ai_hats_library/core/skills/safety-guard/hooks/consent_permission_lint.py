@@ -2,38 +2,38 @@
 """HATS-1642 — report an allow-rule that switches the consent gate off.
 
 Measured, not imagined: a live session walked `plan → execute` with no question
-asked, because `"Bash(rack transition *)"` sat under `permissions.allow`. The
-harness auto-approved the call, the guard still injected its ticket, and the log
-said consent was accepted. A gate one config line disarms in silence is no gate.
+asked, because `"Bash(rack transition *)"` sat under `permissions.allow` — the
+harness approved the call before any prompt could appear. A gate one config line
+disarms in silence is no gate.
 
-Bound at ``ai-hats:startup`` with ``on_error: warn``: exit 1 to report (the
-channel softens a BROKE run), never 2 — a REFUSE is not downgradable.
+Carried by the PreToolUse hook, not a bound check: ADR-0019 D9 clause 4 will not
+resolve a check whose skill sits in a linked worktree, and ai-hats is developed
+from worktrees. The hook runs everywhere, and warns without blocking.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import NamedTuple
 
 #: Settings files a project or a user can put an allow-rule in, nearest first.
 SETTINGS_FILES = (".claude/settings.json", ".claude/settings.local.json")
 
-#: What auto-approval must never reach. Probes, not patterns: a rule is judged
-#: by whether it would wave THESE through, so a narrow rule about a neighbouring
-#: verb (`rack context *`, `rack transition * --log *`) stays untouched.
-CONSENT_COMMANDS = (
-    "rack transition HATS-1 execute",
-    "rack transition HATS-1 --state execute",
+#: What auto-approval must never reach, and which pause each one removes. Probes,
+#: not patterns: a rule is judged by whether it would wave THESE through, so a
+#: narrow rule about a neighbouring verb stays untouched.
+GUARDED_COMMANDS = (
+    ("rack transition HATS-1 execute", "the plan → execute consent question"),
+    ("rack transition HATS-1 --state execute", "the plan → execute consent question"),
+    ("ai-hats wt merge task/x", "the pause before a merge into master"),
 )
 
 #: The inline self-grant HATS-1639 refuses, fossilised into an allow-rule — the
 #: shape found live, one line below the one that started this.
 INLINE_GRANT = re.compile(r"AI_HATS_[A-Z0-9_]*(?:ACK|CONSENT_TICKET)\s*=")
 
-AUTO_APPROVES = "auto-approves `plan → execute`, so the supervisor is never asked"
 SELF_GRANT = "spells the inline consent self-grant the guard refuses (HATS-1639)"
 
 
@@ -57,6 +57,11 @@ def covers(rule: str, command: str) -> bool:
     inner = rule[len("Bash(") : -1].strip()
     if not inner:
         return False
+    if inner.endswith(":*"):
+        # The harness's prefix idiom: `Bash(ai-hats:*)` is every ai-hats command,
+        # which is how an allow-rule quietly covers `ai-hats wt merge`.
+        prefix = inner[:-2]
+        return command == prefix or command.startswith(prefix + " ")
     pattern = "".join(".*" if ch == "*" else re.escape(ch) for ch in inner)
     try:
         return re.fullmatch(pattern, command) is not None
@@ -67,9 +72,10 @@ def covers(rule: str, command: str) -> bool:
 def _why(rule: str) -> str:
     if INLINE_GRANT.search(rule):
         return SELF_GRANT
-    if any(covers(rule, command) for command in CONSENT_COMMANDS):
-        return AUTO_APPROVES
-    return ""
+    silenced = sorted({why for command, why in GUARDED_COMMANDS if covers(rule, command)})
+    if not silenced:
+        return ""
+    return "auto-approves the call, so " + " and ".join(silenced) + " never happens"
 
 
 def _line_of(rule: str, lines: list[str]) -> int:
@@ -122,27 +128,47 @@ def settings_paths(roots) -> list[Path]:
     return paths
 
 
-def main(roots=None) -> int:
-    """Report, never refuse. ``roots`` defaults to the two places a rule lives —
-    resolved HERE rather than three frames down, so a caller can name its own."""
+def warning_for(roots=None) -> str:
+    """The message to surface, or ``""`` when the allow-list leaves the gates alone.
+
+    ``roots`` defaults to the two places a rule lives — resolved HERE rather than
+    three frames down, so a caller can name its own.
+    """
     reported = []
     for path in settings_paths(roots if roots is not None else (Path.cwd(), Path.home())):
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue  # absent or unreadable: nothing this check can say
-        reported.extend(f"{path}:{f.line}: {f.rule!r} — {f.why}" for f in findings_in(text))
+        reported.extend(f"  {path}:{f.line}: {f.rule!r} — {f.why}" for f in findings_in(text))
     if not reported:
-        return 0
-    print("permissions.allow disarms the plan → execute consent gate:")
-    for line in reported:
-        print(f"  {line}")
-    print(
-        "Narrow or drop these rules — with one in place the transition is "
-        "auto-approved and the supervisor is never asked."
+        return ""
+    return "\n".join(
+        [
+            "permissions.allow silences a guard that is meant to ask:",
+            *reported,
+            "Narrow or drop these rules. The routine rack calls are allowed by "
+            "this guard itself, so no allow-rule is needed for them.",
+        ]
     )
-    return 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def already_warned(marker: Path, session: str) -> bool:
+    """True when ``session`` has already been told; records it when it has not.
+
+    One file, rewritten rather than accumulated: a warning worth repeating every
+    session is not worth a directory of markers. Unwritable means "not warned",
+    so the message repeats rather than vanishing.
+    """
+    try:
+        seen = json.loads(marker.read_text(encoding="utf-8")).get("session_id")
+    except (OSError, ValueError, UnicodeDecodeError, AttributeError):
+        seen = None
+    if seen == session:
+        return True
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({"session_id": session}), encoding="utf-8")
+    except OSError:
+        pass
+    return False
