@@ -155,3 +155,19 @@ def test_the_merge_gate_is_a_subset_of_the_done_gate():
         "merge-gate must stay a subset of done-gate or one run stops paying for "
         f"both — stages only merge-gate demands: {sorted(merge - done)}"
     )
+
+
+def test_the_done_gate_demands_what_only_it_can_ask():
+    """ADR-0023 D4 splits the two edges by question, and the split is REAL only
+    while `->done` carries stages `->merge` does not.
+
+    Shrinking a composition is the silent direction: markers already on disk stay
+    valid, so the gate keeps passing and nothing turns red (HATS-1601).
+    """
+    merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
+
+    assert done - merge == {"integration", "merge-smoke"}, (
+        "`->done` asks whether master is green after this card; `integration` and "
+        "`merge-smoke` are the stages that answer it. Actual extra: "
+        f"{sorted(done - merge)}"
+    )

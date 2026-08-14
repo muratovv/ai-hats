@@ -96,12 +96,18 @@ gate_stamp() {
 # retry is instant because the marker is already there. The composition is
 # RENDERED from the dispatcher, never restated here (ADR-0023 D7).
 gate_refusal() {
-    local gate="$1" tree="$2" label="$3" cmd="$4" stages="$5"
+    local gate="$1" tree="$2" label="$3" cmd="$4" stages="$5" fuller="${6:-}"
     printf '%s: no green marker for tree %s (%s).\n\n' "$gate" "$tree" "$label"
     printf 'Run the gate on that exact content, then retry:\n\n    %s\n\n' "$cmd"
     printf 'It runs %s.\n' "${stages:-the stages this project composes}"
     printf 'The marker keys on the tree, so a merge that changes nothing reuses this\n'
     printf 'run, and one run covers every card sitting on the same content.\n'
+    # Absorption (ADR-0023 D5) makes the superset the cheaper command: it stamps
+    # both gates, so the card pays one run instead of two (HATS-1664).
+    if [[ -n "$fuller" ]]; then
+        printf '\nThe ->done gate wants more than this one. Running IT here stamps both,\n'
+        printf 'so the card pays a single run:\n\n    %s\n' "$fuller"
+    fi
 }
 
 # --- whose backlog is this? ------------------------------------------------
@@ -144,7 +150,7 @@ _gate_realdir() {
 # below stays where its author can see and test it (supervisor ruling
 # 2026-08-08 P1).
 gate_check_task_worktree() {
-    local gate="$1" run_cmd="$2"
+    local gate="$1" run_cmd="$2" fuller="${3:-}"
     local project_dir="${AI_HATS_PROJECT_DIR:-$PWD}"
     local task_id="${AI_HATS_TASK_ID:-<unnamed>}"
 
@@ -255,7 +261,8 @@ gate_check_task_worktree() {
         gate_exit checks pass
     fi
 
-    gate_refusal "$gate" "$tree" "$subject" "$run_where && $run_cmd" "$stages"
+    gate_refusal "$gate" "$tree" "$subject" "$run_where && $run_cmd" "$stages" \
+                 "${fuller:+$run_where && $fuller}"
     gate_exit checks refuse
 }
 

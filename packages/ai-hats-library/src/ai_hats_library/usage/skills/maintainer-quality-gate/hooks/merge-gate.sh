@@ -25,6 +25,9 @@ set -uo pipefail
 
 GATE_NAME='merge-gate'
 RUN_CMD='make merge-gate'
+#: The ->done gate's superset. Its run stamps this one too (absorption, D5), so
+#: naming it here is what keeps a typical card at one run instead of two.
+FULLER_CMD='make done-gate'
 
 _self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if ! . "$_self_dir/../lib/gate-marker.sh" || ! . "$_self_dir/../lib/gate.sh"; then
@@ -35,7 +38,7 @@ fi
 
 # The check runner spawns this with no argv at all, so --check is the default.
 case "${1:---check}" in
-    --check) gate_check_task_worktree "$GATE_NAME" "$RUN_CMD" ;;
+    --check) gate_check_task_worktree "$GATE_NAME" "$RUN_CMD" "$FULLER_CMD" ;;
     --run)
         gate_run_and_stamp_here "$GATE_NAME" \
             "'ai-hats wt merge' on this content now passes instantly."

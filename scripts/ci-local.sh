@@ -155,19 +155,17 @@ ci_e2e() {
 # — because the primitive stops at the first red and a stale CATALOG.md is the
 # structural failure worth refusing before anything else starts (HATS-1562).
 #
-# `merge-gate` carries `integration` against ADR-0023 D4, which assigns it to
-# `->done` (supervisor ruling 2026-08-13). Until `->done` can judge the result of
-# a merge (HATS-1602), the edge passes hollow on most cards — measured 8 of 9 —
-# so D4's `->merge` would be the last blocking road those 415 real-subprocess
-# tests outside tests/e2e have. Their only other road is CI's `coverage` job,
-# which runs after the push. HATS-1615 moves it back.
+# `integration` sits on `->done`, as ADR-0023 D4 assigns it. It lived on
+# `->merge` while the edge passed hollow on most cards (HATS-1614's temporary
+# ruling); HATS-1664 made the edge judge the merge result, so the 415
+# real-subprocess tests outside tests/e2e are on a blocking road again.
 #
 # No gate joins `all`: `all` is the pre-push bundle and already runs `coverage`,
 # which collects the same non-e2e integration tests unfiltered.
 gate_composition() {
     local tier="e2e-catalog lint dependency-floor silent-fallback test-isolation"
     case "$1" in
-        merge-gate) echo "$tier unit integration" ;;
+        merge-gate) echo "$tier unit" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
         push-gate) echo "lint unit e2e-catalog adr-integrity e2e" ;;
         *) return 1 ;;
