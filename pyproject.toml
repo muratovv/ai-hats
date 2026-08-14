@@ -38,10 +38,12 @@ dependencies = [
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
     # HATS-1541 grew this package to 0.2.0 (ai_hats_rack.checks — the FSM half
     # of the checks channel, imported at module level by rack_consumers);
-    # HATS-1603 to 0.3.0 (DispatchContext.lock_expires_at, read by rack_wiring).
-    "ai-hats-rack>=0.3.0",
+    # HATS-1603 to 0.3.0 (DispatchContext.lock_expires_at, read by rack_wiring);
+    # HATS-1647 to 0.3.1 (the empty-documents hint names `--attach`, since the
+    # card directory is gated).
+    "ai-hats-rack>=0.3.1",
     "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
-    "ai-hats-library>=0.5.2",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-library>=0.5.3",  # floor tracks the workspace version (HATS-1399)
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",

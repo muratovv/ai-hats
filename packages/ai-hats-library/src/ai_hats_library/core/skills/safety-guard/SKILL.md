@@ -1,6 +1,6 @@
 ---
 name: safety-guard
-description: PreToolUse hooks enforcing global_rule_destructive_actions and rule_pause_before_shared_state_write. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, and holds the pause before an irreversible shared-state write.
+description: PreToolUse hooks enforcing global_rule_destructive_actions, rule_pause_before_shared_state_write and rule_backlog_discipline. Prevents destructive commands like in-place sed edits, deletion of protected data, and disk-formatting binaries, holds the pause before an irreversible shared-state write, and keeps the tracker backlog writable only through `rack`.
 ai_hats:
   runtime_hooks:
     PreToolUse:
@@ -8,6 +8,8 @@ ai_hats:
         script: hooks/safety_gate.py
       - matcher: Bash
         script: hooks/pre_bash_shared_state_guard.sh
+      - matcher: Edit|Write|MultiEdit
+        script: hooks/backlog_write_gate.py
 license: MIT
 ---
 
@@ -31,6 +33,26 @@ A guard that can only say "no" pushes the agent toward blunt instruments.
 `git push` is **not** handled here — `pre_bash_shared_state_guard.sh` owns it
 (`rule_pause_before_shared_state_write`). Two gates on one concern means the
 coarser one silently wins (HATS-1253).
+
+## The tracker backlog is `rack`-only
+
+`backlog_write_gate.py` (Edit/Write/MultiEdit) and a matching predicate in
+`safety_gate.py` (Bash) deny writes under `<ai_hats_dir>/tracker/backlog/**` —
+`rule_backlog_discipline` §1. A hand-edited card desynchronises the state
+machine from its locks and audit trail, so the card moves with
+`rack transition <ID> <state> --log "..."`, fields change with
+`rack transition <ID> --set <field>=<value>`, and a document (`summary.md`,
+`audit.md`, …) is written outside the tracker and brought in with
+`rack transition <ID> --attach /tmp/summary.md:summary.md`. Reads (`cat`,
+`grep`) are not touched, and `tasks/<ID>/plan.md` stays directly writable
+(§1b) — it is the agent's own deliverable, not FSM-owned state.
+
+`ai_hats_dir` is resolved from the TARGET path's own `ai-hats.yaml`, never from
+`$AI_HATS_DIR`: that variable leaks between checkouts, and a worktree session
+editing the main checkout's tracker must be judged by that tracker's config.
+
+There is no per-call flag. If the tracker is broken and only a raw edit can
+repair it, the supervisor exports `AI_HATS_BACKLOG_GATE_OFF=1` for the session.
 
 ## YOLO Mode
 

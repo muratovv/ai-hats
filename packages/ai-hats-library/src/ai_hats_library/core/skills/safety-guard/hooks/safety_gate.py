@@ -3,8 +3,10 @@
 
 The rule protects PATHS, so this gate matches paths, not binary names: a name
 match cannot tell `rm -rf /tmp/scratch` from `rm -rf /`, and denying both
-contradicts `global_rule_resource_hygiene` (HATS-1253). Not handled here:
-`git push` (pre_bash_shared_state_guard.sh), worktrees (wt_gate.py).
+contradicts `global_rule_resource_hygiene` (HATS-1253). The same path matching
+carries `rule_backlog_discipline` §1 (HATS-1647): a raw mutation under the
+tracker backlog is refused with the `rack` recipe. Not handled here: `git push`
+(pre_bash_shared_state_guard.sh), worktrees (wt_gate.py).
 """
 
 import json
@@ -25,6 +27,22 @@ except ImportError:  # helper absent -> say so; never skip quietly
             file=sys.stderr,
         )
         return False
+
+
+_backlog_off_journaled = False
+
+# HATS-1647 — the tracker predicate shares its resolver and its wording with the
+# Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
+try:
+    from backlog_write_gate import verdict_for as _backlog_verdict
+except ImportError:  # sibling absent -> predicate off; recorded on first use
+
+    def _backlog_verdict(_path: str) -> str:
+        global _backlog_off_journaled
+        if not _backlog_off_journaled:
+            _backlog_off_journaled = True
+            journal_bypass("fail-open", "backlog_write_gate.py missing", hook="safety_gate.py")
+        return ""
 
 
 #: Set to "1" when the supervisor approved a specific destructive command.
@@ -153,10 +171,15 @@ def check_dangerous_bin(cmd_bin: str, args) -> str:
     return ""
 
 
+def check_sed_inplace(args) -> bool:
+    """True when this `sed` rewrites its file instead of reading it."""
+    return any(tok == "-i" or (tok.startswith("-i") and not tok.startswith("--")) for tok in args)
+
+
 def check_sed(args) -> str:
     if _acked():
         return ""
-    if any(tok == "-i" or (tok.startswith("-i") and not tok.startswith("--")) for tok in args):
+    if check_sed_inplace(args):
         return _ack_hint("Stopped: `sed -i` edits files in place.")
     return ""
 
@@ -190,6 +213,35 @@ def check_self_grant(args) -> str:
     return ""
 
 
+#: Binaries that mutate whatever path they are handed. `sed` counts only with
+#: `-i`; without it sed reads.
+BACKLOG_MUTATORS = ("mkdir", "rmdir", "mv", "cp", "rm", "touch", "tee", "ln", "sed")
+#: …except these two, judged on their DESTINATION alone: naming the card as the
+#: source writes nothing, and reading a card out is what this gate leaves open.
+#: `mv` is not among them — it empties the source as well.
+DESTINATION_ONLY = ("cp", "ln")
+#: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
+#: operator over as ONE token, so `>|` (the noclobber escape) and `&>` are simply
+#: not reachable by looking for `>`.
+REDIRECTS = (">", ">>", ">|", "&>", "&>>", ">&")
+
+
+def check_backlog_write(cmd_bin: str, args) -> str:
+    """`rule_backlog_discipline` §1 — the tracker backlog is `rack`-only.
+
+    Runs before the generic handlers so a tracker path gets the `rack` recipe
+    rather than `sed -i`'s per-call ack: there is no per-call form here."""
+    targets = [args[i + 1] for i, tok in enumerate(args) if tok in REDIRECTS and i + 1 < len(args)]
+    if cmd_bin in BACKLOG_MUTATORS and (cmd_bin != "sed" or check_sed_inplace(args)):
+        paths = _paths(args)
+        targets.extend(paths[-1:] if cmd_bin in DESTINATION_ONLY else paths)
+    for target in targets:
+        reason = _backlog_verdict(target)
+        if reason:
+            return reason
+    return ""
+
+
 HANDLERS = {"sed": check_sed, "rm": check_rm}
 
 
@@ -208,6 +260,10 @@ def check_command(cmd_string: str) -> str:
             if os.path.basename(tok) == cmd_bin:
                 args = tokens[i:]
                 break
+
+        reason = check_backlog_write(cmd_bin, args)
+        if reason:
+            return reason
 
         reason = check_dangerous_bin(cmd_bin, args) or check_sql(cmd_bin, args)
         if reason:
@@ -244,7 +300,13 @@ def main() -> int:
     if not cmd:
         return 0
 
-    reason = check_command(cmd)
+    try:
+        reason = check_command(cmd)
+    except Exception as exc:
+        # Fail-open, but recorded. A guard that dies mid-sweep also drops every
+        # check it had not reached yet — `rm -rf /` among them (HATS-1647).
+        journal_bypass("fail-open", f"cannot judge {cmd!r}: {exc!r}", hook="safety_gate.py")
+        return 0
 
     if reason:
         print(

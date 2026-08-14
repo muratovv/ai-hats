@@ -142,6 +142,17 @@ def test_context_human_is_discovery_only(runner, tmp_path):
     assert "epic plan body" not in out and "dep summary body" not in out
 
 
+def test_the_empty_documents_hint_names_the_sanctioned_way_in(runner, tmp_path):
+    """HATS-1647 put a gate on the card directory, so a tip reading "write files
+    into this directory" now teaches the one move that is refused."""
+    _family(tmp_path)
+    result = runner.invoke(main, ["context", "HATS-4", *_args(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "(none" in result.output, result.output
+    assert "--attach" in result.output, result.output
+    assert "write files into this directory" not in result.output, result.output
+
+
 def test_context_human_renders_the_derived_blocks_section(runner, tmp_path):
     """HATS-2 depends_on HATS-3, so HATS-3's read must surface the reverse."""
     _family(tmp_path)

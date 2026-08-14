@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**238 of 238 files catalogued — 245 flows.**
+**239 of 239 files catalogued — 247 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -157,6 +157,31 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree gate hook denies destructive writes in main checkout
 - **why** — without worktree gate hooks materialized for agy, agents make unauthorized direct edits to main checkout
+
+## `test_backlog_write_gate.py`
+
+*pins HATS-1647*
+
+- **flow** — an agent edits a task card by hand instead of going through `rack`, while a teammate keeps authoring the same task's plan.md
+- **cmds**
+
+  ```console
+  rack transition HATS-1647 execute --log 'moved by the sanctioned writer'
+  sed -i '' 's/^state:.*/state: done/' <ai_hats_dir>/tracker/backlog/tasks/HATS-1647/task.yaml  # no-resolve: the raw mutation the gate refuses
+  ```
+
+- **expect** — writes under `<ai_hats_dir>/tracker/backlog/**` are denied and the refusal names `rack transition` plus its export-only kill switch, while `tasks/<ID>/plan.md` and files outside the tracker stay writable
+- **why** — `rule_backlog_discipline` §1 has no automation behind it — a hand-edited task.yaml desynchronises the FSM, its locks and its audit trail, and the rule text alone has never stopped it
+
+- **flow** — an agent working inside a linked worktree reaches back into the main checkout's tracker, its shell still carrying another checkout's AI_HATS_DIR
+- **cmds**
+
+  ```console
+  rack context HATS-1647
+  ```
+
+- **expect** — the write is denied all the same, and by this gate — `ai_hats_dir` is resolved from the TARGET path's own ai-hats.yaml
+- **why** — a worktree's project dir points at MAIN (HATS-524) and an inherited AI_HATS_DIR names a tracker of its own, so an env-based resolver would guard the wrong backlog while reporting success
 
 ## `test_bare_positional_prompt.py`
 
