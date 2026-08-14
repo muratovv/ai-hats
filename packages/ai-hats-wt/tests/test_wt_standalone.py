@@ -123,6 +123,29 @@ def test_create_then_merge_standalone(bare_repo: Path) -> None:
     assert _git(bare_repo, "branch", "--list", "standalone/feature").stdout.strip() == ""
 
 
+def test_a_merged_worktree_leaves_the_merge_commit_behind(bare_repo: Path) -> None:
+    """HATS-1664: teardown clears the state file, so without this the task's only
+    record is gone and a later reader cannot tell "brought no code" from
+    "already merged" — the ->done gate waved the second through."""
+    mgr = WorktreeManager(bare_repo, branch_name="task/hats-999", lifecycle=NOOP_LIFECYCLE)
+    wt_path = mgr.create()
+    mgr.save_state()
+    _commit_in_worktree(wt_path, "shipped.txt", "content that reached the base branch")
+    state_dir = bare_repo / ".wt"
+
+    assert (
+        WorktreeManager.peek_merged_sha(bare_repo, "HATS-999", state_dir=state_dir) is None
+    ), "nothing is merged yet, and a record here would be a lie"
+
+    mgr.merge()
+
+    recorded = WorktreeManager.peek_merged_sha(bare_repo, "HATS-999", state_dir=state_dir)
+    assert recorded == _git(bare_repo, "rev-parse", "HEAD").stdout.strip()
+    # The card that never had a worktree stays distinguishable — that is the
+    # whole point of the pair, and F-11's original exemption depends on it.
+    assert WorktreeManager.peek_merged_sha(bare_repo, "HATS-000", state_dir=state_dir) is None
+
+
 def test_merge_requires_consent_standalone(
     bare_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
