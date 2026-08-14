@@ -196,6 +196,9 @@ def _sweep_orphan_project_keys(
         try:
             if _key_last_touched(entry) >= cutoff:
                 continue
+            if _holds_worktrees(entry):
+                logger.info("project cache key %s kept: it holds worktrees", entry.name)
+                continue
             live = _live_session_in(entry, liveness, session_cutoff)
             if live is not None:
                 logger.info("project cache key %s kept: session %s is running", entry.name, live)
@@ -204,6 +207,20 @@ def _sweep_orphan_project_keys(
             logger.warning("reclaimed orphaned project cache key: %s", entry.name)
         except OSError as exc:
             logger.warning("project-key sweep skipped %s: %s", entry.name, exc)
+
+
+def _holds_worktrees(key_dir: Path) -> bool:
+    """Whether ``key_dir`` still holds worktree checkouts (HATS-1632).
+
+    Age is no evidence here: a worktree can sit untouched for weeks and still
+    carry uncommitted work, and reclaiming it would also strand the git admin
+    entry the engine refuses to auto-prune. Presence, not liveness — proving a
+    tree is abandoned is the job of the (deliberately manual) gc, not this sweep.
+    """
+    try:
+        return any((key_dir / "worktrees").iterdir())
+    except OSError:
+        return False  # silent-ok: absent or unreadable — the caller's TTL decides
 
 
 def _live_session_in(key_dir: Path, liveness: _LazyLiveness, session_cutoff: float) -> str | None:

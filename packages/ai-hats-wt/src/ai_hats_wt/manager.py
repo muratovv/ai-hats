@@ -762,6 +762,7 @@ class WorktreeManager:
         merge_target: str | None = None,
         lifecycle: WorktreeLifecycle = NOOP_LIFECYCLE,
         state_dir: Path | None = None,
+        worktree_checkouts_dir: Path | None = None,
         git_timeout: float | None = None,
     ) -> None:
         self.project_dir = project_dir
@@ -799,6 +800,9 @@ class WorktreeManager:
         # ADR-0013 D4: the state/lock path-base. ai-hats passes worktrees_dir;
         # a bare core falls back project-local (no ai_hats.paths import).
         self._state_dir = _resolve_state_dir(project_dir, state_dir, lifecycle)
+        # HATS-1632: where create() mints the tree. Same D4 shape as state_dir —
+        # ai-hats passes worktree_checkouts_dir; None keeps the mkdtemp fallback.
+        self._worktree_checkouts_dir = worktree_checkouts_dir
 
     def create(
         self,
@@ -950,7 +954,11 @@ class WorktreeManager:
                 )
 
             prefix = self.branch_name.replace("/", "-")
-            tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-")
+            base = self._worktree_checkouts_dir
+            if base is not None:
+                base.mkdir(parents=True, exist_ok=True)
+            # dir=None keeps the historical temp root for a bare core (D9).
+            tmpdir = tempfile.mkdtemp(prefix=f"ai-hats-wt-{prefix}-", dir=base)
             self.worktree_path = Path(tmpdir)
 
             try:

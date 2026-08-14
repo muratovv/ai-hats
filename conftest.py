@@ -238,6 +238,12 @@ def _wt_sandbox(tmp_path_factory, request):
       attribute is REQUIRED; ``setenv`` alone would be too late.
     * subprocess CLI ``wt create`` — tests run ``env = os.environ.copy()``
       so ``TMPDIR`` rides along into the child's ``mkdtemp``.
+
+    Since HATS-1632 the ai-hats road no longer lands here at all — it mints under
+    ``worktree_checkouts_dir``, sandboxed by ``_cache_home_sandbox`` and policed
+    by ``_real_cache_home_tripwire``. What is left for this fixture is the
+    bare-core fallback (D9: no injected root, so ``mkdtemp``'s temp root), which
+    the ``ai-hats-wt`` package suite exercises directly.
     """  # comment-length: allow — moved verbatim; names both redirect paths
     sandbox = tmp_path_factory.mktemp("wt-sandbox")
     mp = pytest.MonkeyPatch()
