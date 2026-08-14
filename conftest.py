@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,33 @@ drop_identity(os.environ)
 # Enables `pytester` for test_tmp_hygiene.py; pytest refuses this in a
 # non-top-level conftest, so it can only live here (HATS-570).
 pytest_plugins = ["pytester"]
+
+#: Read before any test can chdir away — the one dir known to outlive them all.
+_SESSION_CWD = os.getcwd()
+
+
+@pytest.fixture(autouse=True)
+def _surviving_cwd():
+    """Keep one test's chdir from taking the rest of the session with it.
+
+    A test that chdirs into its own ``tmp_path`` leaves the process standing in
+    a deleted directory once ``tmp_path_retention_policy=failed`` reaps it, and
+    from then on every ``os.getcwd()`` raises ``FileNotFoundError`` — including
+    the one inside ``monkeypatch.chdir``. Measured: 3 such tests cost 59
+    failures and 933 errors, and the first one reported was an unrelated test
+    several files away (HATS-1624). Autouse at the root, so this teardown runs
+    after the per-test finalizers that do the deleting.
+    """  # comment-length: allow — the cascade is why a warning beats a repair
+    yield
+    try:
+        os.getcwd()
+    except OSError:
+        os.chdir(_SESSION_CWD)
+        warnings.warn(
+            "test left the process in a deleted directory; cwd restored to "
+            f"{_SESSION_CWD}. Use `monkeypatch.chdir` rather than `os.chdir`.",
+            stacklevel=1,
+        )
 
 
 def _ambient_cache_home() -> Path:

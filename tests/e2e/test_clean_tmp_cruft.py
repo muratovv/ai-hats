@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from _helpers.git import git, init_repo
 
 pytestmark = pytest.mark.integration
 
@@ -187,18 +188,6 @@ def test_is_idempotent(sandbox, dead_pid) -> None:
     assert "nothing to clean" in second.stdout
 
 
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-c", "user.email=t@e.st", "-c", "user.name=t", *args],
-        cwd=str(cwd),
-        env={**_ENV, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"},
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    )
-
-
 def test_spares_a_registered_worktree(tmp_path: Path) -> None:
     """A LIVE worktree git still tracks survives; a pruned shell does not.
 
@@ -210,13 +199,10 @@ def test_spares_a_registered_worktree(tmp_path: Path) -> None:
     root.mkdir()
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "-q", "-b", "master")
-    (repo / "f.txt").write_text("x")
-    _git(repo, "add", "f.txt")
-    _git(repo, "commit", "-q", "-m", "seed")
+    init_repo(repo, branch="master")
 
     live = root / "ai-hats-wt-task-registered-ZZZZ"
-    _git(repo, "worktree", "add", "-q", "-b", "task/probe", str(live))
+    git(repo, "worktree", "add", "-q", "-b", "task/probe", str(live))
 
     # Same shape, no admin dir behind it: the leak the sweeper exists to take.
     shell = root / "ai-hats-wt-task-orphan-WWWW"
