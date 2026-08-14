@@ -121,6 +121,8 @@ def _run_steps(steps, state, *, parent_policy):
 - `Parallel(*children)` — children выполняются concurrently на одном snapshot state. Build-time check на disjoint produces. (Для последовательного pipeline требование слабее — см. Update HATS-1249 ниже: повторный producer легален, если его выход прочитан до перезаписи. Для `Parallel` порядка нет, поэтому «прочитан до» не определено и disjoint-требование остаётся строгим.)
 - `Branch(predicate, then_, else_)` — выбор ветки по predicate(inputs). Build-time check: обе ветки имеют одинаковые produces (иначе downstream зависит от runtime value).
 
+> **Не реализовано (HATS-1655, 2026-08-13).** Ни `Parallel`, ни `Branch` в дерево не попали: модуль `composites.py` из Phase 2 не появился, и ни одного класса с такими именами в `src/` и `packages/` нет. Решение оставлено как записано — оно объясняет, почему ядро не знает про параллелизм и ветвление; но оговорка про `Parallel` в скобках выше (добавлена апдейтом HATS-1249) рассуждает о шаге, которого нет. Строгость disjoint-produces для `Parallel` — правило для будущей реализации, не проверка, которая сегодня работает.
+
 ### 5. failure_policy per step
 
 Каждый step имеет атрибут `failure_policy: "halt" | "continue"`. Default зависит от типа step-а:

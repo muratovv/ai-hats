@@ -74,7 +74,7 @@ state); `create()` co-holds 3+4; everything else is single-layer.
 There is no path where an inner layer is held while reaching for an
 outer one, so deadlock is unreachable by construction. A new layer
 is introduced only after justifying its position in this hierarchy —
-the module docstring of `wt/locks.py` is the canonical in-code reference.
+the module docstring of `ai_hats_wt/locks.py` is the canonical in-code reference.
 
 Layer 1 is the outermost lock **this package owns**, which is not always
 the outermost lock held. The FSM road reaches `merge()` from inside the
@@ -116,7 +116,8 @@ event, and `worktree_path.exists()` is the cheap, reliable post-lock
 check.
 
 But idempotency stops at this layer. The data-integrity gate —
-HATS-481 L4' in `state._teardown_worktree` — **re-raises** any merge
+HATS-481 L4' in `_teardown_worktree` (today `WtWorktreeEffects.teardown`,
+`src/ai_hats/wt_effects.py`) — **re-raises** any merge
 failure (except `OriginalBranchMissingError`). `task transition <id>
 done` then aborts before persisting the DONE state; the task stays
 in `review` and the user re-runs after resolving contention. This
@@ -128,7 +129,7 @@ the other way around.
 
 Every worktree-subsystem lock lives under
 `<ai_hats_dir>/sessions/worktrees/`, resolved through
-`worktrees_dir(project_dir)` → `ai_hats_dir()` (paths.py:79).
+`worktrees_dir(project_dir)` → `ai_hats_dir()` (`paths/_dirs.py`).
 The path precedence is `AI_HATS_DIR` env > yaml `ai_hats_dir:` >
 default `<project>/.agent/ai-hats/`. Tests override via
 `AI_HATS_DIR=<tmp_path>` to isolate; users with a custom
@@ -145,14 +146,15 @@ No lock file lives outside `<ai_hats_dir>`, and the default
   lock on process death; the file is just a name.
 - **Fail-under-revert tests per layer.** Each ticket landed at least
   one test that flips red when its specific lock is stubbed out
-  (TC-N1..N20 in `tests/test_worktree_concurrency.py`). A future
-  refactor that "simplifies" the locking model needs to flip these
-  tests deliberately.
+  (TC-N1..N18 in `tests/test_worktree_concurrency.py`, except TC-N13 —
+  the `transition done` fail-loud case — which lives with the FSM in
+  `tests/test_rack_worktree.py`). A future refactor that "simplifies"
+  the locking model needs to flip these tests deliberately.
 - **Extension path is open.** HATS-486 (stale-lock observability)
   plugged in as a sidecar — it added no lock layer, only recovery
   logic over the existing four (now realized, v1 below). The 4-layer
   model has remained stable through the post-epic hardening.
-- **One canonical reference.** This ADR + the `wt/locks.py` module
+- **One canonical reference.** This ADR + the `ai_hats_wt/locks.py` module
   docstring are the two places that describe the full picture.
   Plan.md files of the four tickets are kept for historical /
   decision-fork archaeology.
@@ -248,11 +250,13 @@ flags HATS-481 already passes).
 - HATS-482 — operator-visibility guards (B-02/B-07/B-08/R-08).
 - HATS-486 — stale-index.lock observability (v1, warn-only).
 - HATS-488 — teardown hardening (B-03/R-04/B-06).
-- `src/ai_hats/wt/locks.py` module docstring — canonical
-  in-code reference; mirror this ADR's D2 hierarchy.
-- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py:_teardown_worktree` — site of L4' re-raise
-  (data-integrity gate).
-- `tests/test_worktree_concurrency.py` — TC-N1..N20 fail-under-revert
-  matrix.
+- `packages/ai-hats-wt/src/ai_hats_wt/locks.py` module docstring — canonical
+  in-code reference; mirror this ADR's D2 hierarchy. (Was `src/ai_hats/wt/locks.py`
+  before the HATS-880 package extraction.)
+- `src/ai_hats/wt_effects.py` — `WtWorktreeEffects.teardown`, site of the L4'
+  re-raise (data-integrity gate). Was `_teardown_worktree` in the tracker's
+  `state.py` until `packages/ai-hats-tracker` was deleted (`710f45d3`, HATS-1262).
+- `tests/test_worktree_concurrency.py` — TC-N1..N18 fail-under-revert
+  matrix (TC-N13 lives in `tests/test_rack_worktree.py`).
 - `docs/how-to-advanced.md` §2.7 — user-facing summary of what
   serializes vs what runs in parallel.

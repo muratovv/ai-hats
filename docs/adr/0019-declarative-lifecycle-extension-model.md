@@ -223,12 +223,19 @@ the `apps.<app>` key. So a point is now identified by two things — the app key
 sits under, and its `at:` name — and the three columns that matter are who
 validates the name, who fires it, and whether a row there can veto.
 
-| `apps.<app>` | `at:`               | when                                                                                          | may veto | name validated by                   | fired by                      |
-| ------------ | ------------------- | --------------------------------------------------------------------------------------------- | -------- | ----------------------------------- | ----------------------------- |
-| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30) | yes      | rack, against the topology it runs  | `CheckSubscriber` (HATS-1141) |
-| `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet              | —        | **nobody**                          | **nobody** (HATS-1578)        |
-| `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent   | yes      | ai-hats, `check_points.wt_points()` | `wt_lifecycle.py` (HATS-1540) |
-| `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                | yes      | **nobody** — not in `wt_points()`   | **nobody** (HATS-1145)        |
+| `apps.<app>` | `at:`               | when                                                                                                        | may veto | name validated by                        | fired by                                        |
+| ------------ | ------------------- | ----------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------- | ----------------------------------------------- |
+| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30)               | yes      | rack, against the topology it runs       | `CheckSubscriber` (HATS-1141)                   |
+| `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet                            | —        | **nobody**                               | **nobody** (HATS-1578)                          |
+| `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent                 | yes      | ai-hats, `check_points.wt_points()`      | `wt_lifecycle.py` (HATS-1540)                   |
+| `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                              | yes      | **nobody** — not in `wt_points()`        | **nobody** (HATS-1145)                          |
+| `ai-hats`    | `startup`           | at HITL launch, before the provider binary is spawned — the one owned point where `on_error: warn` is legal | yes      | ai-hats, `check_points.ai_hats_points()` | `startup_checks.run_startup_checks` (HATS-1581) |
+
+The last row arrived after rev 10 and is recorded here for the same reason the
+others are: `ai-hats` is the second app whose points ai-hats fires and therefore
+validates itself (D11 clause 1 names it), and a table that enumerates the owned
+points while omitting one is the catalog-vs-reality gap this section exists to
+close.
 
 `wt` `create` and `teardown[merge|discard|cleanup]` were rows of this table until
 HATS-1577. Both were validated by `wt_points()` and fired by nobody, so a role
@@ -249,12 +256,15 @@ validates `edge:` against the topology it is running, but a name its grammar doe
 not parse — `card:pre-create` among them — is currently skipped in silence rather
 than named; **HATS-1578 owns that gap.**
 
-**Who fires it.** Of the four rows, **two have a caller**: `edge:` through
+**Who fires it.** Of the five rows, **three have a caller**: `edge:` through
 `CheckSubscriber`, subscribed at `Phase.IN_LOCK` priority 15 to every edge key of
-the topology the kernel runs; and `wt` `pre-merge`, inside `merge()` after the
+the topology the kernel runs; `wt` `pre-merge`, inside `merge()` after the
 cheap local guards and before every mutation, which is where the `maintainer`
-role binds. The other two are callerless in **different** ways, and telling those
-ways apart is what the table is for. `pre-reclaim` is a planned name
+role binds; and `ai-hats` `startup`, fired by `run_startup_checks` from the HITL
+launch (`wrap_runner.py`) before the provider is spawned, which never returns on
+a refusal (`STARTUP_REFUSED_EXIT`) so a caller cannot launch past one. The other
+two are callerless in **different** ways, and telling those ways apart is what
+the table is for. `pre-reclaim` is a planned name
 `wt_points()` does not carry, so a row naming it is refused at composition: loud,
 and armable by nobody. `card:pre-create` is the rack's — carried unread by
 ai-hats, skipped in silence by the rack — so a role can arm it and be told
@@ -627,8 +637,12 @@ borrowing the *provider's* cache instead of owning one.
 off the `~99 SKILL.md parses` figure from the HATS-1149 research. That is the
 cost of the **union scan over the whole library**, which **D7 abolishes**: a
 per-role composition touches only the composed set. Measured on this repository:
-**42 ms** for a 35-skill, 13-rule role, against a `HOOK_TIMEOUT` and a rack
-`LOCK_TIMEOUT` of 30 s. No new machinery is owed either — `composition_seam`
+**42 ms** for a 35-skill, 13-rule role, against budgets some five hundred times
+larger: the rack's `LOCK_TIMEOUT` is 30 s and the per-check
+`EDGE_CHECK_TIMEOUT_S` it ships across the port is 20 s. *(The measurement was
+written against a `HOOK_TIMEOUT`, which died with `lifecycle_hooks` in
+HATS-1147; the two live constants above replace it and the comparison is
+unchanged.)* No new machinery is owed either — `composition_seam`
 already composes a role from config for `--dry-run`.
 
 **What is still deleted** — unchanged from rev 5: the copy into `<event>.d/`; the
@@ -990,13 +1004,15 @@ supersede the body above:
 **Factual errors in rev 3.**
 
 - D2 claimed `_health_check` validates "exists, non-empty, shebang, executable".
-  It does **not** check the exec bit (`lifecycle_hooks.py:137-155`). Nor should
-  it: the materializer writes `0o755` (`:217`), so a `644` source in git is
-  legitimate. Non-executability is only reachable by post-materialize tampering.
+  It does **not** check the exec bit (`_health_check` in `lifecycle_hooks.py`).
+  Nor should it: the materializer writes `0o755` (`materialize_lifecycle_hooks`
+  in the same module), so a `644` source in git is legitimate. Non-executability
+  is only reachable by post-materialize tampering.
 - D3's "discard deliberately has no pre-op point: discard is an explicit
   throw-away" is **false for two of three callers** — the FSM fires discard on
-  `failed`/`cancelled` (`rack_wiring.py:261-262` → `teardown(merge=False)`), and
-  `reclaim_if_clean` calls `discard(force=False)` (`manager.py:1042`).
+  `failed`/`cancelled` (`WorktreeExtension.on_event` in `rack_wiring.py` →
+  `teardown(merge=False)`), and `reclaim_if_clean` calls `discard(force=False)`
+  (`manager.py`).
 - D2's "same overlay precedence, last-wins, dedup" described **unimplemented
   work, not reuse**: as of 2026-07-23 `CompositionResult` had no `checks` field,
   `OverlayConfig` had only `add_/remove_{traits,rules,skills}`, and the composer
@@ -1035,14 +1051,15 @@ serves.
 *Rev 4's text, superseded:* `wt:pre-merge` must **not** fire on the FSM
 auto-merge path: there it runs at worktree-effects priority 30, i.e. *after* the
 ownership claim at 20, discarding the "an abort leaves zero resource side
-effects" property that priority 15 exists for (`rack_consumers.py:47-55`, fix
+effects" property that priority 15 exists for (the `HookRunnerExtension`
+docstring in `rack_consumers.py`, fix
 
 # 1), and the dispatcher has no compensation. `edge:review--done` already gated
 
 that path at 15. Related: `wt:pre-merge` is a precondition of the **merge
 operation**, not an invariant of reaching `done` — `merge()` early-returns with
 no worktree, and `teardown` has an already-merged path that never calls `merge()`
-at all (`wt_effects.py:152-174`).
+at all (`WtWorktreeEffects.teardown`, `wt_effects.py`).
 
 **Open question 1 answered, and worse than stated.** No in-repo gate is a natural
 consumer: every one is per-commit (git substrate) or per-tool-call (provider
@@ -1053,10 +1070,11 @@ possible proving consumer**, and it is `blocked` on this epic.
 
 **New decisions the ADR must state** (each now carries review evidence):
 `--force` never bypasses a check, it is passed as information the check may honor
-(`dispatch.py:112-113`); `--skip-hooks` covers teardown harvest only and must not
-reach `wt:pre-merge`; `script:` must resolve inside its skill dir (a live
-traversal hole — `lifecycle_hooks.py:111` joins unresolved, so `../../../x.sh`
-gets copied out, chmod 0755, and executed in-lock); dedup is by
+(the `DispatchContext` docstring, `dispatch.py`); `--skip-hooks` covers teardown
+harvest only and must not reach `wt:pre-merge`; `script:` must resolve inside its
+skill dir (a live traversal hole — `collect_lifecycle_hooks` in
+`lifecycle_hooks.py` joins unresolved, so `../../../x.sh` gets copied out,
+chmod 0755, and executed in-lock); dedup is by
 `(skill, script, point)` with **strictest `on_error` winning** (the
 `collect_plan_sections` OR-on-`required` precedent); ordering moves from
 materialized-filename lexicographic to **composition order**; `stdin=DEVNULL` at
@@ -1073,8 +1091,9 @@ Recorded because they are what forced rev 5, and because they are the evidence
 that a persistent shared managed directory was the wrong substrate:
 
 1. **Wedge (would-have-been).** Worktree sessions resolve `project_dir` to the
-   *main* checkout (`cli/_helpers.py:191-197`), so parallel sessions share one
-   `lifecycle-hooks/.manifest`. Role-independence is what makes them converge on
+   *main* checkout (the linked-worktree hop in `_project_dir`,
+   `cli/_helpers.py`), so parallel sessions share one `lifecycle-hooks/.manifest`.
+   Role-independence is what makes them converge on
    identical bytes today — the absence of a lock in `materialize_lifecycle_hooks`
    is *safe because of* that property, not an oversight. Role-awareness would
    make the expected sets **divergent**, and since the materializer's three
@@ -1082,12 +1101,13 @@ that a persistent shared managed directory was the wrong substrate:
    process's sweep landing between another's sweep and manifest write leaves the
    manifest naming a deleted file. `_assert_manifest_intact` then aborts **every**
    transition on that event, with **no `--force` bypass** — verified: `force`
-   appears in `rack_consumers.py` only as the `AI_HATS_HOOK_FORCE` env var
-   (`:137`), never as a bypass, and the assert runs first in `on_event` (`:92`).
-   Recoverable only by `ai-hats self init`.
+   appears in `rack_consumers.py` only as the `AI_HATS_HOOK_FORCE` env var passed
+   by `_run_script`, never as a bypass, and the assert runs first in
+   `HookRunnerExtension.on_event`. Recoverable only by `ai-hats self init`.
 2. **Silent disarmament (would-have-been).** `materialize_lifecycle_hooks()` is
-   called *unconditionally* (`hooks_manager.py:199`) — unlike git hooks on the
-   next line, which guard on `result is not None`. Role-aware + `result=None`
+   called *unconditionally* (from `HooksManager.materialize`,
+   `hooks_manager.py`) — unlike git hooks on the next line, which guard on
+   `result is not None`. Role-aware + `result=None`
    (reachable from `self init` / `self bump`) would sweep every gate and rewrite
    the manifest empty.
 
@@ -1109,7 +1129,7 @@ union scan at kernel build, no materialized file — packaging allows it:
 `consumer_plan_sections` is integrator-side, the file read was a choice, not an
 import constraint). The original "own module + manifest" idea died on evidence:
 `_assert_manifest_intact` never covered `plan-sections.yaml`
-(`rack_consumers.py:117`). Evidence: HATS-1149 `research.md`; implementation:
+(`rack_consumers.py`). Evidence: HATS-1149 `research.md`; implementation:
 HATS-1160. Resolved since rev 4: the wedge
 mitigation (superseded by D9 — nothing to mitigate) and pulling HATS-1137 inside
 the epic (done; the epic now carries two product deliverables, hunk review and

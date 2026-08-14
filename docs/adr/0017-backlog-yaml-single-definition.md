@@ -756,20 +756,31 @@ rule; the post-lock mirror event is the safe form).
 
 ## References
 
-- [1] `packages/ai-hats-rack/src/ai_hats_rack/fsm.yaml`, `fsm.py` (`REQUIRED_STATES`, `load_topology`)
-- [2] `packages/ai-hats-rack/src/ai_hats_rack/links.yaml`, `registry.py` (`load_registry_for`)
+- [1] `packages/ai-hats-rack/src/ai_hats_rack/fsm.py` (`load_topology`). The
+  packaged `fsm.yaml` cited here folded into `backlog.yaml` exactly as §6
+  planned and no longer exists; `REQUIRED_STATES` left `fsm.py` for
+  `requires_states()`, also as decided (verified 2026-08-14).
+- [2] `packages/ai-hats-rack/src/ai_hats_rack/registry.py` (`load_registry`).
+  `links.yaml` folded into `backlog.yaml` with the same phase; the project-root
+  override `load_registry_for` was retired with it, as §1 said it would be.
 - [3] `packages/ai-hats-rack/src/ai_hats_rack/extensions/sections.py`, `extensions/plan.py`
 - [4] `packages/ai-hats-rack/src/ai_hats_rack/kernel.py` (`Kernel.__init__`)
 - [5] `packages/ai-hats-rack/src/ai_hats_rack/linked.py` (`link` target-existence check)
 - [6] `packages/ai-hats-rack/src/ai_hats_rack/dispatch.py` (`Subscription`, `Subscriber`, `Delta`), `events.py` (`EdgeEvent.key`)
 - [7] `packages/ai-hats-rack/src/ai_hats_rack/extensions/__init__.py` (`standalone_extensions`)
-- [8] `packages/ai-hats-rack/src/ai_hats_rack/cli.py` (`_kernel`)
+- [8] `packages/ai-hats-rack/src/ai_hats_rack/cli_kernel.py` (`_build_kernel`,
+  `_workspace`, `_provider_check_port`) — the `cli.py::_kernel` cited here is
+  what §5 replaced, and it is gone from `cli.py`
 - [9] `packages/ai-hats-rack/src/ai_hats_rack/resolver.py` (`resolve_root`, `RackRoot`)
 - [10] epic HATS-1014 attachment `hats-1014-fsm.md` §3 (transition bypasses), §4 (fail-closed materialization), §5.1 (YAML fork + generalization trigger)
-- [11] `packages/ai-hats-tracker/src/ai_hats_tracker/hypothesis/model.py` (`HypothesisStatus`, field set)
-- [12] `packages/ai-hats-tracker/src/ai_hats_tracker/hypothesis/proposal.py` (`ProposalStatus`, field set)
+- [11] `packages/ai-hats-rack/src/ai_hats_rack/definitions/hypotheses/backlog.yaml` —
+  the HYP definition §5 sketches, now shipped. The tracker
+  `hypothesis/model.py` cited here (`HypothesisStatus`, field set) went with the
+  package in HATS-1262 (`710f45d3`); the field set is the file's `fields:`.
+- [12] `packages/ai-hats-rack/src/ai_hats_rack/definitions/proposals/backlog.yaml` —
+  likewise for `proposal.py` (`ProposalStatus`, field set).
 - [13] `src/ai_hats/rack_wiring.py` (worktree/ownership adapters, `_keys_leaving_execute_or_terminal`, priority chain, `bind`)
-- [14] `packages/ai-hats-tracker/src/ai_hats_tracker/hypothesis/quorum.py` (independent-session quorum, auto sentinel) + `docs/adr/0009-quorum-autoclose-safe-direction.md` (safe closure direction)
+- [14] `packages/ai-hats-rack/src/ai_hats_rack/extensions/quorum.py` (independent-session quorum, auto sentinel, `HypQuorumGate`) — ported byte-for-byte from the tracker's `hypothesis/quorum.py` cited here, which went with the package in HATS-1262 — + `docs/adr/0009-quorum-autoclose-safe-direction.md` (safe closure direction)
 - [15] `packages/ai-hats-rack/src/ai_hats_rack/models.py` (`_capture_extras` passthrough)
 - [16] `packages/ai-hats-rack/src/ai_hats_rack/extensions/epic.py` (`decide`, `RESOLVED_STATES`/`ACTIVE_STATES`, advance chain, `bind`)
 - [17] `packages/ai-hats-rack/README.md` § "Carried check rows" (the same grammar, for consumers of the package) + `checks.py` (`check_subscriber`, `CheckPortFactory`)

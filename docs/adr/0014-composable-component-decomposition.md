@@ -77,9 +77,11 @@ load-bearing **rules** are:
 
 > **Dependency rule:** `ai-hats (integrator) → modules → ai-hats-core`. A module
 > depends only on `ai-hats-core` — **never on another module, never up on the
-> integrator**. Enforced by a **full-AST import-lint** (the wt-core
-> `test_wt_core_imports` pattern; a module-level check misses the deferred
-> function-body imports that carry most coupling today).
+> integrator**. Enforced by a **full-AST import-lint** (the wt-core AST-walk
+> pattern — the test carrying it today is
+> `test_ai_hats_wt_imports_only_declared_deps` in
+> `packages/ai-hats-wt/tests/test_boundary.py`; a module-level check misses the
+> deferred function-body imports that carry most coupling today).
 
 > **Composition rule (the inversion):** `ai-hats-core` exposes `CompositionResult`
 > as a value-type; the integrator composes **once** and injects it **down** into
@@ -95,6 +97,11 @@ load-bearing **rules** are:
 | **Integrator**              | *the combine*: composer/assembler/providers, subagent, retro, pipeline-steps, **CLI commands + aggregation**, init/wizard, hooks — composes & pins every module                                                                    | `ai-hats`                                                             |
 | **Surfaces** (HATS-956)     | in-tree entry-point plugins that dogfood the IoC seam — depend UP on the integrator (`Provider` ABC is integrator-bound, P0#4) + core; register via `ai_hats.providers`. The first consumer tier above the integrator              | `packages/surfaces/*` (e.g. `ai-hats-cline`)                          |
 
+> **`ai-hats-tracker` is a name this repository no longer has.** It was built,
+> then superseded by `ai-hats-rack` and deleted (HATS-1262, 2026-07-28). Every
+> `ai-hats-tracker` cell below and in §2/§3 and both diagrams is the decision as
+> taken; see *Amendments* (2026-08-14) for what the tree did with it.
+
 The **role-model + provider-materialization** and **init/wizard** are integrator, not
 modules — the layer that "takes different projects into itself." Full `ai-hats-core`
 contract (in/out tables + open-field boundary rule + shared-mechanism litmus):
@@ -108,6 +115,14 @@ entry-point provider plugin (integrator-bound `Provider`, P0#4) kept in the work
 to dogfood the seam. The dependency-rule import-lint
 (`tests/test_workspace_boundaries.py`) blesses `packages/surfaces/* -> ai-hats` and
 nothing else new — modules still depend only on core.
+
+> **Divergence, dated 2026-08-14 (HATS-1655).** "Nothing else new" is no longer
+> what the lint says. `_topology_offenders` in
+> `tests/test_workspace_boundaries.py` now allows a surface `{core, integrator} |
+> every module` — widened by HATS-960 so `ai-hats-cline` could take
+> `ai-hats-observe` for the `TranscriptParser` base — while still forbidding
+> surface → surface. The rest of the amendment stands: a surface is the only
+> tier that may depend up, and modules still depend on core alone.
 
 **The dependency rule as a picture — who may import what from whom:**
 
@@ -263,7 +278,7 @@ re-becoming a god-module).
 | generic parse / `_YamlModel` load helpers                                                                                                                                                                                                                               | domain parsers: provider-JSONL → observe, `SKILL.md` → library, task-card md → tracker                |
 | base `Error` hierarchy + logging setup                                                                                                                                                                                                                                  | —                                                                                                     |
 | **CLI-kit** — the `cli/_helpers` plumbing (resolver, shared decorators, error/output rendering, group registration)                                                                                                                                                     | the **commands** (`task` → tracker, `wt` → wt, …); aggregation into the `ai-hats` binary → integrator |
-| generic `StateMachine[S]` transition-guard primitive — **DEFERRED** (HATS-801 researched a shared FSM → "mirage": the generic part is tiny and does **not** unify domain FSMs, whose git/file side-effects stay per-module). Add only if ≥2 modules genuinely share it. | the Task transition table (`valid_transitions`, `models.py:56`) → tracker; `WT_TEARDOWN_EVENTS` → wt  |
+| generic `StateMachine[S]` transition-guard primitive — **DEFERRED** (HATS-801 researched a shared FSM → "mirage": the generic part is tiny and does **not** unify domain FSMs, whose git/file side-effects stay per-module). Add only if ≥2 modules genuinely share it. | the Task transition table (`valid_transitions`, `models.py`) → tracker; `WT_TEARDOWN_EVENTS` → wt     |
 
 **How the repos connect — a pip-dependency DAG (`ai-hats → modules → core`)** (§1's
 dependency rule, in pip terms):
@@ -554,7 +569,9 @@ ai-hats only as a **dev tool** (like an editor or linter). A published tool used
 edit data is not a build cycle — same as a compiler written in its own language.
 
 **`role-curator` is library content (self-hosting).** It lives at
-`library/usage/roles/role-curator/` and composes `skill-engineer` +
+`usage/roles/role-curator/` inside the library — since the T18 extraction that
+path is `packages/ai-hats-library/src/ai_hats_library/usage/roles/role-curator/`
+— and composes `skill-engineer` +
 `library-curator` + `review-role` — all library content. So "we need ai-hats with
 role-curator" = the ai-hats *tool* + a library checkout (which *contains*
 role-curator). During curation, role-curator resolves from the working checkout
@@ -841,10 +858,10 @@ are contradicted below and must be revised before this ADR is accepted.
 
 ### The meta-finding — three structural blockers the Decision missed
 
-1. **Composition flows UP, not down.** `subagent_runner` (`:15/25/27`), three
-   `pipeline/steps/*`, and `wt_carry.py:46` all import `composer` / `assembler` /
-   `materialize` / `providers` — bricks reaching *up* into the integrator. To obey
-   both this ADR (brick ↛ integrator) **and** [ADR-0005](0005-composition-and-pipeline-value-contract.md)
+1. **Composition flows UP, not down.** `subagent_runner`, three `pipeline/steps/*`,
+   and `collect_carry_for_role` (`wt_carry.py`) all import `composer` /
+   `assembler` / `materialize` / `providers` — bricks reaching *up* into the
+   integrator. To obey both this ADR (brick ↛ integrator) **and** [ADR-0005](0005-composition-and-pipeline-value-contract.md)
    (compose once, immutable `CompositionResult`), the integrator must compose once
    and inject the value **down**; `CompositionResult` becomes a **kernel value-type**
    bricks accept as a parameter. The ADR never specifies this inversion — it is the
@@ -855,9 +872,10 @@ are contradicted below and must be revised before this ADR is accepted.
 2. **Two god-kernels.** `models.py` is the union of all five domains' schemas (wt
    `WorktreeCarry`/`WorktreeHook`, tracker `TaskCard`/`TaskState`, retro
    `FeedbackConfig`, library `SkillMetadata` — which *embeds* `WorktreeCarry` — and
-   integrator `ProjectConfig`) **and** imports a brick (`models.py:28 →
-   skill_sidecar`; `:847 → providers`). `paths/_dirs.py` hard-codes every brick's
-   on-disk layout (`worktrees_dir`, `tasks_dir`, `sessions_dir`, …), contradicting
+   integrator `ProjectConfig`) **and** imports a brick (`models.py` →
+   `skill_sidecar` at module level; `_validate_provider` → `providers`).
+   `paths/_dirs.py` hard-codes every brick's on-disk layout (`worktrees_dir`,
+   `tasks_dir`, `sessions_dir`, …), contradicting
    ADR-0013 D4 (wt takes its state-dir *injected* precisely so it never imports
    `paths`). Both violate the project's own "open registries > closed central
    schemas" default. → split `models` per-brick; make layout integrator policy
@@ -932,8 +950,9 @@ step rather than a forked runtime? Would anyone use the bare step-runner without
 ai-hats (every built-in step is ai-hats-specific)?
 
 **Worktree (`wt`) — net-new beyond ADR-0013.** With both `tracker` and `wt` as
-bricks, `state.py:1011-1017` and `subagent_runner.py:28` are brick→brick violations:
-does `wt` drop to **kernel/mid-tier** (so bricks may legally depend on it), or must
+bricks, the `wt` import inside `_setup_worktree` (`state.py`) and the module-level
+`wt` import in `subagent_runner.py` are brick→brick violations: does `wt` drop to
+**kernel/mid-tier** (so bricks may legally depend on it), or must
 FSM auto-create route through the integrator? Is "depended-on-by-many" (FSM +
 subagent + hooks) proof `wt` is mis-tiered? Does the `wt` sub-package (ADR-0013 P3,
 not yet formed) gate the lint generalization? Does `wt` own a state-schema version +
@@ -980,13 +999,14 @@ should it be classified integrator, never an extraction candidate?
 **standalone managed-venv installer**? Is the config-schema+migration machinery
 (`ProjectConfig` + `migrations.py` + `version_lock`) a kernel-tier "config
 management" unit the wizard *uses*? Should prompt-materialization be a stable API the
-wizard calls rather than assembling steps by hand (`cli/assembly.py:956`)? Does the
-new `library:` block (§7) sit in the wizard's config schema parallel to
-`harness:`, validated by the same migration chain — and do the config-schema version
+wizard calls rather than assembling steps by hand (`show_prompt`,
+`cli/assembly.py`)? Does the new `library:` block (§7) sit in the wizard's config
+schema parallel to `harness:`, validated by the same migration chain — and do the
+config-schema version
 and library-schema version share one migration mechanism or two? Where does the
 library-schema-range check live — wizard config validation or the resolver?
 
-**Library — net-new only.** `models.py:28 → skill_sidecar` is a kernel→library
+**Library — net-new only.** `models.py` → `skill_sidecar` is a kernel→library
 back-edge: does `skill_sidecar` move to kernel, or does this break "library is a
 leaf brick" before extraction starts? Which tier do `resolver.py` /
 `paths/library.py` (the consumption seam) sit in — library brick or integrator
@@ -1010,6 +1030,49 @@ component-granular)?
   - `_YamlModel` moved as `ai_hats_core.YamlModel` and pulled **pydantic** into
     core — the first sanctioned dep; core's charter text changed from
     "dependency-free" to "minimal deps, each load-bearing" (F2, HATS-862 plan).
+
+- **Divergence, dated 2026-08-14 (HATS-1655) — there is no `ai-hats-tracker`.**
+  §1, §2, §3, both mermaid diagrams and the Phase-2 rollout name
+  **`ai-hats-tracker`** as the tracker module and T16/HATS-874 as the card that
+  ships it. That is what was decided, and it was built: the package reached
+  0.1.0 with standalone + boundary tests (HATS-933). It then lost the race with
+  a second engine. `ai-hats-rack` (HATS-1020) rebuilt the backlog FSM around a
+  declarative topology, and `packages/ai-hats-tracker` was **deleted on
+  2026-07-28 by HATS-1262**. Today's workspace is `ai-hats-core`, `ai-hats-wt`,
+  **`ai-hats-rack`**, `ai-hats-observe`, `ai-hats-library`, the `ai-hats`
+  integrator, and `packages/surfaces/{agy,cline}`. Read every
+  `ai-hats-tracker` cell above as `ai-hats-rack`, with three specifics the
+  substitution does not carry:
+  - The tier claim survives intact — the rack depends on core and never on the
+    integrator, pinned by an AST import-hygiene test inside the package
+    (`packages/ai-hats-rack/tests/test_import_hygiene.py`), which also forbids
+    `subprocess` there.
+  - `TaskCard`/`TaskState` did **not** simply move: the rack owns its topology
+    as *data* (`backlog.yaml` + `backlog-schema.yaml` in
+    `ai_hats_rack/`), so the shared-mechanism table's example
+    "the Task transition table (`valid_transitions`, `models.py`)" names two
+    symbols that are both gone. The pin on that topology is
+    `packages/ai-hats-rack/tests/test_fsm.py`.
+  - `TrackerPaths` outlived the package it was named for and sits on the
+    integrator side as a layout contract (`src/ai_hats/tracker_wiring.py`,
+    HATS-1258/1264) — the §2 P0#2 answer ("layout is integrator policy,
+    injected") held even though its module did not.
+
+- **Landed, dated 2026-08-14 (HATS-1655) — §5/§7's "today" is the 2026-06-30
+  tree, not this one.** §5 says `builtin_library_root()` "today reads the
+  bundled `ai_hats.library` package-data" and §7 opens "**Today this is
+  impossible** — the library is bundled package-data inside `ai_hats`". Phase 3
+  closed both: `src/ai_hats/paths/library.py` resolves the standalone
+  `ai_hats_library` package through `importlib.resources.as_file` (T18 /
+  HATS-876, which is also the review's P1 #14 answer), `packages/ai-hats-library`
+  carries its own semver, and the integrator pins it (`ai-hats-library>=0.5.2`).
+  §7's *hard constraint* shipped too — the library declares a format-schema
+  version and ai-hats declares the range it supports
+  (`SUPPORTED_LIBRARY_SCHEMA`, `src/ai_hats/library_schema.py`), checked before
+  composition. What did **not** ship is §7's `library:` config block:
+  `ProjectConfig` still carries only `library_paths` and `harness:`, so
+  per-project version selection is `AI_HATS_LIBRARY_ROOT` plus the
+  `library_paths` overlay, exactly as senses (B) and (C) describe.
 
 ## References
 

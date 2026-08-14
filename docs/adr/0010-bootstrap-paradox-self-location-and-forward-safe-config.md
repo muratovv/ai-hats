@@ -239,9 +239,12 @@ Rejected).
   truth table. Wiring lives in
   [`src/ai_hats/cli/__init__.py`](../../src/ai_hats/cli/__init__.py)
   (`_guard_self_location` / `main_entry`).
-- **[3]** — [`src/ai_hats/models.py`](../../src/ai_hats/models.py) —
-  `KNOWN_SCHEMA_VERSION`, `ProjectConfig._extra` round-trip, the `from_yaml`
-  fail-loud + `save()` clobber guard.
+- **[3]** — [`src/ai_hats/config/project.py`](../../src/ai_hats/config/project.py)
+  — `KNOWN_SCHEMA_VERSION` (4), `ProjectConfig._extra` round-trip, the
+  `from_yaml` fail-loud + `save()` clobber guard. The god-module split of
+  HATS-863 left [`src/ai_hats/models.py`](../../src/ai_hats/models.py) a pure
+  re-export facade, so `ai_hats.models.ProjectConfig` still names the same class
+  — the code is here.
 - [`scripts/bootstrap.sh`](../../scripts/bootstrap.sh) — out-of-band recovery
   hatch, `--repair`, `detect_stray_launchers`.
 - [`scripts/ai-hats-launcher`](../../scripts/ai-hats-launcher) — host launcher;

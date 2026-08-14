@@ -17,7 +17,7 @@ ADR владеет картиной материализации целиком*
 **Голос документа — to-be** (ревью 2026-08-03): описывается система по
 завершении эпика; там, где сегодня иначе, стоит врезка «Сегодня (до
 HATS-NNNN)» с замеренным фактом и карточкой, которая это правит. Замеры и
-file:line сняты на базе `c533d868`; недоказанное помечено `unverified`, не
+ссылки на код сняты на базе `c533d868`; недоказанное помечено `unverified`, не
 опущено.
 
 ## Контекст
@@ -58,20 +58,21 @@ file:line сняты на базе `c533d868`; недоказанное поме
 | слои библиотек     | `--library` extra (высший) | `library_paths:`, `<project>/libraries/`                  | `~/.ai-hats/`                  |
 
 Прецеденс имени роли — одна цепочка в одном месте
-(`composition_seam.py:65`); композиция выполняется **один раз на запуск**
-(`build_composition_payload`, `composition_seam.py:137`, контракт ADR-0005)
+(`_project_context`, `composition_seam.py`); композиция выполняется **один раз на запуск**
+(`build_composition_payload`, `composition_seam.py`, контракт ADR-0005)
 и едет во все раннеры замороженным `CompositionPayload`; ретраи сабагента
 переиспользуют её. Кэша композиции **нет** — каждый запуск перечитывает
 библиотеку с диска; «раз на запуск» держится тредингом payload, не
 мемоизацией.
 
 **Где ищутся компоненты (слои, последний выигрывает).**
-`Assembler._build_library_paths` (`assembler.py:145-191`) собирает
+`Assembler._build_library_paths` (`assembler.py`) собирает
 упорядоченную цепочку: (1) встроенная `core/` → (2) встроенная `usage/` →
 (3) пакеты через entry-point `ai_hats.skills` → (4) пользовательская
 `~/.ai-hats/` → (5) пути из `ai-hats.yaml: library_paths:` → (6) проектная
 `<project>/libraries/` → (7) явные extra. Резолв компонента —
-**last-wins**: возвращается последнее совпадение (`resolver.py:30-43`),
+**last-wins**: возвращается последнее совпадение (`LibraryResolver.resolve`,
+`resolver.py`),
 т.е. проектный слой переопределяет встроенный тем же именем.
 `<ai_hats_dir>/library/{rules,skills}` — **не** слой поиска (авторское
 зеркало). Отдельного ключа для внешней библиотеки (ai-hats-custom) нет —
@@ -84,8 +85,8 @@ file:line сняты на базе `c533d868`; недоказанное поме
 <!-- Source: docs/assets/diagrams/component-resolution.d2 — render: docs/assets/diagrams/render.sh -->
 
 **Логика композиции.** Единственный вход — фасад `compose_for_role`
-(`materialize.py:50-74`; прямой compose вне фасада гейтится тестом). Внутри
-`Composer.compose` (`composer.py:27`): загрузка конфига роли → **оверлеи**
+(`materialize.py`; прямой compose вне фасада гейтится тестом). Внутри
+`Composer.compose` (`composer.py`): загрузка конфига роли → **оверлеи**
 по слоям (глобальный, затем проектный; в каждом слое `remove` → `append`) →
 **развёртка трейтов** (каждый даёт правила → скиллы → checks → инжекцию) →
 собственные правила/скиллы/checks роли → **дедуп по имени, первый
@@ -95,7 +96,7 @@ file:line сняты на базе `c533d868`; недоказанное поме
 overlay-append. Тела
 компонентов не читаются — резолвится только `(имя, source_path)`;
 тумбстоуны ретайрнутых деклараций (`lifecycle_hooks:`) роняют композицию
-громко (`libraries/models.py:437-446`).
+громко (`SkillMetadata.from_skill_dir`, `libraries/models.py`).
 
 <p align="center">
   <img src="../assets/diagrams/composition-flow.svg" alt="Поток композиции роли" width="440">
@@ -104,13 +105,13 @@ overlay-append. Тела
 <!-- Source: docs/assets/diagrams/composition-flow.d2 — render: docs/assets/diagrams/render.sh -->
 
 **Что получает материализатор на вход** — замороженный `CompositionResult`
-(`ai_hats_core/composition.py:59-105`). Его артефакты, по группам:
+(`ai_hats_core/composition.py`). Его артефакты, по группам:
 
 #### Промпт-артефакты
 
 Из них собирается системный промпт, секциями в этом порядке:
 `## PRIORITIES` → инжекции → `## RULES` → `## USER RULES`
-(`providers.py:260-319`).
+(`Provider._compose_sections`, `providers.py`).
 
 - **`priorities`** — ранжированный список приоритетов из конфига корневой
   роли. Отдельного механизма доставки не имеет — это просто первая секция
@@ -176,8 +177,8 @@ overlay-append. Тела
 
 **Почему поле `delivery` осталось.** Единственная его работа теперь —
 предупредить о незнакомом значении. Без него `delivery: summarized`, написанный
-по старой документации, был бы проглочен молча (`extra="ignore"`,
-`ai_hats_core/yaml_model.py:19`) — ровно тот класс тишины, который эта
+по старой документации, был бы проглочен молча (`extra="ignore"` в
+`YamlModel.model_config`, `ai_hats_core/yaml_model.py`) — ровно тот класс тишины, который эта
 итерация и закрывала. Само по себе значение `always_on` больше ни на что не
 влияет и в новых правилах не нужно.
 
@@ -191,7 +192,7 @@ overlay-append. Тела
 
 Наборы хуков — не поля результата: они вычисляются из деклараций
 композированных скиллов (`hook_collection.py`, git —
-`hooks_manager.py:648`). Что это по каналам:
+`_collect_skill_git_hooks`, `hooks_manager.py`). Что это по каналам:
 
 - **`[runtime_hooks]`** — скрипты, которые **поверхность** вызывает на
   события сессии (PreToolUse/PostToolUse и т.п.): гейты инструментов агента
@@ -219,7 +220,11 @@ overlay-append. Тела
   (`check_points.wt_points()`) и `ai-hats` (`ai_hats_points()`, HATS-1581);
   груз всех прочих, `apps.rack` включительно, он
   перевозит непрозрачно, а разбирает, фильтрует по своей топологии и
-  подписывается на рёбра сам рак (ADR-0019 [2] D11). Материализации это не
+  подписывается на рёбра сам рак (ADR-0019 [2] D11). У приложения `ai-hats`
+  точка одна — `startup`: она зажигается на HITL-запуске до спавна поверхности
+  (`startup_checks.run_startup_checks`, зовётся из `wrap_runner.py`) и
+  единственная из своих допускает `on_error: warn`, потому что данных на старте
+  не защищает. Материализации это не
   добавляет ни одной точки записи — набор по-прежнему заморожен в композиции.
 
 Сводно — куда что раскладывается:
@@ -446,22 +451,22 @@ S3–S9.
 
 Таблица корней — кто пишет, сколько живёт, что меняет эпик:
 
-| корень                      | пути                                                                                                                                                                                                                                                                                                         | кто пишет / когда                                                                                                      | лайфтайм                                                                                                   | to-be дельта (владелец)                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **package**                 | версионированный venv + указатель `versions/current`                                                                                                                                                                                                                                                         | `self update` (managed-арм, под `versions_lock`)                                                                       | до следующего update; недособранные/осиротевшие версии сметаются                                           | без изменений                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **проект, `<ai_hats_dir>`** | каноническая композиция + `user-rules/`, `library/{rules,skills}`, трекер, `sessions/runs/`                                                                                                                                                                                                                  | install-time `_refresh` и `set_role` (`write_canonical`); rack (трекер); observe (`runs/`)                             | проект                                                                                                     | `library/hooks/` + `.manifest` — снесён (HATS-1480, done — миграция step 10; проводка отцеплена от неё в HATS-1268); `library/wt-hooks/` + `.manifest` — снесён (HATS-1269, done — миграция step 9); `tracker/lifecycle-hooks/` — снесён (HATS-1147, done); `sessions/runs/` ограничен двухслойным удержанием (HATS-1339, done)                                                                                                                      |
-| **корень проекта**          | диспетчеры `.githooks/<event>` + `core.hooksPath`; managed-строка `.gitignore`                                                                                                                                                                                                                               | только `ai-hats init`                                                                                                  | переживает `self update` по содержимому                                                                    | копии гейтов `<event>.d/` и `.ai-hats-manifest` **исчезли**; остался статический диспетчер с live-резолвом и fail-open, `core.hooksPath` абсолютный (HATS-1337, done). Других корневых файлов нет: проводка в корневом `.claude/settings.json` выметена, со сторожем (HATS-1336, done); `./GEMINI.md` — последняя живая корневая запись (`assembler.py:772-776`) — ретайр либо документированное gitignored-исключение, решается замером (HATS-1338) |
-| **`$HOME` (глобальный)**    | `~/.gemini/antigravity-cli/settings.json` (запись agy-диспетчера); `<cache_home>/<project-key>/` (дефолт `~/.cache/ai-hats/`)                                                                                                                                                                                | сборка agy-сессии — **каждая**, не init (`agy/provider.py:206`, вопреки ADR-0018 §5.1); сборка сессии + recovery-свипы | пользователь / машина                                                                                      | read-modify-write получает лок или CAS (HATS-1338); сессионные деревья и межпроектные ключи ограничены liveness-aware GC (HATS-1339, done); `probe-mirror` — HATS-1608                                                                                                                                                                                                                                                                               |
-| **дерево сессии**           | `<cache_root>/sessions/<sid>/` — `prompt.md`; зеркало скиллов (`plugin/skills/` claude, `rules/.agents/skills/` agy, `skills/` cline); `settings.json` (claude) / `hooks.json` (agy). Зеркало скиллов — оно же корень исполнения bound-чеков (*HATS-1540*, ADR-0019 [2] D9); отдельного `checks/` больше нет | сборка сессии; единственный writer = сессия-владелец (id сессий уникальны на процесс, HATS-1248)                       | сессия; удаляется на выходе; сироту после падения сносит следующий старт, когда владелец мёртв (HATS-1339) | проводка хуков claude перенацеливается с `library/hooks/<skill>-<basename>` (`surfaces/claude/provider.py:442`) на `<sid>/plugin/skills/<skill>/<script>` (HATS-1268); wt-хуки резолвятся из директорий скиллов через carry (HATS-1269, done)                                                                                                                                                                                                        |
+| корень                      | пути                                                                                                                                                                                                                                                                                                                                                                                                                           | кто пишет / когда                                                                                                                                | лайфтайм                                                                                                   | to-be дельта (владелец)                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **package**                 | версионированный venv + указатель `versions/current`                                                                                                                                                                                                                                                                                                                                                                           | `self update` (managed-арм, под `versions_lock`)                                                                                                 | до следующего update; недособранные/осиротевшие версии сметаются                                           | без изменений                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **проект, `<ai_hats_dir>`** | каноническая композиция + `user-rules/`, `library/{rules,skills}`, трекер, `sessions/runs/`                                                                                                                                                                                                                                                                                                                                    | install-time `_refresh` и `set_role` (`write_canonical`); rack (трекер); observe (`runs/`)                                                       | проект                                                                                                     | `library/hooks/` + `.manifest` — снесён (HATS-1480, done — миграция step 10; проводка отцеплена от неё в HATS-1268); `library/wt-hooks/` + `.manifest` — снесён (HATS-1269, done — миграция step 9); `tracker/lifecycle-hooks/` — снесён (HATS-1147, done); `sessions/runs/` ограничен двухслойным удержанием (HATS-1339, done)                                                                                                                                    |
+| **корень проекта**          | диспетчеры `.githooks/<event>` + `core.hooksPath`; managed-строка `.gitignore`                                                                                                                                                                                                                                                                                                                                                 | только `ai-hats init`                                                                                                                            | переживает `self update` по содержимому                                                                    | копии гейтов `<event>.d/` и `.ai-hats-manifest` **исчезли**; остался статический диспетчер с live-резолвом и fail-open, `core.hooksPath` абсолютный (HATS-1337, done). Других корневых файлов нет: проводка в корневом `.claude/settings.json` выметена, со сторожем (HATS-1336, done); `./GEMINI.md` — последняя живая корневая запись (`Assembler.set_role`, `assembler.py`) — ретайр либо документированное gitignored-исключение, решается замером (HATS-1338) |
+| **`$HOME` (глобальный)**    | `~/.gemini/antigravity-cli/settings.json` (запись agy-диспетчера); `<cache_home>/<project-key>/` (дефолт `~/.cache/ai-hats/`)                                                                                                                                                                                                                                                                                                  | сборка agy-сессии — **каждая**, не init (`AgyProvider._deliver_hooks`, `agy/provider.py`, вопреки ADR-0018 §5.1); сборка сессии + recovery-свипы | пользователь / машина                                                                                      | read-modify-write получает лок или CAS (HATS-1338); сессионные деревья и межпроектные ключи ограничены liveness-aware GC (HATS-1339, done); `probe-mirror` — HATS-1608                                                                                                                                                                                                                                                                                             |
+| **дерево сессии**           | `<cache_root>/sessions/<sid>/` — `prompt.md`; зеркало скиллов (`plugin/skills/` claude, `rules/.agents/skills/` agy, `skills/` cline); `settings.json` (claude) / `hooks.json` (agy). Зеркало скиллов — оно же корень исполнения bound-чеков (*HATS-1540*, ADR-0019 [2] D9); собственного снапшота `checks/` у канала больше нет, а сам каталог `checks/` в дереве сессии остался под логи точки `ai-hats:startup` (HATS-1581) | сборка сессии; единственный writer = сессия-владелец (id сессий уникальны на процесс, HATS-1248)                                                 | сессия; удаляется на выходе; сироту после падения сносит следующий старт, когда владелец мёртв (HATS-1339) | проводка хуков claude перенацеливается с `library/hooks/<skill>-<basename>` (`ClaudeProvider._desired_runtime_entries`, `surfaces/claude/provider.py`) на `<sid>/plugin/skills/<skill>/<script>` (HATS-1268); wt-хуки резолвятся из директорий скиллов через carry (HATS-1269, done)                                                                                                                                                                               |
 
 Материализованное состояние трогают четыре точки записи — и только они:
 
-| точка записи                | триггер                                        | что делает                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **install-time `_refresh`** | `self init`, `self update` (bump)              | `_refresh(install_time=True)` — `assembler.py:842-860`; ровно три call-site: `Assembler.init` (`assembler.py:511`), `do_bump` (`cli/assembly.py:1026`), in-process update (`cli/maintenance.py:1867`). Порядок: реестр миграций → свип unclaimed-маркеров → `write_canonical` → `hooks.materialize`. Миграции срабатывают **один раз на проект на шаг** (гейт `migration_step`, `ai_hats_core/migrations.py:75-92`) — *не* на каждом bump            |
-| **`set_role`**              | первая интерактивная сессия / смена провайдера | `_refresh(install_time=False)` (`assembler.py:770`; единственный вызыватель `composition_seam.py:132`): **без** миграций, **без** unclaimed-свипа — но `write_canonical` и `hooks.materialize` выполняются. Сегодня (до HATS-1338) agy здесь же пишет `./GEMINI.md` (`assembler.py:772-776`)                                                                                                                                                         |
-| **сборка сессии**           | каждая сессия (HITL и automate)                | recovery-свипы эфемерного состояния (кэши-сироты по владельцу, межпроектные ключи, удержание `runs/`, недособранные версии — `EnvironmentRecovery.run`, `environment_recovery.py`); артефакты по поверхностям в дерево сессии, плюс якорь владельца рядом с ними (`_claim_session_cache`). Общих hook-директорий больше нет, поэтому session-start drift-heal `sync_hooks` ретайрен целиком (HATS-1480) — вектор HATS-1439 растворён, а не пропатчен |
-| **spawn**                   | вызов инструмента / `git commit` / wt-событие  | claude порождает свои хуки сам из сессионного `settings.json`; agy — через `$HOME`-диспетчер, читающий `AI_HATS_SESSION_CACHE_DIR` (`hook_dispatcher.py:21-34`); wt-хуки порождает ai-hats (примитив ADR-0020 D2); git-хуки порождает git через `.githooks/`                                                                                                                                                                                         |
+| точка записи                | триггер                                        | что делает                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **install-time `_refresh`** | `self init`, `self update` (bump)              | `_refresh(install_time=True)` — `Assembler._refresh` (`assembler.py`); ровно три call-site: `Assembler.init` (`assembler.py`), `do_bump` (`cli/assembly.py`), in-process update (`update`, `cli/maintenance.py`). Порядок: реестр миграций → свип unclaimed-маркеров → `write_canonical` → `hooks.materialize`. Миграции срабатывают **один раз на проект на шаг** (гейт `migration_step` в `run_pending`, `ai_hats_core/migrations.py`) — *не* на каждом bump |
+| **`set_role`**              | первая интерактивная сессия / смена провайдера | `_refresh(install_time=False)` (`Assembler.set_role`, `assembler.py`; единственный вызыватель — `_maybe_sync_active_role`, `composition_seam.py`): **без** миграций, **без** unclaimed-свипа — но `write_canonical` и `hooks.materialize` выполняются. Сегодня (до HATS-1338) agy здесь же пишет `./GEMINI.md` (`Assembler.set_role`, `assembler.py`)                                                                                                          |
+| **сборка сессии**           | каждая сессия (HITL и automate)                | recovery-свипы эфемерного состояния (кэши-сироты по владельцу, межпроектные ключи, удержание `runs/`, недособранные версии — `EnvironmentRecovery.run`, `environment_recovery.py`); артефакты по поверхностям в дерево сессии, плюс якорь владельца рядом с ними (`_claim_session_cache`). Общих hook-директорий больше нет, поэтому session-start drift-heal `sync_hooks` ретайрен целиком (HATS-1480) — вектор HATS-1439 растворён, а не пропатчен           |
+| **spawn**                   | вызов инструмента / `git commit` / wt-событие  | claude порождает свои хуки сам из сессионного `settings.json`; agy — через `$HOME`-диспетчер, читающий `AI_HATS_SESSION_CACHE_DIR` (`_session_hooks_file`, `hook_dispatcher.py`); wt-хуки порождает ai-hats (примитив ADR-0020 D2); git-хуки порождает git через `.githooks/`                                                                                                                                                                                  |
 
 ### S4 — Материализация роли на поверхности
 
@@ -472,11 +477,12 @@ S3–S9.
 
 1. **Запуск**: `ai-hats` (HITL) или `ai-hats agent <role>` (automate).
 2. **Композиция — один раз** (`build_composition_payload`,
-   `composition_seam.py:137`; S1): имя роли по дереву переопределений,
+   `composition_seam.py`; S1): имя роли по дереву переопределений,
    компоненты по слоям, на выходе — замороженный `CompositionResult` внутри
    `CompositionPayload`. `--dry-run` здесь же сворачивает всё дальнейшее в
    план (`PlanMaterializer`) — байты не пишутся.
-3. **`create_session`** (`wrap_runner.py:457` / `subagent_runner.py:170`):
+3. **`create_session`** (`WrapRunner.run`, `wrap_runner.py` /
+   `SubAgentRunner._run_attempt`, `subagent_runner.py`):
    минтится id `<YYYYMMDD-HHMMSS>-<counter>-<pid>`, открывается долговечная
    запись `sessions/runs/session_<sid>/`; тут же recovery-свипы (S9): пин
    своей версии → свип кэшей-сирот по владельцу → свип межпроектных ключей →
@@ -495,7 +501,7 @@ S3–S9.
    wt-хуки и checks (*реализовано (HATS-1141)*) — процесс ai-hats, git-хуки —
    git через `.githooks/`.
 7. **Выход**: `_cleanup_session_cache` сносит дерево сессии
-   (`wrap_runner.py:715`); crash оставляет сироту, и следующий старт сносит
+   (`WrapRunner.run`, `wrap_runner.py`); crash оставляет сироту, и следующий старт сносит
    её, как только владелец окажется мёртв (S9). Долговечная запись
    `sessions/runs/` остаётся — это журнал, не кэш.
 
@@ -507,59 +513,61 @@ S3–S9.
 
 **Общая машинерия.** Единый шов сборки — artifact builder ADR-0018:
 категории `CONTEXT / SKILLS / HOOKS / SETTINGS` × режимы `HITL / AUTOMATE`
-(`session_artifacts.py:12-44`). Поверхность реализует по методу на пару
-`_build_<категория>_<режим>`; базовый класс диспетчит
-(`providers.py:147-169`); отсутствующая пара = доставки нет, и это видно по
+(`ArtifactCategory` × `RunMode`, `session_artifacts.py`). Поверхность реализует
+по методу на пару `_build_<категория>_<режим>`; базовый класс диспетчит
+(`Provider.build_category_artifact`, `providers.py`); отсутствующая пара =
+доставки нет, и это видно по
 телу класса (M14). Каждая запись идёт через порт `Materializer` — подставив
 `PlanMaterializer`, вызыватель превращает всю сборку в dry-run (план вместо
-байтов). Вызыватели: HITL — `wrap_runner.py:462-489`; automate —
-`subagent_runner.py:192-199`.
+байтов). Вызыватели: HITL — `WrapRunner.run` (`wrap_runner.py`); automate —
+`SubAgentRunner._run_attempt` (`subagent_runner.py`).
 
 Всё складывается в **дерево сессии** `<cache_root>/sessions/<sid>/` (далее
 `<sc>`) — вне воркспейса (S8).
 
 **claude** (`surfaces/claude/provider.py`) — референсная поверхность:
 
-| категория | артефакт                                                               | writer                                                   | доставка HITL                     | доставка AUTOMATE                                   |
-| --------- | ---------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------- | --------------------------------------------------- |
-| context   | `<sc>/prompt.md`                                                       | `_write_prompt_file` `:182-191`                          | `--system-prompt-file` `:193-196` | SDK `system_prompt={preset, append}` `:198-211`     |
-| skills    | `<sc>/plugin/` — `.claude-plugin/plugin.json` + `skills/<skill>/…`     | `_materialize_plugin` `:215-225` → `plugin_dir.py:28-84` | `--plugin-dir` `:227-229`         | `plugins=[{type: local, path}]` `:231-235`          |
-| hooks     | `<sc>/settings.json` (записи из `_desired_runtime_entries` `:391-450`) | `_write_cache_settings` `:239-249`                       | `--settings` `:251-254`           | `settings=<path>` + `setting_sources=[]` `:256-259` |
-| settings  | —                                                                      | хендлера нет (`:173`) — категория не доставляется        | —                                 | —                                                   |
+| категория | артефакт                                                           | writer                                                                                            | доставка HITL                                  | доставка AUTOMATE                                                  |
+| --------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
+| context   | `<sc>/prompt.md`                                                   | `_write_prompt_file`                                                                              | `--system-prompt-file` (`_build_context_hitl`) | SDK `system_prompt={preset, append}` (`_build_context_automate`)   |
+| skills    | `<sc>/plugin/` — `.claude-plugin/plugin.json` + `skills/<skill>/…` | `_materialize_plugin` → `materialize_plugin_dir` (`plugin_dir.py`)                                | `--plugin-dir` (`_build_skills_hitl`)          | `plugins=[{type: local, path}]` (`_build_skills_automate`)         |
+| hooks     | `<sc>/settings.json` (записи из `_desired_runtime_entries`)        | `_write_cache_settings`                                                                           | `--settings` (`_build_hooks_hitl`)             | `settings=<path>` + `setting_sources=[]` (`_build_hooks_automate`) |
+| settings  | —                                                                  | хендлера нет (комментарий «SETTINGS delivers nothing in either mode») — категория не доставляется | —                                              | —                                                                  |
 
 **agy** (`packages/surfaces/agy/src/ai_hats_agy/provider.py`):
 
-| категория | артефакт                                                | writer                                                      | доставка                                                                                                           |
-| --------- | ------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| context   | HITL: `<sc>/rules/GEMINI.md`; automate: ничего на диске | `:129-145` / инлайн в мета-промпт `:147-155`                | `--add-dir <sc>/rules` `:145`                                                                                      |
-| skills    | `<sc>/rules/.agents/skills/<skill>/…`                   | `_materialize_skills` `:159-169` → `materialize_skills_dir` | неявно — agy сам сканирует дерево из `--add-dir`                                                                   |
-| hooks     | `<sc>/hooks.json` + запись диспетчера в `$HOME`         | `_deliver_hooks` `:198-211`, манифест `:179-196`            | глобальный диспетчер читает манифест по `AI_HATS_SESSION_CACHE_DIR` `:205`; HITL и automate одинаково (`:213-217`) |
+| категория | артефакт                                                | writer                                                                   | доставка                                                                                                                                       |
+| --------- | ------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| context   | HITL: `<sc>/rules/GEMINI.md`; automate: ничего на диске | `_build_context_hitl` / инлайн в мета-промпт — `_build_context_automate` | `--add-dir <sc>/rules`                                                                                                                         |
+| skills    | `<sc>/rules/.agents/skills/<skill>/…`                   | `_materialize_skills` → `materialize_skills_dir`                         | неявно — agy сам сканирует дерево из `--add-dir`                                                                                               |
+| hooks     | `<sc>/hooks.json` + запись диспетчера в `$HOME`         | `_deliver_hooks`, манифест — `_hooks_manifest`                           | глобальный диспетчер читает манифест по `AI_HATS_SESSION_CACHE_DIR`; HITL и automate одинаково (`_build_hooks_hitl` / `_build_hooks_automate`) |
 
 **cline** (`packages/surfaces/cline/src/ai_hats_cline/provider.py`):
 
-| категория      | артефакт                       | writer                          | доставка                                                   |
-| -------------- | ------------------------------ | ------------------------------- | ---------------------------------------------------------- |
-| context        | ничего на диске                | `:106-117` / `:119-128`         | инлайн: `-s <промпт>` `:117`; automate — мета-промпт       |
-| skills         | `<sc>/skills/<skill>/…`        | `_deliver_skills` `:132-144`    | `--config <sc>` (cline сканирует `<config>/skills`) `:142` |
-| hooks/settings | **нет по решению** (HATS-1083) | явная пометка в коде (`:85-87`) | гардинг — на уровне харнесса, `SurfaceGuard` (ADR-0018 §4) |
+| категория      | артефакт                       | writer                                                                             | доставка                                                   |
+| -------------- | ------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| context        | ничего на диске                | `_build_context_hitl` / `_build_context_automate`                                  | инлайн: `-s <промпт>`; automate — мета-промпт              |
+| skills         | `<sc>/skills/<skill>/…`        | `_deliver_skills`                                                                  | `--config <sc>` (cline сканирует `<config>/skills`)        |
+| hooks/settings | **нет по решению** (HATS-1083) | явная пометка в коде (комментарий «HOOKS/SETTINGS deliver nothing in either mode») | гардинг — на уровне харнесса, `SurfaceGuard` (ADR-0018 §4) |
 
 `CLINE_DATA_DIR` пиннит auth/сессии/БД cline обратно в его настоящий дом
-(`:211-214`) — конфиг-дерево сессии не утаскивает пользовательский стейт.
+(`_env`) — конфиг-дерево сессии не утаскивает пользовательский стейт.
 
 **Семантика зеркала скиллов** (общая для трёх поверхностей): wipe-and-rebuild
 целиком на каждую сборку — `remove_tree` → `mkdir` → по-скилловый
-`copy_tree(skill.source_path, …)` (`plugin_dir.py:49-84`,
-`skills_dir.py:113-148`). `SKILL.md` ре-рендерится из **истока**
+`copy_tree(skill.source_path, …)` (`_rebuild_plugin_dir`, `plugin_dir.py`;
+`materialize_skills_dir`, `skills_dir.py`). `SKILL.md` ре-рендерится из **истока**
 (плейсхолдеры путей + `{{backlog_fsm_edges}}`), копия никогда не
 перечитывается. Зеркало копирует и `hooks/` каждого скилла — сессионное
 дерево всегда несёт исполняемую копию каждого задекларированного
 hook-скрипта. `scripts/` и `bin/` скиллов из зеркала попадают в PATH сессии
-(`skills_dir.py:79-110`). У claude рядом с деревом лежит `plugin.lock`
-(`plugin_dir.py:40-45`).
+(`collect_skill_script_paths` → `inject_skill_paths_to_env`, `skills_dir.py`).
+У claude рядом с деревом лежит `plugin.lock` (`lock_path` в
+`materialize_plugin_dir`, `plugin_dir.py`).
 
 Помимо эфемерного дерева пишется **долговечная запись сессии**
 `<ai_hats_dir>/sessions/runs/session_<sid>/` (мета-промпт, audit,
-`role_materialization.json` — `wrap_runner.py:490-536`): это
+`role_materialization.json` — `WrapRunner.run`, `wrap_runner.py`): это
 observability-данные, их читают retro/reflect. Каталог прогона не удаляется
 никогда; истекают по возрасту только bulk-файлы внутри него, слой фактов
 удерживается вечно (HATS-1339, S9).
@@ -581,7 +589,7 @@ headless-режиме может вообще не вызывать tool-хук�
 HATS-1105): гейты, обязанные сработать, проверяются вне поверхности.
 *Сегодня компенсация тоньше формулировки (замер 2026-08-03): pre-flight
 реально проверяет только изоляцию worktree, post-flight — заглушка
-(`harness/surface_guard.py:80-97`); полнота — вопрос surfaces-дока
+(`SurfaceGuard.post_flight_guard`, `harness/surface_guard.py`); полнота — вопрос surfaces-дока
 HATS-1341.* Механика честности: отсутствующая пара
 `_build_<категория>_<режим>` — это объявленное «не доставляем», видимое по
 телу класса провайдера, а не тихий `else`.
@@ -593,36 +601,40 @@ HATS-1341.* Механика честности: отсутствующая па
 
 - **Одна композиция — много попыток.** Ретраи по таймауту переиспользуют
   один `CompositionResult`, но каждая попытка минтит **новый** session id и
-  пересобирает дерево сессии заново (`subagent_runner.py:96-139`, `:170`);
+  пересобирает дерево сессии заново (`SubAgentRunner.run`, `subagent_runner.py`);
   у HITL ретраев нет.
 - **Изоляция.** `--isolation discard|squash|branch` создаёт worktree
   (ветка `agent/<role>/<sid>`), но worktree — только **cwd** процесса:
   вся материализация (дерево сессии, долговечная запись) остаётся под
-  ключом **основного** проекта (`cli/_helpers.py:243-265` — хоп к main
+  ключом **основного** проекта (`_project_dir`, `cli/_helpers.py` — хоп к main
   root). Сабагентский worktree создаётся **без** hook-carry — `wt_in`/
-  `wt_out` для него не бегут (`manager.py:1245-1246` → пустой набор);
+  `wt_out` для него не бегут (`WorktreeManager.__enter__` зовёт `create()` без
+  `wt_hooks`, `manager.py` → пустой набор);
   `compose_for_carry` — путь карточных worktree, не сабагентов. Pre-flight
   guard отказывает, когда изоляция запрошена, а `work_dir == project_dir`
-  (`harness/surface_guard.py:71-78`).
+  (`SurfaceGuard.pre_flight_check`, `harness/surface_guard.py`).
 - **Канал подмены промпта** — только automate: `with_injection_override`
-  (`ai_hats_core/composition.py:91-97`) **целиком заменяет** инжекции
+  (`ai_hats_core/composition.py`) **целиком заменяет** инжекции
   композиции до сборки артефактов; HITL такого канала не имеет намеренно
   (ловушка HATS-452, ADR-0005). Продакшен-вызывателей сегодня ноль — канал
   зарезервирован под API.
 - **Старт без обслуживания.** Automate не выполняет ничего из
   HITL-стартового набора: ни линтов
   настроек/env, ни проверок коллизий скиллов, ни `diagnostics.json`
-  (список — `wrap_runner.py:558-563`); сборка сессии — и сразу запуск.
+  (список — блок `startup_notices` в `WrapRunner.run`, `wrap_runner.py`);
+  сборка сессии — и сразу запуск.
 - **Уборка.** Кэш сессии сносится **до** teardown worktree
-  (`subagent_runner.py:452-458`), ownership-холд снимается там же; каждая
+  (`_cleanup_session_cache` в `SubAgentRunner._run_attempt`,
+  `subagent_runner.py`), ownership-холд снимается там же; каждая
   попытка ретрая оставляет свой каталог уборке своей попытки.
 - **Env-паритет — с дырой.** Automate собирает две env-карты (полную для
-  legacy-subprocess и overlay для SDK, `subagent_runner.py:255-268`), но
+  legacy-subprocess и overlay для SDK — `assemble_launch_env` в
+  `SubAgentRunner._run_attempt`, `subagent_runner.py`), но
   `artifacts.extra_env` не попадает ни в одну — agy-сабагент теряет
   `AI_HATS_SESSION_CACHE_DIR` (его хуки фактически мертвы), а
   `SessionReport.env` описывает env, которого процесс не получает — баг
   **HATS-1475**.
-- **Dry-run automate** (`dry_run.py:98-158`): preview-payload (без
+- **Dry-run automate** (`dry_run_automate`, `dry_run.py`): preview-payload (без
   `set_role` и хук-менеджера), синтетический sid `dry-run`, реальная сборка
   за `PlanMaterializer` + инвариант «файловая система байт-в-байт»
   (детектор escapes). Недорисовка: `TICKET_CONTEXT`/`LINKED_CONTEXT` в
@@ -668,12 +680,12 @@ ai-hats на машине:
   только на побайтовой идентичности написаний (замер 2026-08-01), и
   перенацеливание 1268 её разрушает.
 - **runtime, agy — уже целевая форма:** `hooks.json` указывает абсолютными
-  путями в зеркало сессии (`agy/provider.py:182,193`); исполняет глобальный
-  диспетчер из `$HOME` по `AI_HATS_SESSION_CACHE_DIR`
-  (`hook_dispatcher.py:21-34`), без импорта ai-hats на hot path;
+  путями в зеркало сессии (`AgyProvider._hooks_manifest`, `agy/provider.py`);
+  исполняет глобальный диспетчер из `$HOME` по `AI_HATS_SESSION_CACHE_DIR`
+  (`_session_hooks_file`, `hook_dispatcher.py`), без импорта ai-hats на hot path;
   standalone-agy без `AI_HATS_SESSION_ID` — no-op. *Сегодня (до
   HATS-1338):* регистрация диспетчера — незалоченный read-modify-write на
-  каждой сборке (`agy/provider.py:206`).
+  каждой сборке (`AgyProvider._deliver_hooks`, `agy/provider.py`).
 - **runtime, cline:** хуков нет по решению (HATS-1083), гардинг у
   `SurfaceGuard`; вердикт «маппится ли канал на cline вообще» —
   research-карточка HATS-1340.
@@ -696,7 +708,9 @@ ai-hats на машине:
   сиблинга для HYP/PROP (HATS-1575; при `--tasks-dir` вне проекта — вне
   проекта); на `pre-merge` —
   `<state_dir>/<branch>.logs/pre-merge~<токен>.log` рядом с
-  состоянием воркдерева. `<токен>` в обоих случаях — обратимо экранированная
+  состоянием воркдерева; на `startup` приложения `ai-hats` —
+  `<sc>/checks/startup~<токен>.log`, то есть в дереве самой сессии, которую
+  точка и гейтит (HATS-1581). `<токен>` во всех случаях — обратимо экранированная
   идентичность строки, `<приложение>~<путь в дереве>~<skill>~<script>` плюс
   короткий дайджест `at:` и остального груза (`check_points.check_log_token`):
   `run_hook` усекает выданный ему лог, поэтому более грубое имя даёт второму
@@ -749,12 +763,12 @@ ai-hats на машине:
 **Общая механика (уже так).** Оба пути — init и update — сходятся в
 `_refresh(install_time=True)`: реестр миграций (раз на проект на шаг) →
 свип unclaimed-маркеров (residue мёртвых механизмов; мёртвый owner ⇒ метёт,
-живой ⇒ поверхность защищена — `sweeper.py:228`) → `write_canonical` →
+живой ⇒ поверхность защищена — `sweep_unclaimed`, `sweeper.py`) → `write_canonical` →
 `hooks.materialize`. Сессионная проводка на init не пишется (корневой
 `.claude/settings.json` не пишется с HATS-1170 и выметен с HATS-1336);
 agy-диспетчер в `$HOME` на init не регистрируется (только на сборке сессии
 — S5). Re-init гейтится `assert_runtime_hooks_resolve`
-(`migration_assert.py:214-267`): нерезолвящаяся команда — громкий отказ.
+(`migration_assert.py`): нерезолвящаяся команда — громкий отказ.
 
 `hooks.materialize` больше не ставит managed-копий hook-скриптов: обе
 директории с манифестами ретайрнуты (`library/hooks/` — HATS-1480,
@@ -787,7 +801,8 @@ step 9. Остаётся одна поверхность:
    runtime-хуков + 2 wt-хука исчезли mid-session. Полицировать больше нечего,
    поэтому сам drift-net снят (HATS-1480).
 2. **`$HOME`-мерж agy** (HATS-1338) — незалоченный read-modify-write на
-   каждой сборке (`global_hook.py:19-75`); конкурентные сборки могут
+   каждой сборке (`ensure_global_dispatcher_hook`, `global_hook.py`);
+   конкурентные сборки могут
    потерять чужие ключи.
 
 **Worktree-параллельность** (замерено 2026-08-03, из этой самой сессии):
@@ -797,7 +812,7 @@ step 9. Остаётся одна поверхность:
 чужие для worktree-каталога, сбрасывает их (pair-pinning HATS-897 работает)
 и требует собственный `self init` — тихого «прыжка» к основному чекауту на
 пути запуска нет; `main_worktree_root`
-(`ai_hats_wt/manager.py:1675-1692`) — внутренний механизм wt-тулинга, не
+(`ai_hats_wt/manager.py`) — внутренний механизм wt-тулинга, не
 лончера. Worktree обслуживает **сессия основного чекаута** (агент заходит
 внутрь через `cd`): её материализация живёт под ключом основного проекта, а
 уже прописанная hook-проводка продолжает резолвиться против основного
@@ -818,7 +833,7 @@ findings §3).
 состояние, вне воркспейса, по ключу проекта, по каталогу на сессию** —
 потерять его безопасно, пересоздать дёшево.
 
-**Резолв корня** (`paths/_dirs.py:326-381`): `cache_home()` =
+**Резолв корня** (`paths/_dirs.py`): `cache_home()` =
 `AI_HATS_CACHE_HOME` → `XDG_CACHE_HOME/ai-hats` → `~/.cache/ai-hats`;
 `project_key()` = `<имя-каталога>-<sha256(abs path)[:8]>`; `cache_root()` =
 `cache_home()/project_key()`. Env-переменные задают **базу**, не финальный
@@ -973,7 +988,7 @@ mtime непосредственных детей — mtime самого кат�
   решению супервизора (2026-08-12), та же категория, что `tracker/backlog`.
 - `probe-mirror/` — уехал в **HATS-1608**. Содержимое зеркала — чистая
   функция от (remote, ref), а `project_dir` выбирает только место
-  (`_probe_mirror_dir`, `update_check/checker.py:238`), поэтому N проектов
+  (`_probe_mirror_dir`, `update_check/checker.py`), поэтому N проектов
   держат N байт-идентичных копий одного пака. Это лечится не свипом, а одним
   зеркалом на пользователя.
 
@@ -1005,7 +1020,7 @@ mtime непосредственных детей — mtime самого кат�
 
 **Риск.** Замеры одного репозитория (набор гейтов `.githooks/`, состав
 `library/hooks/`) — иллюстрации, не контракт: у другого проекта состав
-другой. Контрактные утверждения всегда сопровождены file:line кода, а не
+другой. Контрактные утверждения всегда сопровождены символом в коде, а не
 листингом диска.
 
 ## Ссылки
@@ -1015,7 +1030,8 @@ mtime непосредственных детей — mtime самого кат�
   agy global dispatcher (с поправками HATS-1465).
 - [2] `docs/adr/0019-declarative-lifecycle-extension-model.md` — `checks:`-канал
   и его корень исполнения (D9) — с HATS-1540 это само зеркало скиллов, поэтому
-  отдельного класса содержимого дерева сессии у канала больше нет.
+  собственного снапшота в дереве сессии у канала больше нет; каталог
+  `<sc>/checks/` остался только под логи точки `ai-hats:startup` (HATS-1581).
 - [3] `docs/adr/0020-hook-execution-and-materialization-substrate.md` —
   hook-подложка: таксономия `in_process`/`detached` (D1), примитив
   исполнения (D2), git-оркестратор (D3), миграция каналов (D4).

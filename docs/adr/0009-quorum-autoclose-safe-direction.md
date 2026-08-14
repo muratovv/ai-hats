@@ -86,6 +86,34 @@ is reopened (`set-status active`) does not start pre-loaded with one vote.
 
 - `library/core/pipelines/finalize-hitl.yaml` — `quorum_autoclose` appended.
 
+**Where those artifacts live now (update 2026-08-14, HATS-1655)**
+
+The decision above is unchanged and still shipping; only its homes moved, with
+the tracker package (`packages/ai-hats-tracker` deleted by HATS-1262,
+`710f45d3`) and the `ai-hats task` CLI it backed. The map, so the artifact list
+above stays followable:
+
+- pure core → `packages/ai-hats-rack/src/ai_hats_rack/extensions/quorum.py`
+  (`independent_refute_sessions`, `quorum_closures`, and `AUTO_SESSION_ID` /
+  `AUTOCLOSE_ACTOR`) — ported byte-for-byte, per its own module docstring.
+- the sweep → `HypVerdicts.find_quorum_closures` / `HypVerdicts.autoclose`
+  (`extensions/verdicts.py`), reached from the step through
+  `autoclose_hypotheses` in `src/ai_hats/rack_workspace.py`. The old
+  `apply_closure` / `autoclose_quorum` names are gone.
+- the step → unchanged at `src/ai_hats/pipeline/steps/quorum_autoclose.py`
+  (`QuorumAutoclose`), still in `_BUILTINS`, still at the tail of
+  `finalize-hitl` — now packaged as
+  `packages/ai-hats-library/src/ai_hats_library/core/pipelines/finalize-hitl.yaml`.
+- the CLI → `rack hyp autoclose [--k N] [--dry-run]`; the undo of D1 is
+  `rack transition <HYP-ID> revive`. Both mappings are in
+  `docs/migration-v0.14.0.md`.
+
+One thing did get *added* on top of the decision, and it strengthens it: the
+same quorum now also hangs as an in-lock gate on the `active--refuted` edge
+(`HypQuorumGate`, ADR-0017 §5), licensing **only** the autoclose actor. A manual
+HITL refute stays ungated — the D1 asymmetry, enforced by the FSM rather than by
+the sweep alone.
+
 **Scope limits (deliberate)**
 
 - **HYP only.** PROP has no refuted-quorum analog: a `Vote` carries only support

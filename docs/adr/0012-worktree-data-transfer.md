@@ -12,6 +12,20 @@ hardened after a failure-mode review (bounded timeout, fail-closed on every
 teardown with a single `--skip-hooks` escape, `IsolationMode.NONE` skip), see
 D4 + D7.
 
+> **Shipped, and the code moved (HATS-1655, 2026-08-13).** The `wt_in` / `wt_out`
+> primitive landed under HATS-823 and is documented for users in
+> `docs/how-to-extend.md` §"worktree" — so "Proposed" above is the status of the
+> design act, not of the mechanism. Every source pointer in this document was
+> written against a layout that no longer exists and has been repointed in place:
+> `src/ai_hats/worktree.py` → `packages/ai-hats-wt/src/ai_hats_wt/manager.py`
+> (`WorktreeManager`); the carry schema → `ai_hats_wt.carry`
+> (`WorktreeHook`, `parse_worktree_carry`); collection → `src/ai_hats/wt_carry.py`
+> (`collect_carry_for_role`); execution → `src/ai_hats/worktree_hooks.py`
+> (`run_worktree_hook`, `resolve_hook_timeout`); and the tracker-side create/teardown
+> call sites → `WtWorktreeEffects.setup` / `.teardown` in `src/ai_hats/wt_effects.py`
+> after `packages/ai-hats-tracker` was deleted (`710f45d3`, HATS-1262). The
+> decisions themselves are unchanged.
+
 ## Revisions
 
 Two corrections landed at the HATS-823 implementation plan-gate (2026-06-24),
@@ -87,7 +101,7 @@ below:
 copy (`ai-hats wt create / merge / discard`, plus the auto-create path in
 `ai-hats task transition <id> execute`). `WorktreeManager.create()` populates
 that copy with **one thing only**: the base branch's *tracked* git state (via
-`git worktree add`, `src/ai_hats/worktree.py`). Anything **gitignored** is, by
+`git worktree add`, `packages/ai-hats-wt/src/ai_hats_wt/manager.py`). Anything **gitignored** is, by
 construction, absent when the worktree is born and destroyed when it is torn
 down.
 
@@ -99,8 +113,8 @@ three independent point-tasks, one with *irreversible* loss:
   ran `ai-hats wt merge`; teardown removed the worktree **and** the gitignored
   sidecar. The comments were unrecoverable — recovered only from the
   supervisor's memory (HATS-818). The existing merge guards do not catch this:
-  `_check_clean` inspects only *tracked* changes (`git status --porcelain`,
-  `worktree.py:1246`), so a gitignored sidecar is invisible to it. Note: the
+  `WorktreeManager._check_clean` inspects only *tracked* changes
+  (`git status --porcelain`), so a gitignored sidecar is invisible to it. Note: the
   hunk tooling *already* has a `consume` step that backs the sidecar up to
   `/tmp/review/<wtid>` (`~/.config/hunk/scripts/hunk-notes.sh`, DOTS-157) — it
   simply never ran before teardown.
@@ -197,8 +211,11 @@ materialized, logged scripts — `src/ai_hats/composer.py`,
 
 What is genuinely new (architect review, BLOCKING): there is no hook invocation in
 the worktree lifecycle today, and collected declarations do not reach it.
-`StateManager._setup_worktree()` constructs `WorktreeManager(...).create()` with
-**no composition context** (`packages/ai-hats-tracker/src/ai_hats_tracker/state.py`). So the mechanism owns:
+`TaskManager._setup_worktree()` constructs `WorktreeManager(...).create()` with
+**no composition context** (`src/ai_hats/state.py` as of this ADR; the class was
+never named `StateManager`, and the body has since moved to
+`WtWorktreeEffects.setup` in `src/ai_hats/wt_effects.py` — HATS-866/HATS-1262 —
+where it now threads carry via `collect_carry_for_project`). So the mechanism owns:
 
 1. **Application points** — the `wt_in` / `wt_out` invocation sites in `create()`
    and all teardown routes (D2).
@@ -251,8 +268,8 @@ Two contexts need care so fail-closed does not backfire (failure-mode review):
   exit if the hook is permanently broken.
 
 A single `_run_wt_out_hooks(event)` helper is called from every teardown route so
-none is missed (quality review, BLOCKING — covers the HATS-596 short-circuit at
-`worktree.py` ~line 663 and `cleanup()` BRANCH mode). Hooks **must be idempotent**:
+none is missed (quality review, BLOCKING — covers the HATS-596 short-circuit inside
+`WorktreeManager.merge` and `cleanup()` BRANCH mode). Hooks **must be idempotent**:
 a retry (after a failed `merge`, or after `--skip-hooks` was *not* used) re-runs
 them, and `hunk-notes.sh consume` on an already-cleared sidecar is a no-op.
 `_check_clean` is irrelevant: it sees only *tracked* changes, so a gitignored
@@ -436,7 +453,7 @@ mechanism owns them.
 | 3  | review sidecar `.hunk/notes.json` (HATS-818)                   | OUT | **custom `wt_out` hook** (`hunk-notes.sh consume`)          | **Y**      | hook guarantees the existing consume runs before teardown — the step that never ran in the incident                                                                                                               |
 | 4  | agent `*.log` born in worktree                                 | OUT | custom `wt_out` hook if needed (`harvest_out` shelved)      | shelved    | Rev #5: no confirmed incident + `capture` shelved; a `wt_out` hook if a real need surfaces                                                                                                                        |
 | 5  | file creds: kubeconfig / SSH / TLS / tokens (HATS-776)         | IN  | ambient (in-place) / deferred broker                        | N          | outside-repo OS creds used in place, never seeded; broker / short-lived = deferred tier (wardn = reference, not MCP). `.env` secrets → row 2. Never-harvest-into-backup (D5) applies to any secret a hook touches |
-| 6  | tracker `.agent/` read access (HATS-492 session)               | IN  | redirect-or-none                                            | N          | **already solved** by HATS-524: `_project_dir()` (`cli/_helpers.py`) hops to `main_worktree_root()` (`worktree.py`). The shared-file-by-reference need (review #1) is met here — read live, never copied/forked   |
+| 6  | tracker `.agent/` read access (HATS-492 session)               | IN  | redirect-or-none                                            | N          | **already solved** by HATS-524: `_project_dir()` (`cli/_helpers.py`) hops to `WorktreeManager.main_worktree_root()`. The shared-file-by-reference need (review #1) is met here — read live, never copied/forked   |
 | 7  | `.githooks/` generated tree                                    | IN  | re-compose (existing)                                       | N          | regenerated by composition; HATS-088 / HATS-593                                                                                                                                                                   |
 | 8  | editable-venv tests main checkout, not worktree (HATS-641)     | —   | doc/convention-fix                                          | N          | test-correctness, not data carry; throwaway venv                                                                                                                                                                  |
 | 9  | main-path Read then worktree-path Edit fails (HYP-015)         | —   | doc/convention-fix                                          | N          | tool/UX; document "edit via main-repo path"                                                                                                                                                                       |
@@ -546,11 +563,19 @@ today omits the `.agent/`-is-main-repo-only rule (a gap the sweep confirmed).
 - HATS-597 / HATS-814 — `runtime_hooks` frontmatter declaration + materialization
   pattern this mechanism mirrors (`src/ai_hats/models.py` `RuntimeHook`,
   `SkillMetadata`).
-- `src/ai_hats/worktree.py` — `create()` (`wt_in` site), `merge()` / `discard()` /
-  `cleanup()` + the HATS-596 short-circuit (`wt_out` sites), `_check_clean` (the
-  tracked-only guard that misses gitignored sidecars).
-- `packages/ai-hats-tracker/src/ai_hats_tracker/state.py` — `_setup_worktree()`, the `create()` call site that must
-  thread carry declarations (D3).
+- `packages/ai-hats-wt/src/ai_hats_wt/manager.py` — `WorktreeManager.create()`
+  (`wt_in` site), `merge()` / `discard()` / `cleanup()` + the HATS-596
+  short-circuit (`wt_out` sites), `_check_clean` (the tracked-only guard that
+  misses gitignored sidecars).
+- `src/ai_hats/wt_effects.py` — `WtWorktreeEffects.setup` / `.teardown`, the
+  `create()` / teardown call sites that thread carry declarations (D3). Was
+  `packages/ai-hats-tracker/src/ai_hats_tracker/state.py` until that package was
+  deleted (`710f45d3`, HATS-1262).
+- `src/ai_hats/wt_carry.py` (`collect_carry_for_role`) +
+  `packages/ai-hats-wt/src/ai_hats_wt/carry.py` (`WorktreeHook`,
+  `parse_worktree_carry`) + `src/ai_hats/worktree_hooks.py` (`run_worktree_hook`)
+  — the shipped collection / parse / execution path (HATS-823).
 - `src/ai_hats/composer.py` / `materialize.py` / `assembler.py` — the
   collection / materialization infra reused by D3.
-- `docs/glossary.md` — "Worktree data-transfer" entry.
+- `docs/wt/glossary.md` — "Worktree data transfer (carry-in / carry-out)" entry
+  (extracted from `docs/glossary.md` with the rest of the wt vocabulary).

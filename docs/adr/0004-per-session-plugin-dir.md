@@ -64,7 +64,7 @@ Conclusion: the project-mirror-wins behavior is acceptable because content equiv
 
 ## Update — HATS-294 (2026-05-20) realized Alternative D
 
-The two-track design described above (permanent `.claude/skills/` mirror **plus** per-session plugin-dir) is no longer current. **HATS-294 implemented Alternative D**: `Provider.export_skills` / `cleanup_skills` / `skills_export_dir` were removed; skills now live exclusively in the per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/<sid>/plugin/`, materialized by `plugin_dir.materialize_plugin_dir` and passed to `claude` via `--plugin-dir`. The original ADR-0004 decision and analysis are retained verbatim above as historical record; the "primary user session unchanged" wording (§Decision) and the "mirror wins on name collision" row (§Edge cases) no longer reflect the system.
+The two-track design described above (permanent `.claude/skills/` mirror **plus** per-session plugin-dir) is no longer current. **HATS-294 implemented Alternative D**: `Provider.export_skills` / `cleanup_skills` / `skills_export_dir` were removed; skills now live exclusively in the per-session plugin-dir under `<ai_hats_dir>/.cache/sessions/<sid>/plugin/`, materialized by `materialize_plugin_dir` (today `src/ai_hats/surfaces/claude/plugin_dir.py`, moved there with the rest of the Claude surface; `src/ai_hats/plugin_dir.py` now holds only the legacy-mirror teardown helpers) and passed to `claude` via `--plugin-dir`. The original ADR-0004 decision and analysis are retained verbatim above as historical record; the "primary user session unchanged" wording (§Decision) and the "mirror wins on name collision" row (§Edge cases) no longer reflect the system.
 
 Location superseded by **HATS-1398**: the plugin-dir still lives under the per-session cache, but that cache moved out of the project to `<cache_root>/sessions/<sid>/plugin/` (default `~/.cache/ai-hats/<project-key>/`).
 
@@ -77,10 +77,10 @@ Follow-on consequence captured by **HATS-465**: because ai-hats never wrote to `
 - HATS-465 — `self init` WARN on orphan `~/.claude/skills/.ai-hats-managed` marker.
 - HATS-1398 — the per-session cache moved out of the workspace (location only; the plugin-dir design is unchanged).
 - HATS-380 — placeholder expansion (`expand_path_placeholders`); reused in the plugin-dir generator.
-- HATS-367 — cross-provider per-step provider selection; Gemini's analog for `--plugin-dir` belongs here.
+- HATS-367 — cross-provider per-step provider selection; Gemini's analog for `--plugin-dir` belongs here. **Moot since HATS-1093 (`26557c15`):** the Gemini surface was retired and `GeminiProvider` deleted, so the base no-op named in §Decision has no Gemini inheritor; the `agy` (Antigravity CLI) surface took its place.
 - HATS-278 — epic: role-prompt composition. Hosts the on-demand skill model and any follow-up to retire the `.claude/skills/` mirror (alternative D).
 - HATS-303 — surfaced the bug during Pass B sessions.
 - `notes-poc.md` under the HATS-307 task dir — empirical PoC results.
-- `src/ai_hats/plugin_dir.py` — materialization helper.
+- `src/ai_hats/surfaces/claude/plugin_dir.py` — `materialize_plugin_dir`, the materialization helper (was `src/ai_hats/plugin_dir.py`).
 - `src/ai_hats/providers.py` — `Provider.materialize_runtime_skills` hook.
-- `src/ai_hats/runtime.py` — `_cleanup_plugin_dir`; wired into both `WrapRunner` and `SubAgentRunner`.
+- `src/ai_hats/runtime.py` — `_cleanup_plugin_dir` is gone: with the plugin-dir living inside the per-session cache (HATS-294 / HATS-1398), cleanup is whole-cache and rides `_cleanup_session_cache` (`src/ai_hats/runtime_common.py`), still reached from both `WrapRunner` and `SubAgentRunner`.

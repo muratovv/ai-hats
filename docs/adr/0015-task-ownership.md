@@ -77,3 +77,42 @@ state.**
   fencing, TTL leases, a reverse index, a visible `parked` state, an auto-reclaim
   daemon. Epic-transition policy is scattered and tracked for a cohesive refactor
   (HATS-958).
+
+## Divergence — where ownership actually lives (2026-08-14, HATS-1655)
+
+The mechanism — all six decisions above — is intact and shipping. The **first
+consequence is not**: ownership no longer lives in the tracker package, and it
+no longer works by inline calls in `transition`.
+
+- `packages/ai-hats-tracker` was deleted with the CLI it backed (HATS-1262,
+  `710f45d3`). The registry module moved to the **integrator** —
+  `src/ai_hats/ownership.py` (`take`, `finish`, `held_by`, `owner_of`, `sweep`,
+  `record_is_live`), still one `filelock`-guarded JSON at
+  `<tasks_dir>/../ownership.json`, still `ps -o lstart=` under a pinned
+  `TZ=UTC`/`LC_ALL=C`, still the deliberate ~30-line copy of `version_refs`
+  (its module docstring says so).
+- The "no integrator module, no `OwnershipEffects` DI seam" clause did not
+  survive the move onto the rack. Ownership is now three rack **subscribers**
+  wired from `src/ai_hats/rack_wiring.py` — `OwnershipSingleSlot` (in-lock,
+  priority 5, every edge), `OwnershipClaim` (priority 20, edges into `execute`),
+  `OwnershipRelease` (priority 40, edges leaving `execute` or terminal, plus a
+  post-lock `epicify` reaction). The seam the ADR refused is exactly what the
+  declaration/code-channel split of ADR-0017 §4 required; the *reasoning* that
+  refused it ("one consumer, a shared home would couple two packages") no
+  longer applies once the consumer and the integrator are the same package.
+- What that buys, and it is a strengthening rather than a loss: the ordering the
+  ADR left implicit is now an explicit priority chain, and release fires on
+  *leaving* execute through `_keys_leaving_execute_or_terminal` — forced
+  non-topology exits included. The `execute → execute` reclaim self-loop of
+  point 3 is a declared edge in
+  `packages/ai-hats-rack/src/ai_hats_rack/backlog.yaml`
+  (`{ from: execute, to: execute, name: reclaim }`), and "force does not bypass
+  ownership" (point 5) is spelled in both refusal messages.
+- The session id the registry keys on comes from the identity envelope
+  (`SessionIdentity.from_env`, ADR-0024) rather than being read raw; the
+  `AI_HATS_ROOT_PID` liveness anchor of point 6 is unchanged, but its ephemeral
+  reader is now `rack`, not the retired `ai-hats task`.
+- **The operator surface of the last consequence is gone.** `task list --reclaimable`
+  has no rack equivalent — `docs/migration-v0.14.0.md` lists it under "Removed
+  with no equivalent". Reclaim itself still works exactly as decided:
+  re-`rack transition <id> execute`.

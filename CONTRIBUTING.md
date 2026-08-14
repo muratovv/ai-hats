@@ -347,6 +347,25 @@ filter-repo procedure for purging the history.
 - If a term is genuinely new (not yet in the glossary), update the glossary first, then reference it.
 - For cross-doc / cross-file / fixture links use the numbered-refs convention — see [Documentation references](#documentation-references) below for the full rules.
 
+### ADR numbers and decision markers
+
+Two invariants over `docs/adr/`, enforced by `bash scripts/ci-local.sh adr-integrity`
+(in the `all` bundle and in the master push-gate):
+
+- **A number names exactly one file.** `0023` once named two live ADRs, and the
+  ambiguity corrupted an automated check before a human ever noticed. When a
+  number collides, renumber the *later* record and move its citations.
+- **A cited marker resolves.** Write decisions as `D<N>` (`### D1 — …`). A marker
+  counts as declared where it **opens a line** — header, table row, list item —
+  optionally inside a blockquote, or where it is **bold** anywhere. A marker
+  mentioned only mid-sentence does not count: that is how a citation into a
+  section that does not exist survives.
+
+The check states on every run what it does *not* cover (numeric `§N` sections,
+prose section names, `.agent/`). A file whose ADR citations are test data rather
+than prose opts out with the marker `adr-integrity: fixtures`, and every opt-out
+is printed — an unannounced exclusion would read as green.
+
 ## Diagrams
 
 Architecture diagrams live in `docs/assets/diagrams/` and are written
@@ -533,3 +552,19 @@ Run `ai-hats reflect all` to start the triage.
 ```
 
 Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hatrack.md), [`docs/how-to-advanced.md`](docs/how-to-advanced.md), [`docs/how-to-feedback-loop.md`](docs/how-to-feedback-loop.md).
+
+### Never cite a line number (HATS-1655)
+
+**In `docs/adr/**`, a pointer into source names the file and the symbol — never a line number.** `tests/test_adr_references.py` refuses every spelling of it. Inside backticks the rule is deliberately blunt: **any token carrying `:<digits>` is treated as a citation**, because enumerating the shapes failed three times in one sweep — `` `:182-191` `` (filename left to a table heading), `scripts/ai-hats-launcher:18` (no extension), `` `0014-…:361-377` `` (no extension, no slash). Adding a form the guard has to learn is the wrong direction; if you need an exception, argue it in the test.
+
+```markdown
+✅ `CHECK_PRIORITY` (`checks.py`) ✅ `CheckSubscriber.__init__` (`checks.py`)
+✅ the `--no-ff` in `_fast_forward_merge` ✅ the "forget to opt into" comment in `workspace.py`
+❌ `checks.py:29` ❌ `checks.py:284-303`
+```
+
+**Why the form and not the discipline.** A line number rots from any edit *above* it, in a file the citing author never touches — so it decays without anyone doing anything wrong. ADR-0023 stated outright that its `file:line` refs had been re-verified at a named commit; **13 of its 20 were stale**, and the worst had drifted onto unrelated code (`manager.py:2266` landed inside `_squash_merge` while the claim was about `--no-ff` in `_fast_forward_merge`) — a reader following it is misled rather than merely lost. A symbol name survives edits above it and is greppable, which is what a reader does with it anyway.
+
+**No target symbol?** Name the enclosing function, the section, or quote the first words of the comment — all three grep. Reaching for a line number means the anchor has not been found yet.
+
+**Not automatable, which is the point.** A checker can only confirm the file exists and is long enough — both true of every stale ref above. Removing the form is the only fix that holds.

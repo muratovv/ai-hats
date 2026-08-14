@@ -124,6 +124,13 @@ ci_e2e_catalog() {
     "$PY" scripts/gen_e2e_catalog.py --check
 }
 
+# Offline and instant, like the three above. HATS-1646: prose carries no assert,
+# so a citation into an ADR rots green — two such defects lived for months.
+ci_adr_integrity() {
+    echo "[ci-local] adr-integrity (ADR citations resolve; a number names one file)" >&2
+    "$PY" scripts/check_adr_integrity.py
+}
+
 # The full maintainer tier (~25 min). Excluded from `all`; this is the selection
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
@@ -160,7 +167,7 @@ gate_composition() {
     case "$1" in
         merge-gate) echo "$tier unit integration" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity e2e" ;;
         *) return 1 ;;
     esac
 }
@@ -202,6 +209,7 @@ case "$stage" in
     silent-fallback) ci_silent_fallback ;;
     test-isolation) ci_test_isolation ;;
     e2e-catalog) ci_e2e_catalog ;;
+    adr-integrity) ci_adr_integrity ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
     tmp-sweep) ci_tmp_sweep ;;
@@ -213,6 +221,7 @@ case "$stage" in
         ci_silent_fallback
         ci_test_isolation
         ci_e2e_catalog
+        ci_adr_integrity
         ci_unit
         ci_coverage
         ci_merge_smoke
@@ -220,7 +229,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | adr-integrity | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
         echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
         exit 2
         ;;

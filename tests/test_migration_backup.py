@@ -11,13 +11,20 @@ tarball under a real ``/tmp/``) lives in
 
 from __future__ import annotations
 
+import shutil
 import tarfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from ai_hats.paths import claude_dir, claude_settings_json
+from ai_hats.paths import (
+    ENV_AI_HATS_VENV,
+    claude_dir,
+    claude_settings_json,
+    read_current_sha,
+    venv_path,
+)
 from ai_hats.migration_backup import (
     BACKUP_SCOPE_PATHS,
     ENV_BACKUP_DIR,
@@ -431,6 +438,99 @@ def test_exclusion_does_not_drop_legitimate_dotfiles(
     assert ".agent/ai-hats/library/hooks/.manifest" in names
     assert ".agent/ai-hats/library/hooks/.ai-hats-managed" in names
     assert ".gitignore" in names
+
+
+def test_managed_versioned_venv_excluded_from_tarball(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1662: the managed venv root is ``versions/<sha>/`` — bin/ and lib/
+    sit directly under the sha, so no segment is ``.venv`` and the name-based
+    exclusion never saw it (measured: 44 s of zlib, 96 MB, per ``self init``).
+    The ``versions/current`` pointer sits beside the environment, not in it."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    version = project / ".agent" / "ai-hats" / "versions" / "abc123"
+    (version / "bin").mkdir(parents=True)
+    (version / "pyvenv.cfg").write_text("home = /usr/bin\ninclude-system-site-packages = false\n")
+    (version / "bin" / "python").write_text("#!/bin/sh\n")
+    (version / ".complete").write_text("")
+    site = version / "lib" / "python3.11" / "site-packages" / "yaml"
+    site.mkdir(parents=True)
+    (site / "__init__.py").write_text("# stand-in for 96 MB of site-packages\n")
+    (version.parent / "current").write_text("abc123\n")
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+    with tarfile.open(snap, "r:gz") as tar:
+        names = set(tar.getnames())
+    leaked = sorted(n for n in names if n.startswith(".agent/ai-hats/versions/abc123"))
+    assert not leaked, f"managed venv leaked into the tarball: {leaked[:5]}"
+    assert ".agent/ai-hats/versions/current" in names
+    assert PROJECT_CONFIG in names
+
+
+def test_venv_excluded_by_marker_under_any_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1662 R2: the exclusion keys on what a venv IS — a ``pyvenv.cfg`` at
+    its root (PEP 405) — not on what it is called. A name list only ever covers
+    the venvs already known, which is the exact miss this card is an instance
+    of, so a venv under an unforeseen name must drop out by construction."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    env = project / ".agent" / "ai-hats" / "envs" / "unforeseen-name"
+    (env / "lib").mkdir(parents=True)
+    (env / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (env / "lib" / "payload.so").write_text("x" * 1024)
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+    with tarfile.open(snap, "r:gz") as tar:
+        names = set(tar.getnames())
+    root = ".agent/ai-hats/envs/unforeseen-name"
+    leaked = sorted(n for n in names if n == root or n.startswith(f"{root}/"))
+    assert not leaked, f"venv under a non-standard name leaked: {leaked[:5]}"
+    # A sibling directory that is not a venv is untouched by the predicate.
+    assert ".agent/ai-hats/library/hooks/pre_bash_shared_state_guard.sh" in names
+
+
+def test_restore_without_the_venv_lands_on_the_self_heal_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HATS-1662 R3: the snapshot is a recovery artefact (HATS-549), so leaving
+    the environment out must not turn a restore into a trap. The restored
+    ``versions/current`` names a venv that is no longer on disk — and
+    ``read_current_sha`` refuses an unusable version, so resolution falls back
+    to the legacy ``.venv`` the launcher rebuilds (e2e:
+    ``test_bootstrap_recovery_after_broken_pkg.py``)."""
+    monkeypatch.delenv(ENV_AI_HATS_VENV, raising=False)
+    project = tmp_path / "proj"
+    project.mkdir()
+    _seed_project(project)
+    version = project / ".agent" / "ai-hats" / "versions" / "abc123"
+    (version / "bin").mkdir(parents=True)
+    (version / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (version / "bin" / "python").write_text("#!/bin/sh\n")
+    (version / ".complete").write_text("")
+    (version.parent / "current").write_text("abc123\n")
+    _isolate_backup_dir(monkeypatch, tmp_path)
+
+    snap = snapshot_pre_bump(project)
+    assert snap is not None
+
+    # A migration wrecks the managed surface; the user runs the recovery line.
+    shutil.rmtree(project / ".agent")
+    with tarfile.open(snap, "r:gz") as tar:
+        tar.extractall(path=project, filter="data")
+
+    assert (project / ".agent" / "ai-hats" / "versions" / "current").read_text() == "abc123\n"
+    assert (project / PROJECT_CONFIG).exists()
+    assert read_current_sha(project) is None
+    assert venv_path(project) == project / ".agent" / "ai-hats" / ".venv"
 
 
 def test_snapshot_drops_symlinks_from_tarball(

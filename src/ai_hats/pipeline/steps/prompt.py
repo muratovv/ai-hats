@@ -1,6 +1,6 @@
 """``resolve_prompt`` step — read a harness-prepared prompt file.
 
-Per ADR-0002 §Q4 the pipeline only sees ``prompt_path: Path``. Any
+Per ADR-0002 §1 the pipeline only sees ``prompt_path: Path``. Any
 short-name / raw-text / glue-with-handoff resolution lives in the
 harness wrapper (``cli.execute._resolve_prompt`` style) before pipeline
 ``run`` is invoked.
