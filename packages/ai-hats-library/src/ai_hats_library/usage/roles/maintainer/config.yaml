@@ -32,10 +32,11 @@ composition:
   #
   # TWO GATES since HATS-1614, one per edge, because the two edges ask different
   # questions (ADR-0023 D3/D4). `->merge`: is this branch fit to enter master —
-  # the agent is alone at that refusal. `->done`: is master green after this card
-  # — the supervisor is present, and only here can a gate see two independently
-  # green branches meeting. `merge-gate`'s composition stays a subset of
-  # `done-gate`'s, so one run pays for both (D5).
+  # the agent is alone at that refusal. `->done`: is master green after this card,
+  # judged on the MERGE RESULT — the worktree while it lives, the merge commit
+  # once it does not (HATS-1664, which is why the edge stopped passing hollow).
+  # `merge-gate`'s composition stays a subset of `done-gate`'s, so one run pays
+  # for both (D5).
   #
   # Two rows rather than one list of points since HATS-1545: the app owns the
   # grammar above `run:`, so a row belongs to exactly one app. `apps.rack.tasks`
