@@ -944,12 +944,12 @@ def _get_changelog() -> str:
     # urllib injects a default Python-urllib UA that GitHub accepts (a UA-less
     # request is 403'd); we set an explicit one anyway. URL is a pinned https
     # constant, so the B310 scheme audit is satisfied.
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "ai-hats"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — pinned https constant
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             commits = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError):
         logger.debug("changelog fetch failed", exc_info=True)

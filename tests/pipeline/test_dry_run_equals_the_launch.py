@@ -126,7 +126,7 @@ def _strip_provider_session_id(launch: list[str]) -> list[str]:
     """claude puts a fresh uuid on the argv; the dry-run says so instead."""
     out = list(launch)
     for i, token in enumerate(out[:-1]):
-        if token == "--session-id":
+        if token == "--session-id":  # noqa: S105 — an argv element named `token`, not a secret
             out[i + 1] = AT_LAUNCH
     return out
 

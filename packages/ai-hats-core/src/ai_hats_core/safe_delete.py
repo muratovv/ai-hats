@@ -113,7 +113,7 @@ def _ensure_session() -> _Session:
             # discard/replace short-circuit before any IO uses this.
             _current_session = _Session(root=Path("/dev/null"), hard_delete=True)
             return _current_session
-        assert base is not None  # narrow the type for mypy
+        assert base is not None  # noqa: S101 — narrow the type for mypy
         ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         # mkdtemp guarantees uniqueness even when two ai-hats processes
         # (or two pytest cases within the same wall second) initialise

@@ -204,7 +204,7 @@ def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) ->
 
         budget = _hook_timeout()
         try:
-            with subprocess.Popen(
+            with subprocess.Popen(  # noqa: S602 — a hook's `command` IS a shell snippet
                 command,
                 shell=True,
                 stdin=subprocess.PIPE,

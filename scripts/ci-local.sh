@@ -89,8 +89,9 @@ ci_coverage() {
 }
 
 ci_security() {
-    echo "[ci-local] security (bandit + pip-audit)" >&2
-    "$PY" -m bandit -r src/ -ll -q
+    # HATS-1591: bandit dropped — ruff's `S` family covers its inventory and
+    # already runs on every road. What is left here is the network half.
+    echo "[ci-local] security (pip-audit)" >&2
     "$PY" -m pip_audit
 }
 

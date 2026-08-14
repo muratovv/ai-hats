@@ -419,7 +419,7 @@ def _cargo_tag(check: ResolvedCheck) -> str:
     for the case its condition did not foresee.
     """  # comment-length: allow — the defect recurred twice; the token rule is why
     payload = json.dumps({"at": list(check.at), **dict(check.cargo)}, sort_keys=True, default=str)
-    return f"~{sha1(payload.encode()).hexdigest()[:8]}"
+    return f"~{sha1(payload.encode(), usedforsecurity=False).hexdigest()[:8]}"
 
 
 __all__ = [

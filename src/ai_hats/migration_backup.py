@@ -217,7 +217,7 @@ def snapshot_pre_bump(
         )
         return None
 
-    assert base is not None  # narrow for mypy
+    assert base is not None  # noqa: S101 — narrow for mypy; _resolve_base only Nones when hard-disabled
 
     project_dir = project_dir.resolve()
     slug = _project_slug(project_dir)

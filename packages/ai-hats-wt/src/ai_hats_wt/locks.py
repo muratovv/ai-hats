@@ -421,7 +421,7 @@ def _retry_worktree_add(
             last_exc = exc
             if attempt == GIT_RETRY_MAX:
                 break
-            jitter = random.uniform(0, delay)
+            jitter = random.uniform(0, delay)  # noqa: S311 — retry jitter, not a secret
             logger.info(
                 "git worktree add transient failure (attempt %d/%d): %s",
                 attempt,
@@ -430,7 +430,7 @@ def _retry_worktree_add(
             )
             sleep(delay + jitter)
             delay = min(delay * 2, GIT_RETRY_MAX_DELAY)
-    assert last_exc is not None
+    assert last_exc is not None  # noqa: S101 — narrow for mypy; the loop sets it before breaking
     raise last_exc
 
 
@@ -531,7 +531,7 @@ def _retry_git_merge(
             if attempt == MERGE_RETRY_MAX:
                 break
             ceiling = min(MERGE_RETRY_MAX_DELAY, delay)
-            wait = random.uniform(0, ceiling)
+            wait = random.uniform(0, ceiling)  # noqa: S311 — retry jitter, not a secret
             cmd_label = git_args[0] if git_args else "<no-cmd>"
             logger.info(
                 "git %s transient lock contention (attempt %d/%d), waiting %.2fs: %s",
@@ -543,5 +543,5 @@ def _retry_git_merge(
             )
             sleep(wait)
             delay = min(delay * 2, MERGE_RETRY_MAX_DELAY)
-    assert last_exc is not None
+    assert last_exc is not None  # noqa: S101 — narrow for mypy; the loop sets it before breaking
     raise last_exc

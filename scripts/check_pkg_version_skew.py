@@ -89,7 +89,7 @@ def latest_pypi_version(name: str, *, fetch=None) -> Version | None:
 
 
 def _http_get_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310 — the one caller builds an https PyPI URL
     with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 — fixed https host
         return json.loads(resp.read().decode())
 

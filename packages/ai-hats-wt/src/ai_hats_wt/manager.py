@@ -725,7 +725,7 @@ def _resolve_state_dir(
     ``__debug__`` assert (D4 "Variant A") catches that omission loud rather than
     silently mis-locating state.
     """
-    assert lifecycle is NOOP_LIFECYCLE or state_dir is not None, (
+    assert lifecycle is NOOP_LIFECYCLE or state_dir is not None, (  # noqa: S101 — ADR-0013 D4 wants the __debug__ contract check
         "ADR-0013 D4: a non-no-op WorktreeLifecycle requires an explicit "
         "state_dir base (omitting it de-serializes the cross-process locks)"
     )
@@ -2469,7 +2469,7 @@ class WorktreeManager:
                 lines.append("  affected paths (local drift):")
                 lines.extend(f"    {p}" for p in paths)
         if remote_drifted:
-            assert current_remote is not None
+            assert current_remote is not None  # noqa: S101 — narrow for mypy
             n_r, paths_r = self._drift_summary(self.branch_name, current_remote)
             lines.append(
                 f"  remote: origin/{self._original_branch} is "

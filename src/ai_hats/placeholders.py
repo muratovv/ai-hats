@@ -61,7 +61,7 @@ def expand_path_placeholders(text: str, project_dir: Path) -> str:
 # ``<ai_hats_dir>`` placeholder (plugin-dir + skills-dir SKILL.md writers), so
 # it is layer-agnostic: an arm-dir / overridden skill (last-wins) gets the
 # rendered table just like the built-in.
-FSM_EDGES_TOKEN = "{{backlog_fsm_edges}}"
+FSM_EDGES_TOKEN = "{{backlog_fsm_edges}}"  # noqa: S105 — a placeholder name, not a secret
 
 
 #: Rendered in place of the table when the project's backlog will not load. Names
