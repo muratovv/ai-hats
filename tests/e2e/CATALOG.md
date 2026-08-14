@@ -12,7 +12,22 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**239 of 239 files catalogued — 247 flows.**
+**240 of 240 files catalogued — 248 flows.**
+
+## `test_adr_integrity_gate.py`
+
+*pins HATS-1646*
+
+- **flow** — a maintainer runs the pre-push bundle, which must refuse the push when a citation into an ADR no longer resolves, or when one ADR number names two files
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh adr-integrity   # exit 0 while the corpus is intact
+  bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
+  ```
+
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity`, exits 0 on a clean corpus and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows
+- **why** — a checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose absence is equally invisible: its defects (a citation into a section that does not exist, one ADR number naming two files) rot green.
 
 ## `test_agent_orchestration.py`
 

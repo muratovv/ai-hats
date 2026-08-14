@@ -1,4 +1,4 @@
-"""The ``wt:pre-merge`` extension-point (HATS-1540, ADR-0019 R5 / HATS-1143).
+"""The ``wt:pre-merge`` extension-point (HATS-1540, ADR-0019 D3 / HATS-1143).
 
 The incident that started the epic (HATS-1130) was ``ai-hats wt merge`` running
 with no precondition at all, and HATS-1538 left through exactly that door. The

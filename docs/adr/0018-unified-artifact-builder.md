@@ -225,8 +225,10 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 > (`packages/surfaces/agy/src/ai_hats_agy/provider.py:206`), незалоченный
 > read-modify-write файла настроек в `$HOME` (`global_hook.py:19-75`, только
 > идемпотентный short-circuit). Call-site из `self init` не существует.
-> Защита этой записи от гонок — HATS-1338; per-build каденция зафиксирована
-> в таблице ярусов ADR-0020 D5.
+> Защита этой записи от гонок — HATS-1338. Карта ярусов материализации живёт
+> в ADR-0021 [2], но утверждение о per-build каденции там не подкреплено ни
+> одним маркером, поэтому ссылка намеренно голая: голую цитату проверка
+> целостности корпуса не резолвит. Содержание — за HATS-1652.
 
 ## Consequences
 
@@ -237,6 +239,10 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 
 ## References
 
+- [2] `docs/adr/0021-surface-materialization.md` — карта материализации
+  поверхностей (ярусы, чокпойнты, кэш, очистка) и требования M1–M15, куда
+  ADR-0020 отсылает за ярусами (`0020:32-34`). Таблицы с per-build каденцией
+  в ней нет — HATS-1652.
 - [1] `docs/adr/0014-composable-component-decomposition.md` §1 — the three-tier
   dependency model and the HATS-956 amendment adding the surface tier
   (*"depend UP on the integrator"*, *"The first consumer tier above the

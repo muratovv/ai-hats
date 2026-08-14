@@ -347,6 +347,25 @@ filter-repo procedure for purging the history.
 - If a term is genuinely new (not yet in the glossary), update the glossary first, then reference it.
 - For cross-doc / cross-file / fixture links use the numbered-refs convention — see [Documentation references](#documentation-references) below for the full rules.
 
+### ADR numbers and decision markers
+
+Two invariants over `docs/adr/`, enforced by `bash scripts/ci-local.sh adr-integrity`
+(in the `all` bundle and in the master push-gate):
+
+- **A number names exactly one file.** `0023` once named two live ADRs, and the
+  ambiguity corrupted an automated check before a human ever noticed. When a
+  number collides, renumber the *later* record and move its citations.
+- **A cited marker resolves.** Write decisions as `D<N>` (`### D1 — …`). A marker
+  counts as declared where it **opens a line** — header, table row, list item —
+  optionally inside a blockquote, or where it is **bold** anywhere. A marker
+  mentioned only mid-sentence does not count: that is how a citation into a
+  section that does not exist survives.
+
+The check states on every run what it does *not* cover (numeric `§N` sections,
+prose section names, `.agent/`). A file whose ADR citations are test data rather
+than prose opts out with the marker `adr-integrity: fixtures`, and every opt-out
+is printed — an unannounced exclusion would read as green.
+
 ## Diagrams
 
 Architecture diagrams live in `docs/assets/diagrams/` and are written
