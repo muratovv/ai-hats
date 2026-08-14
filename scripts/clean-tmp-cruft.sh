@@ -119,8 +119,20 @@ skip_line() {
     printf "  ${YELLOW}skip${RESET} %s ${DIM}(%s)${RESET}\n" "$1" "$2"
 }
 
+# Delete $1 whole. A venv-tier test leaves dirs at mode 500 (measured: a
+# .venv/bin as dr-x------), and a non-writable dir's children cannot be
+# unlinked — so chmod and retry, the way pytest's own rm_rf does. Returns
+# non-zero if the tree still stands, and the caller keeps sweeping: one
+# stubborn dir used to abort the run under `set -e` and cost the other 22.
+remove_tree() {
+    rm -rf "$1" 2>/dev/null && return 0
+    chmod -R u+rwX "$1" 2>/dev/null || true
+    rm -rf "$1" 2>/dev/null
+}
+
 total=0
 freed_kb=0
+failed=0
 for path in "${candidates[@]:-}"; do
     [[ -e "$path" ]] || continue
     real="$(cd "$path" 2>/dev/null && pwd -P || echo "$path")"
@@ -158,21 +170,29 @@ for path in "${candidates[@]:-}"; do
     fi
 
     sz_kb="$(du -sk "$path" 2>/dev/null | cut -f1 || echo 0)"
-    total=$((total + 1))
-    freed_kb=$((freed_kb + sz_kb))
     if [[ "$DRY" -eq 1 ]]; then
+        total=$((total + 1))
+        freed_kb=$((freed_kb + sz_kb))
         printf "  ${DIM}would rm${RESET} %s ${DIM}(%s)${RESET}\n" "$path" "$reason"
-    else
-        rm -rf "$path"
+    elif remove_tree "$path"; then
+        total=$((total + 1))
+        freed_kb=$((freed_kb + sz_kb))
         printf "  ${GREEN}rm${RESET}   %s ${DIM}(%s)${RESET}\n" "$path" "$reason"
+    else
+        failed=$((failed + 1))
+        printf "  ${YELLOW}FAIL${RESET} %s ${DIM}(not removable — left in place)${RESET}\n" "$path" >&2
     fi
 done
 
 freed_mb=$((freed_kb / 1024))
-if [[ "$total" -eq 0 ]]; then
+if [[ "$total" -eq 0 && "$failed" -eq 0 ]]; then
     printf "${GREEN}nothing to clean${RESET} (roots: %s)\n" "${ROOTS[*]}"
 elif [[ "$DRY" -eq 1 ]]; then
     printf "${BOLD}DRY-RUN${RESET}: %d dir(s), ~%d MB would be freed.\n" "$total" "$freed_mb"
 else
     printf "${BOLD}removed %d dir(s), ~%d MB freed${RESET}\n" "$total" "$freed_mb"
+fi
+if [[ "$failed" -gt 0 ]]; then
+    printf "${YELLOW}%d dir(s) could not be removed${RESET} (listed above on stderr)\n" "$failed" >&2
+    exit 1
 fi

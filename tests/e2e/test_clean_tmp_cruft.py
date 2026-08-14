@@ -140,6 +140,33 @@ def test_unlocked_run_dir_is_left_to_pytest_then_forced(sandbox) -> None:
     assert not run.exists(), "--force must take unlocked run dirs"
 
 
+def test_reaps_a_read_only_dir_and_keeps_going(sandbox, dead_pid) -> None:
+    """A mode-500 dir inside the tree must not stop the sweep at that dir.
+
+    Measured on the real root: a venv-tier test left ``.venv/bin`` at
+    ``dr-x------``, whose children cannot be unlinked. ``rm -rf`` failed, and
+    under ``set -e`` that aborted the whole run — 22 of 36 dirs survived, 153
+    of 167 GB unfreed (HATS-1624).
+    """
+    root, wt, _keep = sandbox
+    stubborn = _run_dir(root, "pytest-11", pid=dead_pid)
+    locked = stubborn / "venv" / "bin"
+    locked.mkdir(parents=True)
+    (locked / "python").write_text("#!/bin/sh\n")
+    locked.chmod(0o500)
+    later = _run_dir(root, "pytest-12", pid=dead_pid)
+
+    try:
+        cp = _run(root)
+    finally:
+        if locked.exists():
+            locked.chmod(0o700)
+
+    assert cp.returncode == 0, f"stderr:\n{cp.stderr}"
+    assert not stubborn.exists(), "a read-only subdir must be chmod'ed and reaped"
+    assert not later.exists(), "a later candidate must still be swept"
+
+
 def test_unreadable_lock_is_not_proof(sandbox) -> None:
     root, _wt, _keep = sandbox
     run = root / "pytest-of-probe" / "pytest-10"
