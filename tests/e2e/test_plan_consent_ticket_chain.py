@@ -126,6 +126,27 @@ def test_the_ticket_the_chain_minted_is_what_moves_the_card(project, settings, e
     assert "→ execute" in moved.stdout, moved.stdout
 
 
+def test_the_ticket_opens_the_command_it_was_asked_about_and_no_other(
+    project, settings, env, planned
+):
+    """Same card, same session, different call — and the answer does not carry.
+
+    The mint precedes the answer, so a "No" always leaves a live ticket behind.
+    Binding it to the invocation is what stops that leftover opening the next
+    call inside its window (HATS-1642, live probe).
+    """
+    task_id = planned("command binding")
+    nonce = _ask_for(project, settings, env, task_id)
+    with_ticket = {**env, TICKET_ENV: nonce}
+
+    other = _rack(project, "transition", task_id, "execute", "--json", env=with_ticket)
+    assert other.returncode != 0, f"a ticket for another call passed:\n{other.stdout}"
+    assert "supervisor approval" in other.stdout + other.stderr
+
+    asked = _rack(project, "transition", task_id, "execute", env=with_ticket)
+    assert asked.returncode == 0, f"the call it WAS asked about was refused:\n{asked.stderr}"
+
+
 def test_a_transition_that_fails_downstream_gives_the_click_back(project, settings, env, planned):
     """The gate runs before ownership and the worktree, both of which can still
     abort — a ticket spent there burns a click on nothing (HATS-1642 review)."""

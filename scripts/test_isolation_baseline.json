@@ -18,6 +18,7 @@
   "tests/e2e/conftest.py": 2,
   "tests/e2e/test_broken_hook_ref_startup_warn.py": 2,
   "tests/e2e/test_bypass_journal.py": 2,
+  "tests/e2e/test_consent_permission_lint_startup.py": 2,
   "tests/e2e/test_edge_check_gate.py": 3,
   "tests/e2e/test_env_drift_startup_warn.py": 4,
   "tests/e2e/test_launcher_heals_markerless_skills_mirror.py": 2,

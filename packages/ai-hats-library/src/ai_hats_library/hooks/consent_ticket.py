@@ -12,6 +12,7 @@ too. The ticket removes the corner-cut, not a determined agent (HATS-1613).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -100,8 +101,27 @@ def _session() -> str:
     return os.environ.get(SESSION_ENV, "")
 
 
-def mint(task_id: str, *, start: Path | None = None, session_id: str | None = None) -> str | None:
-    """Issue a ticket for ``task_id``; the nonce, or ``None`` when it cannot.
+def command_key(argv) -> str:
+    """A stable name for ONE `rack` invocation, from its argv past the binary.
+
+    Both halves can produce this and neither can produce the other's view: the
+    hook has the command line and lexes it, the `rack` process has ``sys.argv``.
+    Binding on the TOKENS rather than the raw line is what keeps the shell's own
+    business — spacing, quote style, the ticket prefix the guard itself injects —
+    from reading as a different command. ``argv[0]`` is left out: it is the
+    resolved binary path on one side and whatever was typed on the other.
+    """
+    return hashlib.sha256("\x00".join(argv).encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def mint(
+    task_id: str,
+    *,
+    start: Path | None = None,
+    session_id: str | None = None,
+    argv=(),
+) -> str | None:
+    """Issue a ticket for ``task_id`` and ``argv``; the nonce, or ``None``.
 
     ``None`` is not a failure to gate — the rack's own consent gate still runs
     and still refuses; it only means this transition has no question to ask.
@@ -116,6 +136,10 @@ def mint(task_id: str, *, start: Path | None = None, session_id: str | None = No
             "task_id": task_id,
             "issued_at": now,
             "session_id": _session() if session_id is None else session_id,
+            # The call the supervisor was shown. There is no callback after the
+            # answer, so a ticket always outlives a "No" — binding it here is
+            # what keeps that leftover from opening the NEXT call (HATS-1642).
+            "command": command_key(argv),
         }
     )
     try:
@@ -136,6 +160,7 @@ def peek(
     start: Path | None = None,
     nonce: str | None = None,
     now: float | None = None,
+    argv=(),
 ) -> bool:
     """Is consent for ``task_id`` on hand? Asking does not use it up.
 
@@ -143,7 +168,7 @@ def peek(
     can still be rolled back by a later subscriber — spending there would burn
     the supervisor's click on a move that never happened (HATS-1642).
     """
-    return _valid_ticket(task_id, start=start, nonce=nonce, now=now) is not None
+    return _valid_ticket(task_id, start=start, nonce=nonce, now=now, argv=argv) is not None
 
 
 def consume(
@@ -152,14 +177,23 @@ def consume(
     start: Path | None = None,
     nonce: str | None = None,
     now: float | None = None,
+    argv=(),
 ) -> bool:
     """Spend the ticket naming ``task_id``; ``True`` iff THIS call spent it.
 
     One-shot by the unlink: whoever removes the file is the one call the ticket
     consented to.
     """
-    path = _valid_ticket(task_id, start=start, nonce=nonce, now=now)
-    return _drop(path) if path is not None else False
+    path = _valid_ticket(task_id, start=start, nonce=nonce, now=now, argv=argv)
+    if path is None:
+        return False
+    directory, spent = path.parent, _drop(path)
+    if spent:
+        # Sweep on use as well as on mint: an expired ticket is refused either
+        # way, but one left lying around reads like live consent to anyone
+        # opening the directory. Cheap — the store holds a handful of files.
+        _prune(directory, time.time())
+    return spent
 
 
 def _valid_ticket(
@@ -168,12 +202,13 @@ def _valid_ticket(
     start: Path | None = None,
     nonce: str | None = None,
     now: float | None = None,
+    argv=(),
 ):
-    """The ticket file that consents to ``task_id`` here and now, or ``None``.
+    """The ticket file that consents to THIS call, here and now, or ``None``.
 
-    Bound to the card, so another card's ticket is not this card's consent; to
-    the session, so a leftover from another session's question is not either;
-    and expiring, so a click is consent now and not an hour from now.
+    Bound to the card, to the session, to the exact invocation, and expiring —
+    four axes because the mint precedes the answer, so every one of them is a
+    way a ticket the supervisor refused could otherwise still be spent.
     """
     raw = os.environ.get(TICKET_ENV, "") if nonce is None else nonce
     if not raw:
@@ -201,6 +236,10 @@ def _valid_ticket(
     if data.get("session_id") != _session():
         # Same reason, other axis: another session's question, answered or not.
         _note(f"ticket {raw[:8]}… was issued to another session")
+        return None
+    if data.get("command") != command_key(argv):
+        # The supervisor answered about a command, not about a card in general.
+        _note(f"ticket {raw[:8]}… was issued for a different command")
         return None
     issued = data.get("issued_at")
     if not isinstance(issued, (int, float)) or isinstance(issued, bool):

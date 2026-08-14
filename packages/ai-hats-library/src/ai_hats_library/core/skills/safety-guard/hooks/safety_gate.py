@@ -350,7 +350,7 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
             journal_bypass("hatch", "AI_HATS_PLAN_ACK", hook="safety_gate.py", cmd=cmd)
             return {}
         where = target_cwd(cmd)
-        nonce = None if where is None else _mint_ticket(task_id, start=where)
+        nonce = None if where is None else _mint_ticket(task_id, start=where, argv=args[1:])
         rewritten = (
             prefixed_command(cmd, token, ordinal, total, f"{TICKET_ENV}={nonce}") if nonce else ""
         )

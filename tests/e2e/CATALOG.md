@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**240 of 240 files catalogued — 248 flows.**
+**241 of 241 files catalogued — 249 flows.**
 
 ## `test_agent_orchestration.py`
 
@@ -601,6 +601,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
 - **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
+
+## `test_consent_permission_lint_startup.py`
+
+*pins HATS-1642*
+
+- **flow** — a developer launching a session in a project whose permissions.allow auto-approves the very transition the consent gate exists to question
+- **cmds**
+
+  ```console
+  ai-hats
+  ```
+
+- **expect** — session startup warns, naming the settings file and the offending rule, and the launch still proceeds
+- **why** — the gate was measured switching off in silence — no prompt went up while the guard still injected its ticket, so the card moved regardless
 
 ## `test_consent_self_grant_chain.py`
 

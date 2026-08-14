@@ -281,7 +281,8 @@ def test_the_ticket_lands_in_the_repo_the_rack_call_will_run_in(repo, tmp_path):
     out = _decide(f"cd {other} && rack transition HATS-9 execute", cwd=repo)
 
     nonce = out["updatedInput"]["command"].split("AI_HATS_CONSENT_TICKET=", 1)[1].split(" ", 1)[0]
-    assert consent_ticket.consume("HATS-9", start=other, nonce=nonce) is True, (
+    argv = ["transition", "HATS-9", "execute"]  # what `rack` will see as sys.argv[1:]
+    assert consent_ticket.consume("HATS-9", start=other, nonce=nonce, argv=argv) is True, (
         "the ticket did not land in the repo the transition runs in"
     )
 
@@ -300,7 +301,10 @@ def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
     assert command.endswith(" rack transition HATS-7 execute"), command
 
     nonce = command.split("AI_HATS_CONSENT_TICKET=", 1)[1].split(" ", 1)[0]
-    assert consent_ticket.consume("HATS-7", start=repo, nonce=nonce) is True
+    argv = ["transition", "HATS-7", "execute"]  # what `rack` will see as sys.argv[1:]
+    assert consent_ticket.consume("HATS-7", start=repo, nonce=nonce, argv=argv) is True
+    # …and the very same ticket opens nothing else, however close (HATS-1642).
+    assert consent_ticket.peek("HATS-7", start=repo, nonce=nonce, argv=[*argv, "--json"]) is False
 
 
 @pytest.mark.parametrize(

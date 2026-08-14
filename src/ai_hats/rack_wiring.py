@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -423,10 +424,10 @@ class ConsentTickets:
     """
 
     def peek(self, task_id: str) -> bool:
-        return consent_ticket.peek(task_id)
+        return consent_ticket.peek(task_id, argv=sys.argv[1:])
 
     def spend(self, task_id: str) -> bool:
-        return consent_ticket.consume(task_id)
+        return consent_ticket.consume(task_id, argv=sys.argv[1:])
 
 
 def build_rack_kernel(

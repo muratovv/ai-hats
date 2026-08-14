@@ -10,6 +10,7 @@ requirement nobody checked.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -68,6 +69,35 @@ def test_a_ticket_older_than_its_ttl_is_refused(repo, monkeypatch):
     assert ct.consume("HATS-1", start=repo) is False, "an expired ticket survived"
 
 
+#: What the supervisor was shown, as argv past the binary — the form both sides
+#: can name (the hook from its lexer, the rack process from its own argv).
+_A = ["transition", "HATS-1", "execute"]
+_B = ["transition", "HATS-1", "execute", "--json"]
+
+
+def test_a_ticket_does_not_travel_to_another_command(repo, monkeypatch):
+    """Consent is for the call the supervisor read, not for the card in general.
+
+    Without this a ticket left over from a REJECTED question — the mint precedes
+    the answer, so one always is — would still open the next call in its window.
+    """
+    nonce = ct.mint("HATS-1", start=repo, argv=_A)
+    _grant(nonce, monkeypatch)
+
+    assert ct.consume("HATS-1", start=repo, argv=_B) is False, "another command spent it"
+    # …and refusing B did not eat the consent that was given to A.
+    assert ct.consume("HATS-1", start=repo, argv=_A) is True
+
+
+def test_the_same_command_typed_untidily_is_the_same_command(repo, monkeypatch):
+    """The binding is on argv, not on the raw line, so spacing and quote style —
+    the shell's business, not the supervisor's — never cause a false refusal."""
+    nonce = ct.mint("HATS-1", start=repo, argv=["transition", "HATS-1", "--log", "a b"])
+    _grant(nonce, monkeypatch)
+
+    assert ct.consume("HATS-1", start=repo, argv=["transition", "HATS-1", "--log", "a b"]) is True
+
+
 def test_a_ticket_does_not_travel_to_another_session(repo, monkeypatch):
     """A ticket the supervisor answered in one session — or REJECTED there, since
     the mint precedes the answer — is not consent anywhere else (HATS-1642 R1)."""
@@ -112,6 +142,21 @@ def test_a_traversal_shaped_value_is_never_a_path(repo, monkeypatch):
 
     assert ct.consume("HATS-1", start=repo) is False
     assert bait.exists(), "the traversal value was treated as a path"
+
+
+def test_spending_a_ticket_sweeps_the_stale_ones_out(repo, monkeypatch):
+    """An expired ticket is refused either way, but one left on disk reads like
+    live consent to anyone opening the directory."""
+    stale = ct.mint("HATS-OLD", start=repo, argv=_A)
+    directory = ct.tickets_dir(repo)
+    old = time.time() - (ct.TTL_SECONDS + 60)
+    os.utime(directory / f"{stale}.json", (old, old))
+
+    fresh = ct.mint("HATS-1", start=repo, argv=_A)
+    _grant(fresh, monkeypatch)
+    assert ct.consume("HATS-1", start=repo, argv=_A) is True
+
+    assert not (directory / f"{stale}.json").exists(), "the stale ticket outlived the sweep"
 
 
 def test_no_ticket_in_the_environment_is_simply_no_consent(repo):
