@@ -139,12 +139,18 @@ rack transition HATS-NNN review
 rack transition HATS-NNN done        # the reviewer drives this one
 ```
 
-`plan → execute` is **consent-gated**: it aborts unless `AI_HATS_PLAN_ACK=1` is
-set, so an agent cannot walk its own plan into implementation without your
-approval. The refusal prints the recipe:
+`plan → execute` is **consent-gated**, so an agent cannot walk its own plan into
+implementation without your approval. On a surface with runtime hooks the agent
+simply runs the command and the guard turns it into a **question in chat**:
+approving mints a one-shot ticket, bound to that card and short-lived, and the
+transition goes through. Nothing is typed by the agent — a consent prefix it
+writes itself is refused as a self-grant.
+
+Where there is nobody to ask — headless (`claude -p`), cron, or a surface with
+no runtime hooks — consent comes from the environment that launches the session:
 
 ```bash
-AI_HATS_PLAN_ACK=1 rack transition HATS-NNN execute
+export AI_HATS_PLAN_ACK=1
 ```
 
 There is no `sync` step — see [STATE.md is reactive](#statemd-is-reactive).
