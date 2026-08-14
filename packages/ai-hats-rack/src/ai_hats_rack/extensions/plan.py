@@ -86,9 +86,9 @@ class PlanConsentExtension:
             "2. Then re-run this exact command: the guard turns it into a one-click\n"
             "   question in chat, and the supervisor's answer is what carries consent.\n"
             "3. Where there is nobody to ask — headless, cron, a surface without\n"
-            "   runtime hooks — consent comes from the launching environment, on its\n"
-            "   own line, before the session starts:\n"
-            "     export AI_HATS_PLAN_ACK=1"
+            "   runtime hooks — consent comes from the environment instead. One\n"
+            "   line: a lone export dies with the shell that ran it (HATS-1654):\n"
+            f"     export AI_HATS_PLAN_ACK=1 && rack transition {ctx.task.id} execute"
         )
 
 

@@ -89,8 +89,7 @@ def echo_documents(
     click.echo(f"{indent}Documents ({card_dir.absolute()}):")
     if not docs:
         click.echo(
-            f"{indent}  (none — add one with "
-            f"`rack transition {card_id} --attach <src>:<name>`)"
+            f"{indent}  (none — add one with `rack transition {card_id} --attach <src>:<name>`)"
         )
         return
     rows = [[d.name, str(d.path), _mtime_human(d.mtime), _frozen_mark(d)] for d in docs]
@@ -500,6 +499,12 @@ def _emit_walk(
 @click.command("ls")
 @click.argument("task_id", required=False)
 @click.option(
+    "--id",
+    "id_opt",
+    default=None,
+    help="Alias for the positional TASK_ID — `rack create` spells it this way too.",
+)
+@click.option(
     "--deep",
     default=None,
     type=int,
@@ -559,6 +564,7 @@ def _emit_walk(
 @JSON_OPT
 def ls_cmd(
     task_id: str | None,
+    id_opt: str | None,
     deep: int | None,
     link_patterns: tuple[str, ...],
     grep: str | None,
@@ -574,6 +580,11 @@ def ls_cmd(
     as_json: bool,
 ) -> None:
     """Backlog search (no ID) or a ticket-neighbourhood graph walk (rack ls <ID> --deep N)."""
+    if id_opt is not None:
+        if task_id is not None:
+            fail(as_json, "invalid_request", "id given twice: rack ls <ID> or rack ls --id <ID>")
+            return
+        task_id = id_opt
     if task_id is None and (deep is not None or link_patterns):
         fail(as_json, "invalid_request", "--deep/--link require a task id: rack ls <ID> --deep N")
         return

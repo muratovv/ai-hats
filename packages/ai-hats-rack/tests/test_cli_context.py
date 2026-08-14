@@ -533,6 +533,32 @@ def test_ls_walk_unknown_root_is_typed(runner, tmp_path):
     assert json.loads(result.output)["error"]["code"] == "unknown_task"
 
 
+def test_ls_id_flag_walks_the_same_neighbourhood_as_the_positional(runner, tmp_path):
+    """`--id` is `create`'s spelling, so `ls` answers to it too (HATS-1654)."""
+    _family(tmp_path)
+    positional = runner.invoke(main, ["ls", "HATS-2", *_args(tmp_path), "--json"])
+    flagged = runner.invoke(main, ["ls", "--id", "HATS-2", *_args(tmp_path), "--json"])
+    assert flagged.exit_code == 0, flagged.output
+    assert flagged.output == positional.output
+
+
+def test_ls_id_flag_carries_the_id_only(runner, tmp_path):
+    """The alias feeds the walk; every other option keeps its meaning."""
+    _family(tmp_path)
+    result = runner.invoke(
+        main, ["ls", "--id", "HATS-1", "--deep", "2", *_args(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["depth"] == 2
+
+
+def test_ls_id_given_both_ways_is_typed(runner, tmp_path):
+    _family(tmp_path)
+    result = runner.invoke(main, ["ls", "HATS-2", "--id", "HATS-3", *_args(tmp_path), "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "invalid_request"
+
+
 def test_ls_deep_without_id_is_typed(runner, tmp_path):
     _family(tmp_path)
     result = runner.invoke(main, ["ls", "--deep", "2", *_args(tmp_path), "--json"])

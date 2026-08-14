@@ -20,6 +20,7 @@ from .carry import WT_TEARDOWN_EVENTS, WorktreeCarry, WorktreeHook, parse_worktr
 from .env import workspace_pythonpath
 from .locks import WorktreeLockError
 from .manager import (
+    Blocker,
     IsolationMode,
     LifecycleContext,
     NOOP_LIFECYCLE,
@@ -32,9 +33,11 @@ from .manager import (
     WorktreeLifecycle,
     WorktreeMainRepoMidMergeError,
     WorktreeManager,
+    WorktreeMergeConflictError,
     WorktreeMergeConsentError,
     WorktreeMergeAborted,
     WorktreeMergeIncompleteError,
+    WorktreeMergeLeftoverError,
     WorktreePartialCleanupError,
     WorktreeRebasedBranchError,
     WorktreeRemoveError,
@@ -65,6 +68,7 @@ __all__ = [
     "WorktreeLifecycle",
     "LifecycleContext",
     "NOOP_LIFECYCLE",
+    "Blocker",
     # Typed exceptions (the clean seam, ADR-0013 D1)
     "WorktreeDirtyError",
     "WorktreeCreateError",
@@ -80,7 +84,9 @@ __all__ = [
     "WorktreeMainRepoMidMergeError",
     "WorktreeMergeConsentError",
     "WorktreeStaleRefError",
+    "WorktreeMergeConflictError",
     "WorktreeMergeIncompleteError",
+    "WorktreeMergeLeftoverError",
     "WorktreeMergeAborted",
     "WorktreeTeardownAborted",
     "WorktreeLockError",

@@ -12,6 +12,7 @@ because a message that reads well and drops the errno is the worse regression.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -79,6 +80,93 @@ def test_a_refusal_that_spoke_only_on_stderr_still_speaks(tmp_path):
     )
 
     assert reason == "drain the review notes first"
+
+
+def _mirrored(tmp_path: Path, *, mirror: str, live: str) -> ResolvedCheck:
+    """A bound check whose session mirror and live library hold different bytes."""
+    mirror_script = tmp_path / "mirror" / "quality" / "done-gate.sh"
+    live_script = tmp_path / "library" / "quality" / "done-gate.sh"
+    for script, text in ((mirror_script, mirror), (live_script, live)):
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(text)
+    return replace(_check(mirror_script), source_path=live_script)
+
+
+def test_a_refusal_from_a_stale_mirror_says_so(tmp_path):
+    """HATS-1651: the gate refused, and the bytes that refused are not the bytes
+    the library ships — the operator has to be told which of the two to fix.
+
+    Observed 2026-08-13: an Aug-10 mirror keyed the marker on the commit while
+    the live writer keyed it on the tree, so a genuinely green gate was refused
+    with "no green quality-gate marker for <sha>" — naming a key that no longer
+    existed in the scheme the writer used. Nothing in that message could lead
+    anyone to the stale mirror; the workaround was found by accident, running
+    the merge outside any session.
+    """
+    reason = check_failure_reason(
+        _mirrored(tmp_path, mirror='grep -qx "sha=$3"', live='grep -qx "tree=$tree"'),
+        _run(
+            HookOutcomeKind.REFUSED,
+            verdict=HookVerdict.REFUSE,
+            said="no green marker for eea4f6d0\n",
+            code=2,
+        ),
+        identity=_identity(tmp_path),
+    )
+
+    assert reason.startswith("no green marker for eea4f6d0"), (
+        f"the child's own verdict must stay first and verbatim:\n{reason}"
+    )
+    assert "stale" in reason
+    assert "'sess-a'" in reason
+    assert str(tmp_path / "mirror" / "quality" / "done-gate.sh") in reason
+    assert str(tmp_path / "library" / "quality" / "done-gate.sh") in reason
+    assert "Restart the session" in reason
+
+
+def test_the_note_reaches_the_callers_that_never_pass_an_identity(tmp_path, monkeypatch):
+    """The hole this test exists for: both production callers
+    (``wt_lifecycle``, ``rack_consumers``) call with ``identity`` defaulted, so a
+    note that only fires on an explicitly-passed identity is unreachable code
+    with green tests around it. Read from the environment, exactly as the
+    sibling ``SCRIPT_MISSING`` notice does.
+    """
+    for key, value in _identity(tmp_path).to_env().items():
+        monkeypatch.setenv(key, value)
+
+    reason = check_failure_reason(
+        _mirrored(tmp_path, mirror="frozen", live="current"),
+        _run(HookOutcomeKind.REFUSED, verdict=HookVerdict.REFUSE, said="no green marker\n", code=2),
+    )
+
+    assert "stale" in reason, f"the note never fires the way production calls it:\n{reason}"
+
+
+def test_a_refusal_from_a_current_mirror_adds_nothing(tmp_path):
+    """The note must stay silent when the bytes agree.
+
+    A notice on every refusal is a notice nobody reads, and this one has to
+    survive being read on the day it matters.
+    """
+    same = 'grep -qx "tree=$tree"'
+    reason = check_failure_reason(
+        _mirrored(tmp_path, mirror=same, live=same),
+        _run(HookOutcomeKind.REFUSED, verdict=HookVerdict.REFUSE, said="no green marker\n", code=2),
+        identity=_identity(tmp_path),
+    )
+
+    assert reason == "no green marker"
+
+
+def test_outside_a_session_no_mirror_can_be_stale(tmp_path):
+    """Live resolution has no frozen half, so the note would name a non-problem."""
+    reason = check_failure_reason(
+        _mirrored(tmp_path, mirror="one", live="another"),
+        _run(HookOutcomeKind.REFUSED, verdict=HookVerdict.REFUSE, said="no green marker\n", code=2),
+        identity=None,
+    )
+
+    assert reason == "no green marker"
 
 
 def test_absent_bytes_name_the_resolution_not_the_script(tmp_path):

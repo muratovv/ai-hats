@@ -112,6 +112,12 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert "SBX-001" in from_wt.stdout
     assert not (worktree / ".agent").exists(), "resolution must not mkdir a tracker in the worktree"
 
+    # --- HATS-1654: `ls --id` is the positional, on the installed binary ---
+    ls_positional = _rack(rack, "ls", "SBX-001", cwd=main, env=env)
+    ls_flagged = _rack(rack, "ls", "--id", "SBX-001", cwd=main, env=env)
+    assert ls_flagged.returncode == 0, ls_flagged.stderr
+    assert ls_flagged.stdout == ls_positional.stdout
+
     # --- C1d: `done` without merge consent is a typed refusal, not a raw traceback ---
     # The launcher-tier env grants consent by default (AI_HATS_MERGE_ACK=1) so
     # other tests can merge; drop it here to exercise the review-consent gate.
@@ -125,3 +131,10 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert done.returncode == 1, "merge without consent must refuse"
     assert "consent" in (done.stdout + done.stderr).lower()
     assert "Traceback" not in done.stderr, "merge-consent refusal must be typed (C1, HATS-1019)"
+    # HATS-1654: the recipe is followed one line at a time, so the export must
+    # reach the merge on the line it was typed with.
+    recipe = [ln for ln in (done.stdout + done.stderr).splitlines() if "export AI_HATS_MERGE" in ln]
+    assert recipe, f"consent refusal carries no export recipe:\n{done.stdout}\n{done.stderr}"
+    assert all("&& ai-hats wt merge" in ln for ln in recipe), (
+        f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
+    )
