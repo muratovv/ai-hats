@@ -191,7 +191,10 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
-        "plan-consent",
+        # HATS-1682: the integrator's own, at the slot `plan-consent` held while
+        # the packaged backlog declared it. Which edges it fires on is the role's
+        # declaration now, so it subscribes to all of them and filters on dispatch.
+        "consent",
         "ownership",
         "worktree",
     ]
@@ -203,6 +206,10 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
     assert to_done == [
         "ownership-single-slot",
         "frozen-integrity",
+        # HATS-1682: `consent` sits on THIS edge too — the role declares the two
+        # roads into master, and its silence here was a merge nobody was asked
+        # about. Ahead of the worktree teardown, so a refusal leaves no merge.
+        "consent",
         "stamp-lifecycle",
         "worktree",
         "ownership-release",
@@ -223,7 +230,7 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
-        "plan-consent",
+        "consent",
         "checks",
         "ownership",
         "worktree",
@@ -284,11 +291,12 @@ def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
     """Standalone kit is composed from the packaged definition (HATS-1043):
     frozen-integrity + scaffold/gate/stamp/clear — still no worktree/ownership."""
     names = {ext.name for ext in standalone_extensions(tmp_path / "tasks")}
+    # `plan-consent` is NOT here since HATS-1682: the packaged definition stopped
+    # declaring it, and the rack composes only what a definition declares.
     assert names == {
         "frozen-integrity",
         "plan-scaffold",
         "plan-gate",
-        "plan-consent",
         "stamp-lifecycle",
         "clear-lifecycle",
     }
