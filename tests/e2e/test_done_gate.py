@@ -36,7 +36,7 @@ TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "edge:review--done"
 SCRIPT = "hooks/done-gate.sh"
 #: The `->merge` gate, on the other road since HATS-1614. Two edges, two
-#: questions, two compositions (ADR-0026 D3/D4).
+#: questions, two compositions (ADR-0023 D3/D4).
 MERGE_SCRIPT = "hooks/merge-gate.sh"
 #: ``<event>~<skill>~<script>.log`` — one file per (task, edge, binding), the
 #: script's ``/`` escaped to ``+`` (``rack_consumers._escaped``, HATS-1137).
@@ -299,7 +299,7 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     one.
 
     Two DIFFERENT scripts since HATS-1614: the two edges ask different questions
-    (ADR-0026 D3/D4), and one script on both could only ever ask one of them.
+    (ADR-0023 D3/D4), and one script on both could only ever ask one of them.
     """
     apps = shipped_apps()
     assert apps["rack"]["tasks"] == [
@@ -344,7 +344,7 @@ def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
     assert "no green marker for tree" in reason
     # R6: an action, not a diagnosis — the exact command, in the right directory.
     assert f"cd {wt} && make done-gate" in reason
-    # HATS-1604 / ADR-0026 D7: the refusal RENDERS the composition from the
+    # HATS-1604 / ADR-0023 D7: the refusal RENDERS the composition from the
     # project's dispatcher. A library file that restated it drifted within days.
     assert _STUB_STAGE in reason, "the refusal names what this project's gate runs"
     assert _card(project, task_id).read_bytes() == before
@@ -558,7 +558,7 @@ def test_a_direct_wt_merge_is_refused_before_it_mutates_anything(
 def test_a_done_gate_run_clears_the_merge_gate_on_the_same_tree(
     gate_project, rack_bin, shared_launcher
 ):
-    """Absorption on the live road (ADR-0026 D5, HATS-1614).
+    """Absorption on the live road (ADR-0023 D5, HATS-1614).
 
     The marker is planted under ``done-gate/`` and the road being walked is
     guarded by ``merge-gate`` — a different gate, a different directory. It

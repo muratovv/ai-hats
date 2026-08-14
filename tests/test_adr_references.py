@@ -1,7 +1,7 @@
 """An ADR points at a symbol, never at a line number (HATS-1655).
 
 A line number rots from any edit ABOVE it, in a file the citing author never
-touches — so the reference decays with nobody doing anything wrong. ADR-0026
+touches — so the reference decays with nobody doing anything wrong. ADR-0023
 stated its `file:line` refs had been re-verified at a named commit; 13 of 20
 were stale by the time anyone looked, and the worst had drifted onto unrelated
 code, which misleads a reader rather than merely losing them.

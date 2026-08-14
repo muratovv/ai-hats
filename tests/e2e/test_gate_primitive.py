@@ -147,7 +147,7 @@ def test_a_green_run_on_a_dirty_tree_earns_no_marker(repo: Path):
 def test_one_outcome_maps_onto_each_channel_s_own_exit_contract(
     repo: Path, channel: str, outcome: str, code: int
 ):
-    """The reason the primitive exists (ADR-0026 D6): the SAME verdict is spelled
+    """The reason the primitive exists (ADR-0023 D6): the SAME verdict is spelled
     0/1 to git and 0/2/126/127 to the checks channel (ADR-0020 D2), and both
     mappings were written by hand, once per script."""
     ran = _bash(f"gate_exit {channel} {outcome}", repo, lib=GATE_LIB)
@@ -156,7 +156,7 @@ def test_one_outcome_maps_onto_each_channel_s_own_exit_contract(
 
 
 def test_a_marker_covers_a_gate_whose_composition_it_includes(repo: Path):
-    """The absorption rule (ADR-0026 D5): a fuller run stamps every gate whose
+    """The absorption rule (ADR-0023 D5): a fuller run stamps every gate whose
     composition it contains, so a typical card costs one run, not two."""
     tree = _tree(repo)
     _bash(f'gate_marker_write done-gate . "{tree}" "lint unit integration"', repo)
