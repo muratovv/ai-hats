@@ -86,7 +86,19 @@ PROTECTED_DIRS = ("volumes", "data", "storage", "runs")
 SQL_CLIENTS = ("psql", "mysql", "mariadb", "sqlite3", "sqlcmd", "mongo", "clickhouse-client")
 
 OPERATORS = (";", "&&", "||", "|", "&")
-WRAPPERS = ("sudo", "env", "nohup", "xargs", "time")
+
+#: Binaries that run ANOTHER binary. The list is names only — how many operands
+#: each one eats before the real command is deliberately NOT modelled; see
+#: :func:`command_slices` for why.
+WRAPPERS = (
+    "sudo", "doas", "env", "nohup", "xargs", "time", "timeout",
+    "nice", "ionice", "stdbuf", "setsid", "chrt", "taskset", "command",
+)  # fmt: skip
+
+#: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
+#: operator over as ONE token, so `>|` (the noclobber escape) and `&>` are simply
+#: not reachable by looking for `>`.
+REDIRECTS = (">", ">>", ">|", "&>", "&>>", ">&")
 
 
 def parse_commands(cmd_string: str):
@@ -117,11 +129,83 @@ def parse_commands(cmd_string: str):
 
 
 def get_bin(tokens):
+    """The binary ``tokens`` runs, env assignments skipped."""
     for token in tokens:
-        if "=" in token or token in WRAPPERS:
+        if "=" in token:
             continue
         return os.path.basename(token)
     return ""
+
+
+def _is_operand(token: str) -> bool:
+    """A token that cannot be a command: an option, or a bare duration/number."""
+    return token.startswith("-") or bool(re.fullmatch(r"\d+(\.\d+)?[smhd]?", token))
+
+
+def command_slices(tokens):
+    """Every token slice that could be the command ``tokens`` actually runs.
+
+    A wrapper eats a variable number of operands — `timeout 5`, `sudo -u root`,
+    `nice -n 10`, `stdbuf -oL` — and modelling each one's option arity is a
+    losing game: the entry the table gets wrong makes the gate BLIND, not merely
+    imprecise. That is exactly how `timeout 5 rm -rf /` was allowed while
+    `rm -rf /` was denied (HATS-1682, measured). So when a wrapper leads, every
+    later slice is offered to the checks and a dangerous binary cannot hide
+    behind an operand nobody counted.
+    """
+    def _command_at(index: int) -> int:
+        while index < len(tokens) and "=" in tokens[index]:
+            index += 1  # `env FOO=1 rack …`: the assignment belongs to the shell
+        return index
+
+    start = _command_at(0)
+    if start >= len(tokens):
+        return []
+    slices = [tokens[start:]]
+    if os.path.basename(tokens[start]) not in WRAPPERS:
+        return slices
+    seen = {start}
+    for i in range(start + 1, len(tokens)):
+        j = _command_at(i)
+        if j >= len(tokens) or j in seen or _is_operand(tokens[j]):
+            continue
+        seen.add(j)
+        slices.append(tokens[j:])
+    return slices
+
+
+def slice_for(tokens, name: str):
+    """The slice of ``tokens`` whose command is ``name`` — ``[]`` when none is.
+
+    Reading past a wrapper matters on the permissive paths too: `env FOO=1 rack …`
+    and `timeout 180 rack …` are everyday spellings, and a gate that cannot see
+    the `rack` in them asks no question at all (HATS-1682).
+    """
+    for candidate in command_slices(tokens):
+        if get_bin(candidate) == name:
+            return candidate
+    return []
+
+
+def without_shell_redirects(args):
+    """``args`` minus what the SHELL consumes, so it matches the process's argv.
+
+    A redirection never reaches the child's `sys.argv`, but the lexer hands it
+    over as tokens — `2>&1` arrives as `2`, `>&`, `1`. Binding a consent ticket
+    to those three made `rack` compute a different argv and refuse a click the
+    supervisor had already given (HATS-1682, live probe).
+    """
+    kept, i = [], 0
+    while i < len(args):
+        token = args[i]
+        if token in REDIRECTS:
+            if kept and kept[-1].isdigit():
+                kept.pop()  # the fd the redirection applies to
+            i += 2  # the operator and its target
+            continue
+        kept.append(token)
+        i += 1
+    return kept
 
 
 #: One line per process: the ack is documented as per-single-command, so its
@@ -276,14 +360,6 @@ RACK_SAFE_OPS = frozenset({"--log", "--set", "--append", "--attach", "--link", "
 RACK_SAFE_OPTS = frozenset({"--json", "--tasks-dir"})
 
 
-def bin_args(tokens, cmd_bin: str):
-    """``tokens`` from the binary onward — env assignments and wrappers dropped."""
-    for i, tok in enumerate(tokens):
-        if os.path.basename(tok) == cmd_bin:
-            return tokens[i:]
-    return tokens
-
-
 def execute_transition_target(args) -> str:
     """The task id iff ``args`` is ``rack transition <ID> execute``, else ``""``.
 
@@ -356,10 +432,10 @@ def allow_verdict(cmd: str) -> dict:
     if not commands:
         return {}
     for tokens in commands:
-        cmd_bin = get_bin(tokens)
-        if cmd_bin == "cd":
+        if slice_for(tokens, "cd"):
             continue
-        if cmd_bin != "rack" or not auto_allowed(bin_args(tokens, cmd_bin)):
+        rack = slice_for(tokens, "rack")
+        if not rack or not auto_allowed(without_shell_redirects(rack)):
             return {}
     return {
         "permissionDecision": "allow",
@@ -420,9 +496,10 @@ def target_cwd(cmd: str):
     """
     where = Path.cwd()
     for tokens in parse_commands(cmd):
-        if get_bin(tokens) != "cd":
+        cd = slice_for(tokens, "cd")
+        if not cd:
             continue
-        args = [tok for tok in bin_args(tokens, "cd")[1:] if not tok.startswith("-")]
+        args = [tok for tok in cd[1:] if not tok.startswith("-")]
         if len(args) != 1:
             return None  # `cd`, `cd -`, `cd a b`: not a destination we can name
         where = (where / os.path.expanduser(args[0])).resolve()
@@ -436,7 +513,11 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
     one that refuses a typed one, so the two can never disagree about which is
     which. Empty means there is nothing to ask — the rack's own gate still runs.
     """
-    calls = [bin_args(t, "rack") for t in parse_commands(cmd) if get_bin(t) == "rack"]
+    calls = []
+    for tokens in parse_commands(cmd):
+        rack = slice_for(tokens, "rack")
+        if rack:
+            calls.append(without_shell_redirects(rack))
     for index, args in enumerate(calls):
         task_id = execute_transition_target(args)
         if not task_id:
@@ -487,10 +568,6 @@ BACKLOG_MUTATORS = ("mkdir", "rmdir", "mv", "cp", "rm", "touch", "tee", "ln", "s
 #: source writes nothing, and reading a card out is what this gate leaves open.
 #: `mv` is not among them — it empties the source as well.
 DESTINATION_ONLY = ("cp", "ln")
-#: Every shape bash writes a file with. `shlex(punctuation_chars=True)` hands the
-#: operator over as ONE token, so `>|` (the noclobber escape) and `&>` are simply
-#: not reachable by looking for `>`.
-REDIRECTS = (">", ">>", ">|", "&>", "&>>", ">&")
 
 
 def check_backlog_write(cmd_bin: str, args) -> str:
@@ -536,31 +613,32 @@ def check_command(cmd_string: str, depth: int = 0) -> str:
         if reason:
             return reason
 
-        cmd_bin = get_bin(tokens)
-        if not cmd_bin:
-            continue
+        # Every slice, not just the leading one: a wrapper hides the real binary
+        # behind operands this gate deliberately does not count (HATS-1682).
+        for args in command_slices(tokens):
+            cmd_bin = get_bin(args)
+            if not cmd_bin:
+                continue
 
-        args = bin_args(tokens, cmd_bin)
+            if depth < MAX_WRAPPER_DEPTH:
+                for payload in shell_payloads(cmd_bin, args):
+                    reason = check_command(payload, depth + 1)
+                    if reason:
+                        return reason
 
-        if depth < MAX_WRAPPER_DEPTH:
-            for payload in shell_payloads(cmd_bin, args):
-                reason = check_command(payload, depth + 1)
-                if reason:
-                    return reason
-
-        reason = check_backlog_write(cmd_bin, args)
-        if reason:
-            return reason
-
-        reason = check_dangerous_bin(cmd_bin, args) or check_sql(cmd_bin, args)
-        if reason:
-            return reason
-
-        handler = HANDLERS.get(cmd_bin)
-        if handler:
-            reason = handler(args)
+            reason = check_backlog_write(cmd_bin, args)
             if reason:
                 return reason
+
+            reason = check_dangerous_bin(cmd_bin, args) or check_sql(cmd_bin, args)
+            if reason:
+                return reason
+
+            handler = HANDLERS.get(cmd_bin)
+            if handler:
+                reason = handler(args)
+                if reason:
+                    return reason
 
     return ""
 

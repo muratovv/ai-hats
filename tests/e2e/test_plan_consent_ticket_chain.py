@@ -279,7 +279,19 @@ def test_the_chain_reports_an_allow_rule_that_silences_the_question(project, set
     assert not verdict.gated, f"a lint must not gate: {verdict}"
 
 
-@pytest.mark.parametrize("prefix", ["", "cd . && ", "env FOO=1 "])
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "",
+        "cd . && ",
+        "env FOO=1 ",
+        # HATS-1682: the maintainer injection prescribes `timeout` for anything
+        # that can hang, and the gate used to read the wrapper as the binary —
+        # so the everyday spelling of a gated move asked nothing at all.
+        "timeout 180 ",
+        "nice -n 10 ",
+    ],
+)
 def test_the_question_survives_the_shapes_the_agent_actually_types(
     project, settings, env, planned, prefix
 ):
@@ -294,3 +306,31 @@ def test_the_question_survives_the_shapes_the_agent_actually_types(
     nonce = _ticket_from(verdict.updated_input["command"])
     moved = _rack(project, "transition", task_id, "execute", env={**env, TICKET_ENV: nonce})
     assert moved.returncode == 0, moved.stderr
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        pytest.param(" 2>&1", id="stderr-to-stdout"),
+        pytest.param(" 2>&1; echo rc=$?", id="redirect-and-tail"),
+        pytest.param(" > /dev/null", id="stdout-to-file"),
+        pytest.param(" 2>&1 | tail -5", id="redirect-and-pipe"),
+    ],
+)
+def test_what_the_shell_eats_does_not_change_the_command_that_was_approved(
+    project, settings, env, planned, suffix
+):
+    """A redirection never reaches the child's argv, but the lexer hands it over
+    as tokens — `2>&1` arrives as `2`, `>&`, `1`. Binding the ticket to those
+    made `rack` compute a different argv and refuse a click already given, so the
+    supervisor paid for a transition that never happened (HATS-1682, live probe).
+    """
+    task_id = planned("shell-owned tail")
+    verdict = run_chain(
+        project, f"rack transition {task_id} execute{suffix}", settings=settings, env=env
+    )
+
+    assert verdict.decision == "ask", f"{suffix!r} did not ask: {verdict}"
+    nonce = _ticket_from(verdict.updated_input["command"])
+    moved = _rack(project, "transition", task_id, "execute", env={**env, TICKET_ENV: nonce})
+    assert moved.returncode == 0, f"the click was spent on nothing:\n{moved.stdout}{moved.stderr}"
