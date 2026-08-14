@@ -342,10 +342,11 @@ def wt_merge(
             "supervisor. Consent is the supervisor's to give, from the environment "
             "that launched this session — an inline prefix on the agent's own "
             "command is refused as a self-grant (HATS-1639). Once review passes "
-            "(supervisor saw the diff, notes resolved, explicit go):"
+            "(supervisor saw the diff, notes resolved, explicit go) — one line, "
+            "a lone export dies with the shell that ran it (HATS-1654):"
         )
         console.print(
-            f"  [cyan]export AI_HATS_MERGE_ACK=1[/]\n  [cyan]ai-hats wt merge {name}[/]",
+            f"  [cyan]export AI_HATS_MERGE_ACK=1 && ai-hats wt merge {name}[/]",
             soft_wrap=True,
         )
         sys.exit(1)

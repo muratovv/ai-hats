@@ -125,3 +125,10 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert done.returncode == 1, "merge without consent must refuse"
     assert "consent" in (done.stdout + done.stderr).lower()
     assert "Traceback" not in done.stderr, "merge-consent refusal must be typed (C1, HATS-1019)"
+    # HATS-1654: the recipe is followed one line at a time, so the export must
+    # reach the merge on the line it was typed with.
+    recipe = [ln for ln in (done.stdout + done.stderr).splitlines() if "export AI_HATS_MERGE" in ln]
+    assert recipe, f"consent refusal carries no export recipe:\n{done.stdout}\n{done.stderr}"
+    assert all("&& ai-hats wt merge" in ln for ln in recipe), (
+        f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
+    )

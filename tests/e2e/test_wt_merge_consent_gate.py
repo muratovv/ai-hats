@@ -112,6 +112,13 @@ def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     assert "review" in combined.lower(), (
         f"review handoff directive missing from refusal:\n{combined}"
     )
+    # HATS-1654: the recipe is followed one line at a time, so the export must
+    # reach the merge on the line it was typed with.
+    recipe = [ln for ln in combined.splitlines() if "export AI_HATS_MERGE_ACK=1" in ln]
+    assert recipe, f"refusal carries no export recipe:\n{combined}"
+    assert all("&& ai-hats wt merge" in ln for ln in recipe), (
+        f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
+    )
 
     branches = _git(project, "branch", "--list", "task/test-consent").stdout
     assert "task/test-consent" in branches, (

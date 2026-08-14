@@ -1,10 +1,12 @@
-"""A consent gate must not prescribe the one form its guard refuses (HATS-1639).
+"""A consent gate must print a recipe that works when followed literally.
 
 `safety_gate.check_self_grant` denies an inline `AI_HATS_*_ACK=1 <cmd>` prefix, so
-a refusal that spells the recipe that way sends the agent at a wall — the HATS-1294
-shape `rule_pause_before_shared_state_write` names, and the class HATS-1630 closed
-for the tool-hygiene nudge. Consent is the supervisor's, from the launching
-environment; the recipe must say `export`.
+a recipe spelled that way sends the agent at a wall (HATS-1639; same shape as
+HATS-1294 / HATS-1630). Consent is the supervisor's: the recipe must say `export`.
+
+Saying `export` is necessary, not sufficient (HATS-1654): alone on its line it
+dies with the shell that ran it, so a recipe read one line at a time refuses a
+correctly typed command. Export and the command it unlocks share ONE line.
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: ("AI_HATS_PLAN_ACK=1 is not set") states, it does not prescribe — so the match
 #: is anchored on a command word, and `export …` is the supported spelling.
 INLINE_GRANT = re.compile(r"(?<!export )AI_HATS_[A-Z0-9_]*ACK=1\s+(rack|ai-hats|git|python)\b")
+
+#: The forgotten form: an `export` prescribed as a step of its own. Only the
+#: literal command spelling counts — prose merely naming the flag prescribes
+#: nothing, and an ack-free follow-up may keep its own line (HATS-596).
+LONE_EXPORT = re.compile(r"export AI_HATS_[A-Z0-9_]*ACK=1")
 
 #: Every surface that tells a human or an agent how to satisfy a consent gate.
 ADVICE_SITES = (
@@ -46,7 +53,7 @@ def test_no_consent_gate_prescribes_the_inline_grant():
             offenders[rel] = hits
     assert not offenders, (
         "these messages prescribe an inline ack the guard refuses — say "
-        f"`export AI_HATS_..._ACK=1` on its own line instead: {offenders}"
+        f"`export AI_HATS_..._ACK=1 && <cmd>` instead: {offenders}"
     )
 
 
@@ -57,3 +64,31 @@ def test_the_detector_tells_the_forms_apart():
     assert not INLINE_GRANT.search("export AI_HATS_PLAN_ACK=1")
     # Prose ABOUT the flag states a fact; it prescribes nothing.
     assert not INLINE_GRANT.search("AI_HATS_PLAN_ACK=1 is not set in environment.")
+
+
+def test_no_consent_recipe_leaves_its_export_alone_on_a_line():
+    """An export the next line cannot see grants nothing (HATS-1654)."""
+    offenders: dict[str, list[str]] = {}
+    for rel in ADVICE_SITES:
+        hits = [
+            line.strip()
+            for line in (REPO_ROOT / rel).read_text(encoding="utf-8").splitlines()
+            if LONE_EXPORT.search(line) and "&&" not in line
+        ]
+        if hits:
+            offenders[rel] = hits
+    assert not offenders, (
+        "these recipes spend the export on a line of its own — chain it to the "
+        f"command it unlocks (`export … && ai-hats wt merge …`): {offenders}"
+    )
+
+
+def test_the_lone_export_detector_tells_the_forms_apart():
+    """Without this, a detector matching nothing would pass the test above."""
+    lone = "  export AI_HATS_MERGE_ACK=1"
+    chained = "  export AI_HATS_MERGE_ACK=1 && ai-hats wt merge task/x"
+    assert LONE_EXPORT.search(lone) and "&&" not in lone
+    assert LONE_EXPORT.search(chained) and "&&" in chained
+    # Prose naming the flag is not a recipe step, chained or not.
+    assert not LONE_EXPORT.search("a supervisor-exported `AI_HATS_MERGE_ACK=1` flows in")
+    assert not LONE_EXPORT.search("AI_HATS_PLAN_ACK=1 is not set in environment.")

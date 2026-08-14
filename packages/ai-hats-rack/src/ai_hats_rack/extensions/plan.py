@@ -37,9 +37,9 @@ class PlanConsentExtension:
                 "1. Present plan.md to the supervisor in chat and STOP.\n"
                 "2. Consent is the supervisor's to give, from the environment that\n"
                 "   launched this session — an inline prefix on the agent's own command\n"
-                "   is refused as a self-grant (HATS-1639):\n"
-                "     export AI_HATS_PLAN_ACK=1\n"
-                f"   then: rack transition {ctx.task.id} execute"
+                "   is refused as a self-grant (HATS-1639). One line — a lone\n"
+                "   export dies with the shell that ran it (HATS-1654):\n"
+                f"     export AI_HATS_PLAN_ACK=1 && rack transition {ctx.task.id} execute"
             )
         return None
 
