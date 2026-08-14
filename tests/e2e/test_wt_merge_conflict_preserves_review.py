@@ -1,10 +1,20 @@
-"""e2e (HATS-481)
+"""e2e (HATS-481, HATS-1651)
 
-flow:   a developer finalizing a task when a git merge conflict occurs
+flow:   a developer finalizing a task whose branch diverged from the base
 cmds:
     rack transition TST-001 done
-expect: task state remains in review and worktree branch is preserved for resolution
-why:    tasks must not transition to done when git merge fails due to conflicts"""
+expect: the task stays in review and the worktree branch survives for resolution
+why:    a task must not reach done when the merge it needs cannot be performed
+"""
+
+# HATS-1651 corrected the claim the block above used to make ("when a git merge
+# conflict occurs"). Conflicting content means the base moved, which IS drift, and
+# this road merges with accept_drift=False (wt_effects.py) — so the refusal comes
+# from the drift guard BEFORE any `git merge` runs, and a conflict is unreachable
+# here. The assertions below are true and worth keeping; they were simply never
+# about a conflict, which is how the crash HATS-1651 fixes stayed uncovered. The
+# conflict needs --accept-drift and lives in test_wt_merge_conflict_is_atomic.py.
+# comment-length: allow — the corrected coverage claim IS the point
 
 from __future__ import annotations
 from _helpers.git import git as _git
@@ -49,8 +59,8 @@ def _task_state(project: Path, task_id: str) -> str:
 
 @pytest.mark.integration
 def test_e2e_merge_conflict_does_not_mark_task_done(shared_launcher, tmp_path):
-    """Forcing a merge conflict on `transition done` must leave the task
-    in `review` (not DONE) and preserve the worktree branch for retry."""
+    """A `transition done` whose merge is refused must leave the task in
+    `review` (not DONE) and preserve the worktree branch for retry."""
     launcher_dest, env, venv = shared_launcher
     rack_bin = venv / "bin" / "rack"
     project = tmp_path / "project"

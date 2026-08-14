@@ -60,7 +60,9 @@ ci_lint() {
     "$PY" -m ruff check .
     # HATS-1372: the formatter check lived only in `make lint`, behind a failing
     # `ruff check` — so 20 unformatted files sat on master unseen for weeks.
-    "$PY" -m ruff format --check src/ tests/
+    # HATS-1651: the same `.` as the line above. Two scopes could not stay equal
+    # by convention, and ruff's own extend-exclude is the one that should decide.
+    "$PY" -m ruff format --check .
 }
 
 ci_unit() {

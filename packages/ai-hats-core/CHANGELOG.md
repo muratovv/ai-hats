@@ -3,6 +3,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions adhere to [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-14
+
+### Added
+
+- `ResolvedCheck.source_path` — where `script_path` pointed before a session
+  re-based it onto that session's frozen mirror; `None` under live resolution.
+  Only the rebaser ever sees both paths, and without keeping one a refusal
+  cannot tell whether the bytes that refused are still the bytes the library
+  ships — the gap that reported a green gate as "no green marker" for a whole
+  session (HATS-1651).
+
 ## [0.6.1] - 2026-08-02
 
 ### Added

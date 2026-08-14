@@ -89,8 +89,7 @@ def echo_documents(
     click.echo(f"{indent}Documents ({card_dir.absolute()}):")
     if not docs:
         click.echo(
-            f"{indent}  (none — add one with "
-            f"`rack transition {card_id} --attach <src>:<name>`)"
+            f"{indent}  (none — add one with `rack transition {card_id} --attach <src>:<name>`)"
         )
         return
     rows = [[d.name, str(d.path), _mtime_human(d.mtime), _frozen_mark(d)] for d in docs]

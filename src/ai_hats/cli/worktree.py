@@ -287,7 +287,9 @@ def wt_merge(
         WorktreeDirtyError,
         WorktreeDriftError,
         WorktreeMainRepoMidMergeError,  # HATS-587 / F4
+        WorktreeMergeConflictError,  # HATS-1651
         WorktreeMergeConsentError,  # HATS-1019
+        WorktreeMergeLeftoverError,  # HATS-1651
         WorktreePartialCleanupError,
         WorktreeRebasedBranchError,  # HATS-1370
         WorktreeRemoveError,
@@ -396,6 +398,31 @@ def wt_merge(
             soft_wrap=True,
         )
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
+        sys.exit(1)
+    except WorktreeMergeConflictError as e:
+        # HATS-1651: the rollback was verified before this was raised, so the
+        # recipe can send the operator straight at the conflict. Resolve on the
+        # BRANCH, not in main: a hand-merge in the main checkout produces a merge
+        # commit outside the worktree bookkeeping this command owns.
+        from rich.markup import escape as _escape
+
+        console.print(f"[red]Refused (merge conflict)[/]: {_escape(str(e))}")
+        console.print("Resolve on the branch, then re-run this command:")
+        console.print(f"  [cyan]cd {mgr.worktree_path}[/]", soft_wrap=True)
+        console.print(f"  [cyan]git merge {e.base_branch}[/]  [dim]# resolve there, commit[/]")
+        console.print(f"  [cyan]ai-hats wt merge {name}[/]", soft_wrap=True)
+        sys.exit(1)
+    except WorktreeMergeLeftoverError as e:
+        # HATS-1651: the rollback did NOT restore the main checkout. Nothing is
+        # claimed about it here beyond what was observed, and the cleanup is the
+        # operator's call — this command will not guess with `reset --hard` over
+        # a checkout that may hold their uncommitted work.
+        from rich.markup import escape as _escape
+
+        console.print(f"[red]Refused (merge left state behind)[/]: {_escape(str(e))}")
+        console.print("Inspect and clean up the main checkout by hand before retrying:")
+        console.print(f"  [cyan]cd {_project_dir()}[/]", soft_wrap=True)
+        console.print("  [cyan]git status[/]", soft_wrap=True)
         sys.exit(1)
     except WorktreeRebasedBranchError as e:
         from rich.markup import escape as _escape

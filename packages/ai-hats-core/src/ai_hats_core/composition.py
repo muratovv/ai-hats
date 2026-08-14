@@ -65,6 +65,12 @@ class ResolvedCheck:
     on_error: str
     script_path: Path
     declared_by: str
+    #: Where ``script_path`` pointed BEFORE a session re-based it onto that
+    #: session's frozen mirror; ``None`` when nothing re-based it, which is the
+    #: live-resolution mode. Retained so a refusal can tell whether the bytes
+    #: that refused are still the bytes the library ships (HATS-1651) — the two
+    #: diverge silently as a session ages, and only the rebaser sees both.
+    source_path: Path | None = None
 
     @property
     def skill(self) -> str:
