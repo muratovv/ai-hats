@@ -10,6 +10,7 @@ requirement nobody checked.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,26 @@ def test_a_ticket_older_than_its_ttl_is_refused(repo, monkeypatch):
     assert ct.consume("HATS-1", start=repo) is False, "an expired ticket survived"
 
 
+def test_a_ticket_does_not_travel_to_another_session(repo, monkeypatch):
+    """A ticket the supervisor answered in one session — or REJECTED there, since
+    the mint precedes the answer — is not consent anywhere else (HATS-1642 R1)."""
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-a")
+    nonce = ct.mint("HATS-1", start=repo)
+    _grant(nonce, monkeypatch)
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-b")
+    assert ct.consume("HATS-1", start=repo) is False, "another session spent the ticket"
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-a")
+    assert ct.consume("HATS-1", start=repo) is True, "the issuing session lost its own ticket"
+
+
+def test_the_ttl_is_short_enough_that_a_stale_click_is_not_consent(repo):
+    """A number, but a load-bearing one: the mint happens when the question is
+    RAISED, so the TTL is the whole window a rejected ticket stays usable."""
+    assert 60 <= ct.TTL_SECONDS <= 120, ct.TTL_SECONDS
+
+
 def test_an_invented_nonce_opens_nothing(repo, monkeypatch):
     ct.mint("HATS-1", start=repo)
     _grant("f" * 32, monkeypatch)
@@ -75,13 +96,22 @@ def test_an_invented_nonce_opens_nothing(repo, monkeypatch):
 
 
 def test_a_traversal_shaped_value_is_never_a_path(repo, monkeypatch):
-    """The env value is caller-shaped input; `../` must not reach the filesystem."""
-    outside = repo / "escape.json"
-    outside.write_text(json.dumps({"task_id": "HATS-1", "issued_at": 2e9}), encoding="utf-8")
+    """The env value is caller-shaped input; `../` must not reach the filesystem.
+
+    Aimed at the EXACT depth the store sits at (``<git>/ai-hats/consent/<n>.json``)
+    and baited with a ticket this very call would otherwise accept — so with the
+    shape check gone the traversal deletes a file two levels up and this fails.
+    """
+    ct.mint("HATS-1", start=repo)  # the store must exist, or `..` resolves nowhere
+    bait = repo / ".git" / "escape.json"
+    bait.write_text(
+        json.dumps({"task_id": "HATS-1", "issued_at": time.time(), "session_id": ""}),
+        encoding="utf-8",
+    )
     _grant("../../escape", monkeypatch)
 
     assert ct.consume("HATS-1", start=repo) is False
-    assert outside.exists(), "the traversal value was treated as a path"
+    assert bait.exists(), "the traversal value was treated as a path"
 
 
 def test_no_ticket_in_the_environment_is_simply_no_consent(repo):

@@ -126,6 +126,27 @@ def test_the_ticket_the_chain_minted_is_what_moves_the_card(project, settings, e
     assert "→ execute" in moved.stdout, moved.stdout
 
 
+def test_a_transition_that_fails_downstream_gives_the_click_back(project, settings, env, planned):
+    """The gate runs before ownership and the worktree, both of which can still
+    abort — a ticket spent there burns a click on nothing (HATS-1642 review)."""
+    task_id = planned("downstream failure")
+    nonce = _ask_for(project, settings, env, task_id)
+    with_ticket = {**env, TICKET_ENV: nonce}
+    # A FILE where the worktree bookkeeping wants a directory: `→ execute` gets
+    # past consent and dies further down, exactly as the ordering worry describes.
+    worktrees = project / ".agent" / "ai-hats" / "sessions" / "worktrees"
+    worktrees.parent.mkdir(parents=True, exist_ok=True)
+    worktrees.write_text("not a directory", encoding="utf-8")
+
+    failed = _rack(project, "transition", task_id, "execute", env=with_ticket)
+    assert failed.returncode != 0, f"expected the transition to fail:\n{failed.stdout}"
+
+    worktrees.unlink()
+    retried = _rack(project, "transition", task_id, "execute", env=with_ticket)
+
+    assert retried.returncode == 0, f"the click was eaten by the failed attempt:\n{retried.stderr}"
+
+
 def test_a_spent_ticket_does_not_open_the_gate_twice(project, settings, env, planned):
     """One card, one ticket, two attempts — nothing but the ticket differs."""
     task_id = planned("replay")

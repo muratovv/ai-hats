@@ -46,7 +46,7 @@ from ai_hats_rack.extensions import (
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
-from ai_hats_library.hooks.consent_ticket import consume as consume_consent_ticket
+from ai_hats_library.hooks import consent_ticket
 
 from . import ownership
 from .constants import ENV_ROOT_PID
@@ -415,6 +415,20 @@ class WorktreeExtension:
         return out.returncode == 0 and bool(out.stdout.strip())
 
 
+class ConsentTickets:
+    """The rack's consent-ticket seam, bound to the shipped store (HATS-1642).
+
+    ``peek`` and ``spend`` stay apart on purpose: the gate must refuse early but
+    settle late, or a rolled-back transaction eats the supervisor's click.
+    """
+
+    def peek(self, task_id: str) -> bool:
+        return consent_ticket.peek(task_id)
+
+    def spend(self, task_id: str) -> bool:
+        return consent_ticket.consume(task_id)
+
+
 def build_rack_kernel(
     project_dir: Path,
     *,
@@ -458,11 +472,10 @@ def build_rack_kernel(
     # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
     factories = stock_factories(sections)
     # HATS-1642: the consent ticket is written by a shipped hook, which the rack
-    # may not import (import-hygiene pin) — so the READER is bound here, the same
+    # may not import (import-hygiene pin) — so the STORE is bound here, the same
     # one-directional channel ownership already rides.
-    factories["plan-consent"] = lambda defn, catalog, cfg: PlanConsentExtension(
-        ticket_consumer=consume_consent_ticket
-    )
+    consent = PlanConsentExtension(tickets=ConsentTickets())
+    factories["plan-consent"] = lambda defn, catalog, cfg: consent
     declared = (
         build_extensions(defn, tasks_dir, factories)
         + build_bound_subscribers(defn, tasks_dir, factories)
@@ -481,6 +494,10 @@ def build_rack_kernel(
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
+    if {"plan", "execute"} <= set(topology.states):
+        # Post-lock, so the click is spent only on a transition that happened.
+        # A backlog without those states never declared plan-consent either.
+        subscribers.append(consent.spender())
     # Fail-closed at composition: a subscriber's declared state vocabulary must
     # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
     validate_requires_states(subscribers, topology, source=str(tasks_dir))

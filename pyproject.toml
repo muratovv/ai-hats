@@ -40,13 +40,13 @@ dependencies = [
     # of the checks channel, imported at module level by rack_consumers);
     # HATS-1603 to 0.3.0 (DispatchContext.lock_expires_at, read by rack_wiring);
     # HATS-1647 to 0.3.1 (the empty-documents hint names `--attach`, since the
-    # card directory is gated); HATS-1642 to 0.3.2 (PlanConsentExtension takes
-    # the integrator's ticket reader, bound in rack_wiring).
-    "ai-hats-rack>=0.3.2",
+    # card directory is gated); HATS-1642 to 0.3.3 (PlanConsentExtension takes the
+    # integrator's ticket STORE and exposes the post-lock spender it pairs with).
+    "ai-hats-rack>=0.3.3",
     "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
-    # 0.5.4 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket, imported
-    # at module level by rack_wiring — the floor also tracks the workspace version.
-    "ai-hats-library>=0.5.4",
+    # 0.5.5 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket with its
+    # peek/consume pair — imported at module level by rack_wiring.
+    "ai-hats-library>=0.5.5",
     "click>=8.1",
     "pyyaml>=6.0",
     "pydantic>=2.0",

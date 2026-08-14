@@ -110,6 +110,37 @@ def test_granting_yolo_inline_is_denied():
     assert "cannot be granted inline" in _denied("AI_HATS_YOLO=1 rm -rf app.db")
 
 
+# A shell wrapper hands its whole script over as ONE token, so every check above
+# read it as a single opaque argument and found nothing (HATS-1642 review).
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('bash -c "AI_HATS_PLAN_ACK=1 rack transition HATS-1 execute"', "granted inline"),
+        ("sh -c 'cd . && AI_HATS_MERGE_ACK=1 ai-hats wt merge task/x'", "granted inline"),
+        ('bash -lc "AI_HATS_YOLO=1 rm -rf app.db"', "granted inline"),
+        ('bash -c "rm -rf /"', "filesystem root"),
+        ("sh -c 'sed -i s/a/b/ file.py'", "in place"),
+        ('zsh -c "mkfs.ext4 /dev/sda1"', "formats a filesystem"),
+    ],
+)
+def test_what_a_shell_wrapper_hides_is_still_denied(command, expected):
+    assert expected in _denied(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'bash -c "ls -la"',
+        "sh -c 'echo rm -rf /'",
+        # Not a shell: `-c` is python's own flag and its payload is not a command.
+        "python -c \"print('rm -rf /')\"",
+    ],
+)
+def test_a_shell_wrapper_around_something_harmless_still_passes(command):
+    """Control: looking inside must not turn every wrapper into a refusal."""
+    assert _decide(command) == {}, command
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -161,6 +192,98 @@ def test_typing_a_consent_ticket_is_denied_like_any_other_self_grant(repo):
     """The guard mints the ticket; an agent writing one is forging the answer."""
     forged = f"AI_HATS_CONSENT_TICKET={'a' * 32} rack transition HATS-1 execute"
     assert "minted by this guard" in _denied(forged, cwd=repo)
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        # The refusal tells the agent to re-run the command — so every shape it
+        # may have typed must raise the question, not go quiet (HATS-1642 review).
+        (
+            "rack transition HATS-7 execute && rack context HATS-7",
+            "AI_HATS_CONSENT_TICKET=%s rack transition HATS-7 execute && rack context HATS-7",
+        ),
+        (
+            "rack ls && rack transition HATS-7 execute",
+            "rack ls && AI_HATS_CONSENT_TICKET=%s rack transition HATS-7 execute",
+        ),
+        (
+            "rack transition HATS-7 execute --log 'impl started'",
+            "AI_HATS_CONSENT_TICKET=%s rack transition HATS-7 execute --log 'impl started'",
+        ),
+        (
+            "rack transition --tasks-dir /t HATS-7 execute",
+            "AI_HATS_CONSENT_TICKET=%s rack transition --tasks-dir /t HATS-7 execute",
+        ),
+    ],
+)
+def test_every_shape_the_agent_types_raises_the_question(command, expected, repo):
+    out = _decide(command, cwd=repo)
+    assert out.get("permissionDecision") == "ask", f"{command!r} went quiet: {out}"
+    rewritten = out["updatedInput"]["command"]
+    nonce = rewritten.split("AI_HATS_CONSENT_TICKET=", 1)[1].split(" ", 1)[0]
+    assert rewritten == expected % nonce, rewritten
+
+
+def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
+    """agy spells the Bash argument `CommandLine`. Writing `command` back at it
+    drops the ticket while the prompt claims the command carries one."""
+    payload = {
+        "tool_name": "run_command",
+        "tool_input": {"CommandLine": "rack transition X execute"},
+    }
+    res = subprocess.run(  # noqa: S603
+        [sys.executable, str(HOOK)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        cwd=str(repo),
+        env={k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")},
+    )
+    out = json.loads(res.stdout)["hookSpecificOutput"]
+
+    assert out["permissionDecision"] == "ask", out
+    assert "CommandLine" in out["updatedInput"], out["updatedInput"]
+    assert "command" not in out["updatedInput"], "invented a key the surface never sent"
+    assert out["updatedInput"]["CommandLine"].startswith("AI_HATS_CONSENT_TICKET=")
+
+
+def test_a_store_that_cannot_mint_records_why_the_question_vanished(tmp_path):
+    """The doctrine of HATS-1373/1407: a gate that stopped acting looks exactly
+    like a gate with nothing to do — unless it says so."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    (tmp_path / ".git" / "ai-hats").mkdir()
+    (tmp_path / ".git" / "ai-hats" / "consent").write_text("not a directory", encoding="utf-8")
+
+    assert _decide("rack transition HATS-1 execute", cwd=tmp_path) == {}
+    journal = tmp_path / ".git" / "ai-hats" / "bypasses.jsonl"
+    assert journal.is_file(), "the question vanished without a trace"
+    assert "HATS-1" in journal.read_text(encoding="utf-8")
+
+
+def test_the_ticket_lands_in_the_repo_the_rack_call_will_run_in(repo, tmp_path):
+    """Resolved from the TARGET, like `backlog_write_gate` next door (HATS-1647).
+
+    Resolving from the hook's own cwd puts the ticket in one repo while `rack`
+    looks for it in another: the supervisor clicks and the card does not move.
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    other = tmp_path / "other"
+    other.mkdir()
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(other), check=True, timeout=30
+    )
+
+    out = _decide(f"cd {other} && rack transition HATS-9 execute", cwd=repo)
+
+    nonce = out["updatedInput"]["command"].split("AI_HATS_CONSENT_TICKET=", 1)[1].split(" ", 1)[0]
+    assert consent_ticket.consume("HATS-9", start=other, nonce=nonce) is True, (
+        "the ticket did not land in the repo the transition runs in"
+    )
 
 
 def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):

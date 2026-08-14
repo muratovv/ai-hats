@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import sys
+from pathlib import Path
 
 # HATS-1407 — a bypass printed only to stderr leaves no trace an hour later.
 # The hooks are stdlib-only, so the journal arrives as a flattened sibling.
@@ -35,7 +36,7 @@ _backlog_off_journaled = False
 # HATS-1642 — the ticket the ask hands to the rack process. Imported, never
 # re-spelled: one module owns the nonce, the directory and the clock.
 try:
-    from consent_ticket import TICKET_ENV
+    from consent_ticket import TICKET_ENV, TTL_SECONDS as TICKET_TTL
     from consent_ticket import mint as _mint_ticket
 except ImportError:  # sibling absent -> no question to ask; the refusal still stands
 
@@ -45,6 +46,7 @@ except ImportError:  # sibling absent -> no question to ask; the refusal still s
     #: The literal is duplicated ONLY on this path, so a missing sibling cannot
     #: turn the deny-list entry below into a hole.
     TICKET_ENV = "AI_HATS_CONSENT_TICKET"
+    TICKET_TTL = 0
 
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
@@ -261,76 +263,118 @@ def bin_args(tokens, cmd_bin: str):
 
 
 def execute_transition_target(args) -> str:
-    """The task id iff ``args`` is ``rack transition <ID> execute``, else ``""``."""
+    """The task id iff ``args`` is ``rack transition <ID> execute``, else ``""``.
+
+    One pass, because options come before the positional id as readily as after
+    it (`rack transition --tasks-dir /t X execute`) — and the refusal tells the
+    agent to re-run its command, so a shape that goes quiet makes it a liar.
+    """
     rest = args[1:]
-    if len(rest) < 2 or rest[0] != "transition":
+    if not rest or rest[0] != "transition":
         return ""
-    task_id = rest[1]
-    if not task_id or task_id.startswith("-"):
-        return ""
-    tokens, i, wanted = rest[2:], 0, False
-    while i < len(tokens):
-        tok = tokens[i]
+    task_id, wanted, i = "", False, 1
+    while i < len(rest):
+        tok = rest[i]
         if tok in RACK_UNGATED_FLAGS:
             return ""
         if tok in RACK_VALUE_FLAGS:
-            wanted = wanted or (tok == "--state" and tokens[i + 1 : i + 2] == [EXECUTE_STATE])
+            if tok == "--state" and rest[i + 1 : i + 2] == [EXECUTE_STATE]:
+                wanted = True
             i += 2
             continue
-        wanted = wanted or tok == EXECUTE_STATE
+        if tok.startswith("-"):
+            i += 1
+            continue
+        if not task_id:
+            task_id = tok
+        elif tok == EXECUTE_STATE:
+            wanted = True
         i += 1
     return task_id if wanted else ""
 
 
-def prefixed_command(cmd: str, rack_token: str, assignment: str) -> str:
-    """``cmd`` with ``assignment`` inserted immediately before the rack call.
+def prefixed_command(cmd: str, rack_token: str, ordinal: int, total: int, assignment: str) -> str:
+    """``cmd`` with ``assignment`` inserted before the ``ordinal``-th rack call.
 
     Prefixing the whole string would be wrong — in `cd x && rack …` the
-    assignment would belong to `cd`. An ambiguous position yields ``""``: a
-    rewrite this gate is not sure of is a rewrite it does not make.
+    assignment would belong to `cd`. Counting occurrences against the commands
+    the lexer actually found is what tells `rack ls && rack transition …` (two
+    calls, two spellings) from a `rack` inside a quoted argument: on a mismatch
+    this returns ``""``, and a rewrite the gate is unsure of is one it skips.
     """
     spots = list(re.finditer(r"(?<![\w./~-])" + re.escape(rack_token) + r"(?=\s)", cmd))
-    if len(spots) != 1:
+    if len(spots) != total or not (0 <= ordinal < total):
         return ""
-    at = spots[0].start()
+    at = spots[ordinal].start()
     return f"{cmd[:at]}{assignment} {cmd[at:]}"
 
 
-def consent_ask(cmd: str, tool_input: dict) -> dict:
+def target_cwd(cmd: str):
+    """Where the rack call in ``cmd`` will actually run — ``None`` if unknowable.
+
+    The store is resolved from the TARGET, not from the hook's own directory
+    (the HATS-1647 policy its neighbour ``backlog_write_gate`` already follows):
+    with `cd /other/repo && rack …` a hook-relative store means the supervisor
+    clicks in one repo and `rack` looks in another.
+    """
+    where = Path.cwd()
+    for tokens in parse_commands(cmd):
+        if get_bin(tokens) != "cd":
+            continue
+        args = [tok for tok in bin_args(tokens, "cd")[1:] if not tok.startswith("-")]
+        if len(args) != 1:
+            return None  # `cd`, `cd -`, `cd a b`: not a destination we can name
+        where = (where / os.path.expanduser(args[0])).resolve()
+    return where
+
+
+def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
     """The `ask` payload for a `plan → execute` transition, or ``{}``.
 
     One hook, one verdict (HATS-1253): the process that mints the ticket is the
     one that refuses a typed one, so the two can never disagree about which is
     which. Empty means there is nothing to ask — the rack's own gate still runs.
     """
-    for tokens in parse_commands(cmd):
-        cmd_bin = get_bin(tokens)
-        if cmd_bin != "rack":
-            continue
-        args = bin_args(tokens, cmd_bin)
+    calls = [bin_args(t, "rack") for t in parse_commands(cmd) if get_bin(t) == "rack"]
+    for index, args in enumerate(calls):
         task_id = execute_transition_target(args)
         if not task_id:
             continue
+        token = args[0]
+        ordinal = sum(1 for a in calls[:index] if a and a[0] == token)
+        total = sum(1 for a in calls if a and a[0] == token)
         # The env channel stands in wherever no question can be asked — headless,
         # cron, a surface without runtime hooks. Set there, a prompt is redundant,
         # and in headless an `ask` does not prompt, it blocks.
         if os.environ.get("AI_HATS_PLAN_ACK") == "1":
             journal_bypass("hatch", "AI_HATS_PLAN_ACK", hook="safety_gate.py", cmd=cmd)
             return {}
-        nonce = _mint_ticket(task_id, session_id=os.environ.get("AI_HATS_SESSION_ID", ""))
-        if not nonce:
-            return {}
-        rewritten = prefixed_command(cmd, args[0], f"{TICKET_ENV}={nonce}")
+        where = target_cwd(cmd)
+        nonce = None if where is None else _mint_ticket(task_id, start=where)
+        rewritten = (
+            prefixed_command(cmd, token, ordinal, total, f"{TICKET_ENV}={nonce}") if nonce else ""
+        )
         if not rewritten:
+            # A gate that stopped asking looks exactly like one with nothing to
+            # ask about (HATS-1373). The rack still refuses; say why it must.
+            journal_bypass(
+                "fail-open",
+                f"no consent question raised for {task_id}: "
+                + ("cannot place the ticket in the command" if nonce else "cannot mint a ticket"),
+                hook="safety_gate.py",
+                cmd=cmd,
+            )
             return {}
         return {
             "permissionDecision": "ask",
             "permissionDecisionReason": (
                 f"{task_id}: plan → execute needs your consent. This command carries a "
-                "ticket good for one transition of this card and a few minutes — it "
-                "opens nothing else. Reject to keep the card in plan."
+                f"ticket good for one transition of this card, in this session, for "
+                f"{TICKET_TTL}s."
             ),
-            "updatedInput": {**tool_input, "command": rewritten},
+            # Answer in the key the surface spoke in: agy says `CommandLine`, and
+            # a rewrite filed under `command` would be dropped in silence.
+            "updatedInput": {**tool_input, cmd_key: rewritten},
         }
     return {}
 
@@ -366,8 +410,26 @@ def check_backlog_write(cmd_bin: str, args) -> str:
 
 HANDLERS = {"sed": check_sed, "rm": check_rm}
 
+#: Shells whose `-c` argument is a whole command line. To the outer lexer that
+#: argument is ONE token, so every check above read past it — which is how
+#: `bash -c "rm -rf /"` and an ack hidden behind `export` both went through.
+SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "ash")
+#: `-c`, and the bundles it really arrives in: `-lc`, `-lic`, `-euc`.
+SHELL_C_FLAG = re.compile(r"\A-[a-z]*c\Z")
+#: A wrapper nesting deeper than this is not a spelling anyone types.
+MAX_WRAPPER_DEPTH = 3
 
-def check_command(cmd_string: str) -> str:
+
+def shell_payloads(cmd_bin: str, args) -> list:
+    """The command lines a `sh -c '…'` style call hands to a shell."""
+    if cmd_bin not in SHELLS:
+        return []
+    return [
+        args[i + 1] for i, tok in enumerate(args) if SHELL_C_FLAG.match(tok) and i + 1 < len(args)
+    ]
+
+
+def check_command(cmd_string: str, depth: int = 0) -> str:
     for tokens in parse_commands(cmd_string):
         reason = check_self_grant(tokens)
         if reason:
@@ -378,6 +440,12 @@ def check_command(cmd_string: str) -> str:
             continue
 
         args = bin_args(tokens, cmd_bin)
+
+        if depth < MAX_WRAPPER_DEPTH:
+            for payload in shell_payloads(cmd_bin, args):
+                reason = check_command(payload, depth + 1)
+                if reason:
+                    return reason
 
         reason = check_backlog_write(cmd_bin, args)
         if reason:
@@ -414,7 +482,10 @@ def main() -> int:
         tool_call = payload.get("toolCall") or {}
         tool_input = tool_call.get("args") or {}
 
-    cmd = (tool_input.get("command") or tool_input.get("CommandLine") or "").strip()
+    # Remember WHICH key carried the command: a rewrite has to answer in the same
+    # one, and agy spells it `CommandLine` (HATS-1642 review).
+    cmd_key = "command" if tool_input.get("command") else "CommandLine"
+    cmd = (tool_input.get(cmd_key) or "").strip()
     if not cmd:
         return 0
 
@@ -431,11 +502,11 @@ def main() -> int:
         return 0
 
     try:
-        ask = consent_ask(cmd, tool_input)
+        ask = consent_ask(cmd, tool_input, cmd_key)
     except Exception as exc:
         # A consent path that touches the filesystem must never take the rest of
         # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).
-        journal_bypass("fail-open", f"consent ask failed on {cmd!r}: {exc!r}", hook="safety_gate.py")
+        journal_bypass("fail-open", f"consent ask failed: {exc!r}", hook="safety_gate.py", cmd=cmd)
         return 0
     if ask:
         _emit(ask)

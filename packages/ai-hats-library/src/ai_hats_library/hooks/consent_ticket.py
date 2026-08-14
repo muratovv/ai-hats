@@ -29,9 +29,13 @@ TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 #: input, and ``../../../etc/passwd`` must never become a path.
 NONCE_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 
-#: How long a minted ticket stays valid. Long enough for a supervisor to read
-#: the plan before clicking, short enough that yesterday's click is not consent.
-TTL_SECONDS = 900
+#: With no callback after the answer, the ticket is written when the question is
+#: RAISED — so this is also the window a REJECTED one stays usable. Kept short.
+TTL_SECONDS = 90
+
+#: The session that asked. Carried in the ticket and checked on the way out, so
+#: a leftover from another session's question is not this session's consent.
+SESSION_ENV = "AI_HATS_SESSION_ID"
 
 
 def _git_common_dir(start: Path) -> Path | None:
@@ -92,7 +96,11 @@ def _prune(directory: Path, now: float) -> None:
             continue
 
 
-def mint(task_id: str, *, start: Path | None = None, session_id: str = "") -> str | None:
+def _session() -> str:
+    return os.environ.get(SESSION_ENV, "")
+
+
+def mint(task_id: str, *, start: Path | None = None, session_id: str | None = None) -> str | None:
     """Issue a ticket for ``task_id``; the nonce, or ``None`` when it cannot.
 
     ``None`` is not a failure to gate — the rack's own consent gate still runs
@@ -103,7 +111,13 @@ def mint(task_id: str, *, start: Path | None = None, session_id: str = "") -> st
         return None
     now = time.time()
     nonce = secrets.token_hex(16)
-    payload = json.dumps({"task_id": task_id, "issued_at": now, "session_id": session_id})
+    payload = json.dumps(
+        {
+            "task_id": task_id,
+            "issued_at": now,
+            "session_id": _session() if session_id is None else session_id,
+        }
+    )
     try:
         directory.mkdir(parents=True, exist_ok=True)
         _prune(directory, now)
@@ -116,6 +130,22 @@ def mint(task_id: str, *, start: Path | None = None, session_id: str = "") -> st
     return nonce
 
 
+def peek(
+    task_id: str,
+    *,
+    start: Path | None = None,
+    nonce: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Is consent for ``task_id`` on hand? Asking does not use it up.
+
+    The gate runs early so its refusal is early, but the transition it guards
+    can still be rolled back by a later subscriber — spending there would burn
+    the supervisor's click on a move that never happened (HATS-1642).
+    """
+    return _valid_ticket(task_id, start=start, nonce=nonce, now=now) is not None
+
+
 def consume(
     task_id: str,
     *,
@@ -126,42 +156,62 @@ def consume(
     """Spend the ticket naming ``task_id``; ``True`` iff THIS call spent it.
 
     One-shot by the unlink: whoever removes the file is the one call the ticket
-    consented to. Bound to the card, so another card's ticket is not this card's
-    consent, and expiring, so a click is consent now and not tomorrow.
+    consented to.
+    """
+    path = _valid_ticket(task_id, start=start, nonce=nonce, now=now)
+    return _drop(path) if path is not None else False
+
+
+def _valid_ticket(
+    task_id: str,
+    *,
+    start: Path | None = None,
+    nonce: str | None = None,
+    now: float | None = None,
+):
+    """The ticket file that consents to ``task_id`` here and now, or ``None``.
+
+    Bound to the card, so another card's ticket is not this card's consent; to
+    the session, so a leftover from another session's question is not either;
+    and expiring, so a click is consent now and not an hour from now.
     """
     raw = os.environ.get(TICKET_ENV, "") if nonce is None else nonce
     if not raw:
-        return False
+        return None
     if not NONCE_RE.match(raw):
         _note(f"ignoring a {TICKET_ENV} value that is not a minted nonce")
-        return False
+        return None
     directory = tickets_dir(start)
     if directory is None:
-        return False
+        return None
     path = directory / f"{raw}.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         _note(f"ticket already spent or never issued ({raw[:8]}…)")
-        return False
+        return None
     except (OSError, ValueError, UnicodeDecodeError) as exc:
         _note(f"unreadable ticket at {path}: {exc}")
-        return False
+        return None
     if not isinstance(data, dict) or data.get("task_id") != task_id:
         # Another card's ticket: refuse WITHOUT spending it — it is still that
         # card's consent, and eating it here would send the supervisor back.
         _note(f"ticket {raw[:8]}… was issued for another task, not {task_id}")
-        return False
+        return None
+    if data.get("session_id") != _session():
+        # Same reason, other axis: another session's question, answered or not.
+        _note(f"ticket {raw[:8]}… was issued to another session")
+        return None
     issued = data.get("issued_at")
     if not isinstance(issued, (int, float)) or isinstance(issued, bool):
         _note(f"ticket {raw[:8]}… carries no issue time")
         _drop(path)
-        return False
+        return None
     if (time.time() if now is None else now) - issued > TTL_SECONDS:
         _note(f"ticket {raw[:8]}… expired after {TTL_SECONDS}s — ask again")
         _drop(path)
-        return False
-    return _drop(path)
+        return None
+    return path
 
 
 def _drop(path: Path) -> bool:

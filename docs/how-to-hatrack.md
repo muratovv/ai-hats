@@ -141,10 +141,15 @@ rack transition HATS-NNN done        # the reviewer drives this one
 
 `plan → execute` is **consent-gated**, so an agent cannot walk its own plan into
 implementation without your approval. On a surface with runtime hooks the agent
-simply runs the command and the guard turns it into a **question in chat**:
-approving mints a one-shot ticket, bound to that card and short-lived, and the
-transition goes through. Nothing is typed by the agent — a consent prefix it
-writes itself is refused as a self-grant.
+simply runs the command and the guard turns it into a **question in chat**: the
+call carries a one-shot ticket, good for that card, in that session, for a
+couple of minutes, and spent only if the transition actually lands. Nothing is
+typed by the agent — a consent prefix it writes itself is refused as a
+self-grant.
+
+The question goes up before the plan is read, so a `plan → execute` that then
+fails on empty plan sections spent your answer on a move that did not happen —
+the next attempt asks again.
 
 Where there is nobody to ask — headless (`claude -p`), cron, or a surface with
 no runtime hooks — consent comes from the environment that launches the session:
