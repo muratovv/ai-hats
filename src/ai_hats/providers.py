@@ -662,8 +662,8 @@ class UnknownProviderError(ValueError):
         super().__init__(f"Unknown provider: {name}. Available: {available}")
 
 
-def get_provider(name: str) -> Provider:
-    """Get a provider instance by name (HATS-1394)."""
+def get_provider(name: str, *, auto_install: bool = True) -> Provider:
+    """Get a provider instance, optionally without mutating package state."""
     _ensure_entry_points_loaded()
     canonical_name = PROVIDER_ALIASES.get(name, name)
     cls = _PROVIDER_REGISTRY.get(canonical_name)
@@ -676,7 +676,7 @@ def get_provider(name: str) -> Provider:
         in_tree = root.joinpath(*SURFACES_SUBPATH, canonical_name).is_dir() if root else False
         is_known = get_surface_info(canonical_name) is not None
 
-        if is_known or in_tree:
+        if auto_install and (is_known or in_tree):
             if ensure_surface_plugin_installed(canonical_name):
                 import importlib
 
