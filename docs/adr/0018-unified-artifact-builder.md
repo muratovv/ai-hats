@@ -263,8 +263,9 @@ To maintain the **Clean-Root Invariant** without mutating `<project_root>/.gemin
 
 - [2] `docs/adr/0021-surface-materialization.md` — карта материализации
   поверхностей (ярусы, чокпойнты, кэш, очистка) и требования M1–M15, куда
-  ADR-0020 отсылает за ярусами (`0020:32-34`). Таблицы с per-build каденцией
-  в ней нет — HATS-1652.
+  ADR-0020 отсылает за ярусами (врезка-указатель в его шапке: «полная карта
+  материализации поверхностей … живут в **ADR-0021 [5]**»). Таблицы с per-build
+  каденцией в ней нет — HATS-1652.
 - [1] `docs/adr/0014-composable-component-decomposition.md` §1 — the three-tier
   dependency model and the HATS-956 amendment adding the surface tier
   (*"depend UP on the integrator"*, *"The first consumer tier above the
