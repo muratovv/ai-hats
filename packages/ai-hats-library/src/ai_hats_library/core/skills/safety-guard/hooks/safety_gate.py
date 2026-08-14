@@ -11,6 +11,7 @@ tracker backlog is refused with the `rack` recipe. Not handled here: `git push`
 
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -30,6 +31,20 @@ except ImportError:  # helper absent -> say so; never skip quietly
 
 
 _backlog_off_journaled = False
+
+# HATS-1642 — the ticket the ask hands to the rack process. Imported, never
+# re-spelled: one module owns the nonce, the directory and the clock.
+try:
+    from consent_ticket import TICKET_ENV
+    from consent_ticket import mint as _mint_ticket
+except ImportError:  # sibling absent -> no question to ask; the refusal still stands
+
+    def _mint_ticket(task_id: str, **_kw) -> None:
+        return None
+
+    #: The literal is duplicated ONLY on this path, so a missing sibling cannot
+    #: turn the deny-list entry below into a hole.
+    TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
@@ -196,8 +211,9 @@ def check_sql(cmd_bin: str, args) -> str:
 
 
 # Consent flags the target PROCESS reads, so an inline prefix reaches them. Hook-read
-# flags (AI_HATS_SHARED_STATE_ACK) need no entry — HATS-1639.
-SELF_GRANT_FORBIDDEN = ("AI_HATS_YOLO", "AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK")
+# flags (AI_HATS_SHARED_STATE_ACK) need no entry — HATS-1639. The consent ticket is
+# here too (HATS-1642): this guard mints it, so an agent typing one is forging it.
+SELF_GRANT_FORBIDDEN = ("AI_HATS_YOLO", "AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK", TICKET_ENV)
 
 
 def check_self_grant(args) -> str:
@@ -205,12 +221,118 @@ def check_self_grant(args) -> str:
     for token in args:
         upper = token.upper()
         for flag in SELF_GRANT_FORBIDDEN:
-            if upper.startswith(f"{flag}="):
+            if not upper.startswith(f"{flag}="):
+                continue
+            if flag == TICKET_ENV:
                 return (
-                    f"Stopped: {flag} cannot be granted inline — a guard the agent can "
-                    "switch off is not a guard. Export it in the environment instead."
+                    f"Stopped: {flag} is minted by this guard when the supervisor answers "
+                    "the prompt — it is not typed. Run the transition without a prefix."
                 )
+            return (
+                f"Stopped: {flag} cannot be granted inline — a guard the agent can "
+                "switch off is not a guard. Export it in the environment instead."
+            )
     return ""
+
+
+# ----- the supervisor's consent for `plan → execute` (HATS-1642) --------------
+
+#: `rack transition` op flags that eat the NEXT token as their value. Without
+#: this, `--log "execute"` — a note ABOUT the move — would read as the move.
+RACK_VALUE_FLAGS = frozenset(
+    {
+        "--state", "--attach", "--freeze", "--rm", "--log", "--link", "--unlink",
+        "--set", "--append", "--reason", "--resolution", "--final-state", "--tasks-dir",
+    }
+)  # fmt: skip
+
+#: `--force` skips the rack's consent gate outright, so a prompt would be theatre.
+RACK_UNGATED_FLAGS = frozenset({"--force"})
+
+EXECUTE_STATE = "execute"
+
+
+def bin_args(tokens, cmd_bin: str):
+    """``tokens`` from the binary onward — env assignments and wrappers dropped."""
+    for i, tok in enumerate(tokens):
+        if os.path.basename(tok) == cmd_bin:
+            return tokens[i:]
+    return tokens
+
+
+def execute_transition_target(args) -> str:
+    """The task id iff ``args`` is ``rack transition <ID> execute``, else ``""``."""
+    rest = args[1:]
+    if len(rest) < 2 or rest[0] != "transition":
+        return ""
+    task_id = rest[1]
+    if not task_id or task_id.startswith("-"):
+        return ""
+    tokens, i, wanted = rest[2:], 0, False
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in RACK_UNGATED_FLAGS:
+            return ""
+        if tok in RACK_VALUE_FLAGS:
+            wanted = wanted or (tok == "--state" and tokens[i + 1 : i + 2] == [EXECUTE_STATE])
+            i += 2
+            continue
+        wanted = wanted or tok == EXECUTE_STATE
+        i += 1
+    return task_id if wanted else ""
+
+
+def prefixed_command(cmd: str, rack_token: str, assignment: str) -> str:
+    """``cmd`` with ``assignment`` inserted immediately before the rack call.
+
+    Prefixing the whole string would be wrong — in `cd x && rack …` the
+    assignment would belong to `cd`. An ambiguous position yields ``""``: a
+    rewrite this gate is not sure of is a rewrite it does not make.
+    """
+    spots = list(re.finditer(r"(?<![\w./~-])" + re.escape(rack_token) + r"(?=\s)", cmd))
+    if len(spots) != 1:
+        return ""
+    at = spots[0].start()
+    return f"{cmd[:at]}{assignment} {cmd[at:]}"
+
+
+def consent_ask(cmd: str, tool_input: dict) -> dict:
+    """The `ask` payload for a `plan → execute` transition, or ``{}``.
+
+    One hook, one verdict (HATS-1253): the process that mints the ticket is the
+    one that refuses a typed one, so the two can never disagree about which is
+    which. Empty means there is nothing to ask — the rack's own gate still runs.
+    """
+    for tokens in parse_commands(cmd):
+        cmd_bin = get_bin(tokens)
+        if cmd_bin != "rack":
+            continue
+        args = bin_args(tokens, cmd_bin)
+        task_id = execute_transition_target(args)
+        if not task_id:
+            continue
+        # The env channel stands in wherever no question can be asked — headless,
+        # cron, a surface without runtime hooks. Set there, a prompt is redundant,
+        # and in headless an `ask` does not prompt, it blocks.
+        if os.environ.get("AI_HATS_PLAN_ACK") == "1":
+            journal_bypass("hatch", "AI_HATS_PLAN_ACK", hook="safety_gate.py", cmd=cmd)
+            return {}
+        nonce = _mint_ticket(task_id, session_id=os.environ.get("AI_HATS_SESSION_ID", ""))
+        if not nonce:
+            return {}
+        rewritten = prefixed_command(cmd, args[0], f"{TICKET_ENV}={nonce}")
+        if not rewritten:
+            return {}
+        return {
+            "permissionDecision": "ask",
+            "permissionDecisionReason": (
+                f"{task_id}: plan → execute needs your consent. Approving mints a "
+                "one-shot ticket for this card alone; it expires shortly and cannot "
+                "be reused. Reject to keep the card in plan."
+            ),
+            "updatedInput": {**tool_input, "command": rewritten},
+        }
+    return {}
 
 
 #: Binaries that mutate whatever path they are handed. `sed` counts only with
@@ -255,11 +377,7 @@ def check_command(cmd_string: str) -> str:
         if not cmd_bin:
             continue
 
-        args = tokens
-        for i, tok in enumerate(tokens):
-            if os.path.basename(tok) == cmd_bin:
-                args = tokens[i:]
-                break
+        args = bin_args(tokens, cmd_bin)
 
         reason = check_backlog_write(cmd_bin, args)
         if reason:
@@ -309,18 +427,23 @@ def main() -> int:
         return 0
 
     if reason:
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "deny",
-                        "permissionDecisionReason": reason,
-                    }
-                }
-            )
-        )
+        _emit({"permissionDecision": "deny", "permissionDecisionReason": reason})
+        return 0
+
+    try:
+        ask = consent_ask(cmd, tool_input)
+    except Exception as exc:
+        # A consent path that touches the filesystem must never take the rest of
+        # the gate down with it — `rm`, `mkfs`, `dd` are judged above (HATS-1647).
+        journal_bypass("fail-open", f"consent ask failed on {cmd!r}: {exc!r}", hook="safety_gate.py")
+        return 0
+    if ask:
+        _emit(ask)
     return 0
+
+
+def _emit(decision: dict) -> None:
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", **decision}}))
 
 
 if __name__ == "__main__":

@@ -40,11 +40,13 @@ from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
 from ai_hats_rack.extensions import (
     DerivedViewsExtension,
     EpicAutomationExtension,
+    PlanConsentExtension,
     Section,
 )
 from ai_hats_rack.fsm import Topology
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
+from ai_hats_library.hooks.consent_ticket import consume as consume_consent_ticket
 
 from . import ownership
 from .constants import ENV_ROOT_PID
@@ -455,6 +457,12 @@ def build_rack_kernel(
     # plan-gate/stamp/clear (declaration-bound) come from the definition slots.
     # derived-views stays code-channel — it needs the STATE.md path (ADR-0017 §4).
     factories = stock_factories(sections)
+    # HATS-1642: the consent ticket is written by a shipped hook, which the rack
+    # may not import (import-hygiene pin) — so the READER is bound here, the same
+    # one-directional channel ownership already rides.
+    factories["plan-consent"] = lambda defn, catalog, cfg: PlanConsentExtension(
+        ticket_consumer=consume_consent_ticket
+    )
     declared = (
         build_extensions(defn, tasks_dir, factories)
         + build_bound_subscribers(defn, tasks_dir, factories)

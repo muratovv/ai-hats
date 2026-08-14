@@ -334,6 +334,83 @@ def test_plan_consent_skipped_on_reopen_and_epic(kit, tasks_dir, cwd, monkeypatc
     assert kit.get("T-1").state == "execute"
 
 
+class _Booth:
+    """Stand-in for the integrator's ticket reader: one card, one use."""
+
+    def __init__(self, *task_ids: str) -> None:
+        self.unspent = set(task_ids)
+        self.asked: list[str] = []
+
+    def __call__(self, task_id: str) -> bool:
+        self.asked.append(task_id)
+        if task_id not in self.unspent:
+            return False
+        self.unspent.discard(task_id)
+        return True
+
+
+def _kit_with_booth(tasks_dir, booth):
+    """The seam the integrator fills (HATS-1642): the rack cannot import the
+    library that writes the ticket, so the reader arrives through the factory."""
+    from ai_hats_rack.composition import compose_subscribers, stock_factories
+    from ai_hats_rack.definition import load_backlog
+    from ai_hats_rack.extensions import PlanConsentExtension
+
+    factories = {
+        **stock_factories(),
+        "plan-consent": lambda d, c, cfg: PlanConsentExtension(ticket_consumer=booth),
+    }
+    return make_kernel(
+        tasks_dir, subscribers=compose_subscribers(load_backlog(), tasks_dir, factories)
+    )
+
+
+def _planned(kit, tasks_dir, cwd):
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+    (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+
+
+def test_plan_consent_passes_when_the_seam_spends_a_ticket(tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    booth = _Booth("T-1")
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert kit.get("T-1").state == "execute"
+    assert booth.asked == ["T-1"], "the gate did not ask about THIS card"
+
+
+def test_plan_consent_blocks_when_the_seam_holds_no_ticket(tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    booth = _Booth()  # the supervisor was never asked
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    with pytest.raises(OperationAborted) as exc_info:
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert exc_info.value.subscriber == "plan-consent"
+    assert booth.asked == ["T-1"]
+    assert kit.get("T-1").state == "plan"
+
+
+def test_the_env_ack_never_spends_a_ticket(tasks_dir, cwd, monkeypatch):
+    """Pre-approved in the launching environment: no question is left to ask, so
+    a ticket the supervisor may still hold stays unspent."""
+    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
+    booth = _Booth("T-1")
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert kit.get("T-1").state == "execute"
+    assert booth.asked == [], "the env channel burned a ticket it did not need"
+
+
 def test_plan_consent_skipped_on_force(kit, tasks_dir, cwd, monkeypatch):
     monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
     _create(kit, cwd)

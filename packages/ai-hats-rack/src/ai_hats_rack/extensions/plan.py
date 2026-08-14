@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Callable
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase
 from .epic import AUTOMATION_ACTOR
@@ -18,10 +19,20 @@ from .sections import DEFAULT_PLAN_SECTIONS, Section, render_scaffold, unfilled_
 
 
 class PlanConsentExtension:
-    """Blocks ``plan → execute`` transition unless AI_HATS_PLAN_ACK=1 is set (in-lock)."""
+    """Blocks ``plan → execute`` until the supervisor consents (in-lock).
+
+    Two channels, in this order: a one-shot ticket the guard minted when the
+    supervisor answered a prompt in chat, and — where no question can be asked
+    (headless, cron, surfaces without runtime hooks) — ``AI_HATS_PLAN_ACK=1``
+    in the launching environment. ``ticket_consumer`` is the integrator's, since
+    the rack may not import the library that writes the ticket (HATS-1642).
+    """
 
     name = "plan-consent"
     PHASE = Phase.IN_LOCK
+
+    def __init__(self, ticket_consumer: Callable[[str], bool] | None = None) -> None:
+        self._consume_ticket = ticket_consumer
 
     def requires_states(self) -> frozenset[str]:
         return frozenset({"execute"})  # gates on entering execute
@@ -29,19 +40,23 @@ class PlanConsentExtension:
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic or ctx.force:
             return None  # epics, automation, and forced overrides skip consent check
-        from_state = getattr(ctx.event, "from_state", "")
-        if from_state == "plan" and os.environ.get("AI_HATS_PLAN_ACK") != "1":
-            raise AbortOperation(
-                f"Transition 'plan -> execute' for '{ctx.task.id}' requires supervisor approval. "
-                "AI_HATS_PLAN_ACK=1 is not set in environment.\n"
-                "1. Present plan.md to the supervisor in chat and STOP.\n"
-                "2. Consent is the supervisor's to give, from the environment that\n"
-                "   launched this session — an inline prefix on the agent's own command\n"
-                "   is refused as a self-grant (HATS-1639):\n"
-                "     export AI_HATS_PLAN_ACK=1\n"
-                f"   then: rack transition {ctx.task.id} execute"
-            )
-        return None
+        if getattr(ctx.event, "from_state", "") != "plan":
+            return None
+        if os.environ.get("AI_HATS_PLAN_ACK") == "1":
+            return None
+        if self._consume_ticket is not None and self._consume_ticket(ctx.task.id):
+            return Delta(work_log=("plan → execute: supervisor consent ticket spent",))
+        raise AbortOperation(
+            f"Transition 'plan -> execute' for '{ctx.task.id}' requires supervisor approval, "
+            "and none has arrived.\n"
+            "1. Present plan.md to the supervisor in chat and STOP.\n"
+            "2. Then re-run this exact command: the guard turns it into a one-click\n"
+            "   question in chat, and the supervisor's answer is what carries consent.\n"
+            "3. Where there is nobody to ask — headless, cron, a surface without\n"
+            "   runtime hooks — consent comes from the launching environment, on its\n"
+            "   own line, before the session starts:\n"
+            "     export AI_HATS_PLAN_ACK=1"
+        )
 
 
 class PlanScaffoldExtension:

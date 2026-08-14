@@ -32,6 +32,10 @@ class Verdict:
     #: A nudge never touches ``decision``, so a test reading only the verdict
     #: cannot see what the agent was actually told (HATS-1630).
     context: str = ""
+    #: The tool input a hook rewrote, when it did — an `ask` carrying a consent
+    #: ticket says both things in ONE reply, and dropping half of it here would
+    #: report the question without its payload (HATS-1642).
+    updated_input: dict | None = None
 
     @property
     def denied(self) -> bool:
@@ -140,10 +144,18 @@ def _run_one(command: str, payload: str, project: Path, env: dict) -> Verdict:
         hso = payload_out.get("hookSpecificOutput") or {}
         decision = str(hso.get("permissionDecision", "")).lower()
         context = str(hso.get("additionalContext", ""))
+        rewritten = hso.get("updatedInput")
+        rewritten = rewritten if isinstance(rewritten, dict) else None
         if decision in {"deny", "ask"}:
-            return Verdict(decision, str(hso.get("permissionDecisionReason", "")), name, context)
-        if context:
-            return Verdict("allow", context=context)
+            return Verdict(
+                decision,
+                str(hso.get("permissionDecisionReason", "")),
+                name,
+                context,
+                rewritten,
+            )
+        if context or rewritten:
+            return Verdict("allow", context=context, updated_input=rewritten)
 
     return Verdict("allow")
 
@@ -181,13 +193,18 @@ def run_tool_chain(
         raise AssertionError(f"no {tool} PreToolUse hooks wired in {settings}")
 
     contexts: list[str] = []
+    rewritten: dict | None = None
     for command_str in hooks:
         verdict = _run_one(command_str, payload, project, base_env)
         if verdict.context:
             contexts.append(verdict.context)
+        if verdict.updated_input is not None:
+            rewritten = verdict.updated_input
         if verdict.gated:
-            return Verdict(verdict.decision, verdict.reason, verdict.hook, "\n".join(contexts))
-    return Verdict("allow", context="\n".join(contexts))
+            return Verdict(
+                verdict.decision, verdict.reason, verdict.hook, "\n".join(contexts), rewritten
+            )
+    return Verdict("allow", context="\n".join(contexts), updated_input=rewritten)
 
 
 def run_chain(

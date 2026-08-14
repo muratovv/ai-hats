@@ -28,7 +28,12 @@ HOOK = (
 )
 
 
-def _decide(command: str, *, env_extra: dict[str, str] | None = None) -> dict:
+def _decide(
+    command: str,
+    *,
+    env_extra: dict[str, str] | None = None,
+    cwd: Path | None = None,
+) -> dict:
     """Run the hook on a Bash payload; return its decision ({} when it allows)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
     env.update(env_extra or {})
@@ -39,6 +44,7 @@ def _decide(command: str, *, env_extra: dict[str, str] | None = None) -> dict:
         text=True,
         timeout=20,
         env=env,
+        cwd=str(cwd) if cwd is not None else None,
     )
     assert res.returncode == 0, res.stderr
     if not res.stdout.strip():
@@ -129,3 +135,65 @@ def test_the_ack_opens_protected_data_but_never_the_root():
 def test_the_yolo_switch_disables_the_gate():
     """Documented kill switch — pinned so it cannot be removed silently."""
     assert _decide("rm -rf /", env_extra={"AI_HATS_YOLO": "1"}) == {}
+
+
+# ---------------------------------------------------------------------------
+# HATS-1642 — `plan → execute` is a question in chat, not a refusal
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def repo(tmp_path):
+    """A git repo — the consent ticket lands in the git dir, beside the journal."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    return tmp_path
+
+
+def test_a_plan_to_execute_transition_asks_the_supervisor(repo):
+    out = _decide("rack transition HATS-1 execute", cwd=repo)
+    assert out.get("permissionDecision") == "ask", f"the transition did not ask: {out}"
+    assert "HATS-1" in out.get("permissionDecisionReason", ""), out
+
+
+def test_typing_a_consent_ticket_is_denied_like_any_other_self_grant(repo):
+    """The guard mints the ticket; an agent writing one is forging the answer."""
+    forged = f"AI_HATS_CONSENT_TICKET={'a' * 32} rack transition HATS-1 execute"
+    assert "minted by this guard" in _denied(forged, cwd=repo)
+
+
+def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
+    """The two halves meet here: the hook mints, the integrator's reader spends.
+
+    The prefix must sit on the `rack` call itself — put in front of the whole
+    string it would belong to `cd`, and the rack process would never see it.
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    out = _decide("cd sub && rack transition HATS-7 execute", cwd=repo)
+    command = out["updatedInput"]["command"]
+    assert command.startswith("cd sub && AI_HATS_CONSENT_TICKET="), command
+    assert command.endswith(" rack transition HATS-7 execute"), command
+
+    nonce = command.split("AI_HATS_CONSENT_TICKET=", 1)[1].split(" ", 1)[0]
+    assert consent_ticket.consume("HATS-7", start=repo, nonce=nonce) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rack context HATS-1",
+        "rack ls",
+        "rack transition HATS-1 done",
+        "rack transition HATS-1 review",
+        'rack transition HATS-1 --log "note"',
+        # The op flag eats its value, so a message SAYING execute is still a note.
+        'rack transition HATS-1 --log "execute"',
+        # --force skips the consent gate inside rack; asking would be theatre.
+        'rack transition HATS-1 execute --force --reason "manual"',
+    ],
+)
+def test_the_neighbouring_rack_forms_never_prompt(command, repo):
+    """Control (green before the ask existed): only `plan → execute` is a question."""
+    assert _decide(command, cwd=repo) == {}, command
