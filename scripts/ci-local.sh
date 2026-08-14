@@ -12,7 +12,8 @@
 # interpreter with PYTHON=/path/to/python.
 #
 # Usage:
-#   scripts/ci-local.sh            # local bundle: lint dependency-floor unit coverage merge-smoke
+#   scripts/ci-local.sh            # local bundle: tmp-sweep lint dependency-floor unit coverage merge-smoke
+#   scripts/ci-local.sh tmp-sweep  # housekeeping only: reap dead test cruft from TMPDIR
 #   scripts/ci-local.sh lint       # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage   # the stage that was the sole failing executor
 #   scripts/ci-local.sh security   # CI-only stage; env-scoped (see NOTE below)
@@ -41,6 +42,18 @@ elif [[ -z "${PYTHON:-}" && -x "$repo_root/.venv/bin/python3" ]]; then
 else
     PY="${PYTHON:-python}"
 fi
+
+ci_tmp_sweep() {
+    # HATS-1624: reap what killed runs leave in TMPDIR. Housekeeping, not a
+    # check — it is in the `all` bundle and in NO gate composition, because a
+    # gate names what must be green and this can only free space. Runs FIRST so
+    # the heavy stages below get the space, and never fails the bundle: the
+    # sweeper reports an unremovable dir on stderr and its own exit code says so.
+    local sweep="$repo_root/scripts/clean-tmp-cruft.sh"
+    [[ -x "$sweep" ]] || return 0
+    echo "[ci-local] tmp-sweep (reap provably-dead test cruft)" >&2
+    bash "$sweep" || echo "[ci-local] tmp-sweep left dirs behind (see above); continuing" >&2
+}
 
 ci_lint() {
     echo "[ci-local] lint (ruff check + format)" >&2
@@ -191,8 +204,10 @@ case "$stage" in
     e2e-catalog) ci_e2e_catalog ;;
     e2e) ci_e2e ${@+"$@"} ;;
     version-skew) ci_version_skew ${@+"$@"} ;;
+    tmp-sweep) ci_tmp_sweep ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
+        ci_tmp_sweep
         ci_lint
         ci_dependency_floor
         ci_silent_fallback

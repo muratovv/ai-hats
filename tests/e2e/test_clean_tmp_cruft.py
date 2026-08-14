@@ -234,6 +234,30 @@ def test_never_deletes_cwd_worktree(tmp_path: Path) -> None:
     assert "skip" in cp.stdout
 
 
+def test_ci_local_tmp_sweep_stage_reaps(tmp_path: Path, dead_pid) -> None:
+    """`ci-local.sh` sweeps too — the trigger at the cadence garbage appears.
+
+    The pre-push master gate was the only automatic caller, and it runs once per
+    merge; killed runs leak on every heavy run (HATS-1663), so the residue sat
+    between them. A no-op sweep costs ~0.5 s against a 4-minute bundle.
+    """
+    root = tmp_path / "fake-tmp"
+    root.mkdir()
+    run = _run_dir(root, "pytest-21", pid=dead_pid)
+
+    cp = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "tmp-sweep"],
+        cwd=str(REPO_ROOT),
+        env={"TMPDIR": str(root), **_ENV},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert cp.returncode == 0, f"stderr:\n{cp.stderr}"
+    assert not run.exists(), "the ci-local stage did not reap a dead run dir"
+
+
 def test_rejects_unknown_argument(tmp_path: Path) -> None:
     cp = _run(tmp_path, "--delete-everything")
     assert cp.returncode == 2, "an unknown flag must not fall through to a sweep"
