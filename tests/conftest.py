@@ -164,8 +164,11 @@ def _dev_environment_integrity_tripwire():
 
     if deltas:
         pytest.fail(
-            "[dev-env-integrity] a test mutated the developer's environment (HATS-1164):\n  "
-            + "\n  ".join(deltas),
+            "[dev-env-integrity] the developer's environment changed while the tests "
+            "ran (HATS-1164):\n  "
+            + "\n  ".join(deltas)
+            + "\nA test may have done it; so would a `pip install` in this venv from "
+            "another session. This guard observes the change, not its author.",
             pytrace=False,
         )
 
