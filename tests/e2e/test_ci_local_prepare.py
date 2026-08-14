@@ -85,7 +85,7 @@ def test_preparing_reaches_the_hook_belonging_to_the_tree_it_prepares(checkout: 
     interpreter that could import one, and the hook that runs must be the one
     the judged content carries."""
     (checkout / HOOK_REL).write_text(
-        "#!/usr/bin/env bash\necho \"THIS TREE'S HOOK saw $AI_HATS_WORKTREE_PATH\"\n",
+        '#!/usr/bin/env bash\necho "THIS TREE\'S HOOK saw $AI_HATS_WORKTREE_PATH"\n',
         encoding="utf-8",
     )
 
