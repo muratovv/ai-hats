@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, NoReturn, Protocol
 
 
 from ai_hats_core import scrubbed_git_env
@@ -413,6 +413,80 @@ class WorktreeMainRepoMidMergeError(Exception):
             f"main repo at '{project_dir}' is mid-merge (MERGE_HEAD present) "
             f"— refusing to start another merge on top of an unfinished one."
         )
+
+
+class WorktreeMergeConflictError(Exception):
+    """``git merge`` stopped on conflicting content, and the main checkout was
+    put back where it was (HATS-1651).
+
+    A conflict is the one merge failure git reports by *leaving work behind*:
+    ``MERGE_HEAD`` written, markers in the tree, the index half-resolved. Before
+    this class the resulting :class:`subprocess.CalledProcessError` fell into the
+    generic handler in :meth:`WorktreeManager.merge`, which logged "worktree and
+    branch left intact for retry" — true of the worktree, silent about the main
+    checkout it had just left mid-merge. The next invocation then refused with
+    :class:`WorktreeMainRepoMidMergeError`, telling the operator to clean up after
+    an operation the tool said it never performed.
+
+    Raised only once the rollback is VERIFIED. The unverified case is
+    :class:`WorktreeMergeLeftoverError`, and the two must never be collapsed —
+    the whole point is that a cleanup is reported because it was observed.
+    Facts only, no recipe (HATS-509 contract): the CLI owns what to do next.
+    """  # comment-length: allow — which of the two classes applies IS the contract
+
+    def __init__(self, branch_name: str, base_branch: str, paths: tuple[str, ...]) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        self.paths = paths
+        listed = "\n".join(f"    {path}" for path in paths) or "    (git named no path)"
+        super().__init__(
+            f"Merging '{branch_name}' into '{base_branch}' conflicts on:\n{listed}\n"
+            f"The merge was rolled back: '{base_branch}' and the main checkout are as "
+            f"they were before it started, and the worktree and branch are untouched."
+        )
+
+
+class WorktreeMergeLeftoverError(Exception):
+    """The merge failed AND the main checkout could not be put back (HATS-1651).
+
+    ``git merge --abort`` is documented as unable to reconstruct pre-merge
+    uncommitted changes in some cases, and ``--squash`` writes no ``MERGE_HEAD``
+    for it to work from at all. So the rollback is attempted, then *verified*, and
+    when the verification fails this names what survived. Claiming a cleanup that
+    did not happen is the defect this card exists to remove, so the honest report
+    of a failed rollback is a louder refusal, never a quieter one.
+    """
+
+    def __init__(
+        self,
+        branch_name: str,
+        base_branch: str,
+        leftover: tuple[str, ...],
+        paths: tuple[str, ...] = (),
+    ) -> None:
+        self.branch_name = branch_name
+        self.base_branch = base_branch
+        self.leftover = leftover
+        self.paths = paths
+        conflicted = (
+            "\nIt conflicted on:\n" + "\n".join(f"    {path}" for path in paths) if paths else ""
+        )
+        listed = "\n".join(f"    {item}" for item in leftover)
+        super().__init__(
+            f"Merging '{branch_name}' into '{base_branch}' failed, and the main checkout "
+            f"could NOT be returned to its pre-merge state.{conflicted}\n"
+            f"What is left behind:\n{listed}"
+        )
+
+
+@dataclass(frozen=True)
+class _MainState:
+    """The main checkout in the only terms a merge rollback has to restore
+    (HATS-1651): where the branch points, what is staged, what is unresolved."""
+
+    head: str
+    staged: dict[str, str]
+    unmerged: tuple[str, ...]
 
 
 #: Branch names considered "canonical bases" for worktree creation. The
@@ -1105,9 +1179,14 @@ class WorktreeManager:
                 WorktreeMainRepoMidMergeError,
                 WorktreeStaleRefError,
                 WorktreeMergeIncompleteError,
+                WorktreeMergeConflictError,
+                WorktreeMergeLeftoverError,
             ):
                 # HATS-602 / HATS-1346: precondition & containment refusals — no git merge retry,
                 # propagate cleanly so the caller surfaces the actionable hint.
+                # HATS-1651: the two conflict refusals join them because each has
+                # already established the main checkout's state and said so — the
+                # generic log below would append a second, vaguer account of it.
                 raise
             except Exception:
                 # HATS-587 / F5: a failed merge (conflict, mid-resolution
@@ -2043,6 +2122,107 @@ class WorktreeManager:
         if self._main_repo_mid_merge():
             raise WorktreeMainRepoMidMergeError(self.project_dir)
 
+    # --- HATS-1651: the merge point is atomic ------------------------------
+    #
+    # `git merge` is the one step here that can fail HALFWAY. Everything below
+    # exists so that a failure is followed by a rollback, the rollback is
+    # verified, and the refusal states the state that was OBSERVED.
+
+    def _main_state(self) -> _MainState:
+        """What the main checkout looks like right now, in the terms a rollback
+        has to restore. **Call only while holding the base-branch lock.**
+
+        Deliberately NOT a whole-porcelain snapshot to compare wholesale: on the
+        FSM road rack writes the card's own tracker files into main while the
+        merge runs, so an equality test over every entry would report those
+        unrelated writes as merge leftovers. What a merge can change and nothing
+        else does — the branch pointer, the staged set, unmerged entries — is
+        what travels here.
+        """
+        staged = {}
+        for line in self._git("status", "--porcelain").stdout.splitlines():
+            if len(line) > 3 and line[0] not in " ?":
+                staged[line[3:]] = line[:2]
+        return _MainState(
+            head=self._git("rev-parse", "HEAD").stdout.strip(),
+            staged=staged,
+            unmerged=self._unmerged_paths(),
+        )
+
+    def _unmerged_paths(self) -> tuple[str, ...]:
+        """Paths git left with an unresolved merge, in the main checkout."""
+        try:
+            out = self._git("diff", "--name-only", "--diff-filter=U").stdout
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            # Not silent: the caller reports "git could not name them" rather
+            # than an empty list, which would read as "there were none".
+            logger.warning("could not list unmerged paths in %s: %s", self.project_dir, exc)
+            return ()
+        return tuple(path for path in out.splitlines() if path.strip())
+
+    def _rollback_main_merge(self, before: _MainState) -> tuple[str, ...]:
+        """Undo a half-finished merge in the main checkout; return what survived.
+
+        An empty tuple means the pre-merge state was RE-OBSERVED, not that a
+        command exited zero — the difference is the whole point of the class this
+        feeds. Never ``reset --hard``: main may hold the operator's uncommitted
+        work, and destroying it to tidy up a refusal would trade this card's bug
+        for a worse one.
+        """
+        if self._main_repo_mid_merge():
+            self._try_git("merge", "--abort")
+        elif self._unmerged_paths():
+            # `--squash` writes no MERGE_HEAD, so `merge --abort` has nothing to
+            # work from; `reset --merge` is git's own recovery for that shape.
+            self._try_git("reset", "--merge")
+        return self._diverged(before)
+
+    def _try_git(self, *args: str) -> None:
+        """Run a recovery command, reporting rather than raising on failure —
+        the verification below is what decides, and a raise here would replace an
+        exact diagnosis with a stack trace."""
+        try:
+            self._git(*args)
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            logger.warning("`git %s` failed during merge rollback: %s", " ".join(args), exc)
+
+    def _diverged(self, before: _MainState) -> tuple[str, ...]:
+        """How the main checkout still differs from ``before``, in an operator's
+        terms. Empty iff every fact the merge could have changed is back."""
+        after = self._main_state()
+        leftover: list[str] = []
+        if self._main_repo_mid_merge():
+            leftover.append(f"MERGE_HEAD is still present in {self.project_dir}")
+        if after.head != before.head:
+            leftover.append(
+                f"HEAD moved from {self._short(before.head)} to {self._short(after.head)}"
+            )
+        for path in after.unmerged:
+            if path not in before.unmerged:
+                leftover.append(f"unresolved merge in {path}")
+        for path, status in sorted(after.staged.items()):
+            if before.staged.get(path) != status:
+                leftover.append(f"staged change to {path} ({status.strip()})")
+        return tuple(leftover)
+
+    def _refuse_unmerged(self, before: _MainState, cause: Exception) -> NoReturn:
+        """Roll the main checkout back, then refuse with the state observed after.
+
+        The conflicted paths are read BEFORE the rollback — the rollback is what
+        erases them, and they are what the operator has to go and resolve.
+        """
+        base = self._original_branch or "?"
+        paths = self._unmerged_paths()
+        leftover = self._rollback_main_merge(before)
+        if leftover:
+            raise WorktreeMergeLeftoverError(self.branch_name, base, leftover, paths) from cause
+        if paths:
+            raise WorktreeMergeConflictError(self.branch_name, base, paths) from cause
+        # Nothing was left behind and nothing conflicted: git refused before it
+        # mutated anything (an untracked-file collision, HATS-587). That failure
+        # is already reported truthfully, so it keeps its own type.
+        raise cause
+
     def _is_ancestor(self, maybe_ancestor: str, descendant: str) -> bool:
         """True iff ``maybe_ancestor`` is an ancestor of ``descendant`` per git.
 
@@ -2262,20 +2442,27 @@ class WorktreeManager:
         with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
-            _retry_git_merge(
-                self._git_with_ref_lock_wait,
-                "merge",
-                "--squash",
-                self.branch_name,
-                project_dir=self.project_dir,  # HATS-486 stale-lock probe
-            )
-            _retry_git_merge(
-                self._git_with_ref_lock_wait,
-                "commit",
-                "-m",
-                f"feat(agent): {self.branch_name}",
-                project_dir=self.project_dir,  # HATS-486 stale-lock probe
-            )
+            # HATS-1651: both steps under one snapshot. `--squash` leaves a
+            # conflicted index and NO MERGE_HEAD, so a failure here is the one
+            # shape the mid-merge guard above cannot catch on the next run.
+            before = self._main_state()
+            try:
+                _retry_git_merge(
+                    self._git_with_ref_lock_wait,
+                    "merge",
+                    "--squash",
+                    self.branch_name,
+                    project_dir=self.project_dir,  # HATS-486 stale-lock probe
+                )
+                _retry_git_merge(
+                    self._git_with_ref_lock_wait,
+                    "commit",
+                    "-m",
+                    f"feat(agent): {self.branch_name}",
+                    project_dir=self.project_dir,  # HATS-486 stale-lock probe
+                )
+            except subprocess.CalledProcessError as exc:
+                self._refuse_unmerged(before, exc)
         logger.info("Squash-merged %s into %s", self.branch_name, self._original_branch)
 
     def _fast_forward_merge(self) -> None:
@@ -2291,13 +2478,19 @@ class WorktreeManager:
         with _acquire_base_branch_lock(self._state_dir, self._original_branch):
             # HATS-602: authoritative mid-merge guard, inside the base lock.
             self._refuse_if_mid_merge()
-            _retry_git_merge(
-                self._git_with_ref_lock_wait,
-                "merge",
-                "--no-ff",
-                self.branch_name,
-                project_dir=self.project_dir,  # HATS-486 stale-lock probe
-            )
+            # HATS-1651: a conflict is the failure that leaves the main checkout
+            # mid-merge; snapshot first so the refusal can state what it restored.
+            before = self._main_state()
+            try:
+                _retry_git_merge(
+                    self._git_with_ref_lock_wait,
+                    "merge",
+                    "--no-ff",
+                    self.branch_name,
+                    project_dir=self.project_dir,  # HATS-486 stale-lock probe
+                )
+            except subprocess.CalledProcessError as exc:
+                self._refuse_unmerged(before, exc)
         logger.info("Merged %s into %s", self.branch_name, self._original_branch)
 
     def _remove_worktree(self, *, force_rmtree: bool = False) -> None:
