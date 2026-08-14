@@ -15,10 +15,16 @@ otherwise exit 0 with no stdout. A ``permissionDecision`` is NEVER emitted, so t
 tool is never blocked.
 
 Defense-in-depth, NOT a gate: this is the early, soft, Claude-only, single-file
-layer; the project's CI/pre-commit lint stays the hard, comprehensive gate. We run
-``--select S`` (usually off by default) so we ADD security coverage rather than
-duplicating the project's general lint, and ``--isolated`` so the project's other
-rules / config never leak in.
+layer; the project's CI/pre-commit lint stays the hard, comprehensive gate.
+
+HATS-1591: the run uses the PROJECT'S ruff configuration and keeps the ``S``
+findings out of its output. It used to force ``--isolated --select S``, which
+reports every rule in the family — including the ones a project has deliberately
+excluded — so a repo that spawns processes by profession got 20 lines of
+``S603``/``S607`` on every edit and learned to scroll past the whole message.
+Both CLI forms defeat a declared exception (measured: ``--select S`` and
+``--extend-select S`` each re-enable an ``ignore``d rule), so the project's own
+configuration is the only invocation that reports what the gate would refuse.
 
 Zero network egress (stdlib only; shells out only to local ``ruff``). Fail-open:
 any error, a missing ``ruff``, a non-``.py`` file, or an unparsable payload ->
@@ -31,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,6 +58,9 @@ except ImportError:  # helper absent -> say so; never skip quietly
 
 
 _KILL_SWITCH = "AI_HATS_SECURITY_LINT_OFF"
+
+# `path:line:col: S### message` — the flake8-bandit family, and only it.
+_SECURITY_CODE = re.compile(r":\s*S\d+\s")
 
 
 def main() -> int:
@@ -75,17 +85,7 @@ def main() -> int:
 
     try:
         proc = subprocess.run(
-            [
-                ruff,
-                "check",
-                "--isolated",
-                "--select",
-                "S",
-                "--output-format",
-                "concise",
-                "--quiet",
-                file_path,
-            ],
+            [ruff, "check", "--output-format", "concise", "--quiet", file_path],
             capture_output=True,
             text=True,
             timeout=10,
@@ -95,9 +95,11 @@ def main() -> int:
         journal_bypass("fail-open", f"ruff crash/timeout: {exc!r}", hook="py_security_lint.py")
         return 0
 
-    findings = proc.stdout.strip()
+    findings = "\n".join(
+        line for line in proc.stdout.splitlines() if _SECURITY_CODE.search(line)
+    ).strip()
     if not findings:
-        return 0  # clean -> silent
+        return 0  # clean, or only non-security findings -> silent
 
     msg = (
         "dev_rule_secure_coding — ruff security (flake8-bandit `S`) findings on the "
