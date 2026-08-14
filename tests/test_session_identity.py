@@ -18,6 +18,7 @@ from ai_hats.session_identity import (
     IDENTITY_VERSION,
     SessionIdentity,
     SessionIdentityError,
+    identity_for_project,
 )
 from ai_hats_observe.trace import ENV_SESSION_ID
 
@@ -118,3 +119,54 @@ def test_a_surface_that_mirrors_nothing_is_carried_as_empty_not_missing():
     identity = _identity(skills_root="")
 
     assert SessionIdentity.from_env(identity.to_env()).skills_root == ""
+
+
+# --- which session governs a given project (HATS-1631) -----------------------
+
+
+def test_an_envelope_naming_another_project_does_not_govern_this_one():
+    """The gate-selection defect: session B chose project A's gates.
+
+    ``None`` and not a refusal — for project A, a session of project B is
+    *outside* a session, and outside one the config is the answer (HATS-1594).
+    """
+    foreign = _identity(project_dir=Path("/nonexistent/project-B"))
+
+    assert identity_for_project(Path("/proj-A"), foreign.to_env()) is None
+
+
+def test_the_envelope_alone_proves_foreignness_without_the_scalar_pin():
+    """``_drop_foreign_pin`` keys on ``AI_HATS_PROJECT_DIR`` and returns early
+    without it, so a bare envelope walked past it. The envelope carries its own
+    ``project_dir`` — that is what is asked here."""
+    env = _identity(project_dir=Path("/nonexistent/project-B")).to_env()
+    assert "AI_HATS_PROJECT_DIR" not in env  # the scalar pin has a separate writer
+
+    assert identity_for_project(Path("/proj-A"), env) is None
+
+
+def test_a_session_of_this_project_still_governs_it():
+    """The HATS-1594 behaviour that must not regress: inside a session the role
+    is what THAT session composed, not what the config says."""
+    own = _identity(project_dir=Path("/proj-A"))
+
+    assert identity_for_project(Path("/proj-A"), own.to_env()) == own
+
+
+def test_the_two_paths_are_compared_resolved_not_spelled():
+    """A spelling difference is not foreignness."""
+    own = _identity(project_dir=Path("/proj-A"))
+
+    assert identity_for_project(Path("/proj-A/./"), own.to_env()) == own
+
+
+def test_no_envelope_is_no_session_here_too():
+    assert identity_for_project(Path("/proj-A"), {}) is None
+
+
+def test_a_broken_envelope_refuses_rather_than_reading_as_absence():
+    """Scoping must not become a second way to swallow an untrustworthy
+    envelope: absence resolves against the config, and that is what the
+    envelope exists to stop being asked."""
+    with pytest.raises(SessionIdentityError):
+        identity_for_project(Path("/proj-A"), {ENV_SESSION_IDENTITY: "{not json"})

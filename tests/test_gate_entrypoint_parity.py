@@ -9,6 +9,7 @@ path set than CI, and how the formatter check ended up running in neither.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -129,4 +130,28 @@ def test_ci_workflow_delegates_every_gate():
     assert not offenders, (
         "ci.yml runs a gate command directly instead of calling a "
         f"scripts/ci-local.sh stage: {offenders}"
+    )
+
+
+def _composition(gate: str) -> list[str]:
+    """What the dispatcher itself says the gate runs — never a literal here."""
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "--stages", gate],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.split()
+
+
+def test_the_merge_gate_is_a_subset_of_the_done_gate():
+    """Absorption (ADR-0023 D5) is what makes a typical card cost one run and not
+    two: `->done` includes `->merge`, so the fuller run stamps both. Nothing else
+    enforces the nesting — the two compositions are separate lines, and an edit
+    to either can break it in silence."""
+    merge, done = set(_composition("merge-gate")), set(_composition("done-gate"))
+
+    assert merge <= done, (
+        "merge-gate must stay a subset of done-gate or one run stops paying for "
+        f"both — stages only merge-gate demands: {sorted(merge - done)}"
     )

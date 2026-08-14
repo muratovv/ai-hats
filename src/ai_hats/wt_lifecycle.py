@@ -186,10 +186,16 @@ class HookRunningLifecycle:
         """  # comment-length: allow — the three deliberate non-symmetries with wt_out
         if ctx.worktree_path is None:
             return
-        from .check_resolve import CheckResolutionError, resolve_checks_at
+        from .check_resolve import CheckResolutionError, resolve_checks_at, session_identity_for
 
         try:
-            checks = resolve_checks_at(ctx.project_dir, WT_APP, WT_PRE_MERGE)
+            checks = resolve_checks_at(
+                ctx.project_dir,
+                WT_APP,
+                WT_PRE_MERGE,
+                # Unscoped, another project's session chose the bindings (HATS-1631).
+                identity=session_identity_for(ctx.project_dir),
+            )
         except CheckResolutionError as exc:
             _raise_merge_aborted(ctx.branch_name, f"checks: {exc}")
         if not checks:

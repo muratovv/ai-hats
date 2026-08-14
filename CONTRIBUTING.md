@@ -108,6 +108,10 @@ fails the build if either spells a check command out itself.
 - `make e2e` — the maintainer tier, and the very stage the master pre-push gate
   runs (HATS-1604 — one selection, not a copy), bounded by timeout (default 3600s).
 - `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
+- `make merge-gate` / `make done-gate` — the gates the two roads into master
+  demand of a card. Run one in the **task worktree**: the marker is keyed to the
+  tree you run it on. `make done-gate` is the superset and clears both
+  (ADR-0023 D4/D5); `scripts/ci-local.sh --stages <gate>` prints what each runs.
 - `make help` — display available Makefile targets.
 
 Options:

@@ -14,9 +14,9 @@ review. Driver: HATS-1134 (incident HATS-1130).
 
 **It became `Accepted` at rev 8 (HATS-1540), on the condition it set itself:** a
 live consumer bound and proven to refuse, not merely a merged mechanism. The
-`maintainer` role binds `maintainer-quality-gate/hooks/done-gate.sh` twice — once
-under `apps.rack.tasks` at `edge:review--done`, once under `apps.wt` at
-`pre-merge` (the rev-10 spelling) — and both refusals are asserted
+`maintainer` role binds a gate at both points — `done-gate.sh` under
+`apps.rack.tasks` at `edge:review--done`, `merge-gate.sh` under `apps.wt` at
+`pre-merge` (one script each since HATS-1614) — and both refusals are asserted
 against the real binary — each one also asserted to flip to a pass when the row
 is removed (`tests/e2e/test_done_gate.py`).
 
@@ -501,7 +501,7 @@ two orders run opposite — "the strictest wins" is undefined over the pair. Sec
 no consumer wants a cross-project gate. What the reshape does buy is the narrower
 half for free: a row now names the backlog it gates (`apps.rack.<backlog>`), so an
 unqualified row is no longer writable. Whether a card belongs to **this project's**
-tracker at all stays the script's call (`done-gate.sh` compares
+tracker at all stays the gate's own call (`lib/gate.sh` compares
 `AI_HATS_TASKS_DIR`), because a scratch catalog can carry the same backlog name.
 A field arrives when a real consumer does.*
 
@@ -891,8 +891,8 @@ HATS-1546.
 
 **Resolved at rev 8 (HATS-1540).** The condition was a live consumer bound and
 proven to refuse, because shipping the mechanism unbound would have left a fifth
-channel in the accretion this ADR exists to end. `maintainer` now binds
-`done-gate.sh` to both `edge:review--done` and `apps.wt` `pre-merge`, and each refusal
+channel in the accretion this ADR exists to end. `maintainer` now binds a gate
+to both `edge:review--done` and `apps.wt` `pre-merge`, and each refusal
 is asserted together with its flip-to-pass when the row is removed. HATS-1144
 (hunk-review) remains a candidate and is no longer load-bearing for this status.
 

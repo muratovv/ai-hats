@@ -62,6 +62,23 @@ def session_identity() -> SessionIdentity | None:
         raise CheckResolutionError(f"checks: {exc}") from exc
 
 
+def session_identity_for(project_dir: Path) -> SessionIdentity | None:
+    """The session governing ``project_dir``, in this channel's error type.
+
+    The scoped sibling of :func:`session_identity`, for the consumers that hold
+    the project they are gating. Unscoped, a session of ANOTHER project chose
+    which bindings fired here, and a role declaring none disarmed the gate in
+    silence (HATS-1631). Raising stays this module's contract so a torn envelope
+    is still a refusal at the consumer, never a skip.
+    """
+    from .session_identity import SessionIdentityError, identity_for_project
+
+    try:
+        return identity_for_project(project_dir)
+    except SessionIdentityError as exc:
+        raise CheckResolutionError(f"checks: {exc}") from exc
+
+
 def resolve_carried_checks(
     project_dir: Path,
     app: str,
