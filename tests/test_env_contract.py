@@ -127,6 +127,8 @@ NON_CONTRACT_HOOK_KEYS = {
     "AI_HATS_PRIVACY_ACK",
     "AI_HATS_RULE_DELIVERY_ACK",
     "AI_HATS_SECURITY_LINT_OFF",
+    # HATS-1682: how many days a pass marker may sit before a write sweeps it.
+    "AI_HATS_GATE_MARKER_KEEP_DAYS",
     "AI_HATS_SHARED_STATE_ACK",
     "AI_HATS_SKILL_LINT_ACK",
     "AI_HATS_SMOKE_SKIP",

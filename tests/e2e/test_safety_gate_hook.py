@@ -33,7 +33,7 @@ HOOK = (
 SESSION_DIRNAME = ".session"
 
 
-def _plant_session(repo: Path, *targets: str) -> None:
+def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
     """Make ``repo`` look like a session whose role declared consent (HATS-1682).
 
     WHERE the guard asks is the role's declaration, read from
@@ -46,8 +46,11 @@ def _plant_session(repo: Path, *targets: str) -> None:
         json.dumps(
             {
                 "consent": [
-                    {"app": "rack", "path": ["tasks"], "point": f"edge:x--{state}"}
-                    for state in targets
+                    *(
+                        {"app": "rack", "path": ["tasks"], "point": f"edge:x--{state}"}
+                        for state in targets
+                    ),
+                    *([{"app": "wt", "path": [], "point": "pre-merge"}] if wt else []),
                 ]
             }
         ),
@@ -467,3 +470,30 @@ def test_the_neighbouring_rack_forms_never_prompt(command, repo):
     """
     decision = _decide(command, cwd=repo).get("permissionDecision")
     assert decision not in ("ask", "deny"), f"{command!r} was gated: {decision}"
+
+
+def test_a_direct_merge_into_master_asks_where_the_role_declared_it(tmp_path):
+    """The other road into master (HATS-1130). `rack transition X done` merges
+    through the FSM; `ai-hats wt merge` does it directly, and a gate holding
+    only one of them is the asymmetry that started that epic. One declaration
+    covers both because it names points of two applications (HATS-1682)."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute", wt=True)
+
+    out = _decide("ai-hats wt merge task/hats-1", cwd=tmp_path)
+
+    assert out.get("permissionDecision") == "ask", f"the merge went unasked: {out}"
+    assert "task/hats-1" in out["permissionDecisionReason"], out
+    assert out["updatedInput"]["command"].startswith("AI_HATS_CONSENT_TICKET="), out
+
+
+def test_a_role_that_declared_no_merge_point_is_not_asked(tmp_path):
+    """Control: the declaration is what decides, not the command's shape."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute")  # rack only — no wt point
+
+    assert _decide("ai-hats wt merge task/hats-1", cwd=tmp_path) == {}

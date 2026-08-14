@@ -272,6 +272,23 @@ def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
         console.print("[dim]Not probed: wt:pre-merge checks — each runs its own command.[/]")
 
 
+def _merge_ticket_accepted(branch: str) -> bool:
+    """Did the supervisor answer the guard's question about THIS merge?
+
+    Peek, never spend: a merge that then refuses for drift or a dirty tree must
+    give the click back (HATS-1682).
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    try:
+        # ``None``: the branch may have been auto-detected here and merely typed
+        # (or not) there, so the invocation is the binding that holds.
+        return consent_ticket.peek(None, argv=sys.argv[1:])
+    except Exception as exc:  # noqa: BLE001 — an unreadable store is not consent
+        console.print(f"[yellow]consent ticket unreadable[/]: {exc}")
+        return False
+
+
 @wt.command("merge")
 @click.argument("branch", required=False)
 @click.option("--squash", is_flag=True, default=False, help="Squash all commits into one")
@@ -346,6 +363,9 @@ def wt_merge(
             force=force,
             accept_drift=accept_drift,
             skip_hooks=skip_hooks,
+            # HATS-1682: the guard asks about THIS command where the role
+            # declared `wt: [pre-merge]`, and the ticket it minted is the answer.
+            consent=_merge_ticket_accepted(name),
         )
     except WorktreeTeardownAborted as e:
         # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted

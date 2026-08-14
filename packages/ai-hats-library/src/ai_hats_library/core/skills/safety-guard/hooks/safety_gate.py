@@ -342,6 +342,42 @@ CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 #: `review → done` is exactly how the edge into master went unasked (HATS-1682).
 LEGACY_ACK_BY_TARGET = {"execute": "AI_HATS_PLAN_ACK"}
 
+#: The wt engine's own pre-approval, honoured on the point it was written for —
+#: `ai-hats wt merge` — and nowhere else.
+WT_MERGE_ACK = "AI_HATS_MERGE_ACK"
+
+
+def _declared_points() -> list:
+    """The consent declaration this session was launched with, or ``[]``.
+
+    A role property reaching the guard the way every other one does:
+    `AI_HATS_SESSION_IDENTITY` names the session dir and
+    `role_materialization.json` there carries the composed declaration.
+    Launch-frozen on purpose — the surface asks by what the session started
+    with, not by whatever the library says a moment later.
+    """
+    envelope = os.environ.get("AI_HATS_SESSION_IDENTITY", "")
+    if not envelope:
+        return []  # outside a session there is no role, so nothing declared
+    try:
+        session_dir = json.loads(envelope)["session_dir"]
+        report = json.loads(
+            (Path(session_dir) / "role_materialization.json").read_text(encoding="utf-8")
+        )
+        return list(report["consent"])
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        # In a session but unable to read what it declared: a gate that stopped
+        # asking looks exactly like one with nothing to ask about (HATS-1373).
+        journal_bypass(
+            "fail-open", f"consent declaration unreadable: {exc!r}", hook="safety_gate.py"
+        )
+        return []
+
+
+def consent_declared_at(app: str, point: str) -> bool:
+    """Did the role declare consent on one named point of ``app``?"""
+    return any(e.get("app") == app and e.get("point") == point for e in _declared_points())
+
 
 def declared_consent_targets() -> frozenset:
     """States the session's role declared consent on entering, from the envelope.
@@ -352,24 +388,8 @@ def declared_consent_targets() -> frozenset:
     Launch-frozen on purpose — the surface asks by the declaration the session
     was started with, not by whatever the library says a moment later.
     """
-    envelope = os.environ.get("AI_HATS_SESSION_IDENTITY", "")
-    if not envelope:
-        return frozenset()  # outside a session there is no role, so nothing declared
-    try:
-        session_dir = json.loads(envelope)["session_dir"]
-        report = json.loads(
-            (Path(session_dir) / "role_materialization.json").read_text(encoding="utf-8")
-        )
-        points = report["consent"]
-    except (ValueError, OSError, KeyError, TypeError) as exc:
-        # In a session but unable to read what it declared: a gate that stopped
-        # asking looks exactly like one with nothing to ask about (HATS-1373).
-        journal_bypass(
-            "fail-open", f"consent declaration unreadable: {exc!r}", hook="safety_gate.py"
-        )
-        return frozenset()
     targets = set()
-    for entry in points:
+    for entry in _declared_points():
         if entry.get("app") != "rack":
             continue
         head, sep, to = str(entry.get("point", "")).partition("--")
@@ -399,6 +419,18 @@ RACK_SAFE_OPS = frozenset({"--log", "--set", "--append", "--attach", "--link", "
 
 #: Options that carry no op at all: they shape output or routing.
 RACK_SAFE_OPTS = frozenset({"--json", "--tasks-dir"})
+
+
+def merge_branch(args) -> str:
+    """What ``ai-hats wt merge`` will merge, or ``""`` for another call.
+
+    The branch may be omitted — the CLI detects it from the cwd — so this is a
+    LABEL for the question, never the binding. What binds is the invocation.
+    """
+    rest = [tok for tok in args[1:] if not tok.startswith("-")]
+    if rest[:2] != ["wt", "merge"]:
+        return ""
+    return rest[2] if len(rest) > 2 else "this worktree"
 
 
 def transition_target(args):
@@ -583,35 +615,69 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
             if flag and os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
                 return {}
-        where = target_cwd(cmd)
-        nonce = None if where is None else _mint_ticket(task_id, start=where, argv=args[1:])
-        rewritten = (
-            prefixed_command(cmd, token, ordinal, total, f"{TICKET_ENV}={nonce}") if nonce else ""
-        )
-        if not rewritten:
-            # A gate that stopped asking looks exactly like one with nothing to
-            # ask about (HATS-1373). The rack still refuses; say why it must.
-            journal_bypass(
-                "fail-open",
-                f"no consent question raised for {task_id}: "
-                + ("cannot place the ticket in the command" if nonce else "cannot mint a ticket"),
-                hook="safety_gate.py",
-                cmd=cmd,
+        asked = _ask_for(cmd, tool_input, cmd_key, args, token, ordinal, total, task_id)
+        if asked:
+            asked["permissionDecisionReason"] = (
+                f"{task_id}: → {target} needs your consent. {_TICKET_TERMS}"
             )
-            return {}
-        return {
-            "permissionDecision": "ask",
-            "permissionDecisionReason": (
-                f"{task_id}: → {target} needs your consent. This command carries a "
-                f"ticket good for one transition of this card, in this session, for this "
-                f"exact command. The question does not expire — answer when you have "
-                f"read what you are approving."
-            ),
-            # Answer in the key the surface spoke in: agy says `CommandLine`, and
-            # a rewrite filed under `command` would be dropped in silence.
-            "updatedInput": {**tool_input, cmd_key: rewritten},
-        }
+        return asked
+
+    # `ai-hats wt merge` — the OTHER road into master (HATS-1130). Same question,
+    # different engine, which is why one declaration has to cover both.
+    for tokens in parse_commands(cmd):
+        call = slice_for(tokens, "ai-hats")
+        if not call:
+            continue
+        branch = merge_branch(without_shell_redirects(call))
+        if not branch or not consent_declared_at("wt", "pre-merge"):
+            continue
+        for flag in (CONSENT_ACK, WT_MERGE_ACK):
+            if os.environ.get(flag) == "1":
+                journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)
+                return {}
+        token = call[0]
+        asked = _ask_for(cmd, tool_input, cmd_key, call, token, 0, 1, branch)
+        if asked:
+            asked["permissionDecisionReason"] = (
+                f"merging {branch} into master needs your consent. {_TICKET_TERMS}"
+            )
+        return asked
     return {}
+
+
+#: Said once, so the two questions cannot drift into describing different tickets.
+_TICKET_TERMS = (
+    "This command carries a ticket good for one use, in this session, for this exact "
+    "command — nothing chained after it. The question does not expire: answer when "
+    "you have read what you are approving."
+)
+
+
+def _ask_for(cmd, tool_input, cmd_key, args, token, ordinal, total, label) -> dict:
+    """Mint the ticket, put it on the call, and return the `ask` — or ``{}``."""
+    where = target_cwd(cmd)
+    nonce = None if where is None else _mint_ticket(label, start=where, argv=args[1:])
+    rewritten = (
+        prefixed_command(cmd, token, ordinal, total, f"{TICKET_ENV}={nonce}") if nonce else ""
+    )
+    if not rewritten:
+        # A gate that stopped asking looks exactly like one with nothing to
+        # ask about (HATS-1373). The engine still refuses; say why it must.
+        journal_bypass(
+            "fail-open",
+            f"no consent question raised for {label}: "
+            + ("cannot place the ticket in the command" if nonce else "cannot mint a ticket"),
+            hook="safety_gate.py",
+            cmd=cmd,
+        )
+        return {}
+    return {
+        "permissionDecision": "ask",
+        "permissionDecisionReason": "",
+        # Answer in the key the surface spoke in: agy says `CommandLine`, and
+        # a rewrite filed under `command` would be dropped in silence.
+        "updatedInput": {**tool_input, cmd_key: rewritten},
+    }
 
 
 #: Binaries that mutate whatever path they are handed. `sed` counts only with

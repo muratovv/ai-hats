@@ -93,6 +93,7 @@ def unjournaled(text: str) -> set[str]:
     if re.search(r'journal_bypass\(\s*"hatch"\s*,\s*flag', text):
         journaled |= set(re.findall(r'CONSENT_ACK = "(AI_HATS_[A-Z0-9_]+)"', text))
         journaled |= set(re.findall(r'LEGACY_ACK_BY_TARGET = \{[^}]*"(AI_HATS_[A-Z0-9_]+)"', text))
+        journaled |= set(re.findall(r'WT_MERGE_ACK = "(AI_HATS_[A-Z0-9_]+)"', text))
     return hatches_in(text) - journaled
 
 
