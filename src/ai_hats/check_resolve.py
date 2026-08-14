@@ -32,9 +32,7 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
 #: R11). Anchored to a line start so ``prechecks:`` is not one. A scan still,
 #: not a parse: a false positive costs one compose, a false negative disarms a
 #: gate.
-_CHECKS_KEY = re.compile(
-    rb"""^[ \t]*['"]?(?:apps|checks|consent)['"]?[ \t]*:""", re.MULTILINE
-)
+_CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks|consent)['"]?[ \t]*:""", re.MULTILINE)
 
 
 #: "the caller did not supply one" — distinct from ``None``, which is a caller

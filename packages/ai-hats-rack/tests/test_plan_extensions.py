@@ -383,7 +383,9 @@ def test_plan_consent_passes_with_ack_env(consent_kit, tasks_dir, cwd, monkeypat
 def test_plan_consent_skipped_on_reopen_and_epic(consent_kit, tasks_dir, cwd, monkeypatch):
     monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
     _create(consent_kit, cwd, task_id="T-1", title="Epic")
-    consent_kit.create(actor="test", caller_cwd=cwd, task_id="T-2", title="Child", parent_task="T-1")
+    consent_kit.create(
+        actor="test", caller_cwd=cwd, task_id="T-2", title="Child", parent_task="T-1"
+    )
 
     # Epic execute skips plan-consent
     walk(consent_kit, "T-1", "plan", "execute", cwd=cwd)
@@ -443,7 +445,9 @@ def test_plan_consent_passes_when_the_seam_spends_a_ticket(tasks_dir, cwd, tmp_p
     assert booth.spent == ["T-1"], "the ticket outlived the transition it paid for"
 
 
-def test_a_transaction_that_aborts_later_does_not_eat_the_ticket(tasks_dir, cwd, tmp_path, monkeypatch):
+def test_a_transaction_that_aborts_later_does_not_eat_the_ticket(
+    tasks_dir, cwd, tmp_path, monkeypatch
+):
     """The gate runs at 11; ownership (20) and the worktree (30) can still abort.
 
     Spending there would burn a click on a transition that never happened, and
@@ -456,9 +460,7 @@ def test_a_transaction_that_aborts_later_does_not_eat_the_ticket(tasks_dir, cwd,
         raise AbortOperation("the worktree could not be created")
 
     later = StubSubscriber("late-abort", [in_lock("edge:plan--execute", 20)], _abort)
-    kit = _kit_with_booth(
-        tasks_dir, booth, extra=[later], definition=_consent_definition(tmp_path)
-    )
+    kit = _kit_with_booth(tasks_dir, booth, extra=[later], definition=_consent_definition(tmp_path))
     _planned(kit, tasks_dir, cwd)
 
     with pytest.raises(OperationAborted):

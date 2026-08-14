@@ -227,8 +227,7 @@ def _walk_consent_block(
                 f"consent on nothing asks nobody anything"
             )
         points.extend(
-            ConsentPoint(declared_by=declared_by, app=app, path=path, point=p.strip())
-            for p in node
+            ConsentPoint(declared_by=declared_by, app=app, path=path, point=p.strip()) for p in node
         )
         return
     if isinstance(node, dict):

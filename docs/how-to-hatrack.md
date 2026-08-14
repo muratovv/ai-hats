@@ -139,9 +139,26 @@ rack transition HATS-NNN review
 rack transition HATS-NNN done        # the reviewer drives this one
 ```
 
-`plan → execute` is **consent-gated**, so an agent cannot walk its own plan into
-implementation without your approval. On a surface with runtime hooks the agent
-simply runs the command and the guard turns it into a **question in chat**: the
+Two of those edges are **consent-gated**, so an agent can neither walk its own
+plan into implementation nor land its own branch on master without your
+approval: `plan → execute` and `review → done`. A direct `ai-hats wt merge` —
+the other road into master — is gated the same way.
+
+Which edges those are is not fixed by the backlog: it is the ROLE's
+declaration. `composition.consent` on the agent trait names them, so a role
+that does not compose it is asked nothing, and a role that needs a different
+surface of consent edits the topology rather than the guard:
+
+```yaml
+composition:
+  consent:
+    rack:
+      tasks: [edge:plan--execute, edge:review--done]
+    wt: [pre-merge]
+```
+
+On a surface with runtime hooks the agent simply runs the command and the guard
+turns it into a **question in chat**: the
 call carries a one-shot ticket, good for that card, in that session, for that
 exact command, and spent only if the transition actually lands. The question
 does not expire — read the plan for as long as you need. Nothing is typed by
@@ -156,12 +173,19 @@ The question goes up before the plan is read, so a `plan → execute` that then
 fails on empty plan sections spent your answer on a move that did not happen —
 the next attempt asks again.
 
+`AI_HATS_MERGE_ACK` does **not** answer the `review → done` question. It
+approves `ai-hats wt merge`, and letting a pre-approval given for one thing open
+another is how the edge into master used to pass unasked.
+
 Where there is nobody to ask — headless (`claude -p`), cron, or a surface with
 no runtime hooks — consent comes from the environment that launches the session:
 
 ```bash
-export AI_HATS_PLAN_ACK=1
+export AI_HATS_CONSENT_ACK=1
 ```
+
+(`AI_HATS_PLAN_ACK=1` still answers `plan → execute` alone, for a shell that
+already exports it.)
 
 There is no `sync` step — see [STATE.md is reactive](#statemd-is-reactive).
 

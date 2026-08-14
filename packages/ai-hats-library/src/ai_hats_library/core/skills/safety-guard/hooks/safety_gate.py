@@ -152,6 +152,7 @@ def command_slices(tokens):
     later slice is offered to the checks and a dangerous binary cannot hide
     behind an operand nobody counted.
     """
+
     def _command_at(index: int) -> int:
         while index < len(tokens) and "=" in tokens[index]:
             index += 1  # `env FOO=1 rack …`: the assignment belongs to the shell
@@ -396,6 +397,7 @@ def declared_consent_targets() -> frozenset:
         if sep and head.startswith("edge:") and to:
             targets.add(to)
     return frozenset(targets)
+
 
 #: `rack transition` op flags that eat the NEXT token as their value. Without
 #: this, `--log "execute"` — a note ABOUT the move — would read as the move.
