@@ -231,8 +231,22 @@ def _stale_mirror_note(check: ResolvedCheck, identity: Any) -> str:
     Silent when there is nothing to compare: outside a session nothing was
     frozen, and an unreadable file is the ``SCRIPT_MISSING`` path's business.
     """  # comment-length: allow — when it must NOT appear is half the contract
+    from .check_resolve import CheckResolutionError, session_identity
+
     live = check.source_path
-    if live is None or identity is None or identity is _FROM_ENV:
+    if live is None:
+        # Nothing re-based this check, so no envelope is worth reading — and
+        # asking for one a refusal does not depend on is how a gate's verdict
+        # gets replaced by a complaint about the environment (HATS-1594).
+        return ""
+    if identity is _FROM_ENV:
+        # Both production callers leave it defaulted, so resolving here is not a
+        # convenience — without it this note is unreachable outside its tests.
+        try:
+            identity = session_identity()
+        except CheckResolutionError as exc:
+            return f"\n\n(whether these bytes are current could not be told: {exc})"
+    if identity is None:
         return ""
     try:
         if live.read_bytes() == check.script_path.read_bytes():

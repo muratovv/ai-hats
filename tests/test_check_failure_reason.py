@@ -124,6 +124,24 @@ def test_a_refusal_from_a_stale_mirror_says_so(tmp_path):
     assert "Restart the session" in reason
 
 
+def test_the_note_reaches_the_callers_that_never_pass_an_identity(tmp_path, monkeypatch):
+    """The hole this test exists for: both production callers
+    (``wt_lifecycle``, ``rack_consumers``) call with ``identity`` defaulted, so a
+    note that only fires on an explicitly-passed identity is unreachable code
+    with green tests around it. Read from the environment, exactly as the
+    sibling ``SCRIPT_MISSING`` notice does.
+    """
+    for key, value in _identity(tmp_path).to_env().items():
+        monkeypatch.setenv(key, value)
+
+    reason = check_failure_reason(
+        _mirrored(tmp_path, mirror="frozen", live="current"),
+        _run(HookOutcomeKind.REFUSED, verdict=HookVerdict.REFUSE, said="no green marker\n", code=2),
+    )
+
+    assert "stale" in reason, f"the note never fires the way production calls it:\n{reason}"
+
+
 def test_a_refusal_from_a_current_mirror_adds_nothing(tmp_path):
     """The note must stay silent when the bytes agree.
 
