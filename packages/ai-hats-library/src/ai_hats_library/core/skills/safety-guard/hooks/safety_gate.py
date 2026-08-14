@@ -41,9 +41,9 @@ except ImportError:  # sibling absent -> no warning to raise; every gate still r
     _permission_lint = None
 
 # HATS-1642 — the ticket the ask hands to the rack process. Imported, never
-# re-spelled: one module owns the nonce, the directory and the clock.
+# re-spelled: one module owns the nonce and the directory.
 try:
-    from consent_ticket import TICKET_ENV, TTL_SECONDS as TICKET_TTL
+    from consent_ticket import TICKET_ENV
     from consent_ticket import mint as _mint_ticket
     from consent_ticket import tickets_dir as _tickets_dir
 except ImportError:  # sibling absent -> no question to ask; the refusal still stands
@@ -57,7 +57,6 @@ except ImportError:  # sibling absent -> no question to ask; the refusal still s
     #: The literal is duplicated ONLY on this path, so a missing sibling cannot
     #: turn the deny-list entry below into a hole.
     TICKET_ENV = "AI_HATS_CONSENT_TICKET"
-    TICKET_TTL = 0
 
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
@@ -551,8 +550,9 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
             "permissionDecision": "ask",
             "permissionDecisionReason": (
                 f"{task_id}: plan → execute needs your consent. This command carries a "
-                f"ticket good for one transition of this card, in this session, for "
-                f"{TICKET_TTL}s."
+                f"ticket good for one transition of this card, in this session, for this "
+                f"exact command. The question does not expire — answer when you have read "
+                f"the plan."
             ),
             # Answer in the key the surface spoke in: agy says `CommandLine`, and
             # a rewrite filed under `command` would be dropped in silence.

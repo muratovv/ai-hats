@@ -143,9 +143,9 @@ rack transition HATS-NNN done        # the reviewer drives this one
 implementation without your approval. On a surface with runtime hooks the agent
 simply runs the command and the guard turns it into a **question in chat**: the
 call carries a one-shot ticket, good for that card, in that session, for that
-exact command, for a couple of minutes, and spent only if the transition
-actually lands. Nothing is typed by the agent — a consent prefix it writes
-itself is refused as a self-grant.
+exact command, and spent only if the transition actually lands. The question
+does not expire — read the plan for as long as you need. Nothing is typed by
+the agent — a consent prefix it writes itself is refused as a self-grant.
 
 One thing does switch the question off: an entry under `permissions.allow` that
 covers the call, such as `"Bash(rack transition *)"`. The harness then approves

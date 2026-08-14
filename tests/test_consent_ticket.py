@@ -58,15 +58,29 @@ def test_a_ticket_does_not_open_another_card(repo, monkeypatch):
     assert ct.consume("HATS-1", start=repo) is True
 
 
-def test_a_ticket_older_than_its_ttl_is_refused(repo, monkeypatch):
-    nonce = ct.mint("HATS-1", start=repo)
+def _age(path, seconds: float) -> None:
+    """Backdate a ticket on both axes a reader could judge it by."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["issued_at"] = data["issued_at"] - seconds
+    path.write_text(json.dumps(data), encoding="utf-8")
+    when = time.time() - seconds
+    os.utime(path, (when, when))
+
+
+def test_a_ticket_does_not_expire_while_the_supervisor_thinks(repo, monkeypatch):
+    """The question hangs until it is answered — a supervisor requirement.
+
+    There is no callback after the answer, so the ticket is written when the
+    question is RAISED. That made the old 90s window a budget for thinking:
+    whoever thought longer lost the click and had to be asked again. Time is no
+    longer an axis of validity; the card, the session, the argv and the one-shot
+    unlink are what hold, and none of them weakens with the clock (HATS-1682).
+    """
+    nonce = ct.mint("HATS-1", start=repo, argv=_A)
+    _age(ct.tickets_dir(repo) / f"{nonce}.json", 3600)
     _grant(nonce, monkeypatch)
-    stale = ct.TTL_SECONDS + 1
 
-    import time
-
-    assert ct.consume("HATS-1", start=repo, now=time.time() + stale) is False
-    assert ct.consume("HATS-1", start=repo) is False, "an expired ticket survived"
+    assert ct.consume("HATS-1", start=repo, argv=_A) is True
 
 
 #: What the supervisor was shown, as argv past the binary — the form both sides
@@ -112,10 +126,11 @@ def test_a_ticket_does_not_travel_to_another_session(repo, monkeypatch):
     assert ct.consume("HATS-1", start=repo) is True, "the issuing session lost its own ticket"
 
 
-def test_the_ttl_is_short_enough_that_a_stale_click_is_not_consent(repo):
-    """A number, but a load-bearing one: the mint happens when the question is
-    RAISED, so the TTL is the whole window a rejected ticket stays usable."""
-    assert 60 <= ct.TTL_SECONDS <= 120, ct.TTL_SECONDS
+def test_the_sweep_window_is_not_a_budget_for_thinking(repo):
+    """The remaining number is a housekeeping interval, not a consent window —
+    so it must be far longer than any answer could plausibly take."""
+    assert ct.STALE_AFTER_SECONDS >= 3600, ct.STALE_AFTER_SECONDS
+    assert not hasattr(ct, "TTL_SECONDS"), "the expiry axis is back"
 
 
 def test_an_invented_nonce_opens_nothing(repo, monkeypatch):
@@ -145,18 +160,39 @@ def test_a_traversal_shaped_value_is_never_a_path(repo, monkeypatch):
 
 
 def test_spending_a_ticket_sweeps_the_stale_ones_out(repo, monkeypatch):
-    """An expired ticket is refused either way, but one left on disk reads like
-    live consent to anyone opening the directory."""
+    """A ticket nobody will spend still reads like live consent to anyone
+    opening the directory."""
     stale = ct.mint("HATS-OLD", start=repo, argv=_A)
     directory = ct.tickets_dir(repo)
-    old = time.time() - (ct.TTL_SECONDS + 60)
-    os.utime(directory / f"{stale}.json", (old, old))
+    _age(directory / f"{stale}.json", ct.STALE_AFTER_SECONDS + 60)
 
     fresh = ct.mint("HATS-1", start=repo, argv=_A)
     _grant(fresh, monkeypatch)
     assert ct.consume("HATS-1", start=repo, argv=_A) is True
 
     assert not (directory / f"{stale}.json").exists(), "the stale ticket outlived the sweep"
+
+
+def test_the_engine_sweeps_a_store_the_agent_may_not_touch(repo):
+    """`mint` and `consume` were the only sweeps, so a refused ticket lay on
+    disk until the NEXT gated transition — measured at 1831s in a session that
+    had none. The agent cannot clear it either: `rm` under the store is refused,
+    and correctly so, or it could tidy away evidence and forge consent. That
+    leaves the engine, once per session (HATS-1682).
+    """
+    stale = ct.mint("HATS-OLD", start=repo, argv=_A)
+    live = ct.mint("HATS-NEW", start=repo, argv=_A)
+    directory = ct.tickets_dir(repo)
+    _age(directory / f"{stale}.json", ct.STALE_AFTER_SECONDS + 60)
+
+    assert ct.sweep(repo) == 1
+
+    assert not (directory / f"{stale}.json").exists()
+    assert (directory / f"{live}.json").exists(), "the sweep took a live ticket"
+
+
+def test_a_sweep_with_no_store_is_not_an_error(tmp_path):
+    assert ct.sweep(tmp_path) == 0
 
 
 def test_no_ticket_in_the_environment_is_simply_no_consent(repo):

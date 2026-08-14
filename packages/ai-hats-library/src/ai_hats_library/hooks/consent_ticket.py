@@ -30,9 +30,10 @@ TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 #: input, and ``../../../etc/passwd`` must never become a path.
 NONCE_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 
-#: With no callback after the answer, the ticket is written when the question is
-#: RAISED — so this is also the window a REJECTED one stays usable. Kept short.
-TTL_SECONDS = 90
+#: Housekeeping interval, NOT a consent window — an expiry would be the
+#: supervisor's budget for thinking, since the mint precedes the answer
+#: (HATS-1682). Validity rests on the four bindings below instead.
+STALE_AFTER_SECONDS = 12 * 3600
 
 #: The session that asked. Carried in the ticket and checked on the way out, so
 #: a leftover from another session's question is not this session's consent.
@@ -83,18 +84,33 @@ def _note(message: str) -> None:
     print(f"[consent-ticket] {message}", file=sys.stderr)
 
 
-def _prune(directory: Path, now: float) -> None:
-    """Best-effort sweep of ticket files past their TTL. Failure is not news."""
+def _prune(directory: Path, now: float) -> int:
+    """Best-effort sweep of stale ticket files; how many went. Failure is not news."""
     try:
         entries = list(directory.iterdir())
     except OSError:
-        return
+        return 0
+    dropped = 0
     for path in entries:
         try:
-            if path.suffix == ".json" and now - path.stat().st_mtime > TTL_SECONDS:
+            if path.suffix == ".json" and now - path.stat().st_mtime > STALE_AFTER_SECONDS:
                 path.unlink()  # safe-delete: ok ephemeral-tmp
+                dropped += 1
         except OSError:
             continue
+    return dropped
+
+
+def sweep(start: Path | None = None) -> int:
+    """Clear stale tickets from the store under ``start``; how many went.
+
+    ``mint`` and ``consume`` were the only sweeps, so a refused ticket lay on
+    disk until the next gated transition — 1831s in a session that had none.
+    The agent cannot tidy it either (``rm`` under the store is refused, and must
+    be), which leaves the engine to call this once per session (HATS-1682).
+    """
+    directory = tickets_dir(start)
+    return 0 if directory is None else _prune(directory, time.time())
 
 
 def _session() -> str:
@@ -159,7 +175,6 @@ def peek(
     *,
     start: Path | None = None,
     nonce: str | None = None,
-    now: float | None = None,
     argv=(),
 ) -> bool:
     """Is consent for ``task_id`` on hand? Asking does not use it up.
@@ -168,7 +183,7 @@ def peek(
     can still be rolled back by a later subscriber — spending there would burn
     the supervisor's click on a move that never happened (HATS-1642).
     """
-    return _valid_ticket(task_id, start=start, nonce=nonce, now=now, argv=argv) is not None
+    return _valid_ticket(task_id, start=start, nonce=nonce, argv=argv) is not None
 
 
 def consume(
@@ -176,7 +191,6 @@ def consume(
     *,
     start: Path | None = None,
     nonce: str | None = None,
-    now: float | None = None,
     argv=(),
 ) -> bool:
     """Spend the ticket naming ``task_id``; ``True`` iff THIS call spent it.
@@ -184,14 +198,13 @@ def consume(
     One-shot by the unlink: whoever removes the file is the one call the ticket
     consented to.
     """
-    path = _valid_ticket(task_id, start=start, nonce=nonce, now=now, argv=argv)
+    path = _valid_ticket(task_id, start=start, nonce=nonce, argv=argv)
     if path is None:
         return False
     directory, spent = path.parent, _drop(path)
     if spent:
-        # Sweep on use as well as on mint: an expired ticket is refused either
-        # way, but one left lying around reads like live consent to anyone
-        # opening the directory. Cheap — the store holds a handful of files.
+        # Sweep on use as well as on mint: a ticket nobody will spend reads
+        # like live consent to anyone opening the directory.
         _prune(directory, time.time())
     return spent
 
@@ -201,14 +214,14 @@ def _valid_ticket(
     *,
     start: Path | None = None,
     nonce: str | None = None,
-    now: float | None = None,
     argv=(),
 ):
     """The ticket file that consents to THIS call, here and now, or ``None``.
 
-    Bound to the card, to the session, to the exact invocation, and expiring —
+    Bound to the card, to the session, to the exact invocation, and one-shot —
     four axes because the mint precedes the answer, so every one of them is a
-    way a ticket the supervisor refused could otherwise still be spent.
+    way a ticket the supervisor refused could otherwise still be spent. None of
+    them is the clock: an expiry would only fence the supervisor's thinking.
     """
     raw = os.environ.get(TICKET_ENV, "") if nonce is None else nonce
     if not raw:
@@ -243,11 +256,9 @@ def _valid_ticket(
         return None
     issued = data.get("issued_at")
     if not isinstance(issued, (int, float)) or isinstance(issued, bool):
+        # Age no longer decides, but a ticket that cannot say when it was
+        # written is corrupt rather than merely old.
         _note(f"ticket {raw[:8]}… carries no issue time")
-        _drop(path)
-        return None
-    if (time.time() if now is None else now) - issued > TTL_SECONDS:
-        _note(f"ticket {raw[:8]}… expired after {TTL_SECONDS}s — ask again")
         _drop(path)
         return None
     return path
