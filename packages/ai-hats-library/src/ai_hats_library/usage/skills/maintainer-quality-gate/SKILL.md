@@ -182,7 +182,9 @@ things about that path:
   makes a marker **written inside the task worktree** visible **from the main
   checkout**, where the check runs. `--git-dir` would file it under
   `.git/worktrees/<id>/` and the check would never see it.
-- It lives under `.git/`, so it is never committed. Markers are tiny; no GC.
+- It lives under `.git/`, so it is never committed. Each write sweeps markers
+  older than `AI_HATS_GATE_MARKER_KEEP_DAYS` (30) out of that gate's directory —
+  housekeeping, not expiry (HATS-1682: 125 had accumulated on one checkout).
 
 A marker counts only when its filename and its recorded `tree=` line agree
 (`gate_marker_ok`) — a half-written or hand-copied file names content it does
@@ -371,7 +373,9 @@ network). Any missing → block (exit 1) with the run command. Pushes to other
 branches, master deletions, and empty stdin are fast-path no-ops.
 
 Markers live under `.git/` (never committed, shared across worktrees via
-`git rev-parse --git-common-dir`). They are tiny; no GC is performed.
+`git rev-parse --git-common-dir`). Each write sweeps that gate's directory of
+markers older than `AI_HATS_GATE_MARKER_KEEP_DAYS` (30) — a tree nobody will
+return to, not a marker that went stale.
 
 ## Typical flow
 

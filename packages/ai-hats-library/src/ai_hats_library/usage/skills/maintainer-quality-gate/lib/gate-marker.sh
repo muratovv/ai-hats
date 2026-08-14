@@ -135,6 +135,20 @@ gate_marker_ok() {
     return 0
 }
 
+# Days a marker may sit before the next write sweeps it (HATS-1682).
+# Not an expiry: a marker cannot go stale, since a different tree is a different
+# key. This is housekeeping — 125 files had accumulated on one checkout, the
+# oldest naming a tree from a week nobody will return to.
+: "${AI_HATS_GATE_MARKER_KEEP_DAYS:=30}"
+
+# Drop markers older than the keep window. Best-effort: the sweep never decides
+# a gate's verdict, so a failure here must not fail the run that earned one.
+gate_marker_sweep() {
+    local dir="$1"
+    [ -d "$dir" ] || return 0
+    find "$dir" -type f -mtime "+${AI_HATS_GATE_MARKER_KEEP_DAYS}" -delete 2>/dev/null || true
+}
+
 # Write the marker for <tree> over <stages>; trailing args are provenance lines.
 gate_marker_write() {
     local gate="$1" in_dir="$2" tree="$3" stages="$4"
@@ -142,6 +156,7 @@ gate_marker_write() {
     local dir
     dir="$(gate_marker_dir "$gate" "$in_dir")" || return 1
     mkdir -p "$dir" || return 1
+    gate_marker_sweep "$dir"
     {
         printf 'tree=%s\n' "$tree"
         printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

@@ -12,6 +12,7 @@ why:    the discipline was hand-written twice with a diverging exit contract,
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -207,3 +208,40 @@ def test_a_marker_naming_another_tree_contributes_nothing_to_the_union(repo: Pat
     ok = _bash(f'gate_marker_ok . "{tree}" lint', repo)
 
     assert ok.returncode != 0, "a marker that names another tree certifies nothing here"
+
+
+# ---------------------------------------------------------------------------
+# 6. the store is swept, so it does not grow forever (HATS-1682)
+# ---------------------------------------------------------------------------
+
+
+def test_a_write_sweeps_markers_nobody_will_come_back_for(repo: Path):
+    """125 markers had piled up on one checkout, the oldest naming a tree from a
+    week nobody would return to. Nothing pruned them: staleness is impossible by
+    keying, so no expiry was needed — and none was written either."""
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo)
+    assert written.returncode == 0, written.stderr
+    directory = Path(written.stdout.strip()).parent
+    ancient = directory / ("a" * 40)
+    ancient.write_text("tree=old\n", encoding="utf-8")
+    os.utime(ancient, (0, 0))
+
+    fresh = _bash(f'gate_marker_write done-gate . "{tree}" "lint unit"', repo)
+
+    assert fresh.returncode == 0, fresh.stderr
+    assert not ancient.exists(), "the sweep left a marker older than the keep window"
+    assert Path(fresh.stdout.strip()).is_file(), "the sweep took the marker just written"
+
+
+def test_the_sweep_keeps_a_marker_inside_the_window(repo: Path):
+    """The other half: a run that earned a marker last week still counts."""
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo)
+    directory = Path(written.stdout.strip()).parent
+    recent = directory / ("b" * 40)
+    recent.write_text("tree=recent\n", encoding="utf-8")
+
+    _bash(f'gate_marker_write done-gate . "{tree}" "lint unit"', repo)
+
+    assert recent.exists(), "the sweep took a marker inside the keep window"
