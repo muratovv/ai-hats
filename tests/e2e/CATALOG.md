@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**243 of 243 files catalogued — 251 flows.**
+**244 of 244 files catalogued — 252 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -1393,6 +1393,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the canonical plan file is created at tasks/<ID>/plan.md with standard scaffold content while stray legacy plan files remain untouched
 - **why** — tasks must maintain a single predictable plan home without silently importing untracked legacy artifacts
+
+## `test_plan_consent_ticket_chain.py`
+
+*pins HATS-1642*
+
+- **flow** — an agent asking the supervisor to approve `plan → execute` from chat
+- **cmds**
+
+  ```console
+  rack transition SBX-001 execute
+  ```
+
+- **expect** — the composed PreToolUse chain returns `ask` plus a one-shot consent ticket, and that ticket — spent once, for that card only — is what moves the card
+- **why** — the whole chain, not one hook: a second hook on the Bash matcher can override the verdict, and a ticket rack refuses is a question asked for nothing
 
 ## `test_plan_gate_approach_counter_e2e.py`
 

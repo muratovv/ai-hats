@@ -114,7 +114,10 @@ NON_CONTRACT_HOOK_KEYS = {
     "AI_HATS_DESTRUCTIVE_ACK",
     "AI_HATS_DOCS_INDEX_ACK",
     # Read by the rack process; NAMED in safety_gate because it refuses them as an
-    # inline self-grant rather than reading them (HATS-1639).
+    # inline self-grant rather than reading them (HATS-1639). The consent ticket
+    # is minted by safety_gate and spent by the rack's plan gate (HATS-1642) — a
+    # per-transition nonce, not a flag a human ever sets.
+    "AI_HATS_CONSENT_TICKET",
     "AI_HATS_MERGE_ACK",
     "AI_HATS_PLAN_ACK",
     "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",

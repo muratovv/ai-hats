@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_hats_rack.dispatch import OperationAborted
+from ai_hats_rack.dispatch import AbortOperation, OperationAborted
 from ai_hats_rack.extensions import (
     DEFAULT_PLAN_SECTIONS,
     Section,
@@ -15,7 +15,7 @@ from ai_hats_rack.extensions import (
     unfilled_sections,
 )
 
-from rack_testkit import make_kernel, walk
+from rack_testkit import StubSubscriber, in_lock, make_kernel, walk
 
 ALL_REQUIRED = [s.name for s in DEFAULT_PLAN_SECTIONS if s.required]
 SCAFFOLD = render_scaffold(DEFAULT_PLAN_SECTIONS)
@@ -229,6 +229,32 @@ def test_partial_plan_blocks_and_names_only_the_empty_sections(kit, tasks_dir, c
     assert "Requirements," not in reason  # the filled one is not listed
 
 
+def test_the_content_refusal_says_the_question_was_asked_for_nothing(kit, tasks_dir, cwd):
+    """The prompt goes up before the plan is read — the hook cannot judge the
+    sections without becoming a second plan-gate (HATS-1253). So the refusal
+    that DOES judge them says the answer was spent on a move that never
+    happened, instead of leaving the agent to wonder (HATS-1642 review)."""
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+
+    with pytest.raises(OperationAborted) as exc_info:
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert "asked again" in exc_info.value.reason, exc_info.value.reason
+
+
+def test_a_move_that_never_raised_a_question_is_not_told_one_was_wasted(kit, tasks_dir, cwd):
+    """Control: only `plan → execute` raises the prompt, so only it gets the note."""
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", "blocked", cwd=cwd)
+
+    with pytest.raises(OperationAborted) as exc_info:
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert "Empty required section" in exc_info.value.reason
+    assert "asked again" not in exc_info.value.reason, exc_info.value.reason
+
+
 def test_transition_execute_proceeds_on_populated_plan(kit, tasks_dir, cwd):
     _create(kit, cwd)
     walk(kit, "T-1", "plan", cwd=cwd)
@@ -332,6 +358,111 @@ def test_plan_consent_skipped_on_reopen_and_epic(kit, tasks_dir, cwd, monkeypatc
     # Epic execute skips plan-consent
     walk(kit, "T-1", "plan", "execute", cwd=cwd)
     assert kit.get("T-1").state == "execute"
+
+
+class _Booth:
+    """Stand-in for the integrator's ticket store: one card, one use, and asking
+    about a ticket is not the same act as spending it."""
+
+    def __init__(self, *task_ids: str) -> None:
+        self.unspent = set(task_ids)
+        self.asked: list[str] = []
+        self.spent: list[str] = []
+
+    def peek(self, task_id: str) -> bool:
+        self.asked.append(task_id)
+        return task_id in self.unspent
+
+    def spend(self, task_id: str) -> bool:
+        if task_id not in self.unspent:
+            return False
+        self.unspent.discard(task_id)
+        self.spent.append(task_id)
+        return True
+
+
+def _kit_with_booth(tasks_dir, booth, extra=()):
+    """The seam the integrator fills (HATS-1642): the rack cannot import the
+    library that writes the ticket, so the store arrives through the factory."""
+    from ai_hats_rack.composition import compose_subscribers, stock_factories
+    from ai_hats_rack.definition import load_backlog
+    from ai_hats_rack.extensions import PlanConsentExtension
+
+    gate = PlanConsentExtension(tickets=booth)
+    factories = {**stock_factories(), "plan-consent": lambda d, c, cfg: gate}
+    subs = compose_subscribers(load_backlog(), tasks_dir, factories)
+    return make_kernel(tasks_dir, subscribers=[*subs, gate.spender(), *extra])
+
+
+def _planned(kit, tasks_dir, cwd):
+    _create(kit, cwd)
+    walk(kit, "T-1", "plan", cwd=cwd)
+    (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
+
+
+def test_plan_consent_passes_when_the_seam_spends_a_ticket(tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    booth = _Booth("T-1")
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert kit.get("T-1").state == "execute"
+    assert booth.asked == ["T-1"], "the gate did not ask about THIS card"
+    assert booth.spent == ["T-1"], "the ticket outlived the transition it paid for"
+
+
+def test_a_transaction_that_aborts_later_does_not_eat_the_ticket(tasks_dir, cwd, monkeypatch):
+    """The gate runs at 11; ownership (20) and the worktree (30) can still abort.
+
+    Spending there would burn a click on a transition that never happened, and
+    the supervisor has no way to get it back (HATS-1642 review).
+    """
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    booth = _Booth("T-1")
+
+    def _abort(_ctx):
+        raise AbortOperation("the worktree could not be created")
+
+    later = StubSubscriber("late-abort", [in_lock("edge:plan--execute", 20)], _abort)
+    kit = _kit_with_booth(tasks_dir, booth, extra=[later])
+    _planned(kit, tasks_dir, cwd)
+
+    with pytest.raises(OperationAborted):
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert kit.get("T-1").state == "plan"
+    assert booth.asked == ["T-1"], "the gate never looked at the ticket"
+    assert booth.spent == [], "a rolled-back transition ate the supervisor's click"
+
+
+def test_plan_consent_blocks_when_the_seam_holds_no_ticket(tasks_dir, cwd, monkeypatch):
+    monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
+    booth = _Booth()  # the supervisor was never asked
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    with pytest.raises(OperationAborted) as exc_info:
+        walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert exc_info.value.subscriber == "plan-consent"
+    assert booth.asked == ["T-1"]
+    assert kit.get("T-1").state == "plan"
+
+
+def test_the_env_ack_never_spends_a_ticket(tasks_dir, cwd, monkeypatch):
+    """Pre-approved in the launching environment: no question is left to ask, so
+    a ticket the supervisor may still hold stays unspent."""
+    monkeypatch.setenv("AI_HATS_PLAN_ACK", "1")
+    booth = _Booth("T-1")
+    kit = _kit_with_booth(tasks_dir, booth)
+    _planned(kit, tasks_dir, cwd)
+
+    walk(kit, "T-1", "execute", cwd=cwd)
+
+    assert kit.get("T-1").state == "execute"
+    assert booth.asked == [], "the env channel burned a ticket it did not need"
 
 
 def test_plan_consent_skipped_on_force(kit, tasks_dir, cwd, monkeypatch):
