@@ -9,20 +9,26 @@ process-unique. Under ``pytest -n>1`` every worker that runs
 shared checkout writes into the same ``<repo>/build/`` concurrently →
 the ``[Errno 17] File exists: build/bdist...dist-info`` collision class.
 
-:func:`build_src` resolves the install source so each xdist worker builds
-in its OWN private clone:
+:func:`build_src` resolves the install source to a private ``git clone
+--shared`` of ``repo_root``, ALWAYS — once per process, keyed by worker name
+so xdist gets one clone each and a serial run gets one of its own.
+``--shared`` references the source object store (no object copy → fast); only
+the working tree is materialised. Each clone owns its own ``build/`` → no
+cross-worker race. The wheel build needs only the materialised working tree,
+so the borrowed object store matters solely *during* the clone — the
+guarantee assumes no ``git gc`` on the source repo in that narrow window
+(always true for a worktree under an active test session).
 
-* **Serial run** (no ``PYTEST_XDIST_WORKER``) → returns ``repo_root``
-  unchanged. A single process building in-tree never races itself, and
-  the session-autouse ``_clean_repo_build_dir`` rmtree keeps it clean.
-* **Under xdist** → a once-per-worker ``git clone --shared`` of
-  ``repo_root`` into a tmp dir. ``--shared`` references the source object
-  store (no object copy → fast); only the working tree is materialised.
-  Each worker's clone owns its own ``build/`` → no cross-worker race.
-  The wheel build needs only the materialised working tree, so the
-  borrowed object store matters solely *during* the clone — the guarantee
-  assumes no ``git gc`` on the source repo within that narrow window
-  (always true for a worktree under an active test session).
+PITFALL 2 (HATS-1651): a clone materialises COMMITTED content, so this tier
+never sees uncommitted work. A fix edited but not committed is invisible here,
+and the run reports the behaviour of ``HEAD`` — commit before running e2e, or
+read the result as a statement about the last commit.
+
+Serial used to short-circuit to ``repo_root``, on the argument that one
+process cannot race itself. HATS-1560 removed that: building in-tree wrote
+``build/`` and ``.pyc`` into the developer's own checkout. Cloning
+unconditionally is what keeps the tier out of the working tree — do not
+re-add the short-circuit to make uncommitted code visible.
 
 Workers are separate processes (execnet), so the module-level cache is
 naturally per-worker and single-threaded — no lock needed. The clone
@@ -48,10 +54,9 @@ CLONE_TIMEOUT_S = 120
 
 
 def build_src(repo_root: Path) -> Path:
-    """Return the wheel-build source for the current worker.
-
-    Serial → ``repo_root``. Under xdist → a per-worker ``git clone --shared``
-    so concurrent ``pip install <src>`` builds never race ``<repo>/build/``.
+    """Return the wheel-build source for the current worker: always a per-worker
+    ``git clone --shared``, so no ``pip install <src>`` ever builds in the
+    checkout — and so this tier only ever sees COMMITTED content.
     """
     worker = os.environ.get("PYTEST_XDIST_WORKER", "serial")
     cached = _CACHE.get(worker)
