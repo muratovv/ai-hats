@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`WorktreeManager.probe_blockers()` and `Blocker`** (HATS-1654) — every
+  refusal `merge()` would raise right now, in its own order, as a read-only
+  pass: rebased branch, consent, wandered HEAD, dirty tree, drift. No lock and
+  no mutation; the one cost is the drift check's bounded `git fetch`. The
+  `wt:pre-merge` point is not probed — a check is an arbitrary command with no
+  "would you refuse?" mode. Callers use it to name every blocker in one run
+  instead of one per run.
+
 ## [0.5.0]
 
 ### Added

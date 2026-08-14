@@ -12,6 +12,10 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Added
 
+- **`rack ls --id <ID>`** (HATS-1654). Accept `--id` as an alias for the positional `TASK_ID`, the spelling `rack create` already uses. Until now it exited 2 and click's nearest-string hint offered `--deep` / `--link`, neither of which selects a card.
+
+- **Every blocker named in one refused merge** (HATS-1654). A refused `ai-hats wt merge` now prints, under its own refusal, the other blockers a read-only probe can see — consent, drift, dirty tree, wandered HEAD, rebased branch — plus a line saying `wt:pre-merge` checks were not probed. The guards still fire in the same order and still raise the same exception; only the report grew. Measured cost of the old behaviour: three runs to learn three facts, with a four-minute gate rerun between two of them.
+
 - **Opt-in rule delivery (`delivery: always_on` in `metadata.yaml`)** (HATS-1511). Allow rules from any library layer (including user-global and project-local) to request full body delivery into system prompt `## RULES` via `delivery: always_on` in `metadata.yaml`.
 
 - **User-global library paths (`~/.ai-hats/library_paths.yaml`)** (HATS-1508). Support user-level external library directories (`paths: [<dir>, ...]`) inside `build_library_paths` without modifying project `ai-hats.yaml` or using symlinks.
@@ -21,6 +25,8 @@ since the latest tag lives under **Unreleased** until the next release.
 - **`leader` and `worker` traits for paired sessions** (HATS-1491). Two `usage/` traits that split one card between two live sessions: the leader owns the plan and a two-contour review (completeness first, then discipline) and writes no code; the worker owns every mechanical step, sleeps on `ai-hats wait --until execute --until done`, and hands work back with the artifacts that settle each claim. Mix onto any base role — `ai-hats -r "maintainer + leader"`, `ai-hats -p agy -r "maintainer + worker"`. Until now the `leader` / `worker` examples in the docs named components that did not exist, so a command copied from them exited 2.
 
 ### Fixed
+
+- **A consent recipe now works when followed one line at a time** (HATS-1654). Every gate that asks for `AI_HATS_MERGE_ACK` / `AI_HATS_PLAN_ACK` printed the `export` on a line of its own with the command it unlocks on the next one. Typed one command at a time — a harness bash call, a tool call, any per-command subshell — the export died with its shell and the gate refused a correctly typed command; measured twice on one merge. The export and the command it unlocks now ride one line joined by `&&`. `export` remains the only spelling: an inline `AI_HATS_*_ACK=1 <cmd>` prefix is still refused as a self-grant (HATS-1639).
 
 - **A hung predicate no longer makes `ai-hats wait --timeout` unreachable** (HATS-1598). The probe ran through `subprocess.run` with no `timeout=`, and the deadline was read only after it returned, so `ai-hats wait --until-cmd 'ssh box test -f /out/done' --timeout 60` waited forever on a dead connection — exit 124 was unreachable for every hung predicate. A probe is now bounded by whichever is nearer: the wait's own deadline (exit 124) or the new `--probe-timeout SEC` (default 30, exit 2), which also covers `--timeout 0`, where there is no deadline to bound a probe with. An expired probe is killed by process group, so a compound predicate's children do not outlive it. The same hole in the agy hook dispatcher is closed with a 60s per-hook budget (`AI_HATS_AGY_HOOK_TIMEOUT_S`): it runs on every tool call, so one hung `PreToolUse` hook wedged the whole session; a killed hook returns 1 — `BROKE` per ADR-0020 D2, not a refusal.
 
@@ -53,7 +59,7 @@ since the latest tag lives under **Unreleased** until the next release.
 
 - **`LibraryResolver.list_components` now discovers symlinked components and namespaces** (HATS-1505). Replaced `Path.rglob` with `os.walk(followlinks=True)` guarded by realpath traversal tracking, allowing symlinked trait, skill, rule, and role directories to be listed properly and preventing `RoleSpecError` during runtime composition.
 
-- **Symlinked library components no longer break worktree teardown** (HATS-1494). ``resolve_hook_script`` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. ``~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills``). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
+- **Symlinked library components no longer break worktree teardown** (HATS-1494). `resolve_hook_script` removed the search-root containment check that refused skills living under a symlinked library layer (e.g. `~/.ai-hats/skills -> ~/dev/ai-hats-custom/skills`). M11 security containment of the resolved hook script inside its skill root remains strictly enforced.
 
 - **Deferred rule removals in overlays and customizations** (HATS-1456). Rule removals (`remove: rules: [name]`) in `customizations` and overlays now resolve against the full composed set (mirroring skill removals), allowing rules brought by traits to be removed cleanly.
 

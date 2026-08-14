@@ -594,6 +594,43 @@ class TestDirtyWorktreeSafety:
         assert (git_project / "saved.txt").exists()
 
 
+class TestMergeRefusalNamesEveryBlocker:
+    """One run names every blocker it can see (HATS-1654).
+
+    Measured: consent refused first; the base-moved refusal surfaced only on the
+    next run, with a four-minute gate rerun spent in between.
+    """
+
+    def test_the_consent_refusal_also_names_the_drift(self, git_project: Path, monkeypatch) -> None:
+        monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
+        monkeypatch.chdir(git_project)
+        mgr = WorktreeManager(
+            git_project,
+            branch_name="feat/two-blockers",
+            state_dir=worktrees_dir(git_project),
+        )
+        wt = mgr.create()
+        mgr.save_state()
+        (wt / "work.txt").write_text("work")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "work")
+
+        # The base moves under the worktree — the blocker behind the consent one.
+        (git_project / "peer.txt").write_text("peer")
+        _git(git_project, "add", ".")
+        _git(git_project, "commit", "-m", "peer work")
+
+        try:
+            result = CliRunner().invoke(main, ["wt", "merge", "feat/two-blockers"])
+            assert result.exit_code == 1, result.output
+            assert "consent" in result.output.lower(), result.output
+            assert "drift" in result.output.lower(), (
+                f"the refusal hid the base drift until the next run:\n{result.output}"
+            )
+        finally:
+            mgr.discard(force=True)
+
+
 # ---------------------------------------------------------------------------
 # HATS-1205: where wt exec runs, and whose environment it runs with
 # ---------------------------------------------------------------------------

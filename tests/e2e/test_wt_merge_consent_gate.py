@@ -112,6 +112,13 @@ def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     assert "review" in combined.lower(), (
         f"review handoff directive missing from refusal:\n{combined}"
     )
+    # HATS-1654: the recipe is followed one line at a time, so the export must
+    # reach the merge on the line it was typed with.
+    recipe = [ln for ln in combined.splitlines() if "export AI_HATS_MERGE_ACK=1" in ln]
+    assert recipe, f"refusal carries no export recipe:\n{combined}"
+    assert all("&& ai-hats wt merge" in ln for ln in recipe), (
+        f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
+    )
 
     branches = _git(project, "branch", "--list", "task/test-consent").stdout
     assert "task/test-consent" in branches, (
@@ -131,6 +138,83 @@ def test_e2e_wt_merge_consent_gate(shared_launcher, tmp_path):
     )
     log = _git(project, "log", "--all", "--pretty=%s", "-n", "10").stdout
     assert "wt-work" in log, f"worktree commit not in base history:\n{log}"
+
+
+def _worktree_path(project: Path, branch: str) -> Path:
+    listing = _git(project, "worktree", "list", "--porcelain").stdout
+    current: Path | None = None
+    for line in listing.splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree ") :].strip())
+        elif line.startswith("branch ") and current is not None:
+            if line[len("branch ") :].strip().endswith(f"/{branch}"):
+                return current
+    raise AssertionError(f"could not locate worktree for {branch}:\n{listing}")
+
+
+@pytest.mark.integration
+def test_e2e_merge_refusal_names_every_blocker(shared_launcher, tmp_path):
+    """One run names every blocker it can see (HATS-1654).
+
+    Consent refuses first and the base has moved too. If the refusal names only
+    the consent, the drift costs a second run — the measured cost was a gate
+    rerun in between.
+    """
+    launcher_dest, env, _venv = shared_launcher
+    project = tmp_path / "project"
+    project.mkdir()
+    deny_env = dict(env)
+    deny_env.pop("AI_HATS_MERGE_ACK", None)
+
+    def ai_hats(*args, expect_exit=0, timeout=180, run_env=env):
+        return _run(
+            [str(launcher_dest), *args],
+            cwd=project,
+            env=run_env,
+            timeout=timeout,
+            expect_exit=expect_exit,
+        )
+
+    def commit(cwd: Path, message: str):
+        return _git(
+            cwd,
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            message,
+        )
+
+    _git(project, "init", "-b", "main")
+    _git(project, "config", "user.email", "e2e@test")
+    _git(project, "config", "user.name", "E2E")
+    (project / "README.md").write_text("# e2e\n")
+    _git(project, "add", "README.md")
+    commit(project, "init")
+
+    ai_hats("self", "init", "-r", "assistant", "-p", "claude", "--task-prefix", "TST")
+    ai_hats("wt", "create", "task/two-blockers")
+    wt_path = _worktree_path(project, "task/two-blockers")
+    _git(wt_path, "config", "user.email", "e2e@test")
+    _git(wt_path, "config", "user.name", "E2E")
+    (wt_path / "wt-work.txt").write_text("wt change\n")
+    _git(wt_path, "add", "wt-work.txt")
+    commit(wt_path, "wt-work")
+
+    # The base moves under the worktree — the blocker behind the consent one.
+    (project / "peer.txt").write_text("peer\n")
+    _git(project, "add", "peer.txt")
+    commit(project, "peer work")
+
+    res = ai_hats("wt", "merge", "task/two-blockers", expect_exit=1, run_env=deny_env)
+    combined = res.stdout + res.stderr
+    assert "AI_HATS_MERGE_ACK" in combined, f"consent blocker missing:\n{combined}"
+    assert "Also blocking (drift)" in combined, (
+        f"the refusal hid the base drift until the next run:\n{combined}"
+    )
+    assert "wt:pre-merge" in combined, f"what was NOT probed must be said:\n{combined}"
 
 
 @pytest.mark.integration

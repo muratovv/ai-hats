@@ -134,7 +134,7 @@
   "tests/test_version_recovery.py": 5,
   "tests/test_version_refs.py": 7,
   "tests/test_worktree.py": 2,
-  "tests/test_worktree_cli.py": 11,
+  "tests/test_worktree_cli.py": 12,
   "tests/test_worktree_drift.py": 3,
   "tests/test_worktree_hats1332.py": 1,
   "tests/test_worktree_hats482.py": 15,

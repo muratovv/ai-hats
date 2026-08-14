@@ -632,6 +632,18 @@ class WorktreeMergeAborted(Exception):
 
 
 @dataclass(frozen=True)
+class Blocker:
+    """One reason :meth:`WorktreeManager.merge` would refuse right now (HATS-1654).
+
+    ``kind`` names the guard (``consent``, ``drift``, …) so a caller can drop the
+    one that already raised; ``message`` is the refusal's own words.
+    """
+
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
 class LifecycleContext:
     """What a lifecycle extension-point needs — and nothing hook-policy (D2).
 
@@ -974,6 +986,83 @@ class WorktreeManager:
             self.branch_name,
         )
         return self.worktree_path
+
+    def probe_blockers(self, *, force: bool = False, accept_drift: bool = False) -> list[Blocker]:
+        """Every refusal :meth:`merge` would raise right now, in its own order.
+
+        HATS-1654: the guards fire one per run, so a merge can cost three runs to
+        learn three facts. This asks all of them at once — read-only, no lock, no
+        mutation; the one cost is the drift check's bounded ``git fetch``. The
+        ``wt:pre-merge`` point is NOT probed: a check is an arbitrary command with
+        no "would you refuse?" mode (that predicate is HATS-1615's).
+        """
+        if not self._is_git or self.worktree_path is None or not self.worktree_path.exists():
+            return []
+        base = self._original_branch
+        if base is None:
+            return [Blocker("state", str(WorktreeStateIncompleteError(self.branch_name)))]
+
+        try:
+            tip = self._git("rev-parse", self.branch_name).stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            return [Blocker("branch", f"could not read the tip of '{self.branch_name}': {exc}")]
+
+        base_exists = self._branch_exists(base)
+        if base_exists and self._is_ancestor(tip, base):
+            return []  # already merged — merge() tears down, it does not refuse
+
+        def rebased() -> str | None:
+            if not self._is_patch_integrated(self.branch_name, base):
+                return None
+            return str(WorktreeRebasedBranchError(self.branch_name, base))
+
+        def consent() -> str | None:
+            if os.environ.get("AI_HATS_MERGE_ACK") == "1":
+                return None
+            return str(WorktreeMergeConsentError(self.branch_name, base))
+
+        def base_mismatch() -> str | None:
+            head = self._get_current_branch()
+            if head == base:
+                return None
+            return str(WorktreeBaseBranchMismatchError(current=head, expected=base))
+
+        def dirty() -> str | None:
+            try:
+                self._check_clean()
+            except WorktreeDirtyError as exc:
+                return str(exc)
+            return None
+
+        def drift() -> str | None:
+            try:
+                self._check_drift()
+            except WorktreeDriftError as exc:
+                return str(exc)
+            return None
+
+        # One row per guard, in `merge()`'s order; the flag column is the same
+        # bypass the guard itself honours, so a bypassed guard is never probed.
+        probes: tuple[tuple[str, bool, Callable[[], str | None]], ...] = (
+            ("rebased", accept_drift or force, rebased),
+            ("consent", False, consent),
+            ("base-mismatch", not base_exists, base_mismatch),
+            ("dirty", force, dirty),
+            ("drift", accept_drift, drift),
+        )
+
+        blockers: list[Blocker] = []
+        for kind, skipped, probe in probes:
+            if skipped:
+                continue
+            try:
+                message = probe()
+            except Exception as exc:  # noqa: BLE001 — one broken probe must not blind the rest
+                blockers.append(Blocker(kind, f"could not check: {exc!r}"))
+                continue
+            if message:
+                blockers.append(Blocker(kind, message))
+        return blockers
 
     def merge(
         self,
