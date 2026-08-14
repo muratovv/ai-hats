@@ -338,11 +338,21 @@ gate_run_and_stamp_rev() {
         exit 1
     fi
 
+    # NOT under $TMPDIR, for the reason HATS-1632 measured: macOS reaps the temp
+    # root by ACCESS time, and a uv-materialized venv arrives carrying the
+    # package cache's atime — born expired, swept at the next 03:35 run. The
+    # shared git dir is swept by nothing but us, and it is where the markers
+    # already live, so a scratch checkout keeps the same company as its verdict.
+    #
     # GLOBAL, not local: the trap body is evaluated while the shell is already
     # exiting, and a name that only existed inside a function is not a thing to
     # bet a `rm -rf` on.
+    local common
+    common="$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null)" || exit 1
+    case "$common" in /*) : ;; *) common="$repo_root/$common" ;; esac
     _GATE_SWEEP_REPO="$repo_root"
-    _GATE_SWEEP_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/ai-hats-gate-XXXXXXXX")" || exit 1
+    mkdir -p "$common/ai-hats/gate-checkouts" || exit 1
+    _GATE_SWEEP_SCRATCH="$(mktemp -d "$common/ai-hats/gate-checkouts/XXXXXXXX")" || exit 1
     _GATE_SWEEP_CHECKOUT="$_GATE_SWEEP_SCRATCH/tree"
     local checkout="$_GATE_SWEEP_CHECKOUT"
     # The trap owns BOTH halves: `git worktree remove` un-registers it, `rm -rf`

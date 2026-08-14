@@ -275,7 +275,7 @@ def test_every_stage_runs_inside_the_checkout_and_not_where_it_was_called_from(r
     assert ran.returncode == 0, said
     for line in ("PREPARED ", "ran one in ", "ran two in "):
         where = said.split(line, 1)[1].splitlines()[0].strip()
-        assert "ai-hats-gate-" in where, f"{line.strip()} happened in {where}, not in the checkout"
+        assert "gate-checkouts" in where, f"{line.strip()} happened in {where}, not in the checkout"
 
 
 def test_an_interpreter_from_another_checkout_does_not_ride_along(repo: Path):
