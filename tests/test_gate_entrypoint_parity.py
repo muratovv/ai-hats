@@ -171,3 +171,11 @@ def test_the_done_gate_demands_what_only_it_can_ask():
         "`merge-smoke` are the stages that answer it. Actual extra: "
         f"{sorted(done - merge)}"
     )
+
+
+def test_preparing_a_checkout_is_never_part_of_a_verdict():
+    """`--prepare` mints a venv so the stages run against THIS tree (HATS-1664).
+    It asserts nothing, so a gate naming it would be counting a precondition as
+    evidence — and a marker would then certify that a venv got built."""
+    for gate in ("merge-gate", "done-gate", "push-gate"):
+        assert "prepare" not in _composition(gate), f"{gate} names a precondition as a stage"

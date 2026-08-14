@@ -172,6 +172,30 @@ gate_composition() {
     esac
 }
 
+# Make THIS checkout runnable, so `$PY` above resolves to an interpreter that
+# imports this tree and not another one. NOT a stage and in no gate composition:
+# it asserts nothing and can only be a precondition (HATS-1664).
+#
+# Who asks: the gate primitive, before running a gate inside a scratch checkout
+# of a merge commit — that checkout is minted by `git worktree add` and has no
+# `.venv` at all, so without this every real-subprocess test would exercise the
+# MAIN checkout's installed code while claiming to judge the commit. The hook it
+# delegates to is the same one every task worktree gets (HATS-1291); an already
+# usable `.venv` makes it a no-op.
+ci_prepare() {
+    echo "[ci-local] prepare (a venv for this checkout, if it needs one)" >&2
+    # From the TREE, not from an installed library: an unprepared checkout has no
+    # interpreter that could import one, and this repository carries the hook's
+    # source anyway — so the version that runs is the one belonging to the
+    # content under judgement.
+    local hook="$repo_root/packages/ai-hats-library/src/ai_hats_library/usage/skills/worktree-venv/hooks/provision-venv.sh"
+    if [[ ! -f "$hook" ]]; then
+        echo "[ci-local] no provision-venv hook at $hook — nothing to prepare" >&2
+        return 1
+    fi
+    AI_HATS_WORKTREE_PATH="$repo_root" bash "$hook"
+}
+
 # NOTE: excluded from the local `all` bundle — it queries PyPI, so an offline
 # dev box would fail a legitimate push. CI is authoritative; run explicitly
 # (optionally SKEW_BASE=<sha>) to reproduce.
@@ -191,6 +215,11 @@ case "$stage" in
     # the primitive's job (it owns the marker). `--stages` comes FIRST so a
     # dispatcher that does not know the flag refuses instantly instead of
     # mistaking it for an argument to a gate it does know (HATS-1604).
+    # Also not a stage, and for the same reason as `--stages`: it is asked BEFORE
+    # any stage runs, and it must be its own process — `$PY` is resolved once at
+    # the top of this script, so an interpreter minted here is only seen by the
+    # next invocation (HATS-1664).
+    --prepare) ci_prepare ;;
     --stages)
         gate_composition "${1:-}" || {
             echo "[ci-local] no such gate: ${1:-<none>} (gates: merge-gate | done-gate | push-gate)" >&2
@@ -231,6 +260,7 @@ case "$stage" in
         echo "[ci-local] unknown stage: $stage" >&2
         echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | adr-integrity | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
         echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
+        echo "  --prepare: mint a venv for this checkout (a precondition, never a check)" >&2
         exit 2
         ;;
 esac
