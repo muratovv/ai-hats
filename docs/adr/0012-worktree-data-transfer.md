@@ -100,7 +100,7 @@ three independent point-tasks, one with *irreversible* loss:
   sidecar. The comments were unrecoverable — recovered only from the
   supervisor's memory (HATS-818). The existing merge guards do not catch this:
   `_check_clean` inspects only *tracked* changes (`git status --porcelain`,
-  `worktree.py:1246`), so a gitignored sidecar is invisible to it. Note: the
+  `worktree.py`), so a gitignored sidecar is invisible to it. Note: the
   hunk tooling *already* has a `consume` step that backs the sidecar up to
   `/tmp/review/<wtid>` (`~/.config/hunk/scripts/hunk-notes.sh`, DOTS-157) — it
   simply never ran before teardown.

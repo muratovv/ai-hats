@@ -77,8 +77,9 @@ pure engine that is provided (not owned by the skill, not owning the skill).**
 
 4. **Modernize `GeminiProvider`.** Materialize skills into `.gemini/skills/<name>/`
    the way `ClineProvider` does for `.cline/skills/`, retiring the "Gemini has no
-   native skill registry" text-index workaround (`paths/gemini.py:5-7`,
-   `providers.py:342`) — Gemini CLI now discovers `.gemini/skills/` natively [2].
+   native skill registry" text-index workaround (the `paths/gemini.py` module
+   docstring, `GeminiProvider.build_system_prompt` in `providers.py`) — Gemini
+   CLI now discovers `.gemini/skills/` natively [2].
 
 **Cross-surface mapping (why one abstraction fits all three):**
 

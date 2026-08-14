@@ -29,6 +29,7 @@ ADR-0001 (HATS-261) утвердил **контракт** typed-dataflow pipelin
 > Сейчас мержим задачку as is, но функционал (и adr) переписываем так, чтобы была новая команда `ai-hats pipeline`, через которую мы будем собирать и запускать пайплайны. Я не хочу сейчас смешивать старый и новый код.
 
 Это означает:
+
 - **Расцепление.** `ai-hats execute` возвращается на прямой `_do_execute` (как было до HATS-265). Pipeline становится **отдельной subsystem** под собственной командой `ai-hats pipeline`.
 - **Сосуществование.** Существующие CLI-команды (`bare ai-hats`, `execute`, `reflect all`, `reflect session`) **не пайплайнятся** на этом этапе. Старый и новый код не смешиваются. Финальная миграция CLI-команд на pipeline отложена до HATS-269 / Phase 5 эпика — после стабилизации subsystem'а.
 - **ADR-0001 не отменяется.** Контракт `StepIO`/`Step`/`Pipeline` валиден целиком. Этот ADR-0002 дополняет его тремя ортогональными слоями: harness contract, step inventory, CLI subsystem.
@@ -47,18 +48,18 @@ Pipeline-core видит только `Path` и плоские значения.
 
 ### §2 Step inventory (10 шагов)
 
-| Категория | Step | requires | optional | produces | Params |
-|---|---|---|---|---|---|
-| pre | `compose_role` | `role` | — | `system_prompt` | — |
-| pre | `resolve_prompt` | — | `prompt_path` | `prompt_text` | `default_text: str = ""` |
-| pre | `build_handoff` | `project_dir` | — | `handoff_path` | — |
-| pre | `pre_log` | — | (`params.keys`) | — | `keys: list[str]` |
-| execute | `launch_provider` | `system_prompt`, `interactive` | `prompt_text`, `provider`, `model`, `isolation`, `ticket`, `tags`, `extra_args`, `role` | `session_id`, `session_dir`, `transcript_path`, `exit_code` | — |
-| post | `spawn_session_review` | `session_id`, `project_dir` | — | `review_pid` | `max_retries: int = 1` |
-| post | `extract_marker` | `transcript_path` | — | `<params.out_key>` | `start: str`, `end: str`, `out_key: str` |
-| post | `save_artifact` | `<params.key>` | — | `saved_path` | `key: str`, `out_path_template: str` |
-| post | `post_log` | — | (`params.keys`) | — | `keys: list[str]` |
-| specialized | `run_session_review` | `session_id`, `project_dir` | — | `review_path` | `max_retries: int = 1` |
+| Категория   | Step                   | requires                       | optional                                                                                | produces                                                    | Params                                   |
+| ----------- | ---------------------- | ------------------------------ | --------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------- |
+| pre         | `compose_role`         | `role`                         | —                                                                                       | `system_prompt`                                             | —                                        |
+| pre         | `resolve_prompt`       | —                              | `prompt_path`                                                                           | `prompt_text`                                               | `default_text: str = ""`                 |
+| pre         | `build_handoff`        | `project_dir`                  | —                                                                                       | `handoff_path`                                              | —                                        |
+| pre         | `pre_log`              | —                              | (`params.keys`)                                                                         | —                                                           | `keys: list[str]`                        |
+| execute     | `launch_provider`      | `system_prompt`, `interactive` | `prompt_text`, `provider`, `model`, `isolation`, `ticket`, `tags`, `extra_args`, `role` | `session_id`, `session_dir`, `transcript_path`, `exit_code` | —                                        |
+| post        | `spawn_session_review` | `session_id`, `project_dir`    | —                                                                                       | `review_pid`                                                | `max_retries: int = 1`                   |
+| post        | `extract_marker`       | `transcript_path`              | —                                                                                       | `<params.out_key>`                                          | `start: str`, `end: str`, `out_key: str` |
+| post        | `save_artifact`        | `<params.key>`                 | —                                                                                       | `saved_path`                                                | `key: str`, `out_path_template: str`     |
+| post        | `post_log`             | —                              | (`params.keys`)                                                                         | —                                                           | `keys: list[str]`                        |
+| specialized | `run_session_review`   | `session_id`, `project_dir`    | —                                                                                       | `review_path`                                               | `max_retries: int = 1`                   |
 
 **Принципы decomposition'а:**
 
@@ -75,6 +76,7 @@ Pipeline-core видит только `Path` и плоские значения.
 `library/core/pipelines/`:
 
 **`bare.yaml`** — bare `ai-hats`
+
 ```yaml
 name: bare
 steps:
@@ -88,6 +90,7 @@ steps:
 ```
 
 **`execute.yaml`** — `ai-hats execute` (interactive + batch, с/без prompt)
+
 ```yaml
 name: execute
 steps:
@@ -103,6 +106,7 @@ steps:
 ```
 
 **`reflect-all.yaml`** — `ai-hats reflect all` (judge triage)
+
 ```yaml
 name: reflect-all
 steps:
@@ -126,6 +130,7 @@ steps:
 Особенность: harness склеивает preamble (`reflect-all.md`) + handoff в один файл `prompt_path`. `build_handoff` step здесь нужен только для записи handoff на диск как трассировки. Pipeline в дизайне не занимается склейкой.
 
 **`reflect-session.yaml`** — `ai-hats reflect session` (single-step blackbox)
+
 ```yaml
 name: reflect-session
 steps:
@@ -149,6 +154,7 @@ ai-hats pipeline show <name>    → cat YAML
 ```
 
 **Storage resolution:**
+
 1. `<name>` ищется в `<project>/.agent/pipelines/<name>.yaml` (override).
 2. Затем в `library/core/pipelines/<name>.yaml` (built-in).
 3. Если `<arg>` — путь к `.yaml` файлу — load напрямую без registry.
@@ -164,12 +170,14 @@ ai-hats pipeline show <name>    → cat YAML
 ## Consequences
 
 **Положительные:**
+
 - Pipeline-subsystem стабильно тестируется без затрагивания CLI-команд (ноль regression-риска для существующих flow на этом этапе).
 - Built-in pipeline'ы (`bare/execute/reflect-all/reflect-session`) — отгружаемые reference-композиции; пользователь может склонировать и модифицировать.
 - Harness contract (file-paths only) делает pipeline-state предсказуемым и trace-able: каждый prompt оставляет файл на диске, который можно diff'ать и повторять.
 - `extract_marker` + `save_artifact` решают проблему «judge забыл написать отчёт» (HATS-260 trade-off A) на уровне pipeline-кода, не LLM-инструкции.
 
 **Отрицательные:**
+
 - Дублирование путей: `bare-execute` (без prompt'а) проходит через `bare.yaml`, не `execute.yaml`. Harness/CLI-диспетчинг выбирает какой pipeline запускать на основе наличия `--prompt`.
 - HATS-269 (Phase 5 эпика — финальная миграция CLI-команд на pipeline) откладывается до стабилизации subsystem'а.
 - HATS-266..269 нуждаются в ревизии тел тикетов после approve этого ADR (фокус сдвигается с «миграция CLI на pipeline» на «extract step'ов для standalone subsystem»).
@@ -204,9 +212,9 @@ ai-hats pipeline show <name>    → cat YAML
 - Pipeline Phase 1: commits `90d4f3c` (ADR-0001 landing), `e92ae6b` (core+stubs+preset).
 - Эпик-план: `.claude/plans/moonlit-sprouting-tower.md` — 5-фазный roadmap миграции (Phase 2-5 нуждаются в ревизии после landing'а ADR-0002).
 - Существующий relevant runtime:
-  - `src/ai_hats/cli/execute.py:60` (`_do_execute`), `:35` (`_resolve_prompt`)
-  - `src/ai_hats/cli/reflect.py:79` (`_spawn_detached`), `:187` (`_build_handoff`)
-  - `src/ai_hats/composer.py:52` (`Composer.compose` → `CompositionResult.merged_injection`)
-  - `src/ai_hats/observe.py:34` (`SessionManager.create_session`)
-  - `src/ai_hats/retro/session_review_runner.py:73` (`SessionReviewRunner.run`), `:36-37` (`REVIEW_DELIM_*`)
+  - `src/ai_hats/cli/execute.py` (`_do_execute`, `_resolve_prompt`)
+  - `src/ai_hats/cli/reflect.py` (`_spawn_detached`, `_build_handoff`)
+  - `src/ai_hats/composer.py` (`Composer.compose` → `CompositionResult.merged_injection`)
+  - `src/ai_hats/observe.py` (`SessionManager.create_session`)
+  - `src/ai_hats/retro/session_review_runner.py` (`SessionReviewRunner.run`, `REVIEW_DELIM_*`)
   - `src/ai_hats/runtime.py` (`WrapRunner`, `SubAgentRunner`)

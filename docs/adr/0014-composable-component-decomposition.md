@@ -263,7 +263,7 @@ re-becoming a god-module).
 | generic parse / `_YamlModel` load helpers                                                                                                                                                                                                                               | domain parsers: provider-JSONL → observe, `SKILL.md` → library, task-card md → tracker                |
 | base `Error` hierarchy + logging setup                                                                                                                                                                                                                                  | —                                                                                                     |
 | **CLI-kit** — the `cli/_helpers` plumbing (resolver, shared decorators, error/output rendering, group registration)                                                                                                                                                     | the **commands** (`task` → tracker, `wt` → wt, …); aggregation into the `ai-hats` binary → integrator |
-| generic `StateMachine[S]` transition-guard primitive — **DEFERRED** (HATS-801 researched a shared FSM → "mirage": the generic part is tiny and does **not** unify domain FSMs, whose git/file side-effects stay per-module). Add only if ≥2 modules genuinely share it. | the Task transition table (`valid_transitions`, `models.py:56`) → tracker; `WT_TEARDOWN_EVENTS` → wt  |
+| generic `StateMachine[S]` transition-guard primitive — **DEFERRED** (HATS-801 researched a shared FSM → "mirage": the generic part is tiny and does **not** unify domain FSMs, whose git/file side-effects stay per-module). Add only if ≥2 modules genuinely share it. | the Task transition table (`valid_transitions`, `models.py`) → tracker; `WT_TEARDOWN_EVENTS` → wt     |
 
 **How the repos connect — a pip-dependency DAG (`ai-hats → modules → core`)** (§1's
 dependency rule, in pip terms):
@@ -841,10 +841,10 @@ are contradicted below and must be revised before this ADR is accepted.
 
 ### The meta-finding — three structural blockers the Decision missed
 
-1. **Composition flows UP, not down.** `subagent_runner` (`:15/25/27`), three
-   `pipeline/steps/*`, and `wt_carry.py:46` all import `composer` / `assembler` /
-   `materialize` / `providers` — bricks reaching *up* into the integrator. To obey
-   both this ADR (brick ↛ integrator) **and** [ADR-0005](0005-composition-and-pipeline-value-contract.md)
+1. **Composition flows UP, not down.** `subagent_runner`, three `pipeline/steps/*`,
+   and `collect_carry_for_role` (`wt_carry.py`) all import `composer` /
+   `assembler` / `materialize` / `providers` — bricks reaching *up* into the
+   integrator. To obey both this ADR (brick ↛ integrator) **and** [ADR-0005](0005-composition-and-pipeline-value-contract.md)
    (compose once, immutable `CompositionResult`), the integrator must compose once
    and inject the value **down**; `CompositionResult` becomes a **kernel value-type**
    bricks accept as a parameter. The ADR never specifies this inversion — it is the
@@ -855,9 +855,10 @@ are contradicted below and must be revised before this ADR is accepted.
 2. **Two god-kernels.** `models.py` is the union of all five domains' schemas (wt
    `WorktreeCarry`/`WorktreeHook`, tracker `TaskCard`/`TaskState`, retro
    `FeedbackConfig`, library `SkillMetadata` — which *embeds* `WorktreeCarry` — and
-   integrator `ProjectConfig`) **and** imports a brick (`models.py:28 →
-   skill_sidecar`; `:847 → providers`). `paths/_dirs.py` hard-codes every brick's
-   on-disk layout (`worktrees_dir`, `tasks_dir`, `sessions_dir`, …), contradicting
+   integrator `ProjectConfig`) **and** imports a brick (`models.py` →
+   `skill_sidecar` at module level; `_validate_provider` → `providers`).
+   `paths/_dirs.py` hard-codes every brick's on-disk layout (`worktrees_dir`,
+   `tasks_dir`, `sessions_dir`, …), contradicting
    ADR-0013 D4 (wt takes its state-dir *injected* precisely so it never imports
    `paths`). Both violate the project's own "open registries > closed central
    schemas" default. → split `models` per-brick; make layout integrator policy
@@ -932,8 +933,9 @@ step rather than a forked runtime? Would anyone use the bare step-runner without
 ai-hats (every built-in step is ai-hats-specific)?
 
 **Worktree (`wt`) — net-new beyond ADR-0013.** With both `tracker` and `wt` as
-bricks, `state.py:1011-1017` and `subagent_runner.py:28` are brick→brick violations:
-does `wt` drop to **kernel/mid-tier** (so bricks may legally depend on it), or must
+bricks, the `wt` import inside `_setup_worktree` (`state.py`) and the module-level
+`wt` import in `subagent_runner.py` are brick→brick violations: does `wt` drop to
+**kernel/mid-tier** (so bricks may legally depend on it), or must
 FSM auto-create route through the integrator? Is "depended-on-by-many" (FSM +
 subagent + hooks) proof `wt` is mis-tiered? Does the `wt` sub-package (ADR-0013 P3,
 not yet formed) gate the lint generalization? Does `wt` own a state-schema version +
@@ -980,13 +982,14 @@ should it be classified integrator, never an extraction candidate?
 **standalone managed-venv installer**? Is the config-schema+migration machinery
 (`ProjectConfig` + `migrations.py` + `version_lock`) a kernel-tier "config
 management" unit the wizard *uses*? Should prompt-materialization be a stable API the
-wizard calls rather than assembling steps by hand (`cli/assembly.py:956`)? Does the
-new `library:` block (§7) sit in the wizard's config schema parallel to
-`harness:`, validated by the same migration chain — and do the config-schema version
+wizard calls rather than assembling steps by hand (`show_prompt`,
+`cli/assembly.py`)? Does the new `library:` block (§7) sit in the wizard's config
+schema parallel to `harness:`, validated by the same migration chain — and do the
+config-schema version
 and library-schema version share one migration mechanism or two? Where does the
 library-schema-range check live — wizard config validation or the resolver?
 
-**Library — net-new only.** `models.py:28 → skill_sidecar` is a kernel→library
+**Library — net-new only.** `models.py` → `skill_sidecar` is a kernel→library
 back-edge: does `skill_sidecar` move to kernel, or does this break "library is a
 leaf brick" before extraction starts? Which tier do `resolver.py` /
 `paths/library.py` (the consumption seam) sit in — library brick or integrator

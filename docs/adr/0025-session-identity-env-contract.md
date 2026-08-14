@@ -21,15 +21,15 @@
 работает. Кто и как это замечает, сегодня решают семь мест независимо; проверено
 2026-08-12 на этой ветке:
 
-| Место                                                        | Процедура «чужой ли пин»                                                                          | Реакция                             |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `src/ai_hats/paths/_dirs.py:143-162`                         | парная: `AI_HATS_DIR` honoured, только если пин резолвится в тот же корень                        | warn + ignore                       |
-| `src/ai_hats/paths/_dirs.py:462-464`                         | нет процедуры: `AI_HATS_VENV` берётся сырьём                                                      | honour                              |
-| `src/ai_hats/paths/library.py:111-118`                       | **корректно**: пин берётся как ответ на «чей это чекаут» (HATS-1127)                              | honour — так и надо                 |
-| `scripts/ai-hats-launcher:84-99`                             | парная                                                                                            | warn + ignore + `unset AI_HATS_DIR` |
-| `src/ai_hats/templates/githooks/dispatcher.sh:28-30`         | нет процедуры: `AI_HATS_VENV` сырьём                                                              | honour                              |
-| `src/ai_hats/templates/githooks/dispatcher.sh:32-37`         | **дополнительная**, не конкурирующая: `AI_HATS_DIR` принят, только если лежит под `$PROJECT_DIR/` | ignore — сохранено                  |
-| `packages/ai-hats-rack/src/ai_hats_rack/resolver.py:140-151` | парная                                                                                            | `ForeignProjectPinError` — отказ    |
+| Место                                                                    | Процедура «чужой ли пин»                                                                          | Реакция                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `_scoped_override` (`src/ai_hats/paths/_dirs.py`)                        | парная: `AI_HATS_DIR` honoured, только если пин резолвится в тот же корень                        | warn + ignore                       |
+| `venv_path` (`src/ai_hats/paths/_dirs.py`)                               | нет процедуры: `AI_HATS_VENV` берётся сырьём                                                      | honour                              |
+| `builtin_library_root` (`src/ai_hats/paths/library.py`)                  | **корректно**: пин берётся как ответ на «чей это чекаут» (HATS-1127)                              | honour — так и надо                 |
+| пин-гвард HATS-944 (`scripts/ai-hats-launcher`)                          | парная                                                                                            | warn + ignore + `unset AI_HATS_DIR` |
+| `resolve_python` (`src/ai_hats/templates/githooks/dispatcher.sh`)        | нет процедуры: `AI_HATS_VENV` сырьём                                                              | honour                              |
+| префиксный тест `AI_HATS_DIR` там же в `resolve_python`                  | **дополнительная**, не конкурирующая: `AI_HATS_DIR` принят, только если лежит под `$PROJECT_DIR/` | ignore — сохранено                  |
+| `env_ai_hats_dir` (`packages/ai-hats-rack/src/ai_hats_rack/resolver.py`) | парная                                                                                            | `ForeignProjectPinError` — отказ    |
 
 Шесть из них — в интеграторе и его двух bash-входах, седьмое — в rack, которому
 импортировать дом запрещено структурно [3] (ADR-0014). Процедур в семи местах
@@ -37,8 +37,8 @@
 написана заново своей карточкой.
 
 Девиантов **два**, и это одно и то же сырое чтение `AI_HATS_VENV` на двух
-языках: `_dirs.py:462-464` и `dispatcher.sh:28-30`. Префиксный тест
-`dispatcher.sh:32-37` в их число не входит — он отвечает на другой вопрос
+языках: `venv_path` (`_dirs.py`) и `resolve_python` (`dispatcher.sh`).
+Префиксный тест `AI_HATS_DIR` в том же `resolve_python` в их число не входит — он отвечает на другой вопрос
 («лежит ли путь внутри дерева, которое я гейчу») и сохранён. Правильность при этом нигде не выведена из
 общего правила — она совпадение четырёх независимых авторов, и ровно это делает
 её недолговечной.
@@ -51,15 +51,16 @@
 - **HATS-944** — `self update` для проекта B, запущенный из сессии проекта A,
   вылечил venv проекта A. Дал парную проверку в лаунчере.
 - **HATS-1525** — сессия в чужом репозитории экспортировала `AI_HATS_VENV`;
-  `git commit` в этом взял чужой интерпретатор через `dispatcher.sh:28-30` —
-  строкой выше комментария (`:32-33`), описывающего ровно тот сценарий, от
+  `git commit` в этом взял чужой интерпретатор через сырое чтение в
+  `resolve_python` (`dispatcher.sh`) — строкой выше комментария к префиксному
+  тесту `AI_HATS_DIR`, описывающего ровно тот сценарий, от
   которого ветка не защищена. Карточка втянута в HATS-1613 как случай
   конформанс-теста.
 
 **Авторитетного списка ключей до этого документа не существовало ни в одном
 ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-базы; базовое
 перечисление ADR-0019 D5 [4] — **шесть**; `_hook_env`
-(`src/ai_hats/hook_exec.py:191-228`) пишет **семь**. `AI_HATS_TASKS_DIR`
+(`src/ai_hats/hook_exec.py`) пишет **семь**. `AI_HATS_TASKS_DIR`
 (HATS-1540) отсутствовал в обоих перечислениях, хотя тот же D5 описывает его
 отдельным абзацем ниже по тексту — то есть даже внутри одного раздела список и
 его предмет разошлись. Ключи идентичности сессии не были перечислены вообще
@@ -75,18 +76,18 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
 **Идентичность сессии — десять ключей.** Каждый отвечает на вопрос «чья это
 сессия и где она живёт», а не «как выполнить эту операцию».
 
-| Ключ                        | Что заявляет                                                                                       | Кто пишет                                                                                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AI_HATS_SESSION_ID`        | идентификатор сессии                                                                               | `ai_hats_observe.session:369-378` (`session_env`); спеллинг — `ai_hats_observe/trace.py:12`                                                                |
-| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                                                             | `provider.get_env` (единственный производственный вызывающий — `session_artifacts.py:114`), `scripts/ai-hats-launcher:159`, `src/ai_hats/hook_exec.py:215` |
-| `AI_HATS_DIR`               | база фреймворка этой сессии                                                                        | `provider.get_env` (`src/ai_hats/surfaces/claude/provider.py:395`)                                                                                         |
-| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn)                                            | `scripts/ai-hats-launcher:155`, `src/ai_hats/cli/maintenance.py:682`                                                                                       |
-| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности                                                | `packages/surfaces/agy/src/ai_hats_agy/provider.py:214`                                                                                                    |
-| `AI_HATS_ROLE`              | роль, под которой сессия поднята                                                                   | проекция конверта: `session_identity.py:87` через `session_artifacts.py:119`                                                                               |
-| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости                                                   | `src/ai_hats/session_artifacts.py:120`, из `wrap_runner.py:510` / `subagent_runner.py:219`                                                                 |
-| `AI_HATS_SESSION_IDENTITY`  | конверт: `id`, `role`, `provider`, `project_dir`, `session_dir`, `skills_root` одним JSON          | `SessionIdentity.to_env` (`src/ai_hats/session_identity.py`), через `assemble_launch_env`                                                                  |
-| `AI_HATS_PYTHON`            | интерпретатор процесса сессии — **второй** пин, потому что глобальный хук agy зовёт не наш лаунчер | `packages/surfaces/agy/src/ai_hats_agy/provider.py:341` (`get_env`); читает `agy/global_hook.py:14-24`                                                     |
-| `TRACE_LOG_PATH`            | куда пишется трасса этой сессии — единственный ключ набора без префикса `AI_HATS_`                 | `ai_hats_observe.session:376-378` (`session_env`); дом — `ai_hats_observe/trace.py`                                                                        |
+| Ключ                        | Что заявляет                                                                                       | Кто пишет                                                                                                                                                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_HATS_SESSION_ID`        | идентификатор сессии                                                                               | `session_env` (`ai_hats_observe/session.py`); спеллинг — `ENV_SESSION_ID` (`ai_hats_observe/trace.py`)                                                                                                              |
+| `AI_HATS_PROJECT_DIR`       | какому проекту принадлежит сессия (D2)                                                             | `provider.get_env` (единственный производственный вызывающий — `assemble_launch_env` в `session_artifacts.py`), `export AI_HATS_PROJECT_DIR` в `scripts/ai-hats-launcher`, `_hook_env` (`src/ai_hats/hook_exec.py`) |
+| `AI_HATS_DIR`               | база фреймворка этой сессии                                                                        | `ClaudeProvider.get_env` (`src/ai_hats/surfaces/claude/provider.py`)                                                                                                                                                |
+| `AI_HATS_VENV`              | интерпретатор, к которому сессия прибита (pin-at-spawn)                                            | `export AI_HATS_VENV` в `scripts/ai-hats-launcher`, `_run_managed_versioned_update` (`src/ai_hats/cli/maintenance.py`)                                                                                              |
+| `AI_HATS_SESSION_CACHE_DIR` | резолвнутая директория сессионного кэша поверхности                                                | `AgyProvider._deliver_hooks` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`)                                                                                                                                  |
+| `AI_HATS_ROLE`              | роль, под которой сессия поднята                                                                   | проекция конверта: `SessionIdentity.to_env` (`session_identity.py`) через `assemble_launch_env` (`session_artifacts.py`)                                                                                            |
+| `AI_HATS_ROOT_PID`          | pid долговечного процесса сессии — якорь живости                                                   | `assemble_launch_env` (`src/ai_hats/session_artifacts.py`), из `WrapRunner.run` (`wrap_runner.py`) / `SubAgentRunner._run_attempt` (`subagent_runner.py`)                                                           |
+| `AI_HATS_SESSION_IDENTITY`  | конверт: `id`, `role`, `provider`, `project_dir`, `session_dir`, `skills_root` одним JSON          | `SessionIdentity.to_env` (`src/ai_hats/session_identity.py`), через `assemble_launch_env`                                                                                                                           |
+| `AI_HATS_PYTHON`            | интерпретатор процесса сессии — **второй** пин, потому что глобальный хук agy зовёт не наш лаунчер | `AgyProvider.get_env` (`packages/surfaces/agy/src/ai_hats_agy/provider.py`); читает `DISPATCHER_COMMAND` (`agy/global_hook.py`)                                                                                     |
+| `TRACE_LOG_PATH`            | куда пишется трасса этой сессии — единственный ключ набора без префикса `AI_HATS_`                 | `session_env` (`ai_hats_observe/session.py`); дом — `ENV_TRACE_LOG_PATH` в `ai_hats_observe/trace.py`                                                                                                               |
 
 **Восьмой ключ приехал во время написания этого документа, и это его лучшее
 подтверждение.** HATS-1594 (done, 2026-08-12) завёл `AI_HATS_SESSION_IDENTITY` —
@@ -126,23 +127,24 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
   а не второе владение: шесть ключей описывают точку, а не сессию, и живут по
   своей семантике set-vs-remove.
 - **Точко-специфичный словарь вызывающего**: `AI_HATS_BRANCH_NAME`
-  (`src/ai_hats/wt_lifecycle.py:208`, `src/ai_hats/worktree_hooks.py:80`),
-  `AI_HATS_EVENT` (`worktree_hooks.py:80`), `AI_HATS_HOOK_EVENT`
-  (`src/ai_hats/githooks_run.py:150`), `AI_HATS_BYPASS_JOURNAL`
-  (`githooks_run.py:154`). Их состав — вопрос канала, и он меняется вместе с
-  каналом.
+  (`HookRunningLifecycle.before_merge` в `src/ai_hats/wt_lifecycle.py`,
+  `run_worktree_hook` в `src/ai_hats/worktree_hooks.py`), `AI_HATS_EVENT`
+  (`run_worktree_hook`), `AI_HATS_HOOK_EVENT` и `AI_HATS_BYPASS_JOURNAL`
+  (`run_chain` в `src/ai_hats/githooks_run.py`). Их состав — вопрос канала, и он
+  меняется вместе с каналом.
 - **Настроечные ручки и оверрайды конфигурации**: `AI_HATS_WT_HOOK_TIMEOUT_S`
-  (`worktree_hooks.py:26`), `AI_HATS_USER_HOME`, `AI_HATS_LIBRARY_ROOT`,
-  `AI_HATS_CACHE_HOME` (`src/ai_hats/env.py:13,17,18`). Они отвечают «где лежит
+  (`_TIMEOUT_ENV` в `worktree_hooks.py`), `AI_HATS_USER_HOME`,
+  `AI_HATS_LIBRARY_ROOT`, `AI_HATS_CACHE_HOME` (`ENV_AI_HATS_USER_HOME`,
+  `ENV_LIBRARY_ROOT`, `ENV_AI_HATS_CACHE_HOME` в `src/ai_hats/env.py`). Они отвечают «где лежит
   X» / «сколько ждать», их ставит человек, и процедура доверия D3 к ним не
   применяется: у них нет заявления о принадлежности, которое можно опровергнуть.
 
 ### D2 — `AI_HATS_PROJECT_DIR` — заявление о том, какому проекту принадлежит сессия
 
 Пин — **авторитетное заявление**, а не только область видимости для соседнего
-ключа. Читатели используют его по-разному — `paths/_dirs.py:154` и
-`scripts/ai-hats-launcher:84` как область видимости (корень резолвится
-независимо), а `paths/library.py:114` как ответ по существу, — и это **не
+ключа. Читатели используют его по-разному — `_scoped_override` (`paths/_dirs.py`) и
+пин-гвард лаунчера как область видимости (корень резолвится
+независимо), а `builtin_library_root` (`paths/library.py`) как ответ по существу, — и это **не
 противоречие**: они задают разные вопросы (ниже).
 
 Правило одно, и оно разводит два прочтения по признаку читателя:
@@ -157,31 +159,33 @@ ADR.** ADR-0020 D2 [1] называл **три** ключа общей env-ба�
 знание должно быть **о резолвимом предмете**, а не просто наличием какого-нибудь
 физического якоря.
 
-Разница видна на `builtin_library_root` (`src/ai_hats/paths/library.py:107-122`).
+Разница видна на `builtin_library_root` (`src/ai_hats/paths/library.py`).
 Он спрашивает «из какого чекаута эта **сессия** композирует», и cwd на этот
 вопрос не отвечает — шелл может стоять где угодно. Поэтому пин там законно
 побеждает cwd, и это не наследие: HATS-1127 чинил ровно обратный порядок как
 **дефект**. Резолвя библиотеку cwd-first, процесс композировал из библиотеки
 одного чекаута, а писал в `.agent/ai-hats` другого проекта — инцидент HATS-1123,
 где байты хука побайтово совпали с чужим worktree и ни с чем больше на машине.
-Закреплено `tests/test_library_paths.py:236-243`.
+Закреплено `test_ai_hats_project_dir_env_wins_over_cwd`
+(`tests/test_library_paths.py`).
 
 Читатели, у которых структурное знание **есть** (все они отвечают на вопрос «в
 каком проекте выполняется операция», а на него cwd отвечает):
 
-| Читатель                                                         | Якорь                       | Worktree-hop                                                         |
-| ---------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
-| `src/ai_hats/paths/_dirs.py`, `src/ai_hats/cli/githooks_hook.py` | переданный `project_dir`    | сделан вызывающим                                                    |
-| `src/ai_hats/cli/_helpers.py:270-292` (`_project_dir`)           | обход вверх от cwd          | пункт 3: `.git`-**файл** (gitlink) → главный чекаут через commondir  |
-| `packages/ai-hats-rack/src/ai_hats_rack/resolver.py:53-67`       | обход вверх от `caller_cwd` | `_main_worktree_root`, чисто по ФС (rack запрещён `subprocess`)      |
-| `scripts/ai-hats-launcher:18`                                    | `pwd`                       | `:21-32`, через `git rev-parse --git-common-dir`                     |
-| `src/ai_hats/templates/githooks/dispatcher.sh:17-21`             | `dirname "$0"`              | не нужен: `core.hooksPath` абсолютен ⇒ это **всегда** главный чекаут |
+| Читатель                                                                   | Якорь                       | Worktree-hop                                                         |
+| -------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| `src/ai_hats/paths/_dirs.py`, `src/ai_hats/cli/githooks_hook.py`           | переданный `project_dir`    | сделан вызывающим                                                    |
+| `_project_dir` (`src/ai_hats/cli/_helpers.py`)                             | обход вверх от cwd          | пункт 3: `.git`-**файл** (gitlink) → главный чекаут через commondir  |
+| `find_project_root` (`packages/ai-hats-rack/src/ai_hats_rack/resolver.py`) | обход вверх от `caller_cwd` | `_main_worktree_root`, чисто по ФС (rack запрещён `subprocess`)      |
+| `PROJECT` в `scripts/ai-hats-launcher`                                     | `pwd`                       | блок HATS-1306, через `git rev-parse --git-common-dir`               |
+| `PROJECT_DIR` в `src/ai_hats/templates/githooks/dispatcher.sh`             | `dirname "$0"`              | не нужен: `core.hooksPath` абсолютен ⇒ это **всегда** главный чекаут |
 
 **Структурное знание определяется ПОСЛЕ worktree-hop.** Это часть определения, а
 не деталь реализации каждого читателя. Канонический сценарий, где cwd ≠ пин по
-замыслу, — запуск sub-agent'а: `src/ai_hats/subagent_runner.py:214` передаёт в
-`assemble_launch_env` **главный чекаут**, а ребёнок исполняется в worktree
-(`:309-310` отдаёт движку `project_dir` и `work_dir` разными аргументами).
+замыслу, — запуск sub-agent'а: `SubAgentRunner._run_attempt`
+(`src/ai_hats/subagent_runner.py`) передаёт в `assemble_launch_env` **главный
+чекаут**, а ребёнок исполняется в worktree (там же вызов `engine.run` отдаёт
+движку `project_dir` и `work_dir` разными аргументами).
 Расхождение законно и постоянно: трекер, ownership и бэклог живут в главном
 чекауте, worktree их не несёт (`.agent/` в gitignore). Читатель, резолвящий до
 hop'а, получил бы worktree, объявил бы легитимный пин чужим, сбросил
@@ -201,11 +205,11 @@ hop'а, получил бы worktree, объявил бы легитимный �
 Различать надо **вычисление** hop'а и **условие, при котором он принимается**:
 у двух читателей из трёх это разные функции, и расхождение сидит во второй.
 
-| Читатель                                                 | Условие, при котором hop принимается                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `scripts/ai-hats-launcher:32`                            | **только если** в главном чекауте есть `.agent/` или `ai-hats.yaml`            |
-| `packages/ai-hats-rack/src/ai_hats_rack/resolver.py:110` | **то же условие** (`find_project_root`; сам hop считает `_main_worktree_root`) |
-| `src/ai_hats/cli/_helpers.py:329-330`                    | **безусловно**: `main_root if main_root is not None else d`                    |
+| Читатель                                                                   | Условие, при котором hop принимается                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| блок HATS-1306 в `scripts/ai-hats-launcher`                                | **только если** в главном чекауте есть `.agent/` или `ai-hats.yaml` |
+| `find_project_root` (`packages/ai-hats-rack/src/ai_hats_rack/resolver.py`) | **то же условие** (сам hop считает `_main_worktree_root`)           |
+| `_project_dir` (`src/ai_hats/cli/_helpers.py`)                             | **безусловно**: `main_root if main_root is not None else d`         |
 
 Следствие: в linked worktree, чей главный чекаут **не** онбординжен, лаунчер и
 rack остаются снаружи главного (rack — вплоть до `NoProjectRootError`, если
@@ -219,7 +223,7 @@ rack остаются снаружи главного (rack — вплоть д�
 Это расхождение резолвера, а не политики доверия, и владеет им HATS-1606
 (единый резолвер, слайс 1 оси [2]). Здесь оно записано, чтобы восьмой автор не
 выводил hop заново. **Наблюдаемым оно пока не сделано:** фикстура
-`tests/test_pin_in_linked_worktree.py:33` создаёт главный чекаут уже
+`_project` (`tests/test_pin_in_linked_worktree.py`) создаёт главный чекаут уже
 онбординженным, поэтому спорный случай недостижим во всех трёх тестах файла, а
 в `tests/e2e/test_githooks_dispatcher_env_contract.py` строки про worktree нет.
 Контракт, объявивший hop частью определения, не имеет права оставлять его
@@ -244,30 +248,32 @@ rack остаются снаружи главного (rack — вплоть д�
 **Реакция — параметр, а не часть процедуры.** Имя параметра —
 `ForeignPinPolicy`, значений два:
 
-- `REFUSE` — rack (`packages/ai-hats-rack/src/ai_hats_rack/resolver.py:148`,
+- `REFUSE` — rack (`env_ai_hats_dir` в
+  `packages/ai-hats-rack/src/ai_hats_rack/resolver.py`,
   `ForeignProjectPinError`): бэклог-операция под чужим пином не имеет
   безопасного продолжения.
-- `WARN_AND_IGNORE` — интегратор (`src/ai_hats/paths/_dirs.py:156`), лаунчер
-  (`scripts/ai-hats-launcher:90,98`), диспетчер git-хуков: у них есть
+- `WARN_AND_IGNORE` — интегратор (`_scoped_override` в
+  `src/ai_hats/paths/_dirs.py`), лаунчер (две строки `echo … >&2` пин-гварда в
+  `scripts/ai-hats-launcher`), диспетчер git-хуков: у них есть
   собственный структурный ответ, поэтому чужой пин — шум, а не тупик.
 
 HATS-1606 параметризует ровно эту процедуру (`on_foreign_pin=…`) и не пишет
 восьмую.
 
 **Голый override сохранён намеренно** — это не дыра, а явный жест человека.
-У `AI_HATS_DIR` ровно один производитель —
-`src/ai_hats/surfaces/claude/provider.py:394-397`, и он пишет ключ **вместе** с
+У `AI_HATS_DIR` ровно один производитель — `ClaudeProvider.get_env`
+(`src/ai_hats/surfaces/claude/provider.py`), и он пишет ключ **вместе** с
 пином. Остальные писатели идентичности пинят проект, не производя `AI_HATS_DIR`
-вообще (`scripts/ai-hats-launcher:155-159` экспортирует `AI_HATS_VENV` +
-`AI_HATS_PROJECT_DIR`; `src/ai_hats/hook_exec.py:215` — только
+вообще (лаунчер экспортирует `AI_HATS_VENV` + `AI_HATS_PROJECT_DIR` подряд;
+`_hook_env` в `src/ai_hats/hook_exec.py` — только
 `AI_HATS_PROJECT_DIR`). Поэтому непарный ключ выставлен не фреймворком.
 
 **Drop — это `unset`, а не локальное обнуление.** Лаунчер может позволить себе
-обнулить локальную переменную (`:83,89-92`), потому что переэкспортирует
-корректное значение на `:155`. Диспетчер не переэкспортирует ничего, а
-`src/ai_hats/githooks_run.py:148` копирует `dict(os.environ)` **дословно** и
-отдаёт его каждому гейту, drop-in'у и chained-хуку (`:164`) — без `unset` чужой
-пин доезжает до всех них.
+обнулить локальную переменную (`inherited_venv` в пин-гварде), потому что
+переэкспортирует корректное значение в `export AI_HATS_VENV="$VENV"`. Диспетчер
+не переэкспортирует ничего, а `run_chain` (`src/ai_hats/githooks_run.py`)
+копирует `dict(os.environ)` **дословно** и отдаёт его каждому гейту, drop-in'у и
+chained-хуку — без `unset` чужой пин доезжает до всех них.
 
 **Один warn на решение, не на читателя.** Совпадающий пин (`P == R`) не
 печатает ничего: предупреждение, которое видно на нормальной работе, перестают
@@ -276,31 +282,35 @@ HATS-1606 параметризует ровно эту процедуру (`on_f
 ### D4 — Подлинность заявки проверяется не той переменной, которая её породила
 
 Локация (D2, D3) и подлинность — разные проверки, и сегодня они перепутаны.
-`packages/ai-hats-rack/src/ai_hats_rack/journal.py:103-124` (`build_identity`)
-проверяет заявку актора об идентичности, сравнивая её с `AI_HATS_SESSION_ID`
-(`:111`, вердикт на `:117-124`). Но саму заявку строит
-`packages/ai-hats-rack/src/ai_hats_rack/cli_common.py:63-67` (`actor()`) — из
-**той же** переменной. Ветка `mismatch` (`:123`) на дороге rack-CLI
+`build_identity` (`packages/ai-hats-rack/src/ai_hats_rack/journal.py`)
+проверяет заявку актора об идентичности, сравнивая её с `AI_HATS_SESSION_ID`, и
+на этом сравнении выносит вердикт. Но саму заявку строит `actor()`
+(`packages/ai-hats-rack/src/ai_hats_rack/cli_common.py`) — из
+**той же** переменной. Ветка `mismatch` на дороге rack-CLI
 **недостижима**: сравнение тавтологично.
 
 Единственное, что реально поднимает `mismatch` сегодня, — литеральные акторы
-самого фреймворка: `rack:reflect` (`src/ai_hats/rack_workspace.py:34`),
-`rack:session-reviewer` (`:39`), `rack:hyp-autoclose`
-(`packages/ai-hats-rack/src/ai_hats_rack/extensions/quorum.py:25`). Сигнал
+самого фреймворка: `rack:reflect` (`REFLECT_ACTOR` в
+`src/ai_hats/rack_workspace.py`), `rack:session-reviewer`
+(`SESSION_REVIEWER_ACTOR` там же), `rack:hyp-autoclose` (`AUTOCLOSE_ACTOR` в
+`packages/ai-hats-rack/src/ai_hats_rack/extensions/quorum.py`). Сигнал
 «кто-то врёт о своей личности» срабатывает на фреймворке и молчит на подделке.
 
 Решение — два правила.
 
 1. **Заявка `session:<sid>` проверяется самосогласованностью `session_id` ↔
    `root_pid`.** Pid минтящего процесса вшит в сам идентификатор:
-   `packages/ai-hats-observe/src/ai_hats_observe/session.py:78` строит суффикс
+   `SessionManager.create_session`
+   (`packages/ai-hats-observe/src/ai_hats_observe/session.py`) строит суффикс
    как `<counter>-<pid>`, и тот же pid уходит в `AI_HATS_ROOT_PID`
-   (`src/ai_hats/wrap_runner.py:510`, `src/ai_hats/subagent_runner.py:219`).
+   (`WrapRunner.run` в `src/ai_hats/wrap_runner.py`,
+   `SubAgentRunner._run_attempt` в `src/ai_hats/subagent_runner.py`).
    Оболочка, экспортировавшая `AI_HATS_SESSION_ID` мёртвой или чужой сессии,
    либо не несёт согласованного `AI_HATS_ROOT_PID`, либо несёт такой, который
    идентификатору противоречит. Проверка считается на чистом `os`, без диска —
    что и требуется: rack запрещено импортировать интегратор **и** звать
-   `subprocess` (`packages/ai-hats-rack/tests/test_import_hygiene.py:15-23`).
+   `subprocess` (`FORBIDDEN` в
+   `packages/ai-hats-rack/tests/test_import_hygiene.py`).
 2. **Литеральный актор фреймворка — не заявка о сессии** и под эту проверку не
    подпадает вовсе. Зеркальный дефект чинится границей применимости, а не
    доработкой сравнения.
@@ -325,10 +335,10 @@ D23 при этом закрыт — его текст про «пишет ст�
 зоной, и её никогда не подменяет молчание.
 
 Ступень выше — инъекция предиката живости `record_is_live`
-(`src/ai_hats/ownership.py:84-105`, reuse-proof через `ps -o lstart=`) —
+(`src/ai_hats/ownership.py`, reuse-proof через `ps -o lstart=`) —
 сознательно не берётся: самосогласованности достаточно, чтобы подделка ловилась,
 а собственный актор фреймворка не ловился. Отметить стоит соседний факт:
-`journal.py:89-100` (`_ownership_holder`) уже читает тот самый `ownership.json`,
+`_ownership_holder` (`journal.py`) уже читает тот самый `ownership.json`,
 но берёт из записи только `session_id`, игнорируя лежащие рядом `root_pid` и
 `start_time`. Триггер подъёма ступени — наблюдённый случай, где подделка
 проходит самосогласованность (экспорт пары от живого постороннего процесса).
@@ -359,7 +369,7 @@ D23 при этом закрыт — его текст про «пишет ст�
 ### D5 — Конформанс вместо дедупликации
 
 rack не может импортировать дом контракта: его пин import-гигиены
-(`packages/ai-hats-rack/tests/test_import_hygiene.py:15-23`) запрещает все пять
+(`FORBIDDEN` в `packages/ai-hats-rack/tests/test_import_hygiene.py`) запрещает все пять
 кандидатов, включая `ai_hats_core`, — это следствие трёхуровневой модели
 зависимостей [3] (ADR-0014), а не оплошность. Значит совпадение спеллингов и
 поведения держит **тест через границу процесса**, а не общий модуль. То же
@@ -379,8 +389,8 @@ rack не может импортировать дом контракта: ег�
   инструмента agy и не имеет права тянуть ai-hats: зеркало ради доступности, а
   не ради вкуса;
 - **D** — `ENV_TASKS_DIR` дома (`AI_HATS_TASKS_DIR`) — **не** `ENV_TASKS_DIR`
-  rack'а (`RACK_TASKS_DIR`,
-  `packages/ai-hats-rack/src/ai_hats_rack/cli_common.py:51`): один символ
+  rack'а (`RACK_TASKS_DIR` в
+  `packages/ai-hats-rack/src/ai_hats_rack/cli_common.py`): один символ
   Python, два разных контракта; унификация по имени символа склеила бы их.
 
 Список санкционированных зеркал — часть контракта: зеркало, которого нет в
@@ -404,11 +414,12 @@ rack не может импортировать дом контракта: ег�
 цена: тип-носитель стоил бы пятой узкой копии значения проекта (Альтернативы).
 
 **Послабление, которое рассматривалось и отвергнуто.** Первая редакция снимала
-префиксный тест `dispatcher.sh:32-37` ради «одной политики вместо двух».
+префиксный тест `AI_HATS_DIR` в `resolve_python` (`dispatcher.sh`) ради «одной
+политики вместо двух».
 Состязательное ревью показало, что обоснование было фактически неверным:
-лаунчер `AI_HATS_DIR` при резолюции **не читает вовсе** —
-`scripts/ai-hats-launcher:36` жёстко задаёт `AH_DIR="$PROJECT/.agent/ai-hats"`, а
-`:97-99` только сбрасывает ключ. Снятие теста поэтому ничего не сближало, а
+лаунчер `AI_HATS_DIR` при резолюции **не читает вовсе** — он жёстко задаёт
+`AH_DIR="$PROJECT/.agent/ai-hats"`, а в пин-гварде только сбрасывает ключ
+(`unset AI_HATS_DIR`). Снятие теста поэтому ничего не сближало, а
 расширяло то, что заглушка готова исполнить: при **совпадающем** пине и
 `AI_HATS_DIR` вне дерева она стала бы звать интерпретатор оттуда. Тест
 сохранён как эшелон защиты в единственном файле, который нельзя починить в
@@ -417,8 +428,8 @@ rack не может импортировать дом контракта: ег�
 
 **Окно доставки в уже установленные проекты.** Заглушка диспетчера
 переустанавливается на каждом `self init` / `self update` / `set_role`
-(`src/ai_hats/hooks_manager.py:252-266` — безусловный `shutil.copy2` при живом
-маркере), но **не** в момент коммита: между двумя запусками `self …` исполняются
+(`_install_dispatcher` в `src/ai_hats/hooks_manager.py` — безусловный
+`shutil.copy2` при живом маркере), но **не** в момент коммита: между двумя запусками `self …` исполняются
 старые байты. Механизм под это окно не изобретается — оно делается видимым:
 Python-вход, увидев живую чужую пару при известном `--project-dir`, печатает в
 stderr одну строку с указанием запустить `ai-hats self update`.
@@ -428,8 +439,8 @@ stderr одну строку с указанием запустить `ai-hats s
 остаётся и остаётся сверяемым (D5). Ключи, у которых нет читателя внутри репо
 (`AI_HATS_ROLE` — здесь; `AI_HATS_FORCE` — в половине ADR-0020 D2 [1]), обе
 половины контракта называют, но не удаляют: их потребители внешние **по
-конструкции** — `docs/how-to-extend.md:382-392` документирует env wt-хука как
-контракт для сторонних авторов, а библиотечные bash-скрипты уезжают в чужие
+конструкции** — раздел «Execution contract» в `docs/how-to-extend.md`
+документирует env wt-хука как контракт для сторонних авторов, а библиотечные bash-скрипты уезжают в чужие
 проекты.
 
 **Обязательство при принятии.** «Пин сессии», «структурное знание» и
@@ -448,7 +459,8 @@ glossary-first они зафиксированы в `docs/glossary.md` до пе
 - **Инъекция `ownership.record_is_live` в ядро rack.** Ступень выше
   необходимой: самосогласованность закрывает оба требуемых случая без диска,
   без `subprocess` и без нового шва (D4). Триггер пересмотра назван там же.
-- **Узкий фикс `dispatcher.sh:28-30`.** Закрывает наблюдённый HATS-1525 тремя
+- **Узкий фикс сырого чтения `AI_HATS_VENV` в `resolve_python`
+  (`dispatcher.sh`).** Закрывает наблюдённый HATS-1525 тремя
   строками — и оставляет шесть остальных мест и восьмого автора в том же
   вакууме. Отвергнут по этому основанию, а не по объёму.
 

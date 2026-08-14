@@ -22,10 +22,29 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADR_DIR = REPO_ROOT / "docs" / "adr"
 
-#: `path/to/file.ext:12` or `:12-30`, the two spellings the ADRs actually used.
-#: The extension list is closed on purpose: a bare `word:12` matches prose like
+#: `path/to/file.ext:12` and `path/to/file.ext:12-30` — a named file plus lines.
+#: The extension list is closed on purpose: an open `word:12` matches prose like
 #: "budget:20" and markdown anchors, and a checker that cries wolf gets muted.
-_LINE_REF = re.compile(r"\b[\w./-]+\.(?:py|sh|md|yaml|yml|toml|json|cfg|ini|txt|d2):\d+(?:-\d+)?\b")
+_NAMED_REF = re.compile(
+    r"\b[\w./-]+\.(?:py|sh|md|yaml|yml|toml|json|cfg|ini|txt|d2):\d+(?:-\d+)?\b"
+)
+
+#: `` `:182-191` `` — lines with the filename left implicit, scoped by a table
+#: heading somewhere above. Same rot, and worse: the reader cannot even tell
+#: WHICH file went stale. Found in ADR-0021's surface tables (HATS-1655) after
+#: the named form was already gone, which is why the guard covers both.
+#: Anchored to backticks: bare `:12` in prose is a ratio or a time, and matching
+#: it would be the cry-wolf the comment above refuses.
+_BARE_REF = re.compile(r"`:\d+(?:-\d+)?`")
+
+#: `scripts/ai-hats-launcher:18` — a real path whose file has no extension, so
+#: the closed list above cannot see it. ADR-0025 carried eleven (HATS-1655).
+#: Requires a slash, so it is a path and not prose; the lookbehind keeps
+#: `https://host:8080` out. Matches with a known extension are dropped below so
+#: one citation is not reported twice.
+_UNSUFFIXED_REF = re.compile(r"(?<!/)\b[\w.-]+/[\w./-]+:\d+(?:-\d+)?\b")
+
+_PATTERNS = (_NAMED_REF, _BARE_REF, _UNSUFFIXED_REF)
 
 #: Fenced code is exempt: a shell transcript or a compiler diagnostic quoted
 #: verbatim is evidence, not a citation the reader is meant to follow.
@@ -33,7 +52,11 @@ _FENCE = re.compile(r"^\s*(?:```|~~~)")
 
 
 def _citations(text: str) -> list[tuple[int, str]]:
-    """Line-number citations in prose, skipping fenced blocks."""
+    """Line-number citations in prose, skipping fenced blocks.
+
+    Deduped by position: `_UNSUFFIXED_REF` deliberately overlaps `_NAMED_REF`,
+    and one citation reported twice inflates the worklist it is meant to be.
+    """
     hits: list[tuple[int, str]] = []
     in_fence = False
     for lineno, line in enumerate(text.splitlines(), start=1):
@@ -42,7 +65,13 @@ def _citations(text: str) -> list[tuple[int, str]]:
             continue
         if in_fence:
             continue
-        hits.extend((lineno, match.group(0)) for match in _LINE_REF.finditer(line))
+        claimed: set[int] = set()
+        for pattern in _PATTERNS:
+            for match in pattern.finditer(line):
+                if match.end() in claimed:
+                    continue
+                claimed.add(match.end())
+                hits.append((lineno, match.group(0)))
     return hits
 
 
@@ -75,3 +104,15 @@ def test_the_matcher_reads_a_citation_and_spares_a_shell_transcript():
     # Prose that merely contains a colon and digits.
     assert _citations("the budget is 20s and the lock:30 is wider") == []
     assert _citations("```\n$ ruff check foo.py:1:1\n```") == []
+    # The filename-less form: lines scoped by a table heading somewhere above.
+    # It hid from the first version of this guard, which is why it is pinned.
+    assert _citations("| `_write_prompt_file` | `:182-191` |") == [(1, "`:182-191`")]
+    assert _citations("the row cites `:106`") == [(1, "`:106`")]
+    # ...and what it must NOT swallow: a ratio, a time, a port in prose.
+    assert _citations("a 1:3 ratio at 09:30 on port 8080") == []
+    # A path whose file carries no extension — the closed list above is blind to
+    # it, so a third pattern covers it. ADR-0025 carried eleven.
+    assert _citations("`scripts/ai-hats-launcher:18`") == [(1, "scripts/ai-hats-launcher:18")]
+    assert _citations("fetch https://example.com:8080/x") == []
+    # One citation, two patterns, one report — the dedupe.
+    assert _citations("see `src/ai_hats/checks.py:29`") == [(1, "src/ai_hats/checks.py:29")]
