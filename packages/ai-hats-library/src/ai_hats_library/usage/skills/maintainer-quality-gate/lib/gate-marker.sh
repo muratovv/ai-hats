@@ -14,7 +14,7 @@
 # CARRYING ITS COMPOSITION. `gate_marker_ok` passes only when the required
 # stages are a SUBSET of the recorded ones. That one comparison does two jobs:
 # adding a stage invalidates every marker that never ran it, and a fuller run
-# covers the gates it contains (absorption, ADR-0023 D5).
+# covers the gates it contains (absorption, ADR-0026 D5).
 #
 # READ ACROSS GATES, WRITTEN PER GATE. The subset above is taken over what EVERY
 # gate recorded for that tree, not over one gate's directory. Per-gate
@@ -83,7 +83,7 @@ gate_marker_stages() {
 
 # Every stage recorded for this tree, by ANY gate that ran on it.
 #
-# This is the absorption rule (ADR-0023 D5), and it lives in the READ. Markers
+# This is the absorption rule (ADR-0026 D5), and it lives in the READ. Markers
 # stay one directory per gate, so provenance survives — which gate ran what is
 # still on disk. What changed in HATS-1614 is that a lookup no longer stops at
 # its own directory: a run of `done-gate` over tree T certifies the stages it

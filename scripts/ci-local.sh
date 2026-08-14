@@ -142,10 +142,10 @@ ci_e2e() {
 # HATS-1137/HATS-1604/HATS-1614 — what each gate is made of, and the ONE place
 # it is configured. A gate script asks with `--stages <gate>` and runs them
 # through the shared primitive, so "green enough to merge" is an edit HERE and
-# the library never restates it (ADR-0023 D7).
+# the library never restates it (ADR-0026 D7).
 #
 # `merge-gate` MUST stay a subset of `done-gate`. That is what lets one run pay
-# for both (absorption, ADR-0023 D5) — `tests/test_gate_entrypoint_parity.py`
+# for both (absorption, ADR-0026 D5) — `tests/test_gate_entrypoint_parity.py`
 # refuses a composition that breaks it.
 #
 # `tier` is the linting tier: offline, under eight seconds together. It leads
@@ -153,7 +153,7 @@ ci_e2e() {
 # — because the primitive stops at the first red and a stale CATALOG.md is the
 # structural failure worth refusing before anything else starts (HATS-1562).
 #
-# `merge-gate` carries `integration` against ADR-0023 D4, which assigns it to
+# `merge-gate` carries `integration` against ADR-0026 D4, which assigns it to
 # `->done` (supervisor ruling 2026-08-13). Until `->done` can judge the result of
 # a merge (HATS-1602), the edge passes hollow on most cards — measured 8 of 9 —
 # so D4's `->merge` would be the last blocking road those 415 real-subprocess

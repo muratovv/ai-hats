@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HATS-1604 — the gate primitive (ADR-0023 D6). A gate is a primitive, not a
+# HATS-1604 — the gate primitive (ADR-0026 D6). A gate is a primitive, not a
 # script: the discipline below was written by hand twice, in
 # `git_hooks/pre-push-e2e-master.sh` and `hooks/done-gate.sh`, and the two copies
 # had already begun to drift.
@@ -36,7 +36,7 @@ gate_tree() {
 }
 
 # The composition, from the project's dispatcher — never a literal here. The
-# library owns the discipline, the project owns what its gate runs (ADR-0023 D7).
+# library owns the discipline, the project owns what its gate runs (ADR-0026 D7).
 #
 # `--stages` goes FIRST, and that position is load-bearing: a dispatcher that
 # predates this contract sees an unknown stage name and refuses in milliseconds.
@@ -94,7 +94,7 @@ gate_stamp() {
 
 # The refusal is an action, not a diagnosis: one copy-pasteable command, and the
 # retry is instant because the marker is already there. The composition is
-# RENDERED from the dispatcher, never restated here (ADR-0023 D7).
+# RENDERED from the dispatcher, never restated here (ADR-0026 D7).
 gate_refusal() {
     local gate="$1" tree="$2" label="$3" cmd="$4" stages="$5"
     printf '%s: no green marker for tree %s (%s).\n\n' "$gate" "$tree" "$label"

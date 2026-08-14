@@ -145,7 +145,7 @@ def _composition(gate: str) -> list[str]:
 
 
 def test_the_merge_gate_is_a_subset_of_the_done_gate():
-    """Absorption (ADR-0023 D5) is what makes a typical card cost one run and not
+    """Absorption (ADR-0026 D5) is what makes a typical card cost one run and not
     two: `->done` includes `->merge`, so the fuller run stamps both. Nothing else
     enforces the nesting — the two compositions are separate lines, and an edit
     to either can break it in silence."""

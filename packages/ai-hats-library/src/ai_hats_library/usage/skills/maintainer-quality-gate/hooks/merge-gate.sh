@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HATS-1614 — the `->merge` gate (ADR-0023 D4), bound to `wt:pre-merge`.
+# HATS-1614 — the `->merge` gate (ADR-0026 D4), bound to `wt:pre-merge`.
 #
 # It asks: is this branch fit to enter master. At this edge the agent is ALONE,
 # so only checks whose refusal points at the agent's own branch and is fixable

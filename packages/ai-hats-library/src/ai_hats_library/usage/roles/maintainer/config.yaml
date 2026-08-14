@@ -31,7 +31,7 @@ composition:
   # run out of band via `make merge-gate` / `make done-gate`.
   #
   # TWO GATES since HATS-1614, one per edge, because the two edges ask different
-  # questions (ADR-0023 D3/D4). `->merge`: is this branch fit to enter master —
+  # questions (ADR-0026 D3/D4). `->merge`: is this branch fit to enter master —
   # the agent is alone at that refusal. `->done`: is master green after this card
   # — the supervisor is present, and only here can a gate see two independently
   # green branches meeting. `merge-gate`'s composition stays a subset of

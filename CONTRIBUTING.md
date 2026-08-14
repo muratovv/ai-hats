@@ -111,7 +111,7 @@ fails the build if either spells a check command out itself.
 - `make merge-gate` / `make done-gate` — the gates the two roads into master
   demand of a card. Run one in the **task worktree**: the marker is keyed to the
   tree you run it on. `make done-gate` is the superset and clears both
-  (ADR-0023 D4/D5); `scripts/ci-local.sh --stages <gate>` prints what each runs.
+  (ADR-0026 D4/D5); `scripts/ci-local.sh --stages <gate>` prints what each runs.
 - `make help` — display available Makefile targets.
 
 Options:
@@ -563,7 +563,7 @@ Reference docs already on this style: [`docs/how-to-hatrack.md`](docs/how-to-hat
 ❌ `checks.py:29` ❌ `checks.py:284-303`
 ```
 
-**Why the form and not the discipline.** A line number rots from any edit *above* it, in a file the citing author never touches — so it decays without anyone doing anything wrong. ADR-0023 stated outright that its `file:line` refs had been re-verified at a named commit; **13 of its 20 were stale**, and the worst had drifted onto unrelated code (`manager.py:2266` landed inside `_squash_merge` while the claim was about `--no-ff` in `_fast_forward_merge`) — a reader following it is misled rather than merely lost. A symbol name survives edits above it and is greppable, which is what a reader does with it anyway.
+**Why the form and not the discipline.** A line number rots from any edit *above* it, in a file the citing author never touches — so it decays without anyone doing anything wrong. ADR-0026 stated outright that its `file:line` refs had been re-verified at a named commit; **13 of its 20 were stale**, and the worst had drifted onto unrelated code (`manager.py:2266` landed inside `_squash_merge` while the claim was about `--no-ff` in `_fast_forward_merge`) — a reader following it is misled rather than merely lost. A symbol name survives edits above it and is greppable, which is what a reader does with it anyway.
 
 **No target symbol?** Name the enclosing function, the section, or quote the first words of the comment — all three grep. Reaching for a line number means the anchor has not been found yet.
 

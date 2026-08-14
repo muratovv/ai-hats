@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The `->done` gate (ADR-0023 D4), bound to the FSM edge `review--done`.
+# The `->done` gate (ADR-0026 D4), bound to the FSM edge `review--done`.
 #
 # It asks: is master green after this card. That is the one question no earlier
 # gate can ask — two independently green branches make a red master — and the
@@ -15,7 +15,7 @@
 # HATS-1604 moved the discipline into ../lib/gate.sh; HATS-1614 moved both whole
 # modes there, when `merge-gate.sh` would otherwise have copied them to change
 # two strings. This file states a name, a restart command and nothing else — the
-# composition is the project dispatcher's to answer (ADR-0023 D7).
+# composition is the project dispatcher's to answer (ADR-0026 D7).
 #
 # A SEPARATE script from pre-push-e2e-master.sh on purpose. That one's default
 # mode reads git's pre-push protocol from stdin, and the check runner gives its

@@ -31,12 +31,12 @@ Three gates and the mechanism they share:
 - `hooks/merge-gate.sh` — the **`->merge`** gate, bound to `pre-merge` under
   `apps.wt` (a direct `ai-hats wt merge`). It asks: is this branch fit to enter
   master. The agent is alone at that refusal, so only what the agent can fix
-  without an arbiter belongs to it (HATS-1614, ADR-0023 D3).
+  without an arbiter belongs to it (HATS-1614, ADR-0026 D3).
 - `hooks/done-gate.sh` — the **`->done`** gate, bound to `edge:review--done`
   under `apps.rack.tasks` (the FSM automerge). It asks: is master green after
   this card — the one question no earlier gate can ask, since two independently
   green branches make a red master. The supervisor is present at this edge.
-- `lib/gate.sh` — **the gate primitive** (HATS-1604, ADR-0023 D6): the discipline
+- `lib/gate.sh` — **the gate primitive** (HATS-1604, ADR-0026 D6): the discipline
   itself, including both whole modes (HATS-1614). It resolves the project's
   dispatcher and asks what this gate is made of, runs that composition stopping
   at the first red, applies "green AND a clean tree → marker", looks the marker
@@ -53,7 +53,7 @@ it, so it cannot go stale in either direction — different content is a differe
 key, and a gate that grew a stage stops honouring markers that never ran it.
 
 A run also covers any gate whose composition it contains (**absorption**,
-ADR-0023 D5): the lookup unions what *every* gate recorded for that tree, so
+ADR-0026 D5): the lookup unions what *every* gate recorded for that tree, so
 `make done-gate` also clears `->merge` on the same content and a typical card
 costs one run instead of two. That is why `merge-gate` must stay a **subset** of
 `done-gate` — `tests/test_gate_entrypoint_parity.py` refuses a composition that
@@ -62,7 +62,7 @@ breaks the nesting.
 **The composition belongs to the project, never to this skill.** Every gate asks
 `scripts/ci-local.sh --stages <gate>` and refuses when the answer is empty: a
 library file that restated project content drifted from it within days
-(ADR-0023 D7).
+(ADR-0026 D7).
 
 ## The two card gates (HATS-1137, HATS-1614)
 

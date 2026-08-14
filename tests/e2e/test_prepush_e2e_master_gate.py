@@ -546,7 +546,7 @@ def test_run_mode_without_a_dispatcher_earns_no_marker(tmp_path: Path):
     """HATS-1604: a project that names no composition gets no marker.
 
     The gate used to fall back to a tier it named itself, which is the library
-    stating project content (ADR-0023 D7). With the literal gone there is
+    stating project content (ADR-0026 D7). With the literal gone there is
     nothing to fall back TO — and a marker for an unnamed composition would
     certify whatever the gate happened to run that day.
     """
