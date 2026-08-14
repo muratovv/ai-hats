@@ -326,9 +326,9 @@ def consent_ask(cmd: str, tool_input: dict) -> dict:
         return {
             "permissionDecision": "ask",
             "permissionDecisionReason": (
-                f"{task_id}: plan → execute needs your consent. Approving mints a "
-                "one-shot ticket for this card alone; it expires shortly and cannot "
-                "be reused. Reject to keep the card in plan."
+                f"{task_id}: plan → execute needs your consent. This command carries a "
+                "ticket good for one transition of this card and a few minutes — it "
+                "opens nothing else. Reject to keep the card in plan."
             ),
             "updatedInput": {**tool_input, "command": rewritten},
         }
