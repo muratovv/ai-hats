@@ -218,12 +218,10 @@ class TestBranchNameValidation:
         ],
     )
     def test_rejects_bad_names(
-        self, runner: CliRunner, git_project: Path, name: str, why: str
+        self, runner: CliRunner, git_project: Path, name: str, why: str, monkeypatch
     ) -> None:
         """Names that violate our regex AND survive click's own arg parsing."""
-        import os
-
-        os.chdir(git_project)
+        monkeypatch.chdir(git_project)
         # `--` separator so click treats next arg as positional even if it
         # starts with `-`. Mirrors how operators would invoke from a shell.
         result = runner.invoke(main, ["wt", "create", "--", name])
@@ -232,21 +230,19 @@ class TestBranchNameValidation:
             f"name={name!r} ({why}); output={result.output!r}"
         )
 
-    def test_empty_branch_rejected_by_click(self, runner: CliRunner, git_project: Path) -> None:
+    def test_empty_branch_rejected_by_click(
+        self, runner: CliRunner, git_project: Path, monkeypatch
+    ) -> None:
         """Empty string surfaces as our regex rejection (matches `^[A-Za-z0-9]`)."""
-        import os
-
-        os.chdir(git_project)
+        monkeypatch.chdir(git_project)
         result = runner.invoke(main, ["wt", "create", "--", ""])
         assert result.exit_code != 0
         assert "Invalid branch name" in result.output
 
-    def test_leading_dash_rejected(self, runner: CliRunner, git_project: Path) -> None:
+    def test_leading_dash_rejected(self, runner: CliRunner, git_project: Path, monkeypatch) -> None:
         """Leading dash rejected (via --) even though shell would otherwise
         confuse it with an option."""
-        import os
-
-        os.chdir(git_project)
+        monkeypatch.chdir(git_project)
         result = runner.invoke(main, ["wt", "create", "--", "-dash-leading"])
         assert result.exit_code != 0
         assert "Invalid branch name" in result.output
