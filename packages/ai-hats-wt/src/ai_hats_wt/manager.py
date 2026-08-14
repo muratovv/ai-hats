@@ -996,9 +996,8 @@ class WorktreeManager:
         ``wt:pre-merge`` point is NOT probed: a check is an arbitrary command with
         no "would you refuse?" mode (that predicate is HATS-1615's).
         """
-        blockers: list[Blocker] = []
         if not self._is_git or self.worktree_path is None or not self.worktree_path.exists():
-            return blockers
+            return []
         base = self._original_branch
         if base is None:
             return [Blocker("state", str(WorktreeStateIncompleteError(self.branch_name)))]
@@ -1010,39 +1009,59 @@ class WorktreeManager:
 
         base_exists = self._branch_exists(base)
         if base_exists and self._is_ancestor(tip, base):
-            return blockers  # already merged — merge() tears down, it does not refuse
+            return []  # already merged — merge() tears down, it does not refuse
 
-        if not accept_drift and not force and self._is_patch_integrated(self.branch_name, base):
-            blockers.append(
-                Blocker("rebased", str(WorktreeRebasedBranchError(self.branch_name, base)))
-            )
-        if os.environ.get("AI_HATS_MERGE_ACK") != "1":
-            blockers.append(
-                Blocker("consent", str(WorktreeMergeConsentError(self.branch_name, base)))
-            )
-        if base_exists:
-            try:
-                head = self._get_current_branch()
-            except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-                blockers.append(Blocker("base-mismatch", f"could not read main-repo HEAD: {exc}"))
-            else:
-                if head != base:
-                    blockers.append(
-                        Blocker(
-                            "base-mismatch",
-                            str(WorktreeBaseBranchMismatchError(current=head, expected=base)),
-                        )
-                    )
-        if not force:
+        def rebased() -> str | None:
+            if not self._is_patch_integrated(self.branch_name, base):
+                return None
+            return str(WorktreeRebasedBranchError(self.branch_name, base))
+
+        def consent() -> str | None:
+            if os.environ.get("AI_HATS_MERGE_ACK") == "1":
+                return None
+            return str(WorktreeMergeConsentError(self.branch_name, base))
+
+        def base_mismatch() -> str | None:
+            head = self._get_current_branch()
+            if head == base:
+                return None
+            return str(WorktreeBaseBranchMismatchError(current=head, expected=base))
+
+        def dirty() -> str | None:
             try:
                 self._check_clean()
             except WorktreeDirtyError as exc:
-                blockers.append(Blocker("dirty", str(exc)))
-        if not accept_drift:
+                return str(exc)
+            return None
+
+        def drift() -> str | None:
             try:
                 self._check_drift()
             except WorktreeDriftError as exc:
-                blockers.append(Blocker("drift", str(exc)))
+                return str(exc)
+            return None
+
+        # One row per guard, in `merge()`'s order; the flag column is the same
+        # bypass the guard itself honours, so a bypassed guard is never probed.
+        probes: tuple[tuple[str, bool, Callable[[], str | None]], ...] = (
+            ("rebased", accept_drift or force, rebased),
+            ("consent", False, consent),
+            ("base-mismatch", not base_exists, base_mismatch),
+            ("dirty", force, dirty),
+            ("drift", accept_drift, drift),
+        )
+
+        blockers: list[Blocker] = []
+        for kind, skipped, probe in probes:
+            if skipped:
+                continue
+            try:
+                message = probe()
+            except Exception as exc:  # noqa: BLE001 — one broken probe must not blind the rest
+                blockers.append(Blocker(kind, f"could not check: {exc!r}"))
+                continue
+            if message:
+                blockers.append(Blocker(kind, message))
         return blockers
 
     def merge(

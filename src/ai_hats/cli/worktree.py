@@ -251,29 +251,20 @@ def wt_create(branch: str):
     console.print(f"  [dim]cd {wt_path}[/]")
 
 
-def _print_other_blockers(mgr, *, raised: str, force: bool, accept_drift: bool) -> None:
-    """Name what else would refuse this merge (HATS-1654).
+def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
+    """Render what else would refuse this merge (HATS-1654) — rendering only.
 
-    The guards fire one per run, so a merge can cost a run per fact. The probe is
-    read-only and never replaces the refusal above it — a probe that itself fails
-    says so. ``wt:pre-merge`` checks are not probed (see ``probe_blockers``).
+    The guards fire one per run, so a merge can cost a run per fact. Saying what
+    was NOT probed matters as much: an empty list must not read as "clear to
+    merge" while a `wt:pre-merge` check is still ahead.
     """
     from rich.markup import escape as _escape
 
-    try:
-        others = [
-            b
-            for b in mgr.probe_blockers(force=force, accept_drift=accept_drift)
-            if b.kind != raised
-        ]
-    except Exception as exc:  # noqa: BLE001 — a broken probe must not eat the refusal
-        console.print(f"[dim]Could not check the other blockers: {_escape(str(exc))}[/]")
-        return
-    for blocker in others:
+    for blocker in blockers:
         console.print(f"[yellow]Also blocking ({blocker.kind})[/]:")
         for line in blocker.message.splitlines():
             console.print(f"  {_escape(line)}", soft_wrap=True)
-    if raised != "checks":
+    if note_unprobed_checks:
         console.print("[dim]Not probed: wt:pre-merge checks — each runs its own command.[/]")
 
 
@@ -309,6 +300,7 @@ def wt_merge(
     drift (use --accept-drift to override after re-verifying).
     """
     from ai_hats_wt import (
+        Blocker,  # HATS-1654
         WorktreeBaseBranchMismatchError,  # HATS-533
         WorktreeDirtyError,
         WorktreeDriftError,
@@ -335,6 +327,15 @@ def wt_merge(
         sys.exit(1)
 
     name = mgr.branch_name
+
+    def other_blockers(raised: str) -> list:
+        """Every blocker but the one that already raised — a failed probe is a row, not silence."""
+        try:
+            found = mgr.probe_blockers(force=force, accept_drift=accept_drift)
+        except Exception as exc:  # noqa: BLE001 — a broken probe must not eat the refusal
+            return [Blocker("probe", f"could not check the other blockers: {exc}")]
+        return [b for b in found if b.kind != raised]
+
     try:
         mgr.merge(
             squash=squash,
@@ -358,7 +359,7 @@ def wt_merge(
         from rich.markup import escape as _escape
 
         console.print(f"[red]Refused (checks)[/]: {_escape(str(e))}")
-        _print_other_blockers(mgr, raised="checks", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("checks"), note_unprobed_checks=False)
         sys.exit(1)
     except WorktreeMergeConsentError as e:
         # HATS-1019: recipe lives here (HATS-509 split) — the deny doubles
@@ -376,11 +377,11 @@ def wt_merge(
             f"  [cyan]export AI_HATS_MERGE_ACK=1 && ai-hats wt merge {name}[/]",
             soft_wrap=True,
         )
-        _print_other_blockers(mgr, raised="consent", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("consent"))
         sys.exit(1)
     except WorktreeDirtyError as e:
         console.print(f"[red]Refused[/]: {e}")
-        _print_other_blockers(mgr, raised="dirty", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("dirty"))
         sys.exit(1)
     except WorktreeStateIncompleteError as e:
         # HATS-714: the state file is present but lacks `original_branch`
@@ -411,7 +412,7 @@ def wt_merge(
             soft_wrap=True,
         )
         console.print("  [cyan]ai-hats wt merge[/]", soft_wrap=True)
-        _print_other_blockers(mgr, raised="base-mismatch", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("base-mismatch"))
         sys.exit(1)
     except WorktreeMainRepoMidMergeError as e:
         # HATS-587 / F4: main repo already mid-merge (foreign MERGE_HEAD).
@@ -463,7 +464,7 @@ def wt_merge(
             "To confirm cleanup of this rebased worktree branch without re-merging, re-run with "
             "[cyan]--accept-drift[/]."
         )
-        _print_other_blockers(mgr, raised="rebased", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("rebased"))
         sys.exit(1)
     except WorktreeDriftError as e:
         # Drift message embeds filenames from the diverged commits — escape
@@ -488,7 +489,7 @@ def wt_merge(
             "To merge the stale baseline on purpose instead, re-run with "
             "[cyan]--accept-drift[/]."
         )
-        _print_other_blockers(mgr, raised="drift", force=force, accept_drift=accept_drift)
+        _print_blockers(other_blockers("drift"))
         sys.exit(1)
     except WorktreeRemoveError as e:
         # HATS-488 / B-03: merge committed, but worktree dir cleanup

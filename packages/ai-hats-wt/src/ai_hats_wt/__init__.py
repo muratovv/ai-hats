@@ -68,7 +68,6 @@ __all__ = [
     "WorktreeLifecycle",
     "LifecycleContext",
     "NOOP_LIFECYCLE",
-    # Refusal probe (HATS-1654)
     "Blocker",
     # Typed exceptions (the clean seam, ADR-0013 D1)
     "WorktreeDirtyError",
