@@ -113,6 +113,13 @@ ci_test_isolation() {
     "$PY" scripts/check_test_isolation.py
 }
 
+# Offline and instant. HATS-1591: the one check bandit held that ruff's `S`
+# family does not, kept after bandit itself was dropped.
+ci_bidi() {
+    echo "[ci-local] bidi (bidirectional controls, invisible in review)" >&2
+    "$PY" scripts/check_bidi.py
+}
+
 # Offline and instant, like dependency-floor — so it belongs in `all` too.
 ci_silent_fallback() {
     echo "[ci-local] silent-fallback (broad handlers nothing can escape from)" >&2
@@ -170,7 +177,7 @@ gate_composition() {
     case "$1" in
         merge-gate) echo "$tier unit integration" ;;
         done-gate) echo "$tier unit integration merge-smoke" ;;
-        push-gate) echo "lint unit e2e-catalog adr-integrity e2e" ;;
+        push-gate) echo "lint unit e2e-catalog adr-integrity bidi e2e" ;;
         *) return 1 ;;
     esac
 }
@@ -210,6 +217,7 @@ case "$stage" in
     merge-smoke) ci_merge_smoke ${@+"$@"} ;;
     dependency-floor) ci_dependency_floor ;;
     silent-fallback) ci_silent_fallback ;;
+    bidi) ci_bidi ;;
     test-isolation) ci_test_isolation ;;
     e2e-catalog) ci_e2e_catalog ;;
     adr-integrity) ci_adr_integrity ;;
@@ -222,6 +230,7 @@ case "$stage" in
         ci_lint
         ci_dependency_floor
         ci_silent_fallback
+        ci_bidi
         ci_test_isolation
         ci_e2e_catalog
         ci_adr_integrity
@@ -232,7 +241,7 @@ case "$stage" in
         ;;
     *)
         echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | adr-integrity | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
+        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | adr-integrity | dependency-floor | silent-fallback | bidi | test-isolation | version-skew | all" >&2
         echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
         exit 2
         ;;
