@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 
 
 class SurfaceInfo(NamedTuple):
-    ep_name: str  # entry-point provider name, e.g. "claude", "agy", "cline"
-    package_name: str  # package name: "ai-hats", "ai-hats-agy", "ai-hats-cline"
+    ep_name: str  # entry-point provider name, e.g. "claude", "agy", "cline", "codex"
+    package_name: str  # package name, e.g. "ai-hats", "ai-hats-agy", "ai-hats-codex"
     default_home_dirs: tuple[str, ...] = ()  # default directory names under $HOME to check presence
 
 
@@ -28,6 +28,9 @@ KNOWN_SURFACES: dict[str, SurfaceInfo] = {
     ),
     "cline": SurfaceInfo(
         ep_name="cline", package_name="ai-hats-cline", default_home_dirs=(".cline",)
+    ),
+    "codex": SurfaceInfo(
+        ep_name="codex", package_name="ai-hats-codex", default_home_dirs=(".codex",)
     ),
 }
 
@@ -61,7 +64,7 @@ def is_surface_installed(provider_name: str) -> bool:
     from .providers import get_provider
 
     try:
-        get_provider(provider_name)
+        get_provider(provider_name, auto_install=False)
         return True
     except Exception:  # silent-ok: a surface that will not import is not installed
         return False
@@ -75,9 +78,11 @@ def detect_surface_presence(provider_name: str, home: Path | None = None) -> boo
     from .providers import get_provider
 
     try:
-        provider = get_provider(provider_name)
-        dirs = provider.detected_home_dirs()
-    except Exception:
+        dirs = get_provider(provider_name, auto_install=False).detected_home_dirs()
+    except Exception:  # silent-ok: known metadata is the read-only fallback
+        dirs = []
+
+    if not dirs:
         info = get_surface_info(provider_name)
         if info is None:
             return False

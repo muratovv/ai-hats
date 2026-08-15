@@ -125,10 +125,10 @@ environment. Repeat only when the repo or workflow filename changes.
    publish behind a manual approval. Off by default: the tag push
    publishes unattended.
 
-### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-agy`, `ai-hats-rack`)
+### Workspace packages (`ai-hats-core`, `ai-hats-wt`, `ai-hats-observe`, `ai-hats-library`, `ai-hats-cline`, `ai-hats-agy`, `ai-hats-codex`, `ai-hats-rack`)
 
 The workspace packages under `packages/*` (and surface plugins under
-`packages/surfaces/*`, e.g. `ai-hats-cline`, `ai-hats-agy`) carry their own
+`packages/surfaces/*`, e.g. `ai-hats-cline`, `ai-hats-agy`, `ai-hats-codex`) carry their own
 **static** versions
 (`packages/**/pyproject.toml`), decoupled from the `ai-hats` `v*` tag. They
 publish through a separate workflow,
@@ -136,7 +136,8 @@ publish through a separate workflow,
 with `uv build`, then a per-package OIDC publish **job** each (core first, then
 the `wt` and `observe` packages that depend on it and the data-only
 `library` package, which has no ordering constraint, then the `cline` surface
-that depends on `observe` and the `agy` surface that depends on `core`).
+that depends on `observe`, the `agy` surface that depends on `core`, and the
+`codex` surface).
 **Every surface in `KNOWN_SURFACES` needs a job here** — `self_heal` runs
 `uv pip install <package_name>` for a surface the user selects, so a surface
 without one turns automatic repair into a hard failure on a missing
@@ -154,7 +155,7 @@ environment)` tuple ("*a pending trusted publisher matching this configuration
 has already been registered for a different project name*"). The environment is
 the disambiguator, so each package's publish job runs in its own environment
 (`pypi-core` / `pypi-wt` / `pypi-observe` / `pypi-library` /
-`pypi-cline` / `pypi-agy` / `pypi-rack`) — separate from the `pypi` environment
+`pypi-cline` / `pypi-agy` / `pypi-codex` / `pypi-rack`) — separate from the `pypi` environment
 the main `ai-hats` release uses.
 
 **One-time setup:**
@@ -168,6 +169,7 @@ the main `ai-hats` release uses.
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-library
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-cline
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-agy
+   gh api -X PUT repos/muratovv/ai-hats/environments/pypi-codex
    gh api -X PUT repos/muratovv/ai-hats/environments/pypi-rack
    ```
 
@@ -184,14 +186,19 @@ the main `ai-hats` release uses.
    | `ai-hats-library` | `pypi-library`   |
    | `ai-hats-cline`   | `pypi-cline`     |
    | `ai-hats-agy`     | `pypi-agy`       |
+   | `ai-hats-codex`   | `pypi-codex`     |
    | `ai-hats-rack`    | `pypi-rack`      |
 
 **To cut a package release:** bump the version in the package's `pyproject.toml`
 and merge to master — the push auto-triggers the publish (or run it manually via
-*Actions → release-packages → Run workflow*). PyPI rejects re-uploading an
-existing version, so a re-run without a version bump fails loud (no accidental
-clobber). The integrator `ai-hats` then pins the new versions in the root
-`dependencies`.
+*Actions → release-packages → Run workflow*). `ai-hats-codex` additionally waits until a compatible
+`ai-hats>=0.15.0` release exists on PyPI; if its first package bump lands before
+that integrator tag, the publish job is skipped and the workflow must be rerun
+after the tag is available. A dedicated fresh-venv job verifies the remote
+surface distribution after publication.
+PyPI rejects re-uploading an existing version, so a re-run without a version
+bump fails loud (no accidental clobber). The integrator `ai-hats` then pins the
+new versions in the root `dependencies`.
 
 **The `version-skew-guard` CI job enforces the bump:** any change to
 `packages/<pkg>/src/**` whose version is not strictly above the published PyPI

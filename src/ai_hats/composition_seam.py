@@ -331,7 +331,7 @@ def build_preview_payload(
         )
     return CompositionPayload(
         result=result,
-        provider=get_provider(eff_provider),
+        provider=get_provider(eff_provider, auto_install=False),
         effective_role=eff_role,
     )
 

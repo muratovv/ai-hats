@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    name: build (core + wt + observe + library + cline + agy + rack)
+    name: build (core + wt + observe + library + cline + agy + codex + rack)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -39,6 +39,7 @@ jobs:
           uv build packages/ai-hats-library -o dist-library
           uv build packages/surfaces/cline -o dist-cline
           uv build packages/surfaces/agy -o dist-agy
+          uv build packages/surfaces/codex -o dist-codex
           uv build packages/ai-hats-rack -o dist-rack
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
@@ -51,6 +52,7 @@ jobs:
             dist-library/
             dist-cline/
             dist-agy/
+            dist-codex/
             dist-rack/
           if-no-files-found: error
 
@@ -192,6 +194,78 @@ jobs:
         with:
           packages-dir: dist-agy/
           skip-existing: true
+
+  codex-integrator-ready:
+    name: check ai-hats-codex integrator floor
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        name: Check ai-hats 0.15+ exists on PyPI
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib.request import urlopen
+
+          with urlopen("https://pypi.org/pypi/ai-hats/json", timeout=30) as response:
+              releases = json.load(response)["releases"]
+          ready = any(
+              tuple(int(part) for part in version.split(".")) >= (0, 15, 0)
+              for version in releases
+              if version.count(".") == 2 and all(part.isdigit() for part in version.split("."))
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"ready={'true' if ready else 'false'}\n")
+          PY
+
+  publish-codex:
+    name: publish ai-hats-codex (PyPI trusted publishing)
+    # The surface imports the ai-hats 0.15 provider/artifact seam. A package
+    # version bump can land before the matching integrator tag, so skip rather
+    # than publish a distribution no resolver can install yet.
+    needs: [build, codex-integrator-ready]
+    if: needs.codex-integrator-ready.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi-codex
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: packages-dist
+      - name: Publish ai-hats-codex to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-codex/
+          skip-existing: true
+
+  verify-codex-remote-install:
+    name: verify ai-hats-codex remote install
+    needs: publish-codex
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Fresh venv + surface install + import
+        run: |
+          set -euo pipefail
+          uv venv --python 3.11 /tmp/verify-codex-venv
+          ok=""
+          for attempt in 1 2 3 4 5; do
+            if uv pip install --python /tmp/verify-codex-venv/bin/python --refresh \
+                 "ai-hats-codex==0.1.0"; then
+              ok=1; break
+            fi
+            echo "install attempt $attempt failed (PyPI CDN lag?) — retry in 20s" >&2
+            sleep 20
+          done
+          test -n "$ok" || { echo "ai-hats-codex install never succeeded" >&2; exit 1; }
+          /tmp/verify-codex-venv/bin/python -c \
+            "from ai_hats_codex import CodexProvider; assert CodexProvider().name == 'codex'"
 
   verify-remote-install:
     # HATS-943 #2: reproduce the remote channel post-publish — a fresh venv
