@@ -320,6 +320,28 @@ def _reason(result: subprocess.CompletedProcess[str]) -> str:
     return payload["error"]["reason"]
 
 
+#: Where the child's own words end and this channel's addendum begins.
+_STALE_NOTE_MARKER = "\n\nNOTE: this verdict came from stale bytes."
+
+
+def _verdict(result: subprocess.CompletedProcess[str]) -> str:
+    """The child's own words, with HATS-1651's stale-mirror addendum split off.
+
+    `_seed_mirror` plants bytes that deliberately differ from the library's —
+    that divergence is what proves which root resolved — so the sandbox session
+    is a deliberately AGED one and the note fires on every refusal here. Exact
+    equality still belongs on the half the child wrote (R3.3); the addendum
+    carries absolute tmp paths, which is why `_stale_note` checks its shape.
+    """
+    return _reason(result).split(_STALE_NOTE_MARKER)[0]
+
+
+def _stale_note(result: subprocess.CompletedProcess[str]) -> str:
+    """The addendum itself, or ``""`` when the refusal carried none."""
+    _, marker, rest = _reason(result).partition(_STALE_NOTE_MARKER)
+    return marker + rest if marker else ""
+
+
 def _outcomes(result: subprocess.CompletedProcess[str]) -> dict[str, dict]:
     payload = json.loads(result.stdout)
     return {o["subscriber"]: o for o in payload["journal"][0]["outcomes"]}
@@ -495,7 +517,14 @@ def test_a_bound_check_refuses_a_real_transition_and_leaves_the_card_untouched(
     as_json = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
     assert as_json.returncode == 1
     # R3.3: verbatim in --json — the prefix belongs to the text surface only.
-    assert _reason(as_json) == MIRROR_WORDS
+    assert _verdict(as_json) == MIRROR_WORDS
+    # HATS-1651's addendum, pinned here and nowhere else in the tier: the mirror
+    # this fixture plants really IS stale, so a refusal must name both roots for
+    # the operator to know which of the two to fix.
+    note = _stale_note(as_json)
+    assert note, f"the stale-mirror note never fired:\n{_reason(as_json)}"
+    assert str(_mirror_root(project, env) / SKILL / "refuse.sh") in note, note
+    assert str(project / "libraries" / "skills" / SKILL / "refuse.sh") in note, note
     assert _card(project, task_id).read_bytes() == before
 
 
@@ -610,7 +639,7 @@ def test_a_bound_check_runs_the_active_surfaces_mirror_and_no_other(
     refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
-    assert _reason(refused) == MIRROR_WORDS
+    assert _verdict(refused) == MIRROR_WORDS
     ran = _ran_script(_check_log(project, task_id, "refuse.sh"))
     assert ran == mirrored
     for name, tree in others.items():
@@ -907,7 +936,7 @@ def test_a_stray_row_does_not_disarm_the_gate_on_a_real_edge(gate_project, rack_
     refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
-    assert _reason(refused) == MIRROR_WORDS
+    assert _verdict(refused) == MIRROR_WORDS
     assert _card(project, task_id).read_bytes() == before
 
 
