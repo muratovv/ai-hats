@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_observe import AuditWriter, SessionManager
+from ai_hats_observe import AuditWriter, SessionManager, SidecarTracer
 from ai_hats_observe.artifacts import TRANSCRIPT_JSONL
 
 
@@ -134,3 +134,21 @@ def test_merged_transcript_is_written_as_private_artifact(tmp_path: Path) -> Non
         "second",
     ]
     assert _mode(destination) == 0o600
+
+
+def test_sidecar_raw_dump_tightens_binary_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_HATS_PTY_RAW_DUMP", "1")
+    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
+    session.pty_raw_path.write_bytes(b"stale")
+    session.pty_raw_path.chmod(0o644)
+    tracer = SidecarTracer(session)
+
+    with _umask(0o022):
+        tracer._raw_dump(b"<<", b"secret")
+
+    assert tracer._raw_fp not in (None, False)
+    tracer._raw_fp.close()
+    assert _mode(session.pty_raw_path) == 0o600
+    assert b"secret" in session.pty_raw_path.read_bytes()

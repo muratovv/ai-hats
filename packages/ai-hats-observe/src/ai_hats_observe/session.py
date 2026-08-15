@@ -13,6 +13,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import BinaryIO
 
 from ai_hats_core import atomic_write_text
 from ai_hats_core.recovery import NoOpRecovery, RecoveryProtocol
@@ -224,6 +225,10 @@ class Session:
             destination, "wb", opener=_private_opener
         ) as destination_stream:
             shutil.copyfileobj(source_stream, destination_stream)
+
+    def open_artifact_binary_append(self, path: Path, *, buffering: int = -1) -> BinaryIO:
+        """Open a private session artifact for binary append."""
+        return open(path, "ab", buffering=buffering, opener=_private_opener)
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
         """Persist the transcript link at launch, while the session is still alive.
