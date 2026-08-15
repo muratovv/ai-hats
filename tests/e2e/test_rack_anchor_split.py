@@ -21,6 +21,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from ai_hats.session_identity import SessionIdentity
 from _helpers.git import git as _git
 
 pytestmark = pytest.mark.integration
@@ -63,7 +65,15 @@ def split(shared_launcher, tmp_path):
 
     env = {
         **base_env,
-        "AI_HATS_SESSION_ID": "e2e-anchor-split",
+        # HATS-1594: ownership names the session from the envelope, so a bare
+        # session id aborts the edge before the anchor is ever resolved.
+        **SessionIdentity(
+            id="e2e-anchor-split",
+            role="assistant",
+            provider="claude",
+            project_dir=main,
+            session_dir=main / ".agent" / "ai-hats" / "sessions" / "runs" / "e2e-anchor-split",
+        ).to_env(),
         "AI_HATS_ROOT_PID": str(os.getpid()),
     }
     return rack, main, worktree, env
