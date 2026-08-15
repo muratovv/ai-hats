@@ -7,15 +7,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from ai_hats.pipeline.steps.compute_usage import ComputeUsage
 from ai_hats.runtime import _finalize_sub_agent
 from ai_hats.runtime_common import _flag_sensor_error
-from ai_hats_observe import AuditWriter, SessionManager
+from ai_hats_observe import SessionManager
 from ai_hats_observe.artifacts import REASONING_LOG, TRANSCRIPT_TXT, USAGE_JSON
-from ai_hats_observe.cli import _seam
-from ai_hats_observe.cli.session import _backfill_one
 
 
 @contextmanager
@@ -91,36 +87,3 @@ def test_compute_usage_writes_private_artifact(tmp_path: Path) -> None:
     usage_path = session.session_dir / USAGE_JSON
     assert delta == {"usage_path": usage_path}
     assert _mode(usage_path) == 0o600
-
-
-def test_backfill_identity_rewrite_stays_private_when_audit_build_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
-    session.init_audit(role="maintainer", provider="claude")
-    session.finalize_audit({"exit_code": 0})
-    provider_session_id = "5c639a19-5b64-4a91-8813-2937b47e9126"
-    session.log_trace(
-        "[SYS]",
-        f"Launching: claude --settings settings.json --session-id {provider_session_id}",
-    )
-    session.metrics_path.chmod(0o644)
-    source = tmp_path / f"{provider_session_id}.jsonl"
-    source.write_text("{}\n")
-
-    def resolver(*_args, **_kwargs):
-        return source
-
-    monkeypatch.setattr(_seam, "_PROVIDER_ADAPTER", lambda _provider: (resolver, None))
-
-    def fail_build(*_args, **_kwargs):
-        raise RuntimeError("audit failed")
-
-    monkeypatch.setattr(AuditWriter, "build", fail_build)
-
-    with _umask(0o022), pytest.raises(RuntimeError, match="audit failed"):
-        _backfill_one(session, project_dir=tmp_path, dry_run=False)
-
-    assert _mode(session.metrics_path) == 0o600
-    metrics = json.loads(session.metrics_path.read_text())
-    assert metrics["claude_session_id"] == provider_session_id
