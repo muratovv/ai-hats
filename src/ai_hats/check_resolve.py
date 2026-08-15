@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
-    from ai_hats_core import CompositionResult, ResolvedCheck
+    from ai_hats_core import CompositionResult, ConsentPoint, ResolvedCheck
 
     from .session_identity import SessionIdentity
 
@@ -100,6 +100,30 @@ def resolve_carried_checks(
     if not checks:
         return ()
     return _rooted(result, checks, identity)
+
+
+def resolve_carried_rows(
+    project_dir: Path,
+    app: str,
+    *,
+    identity: SessionIdentity | None | Any = FROM_ENV,
+    compose: Callable[[Path], CompositionResult | None] | None = None,
+) -> tuple[tuple[ResolvedCheck, ...], tuple[ConsentPoint, ...]]:
+    """Both kinds of row declared under ``app``, from ONE composition.
+
+    The consent half rides along so the owner of ``app`` can judge a consent
+    point against its topology exactly as it judges a gate's (HATS-1682 A5).
+    It is returned UNROOTED and never passes through :func:`_rooted`: a consent
+    point names no script, so there are no bytes to re-base and nothing for
+    ``reject_worktree_root`` to look at — which is what keeps a declaration that
+    spawns nothing from refusing because the session was launched in a worktree.
+    """  # comment-length: allow — that the consent half is never rooted IS the contract
+    result, identity = _composed(project_dir, identity, compose)
+    if result is None:
+        return (), ()
+    checks = tuple(check for check in result.checks if check.app == app)
+    consent = tuple(point for point in result.consent if point.app == app)
+    return (_rooted(result, checks, identity) if checks else ()), consent
 
 
 def resolve_checks_at(
@@ -487,6 +511,8 @@ __all__ = [
     "CheckResolutionError",
     "declares_checks",
     "resolve_carried_checks",
+    "resolve_carried_rows",
     "resolve_checks_at",
+    "resolve_consent_points",
     "session_identity",
 ]

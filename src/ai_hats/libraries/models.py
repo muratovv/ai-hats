@@ -55,7 +55,9 @@ class AppBinding:
 
     A row carries ``run``, ``consent``, or both (HATS-1682). Consent runs
     nothing, so a row declaring only consent has no script — which is what lets
-    an edge be gated on a role that binds no gate to it at all.
+    an edge be gated on a role that binds no gate to it at all, and why an
+    explicit ``on_error`` on such a row is refused: it polices a failure that
+    cannot happen.
 
     ``consent`` is THREE-valued: absent says nothing, and only `true`/`false`
     speak. Reading absence as `false` would make every gate row silently switch
@@ -180,6 +182,15 @@ def _app_row(
     run = row.get("run")
     if run is None and consent is not None:
         run = ""  # a consent-only row runs nothing; there is no script to name
+        if "on_error" in row:
+            # Refused here, not downstream: left standing it reached the
+            # owned-point policy check and was refused there for endangering
+            # data a row that spawns nothing cannot touch (HATS-1682).
+            raise CheckBindingError(
+                f"{label}: 'on_error:' is the failure policy of a script, and this row "
+                f"carries no 'run:' — nothing here can fail. Drop the key, or give the "
+                f"row the 'run:' whose verdict it governs"
+            )
     elif not isinstance(run, str) or not run.strip():
         raise CheckBindingError(
             f"{label}: 'run:' must be a non-empty '<skill>/<script>' string, or be "

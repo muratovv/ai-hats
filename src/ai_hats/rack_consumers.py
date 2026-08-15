@@ -18,10 +18,11 @@ import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
-from ai_hats_core import ResolvedCheck
+from ai_hats_core import ConsentPoint, ResolvedCheck
 from ai_hats_core.deadline import Deadline
 from ai_hats_rack.checks import (
     CHECK_PRIORITY,
+    CONSENT_ROW,
     EDGE_CHECK_TIMEOUT_S,
     CheckDeclaration,
     CheckOutcome,
@@ -33,7 +34,7 @@ from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
 from .check_points import check_failure_reason, check_log_token
-from .check_resolve import CheckResolutionError, resolve_carried_checks, session_identity_for
+from .check_resolve import CheckResolutionError, resolve_carried_rows, session_identity_for
 from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
 
@@ -67,6 +68,7 @@ class AiHatsCheckPort:
         *,
         catalog: Path,
         resolve: Callable[[], tuple[ResolvedCheck, ...]] | None = None,
+        resolve_consent: Callable[[], tuple[ConsentPoint, ...]] | None = None,
     ) -> None:
         #: The backlog's own project — the ONLY one this channel knows (HATS-1573):
         #: it composes the role, it is the gate's cwd, and it is the
@@ -76,22 +78,42 @@ class AiHatsCheckPort:
         # a sibling's check log belongs under the sibling, and the gate reads
         # AI_HATS_TASKS_DIR to decide whether the backlog is its business at all.
         self._catalog = catalog
-        self._resolve = resolve if resolve is not None else self._resolve_carried
+        self._resolve = resolve
+        self._resolve_consent = resolve_consent
         self._worktrees: dict[str, Path | None] = {}
 
     def check_declarations(self) -> Sequence[CheckDeclaration]:
         """Every carried row, already deduped, provenance-tagged and rooted.
 
+        Two kinds since HATS-1682: a gate row, and a consent row that spawns
+        nothing. Both travel, because the rack is the only party holding the
+        topology that can tell a misspelt point from one aimed at a sibling —
+        and before this, a consent row reached no validator at all (A5).
+
         Resolution failures become this channel's own typed refusal — a
         traceback out of an in-lock subscriber is a defect, not a message.
         """
         try:
-            resolved = self._resolve()
+            resolved, consent = self._carried()
         except (CheckBindingError, CheckResolutionError, OSError) as exc:
             raise AbortOperation(f"checks: {exc}") from exc
-        return tuple(_declaration(check) for check in resolved)
+        return (
+            *(_declaration(check) for check in resolved),
+            *(_consent_declaration(point) for point in consent),
+        )
 
-    def _resolve_carried(self) -> tuple[ResolvedCheck, ...]:
+    def _carried(self) -> tuple[tuple[ResolvedCheck, ...], tuple[ConsentPoint, ...]]:
+        """Both kinds, from ONE composition — or from whoever was injected.
+
+        An injected source stands in for the composition on its own side: pairing
+        a fake row list with a live consent compose would make the fake compose
+        the real project underneath it.
+        """
+        if self._resolve is not None or self._resolve_consent is not None:
+            return (
+                tuple(self._resolve()) if self._resolve is not None else (),
+                tuple(self._resolve_consent()) if self._resolve_consent is not None else (),
+            )
         if self.backlog_owner is None:
             # A backlog nobody owns declares nothing, so nothing fires. Said out
             # loud: a gate that is not there must not read as a gate that passed.
@@ -100,8 +122,8 @@ class AiHatsCheckPort:
                 f"composes onto it, so no bound check runs on this transition",
                 file=sys.stderr,
             )
-            return ()
-        return resolve_carried_checks(
+            return (), ()
+        return resolve_carried_rows(
             self.backlog_owner,
             self.APP,
             # Scoped to the backlog's owner: unscoped, another project's session
@@ -203,6 +225,25 @@ def _declaration(check: ResolvedCheck) -> CheckDeclaration:
         on_error=check.on_error,
         label=_binding(check),
         handle=check,
+    )
+
+
+def _consent_declaration(point: ConsentPoint) -> CheckDeclaration:
+    """One declared consent point as the rack sees it (HATS-1682).
+
+    ``on_error`` is empty and not ``refuse``: this row spawns nothing, so it has
+    no verdict and no failure policy. Nothing reads it — the subscriber drops
+    the kind before ``run_check`` — and calling it ``refuse`` would put a policy
+    on the report for a row that can never fail.
+    """
+    return CheckDeclaration(
+        path=point.path,
+        at=(point.point,),
+        cargo={},
+        on_error="",
+        label=f"{point.declared_by!r} declares consent under apps.{point.app}",
+        handle=point,
+        kind=CONSENT_ROW,
     )
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
 from .check_points import resolve_checks
@@ -390,9 +392,41 @@ def _resolved_consent(rows: "list[AppBinding]") -> tuple:
     decided: dict[tuple, tuple[bool, str]] = {}
     for row in rows:
         for key, value in row.consent_points():
+            previous = decided.get(key)
+            _warn_on_disarm(key, previous, value, row.declared_by)
+            # The first declarer keeps the slot while the ANSWER is unchanged, as
+            # in ``check_points._stricter``: re-declaring the same value is
+            # idempotent by the card's rule, so it must move nothing at all.
+            if previous is not None and previous[0] == value:
+                continue
             decided[key] = (value, row.declared_by)
     return tuple(
         ConsentPoint(declared_by=who, app=app, path=path, point=point)
         for (app, path, point), (value, who) in decided.items()
         if value
+    )
+
+
+def _warn_on_disarm(
+    key: tuple, previous: "tuple[bool, str] | None", value: bool, declarer: str
+) -> None:
+    """A later `false` over an earlier `true`, said out loud (HATS-1682 B10).
+
+    Last-writer-wins stays the rule — a role must be able to switch off a point
+    its trait declared. What must not stay is the silence: the later writer need
+    not be the role, and a second trait (an overlay appends to the tail of the
+    list) could turn off the merge gate with nothing printed anywhere. Only the
+    disarming direction speaks; re-declaring the same `true` is idempotent by
+    the card's own rule, and warning on that would make every legal duplicate —
+    the maintainer done-gate row among them — noisy for nothing.
+    """  # comment-length: allow — why only one direction warns is the decision
+    if previous is None or value or not previous[0]:
+        return
+    app, path, point = key
+    trail = "".join(f".{part}" for part in path)
+    print(
+        f"WARN: consent at {point!r} under apps.{app}{trail} was declared by "
+        f"{previous[1]!r} and is switched OFF by {declarer!r} — the later writer wins, "
+        f"so the supervisor will NOT be asked there",
+        file=sys.stderr,
     )

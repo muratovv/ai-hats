@@ -1313,6 +1313,37 @@ def test_a_row_that_neither_runs_nor_consents_is_refused():
     assert "'run:'" in str(exc.value)
 
 
+def test_a_failure_policy_on_a_row_with_no_script_is_refused():
+    """``on_error`` reads a verdict, and a consent-only row produces none. Left
+    standing, the key reached the owned-point policy check and was refused there
+    for endangering data the row cannot touch (HATS-1682)."""
+    with pytest.raises(CheckBindingError) as exc:
+        _rows({"wt": [{"at": ["pre-merge"], "consent": True, "on_error": "warn"}]})
+
+    assert "no 'run:'" in str(exc.value)
+
+
+def test_a_row_carrying_both_keys_keeps_its_failure_policy():
+    """The control: ``on_error`` is refused for the ABSENCE of ``run``, not for
+    the presence of ``consent`` — the "both keys" form must keep working."""
+    (row,) = _rows(
+        {
+            "rack": {
+                "tasks": [
+                    {
+                        "run": "g/done.sh",
+                        "at": ["edge:review--done"],
+                        "on_error": "refuse",
+                        "consent": True,
+                    }
+                ]
+            }
+        }
+    )
+
+    assert (row.run, row.on_error, row.consent) == ("g/done.sh", "refuse", True)
+
+
 def test_consent_must_be_a_boolean():
     """Three-valued means true/false/absent — not a string that reads as truthy."""
     with pytest.raises(CheckBindingError) as exc:
