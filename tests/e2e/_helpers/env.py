@@ -62,6 +62,36 @@ ENV_DENYLIST: frozenset[str] = frozenset(
 # inheriting it IS the isolation.
 
 
+#: The point-agnostic env consent channel (HATS-1682). Named here so a grep for
+#: it finds every scaffolding grant in one list.
+CONSENT_ACK = "AI_HATS_CONSENT_ACK"
+
+
+def consented(env: Mapping[str, str], **extra: str) -> dict[str, str]:
+    """``env`` plus the consent grant, for ONE call that is SCAFFOLDING.
+
+    Since HATS-1682 the role declares consent on `edge:review--done` (and
+    `edge:plan--execute`), so a test that only needs a card *parked* in `done`
+    now has to answer a question it is not measuring. This is the answer, and it
+    is a function rather than a fixture or a conftest default on purpose:
+    `test_consent_force_chain.py`, `test_wt_merge_consent_chain.py`,
+    `test_wt_merge_consent_gate.py` and `test_rack_wiring.py` exist to prove the
+    channel works, and an ambient grant would make all four vacuous — the exact
+    defect class HATS-1682 was filed to remove. Grant it at the call, per call,
+    and a reader can see which transition is scaffolding and which is the
+    subject.
+
+    Pure: never mutates ``env``.
+    """  # comment-length: allow — why the grant is per-call and not ambient IS the contract
+    return {**env, CONSENT_ACK: "1", **extra}
+
+
+def consent_grant() -> dict[str, str]:
+    """The grant alone, for a call site that takes an env OVERLAY rather than a
+    whole env. Same rule as :func:`consented`: one call, never the suite."""
+    return {CONSENT_ACK: "1"}
+
+
 def checkout_pythonpath(repo_root: Path, existing: str = "") -> str:
     """PYTHONPATH that runs THIS checkout end-to-end (HATS-863).
 

@@ -10,6 +10,7 @@ why:    concurrent task finalization must synchronize base branch merges to prev
         contention"""
 
 from __future__ import annotations
+from _helpers.env import consented
 from _helpers.git import git as _git
 
 import subprocess
@@ -173,12 +174,16 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     head_before = _git(project, "rev-parse", "HEAD").stdout.strip()
 
     # ---- the race ----
+    # HATS-1682: `review -> done` is a declared consent point. Both racers
+    # carry the answer — the subject is the base-ref lock, and an edge that
+    # refuses for want of a click never reaches it.
+    done_env = consented(env)
     cmd_a = [str(rack_bin), "transition", task_a, "done"]
     cmd_b = [str(rack_bin), "transition", task_b, "done"]
     p1 = subprocess.Popen(
         cmd_a,
         cwd=str(project),
-        env=env,
+        env=done_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -186,7 +191,7 @@ def test_e2e_parallel_transition_done_no_data_loss(shared_launcher, tmp_path):
     p2 = subprocess.Popen(
         cmd_b,
         cwd=str(project),
-        env=env,
+        env=done_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

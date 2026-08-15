@@ -35,7 +35,10 @@ def test_e2e_catalog_check_refuses_unsound_flow_block(tmp_path: Path) -> None:
         "\n"
         "flow:   a maintainer tests an unsound block\n"
         "cmds:\n"
-        "    ai-hats status\n"
+        # `rack`, not `ai-hats`: parse-time validation refuses an unknown ai-hats
+        # subcommand as MALFORMED before soundness ever runs, so an ai-hats line
+        # here would test the wrong layer. rack reaches this one.
+        "    rack bogus\n"
         "expect: failure\n"
         "why:    test\n"
         '"""\n',
@@ -64,4 +67,4 @@ def test_e2e_catalog_check_refuses_unsound_flow_block(tmp_path: Path) -> None:
     assert res.returncode == 1
     assert "[e2e-catalog] unsound row(s):" in res.stderr
     assert "test_unsound.py" in res.stderr
-    assert "unknown subcommand 'status' under main" in res.stderr
+    assert "unknown subcommand 'bogus' under main" in res.stderr

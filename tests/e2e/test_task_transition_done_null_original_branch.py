@@ -12,6 +12,7 @@ why:    incomplete worktree state metadata must produce a clear actionable error
 """
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import json
@@ -69,11 +70,11 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
             expect_exit=expect_exit,
         )
 
-    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(venv / "bin" / "rack"), *args],
             cwd=cwd,
-            env={**env, "AI_HATS_PLAN_ACK": "1"},
+            env={**env, "AI_HATS_PLAN_ACK": "1", **(extra_env or {})},
             timeout=timeout,
             expect_exit=expect_exit,
         )
@@ -150,12 +151,15 @@ def test_e2e_task_transition_done_null_original_branch(shared_launcher, tmp_path
     state_path.write_text(json.dumps(data, indent=2))
 
     # ---- 4. transition done refuses cleanly, no traceback ----
+    # HATS-1682: `review -> done` is a consent point the role declares; the
+    # answer is scaffolding, and the worktree layer is what this measures.
     res = rack(
         "transition",
         task_id,
         "done",
         expect_exit=1,
         cwd=project,
+        extra_env=consent_grant(),
     )
     combined = res.stdout + res.stderr
 

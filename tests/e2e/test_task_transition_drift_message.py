@@ -13,6 +13,7 @@ why:    branch drift must be reported with copy-pasteable resolution steps to pr
 # comment-length: allow — fail-under-revert contract, dev_rule_e2e_gate §4
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import subprocess
@@ -181,7 +182,10 @@ def test_e2e_rack_transition_done_drift_message(shared_launcher, tmp_path):
     rack("transition", task_id, "review")
 
     # ---- 6. transition done MUST fail with the ported recipe ----
-    res = rack("transition", task_id, "done", expect_exit=1)
+    # HATS-1682: `review -> done` is a consent point the role declares. The
+    # answer is scaffolding here — what this test measures is what the
+    # WORKTREE layer does with the edge once consent is in hand.
+    res = rack("transition", task_id, "done", expect_exit=1, extra_env=consent_grant())
     combined = res.stdout + res.stderr
 
     # Positive: drift summary preserved (commits + affected path).

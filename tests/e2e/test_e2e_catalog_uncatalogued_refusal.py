@@ -20,6 +20,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "gen_e2e_catalog.py"
 
+# The pin needs a basis OUTSIDE the header: `_ids_known_for` strips the module
+# docstring before it looks, so a docstring-only pin can never have one and the
+# fixture would be refused as unsound before it reaches what this test measures.
 VALID_BLOCK = '''"""e2e (HATS-1563)
 
 flow:   valid flow for fixture
@@ -28,6 +31,8 @@ cmds:
 expect: valid outcome
 why:    fixture requirement
 """
+
+# HATS-1563 — basis for the header pin above.
 '''
 
 
