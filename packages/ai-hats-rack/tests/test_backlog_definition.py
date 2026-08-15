@@ -233,7 +233,7 @@ def test_packaged_default_declares_the_migrated_kit(tmp_path):
     b = load_backlog().bindings
     assert b.state_on_enter["plan"] == (HandlerRef("plan-scaffold", priority=30),)
     # HATS-1682: `plan-consent` left this file — WHERE consent is required is a
-    # role property now, declared in `composition.consent`, and the packaged
+    # role property now, declared on a `composition.apps` row, and the packaged
     # backlog can say nothing about the wt half of the same question.
     assert b.state_on_enter["execute"] == (HandlerRef("plan-gate", priority=10),)
     assert b.state_on_enter["done"] == (HandlerRef("stamp-lifecycle", priority=12),)

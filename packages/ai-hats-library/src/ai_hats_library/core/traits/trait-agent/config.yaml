@@ -27,22 +27,28 @@ composition:
     - tool-call-hygiene
     - design-minimalism
   # HATS-1682 — where this role needs the supervisor's explicit approval, said
-  # once, on the point. The guard on the tool call reads this and asks exactly
-  # here; the engine reads the same declaration and refuses the move when no
-  # answer arrived, which is what covers a surface that cannot be asked.
+  # once, on the point. Consent is a property OF AN EDGE, so it rides the same
+  # rows a quality gate does: a row carries `run:`, `consent:`, or both. These
+  # carry only consent — there is nothing to run at these points, which is
+  # exactly why the declaration cannot live on a gate's row alone.
   #
   # It lives on the TRAIT and not in the packaged `backlog.yaml`, because that
   # file is the rack's kernel contract and can say nothing about `wt` — and a
   # merge into master is the other half of the same question. A role that does
-  # not compose this trait declares no consent and gets none.
+  # not compose this trait declares no consent and gets none; a role that wants
+  # one point back writes `consent: false` on it, and the later writer wins.
   #
   # `edge:review--done` and `pre-merge` are the two roads into master
   # (HATS-1130): the FSM automerge and a direct `ai-hats wt merge`. A gate
   # holding only one of them is the asymmetry that started that epic.
-  consent:
+  apps:
     rack:
-      tasks: [edge:plan--execute, edge:review--done]
-    wt: [pre-merge]
+      tasks:
+        - at: [edge:plan--execute, edge:review--done]
+          consent: true
+    wt:
+      - at: [pre-merge]
+        consent: true
 injection: |
   ## AGENT BEHAVIOR
 

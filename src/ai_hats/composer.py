@@ -9,10 +9,8 @@ from .resolver import LibraryResolver
 from .models import (
     AppBinding,
     ComponentConfig,
-    ConsentPoint,
     OverlayConfig,
     parse_app_bindings,
-    parse_consent_points,
 )
 
 
@@ -99,12 +97,10 @@ class Composer:
         # Traits are single-level (sub-traits are rejected in _resolve_traits),
         # so bindings accumulate in declaration order: traits, then the role.
         declared_checks: list[AppBinding] = []
-        declared_consent: list[ConsentPoint] = []
 
         self._resolve_traits(
             config.composition.traits,
             declared_checks=declared_checks,
-            declared_consent=declared_consent,
             seen_injections=seen_injections,
             seen_rules=seen_rules,
             seen_skills=seen_skills,
@@ -152,11 +148,6 @@ class Composer:
         declared_checks.extend(
             parse_app_bindings(
                 config.composition.apps, declared_by=config.name, source=config.source_path
-            )
-        )
-        declared_consent.extend(
-            parse_consent_points(
-                config.composition.consent, declared_by=config.name, source=config.source_path
             )
         )
 
@@ -212,7 +203,7 @@ class Composer:
             role_injection=role_injection_text,
             overlay_injection=overlay_injection_text,
             checks=resolve_checks(declared_checks, skills, removed_skills=requested_skill_removes),
-            consent=tuple(dict.fromkeys(declared_consent)),
+            consent=_resolved_consent(declared_checks),
         )
 
     @staticmethod
@@ -266,7 +257,6 @@ class Composer:
         errors: list[str],
         visited: set[str],
         declared_checks: list[AppBinding],
-        declared_consent: list[ConsentPoint],
     ) -> None:
         for trait_name in trait_names:
             if trait_name in visited:
@@ -305,11 +295,6 @@ class Composer:
             declared_checks.extend(
                 parse_app_bindings(
                     config.composition.apps, declared_by=trait_name, source=config.source_path
-                )
-            )
-            declared_consent.extend(
-                parse_consent_points(
-                    config.composition.consent, declared_by=trait_name, source=config.source_path
                 )
             )
 
@@ -390,3 +375,24 @@ class Composer:
 # HATS-865: collect_runtime_hooks / collect_worktree_hooks /
 # resolve_skill_script moved to the neutral leaf ``hook_collection`` so runtime
 # bricks reach them without importing the composition layer.
+
+
+def _resolved_consent(rows: "list[AppBinding]") -> tuple:
+    """The points this composition wants asked on, per ``(app, path, point)``.
+
+    Resolved per POINT and not per row: a trait names several points in one row,
+    and a role must be able to switch ONE of them off without repeating the
+    others. Composition order is trait-then-role, so the last writer wins and
+    `consent: false` in the role overrides `true` from the trait (HATS-1682).
+    """
+    from ai_hats_core import ConsentPoint
+
+    decided: dict[tuple, tuple[bool, str]] = {}
+    for row in rows:
+        for key, value in row.consent_points():
+            decided[key] = (value, row.declared_by)
+    return tuple(
+        ConsentPoint(declared_by=who, app=app, path=path, point=point)
+        for (app, path, point), (value, who) in decided.items()
+        if value
+    )

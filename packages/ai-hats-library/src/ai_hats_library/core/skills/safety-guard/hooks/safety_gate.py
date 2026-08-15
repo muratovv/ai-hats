@@ -650,8 +650,8 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
 #: Said once, so the two questions cannot drift into describing different tickets.
 _TICKET_TERMS = (
     "This command carries a ticket good for one use, in this session, for this exact "
-    "command — nothing chained after it. The question does not expire: answer when "
-    "you have read what you are approving."
+    "call. The question does not expire: answer when you have read what you are "
+    "approving."
 )
 
 

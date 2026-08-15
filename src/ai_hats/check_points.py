@@ -96,6 +96,13 @@ def resolve_checks(
     removed = {resolve_namespace(name) for name in removed_skills}
     resolved: dict[tuple[str, tuple[str, ...], str, str], ResolvedCheck] = {}
     for row in declared:
+        if not row.run:
+            # A consent-only row runs nothing (HATS-1682): no script to find, and
+            # no root to judge it from — resolving it would make a declaration
+            # that spawns nothing refuse from a linked worktree.
+            if owns_app(row.app):
+                _validate_owned_points(row)
+            continue
         # Shape before lookup: a `run` with no slash names a SKILL of "gate.sh"
         # and would be reported as an uncomposed skill — the wrong defect.
         if "/" not in row.run or not row.script.strip():

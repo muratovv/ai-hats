@@ -145,17 +145,26 @@ approval: `plan → execute` and `review → done`. A direct `ai-hats wt merge` 
 the other road into master — is gated the same way.
 
 Which edges those are is not fixed by the backlog: it is the ROLE's
-declaration. `composition.consent` on the agent trait names them, so a role
-that does not compose it is asked nothing, and a role that needs a different
-surface of consent edits the topology rather than the guard:
+declaration. The agent trait names them, so a role that does not compose it is
+asked nothing, and a role that needs a different surface of consent edits the
+topology rather than the guard:
 
 ```yaml
 composition:
-  consent:
+  apps:
     rack:
-      tasks: [edge:plan--execute, edge:review--done]
-    wt: [pre-merge]
+      tasks:
+        - at: [edge:plan--execute, edge:review--done]
+          consent: true
+    wt:
+      - at: [pre-merge]
+        consent: true
 ```
+
+Consent is a property of an **edge**, so it rides the same rows a quality gate
+does — a row carries `run:`, `consent:`, or both. A role that wants one of those
+points back writes `consent: false` on it; the later declaration wins, and
+saying nothing switches nothing off.
 
 On a surface with runtime hooks the agent simply runs the command and the guard
 turns it into a **question in chat**: the

@@ -34,42 +34,19 @@ A guard that can only say "no" pushes the agent toward blunt instruments.
 (`rule_pause_before_shared_state_write`). Two gates on one concern means the
 coarser one silently wins (HATS-1253).
 
-## A wrapper does not hide the command
+## Some moves are consent-gated
 
-`timeout`, `nice`, `sudo`, `stdbuf` and their kin run another binary and eat a
-variable number of operands first. The gate does **not** model each one's option
-arity — the entry a table gets wrong makes the guard blind rather than merely
-imprecise, which is how `timeout 5 rm -rf /` was allowed while `rm -rf /` was
-denied (HATS-1682, measured). When a wrapper leads, every later slice of the
-command is offered to the checks instead.
+On a few moves the guard turns your command into a question for the supervisor
+instead of running it. Which moves those are is the role's declaration, not
+yours to know here. Three things follow for you:
 
-## Consent is declared by the ROLE, on the point
-
-Where the supervisor is asked is not compiled into this hook. A role's
-`composition.consent` names the points it wants asked on, in each application's
-own point grammar:
-
-```yaml
-composition:
-  consent:
-    rack:
-      tasks: [edge:plan--execute, edge:review--done]
-    wt: [pre-merge]
-```
-
-The guard reads that declaration from the session envelope and raises the
-question exactly there; the engine reads the same declaration in-lock and
-refuses the move when no answer arrived. Changing the surface of consent is
-therefore an edit to the role's topology, never to this gate.
-
-The answer rides a one-shot ticket (`AI_HATS_CONSENT_TICKET`) minted by this
-hook and bound to the card, the session, the exact argv, and one use. **The
-question does not expire** — an expiry would only fence the supervisor's
-thinking, since the ticket is written when the question is raised. Typing a
-ticket, or any consent flag, inline is refused as a self-grant.
-
-Nothing chained after a gated command: a redirect is dropped from the binding,
-but a second command in the same call is not what the supervisor was shown.
+- **Run the command bare and let the question happen.** Do not prefix it with a
+  consent flag or a ticket — the guard mints those, and one you typed is refused
+  as a self-grant.
+- **The question does not expire.** Do not re-run, re-ask or nudge; the
+  supervisor may take as long as reading needs.
+- **A refusal names the move it is about.** Read it before retrying — retrying
+  the same command unchanged is the one thing that cannot help.
 
 ## The tracker backlog is `rack`-only
 

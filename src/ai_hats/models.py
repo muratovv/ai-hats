@@ -28,7 +28,6 @@ from .libraries.models import (  # noqa: F401
     GIT_HOOK_EVENTS,
     RUNTIME_HOOK_EVENTS,
     AppBinding,
-    ConsentPoint,
     CheckBindingError,
     ComponentConfig,
     ComponentKeyError,
@@ -39,6 +38,5 @@ from .libraries.models import (  # noqa: F401
     RuntimeHook,
     SkillMetadata,
     parse_app_bindings,
-    parse_consent_points,
     resolve_namespace,
 )

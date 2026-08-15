@@ -322,7 +322,7 @@ def _library_roots(project_dir: Path) -> list[Path]:
 
 
 def declares_checks(project_dir: Path) -> bool:
-    """Whether any trait or role in reach declares ``apps`` or ``consent``.
+    """Whether any trait or role in reach declares ``composition.apps``.
 
     A byte scan, not a parse, so a project with no bindings does not compose on
     every transition (S3). Only traits and roles are read — the two the composer
@@ -337,10 +337,8 @@ def declares_checks(project_dir: Path) -> bool:
                 continue
             for config in _component_configs(base):
                 data = config.read_bytes()
-                # memchr throws out the files with no declaration at all first
-                if (
-                    b"apps" in data or b"checks" in data or b"consent" in data
-                ) and _CHECKS_KEY.search(data):
+                # memchr throws out the files with no `apps` at all before the regex
+                if (b"apps" in data or b"checks" in data) and _CHECKS_KEY.search(data):
                     return True
     return False
 

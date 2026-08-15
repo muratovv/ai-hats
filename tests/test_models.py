@@ -277,7 +277,7 @@ def test_composition_unrelated_key_warning_lists_known_keys(tmp_path, capsys):
 
     err = capsys.readouterr().err
     assert "did you mean" not in err
-    assert "known: apps, consent, rules, skills, traits" in err
+    assert "known: apps, rules, skills, traits" in err
 
 
 def test_composition_rejects_unknown_key_when_loader_bypassed():
@@ -1279,3 +1279,87 @@ def test_every_shipped_library_config_survives_the_strict_loader():
     assert roots, "no library configs found — the probe would prove nothing"
     for path in roots:
         ComponentConfig.from_yaml(path)
+
+
+# --- consent rides a row, three-valued (HATS-1682) --------------------------
+
+
+def _rows(block, declared_by="t"):
+    return list(parse_app_bindings(block, declared_by=declared_by))
+
+
+def test_a_row_may_carry_consent_and_no_script():
+    """The point that forced the shape: `plan → execute` is consent-gated on
+    every lifecycle role, and NO role binds a gate script to it — so consent
+    that could only ride an existing row would not reach it at all."""
+    (row,) = _rows({"rack": {"tasks": [{"at": ["edge:plan--execute"], "consent": True}]}})
+
+    assert row.run == "", "a consent-only row names no script"
+    assert row.consent is True
+    assert row.consent_points() == ((("rack", ("tasks",), "edge:plan--execute"), True),)
+
+
+def test_a_row_may_carry_both_a_gate_and_consent():
+    (row,) = _rows(
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"], "consent": True}]}}
+    )
+
+    assert row.run == "g/done.sh" and row.consent is True
+
+
+def test_a_row_that_neither_runs_nor_consents_is_refused():
+    with pytest.raises(CheckBindingError) as exc:
+        _rows({"rack": {"tasks": [{"at": ["edge:a--b"]}]}})
+    assert "'run:'" in str(exc.value)
+
+
+def test_consent_must_be_a_boolean():
+    """Three-valued means true/false/absent — not a string that reads as truthy."""
+    with pytest.raises(CheckBindingError) as exc:
+        _rows({"rack": {"tasks": [{"at": ["edge:a--b"], "consent": "yes"}]}})
+    assert "three-valued" in str(exc.value)
+
+
+def test_consent_is_not_carried_as_cargo():
+    """An owned key: ai-hats reads it, so it must not also ride opaquely."""
+    (row,) = _rows({"rack": {"tasks": [{"at": ["edge:a--b"], "consent": True, "extra": 1}]}})
+
+    assert row.cargo == {"extra": 1}
+
+
+def test_a_later_false_switches_one_declared_point_off():
+    """The supervisor's rule (HATS-1682): declaring consent twice is idempotent,
+    but a role saying `false` overrides a trait saying `true`. Resolved per
+    POINT, because the trait names two points in ONE row and the role must be
+    able to switch off exactly one of them."""
+    from ai_hats.composer import _resolved_consent
+
+    trait = _rows(
+        {"rack": {"tasks": [{"at": ["edge:plan--execute", "edge:review--done"], "consent": True}]}},
+        declared_by="trait-agent",
+    )
+    role = _rows(
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"], "consent": False}]}},
+        declared_by="maintainer",
+    )
+
+    points = [c.point for c in _resolved_consent([*trait, *role])]
+
+    assert points == ["edge:plan--execute"], "the role's `false` did not win"
+
+
+def test_a_row_silent_about_consent_switches_nothing_off():
+    """Why the key is three-valued: read absence as `false` and every gate row
+    would quietly disarm the consent its trait declared."""
+    from ai_hats.composer import _resolved_consent
+
+    trait = _rows(
+        {"rack": {"tasks": [{"at": ["edge:review--done"], "consent": True}]}},
+        declared_by="trait-agent",
+    )
+    gate = _rows(
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"]}]}},
+        declared_by="maintainer",
+    )
+
+    assert [c.point for c in _resolved_consent([*trait, *gate])] == ["edge:review--done"]
