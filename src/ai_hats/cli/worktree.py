@@ -272,21 +272,41 @@ def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
         console.print("[dim]Not probed: wt:pre-merge checks — each runs its own command.[/]")
 
 
-def _merge_ticket_accepted(branch: str) -> bool:
+def _merge_ticket_accepted() -> bool:
     """Did the supervisor answer the guard's question about THIS merge?
 
     Peek, never spend: a merge that then refuses for drift or a dirty tree must
-    give the click back (HATS-1682).
+    give the click back — :func:`_spend_merge_ticket` settles it once the merge
+    has actually happened (HATS-1682).
     """
     from ai_hats_library.hooks import consent_ticket
 
     try:
-        # ``None``: the branch may have been auto-detected here and merely typed
-        # (or not) there, so the invocation is the binding that holds.
+        # ``None``: no card names this road, and the guard labels its question
+        # with the branch — a label the CLI cannot reproduce, since a branch
+        # left off the command line reads "this worktree" there. The invocation
+        # is the binding that holds; see `consent_ticket._valid_ticket`.
         return consent_ticket.peek(None, argv=sys.argv[1:])
     except Exception as exc:  # noqa: BLE001 — an unreadable store is not consent
         console.print(f"[yellow]consent ticket unreadable[/]: {exc}")
         return False
+
+
+def _spend_merge_ticket() -> None:
+    """Use up the ticket now the merge it paid for has happened (HATS-1682).
+
+    Without this the wt road has no single-use at all: the same answered command
+    re-run inside the store's 12h housekeeping window would merge again, unasked.
+    The two "merged, but cleanup failed" exits in :func:`wt_merge` skip it on
+    purpose: their retry lands on the already-merged short-circuit, which asks
+    for no consent in the first place.
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    try:
+        consent_ticket.consume(None, argv=sys.argv[1:])
+    except Exception as exc:  # noqa: BLE001 — the merge landed; a stuck ticket is not a failure
+        console.print(f"[yellow]consent ticket not spent[/]: {exc}")
 
 
 @wt.command("merge")
@@ -348,11 +368,15 @@ def wt_merge(
         sys.exit(1)
 
     name = mgr.branch_name
+    # HATS-1682: the guard asks about THIS command where the role declared
+    # `wt: [pre-merge]`. Read once: a merge held up by drift must not also tell
+    # the supervisor their consent is missing (HATS-1654).
+    consented = _merge_ticket_accepted()
 
     def other_blockers(raised: str) -> list:
         """Every blocker but the one that already raised — a failed probe is a row, not silence."""
         try:
-            found = mgr.probe_blockers(force=force, accept_drift=accept_drift)
+            found = mgr.probe_blockers(force=force, accept_drift=accept_drift, consent=consented)
         except Exception as exc:  # noqa: BLE001 — a broken probe must not eat the refusal
             return [Blocker("probe", f"could not check the other blockers: {exc}")]
         return [b for b in found if b.kind != raised]
@@ -363,9 +387,7 @@ def wt_merge(
             force=force,
             accept_drift=accept_drift,
             skip_hooks=skip_hooks,
-            # HATS-1682: the guard asks about THIS command where the role
-            # declared `wt: [pre-merge]`, and the ticket it minted is the answer.
-            consent=_merge_ticket_accepted(name),
+            consent=consented,
         )
     except WorktreeTeardownAborted as e:
         # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted
@@ -548,6 +570,7 @@ def wt_merge(
             f"(after resolving the cause)"
         )
         sys.exit(2)
+    _spend_merge_ticket()
     console.print(f"[green]Merged[/]: {name}")
 
 

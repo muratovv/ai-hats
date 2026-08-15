@@ -171,7 +171,7 @@ def mint(
 
 
 def peek(
-    task_id: str,
+    task_id: str | None,
     *,
     start: Path | None = None,
     nonce: str | None = None,
@@ -187,7 +187,7 @@ def peek(
 
 
 def consume(
-    task_id: str,
+    task_id: str | None,
     *,
     start: Path | None = None,
     nonce: str | None = None,
@@ -210,7 +210,7 @@ def consume(
 
 
 def _valid_ticket(
-    task_id: str,
+    task_id: str | None,
     *,
     start: Path | None = None,
     nonce: str | None = None,
@@ -222,7 +222,17 @@ def _valid_ticket(
     four axes because the mint precedes the answer, so every one of them is a
     way a ticket the supervisor refused could otherwise still be spent. None of
     them is the clock: an expiry would only fence the supervisor's thinking.
-    """
+
+    ``task_id=None`` says the CARD axis is not part of the binding on this road,
+    leaving three — session, exact argv, single use. That is the `ai-hats wt
+    merge` road: it has no card to name, and its guard labels the question with
+    the branch, which the CLI cannot reproduce (a branch left off the command
+    line is labelled "this worktree" there and resolved to a real name here).
+    Three axes still hold it: the branch, when typed, is INSIDE the argv the
+    ticket is keyed on, and when omitted it is decided by a cwd the guard and
+    the CLI share — so a ticket for another merge already fails on argv, and a
+    rack ticket fails on it too (HATS-1682 A1).
+    """  # comment-length: allow — why one road binds on three axes, not four
     raw = os.environ.get(TICKET_ENV, "") if nonce is None else nonce
     if not raw:
         return None
@@ -241,7 +251,10 @@ def _valid_ticket(
     except (OSError, ValueError, UnicodeDecodeError) as exc:
         _note(f"unreadable ticket at {path}: {exc}")
         return None
-    if not isinstance(data, dict) or data.get("task_id") != task_id:
+    if not isinstance(data, dict):
+        _note(f"ticket {raw[:8]}… is not a ticket")
+        return None
+    if task_id is not None and data.get("task_id") != task_id:
         # Another card's ticket: refuse WITHOUT spending it — it is still that
         # card's consent, and eating it here would send the supervisor back.
         _note(f"ticket {raw[:8]}… was issued for another task, not {task_id}")

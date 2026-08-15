@@ -112,6 +112,46 @@ def test_the_same_command_typed_untidily_is_the_same_command(repo, monkeypatch):
     assert ct.consume("HATS-1", start=repo, argv=["transition", "HATS-1", "--log", "a b"]) is True
 
 
+#: The other road's argv: `ai-hats wt merge <branch>` past the binary. It names
+#: no card, so the guard labels the question with the branch — and labels it
+#: "this worktree" when the branch is left off (HATS-1682 A1).
+_M = ["wt", "merge", "task/x"]
+_M2 = ["wt", "merge", "task/y"]
+
+
+def test_a_road_with_no_card_spends_the_ticket_its_guard_minted(repo, monkeypatch):
+    """`ai-hats wt merge` peeks with no card, and used to match nothing at all.
+
+    The guard minted under the branch label, the CLI asked about ``None``, the
+    strict comparison refused — so the supervisor approved and the merge still
+    demanded `AI_HATS_MERGE_ACK`. The click was burnt (HATS-1682 A1).
+    """
+    nonce = ct.mint("task/x", start=repo, argv=_M)
+    _grant(nonce, monkeypatch)
+
+    assert ct.peek(None, start=repo, argv=_M) is True, "the guard's own ticket did not match"
+    assert ct.consume(None, start=repo, argv=_M) is True
+    assert ct.consume(None, start=repo, argv=_M) is False, "the cardless road is not one-shot"
+
+
+def test_dropping_the_card_axis_does_not_drop_the_others(repo, monkeypatch):
+    """Three axes, not none: another invocation and another session still fail.
+
+    The card is what the two halves cannot agree on; the invocation and the
+    session are what hold the wt road together in its place.
+    """
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-a")
+    nonce = ct.mint("task/x", start=repo, argv=_M)
+    _grant(nonce, monkeypatch)
+
+    assert ct.consume(None, start=repo, argv=_M2) is False, "another merge spent it"
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-b")
+    assert ct.consume(None, start=repo, argv=_M) is False, "another session spent it"
+
+    monkeypatch.setenv("AI_HATS_SESSION_ID", "session-a")
+    assert ct.consume(None, start=repo, argv=_M) is True, "the call it was minted for lost it"
+
+
 def test_a_ticket_does_not_travel_to_another_session(repo, monkeypatch):
     """A ticket the supervisor answered in one session — or REJECTED there, since
     the mint precedes the answer — is not consent anywhere else (HATS-1642 R1)."""

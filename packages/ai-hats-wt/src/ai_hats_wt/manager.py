@@ -1004,7 +1004,9 @@ class WorktreeManager:
         learn three facts. This asks all of them at once — read-only, no lock, no
         mutation; the one cost is the drift check's bounded ``git fetch``. The
         ``wt:pre-merge`` point is NOT probed: a check is an arbitrary command with
-        no "would you refuse?" mode (that predicate is HATS-1615's).
+        no "would you refuse?" mode (that predicate is HATS-1615's). ``consent``
+        is :meth:`merge`'s, and a caller that answers it there must pass it here
+        too, or a ticket-bearing merge is told its consent is missing.
         """
         if not self._is_git or self.worktree_path is None or not self.worktree_path.exists():
             return []
@@ -1027,8 +1029,6 @@ class WorktreeManager:
             return str(WorktreeRebasedBranchError(self.branch_name, base))
 
         def consent_blocker() -> str | None:
-            if consent or os.environ.get("AI_HATS_MERGE_ACK") == "1":
-                return None
             return str(WorktreeMergeConsentError(self.branch_name, base))
 
         def base_mismatch() -> str | None:
@@ -1055,7 +1055,9 @@ class WorktreeManager:
         # bypass the guard itself honours, so a bypassed guard is never probed.
         probes: tuple[tuple[str, bool, Callable[[], str | None]], ...] = (
             ("rebased", accept_drift or force, rebased),
-            ("consent", consent, consent_blocker),
+            # Both halves of merge()'s own condition ride in the flag column, so
+            # the probe has nothing left to re-decide (HATS-1682 B7).
+            ("consent", consent or os.environ.get("AI_HATS_MERGE_ACK") == "1", consent_blocker),
             ("base-mismatch", not base_exists, base_mismatch),
             ("dirty", force, dirty),
             ("drift", accept_drift, drift),
