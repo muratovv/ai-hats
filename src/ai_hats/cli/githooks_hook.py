@@ -107,10 +107,11 @@ def main(argv: list[str] | None = None) -> int:
                 journal,
                 reason=f"composition failed, all gates SKIPPED: {type(exc).__name__}: {exc}",
                 event=args.event,
+                project_dir=project_dir,
             )
         if resolution is not None:
             for refusal in resolution.refusals:
-                record_fail_open(journal, reason=refusal, event=args.event)
+                record_fail_open(journal, reason=refusal, event=args.event, project_dir=project_dir)
             gates = [g.path for g in resolution.gates]
 
     return run_chain(
