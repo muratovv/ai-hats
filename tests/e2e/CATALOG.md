@@ -587,6 +587,21 @@ as a claim to check, not as evidence.
 - **expect** — real Codex registers session-scoped hatrack as enabled at the session-copy path and excludes another role's skill
 - **why** — prompt diagnostics can name a skill without proving the native registry contract used by explicit $skill invocation
 
+## `test_codex_private_artifacts.py`
+
+*pins HATS-1688*
+
+- **flow** — real Codex HITL and Automate command chains finish successfully, fail, or receive Ctrl-C under `umask 022`
+- **cmds**
+
+  ```bash
+  ai-hats -p codex -r maintainer
+  ai-hats execute --batch -p codex -r maintainer --isolation discard --prompt ping
+  ```
+
+- **expect** — each session directory is mode `0700`, and every sensitive session artifact produced is mode `0600`
+- **why** — prompts, transcripts, traces, and audit metadata must remain private even when the caller's umask permits group and world reads
+
 ## `test_codex_provider_discovery.py`
 
 *pins HATS-1531*
