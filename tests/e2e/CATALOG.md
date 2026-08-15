@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**257 of 257 files catalogued — 266 flows.**
+**258 of 258 files catalogued — 267 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -591,16 +591,16 @@ as a claim to check, not as evidence.
 
 *pins HATS-1688*
 
-- **flow** — real Codex HITL and Automate command chains finish successfully, fail, or receive Ctrl-C under `umask 022`
+- **flow** — Codex HITL and Automate sessions finish under a permissive umask
 - **cmds**
 
-  ```bash
+  ```console
   ai-hats -p codex -r maintainer
   ai-hats execute --batch -p codex -r maintainer --isolation discard --prompt ping
   ```
 
-- **expect** — each session directory is mode `0700`, and every sensitive session artifact produced is mode `0600`
-- **why** — prompts, transcripts, traces, and audit metadata must remain private even when the caller's umask permits group and world reads
+- **expect** — each session directory is 0700 and every sensitive artifact produced is 0600
+- **why** — prompts, transcripts, traces, and audit metadata must not inherit process umask
 
 ## `test_codex_provider_discovery.py`
 
