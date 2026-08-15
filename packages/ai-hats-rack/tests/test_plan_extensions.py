@@ -499,16 +499,25 @@ def test_the_env_ack_never_spends_a_ticket(tasks_dir, cwd, tmp_path, monkeypatch
     assert booth.asked == [], "the env channel burned a ticket it did not need"
 
 
-def test_plan_consent_skipped_on_force(kit, tasks_dir, cwd, monkeypatch):
+def test_plan_consent_is_not_skipped_on_force(consent_kit, tasks_dir, cwd, monkeypatch):
+    """HATS-1682: consent is not a property of the command, so no flag drops it.
+
+    Renamed from `test_plan_consent_skipped_on_force`, which asserted the
+    opposite AND took the `kit` fixture — one that wires no `plan-consent` at
+    all, so it passed no matter what the handler did.
+    """
     monkeypatch.delenv("AI_HATS_PLAN_ACK", raising=False)
-    _create(kit, cwd)
-    walk(kit, "T-1", "plan", cwd=cwd)
+    _create(consent_kit, cwd)
+    walk(consent_kit, "T-1", "plan", cwd=cwd)
     (tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
 
-    kit.transition(
-        "T-1", "execute", actor="test", caller_cwd=cwd, force=True, reason="forced override"
-    )
-    assert kit.get("T-1").state == "execute"
+    with pytest.raises(OperationAborted) as exc_info:
+        consent_kit.transition(
+            "T-1", "execute", actor="test", caller_cwd=cwd, force=True, reason="forced override"
+        )
+
+    assert exc_info.value.subscriber == "plan-consent"
+    assert consent_kit.get("T-1").state == "plan"
 
 
 # ---------------------------------------------------------------------------

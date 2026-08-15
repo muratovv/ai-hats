@@ -200,3 +200,45 @@ def test_a_ticket_in_hand_is_not_reported_as_a_blocker(project, settings, env, b
     assert "AI_HATS_MERGE_ACK" not in refused.output, (
         f"a merge holding consent was sent for the env ack:\n{refused}"
     )
+
+
+def test_the_env_channel_carries_this_road_too(project, settings, env, branch_with_work):
+    """`AI_HATS_CONSENT_ACK=1 ai-hats wt merge` — no question, and no refusal.
+
+    The guard hatches on `CONSENT_ACK` for the direct merge as it does for the
+    FSM edge, so a headless run gets no question. The CLI read only the ticket,
+    so it then refused for want of `AI_HATS_MERGE_ACK` — the supervisor was
+    neither asked nor obeyed, on the surface where asking is impossible. That is
+    HATS-1682 B1 in the mirror, and it is why the two roads read one channel.
+    """
+    branch_with_work("task/headless")
+    _assert_no_consent_anywhere(env)
+    headless = {**env, "AI_HATS_CONSENT_ACK": "1"}
+
+    # `ack=` is how the harness grants one flag; passing it in `env` alone is not
+    # enough, since `run_chain` scrubs every AI_HATS_*ACK it did not name.
+    quiet = run_chain(
+        project,
+        "ai-hats wt merge task/headless",
+        settings=settings,
+        env=env,
+        ack="AI_HATS_CONSENT_ACK",
+    )
+    assert quiet.decision != "ask", f"a surface with nobody to ask was asked anyway: {quiet}"
+
+    merged = subprocess.run(  # noqa: S603 - fixed argv, the shim from the fixture
+        ["ai-hats", "wt", "merge", "task/headless"],
+        cwd=str(project),
+        env=headless,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    assert merged.returncode == 0, f"the env channel was refused:\n{merged.stdout}{merged.stderr}"
+    assert "AI_HATS_MERGE_ACK" not in merged.stdout + merged.stderr, (
+        f"the env channel still demanded the other flag:\n{merged.stdout}{merged.stderr}"
+    )
+    assert "wt-work" in log_subjects(project), "the work never reached master"
+    journal = (project / ".git" / "ai-hats" / "bypasses.jsonl").read_text(encoding="utf-8")
+    assert "AI_HATS_CONSENT_ACK" in journal, f"the hatch left no trace:\n{journal[-400:]}"

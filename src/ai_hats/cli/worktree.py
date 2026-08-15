@@ -272,24 +272,37 @@ def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
         console.print("[dim]Not probed: wt:pre-merge checks — each runs its own command.[/]")
 
 
-def _merge_ticket_accepted() -> bool:
-    """Did the supervisor answer the guard's question about THIS merge?
+#: Named for the journal, so this road's hatch reads like the guard's.
+_HOOK = "cli/worktree.py"
 
-    Peek, never spend: a merge that then refuses for drift or a dirty tree must
-    give the click back — :func:`_spend_merge_ticket` settles it once the merge
-    has actually happened (HATS-1682).
+
+def _merge_consent(branch: str) -> str:
+    """Which channel carries the supervisor's consent for THIS merge, or ``""``.
+
+    The two channels `wt_effects._merge_consent` reads on the FSM road. The
+    guard hatches on ``CONSENT_ACK`` here too, so reading only the ticket left
+    `AI_HATS_CONSENT_ACK=1 ai-hats wt merge` with no question AND a refusal —
+    HATS-1682 B1, in the mirror. Peek, never spend: a merge that then refuses
+    for drift gives the click back.
     """
     from ai_hats_library.hooks import consent_ticket
+
+    from ..rack_wiring import CONSENT_ACK, env_consent_note
 
     try:
         # ``None``: no card names this road, and the guard labels its question
         # with the branch — a label the CLI cannot reproduce, since a branch
         # left off the command line reads "this worktree" there. The invocation
         # is the binding that holds; see `consent_ticket._valid_ticket`.
-        return consent_ticket.peek(None, argv=sys.argv[1:])
+        if consent_ticket.peek(None, argv=sys.argv[1:]):
+            return "consent ticket"
     except Exception as exc:  # noqa: BLE001 — an unreadable store is not consent
         console.print(f"[yellow]consent ticket unreadable[/]: {exc}")
-        return False
+    if os.environ.get(CONSENT_ACK) == "1":
+        # Legitimate where nothing can ask, never silent (HATS-1682 B2).
+        console.print(f"[dim]{env_consent_note(CONSENT_ACK, f'merging {branch}', hook=_HOOK)}[/]")
+        return CONSENT_ACK
+    return ""
 
 
 def _spend_merge_ticket() -> None:
@@ -371,7 +384,7 @@ def wt_merge(
     # HATS-1682: the guard asks about THIS command where the role declared
     # `wt: [pre-merge]`. Read once: a merge held up by drift must not also tell
     # the supervisor their consent is missing (HATS-1654).
-    consented = _merge_ticket_accepted()
+    consented = bool(_merge_consent(name))
 
     def other_blockers(raised: str) -> list:
         """Every blocker but the one that already raised — a failed probe is a row, not silence."""
