@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 from contextlib import contextmanager
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats_observe import SessionManager
+from ai_hats_observe import AuditWriter, SessionManager
+from ai_hats_observe.artifacts import TRANSCRIPT_JSONL
 
 
 @contextmanager
@@ -83,3 +85,52 @@ def test_full_session_lifecycle_keeps_sensitive_artifacts_private(tmp_path: Path
     assert {path.name: _mode(path) for path in artifacts} == {
         path.name: 0o600 for path in artifacts
     }
+
+
+@pytest.mark.integration
+def test_audit_rebuild_keeps_outputs_private(tmp_path: Path) -> None:
+    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
+    session.init_audit(role="maintainer", provider="codex")
+    session.audit_path.chmod(0o644)
+    session.metrics_path.chmod(0o644)
+
+    with _umask(0o022):
+        AuditWriter().build(session)
+
+    assert _mode(session.audit_path) == 0o600
+    assert _mode(session.metrics_path) == 0o600
+
+
+def test_preserved_transcript_is_streamed_to_private_artifact(tmp_path: Path) -> None:
+    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
+    source = tmp_path / "source.jsonl"
+    source.write_text('{"type": "message"}\n')
+    destination = session.session_dir / TRANSCRIPT_JSONL
+    destination.write_text("stale\n")
+    destination.chmod(0o644)
+
+    with _umask(0o022):
+        preserved = AuditWriter._preserve_transcript(session, source)
+
+    assert preserved is True
+    assert destination.read_text() == source.read_text()
+    assert _mode(destination) == 0o600
+
+
+def test_merged_transcript_is_written_as_private_artifact(tmp_path: Path) -> None:
+    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    first.write_text('{"type": "first"}\n')
+    second.write_text('{"type": "second"}\n')
+
+    with _umask(0o022):
+        preserved = AuditWriter._preserve_transcript(session, [first, second])
+
+    destination = session.session_dir / TRANSCRIPT_JSONL
+    assert preserved is True
+    assert [json.loads(line)["type"] for line in destination.read_text().splitlines()] == [
+        "first",
+        "second",
+    ]
+    assert _mode(destination) == 0o600

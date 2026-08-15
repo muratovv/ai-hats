@@ -10,6 +10,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -216,6 +217,13 @@ class Session:
         """Append text after tightening a session artifact to private permissions."""
         with open(path, "a", encoding=encoding, opener=_private_opener) as artifact:
             artifact.write(text)
+
+    def copy_artifact(self, source: Path, destination: Path) -> None:
+        """Stream a file into a private session artifact."""
+        with source.open("rb") as source_stream, open(
+            destination, "wb", opener=_private_opener
+        ) as destination_stream:
+            shutil.copyfileobj(source_stream, destination_stream)
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
         """Persist the transcript link at launch, while the session is still alive.

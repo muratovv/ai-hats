@@ -10,14 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-
-from ai_hats_core import atomic_write_text
 
 from .artifacts import (
     FLAG_NO_STRUCTURED_TRANSCRIPT,
@@ -207,7 +203,7 @@ class AuditWriter:
         audit_content = self._format_audit(session, turns, model_stats=parsed.model_stats)
         if not turns:
             audit_content = self._with_transcript_fallback(session, audit_content)
-        session.audit_path.write_text(audit_content)
+        session.write_artifact_text(session.audit_path, audit_content)
 
         preserved = self._preserve_transcript(session, jsonl_path)
         droppable = self._may_drop_trace(parsed, preserved and transcript_verified)
@@ -292,7 +288,7 @@ class AuditWriter:
         dest = session.session_dir / TRANSCRIPT_JSONL
         try:
             if len(existing) == 1:
-                shutil.copyfile(existing[0], dest)
+                session.copy_artifact(existing[0], dest)
             else:
                 from .artifacts import session_start_dt
 
@@ -300,7 +296,8 @@ class AuditWriter:
                 min_ts = s_dt.timestamp() if s_dt else 0.0
 
                 records = cls._read_and_merge_records(existing, min_ts)
-                dest.write_text(
+                session.write_artifact_text(
+                    dest,
                     "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
                     encoding="utf-8",
                 )
@@ -417,4 +414,4 @@ class AuditWriter:
                 existing.pop("tokens", None)  # on this surface any prior value is fabricated
             existing.update(update)
 
-        atomic_write_text(session.metrics_path, json.dumps(existing, indent=2))
+        session.write_artifact_text(session.metrics_path, json.dumps(existing, indent=2))
