@@ -33,6 +33,7 @@ from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 # HATS-948: the metrics.json (machine-readable audit) schema tag — observe's
 # first versioned surface (mirrors usage/v1). Bumped by the migration seam.
 AUDIT_SCHEMA_VERSION = "audit/v1"
+SESSION_DIR_MODE = 0o700
 
 
 class SessionManager:
@@ -83,7 +84,7 @@ class SessionManager:
             session_id = f"{base_id}-{suffix}"
 
         session_dir = self.gitlog_dir / session_dirname(session_id)
-        session_dir.mkdir(parents=True, exist_ok=True)
+        session_dir.mkdir(parents=True, exist_ok=True, mode=SESSION_DIR_MODE)
         return Session(session_id=session_id, session_dir=session_dir)
 
     def get_session(self, session_id: str) -> Session | None:
