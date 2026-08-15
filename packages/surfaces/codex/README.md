@@ -5,7 +5,7 @@ OpenAI Codex CLI surface plugin for
 the `ai_hats.providers` entry point and supports the normal interactive launch:
 
 ```console
-$ ai-hats -p codex -r maintainer
+$ ai-hats -p codex
 ```
 
 ## Delivery contract
@@ -29,6 +29,14 @@ $ ai-hats -p codex -r maintainer
 - The provider does not pass `-C`: ai-hats owns the child process cwd, including
   its isolated task worktree. The canonical project path may deliberately point
   at the main checkout for shared tracker operations.
+
+Claude-style runtime hooks can request interactive consent with an `ask`
+decision, but Codex `PreToolUse` has no equivalent decision that opens a prompt.
+The adapter therefore fails that event closed and reports the hook's recovery
+instruction; a session-wide ACK must already be present in the environment that
+launches ai-hats. When Codex has independently opened a native
+`PermissionRequest`, the same hook's `ask` defers to that existing user prompt.
+An agent cannot grant itself either form of consent from inside its tool command.
 
 Codex's existing user authentication and native user/repository configuration
 remain in place. The plugin neither reads credentials nor redirects

@@ -297,24 +297,6 @@ class CodexProvider(Provider):
         )
         return artifacts.cli_args, artifacts.extra_env, artifacts.full_content or ""
 
-    def materialize_runtime_skills(
-        self,
-        project_dir: Path,
-        result: "CompositionResult",
-        session_id: str,
-    ) -> list[str]:
-        """Legacy extension point; current runners use the artifact builder."""
-        from ai_hats.materialization import ApplyMaterializer
-        from ai_hats.skills_dir import materialize_skills_dir
-
-        materialize_skills_dir(
-            self.session_skills_root(project_dir, session_id),
-            result.skills,
-            project_dir,
-            ApplyMaterializer(),
-        )
-        return []
-
     @staticmethod
     def _validate_passthrough(args: list[str]) -> None:
         lowered = [arg.lower() for arg in args]
@@ -363,7 +345,7 @@ class CodexProvider(Provider):
         )
 
     def get_run_command(self, cmd: list[str], meta_prompt: str) -> list[str]:
-        """Build `codex <global flags> exec <exec flags> <prompt>`.
+        """Build the non-HITL `ai-hats agent` Codex exec command.
 
         In Codex 0.147 approval policy is parsed globally, so it must precede
         ``exec``. A caller handing this method a HITL-shaped command is safely

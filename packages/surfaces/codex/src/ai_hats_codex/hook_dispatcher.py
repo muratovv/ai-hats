@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
+
+from .claude_hook_adapter import matches_claude_hook, to_claude_hook_payloads
 
 DISPATCHER_COMMAND = (
     'sh -c \'if [ -n "$AI_HATS_SESSION_ID" ] && [ -n "$AI_HATS_DIR" ] '
@@ -23,8 +24,6 @@ ENV_SESSION_ID = "AI_HATS_SESSION_ID"
 ENV_AI_HATS_DIR = "AI_HATS_DIR"
 ENV_SESSION_CACHE_DIR = "AI_HATS_SESSION_CACHE_DIR"
 HOOK_TIMEOUT_S = 60.0
-_PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILINE)
-_PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -89,64 +88,6 @@ def _load_manifest(environ: Mapping[str, str]) -> dict:
                 raise _ManifestError(f"hook command is not an executable session file: {command}")
             entry["command"] = str(command)
     return data
-
-
-def _matches(matcher: str, tool_name: str) -> bool:
-    if not matcher or matcher == "*":
-        return True
-    aliases = [tool_name]
-    if tool_name == "apply_patch":
-        aliases.extend(("Edit", "Write", "MultiEdit"))
-    elif tool_name == "spawn_agent":
-        aliases.append("Agent")
-    try:
-        return any(re.fullmatch(matcher, candidate) is not None for candidate in aliases)
-    except re.error:
-        return matcher in aliases
-
-
-def _patch_targets(command: str, cwd: str) -> list[tuple[str, Path]]:
-    targets = [(kind, raw.strip()) for kind, raw in _PATCH_PATH.findall(command)]
-    targets.extend(("Update", raw.strip()) for raw in _PATCH_MOVE.findall(command))
-    seen: set[Path] = set()
-    resolved: list[tuple[str, Path]] = []
-    base = Path(cwd or os.getcwd())
-    for kind, raw in targets:
-        path = Path(raw).expanduser()
-        path = path if path.is_absolute() else base / path
-        path = path.resolve()
-        if path not in seen:
-            seen.add(path)
-            resolved.append((kind, path))
-    return resolved
-
-
-def _adapt_payloads(payload: dict, event: str) -> list[dict]:
-    adapted = dict(payload)
-    # Existing ai-hats hooks speak the Claude PreToolUse dialect.  Re-running
-    # them during a Codex PermissionRequest must not make them fall back to the
-    # provider-agnostic exit-2 dialect merely because the event name differs.
-    if event == "PermissionRequest":
-        adapted["hook_event_name"] = "PreToolUse"
-    if str(payload.get("tool_name", "")) != "apply_patch":
-        return [adapted]
-    tool_input = payload.get("tool_input")
-    command = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
-    targets = _patch_targets(str(command), str(payload.get("cwd", "")))
-    if not targets:
-        return [adapted]
-    many = len(targets) > 1
-    result: list[dict] = []
-    for kind, path in targets:
-        one = dict(adapted)
-        one["tool_name"] = "MultiEdit" if many else ("Write" if kind == "Add" else "Edit")
-        one["tool_input"] = {
-            **(tool_input if isinstance(tool_input, dict) else {}),
-            "file_path": str(path),
-            "path": str(path),
-        }
-        result.append(one)
-    return result
 
 
 def _kill_group(running: subprocess.Popen) -> None:
@@ -257,13 +198,15 @@ def dispatch_hook(*, stdin=None) -> int:
     contexts: list[str] = []
     post_block: _HookResult | None = None
     for entry in entries:
-        if not isinstance(entry, dict) or not _matches(str(entry.get("matcher", "")), tool_name):
+        if not isinstance(entry, dict) or not matches_claude_hook(
+            str(entry.get("matcher", "")), tool_name
+        ):
             continue
         command = entry.get("command")
         if not isinstance(command, str) or not command:
             _emit_deny(event, f"malformed hook entry: {entry.get('tag', '<untagged>')}")
             return 0
-        for adapted in _adapt_payloads(payload, event):
+        for adapted in to_claude_hook_payloads(payload, event):
             result = _run(command, adapted)
             if result.decision == "deny":
                 if event == "PostToolUse":
