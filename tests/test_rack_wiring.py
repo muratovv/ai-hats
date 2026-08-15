@@ -462,3 +462,32 @@ def test_plan_to_execute_is_refused_when_nobody_answered(project, monkeypatch):
     assert exc_info.value.subscriber == "consent"
     assert kernel.get("T-1").state == "plan"
     assert not WorktreeManager.branch_exists(project, "task/t-1")
+
+
+def test_a_backlog_nobody_owns_is_asked_nothing(project, tmp_path, monkeypatch):
+    """The HATS-1538 leak, closed on the consent half of the same row.
+
+    `consent:` and `run:` live on ONE row of `composition.apps`, so they must
+    have one scope. `AiHatsCheckPort` already refuses to fire a gate on a
+    backlog nobody owns; consent resolved from the cwd's project instead, which
+    is the shape that turned master red — this repo's own rack tests build a
+    scratch `--tasks-dir` and would each have been stopped for want of a click.
+    """  # comment-length: allow — the leak and why the two halves share a scope
+    _be_session(monkeypatch, "sess-foreign", project, role="assistant")
+    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
+    scratch = tmp_path / "scratch" / "tasks"
+    scratch.mkdir(parents=True)
+
+    kernel = build_rack_kernel(
+        project,
+        backlog_owner=None,
+        tasks_dir=scratch,
+        state_md_path=scratch.parent / "STATE.md",
+        prefix="T",
+    )
+    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="someone else's")
+    kernel.transition("T-1", "review", actor="test", caller_cwd=project, force=True, reason="park")
+
+    kernel.transition("T-1", "done", actor="test", caller_cwd=project)
+
+    assert kernel.get("T-1").state == "done"

@@ -473,8 +473,15 @@ class ConsentExtension:
     name = "consent"
     PHASE = Phase.IN_LOCK
 
-    def __init__(self, project_dir: Path, backlog: tuple[str, ...], topology, *, priority=11):
-        self._project_dir = project_dir
+    def __init__(
+        self, backlog_owner: Path | None, backlog: tuple[str, ...], topology, *, priority=11
+    ):
+        #: The backlog's OWN project, or ``None`` where nobody owns it. Not the
+        #: cwd's project as a fallback: a role composed here declares consent for
+        #: the backlog it owns, and reading it onto a foreign one is the leak
+        #: HATS-1538 turned master red with — the same one `AiHatsCheckPort`
+        #: closes on the gate half of the very same row (HATS-1682).
+        self._backlog_owner = backlog_owner
         self._backlog = backlog
         self._topology = topology
         self._priority = priority
@@ -489,8 +496,9 @@ class ConsentExtension:
     def _points(self) -> frozenset[str]:
         if self._declared is None:
             declared: set[str] = set()
-            for path in self._backlog:
-                declared |= resolve_consent_points(self._project_dir, "rack", path=(path,))
+            if self._backlog_owner is not None:
+                for path in self._backlog:
+                    declared |= resolve_consent_points(self._backlog_owner, "rack", path=(path,))
             self._declared = frozenset(declared)
         return self._declared
 
@@ -639,7 +647,7 @@ def build_rack_kernel(
     # spent only on a transition that actually happened.
     subscribers.append(
         ConsentExtension(
-            backlog_owner or project_dir,
+            backlog_owner,
             tuple(dict.fromkeys((defn.name, defn.cli_alias or defn.name))),
             topology,
         )
