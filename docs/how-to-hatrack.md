@@ -193,6 +193,15 @@ no runtime hooks — consent comes from the environment that launches the sessio
 export AI_HATS_CONSENT_ACK=1
 ```
 
+**One flag covers the whole move.** On `review → done` that means the FSM edge
+*and* the worktree merge inside its teardown: the merge reads the same consent
+the edge did, so the headless road no longer needs `AI_HATS_MERGE_ACK` beside
+it. Legitimate is not the same as quiet — every gate this flag opens writes a
+`hatch` line to `<git-common-dir>/ai-hats/bypasses.jsonl`, and the two inside
+the transition (the edge gate and the teardown merge) also leave a work-log note
+saying the move closed with no question asked. On a hookless surface that record
+is the only trace there is.
+
 (`AI_HATS_PLAN_ACK=1` still answers `plan → execute` alone, for a shell that
 already exports it.)
 
@@ -226,6 +235,11 @@ rack transition HATS-NNN --state done --force \
 
 Reserve it for `brainstorm` / `plan` cards the full lifecycle would just
 bookkeep. From `execute` onward, walk the states normally.
+
+`--force` does **not** relax consent. Consent is a property of the move, not of
+the command — `consent | op --force` — so nothing you add to the command line
+switches the question off, and there is no set of "flags we do not ask on" left
+to join. The recipe still works; it asks once (HATS-1682).
 
 ### d) File a HYP from a session
 

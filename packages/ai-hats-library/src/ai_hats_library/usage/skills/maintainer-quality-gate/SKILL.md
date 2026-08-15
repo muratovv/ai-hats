@@ -64,6 +64,18 @@ breaks the nesting.
 library file that restated project content drifted from it within days
 (ADR-0023 D7).
 
+**Neither card gate runs the e2e tier, and a green one does not claim it did.**
+In this repo `done-gate` is `<lint tier> unit integration merge-smoke`: the
+`integration` stage is `pytest --ignore=tests/e2e`, and the only thing reaching
+`tests/e2e/` is `merge-smoke`, the curated `-m smoke` subset. The full tier
+(`(integration or smoke)` across `tests/e2e/` + `tests/smoke/`, ~27 min) belongs
+to the **push** gate alone. So "`make done-gate` is green" answers a narrower
+question than "the e2e tier is green" — a card whose change touches that tier
+runs `pytest -m integration tests/e2e/` on its own and says so. Ask
+`scripts/ci-local.sh --stages done-gate` rather than assuming; a card was sent
+to review with a red e2e test behind a green marker for exactly this reason
+(HATS-1682).
+
 ## The two card gates (HATS-1137, HATS-1614)
 
 ### Who runs what, and when

@@ -280,10 +280,10 @@ def _merge_consent(branch: str) -> str:
     """Which channel carries the supervisor's consent for THIS merge, or ``""``.
 
     The two channels `wt_effects._merge_consent` reads on the FSM road. The
-    guard hatches on ``CONSENT_ACK`` here too, so reading only the ticket left
-    `AI_HATS_CONSENT_ACK=1 ai-hats wt merge` with no question AND a refusal —
-    HATS-1682 B1, in the mirror. Peek, never spend: a merge that then refuses
-    for drift gives the click back.
+    guard hatches on ``CONSENT_ACK`` here too, so reading only the ticket left a
+    session that exported it with no question AND a refusal — HATS-1682 B1, in
+    the mirror. Peek, never spend: a merge that then refuses for drift gives the
+    click back.
     """
     from ai_hats_library.hooks import consent_ticket
 

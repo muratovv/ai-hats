@@ -107,6 +107,11 @@ terminal state; `--force` needs a `--reason` (journaled):
 rack transition PROJ-042 --state done --force --reason "shipped on master"
 ```
 
+`--force` relaxes the FSM **arrow**, never consent — `consent | op --force`.
+Nothing you add to the command line switches the supervisor's question off, so
+run the recipe bare and let the question happen; it still works, it just asks
+once.
+
 ### Hypotheses & proposals — the `rack hyp` / `rack proposal` groups
 
 Migrated HYP/PROP catalogs mount as sibling backlogs; `rack` grows a group per

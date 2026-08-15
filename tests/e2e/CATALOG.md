@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**244 of 244 files catalogued — 252 flows.**
+**246 of 246 files catalogued — 254 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -617,19 +617,35 @@ as a claim to check, not as evidence.
 - **expect** — the Source line in status output displays "stable @ PyPI" instead of the "(unknown — direct_url.json missing)" fallback
 - **why** — standard PyPI package installations omit direct_url.json metadata, requiring package distribution fallback to identify stable releases
 
+## `test_consent_force_chain.py`
+
+*pins HATS-1682*
+
+- **flow** — an agent taking the documented force-close, and the headless road home
+- **cmds**
+
+  ```console
+  rack transition SBX-001 --state done --force --reason close
+  AI_HATS_CONSENT_ACK=1 rack transition SBX-001 done
+  ```
+
+- **expect** — the composed PreToolUse chain ASKS on the forced close, the engine refuses it until the answer arrives, and one env flag — with no AI_HATS_MERGE_ACK anywhere — carries `review → done` through the merge
+- **why** — `--force` applies to the OPERATION. Consent is not a property of the command, so nothing ADDED to a command can switch it off: `consent | op --force`. In the incident that opened this card, that exact spelling merged a branch into master with no question at all.
+
 ## `test_consent_self_grant_chain.py`
 
-*pins HATS-1639*
+*pins HATS-1639, HATS-1682*
 
-- **flow** — an agent granting itself supervisor consent inline, in the same Bash call
+- **flow** — an agent obtaining consent without the supervisor — inline in its own Bash call, or by typing a shape the guard goes quiet on
 - **cmds**
 
   ```console
   AI_HATS_PLAN_ACK=1 rack transition HATS-1 execute
+  rack transition SBX-1 done --log "ask rack later"
   ```
 
-- **expect** — the composed PreToolUse chain refuses it; consent set in the ENVIRONMENT still works, and an unprefixed transition still passes
-- **why** — rack reads these two acks itself, so unlike hook-read AI_HATS_SHARED_STATE_ACK an inline prefix reaches them and the agent approves its own transition
+- **expect** — the composed PreToolUse chain refuses both; consent set in the ENVIRONMENT still works, and an unprefixed transition still passes
+- **why** — rack reads these acks itself, so an inline prefix reaches them; and on a point the role DECLARED, silence is what the permission flow reads as allow — the same grant by another road (HATS-1682 A4)
 
 ## `test_customize_parallel_writes.py`
 
@@ -3465,6 +3481,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the task stays in review and the worktree branch survives for resolution
 - **why** — a task must not reach done when the merge it needs cannot be performed
+
+## `test_wt_merge_consent_chain.py`
+
+*pins HATS-1682*
+
+- **flow** — an agent merging its worktree straight into master, asked about in chat
+- **cmds**
+
+  ```console
+  ai-hats wt merge [task/one-click]
+  ```
+
+- **expect** — the composed chain answers `ask` with a one-shot ticket, and the command it approved — run verbatim through a real shell, with no AI_HATS_MERGE_ACK anywhere in the environment — lands the merge, once
+- **why** — the click here was inert: the guard minted under the branch it saw while the CLI looked for a card, so the merge still demanded the env ack
 
 ## `test_wt_merge_consent_gate.py`
 

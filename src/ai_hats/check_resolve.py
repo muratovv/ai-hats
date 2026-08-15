@@ -26,12 +26,12 @@ if TYPE_CHECKING:  # pragma: no cover — typing only
     from .session_identity import SessionIdentity
 
 
-#: The declaration keys in every spelling the YAML parser accepts — ``apps``,
-#: ``consent`` (HATS-1682) and the retired ``checks`` alike, so a config left on
-#: the old one still composes far enough to hear why it is refused (HATS-1545
-#: R11). Anchored to a line start so ``prechecks:`` is not one. A scan still,
-#: not a parse: a false positive costs one compose, a false negative disarms a
-#: gate.
+#: ``apps`` in every spelling the YAML parser accepts, plus the retired
+#: ``checks`` so a config left on it still composes far enough to hear why it is
+#: refused (HATS-1545 R11). ``consent`` is vestigial: it is a key ON an ``apps``
+#: row (HATS-1682), and :func:`declares_checks`'s prefilter admits no other
+#: spelling. Line-anchored so ``prechecks:`` is not one; a scan, not a parse —
+#: a false positive costs one compose, a false negative disarms a gate.
 _CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks|consent)['"]?[ \t]*:""", re.MULTILINE)
 
 
@@ -361,7 +361,7 @@ def declares_checks(project_dir: Path) -> bool:
                 continue
             for config in _component_configs(base):
                 data = config.read_bytes()
-                # memchr throws out the files with no `apps` at all before the regex
+                # memchr throws out files carrying neither word before the regex
                 if (b"apps" in data or b"checks" in data) and _CHECKS_KEY.search(data):
                     return True
     return False
