@@ -388,9 +388,14 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
     assert out["updatedInput"]["CommandLine"].startswith("AI_HATS_CONSENT_TICKET=")
 
 
-def test_a_store_that_cannot_mint_records_why_the_question_vanished(tmp_path):
+def test_a_store_that_cannot_mint_refuses_and_records_why(tmp_path):
     """The doctrine of HATS-1373/1407: a gate that stopped acting looks exactly
-    like a gate with nothing to do — unless it says so."""
+    like a gate with nothing to do — unless it says so.
+
+    Since HATS-1682 it says so twice: to the journal, and to the agent, whose
+    command is refused. The point was DECLARED, and letting a declared point
+    fall back to the ordinary permission flow is how it simply ran.
+    """
     subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
         ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
     )
@@ -398,7 +403,7 @@ def test_a_store_that_cannot_mint_records_why_the_question_vanished(tmp_path):
     (tmp_path / ".git" / "ai-hats" / "consent").write_text("not a directory", encoding="utf-8")
     _plant_session(tmp_path, "execute")
 
-    assert _decide("rack transition HATS-1 execute", cwd=tmp_path) == {}
+    assert "ticket store" in _denied("rack transition HATS-1 execute", cwd=tmp_path)
     journal = tmp_path / ".git" / "ai-hats" / "bypasses.jsonl"
     assert journal.is_file(), "the question vanished without a trace"
     assert "HATS-1" in journal.read_text(encoding="utf-8")

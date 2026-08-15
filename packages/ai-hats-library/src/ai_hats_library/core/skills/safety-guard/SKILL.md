@@ -38,15 +38,18 @@ coarser one silently wins (HATS-1253).
 
 On a few moves the guard turns your command into a question for the supervisor
 instead of running it. Which moves those are is the role's declaration, not
-yours to know here. Three things follow for you:
+yours to know here. Three things you can do, and nothing else:
 
 - **Run the command bare and let the question happen.** Do not prefix it with a
   consent flag or a ticket — the guard mints those, and one you typed is refused
   as a self-grant.
-- **The question does not expire.** Do not re-run, re-ask or nudge; the
-  supervisor may take as long as reading needs.
-- **A refusal names the move it is about.** Read it before retrying — retrying
-  the same command unchanged is the one thing that cannot help.
+- **Present what you are asking approval for, and stop.** While a question is
+  waiting, do not nudge or re-ask: it does not expire, and the supervisor may
+  take as long as reading needs.
+- **If the engine refused for want of an answer, re-run that exact command
+  unchanged.** Each run raises a fresh question, so this is the one thing that
+  helps. Mutating the command does not: the answer binds to the exact call the
+  supervisor was shown, and a consent flag you add yourself is a self-grant.
 
 ## The tracker backlog is `rack`-only
 

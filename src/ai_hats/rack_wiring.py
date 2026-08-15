@@ -495,7 +495,12 @@ class ConsentExtension:
 
 
 def _consent_refusal(task_id: str, from_state: str, to_state: str) -> str:
-    """Why the move stopped, and what the reader can actually do about it."""
+    """Why the move stopped, and what the reader can actually do about it.
+
+    Step 3 is addressed to whoever LAUNCHES the session, not to the agent
+    reading this. Spelled as a command the agent could paste, it is one line
+    away from being no refusal at all (HATS-1682 C4).
+    """
     return (
         f"Transition '{from_state} -> {to_state}' for '{task_id}' requires supervisor "
         "approval, and none has arrived.\n"
@@ -503,10 +508,12 @@ def _consent_refusal(task_id: str, from_state: str, to_state: str) -> str:
         "2. Then re-run this exact command, with no consent prefix of your own: the\n"
         "   guard turns it into a one-click question in chat, and the supervisor's\n"
         "   answer is what carries consent. The question does not expire.\n"
-        "3. Where there is nobody to ask — headless, cron, a surface without runtime\n"
-        "   hooks — consent comes from the environment instead. One line, because a\n"
-        "   lone export dies with the shell that ran it (HATS-1654):\n"
-        f"     export {CONSENT_ACK}=1 && rack transition {task_id} {to_state}"
+        "3. Where there is nobody to ask — headless, cron, a surface with no hooks —\n"
+        f"   {CONSENT_ACK} stands in, and only the environment that LAUNCHES the\n"
+        "   session may set it (one line, since a lone export dies with its shell):\n"
+        f"     export {CONSENT_ACK}=1 && ai-hats -r <role>\n"
+        "   Setting it from inside this session is a self-grant and is refused. If\n"
+        "   that is what the move needs, say so in chat and stop."
     )
 
 
