@@ -34,6 +34,17 @@ from .trace import ENV_SESSION_ID, ENV_TRACE_LOG_PATH, TraceTag
 # first versioned surface (mirrors usage/v1). Bumped by the migration seam.
 AUDIT_SCHEMA_VERSION = "audit/v1"
 SESSION_DIR_MODE = 0o700
+SESSION_FILE_MODE = 0o600
+
+
+def _private_opener(path: str, flags: int) -> int:
+    fd = os.open(path, flags, SESSION_FILE_MODE)
+    try:
+        os.fchmod(fd, SESSION_FILE_MODE)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 class SessionManager:
@@ -197,6 +208,15 @@ class Session:
             return False
         return turns > 0 and tool_calls > 0
 
+    def write_artifact_text(self, path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        """Atomically replace a session artifact with private permissions."""
+        atomic_write_text(path, text, encoding=encoding, mode=SESSION_FILE_MODE)
+
+    def append_artifact_text(self, path: Path, text: str, *, encoding: str = "utf-8") -> None:
+        """Append text after tightening a session artifact to private permissions."""
+        with open(path, "a", encoding=encoding, opener=_private_opener) as artifact:
+            artifact.write(text)
+
     def record_provider_session_id(self, provider_session_id: str) -> None:
         """Persist the transcript link at launch, while the session is still alive.
 
@@ -210,14 +230,13 @@ class Session:
             return
         metrics = _load_metrics_safe(self) or {}
         metrics["claude_session_id"] = provider_session_id
-        atomic_write_text(self.metrics_path, json.dumps(metrics, indent=2))
+        self.write_artifact_text(self.metrics_path, json.dumps(metrics, indent=2))
 
     def log_trace(self, tag: str, message: str) -> None:
         """Append a trace entry."""
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
         entry = f"{ts} {tag} {message}\n"
-        with open(self.trace_path, "a") as f:
-            f.write(entry)
+        self.append_artifact_text(self.trace_path, entry)
 
     # HATS-948: semantic tag methods keep `TraceTag` private to observe — runtime
     # bricks write traces through the injected session, importing no observe symbol.
@@ -271,7 +290,7 @@ class Session:
         if composition:
             header += self._render_composition_md(composition) + "\n"
         header += "## Events\n\n"
-        self.audit_path.write_text(header)
+        self.write_artifact_text(self.audit_path, header)
         self._write_metrics_stub(role=role, provider=provider, model=model)
 
     def _write_metrics_stub(self, *, role: str, provider: str, model: str) -> None:
@@ -294,7 +313,7 @@ class Session:
             stub["model"] = model
         if self._composition is not None:
             stub["composition"] = self._composition
-        atomic_write_text(self.metrics_path, json.dumps(stub, indent=2))
+        self.write_artifact_text(self.metrics_path, json.dumps(stub, indent=2))
 
     @staticmethod
     def _render_composition_md(composition: dict) -> str:
@@ -326,8 +345,7 @@ class Session:
     def append_audit(self, event: str) -> None:
         """Append an event to the incremental audit."""
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        with open(self.audit_path, "a") as f:
-            f.write(f"- `{ts}` {event}\n")
+        self.append_artifact_text(self.audit_path, f"- `{ts}` {event}\n")
 
     def finalize_audit(self, metrics: dict) -> None:
         """Finalize audit with summary metrics.
@@ -336,10 +354,10 @@ class Session:
         embedded into metrics.json as the ``composition`` field so
         post-session reviewers can read it without parsing markdown.
         """
-        with open(self.audit_path, "a") as f:
-            f.write("\n## Metrics\n\n")
-            for k, v in metrics.items():
-                f.write(f"- **{k}**: {v}\n")
+        summary = "\n## Metrics\n\n" + "".join(
+            f"- **{key}**: {value}\n" for key, value in metrics.items()
+        )
+        self.append_artifact_text(self.audit_path, summary)
 
         # Save metrics as JSON too — fold in the composition snapshot
         # if init_audit was called with one.
@@ -349,15 +367,15 @@ class Session:
         composition = getattr(self, "_composition", None)
         if composition is not None:
             out["composition"] = composition
-        atomic_write_text(self.metrics_path, json.dumps(out, indent=2))
+        self.write_artifact_text(self.metrics_path, json.dumps(out, indent=2))
 
     def save_meta_prompt(self, prompt: str) -> None:
         """Save the meta-prompt used for sub-agent execution."""
-        self.meta_prompt_path.write_text(prompt)
+        self.write_artifact_text(self.meta_prompt_path, prompt)
 
     def save_role_materialization(self, report_dict: dict) -> None:
         """Save the launch-time role materialization report (HATS-1216)."""
-        atomic_write_text(
+        self.write_artifact_text(
             self.role_materialization_path,
             json.dumps(report_dict, indent=2) + "\n",
         )
