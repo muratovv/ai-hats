@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- New session directories use mode `0700`, and sensitive session artifacts use
+  mode `0600` across creation, append, copy, and atomic-replacement paths. The
+  invariant is provider-neutral and does not rewrite existing sessions.
+  (HATS-1688)
+
 ## [0.6.0]
 
 `session_env(session_id, trace_path)` — the session-scoped environment variables

@@ -26,6 +26,15 @@ filesystem primitives + the migration seam).
   JSONL + trace-chrome fallback) is one implementation. A new surface (Gemini,
   or a future CLI) plugs in its own parser — the writer never changes.
 
+## Session privacy
+
+New session directories are created with mode `0700`. Sensitive artifacts are
+created and rewritten with mode `0600`, including prompts, role materialization,
+traces, audits, metrics, transcripts, reasoning, usage, and raw PTY captures.
+These permissions are enforced independently of the caller's umask and apply to
+every provider that uses the observe session API. Existing session trees are not
+migrated or rewritten.
+
 ## Extending to a new surface
 
 The parser is carried by the session's provider, not a central registry: a
