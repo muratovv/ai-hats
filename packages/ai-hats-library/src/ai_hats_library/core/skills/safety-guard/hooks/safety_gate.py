@@ -412,9 +412,6 @@ RACK_VALUE_FLAGS = frozenset(
     }
 )  # fmt: skip
 
-#: `--force` skips the rack's consent gate outright, so a prompt would be theatre.
-RACK_UNGATED_FLAGS = frozenset({"--force"})
-
 #: Read-only verbs: they move nothing, so a prompt on them is pure friction.
 RACK_READ_VERBS = frozenset({"context", "ls"})
 
@@ -445,18 +442,23 @@ def transition_target(args):
     Which target NEEDS consent is not decided here — that is the role's
     declaration (HATS-1682). This only reads the move out of the command line.
 
+    NO flag turns the reading off. There used to be a `RACK_UNGATED_FLAGS` set
+    holding `--force`, and the whole set is gone rather than that one entry:
+    consent is not a property of the command, so nothing ADDED to the command
+    can remove it — `consent | op --force`. A list of flags we do not ask on
+    contradicts that as a category, and the next flag added would join it
+    silently. `--force` now reads as any other unrecognised flag.
+
     One pass, because options come before the positional id as readily as after
     it (`rack transition --tasks-dir /t X execute`) — and the refusal tells the
     agent to re-run its command, so a shape that goes quiet makes it a liar.
-    """
+    """  # comment-length: allow — why the exemption set is gone, not shortened
     rest = args[1:]
     if not rest or rest[0] != "transition":
         return "", ""
     task_id, target, i = "", "", 1
     while i < len(rest):
         tok = rest[i]
-        if tok in RACK_UNGATED_FLAGS:
-            return "", ""  # --force skips the rack's own gate; a prompt would be theatre
         if tok in RACK_VALUE_FLAGS:
             if tok == "--state" and i + 1 < len(rest):
                 target = rest[i + 1]

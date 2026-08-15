@@ -10,6 +10,7 @@ without a handler is a pure FSM (no worktree).
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,23 +20,39 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _supervisor_approved(task_id: str) -> bool:
-    """Did the supervisor approve THIS command, ticket in hand (HATS-1682)?
+#: Point-agnostic pre-approval for a declared consent point (HATS-1682). The
+#: literal is re-spelled here rather than imported from ``rack_wiring``, which
+#: imports THIS module — the constant may not travel back up that edge.
+CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 
-    The merge inside `→ done` is part of the move the supervisor was asked
-    about, so a click there has to be enough — otherwise the guard asks and the
-    engine refuses anyway for want of an env flag. Peek, never spend: the
-    post-lock spender owns that, so a rolled-back move gives the click back.
-    """
+
+def _merge_consent(task_id: str) -> str:
+    """Which channel carries the supervisor's consent for THIS merge, or ``""``.
+
+    Two channels, because the move has two surfaces. A one-use ticket is the
+    answer to a question actually asked — the merge inside `→ done` is part of
+    the move the supervisor approved, so the click has to reach it. Where no
+    question CAN be asked (headless, cron, a hookless surface) ``CONSENT_ACK``
+    stands in; without that half the headless road needed both it and
+    ``AI_HATS_MERGE_ACK``, and no text said so (HATS-1682 B1).
+
+    Peek, never spend: the post-lock spender owns that, so a rolled-back move
+    gives the click back.
+    """  # comment-length: allow — the two channels and why neither is enough alone
     import sys
 
     from ai_hats_library.hooks import consent_ticket
 
     try:
-        return consent_ticket.peek(task_id, argv=sys.argv[1:])
+        if consent_ticket.peek(task_id, argv=sys.argv[1:]):
+            return "consent ticket"
     except Exception:
+        # Unreadable store -> no consent established on THIS channel; the env
+        # one below still stands, as does the wt engine's own ack behind it.
         logger.warning("consent-ticket peek before merge failed", exc_info=True)
-        return False  # unreadable store -> no consent established; the ack still stands
+    if os.environ.get(CONSENT_ACK) == "1":
+        return CONSENT_ACK
+    return ""
 
 
 def collect_carry_for_project(
@@ -170,8 +187,9 @@ class WtWorktreeEffects:
     ) -> str | None:
         """Merge (``merge=True``) or discard the task's worktree.
 
-        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5),
-        or None when no worktree action actually happened. Merge failures
+        Returns "merged" / "discarded" for the card's work_log (HATS-866/AC5) —
+        "merged" carrying the env channel's name when consent came from there
+        (HATS-1682) — or None when no worktree action happened. Merge failures
         re-raise so the transition aborts fail-loud (HATS-481); ``force``
         bypasses only the clean-tree merge gate (HATS-596); discard failures
         on an admin close are swallowed. ``outer_deadline`` is the caller's
@@ -223,11 +241,22 @@ class WtWorktreeEffects:
             if merge:
                 # HATS-596: force reaches merge guards. HATS-1603: so does the
                 # caller's ceiling, or wt:pre-merge outlives the rack lock.
+                channel = _merge_consent(task_id)
                 active.merge(
                     force=force,
                     outer_deadline=outer_deadline,
-                    consent=_supervisor_approved(task_id),
+                    consent=bool(channel),
                 )
+                if channel == CONSENT_ACK:
+                    # The env channel is allowed, but never silent (HATS-1682 B2).
+                    # Imported at call time, not at module import: `rack_wiring`
+                    # imports THIS module, and one wording for both records beats
+                    # two copies that can drift.
+                    from .rack_wiring import env_consent_note
+
+                    return "merged — " + env_consent_note(
+                        channel, "worktree merge", hook="wt_effects.py"
+                    )
                 return "merged"
             # failed → intentional discard; same ceiling as merge (HATS-1603)
             active.discard(force=True, outer_deadline=outer_deadline)

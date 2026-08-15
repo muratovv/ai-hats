@@ -463,8 +463,11 @@ def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
         'rack transition HATS-1 --log "note"',
         # The op flag eats its value, so a message SAYING execute is still a note.
         'rack transition HATS-1 --log "execute"',
-        # --force skips the consent gate inside rack; asking would be theatre.
-        'rack transition HATS-1 execute --force --reason "manual"',
+        # `… execute --force --reason "manual"` left this list at HATS-1682: it
+        # asserted that a flag on the command line switches the question off,
+        # and consent is not a property of the command — `consent | op --force`.
+        # Its replacement is the parametrized principle in
+        # tests/e2e/test_consent_force_chain.py, driven through the whole chain.
     ],
 )
 def test_the_neighbouring_rack_forms_never_prompt(command, repo):

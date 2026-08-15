@@ -444,14 +444,30 @@ CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 LEGACY_ACK_BY_STATE = {"execute": "AI_HATS_PLAN_ACK"}
 
 
+def env_consent_note(flag: str, subject: str, *, hook: str) -> str:
+    """Record a consent that arrived on the env channel, and name it out loud.
+
+    The channel is legitimate where no question can be asked — headless, cron,
+    a surface with no runtime hooks — but on exactly those surfaces the journal
+    is the ONLY trace, and it used to write none: afterwards a consented
+    `→ done` was indistinguishable from an unconsented one (HATS-1682 B2).
+    Same `journal_bypass("hatch", flag, …)` shape the PreToolUse guard writes,
+    so the two records of one hatch agree. Returns the work-log line.
+    """  # comment-length: allow — why the env path is loud, not silent
+    from ai_hats_library.hooks.bypass_journal import journal_bypass
+
+    journal_bypass("hatch", flag, hook=hook, cmd=" ".join(sys.argv))
+    return f"{subject}: consent from {flag}=1 (env channel — no question was asked)"
+
+
 class ConsentExtension:
     """Refuse an edge the ROLE declared consent on, until the answer arrives.
 
-    In-lock and in-process, which is what lets it see the three shapes nobody
-    can be asked about — ``--force``, an epic, and the epic automation — and the
-    invocation the ticket is bound to (HATS-1682). Subscribed to every edge and
-    filtered on dispatch: resolving the declaration needs a composition, and a
-    kernel is built for `rack ls` as readily as for a transition.
+    In-lock and in-process, which is what lets it see the two shapes nobody can
+    be asked about — an epic, and the epic automation — and the invocation the
+    ticket is bound to (HATS-1682). Subscribed to every edge and filtered on
+    dispatch: resolving the declaration needs a composition, and a kernel is
+    built for `rack ls` as readily as for a transition.
     """
 
     name = "consent"
@@ -481,14 +497,19 @@ class ConsentExtension:
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if not isinstance(ctx.event, EdgeEvent):
             return None
-        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic or ctx.force:
-            return None  # epics, automation and forced overrides answer to nobody
+        # Epics and the epic automation stay exempt, and `ctx.force` does NOT:
+        # the first two are properties of the CARD and of the ACTOR, and there
+        # is nobody to ask; `--force` is an addition to the command, and consent
+        # is not a property of the command — `consent | op --force` (HATS-1682).
+        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
+            return None
         if ctx.event.key not in self._points():
             return None
         to_state = ctx.event.to_state
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_STATE.get(to_state, "")):
             if flag and os.environ.get(flag) == "1":
-                return None
+                note = env_consent_note(flag, f"→ {to_state}", hook="rack_wiring.py")
+                return Delta(work_log=(note,))
         if consent_ticket.peek(ctx.task.id, argv=sys.argv[1:]):
             return Delta(work_log=(f"→ {to_state}: supervisor consent ticket accepted",))
         raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state))
