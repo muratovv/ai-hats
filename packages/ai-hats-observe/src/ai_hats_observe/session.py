@@ -221,6 +221,9 @@ class Session:
 
     def copy_artifact(self, source: Path, destination: Path) -> None:
         """Stream a file into a private session artifact."""
+        if destination.exists() and source.samefile(destination):
+            destination.chmod(SESSION_FILE_MODE)
+            return
         with (
             source.open("rb") as source_stream,
             open(destination, "wb", opener=_private_opener) as destination_stream,

@@ -117,6 +117,20 @@ def test_preserved_transcript_is_streamed_to_private_artifact(tmp_path: Path) ->
     assert _mode(destination) == 0o600
 
 
+def test_preserving_transcript_already_in_session_does_not_truncate_it(tmp_path: Path) -> None:
+    session = SessionManager(runs_dir=tmp_path / "runs").create_session()
+    destination = session.session_dir / TRANSCRIPT_JSONL
+    destination.write_text('{"type": "message"}\n')
+    destination.chmod(0o644)
+
+    with _umask(0o022):
+        preserved = AuditWriter._preserve_transcript(session, destination)
+
+    assert preserved is True
+    assert destination.read_text() == '{"type": "message"}\n'
+    assert _mode(destination) == 0o600
+
+
 def test_merged_transcript_is_written_as_private_artifact(tmp_path: Path) -> None:
     session = SessionManager(runs_dir=tmp_path / "runs").create_session()
     first = tmp_path / "first.jsonl"
