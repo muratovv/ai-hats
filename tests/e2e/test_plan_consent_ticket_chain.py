@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from _helpers.git import git as _git
-from _helpers.hook_chain import build_session_settings, run_chain
+from _helpers.hook_chain import Verdict, build_session_settings, run_approved, run_chain
 
 pytestmark = pytest.mark.integration
 
@@ -100,11 +100,28 @@ def _ticket_from(command: str) -> str:
     return command.split(f"{TICKET_ENV}=", 1)[1].split(" ", 1)[0]
 
 
-def _ask_for(project, settings, env, task_id: str) -> str:
-    verdict = run_chain(project, f"rack transition {task_id} execute", settings=settings, env=env)
+def _ask_for(project, settings, env, task_id: str, command: str = "") -> Verdict:
+    """The chain's `ask` for ``command`` (default: the plain `→ execute` move)."""
+    verdict = run_chain(
+        project, command or f"rack transition {task_id} execute", settings=settings, env=env
+    )
     assert verdict.decision == "ask", f"the chain did not ask: {verdict}"
     assert verdict.updated_input, f"the ask carried no rewritten command: {verdict}"
-    return _ticket_from(verdict.updated_input["command"])
+    return verdict
+
+
+def _state_of(project, env, task_id: str) -> str:
+    """Where the card actually sits — the only proof a shell run really moved it.
+
+    A rewritten command can carry a redirect or a pipe, so its exit code belongs
+    to the tail, not to `rack`. The card is what settles it (HATS-1682 T2).
+    """
+    seen = _rack(project, "context", task_id, env=env)
+    assert seen.returncode == 0, seen.stderr
+    for line in seen.stdout.splitlines():
+        if line.strip().startswith("state:"):
+            return line.split(":", 1)[1].strip()
+    raise AssertionError(f"`rack context {task_id}` named no state:\n{seen.stdout}")
 
 
 def test_the_chain_turns_plan_to_execute_into_a_question(project, settings, env, planned):
@@ -118,13 +135,15 @@ def test_the_chain_turns_plan_to_execute_into_a_question(project, settings, env,
 
 
 def test_the_ticket_the_chain_minted_is_what_moves_the_card(project, settings, env, planned):
+    """Run what was approved, not a reconstruction of it (HATS-1682 T2)."""
     task_id = planned("ticket probe")
-    nonce = _ask_for(project, settings, env, task_id)
+    verdict = _ask_for(project, settings, env, task_id)
 
-    moved = _rack(project, "transition", task_id, "execute", env={**env, TICKET_ENV: nonce})
+    moved = run_approved(project, verdict, env=env)
 
-    assert moved.returncode == 0, moved.stderr
-    assert "→ execute" in moved.stdout, moved.stdout
+    assert moved.returncode == 0, moved
+    assert "→ execute" in moved.stdout, moved
+    assert _state_of(project, env, task_id) == "execute"
 
 
 def test_the_ticket_opens_the_command_it_was_asked_about_and_no_other(
@@ -137,64 +156,67 @@ def test_the_ticket_opens_the_command_it_was_asked_about_and_no_other(
     call inside its window (HATS-1642, live probe).
     """
     task_id = planned("command binding")
-    nonce = _ask_for(project, settings, env, task_id)
-    with_ticket = {**env, TICKET_ENV: nonce}
+    verdict = _ask_for(project, settings, env, task_id)
+    nonce = _ticket_from(verdict.updated_input["command"])
 
-    other = _rack(project, "transition", task_id, "execute", "--json", env=with_ticket)
+    # A DIFFERENT argv, same nonce — the one shape `run_approved` cannot spell,
+    # because the guard never approved this call.
+    other = _rack(
+        project, "transition", task_id, "execute", "--json", env={**env, TICKET_ENV: nonce}
+    )
     assert other.returncode != 0, f"a ticket for another call passed:\n{other.stdout}"
     assert "supervisor approval" in other.stdout + other.stderr
 
-    asked = _rack(project, "transition", task_id, "execute", env=with_ticket)
-    assert asked.returncode == 0, f"the call it WAS asked about was refused:\n{asked.stderr}"
+    asked = run_approved(project, verdict, env=env)
+    assert asked.returncode == 0, f"the call it WAS asked about was refused:\n{asked}"
 
 
 def test_a_transition_that_fails_downstream_gives_the_click_back(project, settings, env, planned):
     """The gate runs before ownership and the worktree, both of which can still
     abort — a ticket spent there burns a click on nothing (HATS-1642 review)."""
     task_id = planned("downstream failure")
-    nonce = _ask_for(project, settings, env, task_id)
-    with_ticket = {**env, TICKET_ENV: nonce}
+    verdict = _ask_for(project, settings, env, task_id)
     # A FILE where the worktree bookkeeping wants a directory: `→ execute` gets
     # past consent and dies further down, exactly as the ordering worry describes.
     worktrees = project / ".agent" / "ai-hats" / "sessions" / "worktrees"
     worktrees.parent.mkdir(parents=True, exist_ok=True)
     worktrees.write_text("not a directory", encoding="utf-8")
 
-    failed = _rack(project, "transition", task_id, "execute", env=with_ticket)
-    assert failed.returncode != 0, f"expected the transition to fail:\n{failed.stdout}"
+    failed = run_approved(project, verdict, env=env)
+    assert failed.returncode != 0, f"expected the transition to fail:\n{failed}"
 
     worktrees.unlink()
-    retried = _rack(project, "transition", task_id, "execute", env=with_ticket)
+    retried = run_approved(project, verdict, env=env)
 
-    assert retried.returncode == 0, f"the click was eaten by the failed attempt:\n{retried.stderr}"
+    assert retried.returncode == 0, f"the click was eaten by the failed attempt:\n{retried}"
 
 
 def test_a_spent_ticket_does_not_open_the_gate_twice(project, settings, env, planned):
     """One card, one ticket, two attempts — nothing but the ticket differs."""
     task_id = planned("replay")
-    nonce = _ask_for(project, settings, env, task_id)
-    with_ticket = {**env, TICKET_ENV: nonce}
-    assert _rack(project, "transition", task_id, "execute", env=with_ticket).returncode == 0
+    verdict = _ask_for(project, settings, env, task_id)
+    assert run_approved(project, verdict, env=env).returncode == 0
     # Park the card back in plan: the slot is free and the gate is armed again.
     assert _rack(project, "transition", task_id, "blocked", env=env).returncode == 0
     assert _rack(project, "transition", task_id, "plan", env=env).returncode == 0
 
-    replayed = _rack(project, "transition", task_id, "execute", env=with_ticket)
+    replayed = run_approved(project, verdict, env=env)
 
-    assert replayed.returncode != 0, f"a spent ticket was accepted again:\n{replayed.stdout}"
-    assert "supervisor approval" in replayed.stdout + replayed.stderr
+    assert replayed.returncode != 0, f"a spent ticket was accepted again:\n{replayed}"
+    assert "supervisor approval" in replayed.output
 
 
 def test_a_ticket_belongs_to_the_card_it_was_asked_about(project, settings, env, planned):
     asked, other = planned("asked about"), planned("not asked about")
-    nonce = _ask_for(project, settings, env, asked)
+    verdict = _ask_for(project, settings, env, asked)
+    nonce = _ticket_from(verdict.updated_input["command"])
 
     borrowed = _rack(project, "transition", other, "execute", env={**env, TICKET_ENV: nonce})
 
     assert borrowed.returncode != 0, f"another card's ticket passed:\n{borrowed.stdout}"
     # …and the refusal did not eat the consent the supervisor gave to `asked`.
-    kept = _rack(project, "transition", asked, "execute", env={**env, TICKET_ENV: nonce})
-    assert kept.returncode == 0, kept.stderr
+    kept = run_approved(project, verdict, env=env)
+    assert kept.returncode == 0, kept
 
 
 def test_an_invented_ticket_moves_nothing(project, env, planned):
@@ -289,12 +311,12 @@ def test_the_edge_into_master_refuses_without_consent_and_moves_with_it(
     assert refused.returncode != 0, f"the edge into master was not gated:\n{refused.stdout}"
     assert "requires supervisor approval" in refused.stdout + refused.stderr
 
-    verdict = run_chain(project, f"rack transition {task_id} done", settings=settings, env=env)
-    nonce = _ticket_from(verdict.updated_input["command"])
-    moved = _rack(project, "transition", task_id, "done", env={**env, TICKET_ENV: nonce})
+    verdict = _ask_for(project, settings, env, task_id, f"rack transition {task_id} done")
+    moved = run_approved(project, verdict, env=env)
 
-    assert moved.returncode == 0, f"the answered edge was still refused:\n{moved.stderr}"
-    assert "→ done" in moved.stdout, moved.stdout
+    assert moved.returncode == 0, f"the answered edge was still refused:\n{moved}"
+    assert "→ done" in moved.stdout, moved
+    assert _state_of(project, env, task_id) == "done"
 
 
 def test_the_chain_does_not_wave_through_what_it_must_not(project, settings, env):
@@ -335,16 +357,21 @@ def test_the_question_survives_the_shapes_the_agent_actually_types(
     project, settings, env, planned, prefix
 ):
     """`cd x && rack …` and `env FOO=1 rack …` are the everyday spellings; the
-    ticket must land on the rack call in each, or the rack process never sees it."""
+    ticket must land on the rack call in each, or the rack process never sees it.
+
+    Run through a real shell, because the wrapper is the whole point: `timeout`
+    and `nice` do not understand `VAR=VAL`, so a ticket placed after them exits
+    127 and moves nothing. Lifting the nonce into `env` hid that (HATS-1682 A2).
+    """
     task_id = planned("shape")
-    verdict = run_chain(
-        project, f"{prefix}rack transition {task_id} execute", settings=settings, env=env
+    verdict = _ask_for(
+        project, settings, env, task_id, f"{prefix}rack transition {task_id} execute"
     )
 
-    assert verdict.decision == "ask", f"{prefix!r} did not ask: {verdict}"
-    nonce = _ticket_from(verdict.updated_input["command"])
-    moved = _rack(project, "transition", task_id, "execute", env={**env, TICKET_ENV: nonce})
-    assert moved.returncode == 0, moved.stderr
+    moved = run_approved(project, verdict, env=env)
+
+    assert moved.returncode == 0, f"{prefix!r} approved a command the shell cannot run:\n{moved}"
+    assert _state_of(project, env, task_id) == "execute"
 
 
 @pytest.mark.parametrize(
@@ -365,11 +392,14 @@ def test_what_the_shell_eats_does_not_change_the_command_that_was_approved(
     supervisor paid for a transition that never happened (HATS-1682, live probe).
     """
     task_id = planned("shell-owned tail")
-    verdict = run_chain(
-        project, f"rack transition {task_id} execute{suffix}", settings=settings, env=env
+    verdict = _ask_for(
+        project, settings, env, task_id, f"rack transition {task_id} execute{suffix}"
     )
 
-    assert verdict.decision == "ask", f"{suffix!r} did not ask: {verdict}"
-    nonce = _ticket_from(verdict.updated_input["command"])
-    moved = _rack(project, "transition", task_id, "execute", env={**env, TICKET_ENV: nonce})
-    assert moved.returncode == 0, f"the click was spent on nothing:\n{moved.stdout}{moved.stderr}"
+    moved = run_approved(project, verdict, env=env)
+
+    # The card, not the exit code: with `| tail` or `; echo` the rc belongs to
+    # the tail, so only the card can say whether the click bought anything.
+    assert _state_of(project, env, task_id) == "execute", (
+        f"the click was spent on nothing:\n{moved}"
+    )
