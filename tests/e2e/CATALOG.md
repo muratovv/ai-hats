@@ -501,6 +501,34 @@ as a claim to check, not as evidence.
 - **expect** — the refusal exits non-zero and names "linked worktree"; the worktree survives it; HATS-1 stays in state review; sibling HATS-2 still resolves via `rack context`, both after the refusal and after the close finally issued from main
 - **why** — without the guard the close merges and `git worktree remove --force` deletes the operator's cwd — every later `rack` then mis-resolves the tracker and a sibling task reads "not found" though it is intact on disk
 
+## `test_codex_clean_root.py`
+
+*pins HATS-1531*
+
+- **flow** — a Codex HITL session starts with the real maintainer composition
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r maintainer
+  ```
+
+- **expect** — the child inherits the requested project cwd, runtime safety denies a destructive Bash payload, and shutdown leaves no Codex-owned project files
+- **why** — role delivery is insufficient if startup pollutes the repository or the surface bypasses the composed permission chain
+
+## `test_codex_provider_discovery.py`
+
+*pins HATS-1531*
+
+- **flow** — a developer lists providers with the ai-hats-codex package installed
+- **cmds**
+
+  ```console
+  ai-hats list providers
+  ```
+
+- **expect** — codex is discovered through the real package entry point alongside claude
+- **why** — registry metadata alone cannot launch a surface; the distribution entry point must be visible to the shipped binary (HATS-1531)
+
 ## `test_comment_length_lint_hook.py`
 
 *pins HATS-837, HATS-842*

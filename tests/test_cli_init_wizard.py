@@ -31,12 +31,13 @@ def test_detect_lists_claude_when_dotclaude_exists(tmp_path, monkeypatch):
     assert _detected_providers() == ["claude"]
 
 
-def test_detect_lists_agy_when_only_dotagy_exists(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("home_dir", "provider"), [(".agy", "agy"), (".codex", "codex")])
+def test_detect_lists_one_non_claude_provider(tmp_path, monkeypatch, home_dir, provider):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
-    (fake_home / ".agy").mkdir()
+    (fake_home / home_dir).mkdir()
     monkeypatch.setattr("ai_hats.cli.assembly.Path.home", lambda: fake_home)
-    assert _detected_providers() == ["agy"]
+    assert _detected_providers() == [provider]
 
 
 def test_detect_empty_when_neither(tmp_path, monkeypatch):
@@ -94,6 +95,26 @@ def test_wizard_prompt_preselects_when_single_detected(monkeypatch):
     assert captured["show_default"] is True
 
 
+def test_wizard_prompt_preselects_codex_and_reports_install(capsys):
+    captured = {}
+
+    def fake_prompt(text, default=None, show_default=False):
+        captured["default"] = default
+        return default
+
+    assert (
+        _wizard_provider_prompt(
+            ["codex"],
+            prompt=fake_prompt,
+            installed_lookup=lambda name: name != "codex",
+            provider_lookup=lambda name: pytest.fail("uninstalled provider was imported"),
+        )
+        == "codex"
+    )
+    assert captured["default"] == "4"
+    assert "will install: ai-hats-codex" in capsys.readouterr().out
+
+
 def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
     """Menu marks BOTH detected providers `detected`; never `recommended`."""
     fake_home = fresh_project.parent / "home"
@@ -115,17 +136,19 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
 # ---------- init() flag-only paths (no wizard) ----------
 
 
-def test_init_with_both_flags_skips_wizard(fresh_project):
+@pytest.mark.parametrize(("provider", "role"), [("claude", "assistant"), ("codex", "maintainer")])
+def test_init_with_both_flags_skips_wizard(fresh_project, provider, role):
     """When -p and -r are given, wizard must NOT auto-launch."""
     runner = CliRunner()
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         # stdin TTY behavior is irrelevant when both flags are present.
         result = runner.invoke(
             main,
-            ["self", "init", "-p", "claude", "-r", "assistant"],
+            ["self", "init", "-p", provider, "-r", role, "--no-update"],
         )
     assert result.exit_code == 0, result.output
     assert (fresh_project / PROJECT_CONFIG).exists()
+    assert f"provider: {provider}" in (fresh_project / PROJECT_CONFIG).read_text()
     launch.assert_not_called()
 
 

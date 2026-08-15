@@ -18,8 +18,11 @@ def test_get_known_surfaces() -> None:
     assert "claude" in surfaces
     assert "agy" in surfaces
     assert "cline" in surfaces
+    assert "codex" in surfaces
     assert surfaces["cline"].package_name == "ai-hats-cline"
     assert surfaces["cline"].default_home_dirs == (".cline",)
+    assert surfaces["codex"].package_name == "ai-hats-codex"
+    assert surfaces["codex"].default_home_dirs == (".codex",)
 
 
 def test_get_surface_info() -> None:
@@ -27,6 +30,11 @@ def test_get_surface_info() -> None:
     assert info is not None
     assert info.ep_name == "cline"
     assert info.package_name == "ai-hats-cline"
+
+    codex = get_surface_info("codex")
+    assert codex is not None
+    assert codex.ep_name == "codex"
+    assert codex.package_name == "ai-hats-codex"
 
     assert get_surface_info("unknown_xyz") is None
 
@@ -57,6 +65,10 @@ def test_detect_surface_presence(tmp_path: Path) -> None:
         cline_dir = tmp_path / ".cline"
         cline_dir.mkdir()
         assert detect_surface_presence("cline", home=tmp_path) is True
+
+        assert detect_surface_presence("codex", home=tmp_path) is False
+        (tmp_path / ".codex").mkdir()
+        assert detect_surface_presence("codex", home=tmp_path) is True
 
     # 3. Test unknown surface
     assert detect_surface_presence("unknown_surface", home=tmp_path) is False

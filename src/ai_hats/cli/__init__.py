@@ -143,7 +143,9 @@ def _tree_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     },
 )
 @click.version_option(version=__version__)
-@click.option("--provider", "-p", default=None, help="Provider override (agy/claude)")
+@click.option(
+    "--provider", "-p", default=None, help="Provider override (see `ai-hats list providers`)"
+)
 @click.option("--role", "-r", default=None, help="Role override")
 @click.option(
     "--tag",
