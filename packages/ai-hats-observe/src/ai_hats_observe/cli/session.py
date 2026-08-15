@@ -12,8 +12,6 @@ import json
 import re
 import sys
 
-from ai_hats_core import atomic_write_text
-
 import click
 
 from ..artifacts import (
@@ -583,7 +581,7 @@ def _backfill_one(s, *, project_dir, dry_run: bool) -> dict:
         # Persist the recovered identity so the link survives the next audit,
         # which deletes trace.log — the source we just read it from.
         metrics["claude_session_id"] = provider_session_id
-        atomic_write_text(s.metrics_path, json.dumps(metrics, indent=2))
+        s.write_artifact_text(s.metrics_path, json.dumps(metrics, indent=2))
 
     # keep_raw: a backfill must not consume trace.log — it is the only source
     # left for surfaces whose transcript cannot be recovered (HATS-1374).
