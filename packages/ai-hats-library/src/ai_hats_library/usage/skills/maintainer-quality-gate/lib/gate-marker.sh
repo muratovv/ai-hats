@@ -30,7 +30,9 @@
 # Sourced, never executed. Every function takes the gate name and a directory
 # inside the repo explicitly; there is no ambient default, because a gate that
 # silently resolved the wrong repo would answer confidently about the wrong
-# content. Callers keep their own `set` options — nothing here changes them.
+# content. Callers keep their own `set` options — nothing here changes them, and
+# nothing here defines a name in their scope: every default is a `local`, read
+# when the function runs rather than frozen at `source` time.
 #
 #   gate_marker_root   <in_dir>                          -> the dir holding them all
 #   gate_marker_dir    <gate> <in_dir>                   -> the gate's marker dir
@@ -38,12 +40,14 @@
 #   gate_marker_stages <gate> <in_dir> <tree>            -> what THAT gate recorded
 #   gate_marker_covers <in_dir> <tree>                   -> what ANY gate recorded
 #   gate_marker_ok     <in_dir> <tree> [stage...]        -> rc 0 iff those ran here
+#   gate_marker_sweep  <marker_dir>                      -> drops what aged out
 #   gate_marker_write  <gate> <in_dir> <tree> <stages> [line...] -> writes, prints path
 #
-# All return non-zero when the repo cannot be resolved. `<gate>` is a directory
-# name: `e2e-gate` (pre-push, HATS-550/686), `done-gate` (HATS-1137) and
-# `merge-gate` (HATS-1614) are the three consumers today. `<stages>` is one
-# space-separated string.
+# All return non-zero when the repo cannot be resolved — except the sweep, which
+# resolves nothing and is never allowed to fail the run that earned a marker.
+# `<gate>` is a directory name: `e2e-gate` (pre-push, HATS-550/686), `done-gate`
+# (HATS-1137) and `merge-gate` (HATS-1614) are the three consumers today.
+# `<stages>` is one space-separated string.
 
 # The dir every gate keeps its markers under. Named separately from
 # `gate_marker_dir` because absorption reads ACROSS gates (HATS-1614).
@@ -135,18 +139,29 @@ gate_marker_ok() {
     return 0
 }
 
-# Days a marker may sit before the next write sweeps it (HATS-1682).
-# Not an expiry: a marker cannot go stale, since a different tree is a different
-# key. This is housekeeping — 125 files had accumulated on one checkout, the
-# oldest naming a tree from a week nobody will return to.
-: "${AI_HATS_GATE_MARKER_KEEP_DAYS:=30}"
-
-# Drop markers older than the keep window. Best-effort: the sweep never decides
-# a gate's verdict, so a failure here must not fail the run that earned one.
+# Drop markers past the keep window, in days (HATS-1682). Housekeeping, not
+# expiry: it keys on the MARKER's own mtime, never on whether that tree is still
+# in play, so it can revoke a pass but never grant one — a card parked in
+# `review` past the window pays a re-run and earns its marker back.
+#
+# rc 0 unconditionally: the sweep must never fail the run that earned a marker.
+# The one thing it will not swallow is a malformed window, which would make
+# `find` refuse the whole expression and stop housekeeping for good in silence.
 gate_marker_sweep() {
     local dir="$1"
     [ -d "$dir" ] || return 0
-    find "$dir" -type f -mtime "+${AI_HATS_GATE_MARKER_KEEP_DAYS}" -delete 2>/dev/null || true
+    # `local`, per call: nothing of ours lands in the caller's scope, and a value
+    # exported after this file was sourced still counts. Empty reads as unset.
+    local keep="${AI_HATS_GATE_MARKER_KEEP_DAYS:-30}"
+    case "$keep" in
+        *[!0-9]*)
+            printf 'gate-marker: AI_HATS_GATE_MARKER_KEEP_DAYS=%s is not a whole number of days — sweeping at 30\n' \
+                "$keep" >&2 || true
+            keep=30
+            ;;
+    esac
+    find "$dir" -type f -mtime "+${keep}" -delete 2>/dev/null || true
+    return 0
 }
 
 # Write the marker for <tree> over <stages>; trailing args are provenance lines.
