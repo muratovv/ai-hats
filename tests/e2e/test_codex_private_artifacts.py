@@ -192,9 +192,7 @@ def _run(
     return completed, runs_dir / f"session_{payload['session_id']}"
 
 
-def test_codex_hitl_and_automate_artifacts_are_private(
-    tmp_path: Path, ai_hats_shim: Path
-) -> None:
+def test_codex_hitl_and_automate_artifacts_are_private(tmp_path: Path, ai_hats_shim: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     ProjectConfig(

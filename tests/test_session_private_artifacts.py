@@ -76,9 +76,7 @@ def test_compute_usage_writes_private_artifact(tmp_path: Path) -> None:
     session.init_audit(role="maintainer", provider="codex")
     source = tmp_path / "transcript.jsonl"
     source.write_text("{}\n")
-    parser = SimpleNamespace(
-        parse_usage=lambda _jsonl, _trace: {"schema_version": "usage/v1"}
-    )
+    parser = SimpleNamespace(parse_usage=lambda _jsonl, _trace: {"schema_version": "usage/v1"})
 
     with _umask(0o022):
         delta = ComputeUsage().run(

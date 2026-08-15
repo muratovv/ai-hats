@@ -221,9 +221,10 @@ class Session:
 
     def copy_artifact(self, source: Path, destination: Path) -> None:
         """Stream a file into a private session artifact."""
-        with source.open("rb") as source_stream, open(
-            destination, "wb", opener=_private_opener
-        ) as destination_stream:
+        with (
+            source.open("rb") as source_stream,
+            open(destination, "wb", opener=_private_opener) as destination_stream,
+        ):
             shutil.copyfileobj(source_stream, destination_stream)
 
     def open_artifact_binary_append(self, path: Path, *, buffering: int = -1) -> BinaryIO:
