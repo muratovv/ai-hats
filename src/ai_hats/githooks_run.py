@@ -82,7 +82,12 @@ DISPATCHER = "githooks-dispatcher"
 
 
 def record_fail_open(
-    journal: Path | None, *, reason: str, event: str, hook: str = DISPATCHER
+    journal: Path | None,
+    *,
+    reason: str,
+    event: str,
+    hook: str = DISPATCHER,
+    project_dir: Path | None = None,
 ) -> None:
     """Say — on stderr AND in the bypass journal — that a gate was skipped.
 
@@ -117,6 +122,10 @@ def record_fail_open(
                 hook,
             ],
             env={**os.environ, "AI_HATS_HOOK_EVENT": event},
+            # The writer resolves `--git-common-dir` from where it stands, so the
+            # project must be TOLD, not inferred: inferring put a test's synthetic
+            # skips in the maintainer's own audit journal (HATS-1686).
+            cwd=None if project_dir is None else str(project_dir),
             check=False,
         )
     except OSError as exc:
@@ -203,6 +212,7 @@ def run_chain(
                 reason=f"cannot execute '{script.name}': {exc}",
                 event=event,
                 hook=script.name,
+                project_dir=project_dir,
             )
             continue
         if proc.returncode != 0:
