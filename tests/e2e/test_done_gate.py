@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from _helpers.env import consented
 from _helpers.git import git, init_repo
 
 pytestmark = pytest.mark.integration
@@ -302,8 +303,11 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     (ADR-0023 D3/D4), and one script on both could only ever ask one of them.
     """
     apps = shipped_apps()
+    # `consent: true` since HATS-1682 (supervisor ruling Q3): this edge is a road
+    # into master, so the supervisor is asked AND the gate runs — one row, both
+    # keys. The row is asserted whole, so the new key belongs in the literal.
     assert apps["rack"]["tasks"] == [
-        {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse"}
+        {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse", "consent": True}
     ], "the FSM automerge road, qualified by the backlog it gates"
     assert apps["wt"] == [
         {"run": f"{SKILL}/{MERGE_SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}
@@ -326,12 +330,18 @@ def test_the_maintainer_role_is_ai_hats_specific_not_generic():
 
 def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
     """R1: the card stays in review, the card file is byte-unchanged, and the
-    reason carries the command that clears the gate."""
+    reason carries the command that clears the gate.
+
+    Consent is supplied (HATS-1682): the shipped row now carries `consent: true`
+    as well, and that subscriber is in-lock at priority 11 against `checks`'s 15.
+    Without the grant every case below would measure the consent refusal and the
+    gate could be deleted with this file still green.
+    """
     project, env = gate_project("gated")
     task_id, wt = _to_review(rack_bin, project, env, worktree=True)
     before = _card(project, task_id).read_bytes()
 
-    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=consented(env))
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
     assert _card(project, task_id).read_bytes() == before, "a refused edge must persist nothing"
@@ -339,7 +349,9 @@ def test_a_branch_with_no_marker_cannot_reach_done(gate_project, rack_bin):
     assert f"{EDGE} aborted by 'checks'" in refused.stderr
     assert "Traceback" not in refused.stderr, "a refusal must be typed, not a stack"
 
-    as_json = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+    as_json = _rack(
+        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
+    )
     reason = _reason(as_json)
     assert "no green marker for tree" in reason
     # R6: an action, not a diagnosis — the exact command, in the right directory.
@@ -363,12 +375,17 @@ def test_a_marker_for_the_branch_tip_lets_the_transition_through(gate_project, r
     project, env = gate_project("gated")
     task_id, wt = _to_review(rack_bin, project, env, worktree=True)
 
-    blocked = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+    blocked = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=consented(env))
     assert blocked.returncode == 1, "positive control: unmarked must refuse first"
+    assert f"{EDGE} aborted by 'checks'" in blocked.stderr, (
+        "the control must refuse for want of a MARKER, not for want of consent"
+    )
 
     _write_marker(project, _tree(Path(wt)))
 
-    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+    taken = _rack(
+        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
+    )
 
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
@@ -382,9 +399,10 @@ def test_a_marker_that_never_ran_a_demanded_stage_does_not_clear_the_gate(gate_p
     task_id, wt = _to_review(rack_bin, project, env, worktree=True)
     _write_marker(project, _tree(Path(wt)), stages="some-other-stage")
 
-    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=env)
+    refused = _rack(rack_bin, "transition", task_id, "done", cwd=project, env=consented(env))
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert f"{EDGE} aborted by 'checks'" in refused.stderr, refused.stderr
     assert _state(project, task_id)["state"] == "review"
 
 
@@ -406,7 +424,9 @@ def test_the_composition_is_read_from_the_tree_under_judgement(gate_project, rac
     git(Path(wt), "commit", "-m", "change what the gate runs")
     _write_marker(project, _tree(Path(wt)), stages=branch_stage)
 
-    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+    taken = _rack(
+        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
+    )
 
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
@@ -432,7 +452,9 @@ def test_a_marker_for_a_different_tree_does_not_clear_the_gate(gate_project, rac
     tip = _tree(Path(wt))
     assert tip != stale
 
-    refused = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+    refused = _rack(
+        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
+    )
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
     reason = _reason(refused)
@@ -451,7 +473,9 @@ def test_a_card_with_no_worktree_passes(gate_project, rack_bin):
     project, env = gate_project("gated")
     task_id, _ = _to_review(rack_bin, project, env, worktree=False)
 
-    taken = _rack(rack_bin, "transition", task_id, "done", "--json", cwd=project, env=env)
+    taken = _rack(
+        rack_bin, "transition", task_id, "done", "--json", cwd=project, env=consented(env)
+    )
 
     assert taken.returncode == 0, taken.stdout + taken.stderr
     assert json.loads(taken.stdout)["task"]["state"] == "done"
@@ -619,6 +643,9 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
     declare "not mine", because the engine had no notion of whose backlog it
     was. HATS-1573 gave it one, and the ruling of 2026-08-11 moved the scope to
     the backlog: a backlog nobody owns has no gates, so nothing fires at all.
+
+    Since HATS-1682 that covers the CONSENT half of the same row too — no grant
+    is made below, and the edge must still be taken.
     """
     project, env = gate_project("gated")
     scratch = tmp_path / "scratch-backlog" / "tasks"

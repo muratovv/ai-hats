@@ -208,9 +208,11 @@ def test_a_foreign_envelope_without_the_pin_does_not_disarm_the_rack_gate(
     assert [d.at for d in _declared(gated_project)] == [("edge:review--done",)]
 
 
-#: The two channel entries whose ``identity`` defaults to reading the ambient
+#: The channel entries whose ``identity`` defaults to reading the ambient
 #: environment. Every production caller must say which project it is gating.
-_SCOPED_RESOLVERS = ("resolve_checks_at", "resolve_carried_checks")
+#: ``resolve_carried_rows`` joined at HATS-1682: the rack's carrier moved onto
+#: it, and omitting it would retire the ratchet from that caller in silence.
+_SCOPED_RESOLVERS = ("resolve_checks_at", "resolve_carried_checks", "resolve_carried_rows")
 
 
 def _production_calls():

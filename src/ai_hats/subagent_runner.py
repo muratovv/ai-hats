@@ -304,6 +304,7 @@ class SubAgentRunner:
             plan=artifacts.port.plan,
             cwd="<worktree, assigned at launch>",
             checks=reported_checks,
+            consent=result.consent,
             notes=tuple(notes),
         )
         session.save_role_materialization(report.to_dict())

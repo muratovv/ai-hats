@@ -995,14 +995,18 @@ class WorktreeManager:
         )
         return self.worktree_path
 
-    def probe_blockers(self, *, force: bool = False, accept_drift: bool = False) -> list[Blocker]:
+    def probe_blockers(
+        self, *, force: bool = False, accept_drift: bool = False, consent: bool = False
+    ) -> list[Blocker]:
         """Every refusal :meth:`merge` would raise right now, in its own order.
 
         HATS-1654: the guards fire one per run, so a merge can cost three runs to
         learn three facts. This asks all of them at once — read-only, no lock, no
         mutation; the one cost is the drift check's bounded ``git fetch``. The
         ``wt:pre-merge`` point is NOT probed: a check is an arbitrary command with
-        no "would you refuse?" mode (that predicate is HATS-1615's).
+        no "would you refuse?" mode (that predicate is HATS-1615's). ``consent``
+        is :meth:`merge`'s, and a caller that answers it there must pass it here
+        too, or a ticket-bearing merge is told its consent is missing.
         """
         if not self._is_git or self.worktree_path is None or not self.worktree_path.exists():
             return []
@@ -1024,9 +1028,7 @@ class WorktreeManager:
                 return None
             return str(WorktreeRebasedBranchError(self.branch_name, base))
 
-        def consent() -> str | None:
-            if os.environ.get("AI_HATS_MERGE_ACK") == "1":
-                return None
+        def consent_blocker() -> str | None:
             return str(WorktreeMergeConsentError(self.branch_name, base))
 
         def base_mismatch() -> str | None:
@@ -1053,7 +1055,9 @@ class WorktreeManager:
         # bypass the guard itself honours, so a bypassed guard is never probed.
         probes: tuple[tuple[str, bool, Callable[[], str | None]], ...] = (
             ("rebased", accept_drift or force, rebased),
-            ("consent", False, consent),
+            # Both halves of merge()'s own condition ride in the flag column, so
+            # the probe has nothing left to re-decide (HATS-1682 B7).
+            ("consent", consent or os.environ.get("AI_HATS_MERGE_ACK") == "1", consent_blocker),
             ("base-mismatch", not base_exists, base_mismatch),
             ("dirty", force, dirty),
             ("drift", accept_drift, drift),
@@ -1081,8 +1085,12 @@ class WorktreeManager:
         skip_hooks: bool = False,
         expected_tip: str | None = None,
         outer_deadline: Deadline | None = None,
+        consent: bool = False,
     ) -> None:
         """Merge worktree changes back into the original branch and clean up.
+
+        ``consent`` stands in for the env ack when the caller has already
+        established the supervisor's approval of THIS merge (HATS-1682).
 
         HATS-1603: ``outer_deadline`` is the enclosing caller's ceiling (the rack
         task lock, when the FSM automerges) — every budget drawn inside is
@@ -1215,7 +1223,7 @@ class WorktreeManager:
             # HATS-1019: consent gate AFTER the HATS-596 short-circuit —
             # already-merged cleanup publishes nothing and must stay ack-free
             # (supervisor merges, then the agent's `transition done` tears down).
-            if os.environ.get("AI_HATS_MERGE_ACK") != "1":
+            if not consent and os.environ.get("AI_HATS_MERGE_ACK") != "1":
                 raise WorktreeMergeConsentError(self.branch_name, self._original_branch)
 
             # HATS-533: refuse if main-repo HEAD has wandered off the merge

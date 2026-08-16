@@ -272,6 +272,56 @@ def _print_blockers(blockers, *, note_unprobed_checks: bool = True) -> None:
         console.print("[dim]Not probed: wt:pre-merge checks — each runs its own command.[/]")
 
 
+#: Named for the journal, so this road's hatch reads like the guard's.
+_HOOK = "cli/worktree.py"
+
+
+def _merge_consent(branch: str) -> str:
+    """Which channel carries the supervisor's consent for THIS merge, or ``""``.
+
+    The two channels `wt_effects._merge_consent` reads on the FSM road. The
+    guard hatches on ``CONSENT_ACK`` here too, so reading only the ticket left a
+    session that exported it with no question AND a refusal — HATS-1682 B1, in
+    the mirror. Peek, never spend: a merge that then refuses for drift gives the
+    click back.
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    from ..rack_wiring import CONSENT_ACK, env_consent_note
+
+    try:
+        # ``None``: no card names this road, and the guard labels its question
+        # with the branch — a label the CLI cannot reproduce, since a branch
+        # left off the command line reads "this worktree" there. The invocation
+        # is the binding that holds; see `consent_ticket._valid_ticket`.
+        if consent_ticket.peek(None, argv=sys.argv[1:]):
+            return "consent ticket"
+    except Exception as exc:  # noqa: BLE001 — an unreadable store is not consent
+        console.print(f"[yellow]consent ticket unreadable[/]: {exc}")
+    if os.environ.get(CONSENT_ACK) == "1":
+        # Legitimate where nothing can ask, never silent (HATS-1682 B2).
+        console.print(f"[dim]{env_consent_note(CONSENT_ACK, f'merging {branch}', hook=_HOOK)}[/]")
+        return CONSENT_ACK
+    return ""
+
+
+def _spend_merge_ticket() -> None:
+    """Use up the ticket now the merge it paid for has happened (HATS-1682).
+
+    Without this the wt road has no single-use at all: the same answered command
+    re-run inside the store's 12h housekeeping window would merge again, unasked.
+    The two "merged, but cleanup failed" exits in :func:`wt_merge` skip it on
+    purpose: their retry lands on the already-merged short-circuit, which asks
+    for no consent in the first place.
+    """
+    from ai_hats_library.hooks import consent_ticket
+
+    try:
+        consent_ticket.consume(None, argv=sys.argv[1:])
+    except Exception as exc:  # noqa: BLE001 — the merge landed; a stuck ticket is not a failure
+        console.print(f"[yellow]consent ticket not spent[/]: {exc}")
+
+
 @wt.command("merge")
 @click.argument("branch", required=False)
 @click.option("--squash", is_flag=True, default=False, help="Squash all commits into one")
@@ -331,11 +381,15 @@ def wt_merge(
         sys.exit(1)
 
     name = mgr.branch_name
+    # HATS-1682: the guard asks about THIS command where the role declared
+    # `wt: [pre-merge]`. Read once: a merge held up by drift must not also tell
+    # the supervisor their consent is missing (HATS-1654).
+    consented = bool(_merge_consent(name))
 
     def other_blockers(raised: str) -> list:
         """Every blocker but the one that already raised — a failed probe is a row, not silence."""
         try:
-            found = mgr.probe_blockers(force=force, accept_drift=accept_drift)
+            found = mgr.probe_blockers(force=force, accept_drift=accept_drift, consent=consented)
         except Exception as exc:  # noqa: BLE001 — a broken probe must not eat the refusal
             return [Blocker("probe", f"could not check the other blockers: {exc}")]
         return [b for b in found if b.kind != raised]
@@ -346,6 +400,7 @@ def wt_merge(
             force=force,
             accept_drift=accept_drift,
             skip_hooks=skip_hooks,
+            consent=consented,
         )
     except WorktreeTeardownAborted as e:
         # HATS-823 / ADR-0013 D8: a wt_out hook failed; teardown aborted
@@ -528,6 +583,7 @@ def wt_merge(
             f"(after resolving the cause)"
         )
         sys.exit(2)
+    _spend_merge_ticket()
     console.print(f"[green]Merged[/]: {name}")
 
 

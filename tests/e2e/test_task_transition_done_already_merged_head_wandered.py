@@ -12,6 +12,7 @@ why:    already-merged task branches must finalize cleanly even if the main chec
 """
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import subprocess
@@ -194,7 +195,10 @@ def test_e2e_transition_done_already_merged_head_wandered(shared_launcher, tmp_p
     rack("transition", task_id, "review")
 
     # ---- 6. transition done MUST SUCCEED (the fix) ----
-    res = rack("transition", task_id, "done", expect_exit=0)
+    # HATS-1682: `review -> done` is a consent point the role declares. The
+    # answer is scaffolding here — what this test measures is what the
+    # WORKTREE layer does with the edge once consent is in hand.
+    res = rack("transition", task_id, "done", expect_exit=0, extra_env=consent_grant())
     combined = res.stdout + res.stderr
     assert "base branch mismatch" not in combined.lower(), (
         f"false mismatch refusal — HATS-596 short-circuit not applied:\n{combined}"

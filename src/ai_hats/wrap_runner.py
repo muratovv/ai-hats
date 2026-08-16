@@ -322,6 +322,24 @@ class WrapRunner:
                 )
         return notices
 
+    def _sweep_consent_store(self, session: "Session") -> None:
+        """HATS-1682: clear stale consent tickets once per session.
+
+        Nobody else can. The store's own sweeps ride `mint` and `consume`, so a
+        refused ticket sits until the next gated transition — and the agent may
+        not `rm` under it, by design. Session start is the engine's turn.
+        """
+        from ai_hats_library.hooks import consent_ticket
+
+        try:
+            dropped = consent_ticket.sweep(self.project_dir)
+        except Exception as exc:
+            logger.warning("consent-store sweep at session start failed", exc_info=True)
+            session.log_sys(f"consent-store sweep FAILED — {type(exc).__name__}: {exc}")
+            return
+        if dropped:
+            session.log_sys(f"consent store: {dropped} stale ticket(s) swept")
+
     def _check_skill_script_collisions(
         self, session: "Session", result: "CompositionResult"
     ) -> list[StartupNotice]:
@@ -541,6 +559,7 @@ class WrapRunner:
             plan=artifacts.port.plan,
             cwd=str(self.project_dir),
             checks=reported_checks,
+            consent=result.consent,
             notes=report_notes,
         )
         session.save_role_materialization(report.to_dict())
@@ -566,6 +585,7 @@ class WrapRunner:
         startup_notices.extend(self._lint_provider_settings(session))
         startup_notices.extend(self._lint_env_drift(session))
         startup_notices.extend(self._check_broken_hook_refs(session))
+        self._sweep_consent_store(session)
         # HATS-1581. LAST here on purpose: unlike its fail-open neighbours a
         # refusal does not return, so everything above must speak first. And
         # after the launch record, which is what the gate reads.

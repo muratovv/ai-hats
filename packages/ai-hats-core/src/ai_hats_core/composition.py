@@ -40,6 +40,22 @@ class ResolvedComponent:
 
 
 @dataclass(frozen=True)
+class ConsentPoint:
+    """One point a component declared needs the supervisor's explicit approval.
+
+    Same address shape as :class:`ResolvedCheck` — ``app`` plus the trail of keys
+    below it — and the same policy on the name: ai-hats carries it, the owning
+    application says what it means. A DECLARATION, not a binding: nothing is
+    spawned, so there is no script and no failure policy (HATS-1682).
+    """
+
+    declared_by: str
+    app: str
+    path: tuple[str, ...]
+    point: str
+
+
+@dataclass(frozen=True)
 class ResolvedCheck:
     """One declared row, resolved to an absolute script (HATS-1140, HATS-1545).
 
@@ -107,6 +123,7 @@ class CompositionResult:
     # project-agnostic, so these are attached downstream (HATS-1203).
     user_rules: tuple[Path, ...] = ()
     checks: tuple[ResolvedCheck, ...] = ()
+    consent: tuple[ConsentPoint, ...] = ()
 
     @property
     def merged_injection(self) -> str:

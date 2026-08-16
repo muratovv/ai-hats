@@ -12,7 +12,9 @@ why:    the discipline was hand-written twice with a diverging exit contract,
 
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -33,13 +35,28 @@ MARKER_LIB = SKILL_SRC / "lib" / "gate-marker.sh"
 GATE_LIB = SKILL_SRC / "lib" / "gate.sh"
 
 
-def _bash(script: str, cwd: Path, lib: Path = MARKER_LIB) -> subprocess.CompletedProcess[str]:
-    """Source one library and run `script` under a real bash."""
+def _bash(
+    script: str,
+    cwd: Path,
+    lib: Path = MARKER_LIB,
+    env: dict[str, str | None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Source one library and run `script` under a real bash.
+
+    `env` overlays the inherited environment; a `None` value removes the name.
+    """
+    child = os.environ.copy()
+    for name, value in (env or {}).items():
+        if value is None:
+            child.pop(name, None)
+        else:
+            child[name] = value
     return subprocess.run(
         ["bash", "-c", f'set -uo pipefail; . "{lib}"\n{script}'],
         cwd=cwd,
         capture_output=True,
         text=True,
+        env=child,
     )
 
 
@@ -207,3 +224,107 @@ def test_a_marker_naming_another_tree_contributes_nothing_to_the_union(repo: Pat
     ok = _bash(f'gate_marker_ok . "{tree}" lint', repo)
 
     assert ok.returncode != 0, "a marker that names another tree certifies nothing here"
+
+
+# ---------------------------------------------------------------------------
+# 6. the store is swept, so it does not grow forever (HATS-1682)
+# ---------------------------------------------------------------------------
+
+
+def _aged(path: Path, days: float) -> Path:
+    """A marker whose own mtime sits `days` in the past — what the sweep keys on."""
+    path.write_text(f"tree=aged-{days}\n", encoding="utf-8")
+    when = time.time() - days * 86400
+    os.utime(path, (when, when))
+    return path
+
+
+def test_a_write_sweeps_markers_nobody_will_come_back_for(repo: Path):
+    """125 markers had piled up on one checkout, the oldest naming a tree from a
+    week nobody would return to. Nothing pruned them: staleness is impossible by
+    keying, so no expiry was needed — and none was written either."""
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo)
+    assert written.returncode == 0, written.stderr
+    directory = Path(written.stdout.strip()).parent
+    ancient = directory / ("a" * 40)
+    ancient.write_text("tree=old\n", encoding="utf-8")
+    os.utime(ancient, (0, 0))
+
+    fresh = _bash(f'gate_marker_write done-gate . "{tree}" "lint unit"', repo)
+
+    assert fresh.returncode == 0, fresh.stderr
+    assert not ancient.exists(), "the sweep left a marker older than the keep window"
+    assert Path(fresh.stdout.strip()).is_file(), "the sweep took the marker just written"
+
+
+def test_the_sweep_keeps_a_marker_inside_the_window(repo: Path):
+    """The other half, and the half that pins WHERE the window falls: 29 days old
+    survives the write that takes 32 days old. Both files are aged, so neither can
+    pass by being new — the pair discriminates, where the "keeps" half alone did
+    not (a fresh file survives with or without a sweep).
+
+    29 and 32, not 30 and 31: `-mtime +30` rounds the age UP on BSD find and DOWN
+    on GNU, so the two disagree by up to a day right at the edge."""
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo)
+    assert written.returncode == 0, written.stderr
+    directory = Path(written.stdout.strip()).parent
+    inside = _aged(directory / ("b" * 40), 29)
+    outside = _aged(directory / ("c" * 40), 32)
+
+    fresh = _bash(f'gate_marker_write done-gate . "{tree}" "lint unit"', repo)
+
+    assert fresh.returncode == 0, fresh.stderr
+    assert inside.exists(), "29 days is inside a 30-day window — the sweep took it anyway"
+    assert not outside.exists(), "32 days is past it — the sweep left it"
+
+
+def test_a_garbage_keep_window_says_so_instead_of_quietly_stopping(repo: Path):
+    """MEASURED before the fix: this value made `find` refuse the whole
+    expression, `2>/dev/null || true` ate the error, and housekeeping stopped for
+    good with no signal on any channel. A gate that stopped acting must not look
+    like a gate with nothing to do. It still may not fail the run that earned the
+    marker — hence `set -e` here, and the rc assertions."""
+    tree = _tree(repo)
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo)
+    assert written.returncode == 0, written.stderr
+    directory = Path(written.stdout.strip()).parent
+    ancient = _aged(directory / ("d" * 40), 99)
+
+    fresh = _bash(
+        f'set -e; gate_marker_write done-gate . "{tree}" "lint unit"',
+        repo,
+        env={"AI_HATS_GATE_MARKER_KEEP_DAYS": "+1 -o -name '*'"},
+    )
+
+    assert fresh.returncode == 0, f"housekeeping killed the run: {fresh.stderr}"
+    assert "AI_HATS_GATE_MARKER_KEEP_DAYS" in fresh.stderr, "a garbage window must name itself"
+    assert not ancient.exists(), "falling back to the default still sweeps"
+    assert Path(fresh.stdout.strip()).is_file(), "the marker just earned is on disk"
+
+
+def test_sourcing_the_library_defines_no_keep_window_in_the_caller_s_scope(repo: Path):
+    """The header promises a file that changes nothing in its caller's scope.
+    `: "${AI_HATS_GATE_MARKER_KEEP_DAYS:=30}"` at file scope broke that promise —
+    and left the sweep depending on a name someone else owns, so a caller that
+    unsets it takes the whole write down under `set -u`. A `local` read per call
+    owes the caller nothing."""
+    tree = _tree(repo)
+    no_window: dict[str, str | None] = {"AI_HATS_GATE_MARKER_KEEP_DAYS": None}
+    written = _bash(f'gate_marker_write done-gate . "{tree}" "lint"', repo, env=no_window)
+    assert written.returncode == 0, written.stderr
+    directory = Path(written.stdout.strip()).parent
+    ancient = _aged(directory / ("e" * 40), 99)
+
+    leaked = _bash('echo "[${AI_HATS_GATE_MARKER_KEEP_DAYS-unset}]"', repo, env=no_window)
+    hostile = _bash(
+        f'unset AI_HATS_GATE_MARKER_KEEP_DAYS\ngate_marker_write done-gate . "{tree}" "lint unit"',
+        repo,
+        env=no_window,
+    )
+
+    assert leaked.stdout.strip() == "[unset]", "sourcing must not define the name in the caller"
+    assert hostile.returncode == 0, f"the caller's `unset` killed the write: {hostile.stderr}"
+    assert not ancient.exists(), "the default window still applies"
+    assert Path(hostile.stdout.strip()).is_file(), "the marker just earned is on disk"

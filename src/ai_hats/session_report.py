@@ -15,6 +15,8 @@ from .materialization import MaterializationPlan
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
+    from ai_hats_core import ConsentPoint
+
     from .check_snapshot import ReportedCheck
 
 
@@ -55,6 +57,10 @@ class SessionReport:
     # HATS-1548: the gates this launch arms. Not derivable from the plan — the
     # skill mirror a check runs from is written per SKILL, not per binding.
     checks: tuple[ReportedCheck, ...] = ()
+    #: HATS-1682: where this role wants the supervisor asked. The guard on the
+    #: tool call reads it from here — a role property reaching the surface the
+    #: way every other one does, through the session's own envelope.
+    consent: tuple[ConsentPoint, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +101,15 @@ class SessionReport:
                     "planned": c.planned,
                 }
                 for c in self.checks
+            ],
+            "consent": [
+                {
+                    "app": c.app,
+                    "path": list(c.path),
+                    "point": c.point,
+                    "declared_by": c.declared_by,
+                }
+                for c in self.consent
             ],
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),

@@ -28,6 +28,36 @@ HOOK = (
 )
 
 
+#: Where :func:`_plant_session` puts the envelope's on-disk half, inside the
+#: probe repo so one fixture owns both.
+SESSION_DIRNAME = ".session"
+
+
+def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
+    """Make ``repo`` look like a session whose role declared consent (HATS-1682).
+
+    WHERE the guard asks is the role's declaration, read from
+    ``<session_dir>/role_materialization.json`` — so a probe with no session
+    declares nothing and is asked nothing, which is correct and useless here.
+    """
+    session_dir = repo / SESSION_DIRNAME
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "role_materialization.json").write_text(
+        json.dumps(
+            {
+                "consent": [
+                    *(
+                        {"app": "rack", "path": ["tasks"], "point": f"edge:x--{state}"}
+                        for state in targets
+                    ),
+                    *([{"app": "wt", "path": [], "point": "pre-merge"}] if wt else []),
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _decide(
     command: str,
     *,
@@ -36,6 +66,9 @@ def _decide(
 ) -> dict:
     """Run the hook on a Bash payload; return its decision ({} when it allows)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    planted = None if cwd is None else Path(cwd) / SESSION_DIRNAME
+    if planted is not None and (planted / "role_materialization.json").is_file():
+        env["AI_HATS_SESSION_IDENTITY"] = json.dumps({"v": 1, "session_dir": str(planted)})
     env.update(env_extra or {})
     res = subprocess.run(
         [sys.executable, str(HOOK)],
@@ -175,10 +208,15 @@ def test_the_yolo_switch_disables_the_gate():
 
 @pytest.fixture
 def repo(tmp_path):
-    """A git repo — the consent ticket lands in the git dir, beside the journal."""
+    """A git repo — the consent ticket lands in the git dir, beside the journal.
+
+    Carries a planted session too: since HATS-1682 the guard asks where the
+    ROLE declared consent, so a probe with no declaration is asked nothing.
+    """
     subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
         ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
     )
+    _plant_session(tmp_path, "execute", "done")
     return tmp_path
 
 
@@ -335,7 +373,12 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
         text=True,
         timeout=20,
         cwd=str(repo),
-        env={k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")},
+        env={
+            **{k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")},
+            "AI_HATS_SESSION_IDENTITY": json.dumps(
+                {"v": 1, "session_dir": str(repo / SESSION_DIRNAME)}
+            ),
+        },
     )
     out = json.loads(res.stdout)["hookSpecificOutput"]
 
@@ -345,16 +388,22 @@ def test_the_rewrite_answers_in_the_key_the_surface_spoke_in(repo):
     assert out["updatedInput"]["CommandLine"].startswith("AI_HATS_CONSENT_TICKET=")
 
 
-def test_a_store_that_cannot_mint_records_why_the_question_vanished(tmp_path):
+def test_a_store_that_cannot_mint_refuses_and_records_why(tmp_path):
     """The doctrine of HATS-1373/1407: a gate that stopped acting looks exactly
-    like a gate with nothing to do — unless it says so."""
+    like a gate with nothing to do — unless it says so.
+
+    Since HATS-1682 it says so twice: to the journal, and to the agent, whose
+    command is refused. The point was DECLARED, and letting a declared point
+    fall back to the ordinary permission flow is how it simply ran.
+    """
     subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
         ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
     )
     (tmp_path / ".git" / "ai-hats").mkdir()
     (tmp_path / ".git" / "ai-hats" / "consent").write_text("not a directory", encoding="utf-8")
+    _plant_session(tmp_path, "execute")
 
-    assert _decide("rack transition HATS-1 execute", cwd=tmp_path) == {}
+    assert "ticket store" in _denied("rack transition HATS-1 execute", cwd=tmp_path)
     journal = tmp_path / ".git" / "ai-hats" / "bypasses.jsonl"
     assert journal.is_file(), "the question vanished without a trace"
     assert "HATS-1" in journal.read_text(encoding="utf-8")
@@ -408,13 +457,17 @@ def test_the_ask_hands_the_rack_call_a_ticket_the_rack_side_can_spend(repo):
     [
         "rack context HATS-1",
         "rack ls",
-        "rack transition HATS-1 done",
+        # `done` is NOT here since HATS-1682 — the role declares consent on that
+        # edge, and its silence was the merge into master nobody was asked about.
         "rack transition HATS-1 review",
         'rack transition HATS-1 --log "note"',
         # The op flag eats its value, so a message SAYING execute is still a note.
         'rack transition HATS-1 --log "execute"',
-        # --force skips the consent gate inside rack; asking would be theatre.
-        'rack transition HATS-1 execute --force --reason "manual"',
+        # `… execute --force --reason "manual"` left this list at HATS-1682: it
+        # asserted that a flag on the command line switches the question off,
+        # and consent is not a property of the command — `consent | op --force`.
+        # Its replacement is the parametrized principle in
+        # tests/e2e/test_consent_force_chain.py, driven through the whole chain.
     ],
 )
 def test_the_neighbouring_rack_forms_never_prompt(command, repo):
@@ -425,3 +478,30 @@ def test_the_neighbouring_rack_forms_never_prompt(command, repo):
     """
     decision = _decide(command, cwd=repo).get("permissionDecision")
     assert decision not in ("ask", "deny"), f"{command!r} was gated: {decision}"
+
+
+def test_a_direct_merge_into_master_asks_where_the_role_declared_it(tmp_path):
+    """The other road into master (HATS-1130). `rack transition X done` merges
+    through the FSM; `ai-hats wt merge` does it directly, and a gate holding
+    only one of them is the asymmetry that started that epic. One declaration
+    covers both because it names points of two applications (HATS-1682)."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute", wt=True)
+
+    out = _decide("ai-hats wt merge task/hats-1", cwd=tmp_path)
+
+    assert out.get("permissionDecision") == "ask", f"the merge went unasked: {out}"
+    assert "task/hats-1" in out["permissionDecisionReason"], out
+    assert out["updatedInput"]["command"].startswith("AI_HATS_CONSENT_TICKET="), out
+
+
+def test_a_role_that_declared_no_merge_point_is_not_asked(tmp_path):
+    """Control: the declaration is what decides, not the command's shape."""
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "execute")  # rack only — no wt point
+
+    assert _decide("ai-hats wt merge task/hats-1", cwd=tmp_path) == {}

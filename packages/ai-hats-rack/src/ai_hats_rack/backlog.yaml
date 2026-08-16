@@ -10,7 +10,12 @@ fsm:
   states:
     - { name: brainstorm }
     - { name: plan, on_enter: [{ name: plan-scaffold, priority: 30 }] }
-    - { name: execute, on_enter: [{ name: plan-gate, priority: 10 }, { name: plan-consent, priority: 11 }] }
+    # HATS-1682 — `plan-consent` left this file: WHERE consent is required is a
+    # property of the role wearing the backlog, declared in its
+    # `composition.apps` rows, not of the tool. This file could never speak for
+    # the other half of the same question either (`apps.wt` at `pre-merge`).
+    # The handler stays in the rack's stock factories for a backlog that wants it.
+    - { name: execute, on_enter: [{ name: plan-gate, priority: 10 }] }
     - { name: document }
     - { name: review }
     - { name: done, on_enter: [{ name: stamp-lifecycle, priority: 12 }] }

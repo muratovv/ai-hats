@@ -12,6 +12,7 @@ why:    tasks with merged branches must finalize cleanly even if worktree state 
 """
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import subprocess
@@ -202,7 +203,10 @@ def test_e2e_transition_done_already_merged_state_lost(shared_launcher, tmp_path
     rack("transition", task_id, "review")
 
     # ---- 7. transition done MUST SUCCEED (the fix) ----
-    res = rack("transition", task_id, "done", expect_exit=0)
+    # HATS-1682: `review -> done` is a consent point the role declares. The
+    # answer is scaffolding here — what this test measures is what the
+    # WORKTREE layer does with the edge once consent is in hand.
+    res = rack("transition", task_id, "done", expect_exit=0, extra_env=consent_grant())
     combined = res.stdout + res.stderr
     assert "worktree state lost" not in combined.lower(), (
         f"false state-lost refusal — HATS-697 short-circuit not applied:\n{combined}"
