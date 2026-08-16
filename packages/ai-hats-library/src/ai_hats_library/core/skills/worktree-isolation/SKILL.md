@@ -25,10 +25,10 @@ Isolated development using git worktrees. Each task gets its own working copy �
 >
 > If neither works, the project's venv interpreter lives at `./.venv/bin/python` (invoke the package as `./.venv/bin/python -m ai_hats …`). Resolve the path explicitly — falling back blindly wastes a turn.
 
-> **Worktree Python Environment & Interpreter Trap (HATS-1242).** A worktree has no venv of its own by default. Running tests or Python scripts in a worktree using the main checkout's `.venv` causes `import` statements to silently load code from the main checkout instead of the worktree.
+> **Worktree Python Environment & Interpreter Trap (HATS-1242).** The main venv's editable install points at the MAIN checkout, so **any** command run with that interpreter observes the main checkout — not only tests. `ai-hats` CLI invocations and compose smokes count, and so does anything else you would call verification.
 >
-> - Provision a dedicated venv inside the worktree via `uv`: `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
-> - Test suites enforce this via a session tripwire (`tests/conftest.py`) that refuses running tests if package imports resolve to a foreign checkout.
+> - **Run everything through the worktree's own interpreter**: `./.venv/bin/python -m pytest …`. `wt create` mints that venv for you (`worktree-venv`, HATS-1291); if it is missing, `uv venv .venv && VIRTUAL_ENV=.venv uv pip install -e .` (plus any workspace sub-packages `-e packages/...`).
+> - **Verifying a library-DATA change is the dangerous case.** For a code change the session tripwire (`tests/conftest.py`) refuses the run, so the trap is loud. For `SKILL.md` / trait / role `config.yaml` there is no tripwire: a compose smoke run against the main venv succeeds, exits 0, and validates a tree your change never touched. Validate the worktree file directly, or put the worktree venv on PATH.
 
 ## Workflow
 
@@ -166,15 +166,32 @@ author one see `docs/how-to-extend.md` → "Worktree lifecycle hooks".
 
 ## Running Commands in Worktree
 
-**Always use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate.** It is an
+**Use `wt exec` instead of manual WT=/PYTHONPATH= boilerplate.** It is an
 environment wrapper, not a teleporter: it runs your command **where you stand**
 when your cwd is inside the worktree, and at the worktree root otherwise.
 
+**It swaps the import path, not the interpreter** (HATS-1304). Measured:
+
 ```bash
-# CORRECT — single command, no env vars, no absolute paths:
-ai-hats wt exec -- pytest tests/test_foo.py -xvs
-ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
+ai-hats wt exec task/hats-1 -- python -c 'import sys, ai_hats; print(sys.executable, ai_hats.__file__)'
+#   sys.executable   -> <MAIN checkout>/.venv/bin/python
+#   ai_hats.__file__ -> <worktree>/src/ai_hats/...     (via PYTHONPATH)
+```
+
+That is enough for in-process imports and nothing else. Any subprocess that does
+not inherit `PYTHONPATH`, and any `ai-hats` binary found on `PATH`, sees the MAIN
+checkout. **So for pytest — and for anything that spawns subprocesses — use the
+worktree's own interpreter**; the cost of not doing so is not a quiet false green
+but a loud false red, a wall of HATS-1242 tripwire errors about a mismatch you
+did not cause.
+
+```bash
+# CORRECT — pytest and anything spawning subprocesses, from inside the worktree:
+./.venv/bin/python -m pytest tests/test_foo.py -xvs
+
+# CORRECT — wt exec for in-process, single-shot commands:
 ai-hats wt exec -- ruff check src/
+ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
 
 # WRONG — hand-rolled paths, and one dead permission grant per worktree:
 WT=/var/folders/.../ai-hats-wt-...
@@ -186,9 +203,12 @@ and venv. `cd` into it and carry on, or name it with `-C` from outside — never
 `cd` to an absolute worktree path:
 
 ```bash
-cd packages/ai-hats-wt && ai-hats wt exec -- pytest         # from inside the worktree
-ai-hats wt exec task/hats-1 -C packages/ai-hats-wt -- pytest  # from the main checkout
+cd packages/ai-hats-wt && ../../.venv/bin/python -m pytest    # from inside the worktree
+ai-hats wt exec task/hats-1 -C packages/ai-hats-wt -- ruff check .  # from the main checkout
 ```
+
+Reaching a subproject's *tests* from the main checkout means standing in the
+worktree first — `-C` moves the cwd, not the interpreter.
 
 PYTHONPATH follows the project that **owns** the directory you run in: the
 nearest ancestor with a `pyproject.toml`, bounded by the worktree root. So a

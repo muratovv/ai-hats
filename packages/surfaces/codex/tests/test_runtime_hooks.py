@@ -419,6 +419,10 @@ def test_two_overlapping_dispatcher_processes_keep_session_state_disjoint(
 
     def process_env(cache: Path, session_id: str, output: Path) -> dict[str, str]:
         env = _session_env(cache, session_id=session_id)
+        codex_src = Path(__file__).resolve().parents[1] / "src"
+        env["PYTHONPATH"] = os.pathsep.join(
+            value for value in (str(codex_src), env.get("PYTHONPATH")) if value
+        )
         env["AI_HATS_TEST_BARRIER"] = str(barrier)
         env["AI_HATS_TEST_OUTPUT"] = str(output)
         return env
