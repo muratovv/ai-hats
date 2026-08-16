@@ -225,6 +225,37 @@ why:    test
     assert "header pin HATS-9999 has no basis" in errs[0]
 
 
+def test_a_pin_is_grounded_in_the_tree_that_owns_the_file(tmp_path: Path):
+    """`--dir` may point anywhere, so the log consulted must be that tree's.
+
+    Reading this checkout's history for a foreign file grounds a pin on a basis
+    the guard never checked — and, for a name this repo happens to carry, would
+    ground it on another file's commits entirely (HATS-1644).
+    """
+    import subprocess
+
+    foreign = tmp_path / "e2e"
+    foreign.mkdir()
+    (foreign / "test_gen_e2e_catalog_probe.py").write_text('"""no pin here"""\n')
+
+    # No repository at all: git exits non-zero, which must read as "no basis".
+    assert mod._ids_known_for("test_gen_e2e_catalog_probe.py", foreign) == set()
+
+    for cmd in (
+        ["git", "init", "--quiet"],
+        ["git", "config", "user.email", "t@e.x"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "."],
+        ["git", "commit", "-m", "HATS-4242 seed the pin", "--quiet"],
+    ):
+        subprocess.run(cmd, cwd=foreign, check=True)  # noqa: S603
+
+    mod._ids_known_for.cache_clear()
+    assert "HATS-4242" in mod._ids_known_for("test_gen_e2e_catalog_probe.py", foreign), (
+        "the owning tree's log is what grounds its pins"
+    )
+
+
 def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
     bad = WELL_FORMED.replace(
         "rack transition HATS-1 done",
@@ -244,19 +275,22 @@ def test_check_plumbing_refuses_plumbing_command_and_allows_wt_exec():
 
 
 def test_check_cmds_sub_cases():
+    """Resolution cases use `rack`: a bare `ai-hats` head belongs to
+    ``validate_cmd_line``, which resolves options too (HATS-1644)."""
+
     def mock_resolve(cli_name: str, args: list[str]) -> tuple[bool, str | None]:
-        if cli_name == "ai-hats" and args == ["status"]:
-            return False, "unknown subcommand 'status' under main"
+        if cli_name == "rack" and args == ["nonesuch"]:
+            return False, "unknown subcommand 'nonesuch' under rack"
         return True, None
 
     def mock_path_exists(p: str) -> bool:
         return p != "scripts/missing.sh"
 
     # 1. Unknown subcommand
-    bad_cmd = WELL_FORMED.replace("rack create A --id HATS-1", "ai-hats status")
+    bad_cmd = WELL_FORMED.replace("rack create A --id HATS-1", "rack nonesuch")
     rows = mod.parse_rows(bad_cmd, "test_x.py")
     errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
-    assert any("unknown subcommand 'status'" in e for e in errs)
+    assert any("unknown subcommand 'nonesuch'" in e for e in errs)
 
     # 2. Missing path
     bad_path = WELL_FORMED.replace("rack create A --id HATS-1", "bash scripts/missing.sh")
@@ -272,7 +306,7 @@ def test_check_cmds_sub_cases():
 
     # 4. Empty marker reason
     bad_marker = WELL_FORMED.replace(
-        "rack transition HATS-1 done       # must refuse", "ai-hats status   # no-resolve:"
+        "rack transition HATS-1 done       # must refuse", "rack nonesuch   # no-resolve:"
     )
     rows = mod.parse_rows(bad_marker, "test_x.py")
     errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
@@ -281,11 +315,20 @@ def test_check_cmds_sub_cases():
     # 5. Non-empty marker excuses unknown subcommand
     good_marker = WELL_FORMED.replace(
         "rack transition HATS-1 done       # must refuse",
-        "ai-hats status   # no-resolve: pins removed status CLI",
+        "rack nonesuch   # no-resolve: pins a removed rack subcommand",
     )
     rows = mod.parse_rows(good_marker, "test_x.py")
     errs = mod.check_cmds(rows, mock_resolve, mock_path_exists)
     assert errs == []
+
+    # 6. The ownership boundary: an `ai-hats` line is not resolved here, so one
+    #    bad command cannot be reported twice in two wordings (HATS-1644).
+    ai_hats_line = WELL_FORMED.replace("rack create A --id HATS-1", "ai-hats status")
+    rows = mod.parse_rows(ai_hats_line, "test_x.py")
+    assert mod.check_cmds(rows, mock_resolve, mock_path_exists) == []
+    assert any("unknown subcommand 'status'" in e for e in mod.check_cmd_lines(rows)), (
+        "validate_cmd_line owns it instead — the check must not simply vanish"
+    )
 
 
 def test_check_cmds_with_real_click_trees():

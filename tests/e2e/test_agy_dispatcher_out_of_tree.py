@@ -12,6 +12,8 @@ why:    without out-of-tree cache resolution, moving session cache out of worksp
 
 from __future__ import annotations
 
+from _helpers.sessions import stand_in_session
+
 import json
 import os
 import subprocess
@@ -24,7 +26,6 @@ from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode
-from ai_hats.session_identity import SessionIdentity
 from ai_hats_agy.global_hook import DISPATCHER_COMMAND
 from ai_hats_agy.provider import AgyProvider
 
@@ -73,18 +74,11 @@ def agy_session(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
         **os.environ,
         **provider.get_env(project, project),
         **artifacts.extra_env,
-        # HATS-1594: the envelope is read before the cache pin, so a bare session
-        # id makes BOTH tests below measure the wrong refusal.
-        **SessionIdentity(
-            id=SESSION_ID,
-            role="hook-role",
-            provider=provider.name,
-            project_dir=project,
-            session_dir=project / ".agent" / "ai-hats" / "sessions" / "runs" / SESSION_ID,
-            skills_root=str(provider.session_skills_root(project, SESSION_ID) or ""),
-        ).to_env(),
         "AI_HATS_PYTHON": sys.executable,
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    # After the spreads, so the out-of-tree cache pin this test is about survives.
+    stand_in_session(env, project, SESSION_ID)
     return project, env, marker
 
 

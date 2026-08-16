@@ -11,6 +11,8 @@ why:    the dispatcher runs on EVERY tool call, so an unbounded hook wedges the
 
 from __future__ import annotations
 
+from _helpers.sessions import stand_in_session
+
 import json
 import os
 import subprocess
@@ -20,29 +22,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.session_identity import SessionIdentity
 from ai_hats_agy.global_hook import DISPATCHER_COMMAND
 
 pytestmark = pytest.mark.integration
 
 SESSION_ID = "e2e-sid-timeout"
 BUDGET_S = 2.0
-
-
-def _identity(project: Path) -> SessionIdentity:
-    """The envelope the launch would hand the dispatcher (HATS-1594).
-
-    Built from the production dataclass rather than a literal JSON blob so a
-    change to the envelope reaches this fixture as a type error, not as four
-    silently unreachable hooks.
-    """
-    return SessionIdentity(
-        id=SESSION_ID,
-        role="assistant",
-        provider="agy",
-        project_dir=project,
-        session_dir=project / ".agent" / "ai-hats" / "sessions" / "runs" / SESSION_ID,
-    )
 
 
 @pytest.fixture
@@ -62,14 +47,12 @@ def hanging_hook(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
     env = {
         **os.environ,
-        # HATS-1594: the envelope is read before the hooks, so a bare session id
-        # reads as a session too old to say what it is and nothing fires.
-        **_identity(project).to_env(),
-        "AI_HATS_PROJECT_DIR": str(project),
         "AI_HATS_SESSION_CACHE_DIR": str(cache),
         "AI_HATS_PYTHON": sys.executable,
         "AI_HATS_AGY_HOOK_TIMEOUT_S": str(BUDGET_S),
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    stand_in_session(env, project, SESSION_ID)
     return project, env
 
 

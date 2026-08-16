@@ -18,9 +18,10 @@ The docstring is the source of truth (it cannot drift from the file it sits
 in); this script renders the whole-tier view that answers "is this flow already
 covered?", and `--check` keeps that view current. What `--check` CANNOT catch
 is a docstring drifting from its own code — both go stale together. The claim
-is "this view is current", never "these rows are true". Check B resolves the
-subcommand path only, not options — `ai-hats config status --verbose` passes
-although `config status` declares no options. Check A accepts an id found
+is "this view is current", never "these rows are true". Check B resolves an
+`ai-hats` line's options too, but for `rack` and `python -m` forms the
+subcommand path only — there `rack ls --nonesuch` passes although `ls` declares
+no such option. Check A accepts an id found
 anywhere in the file's git log, including the commit that wrote the flow block
 itself, so the cataloguing card's own id grounds a pin trivially (HATS-1567).
 
@@ -196,13 +197,16 @@ def check_cmds(
                 continue
 
             cmd_head = tokens[0]
-            if cmd_head in ("ai-hats", "rack") or (
+            # A bare `ai-hats` head belongs to validate_cmd_line, which resolves
+            # options too; resolving it here as well reported one defect twice,
+            # in two wordings, once both checks ran in the same phase (HATS-1644).
+            if cmd_head == "rack" or (
                 cmd_head == "python"
                 and len(tokens) >= 3
                 and tokens[1] == "-m"
                 and tokens[2] in ("ai_hats", "ai_hats.cli", "ai_hats_rack")
             ):
-                if cmd_head in ("ai-hats", "rack"):
+                if cmd_head == "rack":
                     cli_name = cmd_head
                     sub_args = tokens[1:]
                 else:
@@ -262,12 +266,11 @@ def _ids_known_for(file_name: str, base_dir: Path = E2E_DIR) -> set[str]:
             pass
         found.update(_ID.findall(text))
     try:
-        rel_path = (
-            file_path.relative_to(REPO_ROOT) if file_path.is_relative_to(REPO_ROOT) else file_path
-        )
+        # In the tree that OWNS the file, not this checkout: grounding a pin in
+        # a repository nobody named is a basis the guard never checked (HATS-1644).
         res = subprocess.run(
-            ["git", "log", "--", str(rel_path)],
-            cwd=REPO_ROOT,
+            ["git", "log", "--", file_name],
+            cwd=base_dir,
             capture_output=True,
             text=True,
             check=False,
@@ -457,8 +460,28 @@ def validate_cmd_line(cmd_str: str) -> str | None:
     return None
 
 
+def check_cmd_lines(rows: list[Row]) -> list[str]:
+    """Rows whose `cmds:` do not resolve against the real CLI trees.
+
+    A row, not a block: the block parsed fine, so reporting this as malformed
+    sends the reader to the docstring's shape when the defect is in what it says
+    (HATS-1644).
+    """
+    errors = []
+    for row in rows:
+        for cmd in row.cmds:
+            err = validate_cmd_line(cmd)
+            if err:
+                errors.append(f"{row.file}: invalid `cmds:` line {cmd!r} — {err}")
+    return errors
+
+
 def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
-    """(rows, uncatalogued file names, errors) over every test file in `e2e_dir`."""
+    """(rows, uncatalogued file names, errors) over every test file in `e2e_dir`.
+
+    ``errors`` is malformed blocks only — a block that cannot be read as a row.
+    Whether a readable row is SOUND is judged later, by the check_* family.
+    """
     rows: list[Row] = []
     pending: list[str] = []
     errors: list[str] = []
@@ -470,11 +493,6 @@ def collect(e2e_dir: Path) -> tuple[list[Row], list[str], list[str]]:
             continue
         if found:
             rows.extend(found)
-            for row in found:
-                for cmd in row.cmds:
-                    err = validate_cmd_line(cmd)
-                    if err:
-                        errors.append(f"{path.name}: invalid `cmds:` line {cmd!r} — {err}")
         else:
             pending.append(path.name)
     return rows, pending, errors
@@ -602,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
         + check_pins(rows, lambda f: _ids_known_for(f, e2e_dir))
         + check_plumbing(rows)
         + check_cmds(rows, resolve_cmd, path_exists)
+        + check_cmd_lines(rows)
     )
     if soundness_errors:
         print("[e2e-catalog] unsound row(s):", file=sys.stderr)
