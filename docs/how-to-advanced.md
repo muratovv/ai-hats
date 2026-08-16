@@ -156,7 +156,6 @@ export AI_HATS_DIR=/team/shared-ai-hats
 
 The override applies to every ai-hats artefact (traces, future pipelines). For backlog target resolution and sandbox isolation details, see [`docs/how-to-hatrack.md`](how-to-hatrack.md#which-backlog-am-i-writing-to).
 
-
 ### 1.7a `AI_HATS_USER_HOME` override — isolated global customizations
 
 The global customization overlay (`~/.ai-hats/customizations.yaml`) is
@@ -233,12 +232,17 @@ Run `wt merge` / `wt discard` from the **main repo**, passing the branch explici
 
 ### 2.3 Running commands inside the worktree
 
-Always use `ai-hats wt exec` instead of hand-rolled `WT=...; PYTHONPATH=$WT/src` boilerplate — it sets cwd and the workspace `PYTHONPATH` for you and skips a permission round-trip on every new worktree:
+Use `ai-hats wt exec` instead of hand-rolled `WT=...; PYTHONPATH=$WT/src` boilerplate — it sets cwd and the workspace `PYTHONPATH` for you and skips a permission round-trip on every new worktree:
 
 ```bash
-ai-hats wt exec -- pytest tests/test_foo.py -xvs
-ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
 ai-hats wt exec -- ruff check src/
+ai-hats wt exec -- python -c 'import ai_hats; print(ai_hats.__file__)'
+```
+
+**It swaps the import path, not the interpreter.** `wt exec … -- python -c 'import sys; print(sys.executable)'` prints the **main** checkout's `.venv/bin/python`; only `PYTHONPATH` points into the worktree. That covers in-process imports, and nothing else: a subprocess that does not inherit `PYTHONPATH`, or an `ai-hats` binary resolved from `PATH`, reads the main checkout. So run pytest — and anything that spawns subprocesses — with the worktree's **own** interpreter, which `wt create` provisions (HATS-1291):
+
+```bash
+cd <worktree> && ./.venv/bin/python -m pytest tests/test_foo.py -xvs
 ```
 
 It is an environment wrapper, not a teleporter: the command runs **where you stand** when your cwd is inside the worktree, and at the worktree root otherwise. `PYTHONPATH` follows the project that *owns* that directory — the nearest ancestor carrying a `pyproject.toml`, bounded by the worktree root — so a subproject with its own venv gets its own `src` instead of the outer repo's packages, while a plain subdirectory keeps the worktree-root workspace.
@@ -246,8 +250,11 @@ It is an environment wrapper, not a teleporter: the command runs **where you sta
 To reach a subproject without leaving the main checkout, name it with `-C` (worktree-relative) rather than `cd`-ing to an absolute worktree path:
 
 ```bash
-ai-hats wt exec task/hats-1193 -C packages/ai-hats-observe -- pytest
+ai-hats wt exec task/hats-1193 -C packages/ai-hats-observe -- ruff check .
 ```
+
+`-C` moves the cwd, not the interpreter — so to run that subproject's *tests*,
+stand in the worktree and use its own `./.venv/bin/python -m pytest`.
 
 A leading token that names an **active branch** is a worktree selector, and it always beats cwd — so the reach-in form works from anywhere, including from inside a *different* worktree (HATS-1213). A first token that names no active worktree is just the command:
 
