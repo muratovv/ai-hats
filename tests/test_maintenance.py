@@ -40,13 +40,7 @@ from datetime import datetime, timezone
 
 @pytest.fixture(autouse=True)
 def _uv_on_path(monkeypatch):
-    """Make ``_require_uv``'s ``shutil.which("uv")`` probe pass deterministically.
-
-    These tests mock the real uv/pip subprocess, so the ``update`` flow must not
-    depend on the host (or the CI ``test`` job) having uv on PATH (HATS-787).
-    Targeted to ``"uv"``; other lookups hit the real ``which``. Tests that pin
-    ``which`` themselves (e.g. the explicit ``/usr/bin/uv`` mocks) override this.
-    """
+    """Keep mocked uv subprocess tests independent of host PATH."""
     import shutil
 
     real_which = shutil.which
@@ -530,19 +524,25 @@ def _entry(
 
 
 def _invoke_update(
-    args: list[str], *, run_check_return, tmp_path: Path, fail_install: bool = False
+    args: list[str],
+    *,
+    run_check_return,
+    tmp_path: Path,
+    fail_install: bool = False,
+    project: Path | None = None,
+    package_version: str = "same-version",
 ) -> tuple[int, str, list[tuple]]:
     """Invoke ``update`` with all heavy I/O patched; return (exit, output, subprocess calls).
 
     ``fail_install`` makes the legacy in-place ``pip install`` subprocess return
     a non-zero code, exercising the HATS-718 failure branch (must exit 1).
     """
-    project = _setup_update_test_env(tmp_path)
+    project = project or _setup_update_test_env(tmp_path)
     captured: list[tuple] = []
 
     def fake_run(cmd_args, **kwargs):
         captured.append((tuple(cmd_args), kwargs))
-        if fail_install and tuple(cmd_args)[:3] == ("uv", "pip", "install"):
+        if fail_install and tuple(cmd_args) == ("uv", "pip", "install", "ai-hats"):
             return _make_completed(cmd_args, returncode=1, stderr="uv boom")
         return _make_completed(cmd_args, returncode=0, stdout="ok")
 
@@ -561,7 +561,7 @@ def _invoke_update(
         patch("ai_hats.cli.maintenance._assembler") as mock_asm_factory,
         patch("ai_hats.update_check.checker.run_check", return_value=run_check_return),
         patch("subprocess.run", side_effect=fake_run),
-        patch("ai_hats.__version__", "same-version"),
+        patch("ai_hats.__version__", package_version),
     ):
         mock_asm_factory.return_value.bump.return_value = MagicMock(
             rules=[],
@@ -573,7 +573,7 @@ def _invoke_update(
 
 
 def _install_called(captured: list[tuple]) -> bool:
-    return any(tuple(c[0][:3]) == ("uv", "pip", "install") for c in captured)
+    return any(tuple(c[0]) == ("uv", "pip", "install", "ai-hats") for c in captured)
 
 
 def test_update_refuses_when_installed_ahead(tmp_path: Path) -> None:
@@ -1327,13 +1327,15 @@ def test_update_stable_refuses_semver_downgrade(tmp_path, monkeypatch):
     """channel: stable + a lower published tag than installed → exit 3."""
     project = _setup_channel_env(tmp_path, "stable")
     monkeypatch.setattr("ai_hats.channel.fetch_latest_stable_version", lambda: "0.0.1")
-    with (
-        patch("ai_hats.cli.maintenance._project_dir", return_value=project),
-        patch("ai_hats.__version__", "0.9.0"),
-    ):
-        result = CliRunner().invoke(update, [])
-    assert result.exit_code == DOWNGRADE_REFUSAL_EXIT_CODE == 3, result.output
-    assert "newer than" in result.output and "0.0.1" in result.output
+    exit_code, output, _ = _invoke_update(
+        [],
+        run_check_return=None,
+        tmp_path=tmp_path,
+        project=project,
+        package_version="0.9.0",
+    )
+    assert exit_code == DOWNGRADE_REFUSAL_EXIT_CODE == 3, output
+    assert "newer than" in output and "0.0.1" in output
 
 
 def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
@@ -1346,10 +1348,15 @@ def test_update_stable_fetch_unreachable_exits_2(tmp_path, monkeypatch):
         raise ChannelResolveError("could not resolve latest stable version from PyPI")
 
     monkeypatch.setattr("ai_hats.channel.fetch_latest_stable_version", boom)
-    with patch("ai_hats.cli.maintenance._project_dir", return_value=project):
-        result = CliRunner().invoke(update, [])
-    assert result.exit_code == 2, result.output
-    assert "could not resolve latest stable version from PyPI" in result.output
+    exit_code, output, _ = _invoke_update(
+        [],
+        run_check_return=None,
+        tmp_path=tmp_path,
+        project=project,
+        package_version="0.9.0",
+    )
+    assert exit_code == 2, output
+    assert "could not resolve latest stable version from PyPI" in output
 
 
 def test_update_local_editable_in_place(tmp_path, monkeypatch):
@@ -1368,7 +1375,7 @@ def test_update_local_editable_in_place(tmp_path, monkeypatch):
     ):
         result = CliRunner().invoke(update, [])
     assert result.exit_code == 0, result.output
-    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and "-e" in c]
+    editable = [c for c in captured if c[:3] == ["uv", "pip", "install"] and c[-2:] == ["-e", "."]]
     assert len(editable) == 1, f"expected one editable install, got {captured}"
     assert editable[0][-1] == "."
     # No versioned dir is created for a local editable install.

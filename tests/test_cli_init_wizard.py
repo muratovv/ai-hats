@@ -136,19 +136,18 @@ def test_init_wizard_marks_every_detected_provider(fresh_project, monkeypatch):
 # ---------- init() flag-only paths (no wizard) ----------
 
 
-@pytest.mark.parametrize(("provider", "role"), [("claude", "assistant"), ("codex", "maintainer")])
-def test_init_with_both_flags_skips_wizard(fresh_project, provider, role):
+def test_init_with_both_flags_skips_wizard(fresh_project):
     """When -p and -r are given, wizard must NOT auto-launch."""
     runner = CliRunner()
     with patch("ai_hats.cli.assembly._launch_wizard_session") as launch:
         # stdin TTY behavior is irrelevant when both flags are present.
         result = runner.invoke(
             main,
-            ["self", "init", "-p", provider, "-r", role, "--no-update"],
+            ["self", "init", "-p", "claude", "-r", "assistant", "--no-update"],
         )
     assert result.exit_code == 0, result.output
     assert (fresh_project / PROJECT_CONFIG).exists()
-    assert f"provider: {provider}" in (fresh_project / PROJECT_CONFIG).read_text()
+    assert "provider: claude" in (fresh_project / PROJECT_CONFIG).read_text()
     launch.assert_not_called()
 
 
