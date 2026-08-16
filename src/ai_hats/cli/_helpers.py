@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from ..paths import NotAnAiHatsProjectError
     from ..providers import UnknownProviderError
     from ..role_spec import RoleSpecError
+    from ..self_heal import ProviderInstallationError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -97,6 +98,12 @@ def _handle_missing_provider(exc: "MissingProviderError") -> NoReturn:
     sys.exit(2)
 
 
+def _handle_provider_installation_error(exc: "ProviderInstallationError") -> NoReturn:
+    """Render an installer failure with its captured diagnostic and no traceback."""
+    click.echo(f"Error: {exc}", err=True)
+    sys.exit(2)
+
+
 def _handle_not_a_project(exc: "NotAnAiHatsProjectError") -> NoReturn:
     """Render a ``NotAnAiHatsProjectError`` as a friendly message + exit 2.
 
@@ -135,12 +142,14 @@ def _friendly_error_handlers() -> "tuple[tuple[type[Exception], Callable[..., No
         from ..paths import NotAnAiHatsProjectError
         from ..providers import UnknownProviderError
         from ..role_spec import RoleSpecError
+        from ..self_heal import ProviderInstallationError
 
     return (
         (RoleSpecError, _handle_role_spec_error),
         (RoleNotFoundError, _handle_role_not_found),
         (UnknownProviderError, _handle_unknown_provider),
         (MissingProviderError, _handle_missing_provider),
+        (ProviderInstallationError, _handle_provider_installation_error),
         (NotAnAiHatsProjectError, _handle_not_a_project),
         (CheckBindingError, _handle_check_binding_error),
         # HATS-1545 F7: a key defect is the same class of message as a binding
