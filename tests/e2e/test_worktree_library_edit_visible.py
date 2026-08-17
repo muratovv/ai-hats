@@ -62,9 +62,7 @@ def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Pa
         )
         ProjectConfig(
             provider="claude",
-            customizations={
-                "role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)
-            },
+            customizations={"role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)},
         ).save(wt / PROJECT_CONFIG)
         Assembler(wt).init()
 
