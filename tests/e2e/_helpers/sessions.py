@@ -242,4 +242,36 @@ def stand_in_session(
         skills_root=str(skills_root if skills_root is not None else session_dir / "skills"),
     )
     env.update(identity.to_env())
+    _write_role_materialization(session_dir, project, role)
     return env
+
+
+def _write_role_materialization(session_dir: Path, project: Path, role: str) -> None:
+    """The envelope's on-disk half, as a real launch writes it (HATS-1682).
+
+    The consent declaration is a role property and reaches the PreToolUse guard
+    through this file, so a stand-in session that omits it stands in for one no
+    launch produces — and the guard asks nothing, for the wrong reason.
+    """
+    from ai_hats.assembler import Assembler
+
+    result = Assembler(project).composer.compose(role)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "role_materialization.json").write_text(
+        json.dumps(
+            {
+                "role": role,
+                "checks": [],
+                "consent": [
+                    {
+                        "app": point.app,
+                        "path": list(point.path),
+                        "point": point.point,
+                        "declared_by": point.declared_by,
+                    }
+                    for point in result.consent
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )

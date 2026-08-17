@@ -12,6 +12,8 @@ why:    without out-of-tree cache resolution, moving session cache out of worksp
 
 from __future__ import annotations
 
+from _helpers.sessions import stand_in_session
+
 import json
 import os
 import subprocess
@@ -72,9 +74,11 @@ def agy_session(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
         **os.environ,
         **provider.get_env(project, project),
         **artifacts.extra_env,
-        "AI_HATS_SESSION_ID": SESSION_ID,
         "AI_HATS_PYTHON": sys.executable,
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    # After the spreads, so the out-of-tree cache pin this test is about survives.
+    stand_in_session(env, project, SESSION_ID)
     return project, env, marker
 
 

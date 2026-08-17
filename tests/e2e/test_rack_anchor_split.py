@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from _helpers.git import git as _git
+from _helpers.sessions import stand_in_session
 
 pytestmark = pytest.mark.integration
 
@@ -63,9 +64,12 @@ def split(shared_launcher, tmp_path):
 
     env = {
         **base_env,
-        "AI_HATS_SESSION_ID": "e2e-anchor-split",
         "AI_HATS_ROOT_PID": str(os.getpid()),
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    # Named against `main`: a linked worktree's session still belongs to the
+    # checkout that owns it, which is the split this file is about.
+    stand_in_session(env, main, "e2e-anchor-split")
     return rack, main, worktree, env
 
 

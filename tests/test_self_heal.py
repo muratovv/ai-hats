@@ -282,6 +282,10 @@ def test_get_surface_remediation(tmp_path) -> None:
     rem_known = self_heal.get_surface_remediation("cline")
     assert "packages/surfaces/cline" in rem_known
 
+    rem_codex = self_heal.get_surface_remediation("codex")
+    assert rem_codex is not None
+    assert "packages/surfaces/codex" in rem_codex or "ai-hats-codex" in rem_codex
+
     rem_claude = self_heal.get_surface_remediation("claude")
     assert rem_claude is not None
     assert "ai-hats" in rem_claude
@@ -301,6 +305,10 @@ def test_surfaces_registry() -> None:
     assert info_agy is not None
     assert info_agy.package_name == "ai-hats-agy"
 
+    info_codex = get_surface_info("codex")
+    assert info_codex is not None
+    assert info_codex.package_name == "ai-hats-codex"
+
 
 def test_ensure_surface_plugin_installed_already_installed() -> None:
     from ai_hats.self_heal import ensure_surface_plugin_installed
@@ -315,10 +323,16 @@ def test_ensure_surface_plugin_installed_already_installed() -> None:
     assert called is False
 
 
-def test_ensure_surface_plugin_installed_triggers_installer(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("provider_name", "package_name"),
+    [("cline", "ai-hats-cline"), ("codex", "ai-hats-codex")],
+)
+def test_ensure_surface_plugin_installed_triggers_installer(
+    monkeypatch, provider_name: str, package_name: str
+) -> None:
     from ai_hats.self_heal import ensure_surface_plugin_installed
 
-    installed_state = {"cline": False}
+    installed_state = {provider_name: False}
     installed_pkg = []
 
     def fake_is_installed(provider_name: str) -> bool:
@@ -326,14 +340,14 @@ def test_ensure_surface_plugin_installed_triggers_installer(monkeypatch) -> None
 
     def fake_installer(pkg: str) -> None:
         installed_pkg.append(pkg)
-        installed_state["cline"] = True
+        installed_state[provider_name] = True
 
     monkeypatch.setattr("ai_hats.self_heal._is_surface_module_installed", fake_is_installed)
     monkeypatch.setattr("ai_hats.self_heal.run_editable_heal", lambda repo_root=None: None)
 
-    res = ensure_surface_plugin_installed("cline", installer=fake_installer)
+    res = ensure_surface_plugin_installed(provider_name, installer=fake_installer)
     assert res is True
-    assert installed_pkg == ["ai-hats-cline"]
+    assert installed_pkg == [package_name]
 
 
 def test_ensure_surface_plugin_installed_raises_on_installer_error(monkeypatch) -> None:

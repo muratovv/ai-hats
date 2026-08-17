@@ -53,18 +53,26 @@ def test_clean_env_denylist_covers_git_plumbing():
     assert {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} <= ENV_DENYLIST
 
 
-def test_merge_ack_inherits_and_defaults(tmp_path):
-    """HATS-1019: yolo-mode rides plain env inheritance — the consent flag
-    must never join the scrub list, must survive the launcher transform,
-    and the hermetic e2e env grants it by default (the merge inventory
-    tests merge semantics, not consent)."""
-    assert "AI_HATS_MERGE_ACK" not in ENV_DENYLIST
-    out = launcher_subprocess_env(
+def test_merge_ack_is_asked_for_never_assumed(tmp_path):
+    """HATS-1682 T4: the launcher env grants a merge only when asked.
+
+    It used to ``setdefault`` the flag, so the whole e2e tier ran in the very
+    environment the live probe named as the incident condition — no test there
+    could observe a hole on the road into master. ``merge_ack`` is now the only
+    source: OFF by default, and an inherited flag is dropped rather than
+    obeyed, so a developer who exports one cannot keep the tier green.
+    """
+    assert "AI_HATS_MERGE_ACK" not in ENV_DENYLIST  # not a leak; a decision
+    plain = launcher_subprocess_env({}, repo_url="/c", venv="/v", user_home=tmp_path)
+    assert "AI_HATS_MERGE_ACK" not in plain
+    inherited = launcher_subprocess_env(
         {"AI_HATS_MERGE_ACK": "1"}, repo_url="/c", venv="/v", user_home=tmp_path
     )
-    assert out["AI_HATS_MERGE_ACK"] == "1"
-    granted = launcher_subprocess_env({}, repo_url="/c", venv="/v", user_home=tmp_path)
-    assert granted["AI_HATS_MERGE_ACK"] == "1"
+    assert "AI_HATS_MERGE_ACK" not in inherited
+    asked = launcher_subprocess_env(
+        {}, repo_url="/c", venv="/v", user_home=tmp_path, merge_ack=True
+    )
+    assert asked["AI_HATS_MERGE_ACK"] == "1"
 
 
 def test_launcher_subprocess_env_isolates_and_pins(tmp_path):

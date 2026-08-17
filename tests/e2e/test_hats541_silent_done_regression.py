@@ -10,6 +10,7 @@ why: without log escaping, special characters in transition logs cause silent ta
      transition drops"""
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import subprocess
@@ -75,11 +76,11 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(shared_launcher, tmp_p
             expect_exit=expect_exit,
         )
 
-    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(rack_bin), *args],
             cwd=cwd,
-            env=env,
+            env={**env, **(extra_env or {})},
             timeout=timeout,
             expect_exit=expect_exit,
         )
@@ -177,12 +178,15 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(shared_launcher, tmp_p
     rack("transition", task_id, "review")
 
     # ---- Attempt 1: must exit non-zero, state must stay `review`. ----
+    # HATS-1682: `review -> done` is a consent point the role declares; the
+    # answer is scaffolding, and the worktree layer is what this measures.
     res1 = rack(
         "transition",
         task_id,
         "done",
         expect_exit=None,
         timeout=90,
+        extra_env=consent_grant(),
     )
     assert res1.returncode != 0, (
         f"attempt 1: transition done exited 0 despite merge conflict\n"
@@ -218,6 +222,7 @@ def test_e2e_failed_done_stays_review_then_retry_succeeds(shared_launcher, tmp_p
         "done",
         expect_exit=None,
         timeout=90,
+        extra_env=consent_grant(),
     )
     assert res2.returncode == 0, (
         f"🐛 attempt 2 should be a clean retry now that the worktree is "

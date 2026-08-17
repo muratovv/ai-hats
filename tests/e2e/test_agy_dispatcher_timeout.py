@@ -11,6 +11,8 @@ why:    the dispatcher runs on EVERY tool call, so an unbounded hook wedges the
 
 from __future__ import annotations
 
+from _helpers.sessions import stand_in_session
+
 import json
 import os
 import subprocess
@@ -45,12 +47,12 @@ def hanging_hook(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
     env = {
         **os.environ,
-        "AI_HATS_SESSION_ID": SESSION_ID,
-        "AI_HATS_PROJECT_DIR": str(project),
         "AI_HATS_SESSION_CACHE_DIR": str(cache),
         "AI_HATS_PYTHON": sys.executable,
         "AI_HATS_AGY_HOOK_TIMEOUT_S": str(BUDGET_S),
     }
+    # HATS-1594: a session is its envelope; the bare id reads as an older build.
+    stand_in_session(env, project, SESSION_ID)
     return project, env
 
 

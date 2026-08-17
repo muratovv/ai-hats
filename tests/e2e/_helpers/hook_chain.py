@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,11 @@ CLAUDE_PROJECT_DIR_VAR = "$CLAUDE_PROJECT_DIR/"
 #: Flags that grant consent. A deny whose text names none of these leaves the
 #: agent nowhere to go — see the deny-names-its-hatch invariant (HATS-1253 P4).
 ACK_FLAG_RE = re.compile(r"AI_HATS_[A-Z0-9_]*ACK")
+
+#: Keys a surface can spell the Bash command line under. ``safety_gate.py``
+#: answers in the key the surface spoke in — Claude Code says ``command``, agy
+#: says ``CommandLine`` — so a runner that knows only one drops half the reply.
+COMMAND_KEYS = ("command", "CommandLine")
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,102 @@ class Verdict:
         if not self.gated:
             return "allow"
         return f"{self.decision} by {self.hook}: {self.reason.strip()[:200]}"
+
+
+@dataclass(frozen=True)
+class Approved:
+    """What a real shell did with the command the supervisor approved.
+
+    Deliberately dumb: no verdict verbs, no assertions of its own. The caller
+    reads :attr:`returncode` — a helper that swallowed a non-zero exit would
+    reproduce the blind spot it exists to remove (HATS-1682 T2).
+    """
+
+    command: str
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+    @property
+    def output(self) -> str:
+        return self.stdout + self.stderr
+
+    def __str__(self) -> str:  # pragma: no cover - assertion messages only
+        return f"exit {self.returncode} from `{self.command}`\n{self.output.strip()[:800]}"
+
+
+def approved_command(verdict: Verdict) -> str:
+    """The command line ``verdict`` approved, in whichever key it answered.
+
+    Raises on anything that is not an `ask` carrying a rewrite: running the
+    ORIGINAL command there would silently test the ungated spelling, which is
+    the failure mode this whole helper exists to end.
+    """
+    if verdict.decision != "ask":
+        raise AssertionError(
+            f"run_approved needs an `ask` to execute; the chain said {verdict}. "
+            "Nothing was approved, so there is no approved command to run."
+        )
+    if not verdict.updated_input:
+        raise AssertionError(
+            f"the ask carried no updatedInput, so no command was approved: {verdict}"
+        )
+    for key in COMMAND_KEYS:
+        value = verdict.updated_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    raise AssertionError(
+        f"updatedInput names none of {COMMAND_KEYS}: {sorted(verdict.updated_input)}"
+    )
+
+
+def run_approved(
+    project: Path,
+    verdict: Verdict,
+    *,
+    env: dict | None = None,
+    ack: str | None = None,
+    timeout: int = 180,
+) -> Approved:
+    """Execute the command the chain approved, verbatim, through a real shell.
+
+    Deliberate long contract — noqa: comment-length.
+
+    The rewrite IS the delivery mechanism, so lifting the nonce out and handing
+    it to a subprocess as an env var tests a path the product never takes — and
+    reported a rewrite that exits 127 as a pass (HATS-1682 T2).
+
+    ``bash -c``, not ``bash -lc``: the harness runs a Bash tool call in a
+    non-login shell, and ``-l`` would source the developer's profile — PATH
+    edits, exported ack flags — re-injecting the ambient state the harness does
+    not have. :func:`_run_one` already runs the hooks that way, so the question
+    and its answer meet the same shell.
+
+    Ack hygiene matches :func:`run_tool_chain`: every ``AI_HATS_*ACK`` is
+    stripped unless named in ``ack``, because an `ask` is only reachable when
+    none was set. ``PATH`` leads with the interpreter's ``bin`` — a bare ``rack``
+    would otherwise resolve to whatever checkout the developer's PATH names.
+    """
+    command = approved_command(verdict)
+
+    base_env = dict(env) if env is not None else os.environ.copy()
+    for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
+        del base_env[key]
+    base_env.pop("AI_HATS_YOLO", None)
+    if ack:
+        base_env[ack] = "1"
+    bin_dir = str(Path(sys.executable).parent)
+    base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
+
+    proc = subprocess.run(  # noqa: S603 - the command the guard itself wrote
+        ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
+        cwd=str(project),
+        env=base_env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return Approved(command, proc.returncode, proc.stdout, proc.stderr)
 
 
 def _matches_tool(matcher: str, tool: str) -> bool:

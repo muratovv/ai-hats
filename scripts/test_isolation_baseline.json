@@ -83,7 +83,7 @@
   "tests/test_library_paths.py": 10,
   "tests/test_library_paths_seam.py": 1,
   "tests/test_list_cmd_resilience.py": 2,
-  "tests/test_maintenance.py": 128,
+  "tests/test_maintenance.py": 125,
   "tests/test_make_audit_step.py": 2,
   "tests/test_maybe_spawn_session_reviewer_step.py": 15,
   "tests/test_migration_backup.py": 1,

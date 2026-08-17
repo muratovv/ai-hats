@@ -45,17 +45,28 @@ class CheckBindingError(ValueError):
 class AppBinding:
     """One row of ``composition.apps``, with its declarer and its place in the tree.
 
-    ai-hats owns three keys — ``run`` (what executes), ``at`` (where) and
-    ``on_error`` (how a verdict is read); ``cargo`` is every other key and is
-    never read here. ``at`` is owned but not *interpreted*: ai-hats checks only
-    that a row names at least one point, because a row bound to nothing is a gate
-    that never fires — the silent absence this channel exists to remove. What each
-    name MEANS stays the owning application's question (HATS-1545 F3).
+    ai-hats owns four keys — ``run`` (what executes), ``at`` (where),
+    ``on_error`` (how a verdict is read) and ``consent`` (whether the supervisor
+    is asked before this point); ``cargo`` is every other key and is never read
+    here. ``at`` is owned but not *interpreted*: ai-hats checks only that a row
+    names at least one point, because a row bound to nothing is a gate that never
+    fires — the silent absence this channel exists to remove. What each name
+    MEANS stays the owning application's question (HATS-1545 F3).
+
+    A row carries ``run``, ``consent``, or both (HATS-1682). Consent runs
+    nothing, so a row declaring only consent has no script — which is what lets
+    an edge be gated on a role that binds no gate to it at all, and why an
+    explicit ``on_error`` on such a row is refused: it polices a failure that
+    cannot happen.
+
+    ``consent`` is THREE-valued: absent says nothing, and only `true`/`false`
+    speak. Reading absence as `false` would make every gate row silently switch
+    off a consent its trait declared.
 
     ``path`` is the trail of keys from the app node down to the row, so an
     application that nests (``apps.rack.<backlog>``) gets its level back and one
     that does not (``apps.wt``) gets an empty trail.
-    """  # comment-length: allow — which of the three keys is interpreted is the contract
+    """  # comment-length: allow — which of the four keys is interpreted is the contract
 
     declared_by: str
     app: str
@@ -64,6 +75,7 @@ class AppBinding:
     at: tuple[str, ...]
     on_error: str
     cargo: Mapping[str, Any]
+    consent: bool | None = None
 
     @property
     def skill(self) -> str:
@@ -89,17 +101,23 @@ class AppBinding:
             json.dumps({"at": list(self.at), **dict(self.cargo)}, sort_keys=True, default=str),
         )
 
+    def consent_points(self):
+        """``((app, path, point), value)`` for each point this row speaks about."""
+        if self.consent is None:
+            return ()
+        return tuple(((self.app, self.path, point), self.consent) for point in self.at)
+
 
 def parse_app_bindings(
     apps: Mapping[str, Any], *, declared_by: str, source: Path | None = None
 ) -> tuple[AppBinding, ...]:
     """Flatten one component's ``composition.apps`` into rows, in document order.
 
-    A row is recognised STRUCTURALLY — a mapping carrying ``run:`` — so the
-    grammar above it belongs to the application and ai-hats never checks its
-    depth (HATS-1545 R4). Flattening here is what makes provenance survive: the
-    declarer is stamped on each row before any two components' rows meet, so no
-    merge step can drop it (D4).
+    A row is recognised STRUCTURALLY — a mapping carrying ``run:`` or
+    ``consent:`` — so the grammar above it belongs to the application and ai-hats
+    never checks its depth (HATS-1545 R4, widened by HATS-1682). Flattening here
+    is what makes provenance survive: the declarer is stamped on each row before
+    any two components' rows meet, so no merge step can drop it (D4).
     """
     where = f"{source}: " if source is not None else ""
     if not isinstance(apps, dict):
@@ -127,13 +145,13 @@ def _walk_app_block(
         for index, item in enumerate(node):
             if not isinstance(item, dict):
                 raise CheckBindingError(
-                    f"{label}[{index}]: a row must be a mapping carrying 'run:', "
-                    f"got {type(item).__name__}"
+                    f"{label}[{index}]: a row must be a mapping carrying 'run:' "
+                    f"or 'consent:', got {type(item).__name__}"
                 )
             rows.append(_app_row(item, app=app, path=path, declared_by=declared_by, label=label))
         return
     if isinstance(node, dict):
-        if "run" in node:
+        if "run" in node or "consent" in node:
             rows.append(_app_row(node, app=app, path=path, declared_by=declared_by, label=label))
             return
         for key, child in node.items():
@@ -155,9 +173,29 @@ def _walk_app_block(
 def _app_row(
     row: Mapping[str, Any], *, app: str, path: tuple[str, ...], declared_by: str, label: str
 ) -> AppBinding:
+    consent = row.get("consent")
+    if consent is not None and not isinstance(consent, bool):
+        raise CheckBindingError(
+            f"{label}: 'consent:' must be true or false, got {consent!r} — the key is "
+            f"three-valued, and ABSENT is how a row says nothing about consent"
+        )
     run = row.get("run")
-    if not isinstance(run, str) or not run.strip():
-        raise CheckBindingError(f"{label}: 'run:' must be a non-empty '<skill>/<script>' string")
+    if run is None and consent is not None:
+        run = ""  # a consent-only row runs nothing; there is no script to name
+        if "on_error" in row:
+            # Refused here, not downstream: left standing it reached the
+            # owned-point policy check and was refused there for endangering
+            # data a row that spawns nothing cannot touch (HATS-1682).
+            raise CheckBindingError(
+                f"{label}: 'on_error:' is the failure policy of a script, and this row "
+                f"carries no 'run:' — nothing here can fail. Drop the key, or give the "
+                f"row the 'run:' whose verdict it governs"
+            )
+    elif not isinstance(run, str) or not run.strip():
+        raise CheckBindingError(
+            f"{label}: 'run:' must be a non-empty '<skill>/<script>' string, or be "
+            f"omitted on a row that carries 'consent:'"
+        )
     on_error = row.get("on_error", "refuse")
     if on_error not in ("refuse", "warn"):
         raise CheckBindingError(
@@ -172,7 +210,9 @@ def _app_row(
             f"got {at!r} — a row bound to nothing is a gate that never fires. What each name "
             f"means is {app!r}'s question, but that a row names one is not"
         )
-    cargo = {key: value for key, value in row.items() if key not in ("run", "on_error", "at")}
+    cargo = {
+        key: value for key, value in row.items() if key not in ("run", "on_error", "at", "consent")
+    }
     return AppBinding(
         declared_by=declared_by,
         app=app,
@@ -181,6 +221,7 @@ def _app_row(
         at=tuple(p.strip() for p in at),
         on_error=on_error,
         cargo=cargo,
+        consent=consent,
     )
 
 

@@ -218,14 +218,16 @@ def test_e2e_merge_refusal_names_every_blocker(shared_launcher, tmp_path):
 
 
 @pytest.mark.integration
-def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
+def test_e2e_transition_done_is_refused_without_consent(shared_launcher, tmp_path):
     """The canonical supervised close, end to end.
 
-    Agent side runs WITHOUT ack throughout:
-      create → plan → execute → commit → document → review → ``done`` is
-      REFUSED (directive, card stays in review, branch preserved).
-    Supervisor merges with ack; the agent's retried ack-free ``done``
-    then passes via the already-merged short-circuit (HATS-596).
+    Was ``…_inner_merge_denied`` until HATS-1682: the refusal used to come from
+    the merge INSIDE the teardown and to name ``AI_HATS_MERGE_ACK``. The role
+    now declares consent on `review → done` itself, so the edge is refused
+    before any worktree is touched — earlier, and by a gate that names the
+    point-agnostic channel. What the test protects is unchanged: the refusal is
+    directive, the card stays in `review`, the branch survives, and the
+    supervisor's answer is what closes it.
     """
     launcher_dest, env, venv = shared_launcher
     project = tmp_path / "project"
@@ -235,6 +237,9 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     deny_env = dict(env)
     deny_env.pop("AI_HATS_MERGE_ACK", None)
     deny_env["AI_HATS_PLAN_ACK"] = "1"  # plan consent is a different gate
+    # The supervisor's answer, on the only channel a hookless subprocess has.
+    consented_env = dict(deny_env)
+    consented_env["AI_HATS_CONSENT_ACK"] = "1"
 
     def ai_hats(*args, expect_exit=0, timeout=180, run_env=deny_env):
         return _run(
@@ -327,21 +332,37 @@ def test_e2e_transition_done_inner_merge_denied(shared_launcher, tmp_path):
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
 
-    # ---- 3. agent's `done` without ack: directive refusal, review intact ----
+    # ---- 3. agent's `done` with no answer: directive refusal, review intact ----
     res = rack("transition", task_id, "done", expect_exit=1)
     combined = res.stdout + res.stderr
-    assert "AI_HATS_MERGE_ACK" in combined, f"consent env var not named in refusal:\n{combined}"
-    assert "review" in combined.lower(), f"review handoff directive missing:\n{combined}"
+    assert "requires supervisor approval" in combined, (
+        f"the edge into master was not gated by consent:\n{combined}"
+    )
+    assert "AI_HATS_CONSENT_ACK" in combined, (
+        f"the refusal names no channel the reader can use:\n{combined}"
+    )
+    assert "review -> done" in combined, f"the refused edge is not named:\n{combined}"
+    assert "STOP" in combined, f"review handoff directive missing:\n{combined}"
     branches = _git(project, "branch", "--list", task_branch).stdout
     assert task_branch in branches, "refusal must preserve the task branch"
+    assert wt_path.is_dir(), "a refusal before the teardown must preserve the worktree"
+    assert not (project / "wt-work.txt").exists(), "base must be untouched by a refusal"
     show = rack("context", task_id).stdout
     assert "state: review" in show, f"card must stay in review after refusal:\n{show}"
 
-    # ---- 4. supervisor merges with ack; agent's ack-free retry closes ----
+    # ---- 4. supervisor merges with the merge ack; the answered close lands ----
+    # The close carries `AI_HATS_CONSENT_ACK` and NOT `AI_HATS_MERGE_ACK`: the
+    # rack gate reads the point-agnostic channel, and the teardown behind it
+    # takes the HATS-596 already-merged short-circuit, which is ack-free.
     ai_hats("wt", "merge", task_branch, run_env=ack_env)
-    rack("transition", task_id, "done", run_env=deny_env)
+    assert "AI_HATS_MERGE_ACK" not in consented_env
+    rack("transition", task_id, "done", run_env=consented_env)
 
     log = _git(project, "log", "--pretty=%s", "-n", "10").stdout
     assert "wt-work" in log, f"worktree commit not in base history:\n{log}"
     branches = _git(project, "branch", "--list", task_branch).stdout
     assert branches.strip() == "", "task branch should be gone after close"
+    closed = rack("context", task_id).stdout
+    assert "no question was asked" in closed, (
+        f"the env channel closed the card without saying so (HATS-1682 B2):\n{closed}"
+    )

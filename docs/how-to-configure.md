@@ -214,9 +214,11 @@ The two traits shipped for this are `leader` and `worker` (HATS-1491) — the sa
 # window 1 — worker (cheaper model); start this one FIRST, it goes to sleep
 ai-hats -p agy -r "maintainer + worker"
 
-# window 2 — leader; he takes `plan -> execute` and the merge, so both acks live here
-AI_HATS_PLAN_ACK=1 AI_HATS_MERGE_ACK=1 ai-hats -r "maintainer + leader" --model opus
+# window 2 — leader; he takes `plan -> execute` and the merge, and answers in chat
+ai-hats -r "maintainer + leader" --model opus
 ```
+
+**No ack is exported there, on purpose.** The leader window is the one with a human in it, so every consent-gated move the role declared — `plan → execute`, `review → done`, and a direct `ai-hats wt merge` — is raised in that window as a question in chat, and the click is what carries it. Pre-approve from the environment only where nobody can be asked, and name the flag that means what you want (HATS-1682): `AI_HATS_PLAN_ACK=1` answers `plan → execute`, `AI_HATS_MERGE_ACK=1` answers a direct `ai-hats wt merge` and deliberately **not** `review → done`, and `AI_HATS_CONSENT_ACK=1` answers every declared point including the merge inside `review → done`. Details in [how-to-hatrack.md](how-to-hatrack.md#a-create-a-task-and-walk-it-to-done).
 
 The leader owns the plan and the review and writes no code; the worker owns every mechanical step and hands work back with the artifacts that settle each claim (commit SHAs, the runner's own exit code, a separate one for the linter). The human enters twice: approving the plan, and the final review. Both traits are `usage/`-level and carry no composition of their own — they mix onto whatever base role already has the working gear.
 

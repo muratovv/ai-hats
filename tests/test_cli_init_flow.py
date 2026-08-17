@@ -894,8 +894,11 @@ def test_task_list_table_filters(cli_project):
         "## Steps\n- [x] do thing\n\n"
         "## Verification Protocol\npytest\n"
     )
+    # HATS-1682: `→ done` is consent-gated too now, and this test is about the
+    # init flow, not about consent — so both gated edges are pre-approved.
+    gated = {"execute", "done"}
     for state in ["execute", "document", "review", "done"]:
-        env = {"AI_HATS_PLAN_ACK": "1"} if state == "execute" else None
+        env = {"AI_HATS_CONSENT_ACK": "1"} if state in gated else None
         r = runner.invoke(rack_main, ["transition", "HATS-003", state], env=env)
         assert r.exit_code == 0, r.output
 

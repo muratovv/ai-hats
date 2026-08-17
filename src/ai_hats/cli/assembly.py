@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -55,7 +56,13 @@ def _detected_providers() -> list[str]:
     return detected
 
 
-def _wizard_provider_prompt(detected: list[str]) -> str:
+def _wizard_provider_prompt(
+    detected: list[str],
+    *,
+    prompt: Callable[..., str] | None = None,
+    installed_lookup: Callable[[str], bool] | None = None,
+    provider_lookup: Callable[[str], Any] | None = None,
+) -> str:
     """Interactive numbered menu for provider selection.
 
     Every provider whose config dir exists is marked ``detected``. A click
@@ -72,21 +79,28 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
     home = Path.home()
     known = get_known_surfaces()
     names = list(known.keys())
+    ask = prompt or click.prompt
+    installed_lookup = installed_lookup or is_surface_installed
+    provider_lookup = provider_lookup or get_provider
 
     console.print("[bold]Choose provider:[/]")
     for idx, name in enumerate(names, start=1):
         markers: list[str] = []
+        installed = installed_lookup(name)
         if name in detected:
-            try:
-                p = get_provider(name)
-                dirs = p.detected_home_dirs()
-            except Exception:
+            dirs: list[str] = []
+            if installed:
+                try:
+                    dirs = provider_lookup(name).detected_home_dirs()
+                except Exception:  # silent-ok: registry dirs still render a non-mutating marker
+                    dirs = []
+            if not dirs:
                 info = known.get(name)
                 dirs = list(info.default_home_dirs) if info else [f".{name}"]
             found_dir = next((d for d in dirs if (home / d).is_dir()), f".{name}")
             markers.append(f"detected — found ~/{found_dir}")
 
-        if not is_surface_installed(name):
+        if not installed:
             info = known.get(name)
             pkg = info.package_name if info else f"ai-hats-{name}"
             markers.append(f"will install: {pkg}")
@@ -98,7 +112,7 @@ def _wizard_provider_prompt(detected: list[str]) -> str:
     default_name = detected[0] if len(detected) == 1 else None
     default_idx = names.index(default_name) + 1 if default_name else None
     while True:
-        raw = click.prompt(
+        raw = ask(
             f"Provider [1-{len(names)}]",
             default=str(default_idx) if default_idx else None,
             show_default=bool(default_idx),
@@ -193,7 +207,7 @@ def _build_init_pipeline_state(
 
 
 @click.command()
-@click.option("--provider", "-p", default=None, help="Provider (agy/claude)")
+@click.option("--provider", "-p", default=None, help="Provider (see `ai-hats list providers`)")
 @click.option("--role", "-r", default=None, help="Role to apply after init")
 @click.option(
     "--task-prefix",
@@ -335,7 +349,7 @@ def init(
 
 
 @click.command("set")
-@click.option("--provider", "-p", default=None, help="Provider (agy/claude)")
+@click.option("--provider", "-p", default=None, help="Provider (see `ai-hats list providers`)")
 @click.option("--role", "-r", default=None, help="Role to apply")
 @click.option(
     "--task-prefix",

@@ -69,8 +69,11 @@ class PlanConsentExtension:
         return f"consent ticket for {task_id} could not be spent — it may still be on disk"
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
-        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic or ctx.force:
-            return None  # epics, automation, and forced overrides skip consent check
+        # HATS-1682: `ctx.force` is deliberately NOT here — consent is not a
+        # property of the command. The card and the actor still are, and there
+        # is nobody to ask on either.
+        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
+            return None
         if getattr(ctx.event, "from_state", "") != "plan":
             return None
         self._accepted.discard(ctx.task.id)  # a prior attempt that never settled

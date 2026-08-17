@@ -110,6 +110,7 @@ def dry_run_hitl(
         cwd=str(project_dir),
         escapes=_detect_escapes(cache_dir, before),
         checks=checks,
+        consent=payload.result.consent,
         notes=tuple(notes),
         prompt_text=artifacts.full_content,
     )
@@ -204,5 +205,6 @@ def dry_run_automate(
         escapes=_detect_escapes(cache_dir, before),
         notes=notes,
         checks=checks,
+        consent=payload.result.consent,
         prompt_text=described.prompt,
     )

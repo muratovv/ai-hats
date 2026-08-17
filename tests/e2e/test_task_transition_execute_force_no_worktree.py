@@ -9,6 +9,7 @@ why:    forced state transitions for retrospective tracking must update task met
 """
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import subprocess
@@ -70,11 +71,11 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
             expect_exit=expect_exit,
         )
 
-    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(venv / "bin" / "rack"), *args],
             cwd=cwd,
-            env=env,
+            env={**env, **(extra_env or {})},
             timeout=timeout,
             expect_exit=expect_exit,
         )
@@ -139,6 +140,10 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
     )
 
     # ---- 3. forced execute MUST NOT create a worktree ----
+    # HATS-1682: `plan -> execute` is a declared consent point and `--force`
+    # deliberately does NOT switch it off (`consent | op --force`). The click
+    # is scaffolding here — the subject is that a FORCED execute spins no
+    # worktree, which is unreachable while the edge refuses for want of one.
     res = rack(
         "transition",
         task_id,
@@ -147,6 +152,7 @@ def test_e2e_transition_execute_force_creates_no_worktree(shared_launcher, tmp_p
         "--reason",
         "shipped on master, correcting state",
         expect_exit=0,
+        extra_env=consent_grant(),
     )
     assert "no worktree created (manual override)" in res.stdout, (
         f"forced execute did not announce the deliberate skip:\n{res.stdout}"

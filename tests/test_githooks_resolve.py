@@ -9,6 +9,7 @@ is asserted here.
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -313,12 +314,20 @@ def test_a_project_with_no_role_runs_no_gates_and_passes(tmp_path: Path) -> None
 
 
 def _gate_project(tmp_path: Path, *, body: str = "exit 0") -> Path:
-    """A project composing exactly one pre-commit gate, whose script runs ``body``."""
+    """A project composing exactly one pre-commit gate, whose script runs ``body``.
+
+    A real repo on purpose: the journal writer resolves ``--git-common-dir`` from
+    the process cwd, never from ``--project-dir``, so a fail-open recorded while
+    an uninitialised sandbox is in play lands in whatever checkout the suite is
+    running in — 228 synthetic rows in the maintainer's own audit journal before
+    HATS-1686 caught it.
+    """
     from ai_hats.models import ProjectConfig
     from ai_hats.paths import PROJECT_CONFIG
 
     project = tmp_path / "project"
     (project / ".githooks").mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet"], cwd=project, check=True)  # noqa: S603, S607
     lib = tmp_path / "lib"
     _skill(lib, "hook_skill", event="pre-commit", scripts=["git_hooks/check.sh"])
     gate = lib / "skills" / "hook_skill" / "git_hooks" / "check.sh"
@@ -541,3 +550,8 @@ def test_a_composition_that_refuses_does_not_wedge_the_commit(
     assert rc == 0, "a broken composition must not wedge a human commit"
     err = capsys.readouterr().err
     assert "fail-open" in err and "composition" in err, err
+    # ADR-0020 D2 forbids passing a gate SILENTLY, so the skip must be on record —
+    # and on record HERE, in the sandbox this test owns (HATS-1686).
+    journal = project / ".git" / "ai-hats" / "bypasses.jsonl"
+    assert journal.is_file(), f"the fail-open was not journalled: {err}"
+    assert "edge:typo" in journal.read_text(encoding="utf-8")

@@ -12,6 +12,11 @@ script exists under it and can exec — but what a row MEANS under a foreign app
 is checked by the application that owns it, when it next runs. Since HATS-1545
 the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
+
+One clause came back in HATS-1682: a point's *spelling* is refused here for a
+foreign app too (``_POINT_FORM``), because consent rides the same row and a
+misspelt consent point is a disarmed gate nothing else would ever have read.
+The grammar still belongs to the owner — the predicate is imported from it.
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
@@ -83,6 +88,44 @@ def owns_app(app: str) -> bool:
     return app in _OWNED_POINTS
 
 
+def _rack_point_form(point: str) -> str | None:
+    """The rack's own parser, asked whether a name is even in its grammar."""
+    from ai_hats_rack.checks import parse_edge_point
+
+    if parse_edge_point(point) is not None:
+        return None
+    return (
+        "a rack point is spelled `edge:<from>--<to>`: TWO dashes between the "
+        "state names, and neither of them empty"
+    )
+
+
+#: Apps whose point GRAMMAR is refused here though ai-hats does not FIRE them.
+#: Not ``_OWNED_POINTS`` (that means running the rows). The predicate is
+#: imported FROM the owner, so ai-hats still never spells the grammar (D11).
+_POINT_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_point_form}
+
+
+def _validate_point_form(row: AppBinding) -> None:
+    """Refuse a point name outside its app's grammar, at composition (HATS-1682).
+
+    Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
+    the rack's topology, so whether ``edge:review--dnoe`` names a REAL edge stays
+    the rack's question, answered where the topology is (``dead_point_reason``).
+    What can be answered here is whether the name is in the grammar at all — and
+    it must be, because the declaration is now a security boundary: a
+    consent-only ``edge:plan-execute`` disarmed both roads into master and no
+    channel said a word (A5).
+    """  # comment-length: allow — which half of the check lives where is the fix
+    form = _POINT_FORM.get(row.app)
+    if form is None:
+        return
+    for name in row.at:
+        reason = form(name)
+        if reason is not None:
+            raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
+
+
 def resolve_checks(
     declared: Sequence[AppBinding],
     skills: Iterable[ResolvedComponent],
@@ -96,6 +139,16 @@ def resolve_checks(
     removed = {resolve_namespace(name) for name in removed_skills}
     resolved: dict[tuple[str, tuple[str, ...], str, str], ResolvedCheck] = {}
     for row in declared:
+        # Form first, and for EVERY row: a consent-only row is refused nowhere
+        # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
+        _validate_point_form(row)
+        if not row.run:
+            # A consent-only row runs nothing (HATS-1682): no script to find, and
+            # no root to judge it from — resolving it would make a declaration
+            # that spawns nothing refuse from a linked worktree.
+            if owns_app(row.app):
+                _validate_owned_points(row)
+            continue
         # Shape before lookup: a `run` with no slash names a SKILL of "gate.sh"
         # and would be reported as an uncomposed skill — the wrong defect.
         if "/" not in row.run or not row.script.strip():
@@ -162,6 +215,11 @@ _FROM_ENV: Any = object()
 
 
 def _label(check: ResolvedCheck | AppBinding) -> str:
+    """What a message calls this row. A consent-only row names no script, and
+    "binds  under apps.wt" printed the hole where the ``run`` would be instead
+    of saying what the row IS (HATS-1682)."""
+    if not check.run:
+        return f"checks: {check.declared_by!r} declares consent under apps.{check.app}"
     return f"checks: {check.declared_by!r} binds {check.run} under apps.{check.app}"
 
 
@@ -350,7 +408,11 @@ def _validate_owned_points(row: AppBinding) -> None:
     (``_app_row``); this is the half only the owner can do. The point set comes
     from ``_OWNED_POINTS`` rather than one app's function, so a second owned app
     (HATS-1581) cannot be validated against the first one's catalog.
-    """
+
+    The ``on_error`` clause reaches only rows that RUN something: an explicit
+    ``on_error`` with no ``run`` is refused at parse (HATS-1682), so this can no
+    longer tell a consent-only row that its failure policy endangers data.
+    """  # comment-length: allow — which rows the policy clause can reach is the fix
     label = _label(row)
     points = _OWNED_POINTS[row.app]()
     for name in row.at:

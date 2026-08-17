@@ -38,6 +38,7 @@ from ai_hats_rack.dispatch import (
     Subscription,
 )
 from ai_hats_rack.events import EdgeEvent, EpicifyEvent, PreDestroyEvent
+from ai_hats_rack.extensions.epic import AUTOMATION_ACTOR
 from ai_hats_rack.extensions import (
     DerivedViewsExtension,
     EpicAutomationExtension,
@@ -50,6 +51,7 @@ from ai_hats_core.deadline import Deadline
 from ai_hats_library.hooks import consent_ticket
 
 from . import ownership
+from .check_resolve import resolve_consent_points
 from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
 from .session_identity import SessionIdentity, SessionIdentityError
@@ -430,6 +432,150 @@ class ConsentTickets:
         return consent_ticket.consume(task_id, argv=sys.argv[1:])
 
 
+#: Point-agnostic pre-approval for a declared consent point. Where no question
+#: can be asked — headless, cron, a surface without runtime hooks — this is the
+#: channel, and it is the supervisor's to export, never the agent's.
+CONSENT_ACK = "AI_HATS_CONSENT_ACK"
+
+#: The one flag kept per state, because it already MEANT this edge's consent.
+#: `AI_HATS_MERGE_ACK` is deliberately NOT here: it approves `ai-hats wt merge`,
+#: and reading it as consent for `review → done` is how a pre-approval given for
+#: one thing opened another — the silent merge this card was filed for.
+LEGACY_ACK_BY_STATE = {"execute": "AI_HATS_PLAN_ACK"}
+
+
+def env_consent_note(flag: str, subject: str, *, hook: str) -> str:
+    """Record a consent that arrived on the env channel, and name it out loud.
+
+    The channel is legitimate where no question can be asked — headless, cron,
+    a surface with no runtime hooks — but on exactly those surfaces the journal
+    is the ONLY trace, and it used to write none: afterwards a consented
+    `→ done` was indistinguishable from an unconsented one (HATS-1682 B2).
+    Same `journal_bypass("hatch", flag, …)` shape the PreToolUse guard writes,
+    so the two records of one hatch agree. Returns the work-log line.
+    """  # comment-length: allow — why the env path is loud, not silent
+    from ai_hats_library.hooks.bypass_journal import journal_bypass
+
+    journal_bypass("hatch", flag, hook=hook, cmd=" ".join(sys.argv))
+    return f"{subject}: consent from {flag}=1 (env channel — no question was asked)"
+
+
+class ConsentExtension:
+    """Refuse an edge the ROLE declared consent on, until the answer arrives.
+
+    In-lock and in-process, which is what lets it see the two shapes nobody can
+    be asked about — an epic, and the epic automation — and the invocation the
+    ticket is bound to (HATS-1682). Subscribed to every edge and filtered on
+    dispatch: resolving the declaration needs a composition, and a kernel is
+    built for `rack ls` as readily as for a transition.
+    """
+
+    name = "consent"
+    PHASE = Phase.IN_LOCK
+
+    def __init__(
+        self, backlog_owner: Path | None, backlog: tuple[str, ...], topology, *, priority=11
+    ):
+        #: The backlog's OWN project, or ``None`` where nobody owns it. Not the
+        #: cwd's project as a fallback: a role composed here declares consent for
+        #: the backlog it owns, and reading it onto a foreign one is the leak
+        #: HATS-1538 turned master red with — the same one `AiHatsCheckPort`
+        #: closes on the gate half of the very same row (HATS-1682).
+        self._backlog_owner = backlog_owner
+        self._backlog = backlog
+        self._topology = topology
+        self._priority = priority
+        self._declared: frozenset[str] | None = None
+
+    def subscriptions(self) -> Sequence[Subscription]:
+        return [
+            Subscription(key, Phase.IN_LOCK, self._priority)
+            for key in _all_edge_keys(self._topology)
+        ]
+
+    def _points(self) -> frozenset[str]:
+        if self._declared is None:
+            declared: set[str] = set()
+            if self._backlog_owner is not None:
+                for path in self._backlog:
+                    declared |= resolve_consent_points(self._backlog_owner, "rack", path=(path,))
+            self._declared = frozenset(declared)
+        return self._declared
+
+    def on_event(self, ctx: DispatchContext) -> Delta | None:
+        if not isinstance(ctx.event, EdgeEvent):
+            return None
+        # Epics and the epic automation stay exempt, and `ctx.force` does NOT:
+        # the first two are properties of the CARD and of the ACTOR, and there
+        # is nobody to ask; `--force` is an addition to the command, and consent
+        # is not a property of the command — `consent | op --force` (HATS-1682).
+        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
+            return None
+        if ctx.event.key not in self._points():
+            return None
+        to_state = ctx.event.to_state
+        for flag in (CONSENT_ACK, LEGACY_ACK_BY_STATE.get(to_state, "")):
+            if flag and os.environ.get(flag) == "1":
+                note = env_consent_note(flag, f"→ {to_state}", hook="rack_wiring.py")
+                return Delta(work_log=(note,))
+        if consent_ticket.peek(ctx.task.id, argv=sys.argv[1:]):
+            return Delta(work_log=(f"→ {to_state}: supervisor consent ticket accepted",))
+        raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state))
+
+
+def _consent_refusal(task_id: str, from_state: str, to_state: str) -> str:
+    """Why the move stopped, and what the reader can actually do about it.
+
+    Step 3 is addressed to whoever LAUNCHES the session, not to the agent
+    reading this. Spelled as a command the agent could paste, it is one line
+    away from being no refusal at all (HATS-1682 C4).
+    """
+    return (
+        f"Transition '{from_state} -> {to_state}' for '{task_id}' requires supervisor "
+        "approval, and none has arrived.\n"
+        "1. Present what you are asking approval for in chat and STOP.\n"
+        "2. Then re-run this exact command, with no consent prefix of your own: the\n"
+        "   guard turns it into a one-click question in chat, and the supervisor's\n"
+        "   answer is what carries consent. The question does not expire.\n"
+        "3. Where there is nobody to ask — headless, cron, a surface with no hooks —\n"
+        f"   {CONSENT_ACK} stands in, and only the environment that LAUNCHES the\n"
+        "   session may set it (one line, since a lone export dies with its shell):\n"
+        f"     export {CONSENT_ACK}=1 && ai-hats -r <role>\n"
+        "   Setting it from inside this session is a self-grant and is refused. If\n"
+        "   that is what the move needs, say so in chat and stop."
+    )
+
+
+class ConsentSpend:
+    """Spend the consent ticket once the move it paid for has happened.
+
+    Post-lock, so a transition a later subscriber rolls back gives the click
+    back (HATS-1642). Subscribed to EVERY edge rather than to the ones the role
+    declared: the ticket is bound to this process's argv, so a call it did not
+    consent to cannot match it — and a spender that had to re-derive the
+    declaration is one more copy of it to drift (HATS-1682).
+    """
+
+    name = "consent-spend"
+
+    def __init__(self, topology: Topology, *, priority: int = 15) -> None:
+        self._topology = topology
+        self._priority = priority
+
+    def subscriptions(self) -> Sequence[Subscription]:
+        return [
+            Subscription(key, Phase.POST_LOCK, self._priority)
+            for key in _all_edge_keys(self._topology)
+        ]
+
+    def on_event(self, ctx: DispatchContext) -> Delta | None:
+        if not isinstance(ctx.event, EdgeEvent):
+            return None
+        if not consent_ticket.consume(ctx.task.id, argv=sys.argv[1:]):
+            return None
+        return Delta(work_log=(f"{ctx.event.to_state}: supervisor consent ticket spent",))
+
+
 def build_rack_kernel(
     project_dir: Path,
     *,
@@ -495,10 +641,18 @@ def build_rack_kernel(
         DerivedViewsExtension(tasks_dir, state_md_path, topology=topology),
         *extra_subscribers,  # consumer add-ons (pre-destroy guards, K4 hook-runner)
     ]
-    if {"plan", "execute"} <= set(topology.states):
-        # Post-lock, so the click is spent only on a transition that happened.
-        # A backlog without those states never declared plan-consent either.
-        subscribers.append(consent.spender())
+    # HATS-1682: where consent is required is the ROLE's declaration, not this
+    # backlog's topology — so the pair is registered unconditionally and the
+    # declaration decides on dispatch. Spending is post-lock, so the click is
+    # spent only on a transition that actually happened.
+    subscribers.append(
+        ConsentExtension(
+            backlog_owner,
+            tuple(dict.fromkeys((defn.name, defn.cli_alias or defn.name))),
+            topology,
+        )
+    )
+    subscribers.append(ConsentSpend(topology))
     # Fail-closed at composition: a subscriber's declared state vocabulary must
     # fit the topology (the HATS-692 stranding class, HATS-1043 R8).
     validate_requires_states(subscribers, topology, source=str(tasks_dir))

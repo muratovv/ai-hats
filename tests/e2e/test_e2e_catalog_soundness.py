@@ -62,6 +62,14 @@ def test_e2e_catalog_check_refuses_unsound_flow_block(tmp_path: Path) -> None:
     )
 
     assert res.returncode == 1
+    # An unsound ROW, not a malformed block: the block parses, so the reader must
+    # be sent to what it says, not to its shape (HATS-1644).
     assert "[e2e-catalog] unsound row(s):" in res.stderr
     assert "test_unsound.py" in res.stderr
-    assert "unknown subcommand 'status' under main" in res.stderr
+    # Named as the user types it. The older wording said "under main" — click's
+    # internal group name, which appears on no command line.
+    assert "unknown subcommand 'status' for command 'ai-hats'" in res.stderr
+    assert res.stderr.count("unknown subcommand 'status'") == 1, (
+        f"one defect, reported once — two resolvers both owned `ai-hats` lines "
+        f"before HATS-1644:\n{res.stderr}"
+    )

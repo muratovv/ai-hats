@@ -43,6 +43,14 @@ if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise 
 #: application and is none of this subscriber's business.
 EDGE_PREFIX = "edge:"
 
+#: What a carried row IS (HATS-1682). A ``CHECK_ROW`` spawns a script when its
+#: point fires; a ``CONSENT_ROW`` spawns nothing and only declares that the
+#: supervisor is asked there. Both are addressed and judged against the topology
+#: alike — the second kind is carried for exactly that, and never run.
+# comment-length: allow — which kind runs is the contract
+CHECK_ROW = "check"
+CONSENT_ROW = "consent"
+
 
 @dataclass(frozen=True)
 class CheckDeclaration:
@@ -52,7 +60,8 @@ class CheckDeclaration:
     over ``path`` (where the row sat under ``apps.rack`` — the backlog it names)
     and ``cargo`` (every key ai-hats does not own), and THIS side decides what
     they mean. ``label`` is whatever the carrier wants a refusal to say about
-    the row; the rack quotes it and never parses it.
+    the row; the rack quotes it and never parses it. ``kind`` defaults to
+    ``CHECK_ROW``, so a carrier older than HATS-1682 declares what it always did.
     """
 
     path: tuple[str, ...]
@@ -61,6 +70,7 @@ class CheckDeclaration:
     on_error: str
     label: str
     handle: Any
+    kind: str = CHECK_ROW
 
     def points(self) -> tuple[str, ...]:
         """The point names this row binds. The carrier guarantees it is non-empty
@@ -236,10 +246,11 @@ def dead_point_reason(row: CheckDeclaration, point: str, mounted: Sequence[str])
     """Why a point fires nowhere. Said with the mounted roster, because that is
     what makes it a typo rather than a row aimed at a backlog of some other
     project — the distinction only a holder of every topology can draw."""
+    what = "the gate" if row.kind == CHECK_ROW else "the consent question"
     return (
         f"checks: {row.label} binds {point!r} under apps.rack.{'.'.join(row.path)}, but no "
         f"topology mounted in this project has that point (backlogs: {', '.join(mounted)}) — "
-        f"the gate can never fire, on that edge or any other. A rack point is spelled "
+        f"{what} can never fire, on that edge or any other. A rack point is spelled "
         f"`edge:<from>--<to>` with the state names of the backlog it gates."
     )
 
@@ -338,6 +349,11 @@ class CheckSubscriber:
                 continue
             if not self._addresses_me(row):
                 continue
+            if row.kind != CHECK_ROW:
+                # A consent row spawns nothing. It is carried this far so the
+                # addressing check above sees it — that is the whole reason the
+                # kind exists (HATS-1682) — and it stops here, before run_check.
+                continue
             bound.append(row)
         return tuple(bound)
 
@@ -435,6 +451,8 @@ def _oneline(reason: str) -> str:
 __all__ = [
     "ARMED",
     "CHECK_PRIORITY",
+    "CHECK_ROW",
+    "CONSENT_ROW",
     "EDGE_CHECK_TIMEOUT_S",
     "EDGE_PREFIX",
     "CheckDeclaration",

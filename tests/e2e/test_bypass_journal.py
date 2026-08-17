@@ -479,14 +479,12 @@ def test_a_gate_the_dispatcher_could_not_run_is_recorded_as_fail_open(gated_repo
     """
     from ai_hats.githooks_run import record_fail_open
 
-    cwd = os.getcwd()
-    os.chdir(gated_repo)  # the writer resolves --git-common-dir from cwd
-    try:
-        record_fail_open(
-            JOURNAL_HELPER, reason="s: 'git_hooks/g.sh' is not executable", event="pre-commit"
-        )
-    finally:
-        os.chdir(cwd)
+    record_fail_open(
+        JOURNAL_HELPER,
+        reason="s: 'git_hooks/g.sh' is not executable",
+        event="pre-commit",
+        project_dir=gated_repo,
+    )
 
     lines = _journal_lines(gated_repo)
     assert len(lines) == 1, f"the skip left no journal line: {lines}"
@@ -495,3 +493,36 @@ def test_a_gate_the_dispatcher_could_not_run_is_recorded_as_fail_open(gated_repo
     assert entry["kind"] == "fail_open"
     assert entry["event"] == "pre-commit"
     assert "not executable" in entry["reason"] and "g.sh" in entry["reason"]
+
+
+@pytest.mark.integration
+def test_the_skip_is_journalled_where_it_is_told_not_where_the_process_stands(
+    gated_repo: Path, tmp_path: Path
+):
+    """HATS-1686: the project is TOLD, never inferred from cwd.
+
+    Inferring is why a unit test's synthetic skips landed in the maintainer's own
+    audit journal — 236 rows that `pre-push-bypass-report.sh` then showed the
+    reviewer, matched by SHA and indistinguishable from real ones. Standing
+    somewhere else entirely is the only way to prove the caller decides.
+    """
+    from ai_hats.githooks_run import record_fail_open
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=elsewhere, check=True)  # noqa: S603, S607
+
+    cwd = os.getcwd()
+    os.chdir(elsewhere)
+    try:
+        record_fail_open(
+            JOURNAL_HELPER, reason="told, not inferred", event="pre-commit", project_dir=gated_repo
+        )
+    finally:
+        os.chdir(cwd)
+
+    lines = _journal_lines(gated_repo)
+    assert len(lines) == 1, f"the named project got no row: {lines}"
+    assert lines[0]["reason"] == "told, not inferred"
+    stray = elsewhere / ".git" / "ai-hats" / "bypasses.jsonl"
+    assert not stray.exists(), f"the row landed in the process's own repo: {stray}"

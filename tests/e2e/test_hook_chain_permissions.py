@@ -198,6 +198,52 @@ def test_catastrophic_targets_deny_even_with_ack(hooked_project, command):
         assert verdict.denied, f"{command!r} must be denied even with ack={ack}; got {verdict}"
 
 
+# --- Wrappers, which used to make the whole gate blind (HATS-1682) ----------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("timeout 5 rm -rf /", id="timeout-duration-operand"),
+        pytest.param("timeout --preserve-status 5 rm -rf /", id="timeout-long-flag"),
+        pytest.param("nice rm -rf /", id="nice-bare"),
+        pytest.param("nice -n 10 rm -rf /", id="nice-valued-flag"),
+        pytest.param("ionice -c3 rm -rf /", id="ionice-bundled-flag"),
+        pytest.param("stdbuf -oL rm -rf /", id="stdbuf-bundled-flag"),
+        pytest.param("sudo -u root rm -rf /", id="sudo-valued-flag"),
+        pytest.param("timeout 5 nice rm -rf /", id="two-wrappers"),
+    ],
+)
+@pytest.mark.integration
+def test_a_wrapper_does_not_blind_the_gate(hooked_project, command):
+    """A wrapper eats a variable number of operands, and the gate used to hand
+    the wrapper's own name to its handler table — so no handler ran at all and
+    `timeout 5 rm -rf /` was ALLOWED (measured, HATS-1682). The role injection
+    prescribes `timeout` for anything that can hang, which makes this the
+    everyday spelling rather than an exotic one."""
+    project, env, settings = hooked_project
+    for ack in (None, DESTRUCTIVE_ACK):
+        verdict = run_chain(project, command, settings=settings, env=env, ack=ack)
+        assert verdict.denied, f"{command!r} was not denied (ack={ack}); got {verdict}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param("timeout 5 ls -la", id="timeout-ls"),
+        pytest.param("nice -n 10 pytest tests/", id="nice-pytest"),
+        pytest.param("timeout 60 git status", id="timeout-git-status"),
+    ],
+)
+@pytest.mark.integration
+def test_a_wrapper_around_something_harmless_still_passes(hooked_project, command):
+    """The other half of the fix: reading past the wrapper must not turn its
+    operands into findings of their own."""
+    project, env, settings = hooked_project
+    verdict = run_chain(project, command, settings=settings, env=env)
+    assert not verdict.gated, f"{command!r} should not be gated; got {verdict}"
+
+
 # --- Binaries that are not data-destructive --------------------------------
 
 

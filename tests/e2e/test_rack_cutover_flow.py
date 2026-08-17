@@ -118,23 +118,26 @@ def test_rack_cutover_flow(shared_launcher, tmp_path):
     assert ls_flagged.returncode == 0, ls_flagged.stderr
     assert ls_flagged.stdout == ls_positional.stdout
 
-    # --- C1d: `done` without merge consent is a typed refusal, not a raw traceback ---
-    # The launcher-tier env grants consent by default (AI_HATS_MERGE_ACK=1) so
-    # other tests can merge; drop it here to exercise the review-consent gate.
+    # --- C1d: `done` with nobody asked is a typed refusal, not a raw traceback ---
+    # Since HATS-1682 the road into master is gated at the EDGE, in-lock, before
+    # the merge is attempted — so the refusal this reaches is the edge's, and
+    # `AI_HATS_MERGE_ACK` is no longer what decides. The wt-merge recipe this
+    # used to read still has its own pins: `test_wt_merge_consent_gate.py`,
+    # `test_rack_cli_provider.py` and `test_consent_advice_is_followable.py`.
     (worktree / "work.txt").write_text("deliverable")
     _git(worktree, "add", "-A")
     _git(worktree, "commit", "-m", "work")
     _rack(rack, "transition", "SBX-001", "document", cwd=main, env=env)
     _rack(rack, "transition", "SBX-001", "review", cwd=main, env=env)
-    no_ack = {k: v for k, v in env.items() if k != "AI_HATS_MERGE_ACK"}
-    done = _rack(rack, "transition", "SBX-001", "done", cwd=main, env=no_ack)
-    assert done.returncode == 1, "merge without consent must refuse"
-    assert "consent" in (done.stdout + done.stderr).lower()
-    assert "Traceback" not in done.stderr, "merge-consent refusal must be typed (C1, HATS-1019)"
+    done = _rack(rack, "transition", "SBX-001", "done", cwd=main, env=env)
+    assert done.returncode == 1, "the road into master with nobody asked must refuse"
+    combined = done.stdout + done.stderr
+    assert "aborted by 'consent'" in combined, combined
+    assert "Traceback" not in done.stderr, "the consent refusal must be typed (C1, HATS-1019)"
     # HATS-1654: the recipe is followed one line at a time, so the export must
-    # reach the merge on the line it was typed with.
-    recipe = [ln for ln in (done.stdout + done.stderr).splitlines() if "export AI_HATS_MERGE" in ln]
-    assert recipe, f"consent refusal carries no export recipe:\n{done.stdout}\n{done.stderr}"
-    assert all("&& ai-hats wt merge" in ln for ln in recipe), (
+    # reach the command it approves on the line it was typed with.
+    recipe = [ln for ln in combined.splitlines() if "export AI_HATS_CONSENT_ACK=1" in ln]
+    assert recipe, f"consent refusal carries no export recipe:\n{combined}"
+    assert all("&& ai-hats" in ln for ln in recipe), (
         f"a lone export dies with the shell that ran it (HATS-1654): {recipe}"
     )

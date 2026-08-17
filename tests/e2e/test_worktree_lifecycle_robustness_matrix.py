@@ -32,6 +32,7 @@ expect: transition done is refused before teardown and worktree directory is pre
 why:    transition done from inside a worktree must refuse to avoid removing caller cwd"""
 
 from __future__ import annotations
+from _helpers.env import consent_grant
 from _helpers.git import git as _git
 
 import json
@@ -163,7 +164,9 @@ def _scenario_already_merged_state_lost(rack, project: Path) -> None:
 
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
-    res = rack("transition", task_id, "done", expect_exit=0)
+    # HATS-1682: `review -> done` is a declared consent point; the answer is
+    # scaffolding, and the worktree invariant below is the subject.
+    res = rack("transition", task_id, "done", expect_exit=0, extra_env=consent_grant())
     assert "worktree state lost" not in (res.stdout + res.stderr).lower(), (
         f"false state-lost refusal:\n{res.stdout}\n{res.stderr}"
     )
@@ -216,7 +219,9 @@ def _scenario_null_original_branch_typed(rack, project: Path) -> None:
 
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
-    res = rack("transition", task_id, "done", expect_exit=1)
+    # HATS-1682: `review -> done` is a declared consent point; the answer is
+    # scaffolding, and the worktree invariant below is the subject.
+    res = rack("transition", task_id, "done", expect_exit=1, extra_env=consent_grant())
     combined = res.stdout + res.stderr
     # rack keeps this on the generic wt-refusal shape (HATS-1263 ruling Q2):
     # no bespoke recipe, but the refusal must stay typed and name the field.
@@ -231,7 +236,9 @@ def _scenario_in_worktree_done_refused(rack, project: Path) -> None:
     rack("transition", task_id, "document")
     rack("transition", task_id, "review")
     # Run from INSIDE the worktree → must refuse before any teardown.
-    res = rack("transition", task_id, "done", cwd=wt, expect_exit=None)
+    # HATS-1682: `review -> done` is a declared consent point; the answer is
+    # scaffolding, and the worktree invariant below is the subject.
+    res = rack("transition", task_id, "done", cwd=wt, expect_exit=None, extra_env=consent_grant())
     combined = res.stdout + res.stderr
     assert res.returncode != 0, f"in-worktree close should refuse:\n{combined}"
     assert "linked worktree" in combined.lower(), combined
@@ -264,11 +271,11 @@ def test_worktree_lifecycle_robustness(shared_launcher, tmp_path, scenario_id):
             expect_exit=expect_exit,
         )
 
-    def rack(*args, expect_exit=0, timeout=180, cwd=project):
+    def rack(*args, expect_exit=0, timeout=180, cwd=project, extra_env=None):
         return _run(
             [str(venv / "bin" / "rack"), *args],
             cwd=cwd,
-            env={**env, "AI_HATS_PLAN_ACK": "1"},
+            env={**env, "AI_HATS_PLAN_ACK": "1", **(extra_env or {})},
             timeout=timeout,
             expect_exit=expect_exit,
         )

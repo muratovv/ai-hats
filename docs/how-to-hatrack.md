@@ -139,13 +139,39 @@ rack transition HATS-NNN review
 rack transition HATS-NNN done        # the reviewer drives this one
 ```
 
-`plan → execute` is **consent-gated**, so an agent cannot walk its own plan into
-implementation without your approval. On a surface with runtime hooks the agent
-simply runs the command and the guard turns it into a **question in chat**: the
+Two of those edges are **consent-gated**, so an agent can neither walk its own
+plan into implementation nor land its own branch on master without your
+approval: `plan → execute` and `review → done`. A direct `ai-hats wt merge` —
+the other road into master — is gated the same way.
+
+Which edges those are is not fixed by the backlog: it is the ROLE's
+declaration. The agent trait names them, so a role that does not compose it is
+asked nothing, and a role that needs a different surface of consent edits the
+topology rather than the guard:
+
+```yaml
+composition:
+  apps:
+    rack:
+      tasks:
+        - at: [edge:plan--execute, edge:review--done]
+          consent: true
+    wt:
+      - at: [pre-merge]
+        consent: true
+```
+
+Consent is a property of an **edge**, so it rides the same rows a quality gate
+does — a row carries `run:`, `consent:`, or both. A role that wants one of those
+points back writes `consent: false` on it; the later declaration wins, and
+saying nothing switches nothing off.
+
+On a surface with runtime hooks the agent simply runs the command and the guard
+turns it into a **question in chat**: the
 call carries a one-shot ticket, good for that card, in that session, for that
-exact command, for a couple of minutes, and spent only if the transition
-actually lands. Nothing is typed by the agent — a consent prefix it writes
-itself is refused as a self-grant.
+exact command, and spent only if the transition actually lands. The question
+does not expire — read the plan for as long as you need. Nothing is typed by
+the agent — a consent prefix it writes itself is refused as a self-grant.
 
 One thing does switch the question off: an entry under `permissions.allow` that
 covers the call, such as `"Bash(rack transition *)"`. The harness then approves
@@ -156,12 +182,28 @@ The question goes up before the plan is read, so a `plan → execute` that then
 fails on empty plan sections spent your answer on a move that did not happen —
 the next attempt asks again.
 
+`AI_HATS_MERGE_ACK` does **not** answer the `review → done` question. It
+approves `ai-hats wt merge`, and letting a pre-approval given for one thing open
+another is how the edge into master used to pass unasked.
+
 Where there is nobody to ask — headless (`claude -p`), cron, or a surface with
 no runtime hooks — consent comes from the environment that launches the session:
 
 ```bash
-export AI_HATS_PLAN_ACK=1
+export AI_HATS_CONSENT_ACK=1
 ```
+
+**One flag covers the whole move.** On `review → done` that means the FSM edge
+*and* the worktree merge inside its teardown: the merge reads the same consent
+the edge did, so the headless road no longer needs `AI_HATS_MERGE_ACK` beside
+it. Legitimate is not the same as quiet — every gate this flag opens writes a
+`hatch` line to `<git-common-dir>/ai-hats/bypasses.jsonl`, and the two inside
+the transition (the edge gate and the teardown merge) also leave a work-log note
+saying the move closed with no question asked. On a hookless surface that record
+is the only trace there is.
+
+(`AI_HATS_PLAN_ACK=1` still answers `plan → execute` alone, for a shell that
+already exports it.)
 
 There is no `sync` step — see [STATE.md is reactive](#statemd-is-reactive).
 
@@ -193,6 +235,11 @@ rack transition HATS-NNN --state done --force \
 
 Reserve it for `brainstorm` / `plan` cards the full lifecycle would just
 bookkeep. From `execute` onward, walk the states normally.
+
+`--force` does **not** relax consent. Consent is a property of the move, not of
+the command — `consent | op --force` — so nothing you add to the command line
+switches the question off, and there is no set of "flags we do not ask on" left
+to join. The recipe still works; it asks once (HATS-1682).
 
 ### d) File a HYP from a session
 

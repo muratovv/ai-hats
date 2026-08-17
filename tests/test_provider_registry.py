@@ -198,6 +198,10 @@ def test_get_provider_auto_installs_known_surface(monkeypatch):
         return True
 
     monkeypatch.setattr("ai_hats.self_heal.ensure_surface_plugin_installed", fake_ensure)
+    with pytest.raises(prov.UnknownProviderError, match="Unknown provider: agy"):
+        get_provider("agy", auto_install=False)
+    assert called == []
+
     provider = get_provider("agy")
     assert called == ["agy"]
     assert isinstance(provider, _FakeProvider)

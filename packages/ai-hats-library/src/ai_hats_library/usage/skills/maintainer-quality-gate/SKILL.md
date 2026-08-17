@@ -64,6 +64,18 @@ breaks the nesting.
 library file that restated project content drifted from it within days
 (ADR-0023 D7).
 
+**Neither card gate runs the e2e tier, and a green one does not claim it did.**
+In this repo `done-gate` is `<lint tier> unit integration merge-smoke`: the
+`integration` stage is `pytest --ignore=tests/e2e`, and the only thing reaching
+`tests/e2e/` is `merge-smoke`, the curated `-m smoke` subset. The full tier
+(`(integration or smoke)` across `tests/e2e/` + `tests/smoke/`, ~27 min) belongs
+to the **push** gate alone. So "`make done-gate` is green" answers a narrower
+question than "the e2e tier is green" — a card whose change touches that tier
+runs `pytest -m integration tests/e2e/` on its own and says so. Ask
+`scripts/ci-local.sh --stages done-gate` rather than assuming; a card was sent
+to review with a red e2e test behind a green marker for exactly this reason
+(HATS-1682).
+
 ## The two card gates (HATS-1137, HATS-1614)
 
 ### Who runs what, and when
@@ -182,7 +194,11 @@ things about that path:
   makes a marker **written inside the task worktree** visible **from the main
   checkout**, where the check runs. `--git-dir` would file it under
   `.git/worktrees/<id>/` and the check would never see it.
-- It lives under `.git/`, so it is never committed. Markers are tiny; no GC.
+- It lives under `.git/`, so it is never committed. Each write sweeps that
+  gate's directory of markers whose own file age is past
+  `AI_HATS_GATE_MARKER_KEEP_DAYS` (30) days — housekeeping, not expiry
+  (HATS-1682: 125 had accumulated on one checkout). A malformed value is
+  reported on stderr and the sweep falls back to 30; it never fails the run.
 
 A marker counts only when its filename and its recorded `tree=` line agree
 (`gate_marker_ok`) — a half-written or hand-copied file names content it does
@@ -205,6 +221,12 @@ matches markers that never ran it. There is no expiry and no invalidation step,
 and none is needed — while one run covers every card sitting on that same tree,
 including the `--no-ff` merge commit that re-parents it unchanged (HATS-1601:
 18 of the last 20 merges), and every gate whose composition it contains.
+
+The age sweep above is not an exception to that. It deletes marker **files** by
+their own age, which is not a claim about the tree they name — a card parked in
+`review` past the window loses a marker that was still honest, and re-earns it
+by re-running. That is the only thing an aged-out marker costs: the sweep can
+revoke a pass, never grant one.
 
 ### The exit contract it obeys (ADR-0020 D2)
 
@@ -371,7 +393,11 @@ network). Any missing → block (exit 1) with the run command. Pushes to other
 branches, master deletions, and empty stdin are fast-path no-ops.
 
 Markers live under `.git/` (never committed, shared across worktrees via
-`git rev-parse --git-common-dir`). They are tiny; no GC is performed.
+`git rev-parse --git-common-dir`). Each write sweeps that gate's directory of
+markers whose own file age is past `AI_HATS_GATE_MARKER_KEEP_DAYS` (30) days —
+housekeeping against a store that only grows, not a marker that went stale. The
+age is the file's, not the tree's, so a tree still in play can lose one; it then
+pays a re-run and earns it back. The sweep can revoke a pass, never grant one.
 
 ## Typical flow
 

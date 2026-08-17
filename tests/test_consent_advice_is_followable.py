@@ -27,7 +27,10 @@ INLINE_GRANT = re.compile(r"(?<!export )AI_HATS_[A-Z0-9_]*ACK=1\s+(rack|ai-hats|
 LONE_EXPORT = re.compile(r"export AI_HATS_[A-Z0-9_]*ACK=1")
 
 #: Every surface that tells a human or an agent how to satisfy a consent gate.
+#: `rack_wiring.py` is the rack-side refusal's live home since HATS-1682 — while
+#: only its OLD address was listed, the text agents read went unpoliced (T6).
 ADVICE_SITES = (
+    "src/ai_hats/rack_wiring.py",
     "packages/ai-hats-rack/src/ai_hats_rack/extensions/plan.py",
     "src/ai_hats/rack_cli_provider.py",
     "src/ai_hats/cli/worktree.py",

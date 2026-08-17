@@ -20,6 +20,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "gen_e2e_catalog.py"
 
+# The pin is grounded in the BODY, not only the header: `_ids_known_for` strips
+# the docstring on purpose, so a header pin's other basis is the file's git log —
+# and this fixture lives in a tmp dir that is no repository (HATS-1644).
 VALID_BLOCK = '''"""e2e (HATS-1563)
 
 flow:   valid flow for fixture
@@ -28,6 +31,8 @@ cmds:
 expect: valid outcome
 why:    fixture requirement
 """
+
+# HATS-1563
 '''
 
 
