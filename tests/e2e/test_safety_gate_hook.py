@@ -11,9 +11,11 @@ why: without safety gate hooks, agents execute irreversible destructive shell co
 
 from __future__ import annotations
 
+import atexit
 import functools
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,7 +72,11 @@ def _neutral_root() -> Path:
     red in the main checkout the moment a session accepts an allow-rule, green
     in a worktree that has none. Found by the HATS-1716 audit, measured both ways.
     """
-    return Path(tempfile.mkdtemp(prefix="ai-hats-safety-gate-neutral-"))
+    root = Path(tempfile.mkdtemp(prefix="ai-hats-safety-gate-neutral-"))
+    # Not a `tmp_path`: the callers are plain functions, not fixtures. Reaped at
+    # exit so the tier does not leave one dir per xdist worker per run behind.
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
+    return root
 
 
 def _decide(
