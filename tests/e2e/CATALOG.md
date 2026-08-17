@@ -22,11 +22,11 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh adr-integrity   # exit 0 while the corpus is intact
+  bash scripts/ci-local.sh adr-integrity   # announces the stage it dispatched to
   bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity`, exits 0 on a clean corpus and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity` and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows. Whether the corpus is INTACT belongs to the stage, not here: this runs against the live checkout (HATS-1714/1716)
 - **why** — a checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose absence is equally invisible: its defects (a citation into a section that does not exist, one ADR number naming two files) rot green.
 
 ## `test_agent_orchestration.py`
@@ -761,7 +761,7 @@ as a claim to check, not as evidence.
   bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together (HATS-1716)
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing. Whether the catalog is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_e2e_catalog_soundness.py`
