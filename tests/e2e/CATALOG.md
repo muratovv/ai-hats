@@ -22,11 +22,11 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh adr-integrity   # exit 0 while the corpus is intact
+  bash scripts/ci-local.sh adr-integrity   # announces the stage it dispatched to
   bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity`, exits 0 on a clean corpus and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows
+- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] adr-integrity` and states on every run what it does NOT cover; an unknown stage exits 2 and lists `adr-integrity` among the stages it knows. Whether the corpus is INTACT belongs to the stage, not here: this runs against the live checkout (HATS-1714/1716)
 - **why** — a checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose absence is equally invisible: its defects (a citation into a section that does not exist, one ADR number naming two files) rot green.
 
 ## `test_agent_orchestration.py`
@@ -761,7 +761,7 @@ as a claim to check, not as evidence.
   bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows — one list, derived from the `ci_*` functions, so both answers die together (HATS-1716)
 - **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing. Whether the catalog is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_e2e_catalog_soundness.py`
@@ -1512,24 +1512,24 @@ as a claim to check, not as evidence.
 
 *pins HATS-550, HATS-686*
 
-- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this commit
+- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this content
 - **cmds**
 
   ```console
-  git push origin master    # allowed only with a green marker for the pushed sha
+  git push origin master    # allowed only with a green marker for the pushed tree
   ```
 
-- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another sha, or carries a body sha that disagrees; in a mixed payload the master line still needs its own marker
-- **why** — the marker is the only evidence the tier ever ran — honour one written for a different commit and the gate certifies code nobody tested
+- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the TREE of the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another tree, or carries a body `tree=` disagreeing with its own filename; in a mixed payload the master line still needs its own marker
+- **why** — the marker is the only evidence the tier ever ran — honour one written for different content and the gate certifies code nobody tested; keyed by tree since HATS-1601, so a commit that only re-parents an already-judged tree is not re-judged
 
-- **flow** — the same maintainer runs the gate itself, which must clear lint and unit before spending ~25 minutes on the tier, then record the marker
+- **flow** — the same maintainer runs the gate itself, which must clear the cheap stages of the push-gate composition before spending the tier's runtime, then record the marker
 - **cmds**
 
   ```console
   bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
   ```
 
-- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep is dry-run unless opted into; and the wrapper errors when the hook is absent
+- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep reaps provably-dead cruft by default and escalates to `--force` only when opted into; and the wrapper errors when the hook is absent
 - **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
 
 ## `test_pretooluse_hook_cwd_resolution.py`

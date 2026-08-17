@@ -7,28 +7,35 @@
 #   1. CHECK MODE (default — git invokes the hook with the standard pre-push
 #      protocol on stdin: `<local_ref> <local_sha> <remote_ref> <remote_sha>`).
 #      INSTANT: for every line targeting refs/heads/master with a non-zero
-#      local_sha, require a green pass-marker keyed to that SHA. All present →
-#      allow (exit 0). Any missing → block (exit 1) with the run command. No
-#      pytest, no network → finishes well under GitHub's ~30s SSH idle window,
-#      which killed the old in-hook 27-min run (HATS-684 — exit 141, twice).
+#      local_sha, require a green pass-marker keyed to the TREE that sha names.
+#      All present → allow (exit 0). Any missing → block (exit 1) with the run
+#      command. No pytest, no network → finishes well under GitHub's ~30s SSH
+#      idle window, which killed the old in-hook 27-min run (HATS-684 — exit
+#      141, twice).
 #
 #   2. RUN MODE (`--run`, invoked manually / via scripts/run-e2e-gate.sh).
-#      Runs `pytest -m "(integration or smoke) and not quarantine"
-#      tests/e2e/ tests/smoke/` from the repo root. On pass AND a clean working
-#      tree, writes a marker keyed to `git rev-parse HEAD`. A DIRTY tree runs
-#      the suite but writes NO marker: the gate builds wheels from the working
-#      tree, so the marker is only honest when clean-tree == HEAD content ==
-#      the SHA that will be pushed.
+#      Runs the stages `scripts/ci-local.sh` names for the `push-gate`
+#      composition — the e2e tier plus the cheap ones that must be green with it
+#      (HATS-726) — from the repo root. On pass AND a clean working tree, writes
+#      a marker keyed to `git rev-parse HEAD^{tree}` recording those stages. A
+#      DIRTY tree runs the suite but writes NO marker: the gate builds wheels
+#      from the working tree, so the marker is only honest when clean-tree ==
+#      HEAD content == the content that will be pushed.
 #
-# Marker store: <git-common-dir>/ai-hats/e2e-gate/<sha> (under .git/, never
-# committed, shared across worktrees). Forging a marker (`touch …`) is the
-# moral equivalent of `git push --no-verify` — a deliberate local act by the
-# trusted maintainer, NOT an accidental normal-flow bypass. See SKILL.md.
+# Marker store: <git-common-dir>/ai-hats/e2e-gate/<tree> (under .git/, never
+# committed, shared across worktrees). Keyed by CONTENT since HATS-1601: a
+# commit that only re-parents an already-marked tree is the same thing the gate
+# already judged. Markers from the pre-1601 scheme are named by commit sha and
+# record `sha=` rather than `tree=`, so `gate_marker_covers` never reads them
+# and the 30-day sweep drops them in its own time — inert, not migrated.
+# Forging a marker (`touch …`) is the moral equivalent of `git push
+# --no-verify` — a deliberate local act by the trusted maintainer, NOT an
+# accidental normal-flow bypass. See SKILL.md.
 #
 # HATS-1137: the marker mechanism moved to ../lib/gate-marker.sh, parameterised
-# by gate name. This gate keeps the name `e2e-gate`, so the path it reads and
-# writes is byte-identical to the pre-1137 one — every marker the maintainer has
-# already accumulated stays valid, and no push turns into a surprise 27-min run.
+# by gate name. This gate keeps the name `e2e-gate`, so the directory it reads
+# and writes is byte-identical to the pre-1137 one — that move cost the
+# maintainer no marker, and no push turned into a surprise 27-min run.
 #
 # Run-mode behaviour carried over from earlier tickets:
 #   * HATS-568: sweeps stale `build/` wheel artefacts before the run.

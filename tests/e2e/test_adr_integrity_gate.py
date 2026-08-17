@@ -4,12 +4,13 @@ flow:   a maintainer runs the pre-push bundle, which must refuse the push when a
         citation into an ADR no longer resolves, or when one ADR number names
         two files
 cmds:
-    bash scripts/ci-local.sh adr-integrity   # exit 0 while the corpus is intact
+    bash scripts/ci-local.sh adr-integrity   # announces the stage it dispatched to
     bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
 expect: the stage is reachable through the dispatcher, announces itself as
-        `[ci-local] adr-integrity`, exits 0 on a clean corpus and states on every
-        run what it does NOT cover; an unknown stage exits 2 and lists
-        `adr-integrity` among the stages it knows
+        `[ci-local] adr-integrity` and states on every run what it does NOT
+        cover; an unknown stage exits 2 and lists `adr-integrity` among the
+        stages it knows. Whether the corpus is INTACT belongs to the stage, not
+        here: this runs against the live checkout (HATS-1714/1716)
 why:    a checker is only a gate if `ci-local.sh` actually dispatches to it —
         `check_dependency_floor.py` sat outside this same ratchet from HATS-1399
         to HATS-1373, silently gating nothing. HATS-1646 adds a checker whose
@@ -40,11 +41,16 @@ def _stage(name: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_gate_dispatches_to_the_adr_check():
+    """The announce IS the dispatch proof: an unwired stage exits 2 without it.
+
+    Neither the exit code nor `[adr-integrity] ok:` is asserted — both report the
+    live corpus's state, which a sibling session merging a doc can change under
+    us mid-run (HATS-1714's shape, found again by the HATS-1716 audit).
+    """
     done = _stage("adr-integrity")
     combined = done.stdout + done.stderr
-    assert done.returncode == 0, combined
     assert "[ci-local] adr-integrity" in combined, combined
-    assert "[adr-integrity] ok:" in combined, combined
+    assert done.returncode != 2, combined
 
 
 def test_the_run_states_what_it_does_not_cover():
@@ -60,8 +66,13 @@ def test_the_run_states_what_it_does_not_cover():
 
 
 def test_unknown_stage_lists_the_adr_stage():
-    """Deleting the `case` branch drops the stage from this list too."""
+    """Deleting `ci_adr_integrity` drops the stage from this list too (HATS-1716)."""
     missing = _stage("no-such-stage")
     combined = missing.stdout + missing.stderr
     assert missing.returncode == 2, combined
-    assert "adr-integrity" in combined, combined
+    listed = [
+        line.split(":", 1)[1].split()
+        for line in combined.splitlines()
+        if line.strip().startswith("stages:")
+    ]
+    assert listed and "adr-integrity" in listed[0], combined

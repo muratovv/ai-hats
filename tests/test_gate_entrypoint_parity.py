@@ -42,6 +42,12 @@ _RUNNER_RE = re.compile(
 )
 _INSTALL_RE = re.compile(r"\b(?:pip[\d.]*|uv)\s+(?:pip\s+)?install\b")
 
+# A stage named by a caller: `bash scripts/ci-local.sh <stage>` in ci.yml, or the
+# Makefile's `$(CI_LOCAL) <stage>`. `--stages <gate>` asks a different question.
+_STAGE_CALL_RE = re.compile(
+    r"(?:bash\s+scripts/ci-local\.sh|\$\(CI_LOCAL\))\s+(?!--)([a-z0-9][a-z0-9-]*)"
+)
+
 
 def raw_gate_invocations(script: str) -> list[str]:
     """Command lines that run a check themselves instead of delegating."""
@@ -130,6 +136,35 @@ def test_ci_workflow_delegates_every_gate():
     assert not offenders, (
         "ci.yml runs a gate command directly instead of calling a "
         f"scripts/ci-local.sh stage: {offenders}"
+    )
+
+
+def _known_stages() -> set[str]:
+    """The dispatcher's own answer: it prints every stage it knows on an unknown one."""
+    out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        ["bash", str(REPO_ROOT / "scripts" / "ci-local.sh"), "no-such-stage"],
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 2, out.stderr
+    line = next(ln for ln in out.stderr.splitlines() if ln.strip().startswith("stages:"))
+    return set(line.split(":", 1)[1].split())
+
+
+def test_every_caller_names_a_stage_the_dispatcher_knows():
+    """HATS-1716: the stage set is the set of `ci_*` functions, so renaming one
+    silently unwires every caller that spells the old name."""
+    called = set(
+        _STAGE_CALL_RE.findall(
+            workflow_run_steps((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text())
+            + "\n"
+            + makefile_recipes((REPO_ROOT / "Makefile").read_text())
+        )
+    )
+    unknown = sorted(called - _known_stages() - {"all"})
+    assert not unknown, (
+        "ci.yml / Makefile call a ci-local.sh stage the dispatcher does not "
+        f"know — that job runs nothing and exits 2: {unknown}"
     )
 
 

@@ -11,10 +11,14 @@ why: without safety gate hooks, agents execute irreversible destructive shell co
 
 from __future__ import annotations
 
+import atexit
+import functools
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -58,6 +62,23 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _neutral_root() -> Path:
+    """A cwd and HOME this file owns.
+
+    The hook's permission lint scans `(Path.cwd(), Path.home())`
+    (`consent_permission_lint.py:138`), so an inherited pair makes every
+    `== {}` here an assertion about someone else's `.claude/settings*.json` —
+    red in the main checkout the moment a session accepts an allow-rule, green
+    in a worktree that has none. Found by the HATS-1716 audit, measured both ways.
+    """
+    root = Path(tempfile.mkdtemp(prefix="ai-hats-safety-gate-neutral-"))
+    # Not a `tmp_path`: the callers are plain functions, not fixtures. Reaped at
+    # exit so the tier does not leave one dir per xdist worker per run behind.
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
+    return root
+
+
 def _decide(
     command: str,
     *,
@@ -66,6 +87,7 @@ def _decide(
 ) -> dict:
     """Run the hook on a Bash payload; return its decision ({} when it allows)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    env["HOME"] = str(_neutral_root())
     planted = None if cwd is None else Path(cwd) / SESSION_DIRNAME
     if planted is not None and (planted / "role_materialization.json").is_file():
         env["AI_HATS_SESSION_IDENTITY"] = json.dumps({"v": 1, "session_dir": str(planted)})
@@ -77,7 +99,7 @@ def _decide(
         text=True,
         timeout=20,
         env=env,
-        cwd=str(cwd) if cwd is not None else None,
+        cwd=str(cwd) if cwd is not None else str(_neutral_root()),
     )
     assert res.returncode == 0, res.stderr
     if not res.stdout.strip():

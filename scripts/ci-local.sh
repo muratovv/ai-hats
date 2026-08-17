@@ -12,12 +12,13 @@
 # interpreter with PYTHON=/path/to/python.
 #
 # Usage:
-#   scripts/ci-local.sh            # local bundle: tmp-sweep lint dependency-floor unit coverage merge-smoke
-#   scripts/ci-local.sh tmp-sweep  # housekeeping only: reap dead test cruft from TMPDIR
-#   scripts/ci-local.sh lint       # one stage (used by the matching CI job)
-#   scripts/ci-local.sh coverage   # the stage that was the sole failing executor
-#   scripts/ci-local.sh security   # CI-only stage; env-scoped (see NOTE below)
-#   scripts/ci-local.sh done-gate  # what edge:review--done demands (HATS-1137)
+#   scripts/ci-local.sh                   # the local bundle — the `all` branch names it
+#   scripts/ci-local.sh tmp-sweep         # housekeeping only: reap dead test cruft from TMPDIR
+#   scripts/ci-local.sh lint              # one stage (used by the matching CI job)
+#   scripts/ci-local.sh coverage          # the stage that was the sole failing executor
+#   scripts/ci-local.sh security          # CI-only stage; env-scoped (see NOTE below)
+#   scripts/ci-local.sh --stages done-gate  # what edge:review--done demands (HATS-1137)
+#   scripts/ci-local.sh no-such-stage     # exit 2, listing every stage there is
 #
 # NOTE: the `install-smoke` CI job is deliberately NOT a stage here — it runs
 # install-launcher.sh which writes ~/.local/bin/ai-hats, an unwanted side effect
@@ -182,13 +183,18 @@ ci_version_skew() {
     "$PY" scripts/check_pkg_version_skew.py "${SKEW_BASE:-origin/master}"
 }
 
+# The stage set IS the set of `ci_*` functions defined above: the dispatch and
+# the usage line below both read it, so a stage can no longer be reachable and
+# unlisted (`tmp-sweep` was, HATS-1716) or listed and unreachable. The other
+# side of the convention: a helper that is not a stage does not take the `ci_`
+# prefix — `gate_composition` is one.
+known_stages() {
+    declare -F | sed -n 's/^declare -f ci_//p' | tr '_' '-' | sort
+}
+
 stage="${1:-all}"
 shift 2>/dev/null || true   # remaining argv is passed through to the pytest stages
 case "$stage" in
-    lint) ci_lint ${@+"$@"} ;;
-    unit) ci_unit ${@+"$@"} ;;
-    integration) ci_integration ${@+"$@"} ;;
-    coverage) ci_coverage ${@+"$@"} ;;
     # A gate is not a stage: it is a NAME for a set of them, and running it is
     # the primitive's job (it owns the marker). `--stages` comes FIRST so a
     # dispatcher that does not know the flag refuses instantly instead of
@@ -205,16 +211,6 @@ case "$stage" in
         echo "  run it (marks the tree on green):  make merge-gate | make done-gate | scripts/run-e2e-gate.sh" >&2
         exit 2
         ;;
-    security) ci_security ${@+"$@"} ;;
-    merge-smoke) ci_merge_smoke ${@+"$@"} ;;
-    dependency-floor) ci_dependency_floor ;;
-    silent-fallback) ci_silent_fallback ;;
-    test-isolation) ci_test_isolation ;;
-    e2e-catalog) ci_e2e_catalog ;;
-    adr-integrity) ci_adr_integrity ;;
-    e2e) ci_e2e ${@+"$@"} ;;
-    version-skew) ci_version_skew ${@+"$@"} ;;
-    tmp-sweep) ci_tmp_sweep ;;
     all)
         # security is intentionally omitted — pip-audit is env-scoped (see NOTE).
         ci_tmp_sweep
@@ -230,9 +226,15 @@ case "$stage" in
         echo "[ci-local] local stages passed (security is CI-authoritative)" >&2
         ;;
     *)
-        echo "[ci-local] unknown stage: $stage" >&2
-        echo "  stages: lint | unit | integration | coverage | security | merge-smoke | e2e | e2e-catalog | adr-integrity | dependency-floor | silent-fallback | test-isolation | version-skew | all" >&2
-        echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
-        exit 2
+        fn="ci_$(printf '%s' "$stage" | tr '-' '_')"
+        if declare -F "$fn" >/dev/null 2>&1; then
+            "$fn" ${@+"$@"}
+        else
+            echo "[ci-local] unknown stage: $stage" >&2
+            echo "  stages: $(known_stages | tr '\n' ' ')" >&2
+            echo "  bundle: all (the local pre-push bundle, and the default)" >&2
+            echo "  gates (--stages prints their composition): merge-gate | done-gate | push-gate" >&2
+            exit 2
+        fi
         ;;
 esac

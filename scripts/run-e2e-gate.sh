@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # HATS-686 — ergonomic entry point for the out-of-band maintainer e2e+smoke gate.
 #
-# Runs the full `pytest -m "(integration or smoke) and not quarantine"
-# tests/e2e/ tests/smoke/` suite and, on green + a clean working tree, writes a
-# pass-marker keyed to HEAD's SHA. Once the marker exists, `git push origin
+# Runs every stage of the `push-gate` composition (`scripts/ci-local.sh
+# --stages push-gate`), the e2e tier among them, and on green + a clean working
+# tree writes a pass-marker keyed to HEAD's TREE. Once the marker exists, `git push origin
 # master` passes the pre-push gate INSTANTLY (no suite inside the doomed SSH
 # connection window — see HATS-686 / HATS-684).
 #

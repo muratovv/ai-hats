@@ -683,41 +683,57 @@ def test_a_card_in_a_foreign_backlog_is_not_this_gates_business(
     assert "no project owns" in taken.stderr, taken.stderr
 
 
-def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog():
+def test_done_gate_runs_e2e_catalog_first_and_refuses_stale_catalog(tmp_path: Path):
     """HATS-1562/HATS-1604: the composition names `e2e-catalog` first and the
     primitive stops at the first red, so a stale CATALOG.md refuses before the
-    expensive stages (lint, unit, integration) are ever started."""
-    catalog_path = REPO_ROOT / "tests/e2e/CATALOG.md"
-    original_bytes = catalog_path.read_bytes()
-    try:
-        catalog_path.write_bytes(original_bytes + b"\n")
+    expensive stages (lint, unit, integration) are ever started.
 
-        proc = subprocess.run(
-            [
-                "bash",
-                "-c",
-                f'. "{SKILL_SRC}/lib/gate-marker.sh"; . "{SKILL_SRC}/lib/gate.sh"; '
-                'gate_run "$1" done-gate',
-                "_",
-                str(REPO_ROOT / "scripts/ci-local.sh"),
-            ],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert proc.returncode != 0, (
-            f"stale CATALOG.md must fail done-gate:\n{proc.stdout}\n{proc.stderr}"
-        )
-        combined = proc.stdout + proc.stderr
-        assert "[ci-local] e2e-catalog" in combined, (
-            f"done-gate output must announce e2e-catalog stage:\n{combined}"
-        )
-        assert "[ci-local] lint" not in combined, (
-            f"done-gate must fail at e2e-catalog stage BEFORE reaching lint:\n{combined}"
-        )
-    finally:
-        catalog_path.write_bytes(original_bytes)
-        assert catalog_path.read_bytes() == original_bytes, (
-            "CATALOG.md must be restored to original state"
-        )
+    HATS-1716: the red stage is a STUB dispatcher's, not the live tree's. This
+    test used to corrupt `tests/e2e/CATALOG.md` in the checkout it runs from and
+    restore it in a `finally` — a write every sibling session and all 8 xdist
+    workers could observe, and the one HATS-1714 spent a card chasing.
+    """
+    real = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts/ci-local.sh"), "--stages", "done-gate"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout.split()
+    assert real[0] == "e2e-catalog", f"e2e-catalog must lead the composition: {real}"
+    assert "lint" in real[1:], f"lint must follow it, or this test proves nothing: {real}"
+
+    dispatcher = tmp_path / "ci-local.sh"
+    dispatcher.write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [[ "$1" == "--stages" ]]; then echo "{" ".join(real)}"; exit 0; fi\n'
+        'echo "[ci-local] $1" >&2\n'
+        '[[ "$1" == "e2e-catalog" ]] && exit 1\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'. "{SKILL_SRC}/lib/gate-marker.sh"; . "{SKILL_SRC}/lib/gate.sh"; '
+            'gate_run "$1" done-gate',
+            "_",
+            str(dispatcher),
+        ],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode != 0, (
+        f"a red e2e-catalog must fail done-gate:\n{proc.stdout}\n{proc.stderr}"
+    )
+    combined = proc.stdout + proc.stderr
+    assert "[ci-local] e2e-catalog" in combined, (
+        f"done-gate output must announce e2e-catalog stage:\n{combined}"
+    )
+    assert "[ci-local] lint" not in combined, (
+        f"done-gate must fail at e2e-catalog stage BEFORE reaching lint:\n{combined}"
+    )
