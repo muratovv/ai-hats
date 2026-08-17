@@ -39,6 +39,7 @@ _HOOK_POLICY_KEYS = {
 }
 _HOOK_FEATURE_NAMES = {"codex_hooks", "hooks"}
 _ENV_CODEX_BASE_HOME = "AI_HATS_CODEX_BASE_HOME"
+_SQLITE_ARTIFACT_SUFFIXES = (".sqlite", ".sqlite-shm", ".sqlite-wal", ".sqlite-journal")
 
 
 def _config_overrides(command: list[str]):
@@ -205,7 +206,9 @@ class CodexProvider(Provider):
     def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
         try:
             for source in sorted(base_home.iterdir(), key=lambda path: path.name):
-                if source.name != "skills":
+                if source.name != "skills" and not source.name.endswith(
+                    _SQLITE_ARTIFACT_SUFFIXES
+                ):
                     artifacts.port.symlink(source, session_home / source.name)
         except OSError:
             raise RuntimeError("Codex session home projection failed") from None

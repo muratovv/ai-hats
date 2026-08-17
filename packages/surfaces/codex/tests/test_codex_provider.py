@@ -270,6 +270,14 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     base_home = tmp_path / "user-codex-home"
     (base_home / "auth.json").write_text("shared auth")
     (base_home / "config.toml").write_text("shared config")
+    sqlite_artifacts = {
+        base_home / "state_5.sqlite",
+        base_home / "state_5.sqlite-shm",
+        base_home / "state_5.sqlite-wal",
+        base_home / "state_5.sqlite-journal",
+    }
+    for path in sqlite_artifacts:
+        path.write_text("shared sqlite state")
     skill = _make_skill(tmp_path, "release")
 
     artifacts = CodexProvider().build_session_artifacts(
@@ -288,6 +296,7 @@ def test_role_skills_activate_native_codex_home_with_shared_user_state(
     assert (session_home / "auth.json").is_symlink()
     assert (session_home / "auth.json").resolve() == base_home / "auth.json"
     assert (session_home / "config.toml").is_symlink()
+    assert not any((session_home / path.name).exists() for path in sqlite_artifacts)
     assert list(project.iterdir()) == []
 
 
