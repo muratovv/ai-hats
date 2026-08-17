@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**249 of 249 files catalogued — 258 flows.**
+**250 of 250 files catalogued — 259 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -395,6 +395,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the skill materialized once at the mirror; the checks section names the binding the plan cannot show
 - **why** — the mirror is per SKILL, so no part of the plan depends on a checks row
+
+## `test_ci_full_e2e_job.py`
+
+*pins HATS-1708*
+
+- **flow** — a GitHub Actions runner executes the full e2e job declared in ci.yml
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup --collect-only
+  ```
+
+- **expect** — the versioned workflow command reaches the canonical dispatcher and successfully collects the full e2e selection
+- **why** — a syntactically valid workflow can still name a missing stage or bypass the canonical dispatcher, leaving the advertised server-side gate inert
 
 ## `test_claude_scaffold_drop.py`
 

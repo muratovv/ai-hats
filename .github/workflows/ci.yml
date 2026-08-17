@@ -136,11 +136,34 @@ jobs:
         run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e ".[dev]"
       - name: Configure git identity (e2e tests create/commit projects)
         run: |
-          git config --global user.email "ci@ai-hats.test"
+          git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret
           git config --global user.name "ai-hats CI"
           git config --global init.defaultBranch main
       - name: Run curated e2e smoke subset
         run: bash scripts/ci-local.sh merge-smoke
+
+  e2e:
+    name: e2e (full tier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install package + dev deps
+        run: pip install uv -e packages/ai-hats-core -e packages/ai-hats-library -e packages/ai-hats-observe -e packages/ai-hats-rack -e packages/ai-hats-wt -e packages/surfaces/agy -e packages/surfaces/cline -e packages/surfaces/codex -e ".[dev]"
+      - name: Configure git identity (e2e tests create/commit projects)
+        run: |
+          git config --global user.email "ci@ai-hats.test" # ai-hats: allow-secret
+          git config --global user.name "ai-hats CI"
+          git config --global init.defaultBranch main
+      - name: Run full e2e tier
+        env:
+          AI_HATS_E2E_REQUIRE_VENV: "1"
+        run: bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup
 
   version-skew-guard:
     # HATS-943: block the HATS-923/937 skew class — a `packages/<pkg>/src/**`
@@ -184,9 +207,8 @@ jobs:
       - name: Check the suite patches its units no more than the baseline
         if: always()
         run: bash scripts/ci-local.sh test-isolation
-      # Offline as well (HATS-1498) — the e2e tier itself runs in no CI job, but
-      # its catalog is rendered from docstrings a PR can edit, so the freshness
-      # check is cheap enough to run where the tier is not.
+      # Offline as well (HATS-1498) and independent of the full e2e job, so a
+      # stale catalog is still named when that heavier job fails or is cancelled.
       - name: Check the e2e flow catalog is current
         if: always()
         run: bash scripts/ci-local.sh e2e-catalog

@@ -1,0 +1,52 @@
+"""e2e (HATS-1708)
+
+flow:   a GitHub Actions runner executes the full e2e job declared in ci.yml
+cmds:
+    bash scripts/ci-local.sh e2e -n 8 --dist=loadgroup --collect-only
+expect: the versioned workflow command reaches the canonical dispatcher and
+        successfully collects the full e2e selection
+why:    a syntactically valid workflow can still name a missing stage or bypass
+        the canonical dispatcher, leaving the advertised server-side gate inert
+"""
+
+from __future__ import annotations
+
+import os
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+
+
+pytestmark = pytest.mark.integration
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
+
+
+# HATS-1708
+def test_full_e2e_job_drives_the_canonical_dispatcher():
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    step = next(step for step in jobs["e2e"]["steps"] if step.get("name") == "Run full e2e tier")
+    argv = shlex.split(step["run"])
+    argv[0] = shutil.which(argv[0], path=os.environ.get("PATH")) or argv[0]
+
+    env = os.environ.copy()
+    env.pop("PYTEST_ADDOPTS", None)
+    env.update({key: str(value) for key, value in step.get("env", {}).items()})
+    result = subprocess.run(  # noqa: S603 — argv comes from the versioned workflow contract
+        [*argv, "--collect-only"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "[ci-local] e2e" in combined
+    assert "test_ci_full_e2e_job.py::test_full_e2e_job_drives_the_canonical_dispatcher" in combined
