@@ -2080,17 +2080,19 @@ as a claim to check, not as evidence.
 
 ## `test_remote_channel_install.py`
 
-*pins HATS-943*
+*pins HATS-943, HATS-988, HATS-1717*
 
-- **flow** — a developer initializing a project configured with remote git harness channel
+- **flow** — a maintainer checks that a released ai-hats installs the way a user's heal would install it — first-party packages resolved from the index, never from the workspace sources this repo carries
 - **cmds**
 
   ```console
-  ai-hats self init --channel remote
+  uv build --wheel . -o dist          # the wheel a user would get
+  uv venv --python 3.11 venv          # a fresh interpreter, outside the repo
+  uv pip install --python venv/bin/python dist/ai_hats-0.0.0-py3-none-any.whl
   ```
 
-- **expect** — project config sets remote harness channel and self update fetches updates from remote git repo
-- **why** — without remote channel support, production installations cannot update directly from remote git repos
+- **expect** — the installed wheel imports `ai_hats_core.migrations` and `ai_hats.migrations`; when a first-party pin is not yet visible to the resolver the test skips carrying the resolver's OWN refusal, never a second oracle's opinion
+- **why** — a heal installs from the index, so a pin that resolves only against the workspace ships broken to every user. The skip has to be asked of `uv`: the version comparison it replaced read `pypi.org/pypi/<name>/json` while the install resolved `pypi.org/simple/<name>/`, whose compressed variant was hours stale, and the tier went red for a reason the guard was written to excuse (HATS-1717)
 
 ## `test_retired_dist_prune_e2e.py`
 
