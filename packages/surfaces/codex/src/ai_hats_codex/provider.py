@@ -1,15 +1,16 @@
 """Codex CLI adapter for ai-hats.
 
 Role context is delivered through Codex's per-run ``developer_instructions``
-configuration override. Composed skills live only in ai-hats' per-session
-cache; the developer instructions expose a compact name/description/path index
-so Codex can load each ``SKILL.md`` on demand without writing ``.agents`` or
-``.codex`` into the project.
+configuration override. Composed skills live in a per-session ``CODEX_HOME``
+that projects shared user state without writing ``.agents`` or ``.codex`` into
+the project. The developer instructions retain a compact skill-path index as a
+fallback.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -37,6 +38,7 @@ _HOOK_POLICY_KEYS = {
     "features.hooks",
 }
 _HOOK_FEATURE_NAMES = {"codex_hooks", "hooks"}
+_ENV_CODEX_BASE_HOME = "AI_HATS_CODEX_BASE_HOME"
 
 
 def _config_overrides(command: list[str]):
@@ -176,9 +178,49 @@ class CodexProvider(Provider):
         return self._compose_sections(result, include_skills=False)
 
     def session_skills_root(self, project_dir: Path, session_id: str) -> Path:
+        return self.session_codex_home(project_dir, session_id) / "skills"
+
+    def session_codex_home(self, project_dir: Path, session_id: str) -> Path:
         from ai_hats.paths import session_cache_dir
 
-        return session_cache_dir(project_dir, session_id) / "skills"
+        return session_cache_dir(project_dir, session_id) / "codex-home"
+
+    def _base_codex_home(self, session_home: Path) -> Path:
+        configured = os.environ.get(_ENV_CODEX_BASE_HOME) or os.environ.get("CODEX_HOME")
+        candidate = Path(configured).expanduser() if configured else Path.home() / ".codex"
+        if not candidate.is_absolute() or not candidate.is_dir():
+            raise RuntimeError("Codex base home must be an existing absolute directory")
+
+        base_home = candidate.resolve()
+        resolved_session_home = session_home.resolve(strict=False)
+        if (
+            base_home == resolved_session_home
+            or base_home in resolved_session_home.parents
+            or resolved_session_home in base_home.parents
+        ):
+            raise RuntimeError("Codex base home must be outside the ai-hats session home")
+        return base_home
+
+    @staticmethod
+    def _project_base_home(base_home: Path, session_home: Path, artifacts) -> None:
+        try:
+            for source in sorted(base_home.iterdir(), key=lambda path: path.name):
+                if source.name != "skills":
+                    artifacts.port.symlink(source, session_home / source.name)
+        except OSError:
+            raise RuntimeError("Codex session home projection failed") from None
+
+    @staticmethod
+    def _project_base_skills(base_home: Path, skills_root: Path, role_names, artifacts) -> None:
+        base_skills = base_home / "skills"
+        if not base_skills.is_dir():
+            return
+        try:
+            for source in sorted(base_skills.iterdir(), key=lambda path: path.name):
+                if source.name not in role_names:
+                    artifacts.port.symlink(source, skills_root / source.name)
+        except OSError:
+            raise RuntimeError("Codex base skill projection failed") from None
 
     @staticmethod
     def _skill_description(skill) -> str:
@@ -236,11 +278,30 @@ class CodexProvider(Provider):
         from ai_hats.paths import session_cache_dir
         from ai_hats.skills_dir import inject_skill_paths_to_env, materialize_skills_dir
 
+        if not result.skills:
+            return
         cache_dir = session_cache_dir(project_dir, session_id)
+        session_home = self.session_codex_home(project_dir, session_id)
+        base_home = self._base_codex_home(session_home)
         artifacts.port.mkdir(cache_dir)
+        artifacts.port.mkdir(session_home)
         skills_root = self.session_skills_root(project_dir, session_id)
         materialize_skills_dir(skills_root, result.skills, project_dir, artifacts.port)
+        self._project_base_home(base_home, session_home, artifacts)
+        self._project_base_skills(
+            base_home,
+            skills_root,
+            {skill.name for skill in result.skills},
+            artifacts,
+        )
         inject_skill_paths_to_env(artifacts.extra_env, result.skills, skills_root)
+        artifacts.extra_env.update(
+            {
+                "CODEX_HOME": str(session_home),
+                "CODEX_SQLITE_HOME": os.environ.get("CODEX_SQLITE_HOME", str(base_home)),
+                _ENV_CODEX_BASE_HOME: str(base_home),
+            }
+        )
         artifacts.materialized.append(skills_root)
 
     def _build_skills_hitl(self, project_dir, result, session_id, artifacts) -> None:

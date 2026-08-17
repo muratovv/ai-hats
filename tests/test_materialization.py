@@ -87,6 +87,21 @@ def test_copy_tree_is_recorded_with_file_count_and_bytes(port: Materializer, tmp
     assert (entry.file_count, entry.size) == (2, 8)
 
 
+def test_symlink_is_recorded_without_dry_run_writes(port: Materializer, tmp_path: Path):
+    source = tmp_path / "user-home" / "auth.json"
+    source.parent.mkdir()
+    source.write_text("auth")
+    target = tmp_path / "session" / "auth.json"
+
+    port.symlink(source, target)
+
+    [entry] = port.plan.entries
+    assert entry.kind is WriteKind.SYMLINK
+    assert entry.source == source
+    assert entry.target == target
+    assert target.is_symlink() is isinstance(port, ApplyMaterializer)
+
+
 def test_repeated_mkdir_of_one_dir_is_recorded_once(port: Materializer, tmp_path: Path):
     target = tmp_path / "cache" / "sessions" / "sid"
     port.mkdir(target)
