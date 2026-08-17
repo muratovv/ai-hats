@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**248 of 248 files catalogued — 256 flows.**
+**249 of 249 files catalogued — 258 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2647,6 +2647,30 @@ as a claim to check, not as evidence.
 
 - **expect** — sub-agent runs through Claude SDK, recording cost telemetry and session ID in metrics.json
 - **why** — without SDK integration, sub-agent execution relies on legacy subprocesses and loses cost telemetry
+
+## `test_surface_auto_install.py`
+
+*pins HATS-1701*
+
+- **flow** — a user launches Codex from an editable checkout whose surface package is not installed in the active environment
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r maintainer
+  ```
+
+- **expect** — the first launch installs the local Codex surface and starts Codex without falling through to the registry installer
+- **why** — editable installation writes a path file that the running interpreter has not processed, so an in-process recheck otherwise misses the heal
+
+- **flow** — a user launches Codex without its surface and package installation fails
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r maintainer
+  ```
+
+- **expect** — the command exits 2 with the installer diagnostic and no Python traceback
+- **why** — subprocess stderr is the actionable installation failure, but a bare CalledProcessError hides it and the generic CLI path leaks a traceback
 
 ## `test_surface_cleanup.py`
 

@@ -323,6 +323,79 @@ def test_ensure_surface_plugin_installed_already_installed() -> None:
     assert called is False
 
 
+def test_ensure_surface_plugin_installed_refreshes_targeted_heal(tmp_path) -> None:
+    from ai_hats.self_heal import ensure_surface_plugin_installed
+
+    installed = False
+    installer_calls = []
+    refresh_calls = []
+    canonical = tmp_path / "packages" / "surfaces" / "codex"
+
+    def fake_refresh(path) -> None:
+        nonlocal installed
+        refresh_calls.append(path)
+        installed = True
+
+    def fake_healer(repo_root=None):
+        return self_heal.HealResult(
+            healed=[
+                self_heal.Healed(
+                    BrokenProvider(ep_name="codex", module="ai_hats_codex"),
+                    canonical,
+                )
+            ],
+            warned=[],
+        )
+
+    result = ensure_surface_plugin_installed(
+        "codex",
+        installer=installer_calls.append,
+        healer=fake_healer,
+        installed_checker=lambda name: installed,
+        refresher=fake_refresh,
+    )
+
+    assert result is True
+    assert refresh_calls == [canonical]
+    assert installer_calls == []
+
+
+def test_ensure_surface_plugin_installed_does_not_refresh_sibling_heal(tmp_path) -> None:
+    from ai_hats.self_heal import ensure_surface_plugin_installed
+
+    installed = False
+    installer_calls = []
+    refresh_calls = []
+
+    def fake_installer(package_name: str) -> None:
+        nonlocal installed
+        installer_calls.append(package_name)
+        installed = True
+
+    def fake_healer(repo_root=None):
+        return self_heal.HealResult(
+            healed=[
+                self_heal.Healed(
+                    BrokenProvider(ep_name="agy", module="ai_hats_agy"),
+                    tmp_path / "packages" / "surfaces" / "agy",
+                )
+            ],
+            warned=[],
+        )
+
+    result = ensure_surface_plugin_installed(
+        "codex",
+        installer=fake_installer,
+        healer=fake_healer,
+        installed_checker=lambda name: installed,
+        refresher=refresh_calls.append,
+    )
+
+    assert result is True
+    assert refresh_calls == []
+    assert installer_calls == ["ai-hats-codex"]
+
+
 @pytest.mark.parametrize(
     ("provider_name", "package_name"),
     [("cline", "ai-hats-cline"), ("codex", "ai-hats-codex")],
@@ -363,3 +436,20 @@ def test_ensure_surface_plugin_installed_raises_on_installer_error(monkeypatch) 
         ProviderInstallationError, match="Failed to auto-install surface plugin 'cline'"
     ):
         ensure_surface_plugin_installed("cline", installer=fake_installer)
+
+
+def test_ensure_surface_plugin_installed_preserves_installer_stderr() -> None:
+    from subprocess import CalledProcessError
+
+    from ai_hats.self_heal import ProviderInstallationError, ensure_surface_plugin_installed
+
+    def fake_installer(pkg: str) -> None:
+        raise CalledProcessError(97, ["uv", "pip", "install", pkg], stderr="registry denied")
+
+    with pytest.raises(ProviderInstallationError, match="registry denied"):
+        ensure_surface_plugin_installed(
+            "cline",
+            installer=fake_installer,
+            healer=lambda repo_root=None: None,
+            installed_checker=lambda name: False,
+        )

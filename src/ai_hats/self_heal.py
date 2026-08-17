@@ -9,12 +9,15 @@ repo dir. Signal = the entry-point module fails ``find_spec`` (not the
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import logging
 import os
+import site
 import subprocess
 import sys
 import types
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -360,10 +363,20 @@ def _is_surface_module_installed(provider_name: str) -> bool:
     return False
 
 
+def _refresh_editable(canonical: Path) -> None:
+    """Expose a healed surface source to the already-running interpreter."""
+    site.addsitedir(str(canonical / "src"))
+    importlib.invalidate_caches()
+
+
 def ensure_surface_plugin_installed(
     provider_name: str,
     repo_root: Path | None = None,
-    installer=_uv_install_surface_package,
+    installer: Callable[[str], None] = _uv_install_surface_package,
+    *,
+    healer: Callable[[Path | None], HealResult | None] | None = None,
+    installed_checker: Callable[[str], bool] | None = None,
+    refresher: Callable[[Path], None] | None = None,
 ) -> bool:
     """Ensure a surface plugin package is installed in venv (HATS-1179, HATS-1394).
 
@@ -375,12 +388,29 @@ def ensure_surface_plugin_installed(
     """
     from .surfaces_registry import get_surface_info
 
-    if _is_surface_module_installed(provider_name):
+    if healer is None:
+        healer = run_editable_heal
+    if installed_checker is None:
+        installed_checker = _is_surface_module_installed
+    if refresher is None:
+        refresher = _refresh_editable
+
+    if installed_checker(provider_name):
         return True
 
     # 1. Try editable heal (for in-tree packages/surfaces/* checkout)
-    run_editable_heal(repo_root=repo_root)
-    if _is_surface_module_installed(provider_name):
+    heal_result = healer(repo_root)
+    targeted_heal = (
+        next(
+            (healed for healed in heal_result.healed if healed.provider.ep_name == provider_name),
+            None,
+        )
+        if heal_result
+        else None
+    )
+    if targeted_heal:
+        refresher(targeted_heal.canonical)
+    if installed_checker(provider_name):
         return True
 
     # 2. Try package installer if known surface package name is available
@@ -389,12 +419,21 @@ def ensure_surface_plugin_installed(
         try:
             installer(info.package_name)
         except Exception as exc:
-            logger.warning("Failed to install surface package %s: %s", info.package_name, exc)
+            detail = str(exc)
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
+                stderr = (
+                    exc.stderr.decode(errors="replace")
+                    if isinstance(exc.stderr, bytes)
+                    else exc.stderr
+                )
+                detail = stderr.strip() or detail
+            logger.warning("Failed to install surface package %s: %s", info.package_name, detail)
             raise ProviderInstallationError(
-                f"Failed to auto-install surface plugin {provider_name!r} ({info.package_name}): {exc}"
+                f"Failed to auto-install surface plugin {provider_name!r} "
+                f"({info.package_name}): {detail}"
             ) from exc
 
-    return _is_surface_module_installed(provider_name)
+    return installed_checker(provider_name)
 
 
 __all__ = [
