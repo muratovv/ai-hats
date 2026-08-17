@@ -55,6 +55,10 @@ ENV_DENYLIST: frozenset[str] = frozenset(
         # would silently disable the very prune under test.
         ENV_SKIP_PRUNE,
         "XDG_CACHE_HOME",
+        # HATS-1661: the pre-push gate exports it to parallelise its own run, but
+        # a nested pytest that disables xdist (or lacks it) cannot parse `-n8`
+        # and dies on argument parsing.
+        "PYTEST_ADDOPTS",
     }
 )
 # HATS-1473: AI_HATS_CACHE_HOME is deliberately NOT denied — stripping it is what

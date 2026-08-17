@@ -47,9 +47,12 @@ def _armed_project(tmp_path: Path, name: str) -> Path:
     return project
 
 
-def _run_hook(project: Path) -> subprocess.CompletedProcess[str]:
+def _run_hook(
+    project: Path, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("AI_HATS_SMOKE_SKIP", None)
+    env.update(extra_env or {})
     return subprocess.run(
         ["bash", str(HOOK_PATH.resolve())],
         cwd=str(project),
@@ -104,4 +107,31 @@ def test_pre_commit_smoke_ignores_collection_error_outside_e2e(tmp_path: Path) -
 
     assert res.returncode == 0, (
         f"Hook failed unexpectedly:\nstdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+
+
+def test_pre_commit_smoke_survives_an_inherited_pytest_addopts(tmp_path: Path) -> None:
+    """HATS-1661: an ambient PYTEST_ADDOPTS must not block the commit.
+
+    The child pytest exits on argument parsing, and the hook — which
+    special-cases only rc=5 — reports that as a test failure, though none ran.
+    The flag is synthetic on purpose: the resolved pytest may HAVE xdist, so the
+    gate's own ``-n8`` would parse and stay green under revert.
+    """
+    project = _armed_project(tmp_path, "addopts")
+    tests_dir = project / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_smoke.py").write_text(
+        "import pytest\n\n@pytest.mark.smoke\ndef test_ok():\n    pass\n"
+    )
+
+    res = _run_hook(project, {"PYTEST_ADDOPTS": "--ai-hats-no-such-flag"})
+
+    assert "unrecognized arguments" not in res.stderr, (
+        "the inherited PYTEST_ADDOPTS reached the hook's pytest:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+    assert res.returncode == 0, (
+        "the hook blocked a commit over an inherited PYTEST_ADDOPTS:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
     )

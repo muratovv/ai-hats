@@ -78,7 +78,10 @@ smoke_paths=()
 # HATS-887: strip GIT_* plumbing so the merge-smoke `git merge` that spawns this
 # hook can't leak GIT_DIR into pytest and retarget a test's git off cwd onto real
 # .git (the child `env -u` does not affect the parent commit).
-output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+# HATS-1661: PYTEST_ADDOPTS rides into EVERY pytest, so a flag absent from this
+# venv (the gate's `-n8`, a stray `--cov`) fails argument parsing and reads here
+# as a test failure.
+output=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u PYTEST_ADDOPTS \
     "$PYTEST" -m smoke -q --tb=line --no-header -p no:cacheprovider \
     ${smoke_paths[@]+"${smoke_paths[@]}"} 2>&1)  # ${a[@]+…}: bash 3.2 + set -u
 rc=$?
