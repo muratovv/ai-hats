@@ -46,6 +46,8 @@ def _run_probe_offline(tmp_path, *, strict: bool) -> subprocess.CompletedProcess
     env = dict(os.environ)
     env["PATH"] = str(empty_bin)  # no uv ⇒ network_available() False
     env.pop(REQUIRE_VENV_ENV, None)
+    # HATS-1661: `-p no:xdist` below makes the gate's `-n8` unparsable, not slow.
+    env.pop("PYTEST_ADDOPTS", None)
     if strict:
         env[REQUIRE_VENV_ENV] = "1"
     return subprocess.run(
