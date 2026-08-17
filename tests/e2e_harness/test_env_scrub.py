@@ -9,6 +9,7 @@ run stops testing the packaged artefact; ``GIT_*`` leaks the outer repo.
 from __future__ import annotations
 
 from _helpers.env import ENV_DENYLIST, clean_env, launcher_subprocess_env
+from _helpers.hitl import DEFAULT_ENV_ALLOWLIST, _build_env
 from ai_hats.paths import ENV_AI_HATS_DIR, ENV_AI_HATS_VENV
 from ai_hats.constants import ENV_LAUNCHER_DEST, ENV_REPO_URL
 
@@ -39,6 +40,15 @@ def test_clean_env_strips_denylist_keeps_rest():
     assert out[ENV_REPO_URL] == "/repo"
     # The input dict is not mutated.
     assert "PYTHONPATH" in base
+
+
+def test_hitl_env_disables_source_bytecode():
+    out = _build_env(
+        {"PYTHONDONTWRITEBYTECODE": "0"},
+        DEFAULT_ENV_ALLOWLIST,
+    )
+
+    assert out["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_clean_env_denylist_covers_pythonpath():
