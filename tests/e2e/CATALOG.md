@@ -1512,24 +1512,24 @@ as a claim to check, not as evidence.
 
 *pins HATS-550, HATS-686*
 
-- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this commit
+- **flow** — a maintainer pushes to master, and the pre-push hook decides from a stored marker whether the e2e tier has already passed for this content
 - **cmds**
 
   ```console
-  git push origin master    # allowed only with a green marker for the pushed sha
+  git push origin master    # allowed only with a green marker for the pushed tree
   ```
 
-- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another sha, or carries a body sha that disagrees; in a mixed payload the master line still needs its own marker
-- **why** — the marker is the only evidence the tier ever ran — honour one written for a different commit and the gate certifies code nobody tested
+- **expect** — a non-master target, a branch deletion and an empty stdin are all no-ops; a master push is allowed only when a pass-marker keyed to the TREE of the pushed local_sha sits under <git-common-dir>/ai-hats/e2e-gate/, and is blocked when that marker is absent, keyed to another tree, or carries a body `tree=` disagreeing with its own filename; in a mixed payload the master line still needs its own marker
+- **why** — the marker is the only evidence the tier ever ran — honour one written for different content and the gate certifies code nobody tested; keyed by tree since HATS-1601, so a commit that only re-parents an already-judged tree is not re-judged
 
-- **flow** — the same maintainer runs the gate itself, which must clear lint and unit before spending ~25 minutes on the tier, then record the marker
+- **flow** — the same maintainer runs the gate itself, which must clear the cheap stages of the push-gate composition before spending the tier's runtime, then record the marker
 - **cmds**
 
   ```console
   bash scripts/run-e2e-gate.sh    # thin wrapper over the hook's --run mode
   ```
 
-- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep is dry-run unless opted into; and the wrapper errors when the hook is absent
+- **expect** — a lint failure blocks before the tier is reached and a unit failure names the stage; a green preamble runs both stages and then the suite; the marker is written on pass and on rc 5 (nothing selected), but never on failure and never from a dirty tree; a missing pytest blocks; the argv carries the tier's markers and folders, deselects quarantined tests, and arms fail-closed venv strict mode, explaining a venv skip only when that is actually the cause; xdist is used when available and capped at a worker ceiling, falling back to serial without it; the tmp sweep reaps provably-dead cruft by default and escalates to `--force` only when opted into; and the wrapper errors when the hook is absent
 - **why** — pre-push runs while git holds the GitHub SSH connection and is killed at ~30s, so the tier cannot run there — splitting check from run is what makes the gate possible at all, and a marker written from a dirty tree or a failed run certifies something that was never green
 
 ## `test_pretooluse_hook_cwd_resolution.py`
