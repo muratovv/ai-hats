@@ -37,6 +37,12 @@ HOOK = (
 SESSION_DIRNAME = ".session"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_permission_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
 def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
     """Make ``repo`` look like a session whose role declared consent (HATS-1682).
 
