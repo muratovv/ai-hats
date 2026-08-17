@@ -10,9 +10,9 @@ expect: stdout carries the trait as edited in the WORKTREE, not the main
         checkout's copy of it — asserted on content, never status, because the
         failure mode is exit 0 with the block present and carrying the wrong text
 why:    the defect was silent, which is why it needs a real subprocess: in
-        process ``_detect_source_library_root(cwd)`` already returned the
+        process `_detect_source_library_root(cwd)` already returned the
         worktree, so every in-process probe agreed with the fix while the shipped
-        CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset
+        CLI still composed master. `AI_HATS_LIBRARY_ROOT` is deliberately unset
         here — setting it is the manual workaround this test exists to remove
 """
 # comment-length: allow — the four-field catalog block, schema in gen_e2e_catalog.py

@@ -99,7 +99,7 @@ def _kill_group(running: subprocess.Popen) -> None:
 
 def _run(command: str, payload: dict) -> _HookResult:
     try:
-        with subprocess.Popen(
+        with subprocess.Popen(  # noqa: S603 - manifest pins an executable inside skills_root
             [command],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
