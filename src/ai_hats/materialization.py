@@ -215,11 +215,9 @@ class ApplyMaterializer(Materializer):
         self._record(entry)
 
     def symlink(self, src: Path, dest: Path) -> None:
-        if dest.is_symlink():
-            if dest.readlink() == src:
-                return
-            raise FileExistsError("session materialization path collision")
-        if dest.exists():
+        if dest.is_symlink() and dest.readlink() == src:
+            return
+        if dest.is_symlink() or dest.exists():
             raise FileExistsError("session materialization path collision")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.symlink_to(src, target_is_directory=src.is_dir())
