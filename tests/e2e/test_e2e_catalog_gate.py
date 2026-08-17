@@ -7,7 +7,8 @@ cmds:
     bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
 expect: the stage is reachable through the dispatcher and announces itself as
         `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists
-        `e2e-catalog` among the stages it knows
+        `e2e-catalog` among the stages it knows — one list, derived from the
+        `ci_*` functions, so both answers die together (HATS-1716)
 why:    the checker is only a gate if `ci-local.sh` actually dispatches to it —
         `check_dependency_floor.py` sat outside this same ratchet from HATS-1399
         to HATS-1373, a gate script that was silently gating nothing. Whether the
@@ -50,7 +51,11 @@ def test_gate_dispatches_to_the_catalog_check():
 
 
 def test_unknown_stage_lists_the_catalog_stage():
-    """Deleting the `case` branch drops the stage from this list too."""
+    """Deleting `ci_e2e_catalog` drops the stage from this list too.
+
+    True since HATS-1716 and not before: the list was a hand-written string, so
+    this passed on a dispatcher that had lost the stage entirely — measured.
+    """
     missing = _stage("no-such-stage")
     combined = missing.stdout + missing.stderr
     assert missing.returncode == 2, combined
