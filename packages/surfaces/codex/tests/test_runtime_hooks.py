@@ -48,7 +48,7 @@ def _manifest(
     matcher: str = "Bash",
 ) -> None:
     cache.mkdir(parents=True, exist_ok=True)
-    mirrored = cache / "skills" / "guard" / "hooks" / script.name
+    mirrored = cache / "codex-home" / "skills" / "guard" / "hooks" / script.name
     mirrored.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(script, mirrored)
     (cache / "hooks.json").write_text(
