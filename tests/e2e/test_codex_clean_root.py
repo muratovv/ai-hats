@@ -53,6 +53,7 @@ payload = {
 }
 cache_dir = Path(os.environ["AI_HATS_SESSION_CACHE_DIR"])
 codex_home = Path(os.environ["CODEX_HOME"])
+base_codex_home = Path(os.environ["AI_HATS_CODEX_BASE_HOME"])
 barrier_dir = os.environ.get("AI_HATS_CODEX_BARRIER_DIR")
 if barrier_dir:
     barrier = Path(barrier_dir)
@@ -77,6 +78,9 @@ capture = {
     "cwd": os.getcwd(),
     "session_id": os.environ["AI_HATS_SESSION_ID"],
     "cache_dir": str(cache_dir),
+    "base_codex_home": str(base_codex_home),
+    "config_is_symlink": (codex_home / "config.toml").is_symlink(),
+    "personal_skill_is_symlink": (codex_home / "skills" / "personal").is_symlink(),
     "manifest_session_id": manifest["session"]["id"],
     "hook_returncode": hook.returncode,
     "hook_stdout": hook.stdout,
@@ -112,11 +116,14 @@ def _snapshot_non_agent_files(project: Path) -> dict[str, str]:
 def _make_base_codex_home(tmp_path: Path) -> Path:
     base_home = tmp_path / "base-codex-home"
     system_skill = base_home / "skills" / ".system"
+    personal_skill = base_home / "skills" / "personal"
     system_skill.mkdir(parents=True)
+    personal_skill.mkdir(parents=True)
     (base_home / "auth.json").write_text("shared auth")
     (base_home / "config.toml").write_text("shared config")
     (base_home / "state_5.sqlite").write_text("shared sqlite state")
     (system_skill / "SKILL.md").write_text("system skill")
+    (personal_skill / "SKILL.md").write_text("personal skill")
     return base_home
 
 
@@ -181,6 +188,11 @@ def test_codex_exit_cleans_session_home_and_preserves_shared_state(
     assert capture["cwd"] == str(project)
     assert capture["session_id"]
     assert not Path(capture["cache_dir"]).exists(), "session cache must be cleaned at exit"
+    assert not Path(capture["codex_home"]).exists()
+    assert capture["base_codex_home"] == str(base_home)
+    assert capture["auth_is_symlink"] is True
+    assert capture["config_is_symlink"] is True
+    assert capture["personal_skill_is_symlink"] is True
     assert capture["codex_home"] == str(Path(capture["cache_dir"]) / "codex-home")
     assert capture["sqlite_home"] == str(base_home)
     assert capture["auth_is_symlink"]
@@ -270,6 +282,9 @@ def test_two_full_codex_sessions_overlap_without_sharing_or_leaking_state(
     for payload in payloads:
         assert payload["manifest_session_id"] == payload["session_id"]
         assert not Path(payload["cache_dir"]).exists()
+        assert not Path(payload["codex_home"]).exists()
+        assert payload["base_codex_home"] == str(base_home)
+        assert payload["auth_is_symlink"] is True
         assert payload["codex_home"] == str(Path(payload["cache_dir"]) / "codex-home")
         assert payload["role_skill_exists"]
         assert payload["system_skill_is_symlink"]

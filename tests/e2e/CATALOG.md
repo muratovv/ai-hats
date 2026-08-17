@@ -544,6 +544,21 @@ as a claim to check, not as evidence.
 - **expect** — the child inherits the requested project cwd, runtime safety denies a destructive Bash payload, and shutdown leaves no Codex-owned project files
 - **why** — role delivery is insufficient if startup pollutes the repository or the surface bypasses the composed permission chain
 
+## `test_codex_native_role_skills.py`
+
+*pins HATS-1694*
+
+- **flow** — a Codex session selects a composed role skill through native discovery
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r native-role
+  codex debug prompt-input "$hatrack verify"
+  ```
+
+- **expect** — real Codex registers session-scoped hatrack, excludes another role's skill, and keeps shared Codex state outside the disposable overlay
+- **why** — the prompt index can name a skill while Codex's native $ picker and /skills remain unaware of it, so only real native discovery closes the gap
+
 ## `test_codex_provider_discovery.py`
 
 *pins HATS-1531*
@@ -3099,7 +3114,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — stdout carries the trait as edited in the WORKTREE, not the main checkout's copy of it — asserted on content, never status, because the failure mode is exit 0 with the block present and carrying the wrong text
-- **why** — the defect was silent, which is why it needs a real subprocess: in process ``_detect_source_library_root(cwd)`` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset here — setting it is the manual workaround this test exists to remove
+- **why** — the defect was silent, which is why it needs a real subprocess: in process `_detect_source_library_root(cwd)` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. `AI_HATS_LIBRARY_ROOT` is deliberately unset here — setting it is the manual workaround this test exists to remove
 
 ## `test_worktree_lifecycle_robustness_matrix.py`
 
