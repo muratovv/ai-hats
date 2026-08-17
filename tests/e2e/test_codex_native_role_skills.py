@@ -145,9 +145,7 @@ def test_real_codex_discovers_selected_skill_from_session_home(
     assert completed.returncode == 0, completed.stdout + completed.stderr
     [session_run] = sorted(runs_dir(project).glob("session_*"))
     trace = (session_run / "trace.log").read_text()
-    native_skills = trace.split("<skills_instructions>", 1)[1].split(
-        "</skills_instructions>", 1
-    )[0]
+    native_skills = trace.split("<skills_instructions>", 1)[1].split("</skills_instructions>", 1)[0]
     assert "## AVAILABLE SKILLS" in trace
     assert "- hatrack: Test native Codex discovery." in native_skills
     assert "/codex-home/skills/hatrack/SKILL.md" in native_skills
@@ -168,9 +166,7 @@ def test_workspace_seatbelt_blocks_session_symlink_write_escape(tmp_path: Path) 
     session_home.mkdir(parents=True)
     local_file = workspace / "local-control"
     local_file.write_text("delete me")
-    protected_dir = (
-        _main_checkout() / ".pytest_cache" / f"hats1694-seatbelt-{uuid.uuid4().hex}"
-    )
+    protected_dir = _main_checkout() / ".pytest_cache" / f"hats1694-seatbelt-{uuid.uuid4().hex}"
     protected_dir.mkdir(parents=True)
     protected_file = protected_dir / "shared-auth-state"
     protected_file.write_text("must survive")
@@ -233,9 +229,7 @@ def test_authenticated_pty_lists_and_invokes_session_role_skill(
     real_codex = shutil.which("codex")
     if real_codex is None:
         pytest.skip("codex binary not found")
-    configured_home = os.environ.get("AI_HATS_CODEX_BASE_HOME") or os.environ.get(
-        "CODEX_HOME"
-    )
+    configured_home = os.environ.get("AI_HATS_CODEX_BASE_HOME") or os.environ.get("CODEX_HOME")
     base_home = Path(configured_home).expanduser() if configured_home else Path.home() / ".codex"
     if not base_home.is_dir():
         pytest.skip("Codex base home is unavailable")

@@ -310,9 +310,7 @@ def test_role_skills_override_collisions_and_preserve_other_base_skills(tmp_path
         (source / "SKILL.md").write_text(f"base {name}")
     role_skill = _make_skill(tmp_path, "release")
 
-    CodexProvider().build_session_prompt(
-        project, _fake_result(skills=[role_skill]), "sid-merged"
-    )
+    CodexProvider().build_session_prompt(project, _fake_result(skills=[role_skill]), "sid-merged")
 
     skills_root = CodexProvider().session_skills_root(project, "sid-merged")
     assert (skills_root / ".system").is_symlink()
