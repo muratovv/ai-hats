@@ -753,16 +753,16 @@ as a claim to check, not as evidence.
 
 *pins HATS-1498*
 
-- **flow** — a maintainer runs the pre-push gate, which must refuse the push when tests/e2e/CATALOG.md no longer matches the flow blocks it is rendered from
+- **flow** — a maintainer runs the pre-push gate, which must route the catalog check through the `ci-local.sh` dispatcher rather than leave it unreachable
 - **cmds**
 
   ```console
-  bash scripts/ci-local.sh e2e-catalog     # exit 0 while the catalog is current
+  bash scripts/ci-local.sh e2e-catalog     # announces the stage it dispatched to
   bash scripts/ci-local.sh no-such-stage   # exit 2, and the usage names the stage
   ```
 
-- **expect** — the stage is reachable through the dispatcher, announces itself as `[ci-local] e2e-catalog`, and exits 0 on a clean tree; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
-- **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing
+- **expect** — the stage is reachable through the dispatcher and announces itself as `[ci-local] e2e-catalog`; an unknown stage exits 2 and lists `e2e-catalog` among the stages it knows
+- **why** — the checker is only a gate if `ci-local.sh` actually dispatches to it — `check_dependency_floor.py` sat outside this same ratchet from HATS-1399 to HATS-1373, a gate script that was silently gating nothing. Whether the catalog is CURRENT belongs to the stage, not here: this runs against the live checkout while sibling workers write it (HATS-1714)
 
 ## `test_e2e_catalog_soundness.py`
 
