@@ -59,4 +59,11 @@ def test_unknown_stage_lists_the_catalog_stage():
     missing = _stage("no-such-stage")
     combined = missing.stdout + missing.stderr
     assert missing.returncode == 2, combined
-    assert "e2e-catalog" in combined, combined
+    listed = [
+        line.split(":", 1)[1].split()
+        for line in combined.splitlines()
+        if line.strip().startswith("stages:")
+    ]
+    # Membership, not substring: `ci_e2e_catalog_GONE` would list
+    # `e2e-catalog-GONE` and satisfy a substring check while dispatching nothing.
+    assert listed and "e2e-catalog" in listed[0], combined
