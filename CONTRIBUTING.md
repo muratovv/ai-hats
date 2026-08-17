@@ -100,11 +100,18 @@ Every `make` target delegates to a `scripts/ci-local.sh` stage, so a target and
 the CI job of the same name cannot disagree — `tests/test_gate_entrypoint_parity.py`
 fails the build if either spells a check command out itself.
 
+A **stage is a `ci_*` function** in that script and nothing else: the dispatch
+and the usage line are both derived from the set of them, so a stage cannot be
+runnable and unlisted (`tmp-sweep` was, HATS-1716). To add one, define
+`ci_<name>` — the name follows with underscores read as hyphens. A helper that
+is not a stage keeps a different prefix.
+
 - `make check` — the fast inner loop: `lint` + `unit` only.
 - `make gates` — everything CI runs locally, the `all` bundle in
   `scripts/ci-local.sh`. This is the parity gate; `check` is a subset of it.
 - `make unit` (or `make tests`) — the unit stage, bounded by timeout (default 300s).
-- `make lint` — `ruff check .` plus the formatter check on `src/ tests/`.
+- `make lint` — `ruff check .` plus `ruff format --check` over that same `.`
+  (HATS-1651: two scopes could not stay equal by convention).
 - `make e2e` — the maintainer tier, and the very stage the master pre-push gate
   runs (HATS-1604 — one selection, not a copy), bounded by timeout (default 3600s).
 - `make coverage` / `make security` / `make version-skew` — the remaining CI stages.
