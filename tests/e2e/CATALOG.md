@@ -552,12 +552,11 @@ as a claim to check, not as evidence.
 - **cmds**
 
   ```console
-  ai-hats -p codex -r native-role
-  codex debug prompt-input "$hatrack verify"
+  ai-hats -p codex -r native-role app-server
   ```
 
-- **expect** — real Codex registers session-scoped hatrack, excludes another role's skill, and keeps shared Codex state outside the disposable overlay
-- **why** — the prompt index can name a skill while Codex's native $ picker and /skills remain unaware of it, so only real native discovery closes the gap
+- **expect** — real Codex registers session-scoped hatrack as enabled at the session-copy path and excludes another role's skill
+- **why** — prompt diagnostics can name a skill without proving the native registry contract used by explicit $skill invocation
 
 ## `test_codex_provider_discovery.py`
 

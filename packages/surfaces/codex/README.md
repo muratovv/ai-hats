@@ -16,9 +16,9 @@ $ ai-hats -p codex
 - Skills are copied to `codex-home/skills` inside ai-hats' external per-session
   cache. For a role with skills, that directory is registered through a
   session-scoped `CODEX_HOME`, so Codex exposes the selected skills through its
-  `$` picker and `/skills`. The compact name, description, and exact
-  `SKILL.md` path index remains as a fallback. Each session gets its own real
-  skills tree, so parallel roles do not overwrite one another.
+  `$` picker and native `skills/list` registry. The compact name, description,
+  and exact `SKILL.md` path index remains as a fallback. Each session gets its
+  own real skills tree, so parallel roles do not overwrite one another.
 - Composed runtime guards are copied into that same session cache. Stable
   per-run Codex hook definitions dispatch `PreToolUse`, `PermissionRequest`,
   and `PostToolUse` to the current session's manifest; the command contains no

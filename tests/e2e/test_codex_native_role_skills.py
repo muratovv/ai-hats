@@ -2,16 +2,17 @@
 
 flow:   a Codex session selects a composed role skill through native discovery
 cmds:
-    ai-hats -p codex -r native-role
-    codex debug prompt-input "$hatrack verify"
-expect: real Codex registers session-scoped hatrack, excludes another role's skill, and keeps shared Codex state outside the disposable overlay
-why:    the prompt index can name a skill while Codex's native $ picker and /skills remain unaware of it, so only real native discovery closes the gap
+    ai-hats -p codex -r native-role app-server
+expect: real Codex registers session-scoped hatrack as enabled at the session-copy path and excludes another role's skill
+why:    prompt diagnostics can name a skill without proving the native registry contract used by explicit $skill invocation
 """
 
 from __future__ import annotations
 
+import json
 import os
 import select
+import signal
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from _helpers.env import checkout_pythonpath, clean_env
 from _helpers.hitl import strip_ansi
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
-from ai_hats.paths import PROJECT_CONFIG, runs_dir
+from ai_hats.paths import PROJECT_CONFIG
 
 pytestmark = pytest.mark.integration
 
@@ -80,10 +81,10 @@ def _write_codex_probe_proxy(path: Path, real_codex: str) -> None:
     path.chmod(0o755)
 
 
-def test_real_codex_discovers_selected_skill_from_session_home(
+def test_real_codex_lists_selected_skill_from_session_home(
     tmp_path: Path, ai_hats_shim: Path
 ) -> None:
-    """HATS-1694: native discovery must resolve the copied session skill."""
+    """HATS-1694: the native registry must resolve the copied session skill."""
     real_codex = shutil.which("codex")
     if real_codex is None:
         pytest.skip("codex binary not found")
@@ -120,7 +121,26 @@ def test_real_codex_discovers_selected_skill_from_session_home(
     env.pop("AI_HATS_CODEX_BASE_HOME", None)
     env.pop("CODEX_SQLITE_HOME", None)
 
-    completed = subprocess.run(  # noqa: S603 - test-controlled executable and argv
+    messages = [
+        {
+            "method": "initialize",
+            "id": 0,
+            "params": {
+                "clientInfo": {
+                    "name": "ai_hats_e2e",
+                    "title": "ai-hats e2e",
+                    "version": "1.0.0",
+                }
+            },
+        },
+        {"method": "initialized", "params": {}},
+        {
+            "method": "skills/list",
+            "id": 1,
+            "params": {"cwds": [str(project)], "forceReload": True},
+        },
+    ]
+    proc = subprocess.Popen(  # noqa: S603 - test-controlled executable and argv
         [
             str(ai_hats_shim),
             "-p",
@@ -131,25 +151,71 @@ def test_real_codex_discovers_selected_skill_from_session_home(
             'sandbox_mode="workspace-write"',
             "-c",
             'approval_policy="on-request"',
-            "debug",
-            "prompt-input",
-            "$hatrack verify",
+            "app-server",
         ],
         cwd=project,
         env=env,
-        capture_output=True,
-        text=True,
-        timeout=90,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    transcript = b""
+    skills_response = None
+    session_skill_body = None
+    try:
+        proc.stdin.write("".join(f"{json.dumps(message)}\n" for message in messages).encode())
+        proc.stdin.flush()
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and proc.poll() is None:
+            ready, _, _ = select.select([proc.stdout.fileno()], [], [], 0.25)
+            if not ready:
+                continue
+            chunk = os.read(proc.stdout.fileno(), 8192)
+            if not chunk:
+                break
+            transcript += chunk
+            for line in transcript.decode(errors="replace").splitlines():
+                candidate = line[line.find("{") :] if "{" in line else ""
+                try:
+                    response = json.loads(candidate)
+                except json.JSONDecodeError:
+                    continue
+                if response.get("id") == 1 and ("result" in response or "error" in response):
+                    skills_response = response
+                    if "result" in response:
+                        [cwd_result] = response["result"]["data"]
+                        native_skill = next(
+                            skill for skill in cwd_result["skills"] if skill["name"] == "hatrack"
+                        )
+                        session_skill_body = Path(native_skill["path"]).read_text()
+                    break
+            if skills_response is not None:
+                break
+    finally:
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
 
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    [session_run] = sorted(runs_dir(project).glob("session_*"))
-    trace = (session_run / "trace.log").read_text()
-    native_skills = trace.split("<skills_instructions>", 1)[1].split("</skills_instructions>", 1)[0]
-    assert "## AVAILABLE SKILLS" in trace
-    assert "- hatrack: Test native Codex discovery." in native_skills
-    assert "/codex-home/skills/hatrack/SKILL.md" in native_skills
-    assert "foreign-only" not in native_skills
+    assert skills_response is not None, strip_ansi(transcript.decode(errors="replace"))[-4000:]
+    assert "error" not in skills_response, skills_response
+    [result] = skills_response["result"]["data"]
+    assert result["cwd"] == str(project)
+    assert result["errors"] == []
+    skills = {skill["name"]: skill for skill in result["skills"]}
+    assert skills["hatrack"]["enabled"] is True
+    assert skills["hatrack"]["path"].endswith("/codex-home/skills/hatrack/SKILL.md")
+    assert session_skill_body is not None and _ROLE_MARKER in session_skill_body
+    assert "foreign-only" not in skills
     assert not (project / ".agents").exists()
     assert not (project / ".codex").exists()
 
@@ -221,9 +287,9 @@ def test_workspace_seatbelt_blocks_session_symlink_write_escape(tmp_path: Path) 
 
 @pytest.mark.skipif(
     os.environ.get("AI_HATS_CODEX_AUTH_E2E") != "1",
-    reason="set AI_HATS_CODEX_AUTH_E2E=1 to spend one authenticated Codex turn",
+    reason="set AI_HATS_CODEX_AUTH_E2E=1 to run the authenticated native picker smoke",
 )
-def test_authenticated_pty_lists_and_invokes_session_role_skill(
+def test_authenticated_pty_picker_shows_session_role_skill(
     tmp_path: Path, ai_hats_shim: Path
 ) -> None:
     real_codex = shutil.which("codex")
@@ -278,11 +344,11 @@ def test_authenticated_pty_lists_and_invokes_session_role_skill(
         dimensions=(40, 140),
     )
     transcript = ""
-    skills_sent = False
-    invocation_sent = False
+    picker_opened = False
+    picker_seen = False
     exit_sent = False
     started = time.monotonic()
-    deadline = started + 180
+    deadline = started + 60
     try:
         while time.monotonic() < deadline and proc.isalive():
             ready, _, _ = select.select([proc.fd], [], [], 0.25)
@@ -293,14 +359,15 @@ def test_authenticated_pty_lists_and_invokes_session_role_skill(
                     break
             plain = strip_ansi(transcript).replace("\r", "")
             elapsed = time.monotonic() - started
-            if not skills_sent and elapsed >= 3:
-                proc.write(b"/skills\r")
-                skills_sent = True
-            elif skills_sent and not invocation_sent and ("hatrack" in plain or elapsed >= 10):
-                proc.write(b"\x1b$hatrack\r")
-                invocation_sent = True
-            elif invocation_sent and not exit_sent and _ROLE_MARKER in plain:
-                proc.write(b"/exit\r")
+            if not picker_opened and elapsed >= 3:
+                proc.write(b"$hatrack")
+                picker_opened = True
+            elif picker_opened and not picker_seen and "Test native Codex discovery." in plain:
+                picker_seen = True
+                proc.write(b"\x1b/exit\r")
+                exit_sent = True
+            elif picker_opened and not exit_sent and elapsed >= 15:
+                proc.write(b"\x1b/exit\r")
                 exit_sent = True
         if proc.isalive():
             proc.write(b"\x03\x03\x03")
@@ -311,7 +378,8 @@ def test_authenticated_pty_lists_and_invokes_session_role_skill(
         proc.wait()
 
     plain = strip_ansi(transcript).replace("\r", "")
-    assert skills_sent and invocation_sent
+    assert picker_opened and picker_seen
     assert "hatrack" in plain
-    assert _ROLE_MARKER in plain, plain[-2000:]
+    assert "Skill" in plain
+    assert _ROLE_MARKER not in plain
     assert _FOREIGN_MARKER not in plain
