@@ -21,6 +21,7 @@ import subprocess
 import pytest
 
 from _helpers.hook_chain import build_session_settings, run_chain  # noqa: E402
+from _helpers.sessions import stand_in_session  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -68,23 +69,37 @@ def test_the_declaration_reaches_the_guard_with_its_ends_parsed(arrow_project):
         assert "point" not in row, f"the retired key is still written: {row}"
 
 
-@pytest.mark.parametrize("target", ["execute", "done"])
-def test_the_question_is_raised_on_a_road_declared_by_arrow(arrow_project, target):
-    """The fail-under-revert half: revert the guard and this goes quiet, not red
-    elsewhere — which is exactly why the assertion is on the QUESTION."""
+@pytest.fixture(scope="module")
+def in_session(arrow_project):
+    """The chain, run from inside a session that DECLARED consent.
+
+    Without the envelope the guard has nothing to read and allows everything —
+    which is correct, and would make every assertion below pass for the wrong
+    reason. The envelope is written by the shared helper, from the role's real
+    composition, so this test cannot agree with a fixture instead of the code.
+    """
     project, env, settings = arrow_project
+    return project, stand_in_session(dict(env), project, "sid-arrow"), settings
+
+
+@pytest.mark.parametrize("target", ["execute", "done"])
+def test_the_question_is_raised_on_a_road_declared_by_arrow(in_session, target):
+    """The fail-under-revert half: revert the guard's envelope read and this goes
+    QUIET rather than red elsewhere — which is why the assertion is on the
+    question, not on some downstream refusal."""
+    project, env, settings = in_session
     verdict = run_chain(project, f"rack transition HATS-1 {target}", settings=settings, env=env)
 
     assert verdict.gated, (
-        f"the guard did NOT raise the consent question on '-> {target}' — a declaration "
+        f"the guard did NOT raise the consent question on '->{target}' — a declaration "
         f"in the arrow spelling reached it unread: {verdict}"
     )
 
 
-def test_an_undeclared_road_is_still_not_gated(arrow_project):
+def test_an_undeclared_road_is_still_not_gated(in_session):
     """Positive control: without it, a chain that gates EVERYTHING would pass the
     two assertions above while telling us nothing about the declaration."""
-    project, env, settings = arrow_project
+    project, env, settings = in_session
     verdict = run_chain(project, "rack transition HATS-1 blocked", settings=settings, env=env)
 
     assert not verdict.gated, f"an undeclared road was gated — the probe proves nothing: {verdict}"
