@@ -39,7 +39,10 @@ def test_a_topology_naming_a_reserved_state_is_refused_at_load(tmp_path, reserve
 
 def test_the_refusal_says_why_the_word_is_taken(tmp_path):
     doc = _write(
-        tmp_path, "{name: ANY}, {name: work}", "{from: ANY, to: work}, {from: work, to: ANY}", "work"
+        tmp_path,
+        "{name: ANY}, {name: work}",
+        "{from: ANY, to: work}, {from: work, to: ANY}",
+        "work",
     )
     with pytest.raises(TopologyError, match="selector"):
         load_backlog(doc)

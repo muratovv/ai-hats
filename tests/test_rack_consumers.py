@@ -21,7 +21,8 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 from ai_hats_rack.definition import BacklogDefinition, resolve_definition
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
-from ai_hats_rack.fsm import Topology, all_edge_keys
+from ai_hats_rack.fsm import Topology, all_edges
+from ai_hats_rack.selectors import Selector
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 from ai_hats_rack.models import TaskCard
 
@@ -130,7 +131,9 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
 
     assert pack, "the consumer pack must carry the check runner"
     subs = [spec for sub in pack for spec in sub.subscriptions()]
-    assert {str(spec.selector) for spec in subs} == set(all_edge_keys(topology))
+    assert {spec.selector for spec in subs} == {
+        Selector(e.from_state, e.to_state) for e in all_edges(topology)
+    }  # typed, not stringly: a plain arrow STRING lands in the non-FSM bucket
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15

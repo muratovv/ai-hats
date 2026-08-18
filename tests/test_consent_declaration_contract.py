@@ -121,27 +121,42 @@ def _ctx(event_key: str = "review->done") -> DispatchContext:
 # ----- contour 1: form, at composition, fail-closed -------------------------
 
 
-@pytest.mark.parametrize(
-    "point",
-    [
-        "edge:plan-execute",  # one dash — the measured A5 typo
-        "edge:--done",  # empty source half
-        "edge:review--",  # empty target half
-        "edge:",  # both halves empty
-        "review--done",  # no prefix at all
-    ],
-)
-def test_a_malformed_rack_consent_point_is_refused_at_composition(point):
-    """Fail-closed, because the alternative is what A5 measured: `edge:plan-execute`
+#: Every branch of the grammar's refusal, reached through the ai-hats composition
+#: contour — the fail-closed boundary A5 measured. Migrating this table by
+#: leaving the retired spellings in place left all five hitting the SAME first
+#: branch ("holds no arrow"), so a mutation that stopped judging arrows entirely
+#: kept 3883 tests green (HATS-1719 review). Each row names the branch it reaches.
+_MALFORMED = [
+    ("plan-execute", "an arrow"),  # the measured A5 typo, respelt
+    ("edge:plan--execute", "an arrow"),  # the RETIRED spelling is not an alias
+    ("review--done", "an arrow"),  # no arrow at all
+    ("->", "both halves empty"),  # a typo, not "everywhere"
+    ("a->b->c", "exactly one"),  # more than one arrow
+    ("review -> done", "no whitespace"),  # a second spelling of one selector
+    ("review->", "HATS-1720"),  # wide OUTPUT, reserved
+    ("ANY->ANY", "HATS-1720"),  # "everywhere", reserved
+    ("NONE->execute", "HATS-1703"),  # reserved word, no call site yet
+    ("ANY->done", "'->done'"),  # ANY on ONE side is a second spelling
+    ("a->>b", "not a state name"),  # the natural mistyping of the arrow
+    ("a-->b", "ends in '-'"),  # the other natural mistyping
+]
+
+
+@pytest.mark.parametrize("point, branch", _MALFORMED, ids=[p for p, _ in _MALFORMED])
+def test_a_malformed_rack_consent_point_is_refused_at_composition(point, branch):
+    """Fail-closed, because the alternative is what A5 measured: `plan-execute`
     composed with no error, no warning and nothing on any channel, and both roads
-    into master were open."""
+    into master were open.
+
+    Asserted per BRANCH, not against one shared sentence: a table whose rows all
+    reach the same refusal proves only that one refusal exists."""
     with pytest.raises(CheckBindingError) as exc:
         resolve_checks(_consent_row(point), [])
 
     said = str(exc.value)
     assert repr(point) in said, "the refusal must name the point it refuses"
     assert "'trait-agent'" in said and "apps.rack" in said, f"the row is unnamed: {said}"
-    assert "a rack selector is an arrow" in said, f"the refusal must spell the grammar: {said}"
+    assert branch in said, f"refused, but not by the branch this input reaches: {said}"
 
 
 def test_the_same_typo_is_refused_alike_with_and_without_a_script(tmp_path):

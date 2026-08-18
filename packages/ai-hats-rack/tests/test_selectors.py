@@ -114,3 +114,35 @@ def test_any_on_one_side_only_is_refused(text, must_say):
     reason = selector_form(text)
     assert reason is not None
     assert must_say in reason
+
+
+# --- derivability is WIDER than legality, and that gap has a consumer --------
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("execute->", Selector("execute", "ANY")),
+        ("->done", Selector("ANY", "done")),
+        ("ANY->ANY", Selector("ANY", "ANY")),
+    ],
+)
+def test_the_parser_derives_forms_the_grammar_does_not_yet_allow(text, expected):
+    """Pinned at the PARSE level on purpose (HATS-1719 review).
+
+    ``checks.py`` calls ``parse_selector`` directly and never ``selector_form``:
+    legality is enforced one layer up, at composition. ``CheckPort`` is a
+    Protocol, so a port that is not ai-hats's own hands rows straight to the
+    subscriber — and there ``execute->`` is a live wildcard over every way out.
+    The retired parse table covered the half-empty shapes; this replaces it, and
+    says which layer owes the refusal.
+    """
+    assert parse_selector(text) == expected
+
+
+def test_a_derived_form_this_slice_does_not_allow_is_still_refused_by_the_judge():
+    """The other half of the same fact, so the pair cannot drift apart."""
+    from ai_hats_rack.selectors import selector_form
+
+    assert selector_form("execute->") is not None
+    assert parse_selector("execute->") is not None
