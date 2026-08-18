@@ -202,7 +202,9 @@ def test_the_check_log_lands_under_the_gated_catalog(sibling_project, rack_bin):
 
     logs = sorted((project / HYP_SUB / "HYP-1" / ".checks").glob("*.log"))
     assert len(logs) == 1, [p.name for p in logs]
-    assert logs[0].name.startswith("edge-active--confirmed~rack~hyp~")
+    # The event, escaped for a filename (HATS-1719): the arrow carries `>`,
+    # a shell redirect, and this path is quoted back to an operator.
+    assert logs[0].name.startswith("active-%3Econfirmed~rack~hyp~")
     assert not (project / TASKS_SUB / "HYP-1").exists()
     assert REFUSAL in logs[0].read_text(encoding="utf-8", errors="replace")
 
