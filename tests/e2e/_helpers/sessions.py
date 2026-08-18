@@ -254,6 +254,7 @@ def _write_role_materialization(session_dir: Path, project: Path, role: str) -> 
     launch produces — and the guard asks nothing, for the wrong reason.
     """
     from ai_hats.assembler import Assembler
+    from ai_hats.session_report import consent_entry
 
     result = Assembler(project).composer.compose(role)
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -262,15 +263,11 @@ def _write_role_materialization(session_dir: Path, project: Path, role: str) -> 
             {
                 "role": role,
                 "checks": [],
-                "consent": [
-                    {
-                        "app": point.app,
-                        "path": list(point.path),
-                        "point": point.point,
-                        "declared_by": point.declared_by,
-                    }
-                    for point in result.consent
-                ],
+                # The ONE writer of this shape, shared with the real launch
+                # (``SessionReport.to_dict``): a hand-rolled copy here would let
+                # the fixture and the guard drift, and the drift would show up as
+                # a GREEN e2e over a question nobody asks (HATS-1719).
+                "consent": [consent_entry(point) for point in result.consent],
             }
         ),
         encoding="utf-8",

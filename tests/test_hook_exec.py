@@ -25,7 +25,7 @@ def _script(p: Path, body: str) -> Path:
 def run_hook(script, **kw):
     """``point`` is required by the contract; the tests that are not about it
     take this stand-in rather than repeat a point they never assert on."""
-    kw.setdefault("point", "edge:review--done")
+    kw.setdefault("point", "review->done")
     return _run_hook(script, **kw)
 
 
@@ -540,7 +540,7 @@ def test_the_shared_env_base_comes_from_the_primitive(tmp_path):
 
     run = run_hook(
         script,
-        point="edge:review--done",
+        point="review->done",
         budget=10,
         deadline=Deadline.without_lock(10, why="unit test"),
         project_dir=proj,
@@ -548,7 +548,7 @@ def test_the_shared_env_base_comes_from_the_primitive(tmp_path):
     )
 
     point, project_dir, in_hook, event, cwd = run.reason.split("|")
-    assert point == "edge:review--done"
+    assert point == "review->done"
     assert Path(project_dir).resolve() == proj.resolve()
     assert in_hook == "1"  # a check must not re-enter the per-task lock (D5)
     assert event == "wt_in"  # the caller's own vocabulary rides along

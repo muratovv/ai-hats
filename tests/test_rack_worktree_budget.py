@@ -72,7 +72,7 @@ def test_worktree_git_timeout_aborts_the_transition_and_journals(tasks_dir, cwd)
 
     assert k.get("T-1").state == "review"  # nothing persisted before the abort
     rec = sink.records[-1]
-    assert rec.event_key == "edge:review--done" and rec.result == "aborted"
+    assert rec.event_key == "review->done" and rec.result == "aborted"
     assert any(o.subscriber == "worktree" and o.outcome == "error" for o in rec.outcomes)
 
 

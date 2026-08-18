@@ -100,8 +100,8 @@ def test_advance_outcome_rides_the_child_journal(kernel, cwd):
     # Each epic hop is its own journaled dispatch under the automation actor.
     auto_records = [r for r in kernel.sink.records if r.actor == AUTOMATION_ACTOR]
     assert [r.event_key for r in auto_records] == [
-        "edge:execute--document",
-        "edge:document--review",
+        "execute->document",
+        "document->review",
     ]
 
 

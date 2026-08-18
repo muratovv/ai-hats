@@ -15,7 +15,7 @@ review. Driver: HATS-1134 (incident HATS-1130).
 **It became `Accepted` at rev 8 (HATS-1540), on the condition it set itself:** a
 live consumer bound and proven to refuse, not merely a merged mechanism. The
 `maintainer` role binds a gate at both points — `done-gate.sh` under
-`apps.rack.tasks` at `edge:review--done`, `merge-gate.sh` under `apps.wt` at
+`apps.rack.tasks` at `review->done`, `merge-gate.sh` under `apps.wt` at
 `pre-merge` (one script each since HATS-1614) — and both refusals are asserted
 against the real binary — each one also asserted to flip to a pass when the row
 is removed (`tests/e2e/test_done_gate.py`).
@@ -157,7 +157,7 @@ composition:
     rack:                                                          # application
       tasks:                                                       # its backlog
         - run: hunk-review-comments/hooks/check-review-availability.sh
-          at: [edge:review--done]                                  # rack's cargo
+          at: [review->done]                                  # rack's cargo
           on_error: warn
     wt:
       - run: hunk-review-comments/hooks/check-review-availability.sh
@@ -225,7 +225,7 @@ validates the name, who fires it, and whether a row there can veto.
 
 | `apps.<app>` | `at:`               | when                                                                                                        | may veto | name validated by                        | fired by                                        |
 | ------------ | ------------------- | ----------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------- | ----------------------------------------------- |
-| `rack`       | `edge:<from>--<to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30)               | yes      | rack, against the topology it runs       | `CheckSubscriber` (HATS-1141)                   |
+| `rack`       | `<from>-><to>`, `-><to>` | rack FSM transition, in-lock, prio 15 — before ownership claim (20) and worktree effects (30)               | yes      | rack, against the topology it runs       | `CheckSubscriber` (HATS-1141)                   |
 | `rack`       | `card:pre-create`   | card creation (`rack create`) — **not** an FSM edge: the card does not exist yet                            | —        | **nobody**                               | **nobody** (HATS-1578)                          |
 | `wt`         | `pre-merge`         | in `merge()`, before **any** mutation — **after** `_check_clean` / `_check_drift` / consent                 | yes      | ai-hats, `check_points.wt_points()`      | `wt_lifecycle.py` (HATS-1540)                   |
 | `wt`         | `pre-reclaim`       | before a worktree is reclaimed                                                                              | yes      | **nobody** — not in `wt_points()`        | **nobody** (HATS-1145)                          |
@@ -321,8 +321,8 @@ topology had no edge for aborted the transition (`check_resolve._guard_topology`
 Both halves are gone: ai-hats no longer holds a topology at all, so the two can
 no longer diverge (D11). A point that is no edge of **this** instance's topology
 is now simply not this instance's business — it may be a sibling backlog's, and
-mistaking one for the other is what made a typo on `edge:reviw--done` abort an
-unrelated `edge:brainstorm--plan`.
+mistaking one for the other is what made a typo on `reviw->done` abort an
+unrelated `brainstorm->plan`.
 
 `pre-merge` is a **precondition**, in the same class as the accepted
 `WorktreeDirtyError` / `WorktreeDriftError` / `WorktreeMergeConsentError`
@@ -694,7 +694,7 @@ ai-hats's side the two are the same fact: a name its catalog does not hold.
 Three silences shared that root, and all three were measured on 2026-08-09
 before this rev was written: a binding on `wt:`/`card:` validates and never
 fires; the catalog validates against a topology nobody runs; and one typo
-(`edge:reviw--done`) aborted an unrelated edge (`edge:brainstorm--plan`), which
+(`reviw->done`) aborted an unrelated edge (`brainstorm->plan`), which
 is the "every transition refused" symptom that made HATS-1538 withdraw the
 shipped row an hour after HATS-1137 landed it.
 
@@ -711,7 +711,7 @@ shipped row an hour after HATS-1137 landed it.
    "`card:`, `wt:`". That was already wrong when rev 10 moved cards under
    `apps.rack`: `card:pre-create` is the rack's, and nothing validates it — see
    D3.)*
-2. **The rack parses, filters and subscribes.** `edge:<from>--<to>` is the
+2. **The rack parses, filters and subscribes.** `<from>-><to>` (and `-><to>`) is the
    rack's grammar; the topology it validates against is the one
    `resolve_definition` gave the kernel, the same object the dispatcher runs.
    Two different misses, two different answers, and rev 10 added the loud half:
@@ -906,7 +906,7 @@ HATS-1546.
 **Resolved at rev 8 (HATS-1540).** The condition was a live consumer bound and
 proven to refuse, because shipping the mechanism unbound would have left a fifth
 channel in the accretion this ADR exists to end. `maintainer` now binds a gate
-to both `edge:review--done` and `apps.wt` `pre-merge`, and each refusal
+to both `review->done` and `apps.wt` `pre-merge`, and each refusal
 is asserted together with its flip-to-pass when the row is removed. HATS-1144
 (hunk-review) remains a candidate and is no longer load-bearing for this status.
 
@@ -1026,7 +1026,7 @@ supersede the body above:
 below because the correction is the interesting part.
 
 Its load-bearing claim is that firing at worktree-effects priority 30 lands
-*after the ownership claim at 20*. On `edge:review--done` the claim never runs:
+*after the ownership claim at 20*. On `review->done` the claim never runs:
 `OwnershipClaim.subscriptions` uses `_keys_into(topology, "execute")`, so it
 subscribes only to edges INTO `execute` (`rack_wiring.py`). The in-lock ladder
 this edge actually walks is single-slot(5) → plan-gate(10) → **checks(15)** →
@@ -1037,7 +1037,7 @@ suppressing it for one caller would be exactly the caller-aware coupling D2
 exists to avoid.
 
 The consequence, stated rather than discovered: on the FSM road the same script
-runs **twice** for one transition — at `edge:review--done` and again inside the
+runs **twice** for one transition — at `review->done` and again inside the
 teardown-merge at `wt:pre-merge`. The second run is a marker lookup on the same
 commit, so it is cheap and its verdict cannot disagree with the first. One
 asymmetry survives and is deliberate: `AI_HATS_TASKS_DIR` is absent at
@@ -1054,7 +1054,7 @@ ownership claim at 20, discarding the "an abort leaves zero resource side
 effects" property that priority 15 exists for (the `HookRunnerExtension`
 docstring in `rack_consumers.py`, fix
 
-# 1), and the dispatcher has no compensation. `edge:review--done` already gated
+# 1), and the dispatcher has no compensation. `review->done` already gated
 
 that path at 15. Related: `wt:pre-merge` is a precondition of the **merge
 operation**, not an invariant of reaching `done` — `merge()` early-returns with

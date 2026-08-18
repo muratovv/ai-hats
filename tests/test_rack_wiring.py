@@ -16,6 +16,7 @@ from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.extensions.epic import AUTOMATION_ACTOR
 from ai_hats_rack.extensions import standalone_extensions
+from ai_hats_rack.selectors import Edge
 from ai_hats.paths import worktrees_dir
 from ai_hats.rack_wiring import build_rack_kernel
 from ai_hats_wt import WorktreeManager
@@ -98,7 +99,7 @@ def _check_pack(project: Path, script: Path | None = None):
                 app="rack",
                 path=("tasks",),
                 run=f"quality::gates/{script.name}",
-                at=("edge:plan--execute",),
+                at=("plan->execute",),
                 cargo={},
                 on_error="refuse",
                 script_path=script,
@@ -149,7 +150,7 @@ def test_gate_abort_leaves_no_ownership_and_no_worktree(project, monkeypatch):
 
     # PROP-004: the refusal itself is auditable — journaled, not swallowed.
     refusal = sink.records[-1]
-    assert refusal.event_key == "edge:plan--execute"
+    assert refusal.event_key == "plan->execute"
     outcomes = {o.subscriber: o.outcome for o in refusal.outcomes}
     assert outcomes["plan-gate"] == "abort"
     assert "ownership" not in outcomes, "claim must not have run after the gate abort"
@@ -175,7 +176,7 @@ def test_ownership_follows_the_backlog_while_worktrees_follow_the_anchor(tmp_pat
         state_md_path=backlog / "STATE.md",
         prefix="T",
     )
-    on_execute = kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+    on_execute = kernel._dispatcher.subscribers_for_edge(Edge("plan", "execute"), Phase.IN_LOCK)
     claim = next(s for s in on_execute if s.name == "ownership")
     worktree = next(s for s in on_execute if s.name == "worktree")
 
@@ -190,7 +191,8 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
     claim-before-effects, HATS-1031 integrity-before-gate)."""
     kernel = _kernel(project)
     into_execute = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("plan", "execute"), Phase.IN_LOCK)
     ]
     assert into_execute == [
         "ownership-single-slot",
@@ -206,7 +208,8 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
 
     # stamp-lifecycle (declared, priority 12) now rides in-lock into `done`.
     to_done = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("review", "done"), Phase.IN_LOCK)
     ]
     assert to_done == [
         "ownership-single-slot",
@@ -229,7 +232,8 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
     before the ownership claim and the worktree, so a refusal costs nothing."""
     kernel = _kernel(project, extra_subscribers=_check_pack(project))
     into_execute = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("plan", "execute"), Phase.IN_LOCK)
     ]
     assert into_execute == [
         "ownership-single-slot",
@@ -278,7 +282,8 @@ def test_reopen_edge_skips_gate_but_clear_lifecycle_fires(project):
     skip, while clear-lifecycle binds to that exact edge (ADR-0017 §3)."""
     kernel = _kernel(project)
     reopen = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:done--execute", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("done", "execute"), Phase.IN_LOCK)
     ]
     assert "plan-gate" not in reopen  # reopen is not gated (HATS-328, declarative skip)
     assert "clear-lifecycle" in reopen  # completed_at cleared on the declared edge
@@ -289,11 +294,13 @@ def test_migrated_handler_subscribes_once_per_edge(project):
     the declaration channel, never also self-subscribing — exactly once/edge."""
     kernel = _kernel(project)
     into_execute = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("plan", "execute"), Phase.IN_LOCK)
     ]
     assert into_execute.count("plan-gate") == 1
     into_plan = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:brainstorm--plan", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("brainstorm", "plan"), Phase.IN_LOCK)
     ]
     assert into_plan.count("plan-scaffold") == 1
 
@@ -422,7 +429,7 @@ def test_the_card_and_the_actor_stay_exempt_while_the_command_line_does_not(revi
     """
     consent = next(
         s
-        for s in reviewed._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
+        for s in reviewed._dispatcher.subscribers_for_edge(Edge("review", "done"), Phase.IN_LOCK)
         if s.name == "consent"
     )
 

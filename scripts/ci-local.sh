@@ -17,7 +17,7 @@
 #   scripts/ci-local.sh lint              # one stage (used by the matching CI job)
 #   scripts/ci-local.sh coverage          # the stage that was the sole failing executor
 #   scripts/ci-local.sh security          # CI-only stage; env-scoped (see NOTE below)
-#   scripts/ci-local.sh --stages done-gate  # what edge:review--done demands (HATS-1137)
+#   scripts/ci-local.sh --stages done-gate  # what review->done demands (HATS-1137)
 #   scripts/ci-local.sh no-such-stage     # exit 2, listing every stage there is
 #
 # NOTE: the `install-smoke` CI job is deliberately NOT a stage here — it runs

@@ -459,7 +459,7 @@ def test_a_transaction_that_aborts_later_does_not_eat_the_ticket(
     def _abort(_ctx):
         raise AbortOperation("the worktree could not be created")
 
-    later = StubSubscriber("late-abort", [in_lock("edge:plan--execute", 20)], _abort)
+    later = StubSubscriber("late-abort", [in_lock("plan->execute", 20)], _abort)
     kit = _kit_with_booth(tasks_dir, booth, extra=[later], definition=_consent_definition(tmp_path))
     _planned(kit, tasks_dir, cwd)
 

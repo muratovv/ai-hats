@@ -74,8 +74,8 @@ CONSENT_ACK = "AI_HATS_CONSENT_ACK"
 def consented(env: Mapping[str, str], **extra: str) -> dict[str, str]:
     """``env`` plus the consent grant, for ONE call that is SCAFFOLDING.
 
-    Since HATS-1682 the role declares consent on `edge:review--done` (and
-    `edge:plan--execute`), so a test that only needs a card *parked* in `done`
+    Since HATS-1682 the role declares consent on `review->done` (and
+    `plan->execute`), so a test that only needs a card *parked* in `done`
     now has to answer a question it is not measuring. This is the answer, and it
     is a function rather than a fixture or a conftest default on purpose:
     `test_consent_force_chain.py`, `test_wt_merge_consent_chain.py`,

@@ -44,7 +44,7 @@ def _row(**overrides) -> AppBinding:
         "app": "rack",
         "path": ("tasks",),
         "run": "gate-skill/hooks/gate.sh",
-        "at": ("edge:plan--execute",),
+        "at": ("plan->execute",),
         "on_error": "refuse",
         "cargo": {},
     }
@@ -92,10 +92,10 @@ def test_ai_hats_owns_one_app_and_judges_only_its_cargo():
 def test_a_foreign_apps_cargo_is_carried_not_judged(skill):
     """D11: what a rack row's cargo means is the rack's question. Carried
     verbatim, with provenance intact and no grammar check of any kind."""
-    (resolved,) = resolve_checks([_row(at=("edge:bogus--state",), cargo={"weird": 7})], [skill])
+    (resolved,) = resolve_checks([_row(at=("bogus->state",), cargo={"weird": 7})], [skill])
 
     assert resolved.cargo == {"weird": 7}
-    assert resolved.at == ("edge:bogus--state",)
+    assert resolved.at == ("bogus->state",)
     assert resolved.declared_by == "trait-x"
     assert resolved.app == "rack"
     assert resolved.path == ("tasks",)
@@ -145,7 +145,7 @@ def test_a_row_bound_to_nothing_is_loud_for_EVERY_app(skill, tmp_path):
     lived in the wt-only branch, which is where the hole was."""
     from ai_hats.models import parse_app_bindings
 
-    for cargo in ({}, {"ats": ["edge:plan--execute"]}):
+    for cargo in ({}, {"ats": ["plan->execute"]}):
         with pytest.raises(CheckBindingError, match="at least one point"):
             parse_app_bindings(
                 {"rack": {"tasks": [{"run": "gate-skill/hooks/gate.sh", **cargo}]}},
@@ -261,8 +261,8 @@ def test_dedup_keeps_rows_whose_cargo_differs(skill):
 
     resolved = resolve_checks(
         [
-            _row(at=("edge:plan--execute",)),
-            _row(at=("edge:execute--review",)),
+            _row(at=("plan->execute",)),
+            _row(at=("execute->review",)),
             _row(run="gate-skill/hooks/other.sh"),
         ],
         [skill],
@@ -318,8 +318,8 @@ def test_two_surviving_rows_never_share_a_log_name(skill):
     """
     rows = resolve_checks(
         [
-            _row(at=("edge:a--b",)),
-            _row(at=("edge:a--b", "edge:c--d"), declared_by="role-y"),
+            _row(at=("a->b",)),
+            _row(at=("a->b", "c->d"), declared_by="role-y"),
         ],
         [skill],
     )

@@ -30,7 +30,7 @@ TRACKER = Path(".agent") / "ai-hats" / "tracker" / "backlog"
 TASKS_SUB = TRACKER / "tasks"
 HYP_SUB = TRACKER / "hypotheses"
 SKILL = "gate-skill"
-HYP_EDGE = "edge:active--confirmed"
+HYP_EDGE = "active->confirmed"
 REFUSAL = "the hypothesis has no validation_log entry"
 
 SKILL_MD = """\

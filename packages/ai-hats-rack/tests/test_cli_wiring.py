@@ -15,7 +15,7 @@ def _record(*lines: str) -> DispatchRecord:
         for line in lines
     )
     return DispatchRecord(
-        event_key="edge:plan--execute",
+        event_key="plan->execute",
         task_id="HATS-001",
         actor="a",
         force=False,

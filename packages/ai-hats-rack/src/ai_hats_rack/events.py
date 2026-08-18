@@ -26,11 +26,13 @@ class EdgeEvent:
     to_state: str
     #: optional declared edge name (HATS-1042 §3): adds the alias match key
     #: ``edge:<name>`` additively; the canonical key below is never affected.
+    #: The canonical spelling is the ARROW since HATS-1719 — one form, on every
+    #: boundary a human or a foreign process reads (design.md §1.6).
     name: str = ""
 
     @property
     def key(self) -> str:
-        return f"edge:{self.from_state}--{self.to_state}"
+        return f"{self.from_state}->{self.to_state}"
 
     @property
     def alias_key(self) -> str | None:

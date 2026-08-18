@@ -32,7 +32,8 @@ Three gates and the mechanism they share:
   `apps.wt` (a direct `ai-hats wt merge`). It asks: is this branch fit to enter
   master. The agent is alone at that refusal, so only what the agent can fix
   without an arbiter belongs to it (HATS-1614, ADR-0023 D3).
-- `hooks/done-gate.sh` — the **`->done`** gate, bound to `edge:review--done`
+- `hooks/done-gate.sh` — the **`->done`** gate, bound to `->done`: EVERY road
+  into the state, the forced close included (HATS-1719)
   under `apps.rack.tasks` (the FSM automerge). It asks: is master green after
   this card — the one question no earlier gate can ask, since two independently
   green branches make a red master. The supervisor is present at this edge.
@@ -97,7 +98,7 @@ it saves `merge-smoke`, and the card will need the fuller run before `done`.
 1. `rack transition <ID> done`.
 2. The rack kernel takes the **per-task file lock** — `<tasks_dir>/<ID>/.lock`,
    30s timeout (`ai_hats_rack.kernel.LOCK_TIMEOUT`).
-3. Still in the lock, it dispatches `edge:review--done` down the priority
+3. Still in the lock, it dispatches the edge into `done` down the priority
    ladder. The checks subscriber (`ai_hats_rack.checks.CheckSubscriber`,
    subscriber name `checks`) sits at **priority 15**, `Phase.IN_LOCK`.
 4. It asks the integrator's port (`ai_hats.rack_consumers.AiHatsCheckPort`) for
@@ -271,10 +272,10 @@ composition:
     rack: # the application; below it, rack's own grammar
       tasks: # the backlog this row gates (name or cli_alias)
         - run: maintainer-quality-gate/hooks/done-gate.sh
-          at: [edge:review--done]
+          at: [review->done]
           on_error: refuse
         - run: maintainer-quality-gate/hooks/changelog-entry.sh
-          at: [edge:review--done, edge:execute--review]
+          at: [review->done, execute->review]
           on_error: warn
     wt: # ai-hats's own app: rows sit directly under the key
       - run: maintainer-quality-gate/hooks/merge-gate.sh

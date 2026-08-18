@@ -62,10 +62,30 @@ def _warnings(state: str, records: list[dict[str, Any]], corrupt: list[CorruptLi
     return out
 
 
+#: The retired spelling of an edge event key. Records written before HATS-1719
+#: keep it forever, so a READER understands both — while nothing writes it again.
+_RETIRED_EDGE_PREFIX = "edge:"
+
+
+def _canonical_event(key: str) -> str:
+    """One spelling to compare by: the retired ``edge:`` form reads as an arrow.
+
+    A rename with history behind it needs a reader that spans it; only the
+    writer moved (design.md §1.6). A retired key without the two dashes — the
+    named-edge alias ``edge:reclaim`` — has no arrow form and is left alone.
+    """
+    if not key.startswith(_RETIRED_EDGE_PREFIX):
+        return key
+    source, sep, target = key[len(_RETIRED_EDGE_PREFIX) :].partition("--")
+    return f"{source}->{target}" if sep and source and target else key
+
+
 def _matches(
     record: dict[str, Any], event: str | None, since: str | None, actor: str | None
 ) -> bool:
-    if event is not None and record.get("event") != event:
+    if event is not None and _canonical_event(str(record.get("event", ""))) != _canonical_event(
+        event
+    ):
         return False
     if since is not None and record.get("ts", "") < since:
         return False

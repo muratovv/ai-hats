@@ -154,7 +154,7 @@ composition:
   apps:
     rack:
       tasks:
-        - at: [edge:plan--execute, edge:review--done]
+        - at: [plan->execute, review->done]
           consent: true
     wt:
       - at: [pre-merge]

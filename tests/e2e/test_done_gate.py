@@ -34,7 +34,7 @@ MAINTAINER_ROLE = (
 )
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
-EDGE = "edge:review--done"
+EDGE = "review->done"
 SCRIPT = "hooks/done-gate.sh"
 #: The `->merge` gate, on the other road since HATS-1614. Two edges, two
 #: questions, two compositions (ADR-0023 D3/D4).

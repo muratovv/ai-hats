@@ -14,7 +14,8 @@ from typing import Sequence
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from ..docstore import _card_pins, compute_digest
-from ..fsm import Topology, all_edge_keys as _all_edge_keys, load_topology
+from ..fsm import Topology, all_edges, load_topology
+from ..selectors import Selector
 
 
 class FrozenIntegrityExtension:
@@ -44,8 +45,8 @@ class FrozenIntegrityExtension:
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in _all_edge_keys(self._topology)
+            Subscription(Selector(e.from_state, e.to_state), Phase.IN_LOCK, self._priority)
+            for e in all_edges(self._topology)
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:

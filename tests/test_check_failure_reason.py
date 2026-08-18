@@ -28,7 +28,7 @@ def _check(script: Path) -> ResolvedCheck:
         app="rack",
         path=("tasks",),
         run="quality::gates/done-gate.sh",
-        at=("edge:review--done",),
+        at=("review->done",),
         cargo={},
         on_error="refuse",
         script_path=script,

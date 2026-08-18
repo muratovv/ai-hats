@@ -365,7 +365,7 @@ def _binding_findings(rows: tuple[BindingStatus, ...]) -> list[Finding]:
     ``edge:`` name means is the rack's question, so the recipe is written where
     the grammar lives."""
     return [
-        Finding(check, "", row.detail, kind=row.point)
+        Finding(check, "", row.detail, kind=row.selector)
         for row in rows
         if (check := _BINDING_FINDINGS.get(row.status))
     ]

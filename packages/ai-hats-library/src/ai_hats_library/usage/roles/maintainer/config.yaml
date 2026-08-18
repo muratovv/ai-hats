@@ -56,16 +56,22 @@ composition:
   # own name from scripts/ci-local.sh and refuses a project that names none, so
   # they belong to a role only this codebase wears — never to a base trait.
   #
-  # `consent: true` on the done-gate row is the "both keys on one row" form
-  # (HATS-1682): this edge is a road into master, so the supervisor is asked
-  # AND the gate runs. `trait-agent` declares the same point, and a second
-  # `true` is idempotent — the duplicate changes no resolved consent point.
+  # `at: ['->done']` is EVERY road into the state, not just the review one
+  # (HATS-1719). Measured: the worktree teardown-merge fires on 8 of the 8 edges
+  # into `done` and this gate covered 1 — a forced close (`--state done --force`)
+  # merged into master with "is master green after this card" never asked.
   apps:
     rack:
       tasks:
+        # The GATE covers every road into `done` (HATS-1719). The CONSENT stays on
+        # the review edge alone — and that is why these are two rows and not the
+        # "both keys on one row" form: that form ties the two reaches together,
+        # and here they genuinely differ. A wide question without a batch is
+        # click-spam (HATS-1728); a narrow gate is the hole this card measured.
         - run: maintainer-quality-gate/hooks/done-gate.sh
-          at: [edge:review--done]
+          at: ['->done']
           on_error: refuse
+        - at: ['review->done']
           consent: true
     wt:
       - run: maintainer-quality-gate/hooks/merge-gate.sh

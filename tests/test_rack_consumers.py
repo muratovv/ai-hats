@@ -78,7 +78,7 @@ def _script(tmp_path: Path, body: str, *, name: str = "gate.sh", executable: boo
     return path
 
 
-def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "refuse"):
+def _check(script: Path, *, point: str = "review->done", on_error: str = "refuse"):
     return ResolvedCheck(
         app="rack",
         path=("tasks",),
@@ -92,12 +92,12 @@ def _check(script: Path, *, point: str = "edge:review--done", on_error: str = "r
 
 
 def _ctx(
-    event_key: str = "edge:review--done",
+    event_key: str = "review->done",
     *,
     task_id: str = "T-1",
     lock_expires_at: float | None = None,
 ) -> DispatchContext:
-    src, dst = event_key.removeprefix("edge:").split("--")
+    src, dst = event_key.split("->")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
         task=TaskCard(id=task_id),
@@ -130,7 +130,7 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
 
     assert pack, "the consumer pack must carry the check runner"
     subs = [spec for sub in pack for spec in sub.subscriptions()]
-    assert {spec.event_key for spec in subs} == set(all_edge_keys(topology))
+    assert {str(spec.selector) for spec in subs} == set(all_edge_keys(topology))
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15
@@ -426,7 +426,7 @@ def test_pass_leaves_no_delta_and_writes_the_log_beside_the_card(tmp_path):
     assert runner.on_event(_ctx()) is None
 
     assert "all good" in _by_stem(
-        _logs(tmp_path), "edge-review--done~rack~tasks~quality+gates~gate.sh"
+        _logs(tmp_path), "review-%3Edone~rack~tasks~quality+gates~gate.sh"
     )
 
 
@@ -491,7 +491,7 @@ def test_a_role_that_is_set_but_unresolvable_still_refuses(tmp_path):
     declaring.mkdir(parents=True)
     (declaring / "config.yaml").write_text(
         "name: declares\ncomposition:\n  checks:\n"
-        "    - {skill: s, script: hooks/x.sh, on: ['edge:review--done']}\n"
+        "    - {skill: s, script: hooks/x.sh, on: ['review->done']}\n"
     )
     assert check_resolve.declares_checks(tmp_path) is True, "precondition: probe must see it"
     runner = _extension(tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology())
@@ -543,12 +543,12 @@ def test_two_bindings_on_one_edge_each_keep_their_own_log(tmp_path):
 
     logs = _logs(tmp_path)
     assert _stems(logs) == [
-        "edge-review--done~rack~tasks~quality+gates~first.sh",
-        "edge-review--done~rack~tasks~quality+gates~second.sh",
+        "review-%3Edone~rack~tasks~quality+gates~first.sh",
+        "review-%3Edone~rack~tasks~quality+gates~second.sh",
     ]
-    assert "first ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~first.sh")
-    assert "second ran" not in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~first.sh")
-    assert "second ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~second.sh")
+    assert "first ran" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~first.sh")
+    assert "second ran" not in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~first.sh")
+    assert "second ran" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~second.sh")
 
 
 def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path):
@@ -561,7 +561,7 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
         app="rack",
         path=("tasks",),
         run="dev::python/hooks/done-gate.sh",
-        at=("edge:review--done",),
+        at=("review->done",),
         cargo={},
         on_error="refuse",
         script_path=_script(hooks, "echo 'nested ran'", name="done-gate.sh"),
@@ -571,10 +571,8 @@ def test_the_log_name_carries_the_namespaced_skill_and_the_script_path(tmp_path)
     assert _runner(tmp_path, check).on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert _stems(logs) == ["edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh"]
-    assert "nested ran" in _by_stem(
-        logs, "edge-review--done~rack~tasks~dev+python~hooks+done-gate.sh"
-    )
+    assert _stems(logs) == ["review-%3Edone~rack~tasks~dev+python~hooks+done-gate.sh"]
+    assert "nested ran" in _by_stem(logs, "review-%3Edone~rack~tasks~dev+python~hooks+done-gate.sh")
 
 
 def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
@@ -593,11 +591,11 @@ def test_two_bindings_that_flatten_alike_still_get_two_logs(tmp_path):
 
     logs = _logs(tmp_path)
     assert _stems(logs) == [
-        "edge-review--done~rack~tasks~quality+gates~a+b.sh",
-        "edge-review--done~rack~tasks~quality+gates~a-b.sh",
+        "review-%3Edone~rack~tasks~quality+gates~a+b.sh",
+        "review-%3Edone~rack~tasks~quality+gates~a-b.sh",
     ]
-    assert "slashed ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~a+b.sh")
-    assert "dashed ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~a-b.sh")
+    assert "slashed ran" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~a+b.sh")
+    assert "dashed ran" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~a-b.sh")
 
 
 def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
@@ -610,11 +608,9 @@ def test_retrying_the_edge_overwrites_that_bindings_own_log(tmp_path):
     assert runner.on_event(_ctx()) is None
 
     logs = _logs(tmp_path)
-    assert _stems(logs) == ["edge-review--done~rack~tasks~quality+gates~gate.sh"]
-    assert "second attempt" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~gate.sh")
-    assert "first attempt" not in _by_stem(
-        logs, "edge-review--done~rack~tasks~quality+gates~gate.sh"
-    )
+    assert _stems(logs) == ["review-%3Edone~rack~tasks~quality+gates~gate.sh"]
+    assert "second attempt" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~gate.sh")
+    assert "first attempt" not in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~gate.sh")
 
 
 def test_bindings_run_in_composition_order_and_the_runner_never_re_sorts(tmp_path):
@@ -628,9 +624,7 @@ def test_bindings_run_in_composition_order_and_the_runner_never_re_sorts(tmp_pat
         _script(tmp_path, f"echo {name} >> '{order}'", name=f"{name}.sh")
         for name in ("c", "a", "b")
     ]
-    elsewhere = _check(
-        _script(tmp_path, f"echo z >> '{order}'", name="z.sh"), point="edge:open--review"
-    )
+    elsewhere = _check(_script(tmp_path, f"echo z >> '{order}'", name="z.sh"), point="open->review")
     runner = _runner(
         tmp_path, _check(scripts[0]), elsewhere, _check(scripts[1]), _check(scripts[2])
     )
@@ -652,7 +646,7 @@ def test_the_first_refusal_stops_every_later_binding(tmp_path):
     assert exc_info.value.reason == "drain the review notes first"
     assert not (tmp_path / "ran-second").exists()
     assert not (tmp_path / "ran-third").exists()
-    assert _stems(_logs(tmp_path)) == ["edge-review--done~rack~tasks~quality+gates~refuse.sh"]
+    assert _stems(_logs(tmp_path)) == ["review-%3Edone~rack~tasks~quality+gates~refuse.sh"]
 
 
 def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
@@ -668,8 +662,8 @@ def test_a_break_downgraded_by_warn_lets_the_next_binding_run(tmp_path):
     assert "downgraded by on_error: warn" in "\n".join(delta.work_log)
     assert (tmp_path / "ran-second").is_file()
     logs = _logs(tmp_path)
-    assert "ruff exploded" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~broke.sh")
-    assert "second ran" in _by_stem(logs, "edge-review--done~rack~tasks~quality+gates~second.sh")
+    assert "ruff exploded" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~broke.sh")
+    assert "second ran" in _by_stem(logs, "review-%3Edone~rack~tasks~quality+gates~second.sh")
 
 
 def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_path):
@@ -686,7 +680,7 @@ def test_a_deduped_binding_keeps_its_first_slot_and_the_strictest_policy(tmp_pat
     composed = ResolvedComponent(
         name="gate-skill", component_type=ComponentKind.SKILL, source_path=skill_dir
     )
-    point = "edge:review--done"  # an edge of _topology(): the rack subscribes by its own
+    point = "review->done"  # an edge of _topology(): the rack subscribes by its own
 
     def row(script: str, on_error: str, declared_by: str) -> AppBinding:
         return AppBinding(
@@ -736,7 +730,7 @@ def _library(root: Path, *, declares: bool) -> Path:
             "      tasks:\n"
             "        - run: quality::gates/gate.sh\n"
             "          at:\n"
-            "            - edge:review--done\n"
+            "            - review->done\n"
         )
     (trait / "config.yaml").write_text(body)
     return root
@@ -877,8 +871,8 @@ def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_pat
     a sibling backlog — and the rack, which holds the running topology, does not
     subscribe it. Measured before: the abort took an UNRELATED edge down with it.
     """
-    stray = _check(_script(tmp_path, "exit 0", name="stray.sh"), point="edge:plan--execute")
-    live = _check(_script(tmp_path, "exit 2", name="real.sh"), point="edge:review--done")
+    stray = _check(_script(tmp_path, "exit 0", name="stray.sh"), point="plan->execute")
+    live = _check(_script(tmp_path, "exit 2", name="real.sh"), point="review->done")
     monkeypatch.setattr(
         check_resolve, "_library_roots", lambda _p: [_library(tmp_path / "lib", declares=True)]
     )
@@ -889,15 +883,15 @@ def test_a_point_outside_the_kernel_topology_is_carried_and_then_skipped(tmp_pat
     )
 
     carried = check_resolve.resolve_carried_checks(tmp_path, "rack")
-    assert [list(c.at) for c in carried] == [["edge:plan--execute"], ["edge:review--done"]]
+    assert [list(c.at) for c in carried] == [["plan->execute"], ["review->done"]]
 
     runner = _extension(
         tmp_path, tasks_dir=tmp_path / "tasks", topology=_topology(), resolve=lambda: carried
     )
     # The stray edge fires nothing; the real one still refuses.
-    assert runner.on_event(_ctx("edge:open--review")) is None
+    assert runner.on_event(_ctx("open->review")) is None
     with pytest.raises(AbortOperation):
-        runner.on_event(_ctx("edge:review--done"))
+        runner.on_event(_ctx("review->done"))
 
 
 def test_out_of_session_a_binding_resolves_live(tmp_path):
@@ -1149,7 +1143,7 @@ def test_every_yaml_spelling_of_checks_is_seen_by_the_probe(tmp_path, monkeypatc
     (trait / "config.yaml").write_text(
         f"name: maintainer\ncomposition:\n  {spelling}\n"
         f"    - skill: quality::gates\n      script: gate.sh\n"
-        f"      on:\n        - edge:review--done\n"
+        f"      on:\n        - review->done\n"
     )
     monkeypatch.setattr(check_resolve, "_library_roots", lambda _p: [root])
 

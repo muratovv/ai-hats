@@ -25,7 +25,7 @@ from ai_hats.providers import Provider
 from ai_hats.session_artifacts import BuiltArtifacts, RunMode, SessionPolicy
 
 SID = "20260801-000000-1-42"
-EDGE = "edge:review--done"
+EDGE = "review->done"
 
 
 def _skill(root: Path, name: str = "gate-skill", script: str = "check.sh") -> ResolvedComponent:

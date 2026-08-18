@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .errors import RackConfigError, RackError
+from .selectors import Edge
 
 # The load-time `document` anchor (PROP-012) moved to extension-declared
 # `requires_states()`, checked at composition (ADR-0017 §3/§6) — a tasks-
@@ -76,18 +77,37 @@ class Topology:
             raise InvalidTransitionError(task_id, from_state, to_state, self.targets(from_state))
 
 
-def all_edge_keys(topology: Topology) -> list[str]:
-    """Every ``edge:<from>--<to>`` key a transition can fire.
+def declares_self_loop(topology: Topology, state: str) -> bool:
+    """Whether the topology DECLARES ``state -> state`` (ADR-0017 §3).
+
+    The one self-loop rule, named once: the product and the declaration-bound
+    subscription builder both ask it, and before HATS-1719 they answered
+    differently — one wired ``execute`` in by name, the other read the topology.
+    """
+    return state in topology.edges.get(state, ())
+
+
+def all_edges(topology: Topology) -> list[Edge]:
+    """Every event a transition of this topology can fire — the ONE product.
 
     The full state product, not just legal edges: a forced transition fires a
-    real non-topology key. Includes the ``execute`` reclaim self-loop
-    (HATS-955). Promoted to the package surface by HATS-1140 so a consumer
-    enumerating points does not add yet another private copy.
+    real non-topology pair. A self-edge is in it only when the topology
+    DECLARES it (ADR-0017 §3, the reclaim precedent) — the one rule, so a
+    backlog whose self-loop is not called ``execute`` stops losing every
+    subscription taken from the product (HATS-1719).
     """
     states = topology.states
     return [
-        f"edge:{src}--{dst}" for src in states for dst in states if src != dst or src == "execute"
+        Edge(src, dst)
+        for src in states
+        for dst in states
+        if src != dst or declares_self_loop(topology, src)
     ]
+
+
+def all_edge_keys(topology: Topology) -> list[str]:
+    """:func:`all_edges` as canonical key strings — the journal/report spelling."""
+    return [f"{e.from_state}->{e.to_state}" for e in all_edges(topology)]
 
 
 def _validate(raw: object, source: str) -> Topology:

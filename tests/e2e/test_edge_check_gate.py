@@ -24,7 +24,7 @@ from _helpers.git import git, init_repo
 pytestmark = pytest.mark.integration
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
-EDGE = "edge:brainstorm--plan"
+EDGE = "brainstorm->plan"
 #: The event half of a check-log filename; the binding half follows it
 #: (``<event>~<skill>~<script>.log``, ``rack_consumers._log_path``).
 EDGE_LOG_PREFIX = "edge-brainstorm--plan"
@@ -74,8 +74,8 @@ ROLES = {
 #: cases the carrier cannot tell apart and the rack can: a typo, and a row
 #: addressed to a SIBLING backlog (this repository ships HYP and PROP next to
 #: tasks). ``reviw`` is the exact string measured on 2026-08-09 taking an
-#: unrelated ``edge:brainstorm--plan`` down with it.
-STRAY_EDGE = "edge:reviw--done"
+#: unrelated ``brainstorm->plan`` down with it.
+STRAY_EDGE = "reviw->done"
 
 #: Roles binding a stray point: alone, and next to a real gate on a real edge.
 STRAY_ROLES = ("stray", "strayed")
@@ -906,8 +906,8 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
 
 
 def test_a_point_outside_this_topology_does_not_abort_an_unrelated_edge(gate_project, rack_bin):
-    """D11 clause 2. Measured on 2026-08-09: one row on ``edge:reviw--done``
-    refused ``edge:brainstorm--plan`` — the "every transition refused" symptom
+    """D11 clause 2. Measured on 2026-08-09: one row on ``reviw->done``
+    refused ``brainstorm->plan`` — the "every transition refused" symptom
     that made HATS-1538 withdraw the shipped binding an hour after it landed.
 
     The carrier cannot tell that row from a sibling backlog's (this repository

@@ -24,7 +24,7 @@ def _rf(name, ftype="str", *, default="", choices=None, validator=None):
     return ResolvedField(name, ftype, True, default, False, choices, validator, "always")
 
 
-def _writer(op, edge="edge:brainstorm--plan"):
+def _writer(op, edge="brainstorm->plan"):
     return StubSubscriber("writer", [in_lock(edge)], action=lambda ctx: Delta(fields=op))
 
 
@@ -96,7 +96,7 @@ def test_validator_runs_on_a_delta_set(tasks_dir, cwd):
 def test_force_path_applies_a_valid_delta_field(tasks_dir, cwd):
     # brainstorm → done is a forced (non-topology) edge; a valid delta still applies.
     kernel = make_kernel(
-        tasks_dir, subscribers=[_writer({"priority": Set("critical")}, "edge:brainstorm--done")]
+        tasks_dir, subscribers=[_writer({"priority": Set("critical")}, "brainstorm->done")]
     )
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     card = kernel.transition(
@@ -107,7 +107,7 @@ def test_force_path_applies_a_valid_delta_field(tasks_dir, cwd):
 
 def test_force_does_not_bypass_schema_validation(tasks_dir, cwd):
     kernel = make_kernel(
-        tasks_dir, subscribers=[_writer({"priority": Set("urgent")}, "edge:brainstorm--done")]
+        tasks_dir, subscribers=[_writer({"priority": Set("urgent")}, "brainstorm->done")]
     )
     kernel.create(actor="t", caller_cwd=cwd, task_id="T-1", title="t")
     with pytest.raises(FieldValidationError):

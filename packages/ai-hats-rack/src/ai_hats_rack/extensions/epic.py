@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING, Sequence
 
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..events import EdgeEvent, EpicifyEvent
-from ..fsm import Topology, load_topology
+from ..fsm import Topology, all_edges, load_topology
 from ..registry import LinksRegistry, load_registry
+from ..selectors import Selector
 
 if TYPE_CHECKING:
     from ..kernel import Kernel
@@ -102,15 +103,12 @@ class EpicAutomationExtension:
         )
 
     def subscriptions(self) -> Sequence[Subscription]:
-        states = self._topology.states
-        keys = [
-            f"edge:{src}--{dst}"
-            for src in states
-            for dst in states
-            if src != dst or src == "execute"  # forced edges fire any pair; + reclaim loop
+        subs = [
+            Subscription(Selector(e.from_state, e.to_state), Phase.POST_LOCK, self._priority)
+            for e in all_edges(self._topology)
         ]
-        keys.append("epicify")
-        return [Subscription(key, Phase.POST_LOCK, self._priority) for key in keys]
+        subs.append(Subscription("epicify", Phase.POST_LOCK, self._priority))
+        return subs
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if ctx.actor == AUTOMATION_ACTOR:

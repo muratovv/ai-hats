@@ -401,7 +401,7 @@ def _resolved_consent(rows: "list[AppBinding]") -> tuple:
                 continue
             decided[key] = (value, row.declared_by)
     return tuple(
-        ConsentPoint(declared_by=who, app=app, path=path, point=point)
+        ConsentPoint(declared_by=who, app=app, path=path, selector=point)
         for (app, path, point), (value, who) in decided.items()
         if value
     )

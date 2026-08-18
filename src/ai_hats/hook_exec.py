@@ -125,7 +125,7 @@ def run_hook(
 ) -> HookRun:
     """Run ``script`` under the D2 contract and return its outcome.
 
-    ``point`` is the fully-qualified attachment point (``edge:review--done``,
+    ``point`` is the fully-qualified attachment point (``review->done``,
     ``wt:teardown[discard]``); it names the run in the env and the log header,
     so a channel never hands in its own strings for those. ``script`` must
     already be absolute — resolution belongs to the caller. ``KeyboardInterrupt``

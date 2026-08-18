@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
-    "ai-hats-core>=0.9.0",  # Deadline.clamped_to, used by the lifecycle lock (HATS-1603)
+    "ai-hats-core>=0.10.0",  # Deadline.clamped_to, used by the lifecycle lock (HATS-1603)
     "filelock>=3.12",
     "pydantic>=2.0",
 ]

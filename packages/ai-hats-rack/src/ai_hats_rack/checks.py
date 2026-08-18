@@ -21,7 +21,8 @@ from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
 from .definition import BacklogDefinition
 from .dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
-from .fsm import Topology, all_edge_keys
+from .fsm import Topology, all_edges
+from .selectors import Edge, Selector, parse_selector
 from .kernel import LOCK_TIMEOUT
 
 #: Reserved "hook" slot of the in-lock ladder — after the plan-gate, before the
@@ -39,9 +40,6 @@ if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise 
         f"EDGE_CHECK_TIMEOUT_S ({EDGE_CHECK_TIMEOUT_S}) must be < LOCK_TIMEOUT ({LOCK_TIMEOUT})"
     )
 
-#: The namespace this package owns. A name outside it belongs to some other
-#: application and is none of this subscriber's business.
-EDGE_PREFIX = "edge:"
 
 #: What a carried row IS (HATS-1682). A ``CHECK_ROW`` spawns a script when its
 #: point fires; a ``CONSENT_ROW`` spawns nothing and only declares that the
@@ -126,20 +124,6 @@ class CheckPort(Protocol):
 CheckPortFactory = Callable[[Path], CheckPort]
 
 
-def parse_edge_point(point: str) -> tuple[str, str] | None:
-    """``edge:<from>--<to>`` → the pair, or ``None`` for any other name.
-
-    ``None`` is not an error: the checks DSL is shared by several applications
-    and a name this grammar does not accept is simply addressed elsewhere.
-    """
-    if not point.startswith(EDGE_PREFIX):
-        return None
-    src, sep, dst = point[len(EDGE_PREFIX) :].partition("--")
-    if not sep or not src or not dst:
-        return None
-    return src, dst
-
-
 #: What a report says about one point of one carried row (HATS-1584). ``dead``
 #: is the miss no topology of this project answers — the one HATS-1578 refuses.
 ARMED = "armed"
@@ -153,14 +137,17 @@ class BindingStatus:
     """One line of the binding report: a row's point, judged.
 
     ``detail`` carries this package's own words for an unhappy status and is
-    empty for a happy one. What an ``edge:`` name means is the rack's question,
-    so the sentence explaining a miss is written here rather than by whoever
-    prints it.
+    empty for a happy one. What a selector means is the rack's question, so the
+    sentence explaining a miss is written here rather than by whoever prints it.
+
+    ``selector`` and not ``point`` since HATS-1719: the word had to change with
+    the grammar, because ``review->done`` denotes one event and ``->done``
+    denotes eight — "point" was honest only for the first (design.md §1.1).
     """
 
     status: str
     backlog: str
-    point: str
+    selector: str
     label: str
     on_error: str
     detail: str = ""
@@ -169,7 +156,7 @@ class BindingStatus:
         return {
             "status": self.status,
             "backlog": self.backlog,
-            "point": self.point,
+            "selector": self.selector,
             "binding": self.label,
             "on_error": self.on_error,
             "detail": self.detail,
@@ -191,13 +178,12 @@ def classify_bindings(
     AND its ``cli_alias``, since either addresses it (ADR-0017 §3); keying on
     one spelling would read an aliased row as unaddressed.
     """  # comment-length: allow — which miss is which is the whole contract
-    points_of = {name: frozenset(all_edge_keys(t)) for name, t in topologies.items()}
-    anywhere: frozenset[str] = frozenset().union(*points_of.values()) if points_of else frozenset()
-    mounted = sorted(points_of)
+    edges_of = {name: tuple(all_edges(t)) for name, t in topologies.items()}
+    mounted = sorted(edges_of)
     rows: list[BindingStatus] = []
     for row in declarations:
         address = ".".join(row.path)
-        if len(row.path) != 1 or row.path[0] not in points_of:
+        if len(row.path) != 1 or row.path[0] not in edges_of:
             rows.append(
                 BindingStatus(
                     UNADDRESSED,
@@ -209,12 +195,28 @@ def classify_bindings(
                 )
             )
             continue
-        here = points_of[row.path[0]]
+        here = edges_of[row.path[0]]
         for point in row.points():
-            status = ARMED if point in here else FOREIGN if point in anywhere else DEAD
-            detail = dead_point_reason(row, point, mounted) if status == DEAD else ""
+            selector = parse_selector(point)
+            status = (
+                ARMED
+                if _hits(selector, here)
+                else FOREIGN
+                if any(_hits(selector, edges) for edges in edges_of.values())
+                else DEAD
+            )
+            detail = dead_selector_reason(row, point, mounted) if status == DEAD else ""
             rows.append(BindingStatus(status, address, point, row.label, row.on_error, detail))
     return tuple(rows)
+
+
+def _hits(selector: Selector | None, edges: Sequence[Edge]) -> bool:
+    """Whether ``selector`` denotes at least one event of this edge set.
+
+    ``None`` — a name holding no arrow — hits nothing: it is addressed to some
+    other application's grammar, and from here that is the same fact as a typo.
+    """
+    return selector is not None and any(selector.matches(edge) for edge in edges)
 
 
 def unaddressed_reason(row: CheckDeclaration, mounted: Sequence[str]) -> str:
@@ -242,16 +244,17 @@ def unaddressed_reason(row: CheckDeclaration, mounted: Sequence[str]) -> str:
     )
 
 
-def dead_point_reason(row: CheckDeclaration, point: str, mounted: Sequence[str]) -> str:
+def dead_selector_reason(row: CheckDeclaration, point: str, mounted: Sequence[str]) -> str:
     """Why a point fires nowhere. Said with the mounted roster, because that is
     what makes it a typo rather than a row aimed at a backlog of some other
     project — the distinction only a holder of every topology can draw."""
     what = "the gate" if row.kind == CHECK_ROW else "the consent question"
     return (
         f"checks: {row.label} binds {point!r} under apps.rack.{'.'.join(row.path)}, but no "
-        f"topology mounted in this project has that point (backlogs: {', '.join(mounted)}) — "
-        f"{what} can never fire, on that edge or any other. A rack point is spelled "
-        f"`edge:<from>--<to>` with the state names of the backlog it gates."
+        f"topology mounted in this project matches it (backlogs: {', '.join(mounted)}) — "
+        f"{what} can never fire, on that edge or any other. A rack selector is an "
+        f"arrow between the state names of the backlog it gates: `review->done` for "
+        f"exactly that edge, `->done` for every road into the state."
     )
 
 
@@ -288,14 +291,14 @@ class CheckSubscriber:
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in all_edge_keys(self._topology)
+            Subscription(Selector(e.from_state, e.to_state), Phase.IN_LOCK, self._priority)
+            for e in all_edges(self._topology)
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if not callable(getattr(self._port, "check_declarations", None)):
             return self._without_declarations()
-        bound = self._bound_to(ctx.event.key)
+        bound = self._bound_to(Edge(ctx.event.from_state, ctx.event.to_state))
         if not bound:
             return None
         runner = getattr(self._port, "run_check", None)
@@ -324,7 +327,7 @@ class CheckSubscriber:
             raise AbortOperation(outcome.reason)
         return Delta(work_log=tuple(notes)) if notes else None
 
-    def _bound_to(self, event_key: str) -> tuple[CheckDeclaration, ...]:
+    def _bound_to(self, edge: Edge) -> tuple[CheckDeclaration, ...]:
         """The declarations this edge fires — THIS edge's rows first, then addressing.
 
         Addressing is decided HERE, where the mounted names are known, which is
@@ -338,14 +341,14 @@ class CheckSubscriber:
         `apps.rack.tasks`, and the whole tracker stopped; `--force` cannot reach
         it, since ``ctx.force`` travels inside the request built after this. It
         is the same argument the point filter already carried: one bad
-        ``edge:reviw--done`` must not abort an unrelated ``edge:brainstorm--plan``.
+        ``reviw->done`` must not abort an unrelated ``brainstorm->plan``.
         A point naming an edge this topology lacks stays a skip for that reason.
         """  # comment-length: allow — which miss is loud, and WHERE, is the contract
         declared = self._declarations()
-        edges = set(all_edge_keys(self._topology))
+        edges = all_edges(self._topology)
         bound: list[CheckDeclaration] = []
         for row in declared:
-            if not self._fires_on(row, event_key, edges):
+            if not self._fires_on(row, edge, edges):
                 continue
             if not self._addresses_me(row):
                 continue
@@ -357,12 +360,19 @@ class CheckSubscriber:
             bound.append(row)
         return tuple(bound)
 
-    def _fires_on(self, row: CheckDeclaration, event_key: str, edges: set[str]) -> bool:
-        """Whether ``row`` names THIS event among the points this topology has."""
+    def _fires_on(self, row: CheckDeclaration, edge: Edge, edges: Sequence[Edge]) -> bool:
+        """Whether ``row`` denotes THIS event, among events this topology has.
+
+        Two questions in one loop, and the order matters: a selector matching
+        nothing here is a SKIP (a sibling backlog's row and a typo are the same
+        fact from a subscriber holding one topology), and only a selector that
+        does denote events here may then claim this one.
+        """
         for point in row.points():
-            if parse_edge_point(point) is None or point not in edges:
+            selector = parse_selector(point)
+            if not _hits(selector, edges):
                 continue
-            if point == event_key:
+            if selector.matches(edge):
                 return True
         return False
 
@@ -454,7 +464,6 @@ __all__ = [
     "CHECK_ROW",
     "CONSENT_ROW",
     "EDGE_CHECK_TIMEOUT_S",
-    "EDGE_PREFIX",
     "CheckDeclaration",
     "CheckOutcome",
     "CheckPort",
@@ -467,7 +476,7 @@ __all__ = [
     "BindingStatus",
     "check_subscriber",
     "classify_bindings",
-    "dead_point_reason",
-    "parse_edge_point",
+    "dead_selector_reason",
+    "parse_selector",
     "unaddressed_reason",
 ]

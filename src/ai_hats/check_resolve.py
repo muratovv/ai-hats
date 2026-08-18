@@ -474,7 +474,7 @@ def resolve_consent_points(
     if result is None:
         return frozenset()
     return frozenset(
-        point.point
+        point.selector
         for point in result.consent
         if point.app == app and (not path or point.path == path)
     )

@@ -47,7 +47,7 @@ of the backlog.
 
 | Key         | Req | Meaning                                                                                                                                                            |
 | ----------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `from`,`to` | ✔   | State names. The canonical event key stays positional `edge:<from>--<to>`.                                                                                         |
+| `from`,`to` | ✔   | State names. The canonical event key stays positional `<from>-><to>`.                                                                                         |
 | `name`      |     | Alias event key **and** the transition verb (`rack <alias> <name>` / `transition <ID> <name>`). **Must not equal any state name** (`EdgeNameStateCollisionError`). |
 | `handlers`  |     | list[handler-ref] fired in-lock on this exact edge (e.g. a quorum gate).                                                                                           |
 | `skip`      |     | list[str] — opt this edge out of a named `on_enter`/`on_exit` handler (the declarative reopen-exception form).                                                     |

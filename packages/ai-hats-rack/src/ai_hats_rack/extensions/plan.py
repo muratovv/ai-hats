@@ -16,10 +16,11 @@ from typing import Protocol, Sequence
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from .epic import AUTOMATION_ACTOR
 from .sections import DEFAULT_PLAN_SECTIONS, Section, render_scaffold, unfilled_sections
+from ..selectors import Selector
 
 #: The edge the ticket pays for. Named once: the gate and its spender must not
 #: drift into checking one move and settling another.
-CONSENT_EDGE = "edge:plan--execute"
+CONSENT_EDGE = Selector("plan", "execute")
 
 
 class TicketStore(Protocol):

@@ -97,7 +97,7 @@ def test_consent_from_the_environment_still_works(hooked_project, ack):
 
 # --- the same grant by another road: silence on a point the role declared ---
 
-#: `edge:review--done` — the agent trait declares it, and it carries the merge.
+#: `review->done` — the agent trait declares it, and it carries the merge.
 DECLARED_MOVE = "done"
 
 #: Where the guard's journal lands, relative to the project it judged.

@@ -38,7 +38,7 @@ composition:
     rack:
       tasks:
         - run: gate-skill/hooks/gate.sh
-          at: [edge:review--done]
+          at: [review->done]
           on_error: refuse
 """
 
@@ -188,7 +188,7 @@ def test_the_projects_own_gate_is_declared_on_the_rack_road(gated_project):
     """The control for the second road."""
     declared = _declared(gated_project)
 
-    assert [d.at for d in declared] == [("edge:review--done",)]
+    assert [d.at for d in declared] == [("review->done",)]
 
 
 def test_a_foreign_session_does_not_disarm_the_rack_gate(gated_project, monkeypatch):
@@ -196,7 +196,7 @@ def test_a_foreign_session_does_not_disarm_the_rack_gate(gated_project, monkeypa
     declares no rack row, so the card closed with the gate never consulted."""
     _foreign_envelope(monkeypatch)
 
-    assert [d.at for d in _declared(gated_project)] == [("edge:review--done",)]
+    assert [d.at for d in _declared(gated_project)] == [("review->done",)]
 
 
 def test_a_foreign_envelope_without_the_pin_does_not_disarm_the_rack_gate(
@@ -205,7 +205,7 @@ def test_a_foreign_envelope_without_the_pin_does_not_disarm_the_rack_gate(
     _foreign_envelope(monkeypatch)
     monkeypatch.delenv("AI_HATS_PROJECT_DIR", raising=False)
 
-    assert [d.at for d in _declared(gated_project)] == [("edge:review--done",)]
+    assert [d.at for d in _declared(gated_project)] == [("review->done",)]
 
 
 #: The channel entries whose ``identity`` defaults to reading the ambient

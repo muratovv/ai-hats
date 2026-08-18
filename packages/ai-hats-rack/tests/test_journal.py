@@ -39,7 +39,7 @@ def create(kernel, cwd, **kwargs) -> str:
 
 def synthetic_record(reason: str) -> DispatchRecord:
     return DispatchRecord(
-        event_key="edge:a--b",
+        event_key="a->b",
         task_id="T-1",
         actor="session:s1",
         force=False,
@@ -53,13 +53,13 @@ def synthetic_record(reason: str) -> DispatchRecord:
 
 def test_transition_journals_every_subscriber_outcome(tasks_dir, cwd):
     subs = [
-        StubSubscriber("gate", [in_lock("edge:brainstorm--plan", priority=10)]),
+        StubSubscriber("gate", [in_lock("brainstorm->plan", priority=10)]),
         StubSubscriber(
             "wt",
-            [in_lock("edge:brainstorm--plan", priority=20)],
+            [in_lock("brainstorm->plan", priority=20)],
             action=lambda ctx: Delta(work_log=("note",)),
         ),
-        StubSubscriber("epic", [post_lock("edge:brainstorm--plan")]),
+        StubSubscriber("epic", [post_lock("brainstorm->plan")]),
     ]
     kernel = journaled_kernel(tasks_dir, subscribers=subs)
     task_id = create(kernel, cwd)
@@ -72,7 +72,7 @@ def test_transition_journals_every_subscriber_outcome(tasks_dir, cwd):
     record = records[0]
     assert record["v"] == 1
     assert record["ts"]
-    assert record["event"] == "edge:brainstorm--plan"
+    assert record["event"] == "brainstorm->plan"
     assert record["task_id"] == task_id
     assert record["detail"] == {"from": "brainstorm", "to": "plan"}
     assert record["actor"] == "session:s1"
@@ -87,7 +87,7 @@ def test_transition_journals_every_subscriber_outcome(tasks_dir, cwd):
 
 
 def test_review_to_execute_journals_the_rework_edge(tasks_dir, cwd):
-    # HATS-1052: the rework loop-back journals a canonical edge:review--execute
+    # HATS-1052: the rework loop-back journals a canonical review->execute
     # record — proof the edge is legal through the kernel guard and that its
     # audit detail names the endpoints like any other transition.
     kernel = journaled_kernel(tasks_dir)
@@ -97,7 +97,7 @@ def test_review_to_execute_journals_the_rework_edge(tasks_dir, cwd):
 
     records, corrupt = read_journal(tasks_dir, task_id)
     assert corrupt == []
-    assert records[-1]["event"] == "edge:review--execute"
+    assert records[-1]["event"] == "review->execute"
     assert records[-1]["detail"] == {"from": "review", "to": "execute"}
     assert records[-1]["result"] == "persisted"
 
@@ -105,7 +105,7 @@ def test_review_to_execute_journals_the_rework_edge(tasks_dir, cwd):
 def test_abort_is_journaled_and_card_untouched(tasks_dir, cwd):
     gate = StubSubscriber(
         "gate",
-        [in_lock("edge:brainstorm--plan")],
+        [in_lock("brainstorm->plan")],
         action=lambda ctx: (_ for _ in ()).throw(AbortOperation("fill the plan")),
     )
     kernel = journaled_kernel(tasks_dir, subscribers=[gate])
@@ -129,7 +129,7 @@ def test_lossless_long_reasons_round_trip_byte_for_byte(tasks_dir, cwd):
     abort_reason = "отказ≠" + "y" * 100_000
     gate = StubSubscriber(
         "gate",
-        [in_lock("edge:plan--execute")],
+        [in_lock("plan->execute")],
         action=lambda ctx: (_ for _ in ()).throw(AbortOperation(abort_reason)),
     )
     kernel = journaled_kernel(tasks_dir, subscribers=[gate])

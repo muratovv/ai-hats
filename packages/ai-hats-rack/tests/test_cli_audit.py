@@ -95,7 +95,7 @@ def test_attr_audit_human_feed(runner, tmp_path):
     result = _audit(runner, tmp_path)
     assert result.exit_code == 0, result.output
     assert "audit:" in result.output
-    assert "edge:brainstorm--plan" in result.output
+    assert "brainstorm->plan" in result.output
     assert "[plan → execute]" in result.output
     assert f"actor=session:{SESSION}" in result.output
     assert "result=persisted" in result.output
@@ -150,7 +150,7 @@ def test_attr_audit_filters_narrow_the_feed(runner, tmp_path):
         return json.loads(result.output)["attrs"]["audit"]["records"]
 
     assert len(records()) == 2
-    assert [r["event"] for r in records("--event", "edge:plan--execute")] == ["edge:plan--execute"]
+    assert [r["event"] for r in records("--event", "plan->execute")] == ["plan->execute"]
     assert len(records("--actor", f"session:{SESSION}")) == 2
     assert records("--actor", "session:nobody") == []
     assert records("--since", "9999-01-01T00:00:00Z") == []

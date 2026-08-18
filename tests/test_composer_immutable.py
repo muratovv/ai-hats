@@ -61,7 +61,7 @@ def test_resolved_check_is_frozen_and_defaults_empty(tmp_path):
         app="rack",
         path=("tasks",),
         run="hunk-review-comments/hooks/check.sh",
-        at=("edge:review--done",),
+        at=("review->done",),
         cargo={},
         on_error="warn",
         script_path=tmp_path / "check.sh",

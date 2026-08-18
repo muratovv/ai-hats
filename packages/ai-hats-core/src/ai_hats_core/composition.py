@@ -52,7 +52,9 @@ class ConsentPoint:
     declared_by: str
     app: str
     path: tuple[str, ...]
-    point: str
+    #: ``selector`` since HATS-1719: under ``apps.rack`` this may denote a SET of
+    #: edges (``->done`` is eight), so "point" was honest only for the exact form.
+    selector: str
 
 
 @dataclass(frozen=True)

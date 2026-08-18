@@ -50,11 +50,32 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
         json.dumps(
             {
                 "consent": [
+                    # The envelope carries the ends ALREADY PARSED (HATS-1719):
+                    # the guard is stdlib-only and cannot import the grammar, so
+                    # it reads `to` rather than cutting `selector` itself.
                     *(
-                        {"app": "rack", "path": ["tasks"], "point": f"edge:x--{state}"}
+                        {
+                            "app": "rack",
+                            "path": ["tasks"],
+                            "selector": f"x->{state}",
+                            "from": "x",
+                            "to": state,
+                        }
                         for state in targets
                     ),
-                    *([{"app": "wt", "path": [], "point": "pre-merge"}] if wt else []),
+                    *(
+                        [
+                            {
+                                "app": "wt",
+                                "path": [],
+                                "selector": "pre-merge",
+                                "from": None,
+                                "to": None,
+                            }
+                        ]
+                        if wt
+                        else []
+                    ),
                 ]
             }
         ),
