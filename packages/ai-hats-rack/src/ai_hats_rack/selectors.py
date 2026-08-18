@@ -12,6 +12,7 @@ decides what is legal today and names the card that opens the rest.
 
 from __future__ import annotations
 
+import string
 from dataclasses import dataclass
 
 #: Reserved. Upper-case because state names in every shipped topology are
@@ -20,6 +21,12 @@ ANY = "ANY"
 NONE = "NONE"
 
 ARROW = "->"
+
+#: What a state name may be made of. A POSITIVE charset, not a blocklist: the
+#: refusals this narrows are typos nobody spells the same way twice
+#: (``a->>b``, a zero-width space before the arrow), and enumerating them was
+#: how three of them got through review.
+_STATE_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
 
 
 @dataclass(frozen=True)
@@ -55,6 +62,17 @@ class Selector:
         return f"{source}{ARROW}{target}"
 
 
+def is_event_key(text: str) -> bool:
+    """Whether ``text`` addresses a NON-FSM event rather than denoting an arrow.
+
+    Those keys carry a namespace (``link:``, ``read:``, ``op:``, the retired
+    ``edge:``), and their tail is user-authored — a link kind may legally be
+    called ``a->b``. Sniffing for an arrow without asking this first turned such
+    a backlog into a crash where it used to work (HATS-1719 review).
+    """
+    return ":" in text.split(ARROW, 1)[0]
+
+
 def parse_selector(text: str) -> Selector | None:
     """The arrow this text derives, or ``None`` when it holds no arrow at all.
 
@@ -63,7 +81,7 @@ def parse_selector(text: str) -> Selector | None:
     ARROW is not this function's business either — it derives, and
     :func:`selector_form` judges.
     """
-    if ARROW not in text:
+    if ARROW not in text or is_event_key(text):
         return None
     source, _, target = text.partition(ARROW)
     return Selector(source or ANY, target or ANY)
@@ -85,7 +103,8 @@ def selector_form(text: str) -> str | None:
     if any(ch.isspace() for ch in text):
         return (
             f"a selector carries no whitespace: {text!r} would be a second spelling of one "
-            f"selector, and the dedup key holds it verbatim — write {text.replace(' ', '')!r}"
+            f"selector, and the dedup key holds it verbatim — write "
+            f"{''.join(text.split())!r}"
         )
     if ARROW not in text:
         return (
@@ -111,5 +130,23 @@ def selector_form(text: str) -> str | None:
             f"because a gate able to refuse would lock the card in that state on every way out"
         )
     if source == ANY:
-        return f"{ANY!r} spells 'everywhere' on BOTH sides; for any road into a state write '{ARROW}{target}'"
+        return (
+            f"{ANY!r} spells 'everywhere' on BOTH sides; for any road into a state "
+            f"write '{ARROW}{target}'"
+        )
+    for half, end in (("source", source), ("target", target)):
+        if not end:
+            continue
+        stray = sorted({ch for ch in end if ch not in _STATE_CHARS})
+        if stray:
+            return (
+                f"the {half} of {text!r} is not a state name: it carries {stray} — "
+                f"a selector is ONE arrow between two names, so 'a{ARROW}{ARROW}b' and "
+                f"an invisible character before the arrow are typos, not selectors"
+            )
+        if end.endswith("-"):
+            return (
+                f"the {half} of {text!r} ends in '-', which is how '--{'>'}' mistypes as an "
+                f"arrow; a selector carries exactly one '{ARROW}'"
+            )
     return None

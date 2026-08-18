@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, ru
 
 from .errors import RackConfigError, RackError
 from .events import EdgeEvent, Event
-from .selectors import ANY, Edge, Selector, parse_selector
+from .selectors import ANY, Edge, Selector, is_event_key, parse_selector, selector_form
 from .models import TaskCard, utc_now
 
 if TYPE_CHECKING:
@@ -50,16 +50,29 @@ class Subscription:
     priority: int = 100
 
     def __post_init__(self) -> None:
-        """Normalize an arrow spelled as a string into the selector it denotes.
+        """A STRING goes through the public grammar; a Selector OBJECT is trusted.
 
-        Without this the two routes are a trap: a plain ``"review->done"`` would
-        land in the key bucket, match no edge ever, and be disarmed in SILENCE —
-        the failure mode this whole change exists to remove. Normalizing is
-        cheaper than a refusal here, because a caller holding the spelling
-        usually means the edge and there is nothing for them to decide.
+        Two traps, and normalizing alone only closed the first. A plain
+        ``"review->done"`` would land in the key bucket and match no edge ever —
+        disarmed in silence. But normalizing without JUDGING relocates the
+        second: ``parse_selector`` is deliberately wider than the legal grammar,
+        so ``"execute->"`` would become a silent WILDCARD and ``"a->b->c"`` a
+        selector that matches nothing — neither raising (HATS-1719 review).
+
+        Hence the rule: a string is validated by the grammar's own predicate and
+        refused when it fails, while code that genuinely means a wide selector
+        says so with a ``Selector`` — which is how HATS-1720 subscribes wide
+        without reopening the string path.
         """
-        if isinstance(self.selector, str) and (parsed := parse_selector(self.selector)) is not None:
-            object.__setattr__(self, "selector", parsed)
+        if not isinstance(self.selector, str) or is_event_key(self.selector):
+            return
+        parsed = parse_selector(self.selector)
+        if parsed is None:
+            return  # a name holding no arrow: a foreign event key, left alone
+        refusal = selector_form(self.selector)
+        if refusal is not None:
+            raise ValueError(f"{self.selector!r} is not a usable selector — {refusal}")
+        object.__setattr__(self, "selector", parsed)
 
 
 @dataclass(frozen=True)
@@ -357,11 +370,12 @@ class Dispatcher:
         which reads exactly like "nothing is subscribed"; refusing is the whole
         point, since that silence is the defect class this grammar removed.
         """
-        if parse_selector(event_key) is not None:
+        if parse_selector(event_key) is not None or event_key.startswith("edge:"):
             raise ValueError(
-                f"{event_key!r} is an FSM selector, not an event key — ask "
-                f"subscribers_for_edge(Edge(...), phase); a selector denotes a set of "
-                f"edges and cannot be looked up as one string"
+                f"{event_key!r} addresses an FSM edge, not a non-FSM event — ask "
+                f"subscribers_for_edge(Edge(...), phase). A selector denotes a SET of edges "
+                f"and cannot be looked up as one string, and the retired 'edge:' spelling "
+                f"would quietly answer 'nothing subscribes' (HATS-1719)."
             )
         return [sub for _, _, sub in self._index.get((event_key, phase), [])]
 

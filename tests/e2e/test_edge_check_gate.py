@@ -188,6 +188,10 @@ def _seed_library(project: Path) -> None:
     stray_rows = {
         "stray": ((STRAY_EDGE, "pass.sh"),),
         "strayed": ((STRAY_EDGE, "pass.sh"), (EDGE, "refuse.sh")),
+        # A selector the grammar REFUSES, not one that merely misses (HATS-1719):
+        # the wide output is reserved for HATS-1720, so composing this role must
+        # fail — and the failure has to read as a message, not a traceback.
+        "wideout": (("execute->", "pass.sh"),),
     }
     for name, rows in stray_rows.items():
         role_dir = lib / "roles" / name
@@ -1008,6 +1012,40 @@ def test_the_doctor_names_the_dead_point_the_transition_skips(gate_project, rack
     assert [(r["status"], r["selector"]) for r in payload["bindings"]["rows"]] == [
         ("dead", STRAY_EDGE)
     ]
+
+
+def test_a_refused_selector_reaches_the_operator_as_a_message(gate_project, rack_bin):
+    """A composition refusal is a MESSAGE, not a stack trace (HATS-1719 review).
+
+    The consent subscriber resolves the role's declaration in-lock at priority
+    11 — before the checks subscriber at 15, whose own resolution already turns
+    trouble into this channel's refusal. So a role carrying a selector the
+    grammar refuses surfaced as an untyped exception twelve frames deep. The
+    arrow grammar made that easy to reach, which is what made it worth closing.
+    """
+    project, env = gate_project("wideout")
+    task_id = _create(rack_bin, project, env)
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env)
+    said = refused.stdout + refused.stderr
+
+    assert refused.returncode != 0, f"a refused selector composed clean:\n{said}"
+    assert "Traceback" not in said, f"the refusal reached the operator as a traceback:\n{said}"
+    assert "HATS-1720" in said, f"the refusal does not name the card that opens the form:\n{said}"
+
+
+def test_the_same_refusal_is_machine_readable(gate_project, rack_bin):
+    """`--json` returning NOTHING is how a caller reads a refusal as a crash."""
+    project, env = gate_project("wideout")
+    task_id = _create(rack_bin, project, env)
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+
+    assert refused.returncode != 0
+    assert json.loads(refused.stdout or "null") is not None, (
+        f"--json printed nothing on a refusal:\nstdout={refused.stdout!r}\n"
+        f"stderr={refused.stderr!r}"
+    )
 
 
 def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):

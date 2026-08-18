@@ -14,7 +14,10 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .errors import RackConfigError, RackError
-from .selectors import Edge
+from .selectors import ANY, NONE, Edge
+
+#: Words the selector grammar owns, so no topology may take them as state names.
+RESERVED_STATE_NAMES = frozenset({ANY, NONE})
 
 # The load-time `document` anchor (PROP-012) moved to extension-declared
 # `requires_states()`, checked at composition (ADR-0017 §3/§6) — a tasks-
@@ -121,6 +124,18 @@ def _validate(raw: object, source: str) -> Topology:
     states = tuple(states_raw)
     if len(set(states)) != len(states):
         raise TopologyError(f"{source}: duplicate state names")
+    taken = sorted(set(states) & RESERVED_STATE_NAMES)
+    if taken:
+        # Beside the duplicate-name check because it is the same kind of check:
+        # a name that cannot mean what it says. The selector grammar compares
+        # these two words by equality, so a state actually called `ANY` turns
+        # every EXACT subscription into a wildcard — gates, ownership and consent
+        # firing on edges nobody declared them for, in silence (HATS-1719).
+        raise TopologyError(
+            f"{source}: state name(s) {taken} are reserved by the selector grammar "
+            f"({', '.join(sorted(RESERVED_STATE_NAMES))} mean 'any state' and 'no state') — "
+            f"rename them; the lower-case spellings are free"
+        )
     if not isinstance(initial, str) or initial not in states:
         raise TopologyError(f"{source}: 'initial' must name a declared state")
     if not isinstance(edges_raw, dict):

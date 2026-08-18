@@ -1,0 +1,30 @@
+"""Repro: a link kind whose name holds an arrow makes the dispatcher RAISE
+inside the task lock where it previously answered 'nobody subscribes'."""
+from pathlib import Path
+import pytest
+from ai_hats_rack.definition import load_backlog
+from ai_hats_rack.ops import parse_ops
+from rack_testkit import make_kernel
+
+_DOC = (
+    "name: b\nprefix: T\n"
+    "fsm:\n"
+    "  initial: plan\n"
+    "  states: [{name: plan}, {name: execute}]\n"
+    "  edges: [{from: plan, to: execute}]\n"
+    "links:\n"
+    "  kinds:\n"
+    "    - {name: 'a->b', arity: many}\n"
+)
+
+def test_arrowy_link_kind(tmp_path, cwd):
+    doc = tmp_path / "cat" / "backlog.yaml"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(_DOC)
+    defn = load_backlog(doc)
+    print("kind loaded ok:", [k.name for k in defn.links_registry.kinds])
+    k = make_kernel(tmp_path / "tasks", topology=defn.topology,
+                    registry=defn.links_registry, subscribers=[])
+    k.create(actor="t", caller_cwd=cwd, task_id="T-1", title="a")
+    k.create(actor="t", caller_cwd=cwd, task_id="T-2", title="b")
+    k.transition_ops("T-1", parse_ops(["--link", "a->b:T-2"]), actor="t", caller_cwd=cwd)

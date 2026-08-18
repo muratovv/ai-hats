@@ -497,9 +497,21 @@ class ConsentExtension:
         """
         if self._declared is None:
             declared: set[str] = set()
-            if self._backlog_owner is not None:
-                for path in self._backlog:
-                    declared |= resolve_consent_points(self._backlog_owner, "rack", path=(path,))
+            try:
+                if self._backlog_owner is not None:
+                    for path in self._backlog:
+                        declared |= resolve_consent_points(
+                            self._backlog_owner, "rack", path=(path,)
+                        )
+            except AbortOperation:
+                raise
+            except Exception as exc:
+                # This subscriber runs at 11, BEFORE checks at 15 whose own
+                # resolution already does this — so a role the composer refuses
+                # surfaced here as an untyped traceback twelve frames deep, and
+                # `--json` printed nothing at all. A refusal out of an in-lock
+                # subscriber is a message, not a defect (HATS-1719 review).
+                raise AbortOperation(f"consent: {exc}") from exc
             parsed = {parse_selector(name) for name in declared}
             self._declared = frozenset(s for s in parsed if s is not None)
         return self._declared

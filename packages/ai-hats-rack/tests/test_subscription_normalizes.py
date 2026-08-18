@@ -44,3 +44,30 @@ def test_asking_for_an_arrow_by_key_is_refused_not_answered_empty():
 
     with pytest.raises(ValueError, match="subscribers_for_edge"):
         Dispatcher().subscribers_for("review->done", Phase.IN_LOCK)
+
+
+@pytest.mark.parametrize("text", ["a->b->c", "execute->", "ANY->ANY", "review -> done"])
+def test_a_string_that_is_not_a_legal_selector_is_refused_not_normalized(text):
+    """Normalizing without judging just relocates the trap (HATS-1719 review).
+
+    ``parse_selector`` is deliberately wider than the legal grammar, so a
+    typo'd arrow string became either a silent WILDCARD (``execute->`` fires on
+    every way out) or a silently DEAD selector (``a->b->c`` matches nothing) —
+    neither raising. A string goes through the public grammar; internal code
+    that means a wide selector says so with a ``Selector`` object.
+    """
+    with pytest.raises(ValueError, match="selector"):
+        Subscription(text, Phase.IN_LOCK)
+
+
+def test_an_object_is_trusted_where_a_string_is_judged():
+    """The escape hatch the rule needs: HATS-1720 subscribes wide from code."""
+    wide = Selector("execute", "ANY")
+    assert Subscription(wide, Phase.IN_LOCK).selector is wide
+
+
+@pytest.mark.parametrize("key", ["link:a->b", "read:x->y"])
+def test_a_namespaced_key_is_not_mistaken_for_an_arrow(key):
+    """A link kind is user-authored text and may contain anything; it is still a
+    KEY, and the retired guard turned such a backlog into a crash."""
+    assert Subscription(key, Phase.IN_LOCK).selector == key
