@@ -117,7 +117,9 @@ it saves `merge-smoke`, and the card will need the fuller run before `done`.
 
 Every run's full transcript lands beside the card at
 
-    <tasks_dir>/<ID>/.checks/edge-review--done~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
+    <tasks_dir>/<ID>/.checks/<event>~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
+    # <event> is the EDGE that fired, arrow-escaped: `review-%3Edone`, `plan-%3Edone`, …
+    # The row binds `->done`, so there is one log per road — glob, never hand-build.
 
 — one file per (task, edge, binding). The leading-dot directory keeps it out of
 the document registry (`docstore._is_document`), so a gate never pins its own
@@ -300,7 +302,9 @@ What that means at run time:
   the loop continues.
 - **Each binding writes its own log**,
   `.checks/<event>~<app>[~<level>…]~<skill>~<script>~<digest>.log`, with `/`
-  escaped to `+`. Before HATS-1137 the name carried the edge only, so binding #2
+  escaped to `+` and every other non-literal byte to `%XX` — so the arrow in an
+  event key lands as `review-%3Edone`, never as a shell redirect in a path an
+  operator is asked to paste (HATS-1719). Before HATS-1137 the name carried the edge only, so binding #2
   truncated #1's file; the trailing digest (HATS-1545) covers `at:` and the rest
   of the row's identity, so two rows differing only in the points they bind
   cannot share a file either. Glob for the stem — do not hand-build the name.

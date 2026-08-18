@@ -310,7 +310,7 @@ for the consumer; HATS-1578 for the question of who owns the name meanwhile).
 
 `edge:` names validate against the topology **the kernel is running** (full state
 product — forced transitions fire non-topology edges); the rack does that with
-`all_edge_keys(topology)`, and ai-hats validates no edge name at all. *Rev 9
+`all_edges(topology)`, and ai-hats validates no edge name at all. *Rev 9
 closed the gap that
 stood here from HATS-1140 to HATS-1540* — the catalog resolved that topology from
 the *packaged* tasks backlog while the kernel ran the catalog-local one

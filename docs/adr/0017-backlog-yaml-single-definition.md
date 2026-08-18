@@ -454,7 +454,7 @@ variant/metric/sample fields — no new mechanics beyond §1.
 ### 4. Extensions: how they work and how they attach
 
 The extension contract keeps its shape [6] — an extension is a `Subscriber`:
-`name`, `subscriptions() -> [Subscription(event_key, phase, priority)]`,
+`name`, `subscriptions() -> [Subscription(selector, phase, priority)]`,
 `on_event(ctx) -> Delta | None`; in-lock subscribers may `AbortOperation`
 with an actionable reason, post-lock subscribers are reactions. Three
 contract extensions (review 2026-07-18, claims б/в):

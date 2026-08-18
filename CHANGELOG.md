@@ -21,6 +21,7 @@ since the latest tag lives under **Unreleased** until the next release.
   - **`rack doctor --json`** renamed its per-row key `point` → `selector`, and `role_materialization.json` did the same — the latter additionally carrying `from` and `to` already parsed, because the PreToolUse guard is stdlib-only and must not hold a second copy of the grammar.
   - **`ai_hats_rack`**: `Subscription.event_key` → `.selector` (a `Selector` or a non-FSM key string), `BindingStatus.point` → `.selector`, `checks.parse_edge_point` → `selectors.parse_selector`, `checks.EDGE_PREFIX` removed. `Dispatcher.subscribers_for` now answers for non-FSM keys only; an edge is addressed by its pair via `subscribers_for_edge`.
   - **`ai_hats_core`**: `ConsentPoint.point` → `.selector`.
+  - **`ai_hats_rack.all_edge_keys` is gone** — the product is `all_edges`, and it returns typed pairs. The string form had no caller left and its docstring named a spelling the journal does not take from it.
   - **A topology may no longer name a state `ANY` or `NONE`** — refused at load. The selector grammar owns both words, and a state actually called `ANY` would turn exact subscriptions into wildcards.
 
   Consent deliberately did **not** widen: it migrates one-to-one and stays on the edges the trait already named. A wide question without a batch is click-spam (HATS-1728). That split the `maintainer` role's single row in two — the "run + consent on one row" form ties the gate's reach to the question's, and here they differ.

@@ -62,6 +62,25 @@ class Selector:
         return f"{source}{ARROW}{target}"
 
 
+#: The spelling this grammar replaced. Recognised on purpose: it must be REFUSED
+#: rather than quietly filed as a key, or an unmigrated subscriber registers
+#: cleanly and never fires — the silence the arrow was adopted to remove.
+_RETIRED_PREFIX = "edge:"
+
+
+def is_retired_point(text: str) -> bool:
+    """Whether ``text`` is the retired ``edge:<from>--<to>`` spelling.
+
+    Narrower than ``startswith("edge:")`` on purpose: ``edge:<name>`` with no
+    pair is the LIVE alias key a declared edge name mints (``name: reclaim``),
+    and refusing that breaks a working feature (HATS-1719 review).
+    """
+    if not text.startswith(_RETIRED_PREFIX):
+        return False
+    source, sep, target = text[len(_RETIRED_PREFIX) :].partition("--")
+    return bool(sep and source and target)
+
+
 def is_event_key(text: str) -> bool:
     """Whether ``text`` addresses a NON-FSM event rather than denoting an arrow.
 

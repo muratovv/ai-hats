@@ -14,7 +14,15 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, ru
 
 from .errors import RackConfigError, RackError
 from .events import EdgeEvent, Event
-from .selectors import ANY, Edge, Selector, is_event_key, parse_selector, selector_form
+from .selectors import (
+    ANY,
+    Edge,
+    Selector,
+    is_event_key,
+    is_retired_point,
+    parse_selector,
+    selector_form,
+)
 from .models import TaskCard, utc_now
 
 if TYPE_CHECKING:
@@ -64,7 +72,15 @@ class Subscription:
         says so with a ``Selector`` — which is how HATS-1720 subscribes wide
         without reopening the string path.
         """
-        if not isinstance(self.selector, str) or is_event_key(self.selector):
+        if not isinstance(self.selector, str):
+            return
+        if is_retired_point(self.selector):
+            raise ValueError(
+                f"{self.selector!r} is the retired point spelling — write the arrow "
+                f"({self.selector[len('edge:') :].replace('--', '->')!r}). Filed as a key it "
+                f"would register cleanly and never fire (HATS-1719)."
+            )
+        if is_event_key(self.selector):
             return
         parsed = parse_selector(self.selector)
         if parsed is None:
@@ -370,12 +386,13 @@ class Dispatcher:
         which reads exactly like "nothing is subscribed"; refusing is the whole
         point, since that silence is the defect class this grammar removed.
         """
-        if parse_selector(event_key) is not None or event_key.startswith("edge:"):
+        if parse_selector(event_key) is not None or is_retired_point(event_key):
             raise ValueError(
                 f"{event_key!r} addresses an FSM edge, not a non-FSM event — ask "
                 f"subscribers_for_edge(Edge(...), phase). A selector denotes a SET of edges "
-                f"and cannot be looked up as one string, and the retired 'edge:' spelling "
-                f"would quietly answer 'nothing subscribes' (HATS-1719)."
+                f"and cannot be looked up as one string, and the retired spelling would "
+                f"quietly answer 'nothing subscribes' (HATS-1719). The named-edge alias "
+                f"'edge:<name>' is NOT that spelling and is answered normally."
             )
         return [sub for _, _, sub in self._index.get((event_key, phase), [])]
 

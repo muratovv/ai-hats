@@ -71,3 +71,33 @@ def test_a_namespaced_key_is_not_mistaken_for_an_arrow(key):
     """A link kind is user-authored text and may contain anything; it is still a
     KEY, and the retired guard turned such a backlog into a crash."""
     assert Subscription(key, Phase.IN_LOCK).selector == key
+
+
+def test_the_retired_spelling_is_refused_rather_than_kept_as_a_key():
+    """The one string that escaped the judge (HATS-1719 review).
+
+    ``edge:review--done`` carries a ':' before any arrow, so ``is_event_key``
+    called it a key and ``__post_init__`` returned before judging. An
+    unmigrated third-party subscriber therefore constructed CLEANLY, registered
+    into the non-FSM index, and never fired — the exact silence this epic
+    retired that spelling to remove. The read side already refused it; the
+    write side must too, or the asymmetry is the defect.
+    """
+    with pytest.raises(ValueError, match="retired"):
+        Subscription("edge:review--done", Phase.IN_LOCK)
+
+
+def test_the_live_named_edge_alias_is_still_a_perfectly_good_key():
+    """``edge:<name>`` is NOT the retired spelling: it is the alias key a
+    declared edge name mints today (`backlog.yaml` `name: reclaim`)."""
+    assert Subscription("edge:reclaim", Phase.IN_LOCK).selector == "edge:reclaim"
+
+
+def test_asking_for_the_live_alias_by_key_is_answered_not_refused():
+    """The read side made the same mistake in the other direction: it refused
+    every `edge:` key, including the alias its own index holds."""
+    from ai_hats_rack.dispatch import Dispatcher
+
+    assert Dispatcher().subscribers_for("edge:reclaim", Phase.IN_LOCK) == []
+    with pytest.raises(ValueError, match="retired"):
+        Dispatcher().subscribers_for("edge:review--done", Phase.IN_LOCK)

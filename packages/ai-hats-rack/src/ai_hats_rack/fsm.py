@@ -108,11 +108,6 @@ def all_edges(topology: Topology) -> list[Edge]:
     ]
 
 
-def all_edge_keys(topology: Topology) -> list[str]:
-    """:func:`all_edges` as canonical key strings — the journal/report spelling."""
-    return [f"{e.from_state}->{e.to_state}" for e in all_edges(topology)]
-
-
 def _validate(raw: object, source: str) -> Topology:
     if not isinstance(raw, dict):
         raise TopologyError(f"{source}: expected a mapping at top level")

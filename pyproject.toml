@@ -32,7 +32,7 @@ dependencies = [
     # HATS-1540 grew this package to 0.5.0 (WorktreeLifecycle.before_merge +
     # WorktreeMergeAborted); HATS-1603 to 0.6.0 (merge takes outer_deadline,
     # passed by wt_effects.teardown).
-    "ai-hats-wt>=0.6.0",
+    "ai-hats-wt>=0.6.1",
     # HATS-1020/1022: the boundary is one-directional — the rack never imports
     # the integrator (rack's import-hygiene pin); the integrator binds its
     # ownership/worktree adapters onto the rack dispatcher in rack_wiring.py.
@@ -43,7 +43,7 @@ dependencies = [
     # card directory is gated); HATS-1642 to 0.3.3 (PlanConsentExtension takes the
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.4.0",  # ai_hats_rack.selectors — the arrow grammar rack_wiring binds by (HATS-1719)
-    "ai-hats-observe>=0.6.0",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
+    "ai-hats-observe>=0.6.1",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
     # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket with its
     # peek/consume pair — imported at module level by rack_wiring — and the
     # startup check trait-base binds against permissions.allow.

@@ -27,7 +27,7 @@ import logging
 from pathlib import Path
 from typing import NoReturn
 
-from .check_points import WT_APP, check_failure_reason, check_log_token
+from .check_points import WT_APP, check_failure_reason, check_log_name
 from .hook_exec import run_hook
 from .worktree_hooks import resolve_hook_timeout, run_worktree_hook
 from ai_hats_wt import (
@@ -214,7 +214,7 @@ class HookRunningLifecycle:
                 # share a basename would otherwise truncate each other's log
                 # while the first one's reason still points at it — the HATS-1137
                 # defect `rack_consumers._escaped` exists to prevent.
-                log_path=log_dir / f"pre-merge~{check_log_token(check)}.log",
+                log_path=log_dir / check_log_name(WT_PRE_MERGE, check),
             )
             if not run.ok:
                 _raise_merge_aborted(

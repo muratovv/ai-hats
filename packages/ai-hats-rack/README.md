@@ -33,7 +33,7 @@ FileLock(task) → FSM-guard → in-memory mutation → in-lock subscribers → 
 class MyExtension:
     name = "my-extension"
 
-    def subscriptions(self) -> list[Subscription]:  # (event_key, phase, priority)
+    def subscriptions(self) -> list[Subscription]:  # (selector, phase, priority)
         return [Subscription("plan->execute", Phase.IN_LOCK, priority=10)]
 
     def on_event(
@@ -135,7 +135,7 @@ is ADR-0017 §3 in the ai-hats repo — keep the two in step.)
   row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`.
   The level is not optional: a row sitting directly under `apps.rack` refuses.
 - **`at: [<point>, …]`** — the points the row fires on, in this package's own
-  vocabulary (`edge:<from>--<to>` today).
+  vocabulary — an ARROW: `<from>-><to>` for exactly that edge, `-><to>` for every road into a state (grammar and legality: ADR-0017 §3).
 - Any other key rides along in `CheckDeclaration.cargo` and is read by nobody:
   an extra key is a no-op, not a setting.
 
