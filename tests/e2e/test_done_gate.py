@@ -45,7 +45,11 @@ MERGE_SCRIPT = "hooks/merge-gate.sh"
 #: backlog since HATS-1545, so two backlogs binding one script cannot collide.
 #: The readable stem of the check-log name; ``check_log_token`` appends an
 #: identity digest so two rows can never share a file (HATS-1137).
-EDGE_LOG_STEM = f"edge-review--done~rack~tasks~{SKILL}~hooks+done-gate.sh"
+#: The log is named after the EVENT that fired, not after the selector the row
+#: binds: the row says `->done`, the event on this road is `review->done`. The
+#: arrow is escaped for a filename (HATS-1719) because it carries `>`, a shell
+#: redirect, and a refusal hands this path to an operator to paste.
+EDGE_LOG_STEM = f"review-%3Edone~rack~tasks~{SKILL}~hooks+done-gate.sh"
 GATE_MARKER_DIR = Path(".git") / "ai-hats" / "done-gate"
 
 #: Enough plan.md for the packaged plan-gate to let `execute` through.
@@ -303,11 +307,14 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     (ADR-0023 D3/D4), and one script on both could only ever ask one of them.
     """
     apps = shipped_apps()
-    # `consent: true` since HATS-1682 (supervisor ruling Q3): this edge is a road
-    # into master, so the supervisor is asked AND the gate runs — one row, both
-    # keys. The row is asserted whole, so the new key belongs in the literal.
+    # TWO rows on the rack road since HATS-1719, and the split is the point: the
+    # GATE covers every road into `done` (the teardown-merge fires on 8 of the 8
+    # edges and this gate covered 1), while the QUESTION stays on the review edge
+    # because a wide question without a batch is click-spam (HATS-1728). The
+    # "both keys on one row" form ties the two reaches together and cannot say it.
     assert apps["rack"]["tasks"] == [
-        {"run": f"{SKILL}/{SCRIPT}", "at": [EDGE], "on_error": "refuse", "consent": True}
+        {"run": f"{SKILL}/{SCRIPT}", "at": ["->done"], "on_error": "refuse"},
+        {"at": [EDGE], "consent": True},
     ], "the FSM automerge road, qualified by the backlog it gates"
     assert apps["wt"] == [
         {"run": f"{SKILL}/{MERGE_SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}

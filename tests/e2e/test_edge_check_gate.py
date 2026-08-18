@@ -27,7 +27,7 @@ TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
 EDGE = "brainstorm->plan"
 #: The event half of a check-log filename; the binding half follows it
 #: (``<event>~<skill>~<script>.log``, ``rack_consumers._log_path``).
-EDGE_LOG_PREFIX = "edge-brainstorm--plan"
+EDGE_LOG_PREFIX = "brainstorm-%3Eplan"
 SKILL = "gate-skill"
 
 #: Where each known surface mirrors the session's composed skills — since
@@ -1005,7 +1005,7 @@ def test_the_doctor_names_the_dead_point_the_transition_skips(gate_project, rack
     assert payload["clean"] is False
     assert [f["check"] for f in payload["findings"]] == ["dead-check-point"]
     assert STRAY_EDGE in payload["findings"][0]["detail"]
-    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [
+    assert [(r["status"], r["selector"]) for r in payload["bindings"]["rows"]] == [
         ("dead", STRAY_EDGE)
     ]
 
@@ -1020,7 +1020,7 @@ def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):
 
     assert report.returncode == 0, report.stdout + report.stderr
     payload = json.loads(report.stdout)
-    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
+    assert [(r["status"], r["selector"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
     assert payload["bindings"]["rows"][0]["on_error"] == "refuse"
 
 
