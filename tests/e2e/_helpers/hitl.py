@@ -206,6 +206,7 @@ def _build_env(
         if val is not None:
             env[key] = val
     env.update(project_env)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
 

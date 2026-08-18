@@ -82,11 +82,13 @@ def _neutral_root() -> Path:
 def _decide(
     command: str,
     *,
+    base_env: dict[str, str] | None = None,
     env_extra: dict[str, str] | None = None,
     cwd: Path | None = None,
 ) -> dict:
     """Run the hook on a Bash payload; return its decision ({} when it allows)."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("AI_HATS_")}
+    source_env = os.environ if base_env is None else base_env
+    env = {k: v for k, v in source_env.items() if not k.startswith("AI_HATS_")}
     env["HOME"] = str(_neutral_root())
     planted = None if cwd is None else Path(cwd) / SESSION_DIRNAME
     if planted is not None and (planted / "role_materialization.json").is_file():
@@ -209,6 +211,14 @@ def test_a_shell_wrapper_around_something_harmless_still_passes(command):
 def test_benign_commands_are_allowed(command):
     """A gate that denies everything is as useless as one that denies nothing."""
     assert _decide(command) == {}
+
+
+def test_default_probe_ignores_ambient_permission_settings(tmp_path):
+    _with_allow(tmp_path, ["Bash(ai-hats:*)"])
+
+    out = _decide("ls -la", base_env={**os.environ, "HOME": str(tmp_path)})
+
+    assert out == {}
 
 
 def test_the_ack_opens_protected_data_but_never_the_root():

@@ -26,6 +26,10 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.assembler import Assembler
+from ai_hats.models import OverlayConfig, ProjectConfig
+from ai_hats.paths import PROJECT_CONFIG
+
 from _helpers.env import checkout_pythonpath
 from _helpers.git import git
 
@@ -33,6 +37,7 @@ TRAIT = Path(
     "packages/ai-hats-library/src/ai_hats_library/usage/traits/library-curator/config.yaml"
 )
 SENTINEL = "SENTINEL_HATS_1501_WORKTREE_EDIT"
+PROJECT_SENTINEL = "SENTINEL_HATS_1699_PROJECT_CONFIG"
 
 
 def _bare_env(repo_root: Path) -> dict[str, str]:
@@ -55,6 +60,11 @@ def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Pa
         trait.write_text(
             original.replace("  ## LIBRARY CURATOR\n", f"  ## LIBRARY CURATOR\n\n  {SENTINEL}\n", 1)
         )
+        ProjectConfig(
+            provider="claude",
+            customizations={"role-curator": OverlayConfig(injection_append=PROJECT_SENTINEL)},
+        ).save(wt / PROJECT_CONFIG)
+        Assembler(wt).init()
 
         proc = subprocess.run(
             [sys.executable, "-m", "ai_hats", "config", "show-prompt", "--role", "role-curator"],
@@ -69,6 +79,7 @@ def test_worktree_library_edit_reaches_show_prompt(repo_root: Path, tmp_path: Pa
         # Positive control first: if the trait vanished entirely, a missing
         # sentinel would prove nothing about WHICH checkout was composed.
         assert "LIBRARY CURATOR" in proc.stdout, "trait did not compose at all"
+        assert PROJECT_SENTINEL in proc.stdout, "worktree project config did not compose"
         assert SENTINEL in proc.stdout, (
             "composed the main checkout's library, not the worktree's — HATS-1501"
         )
