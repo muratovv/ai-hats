@@ -77,6 +77,7 @@ def assemble_launch_env(
     role: str,
     root_pid: str,
     extra_env: dict[str, str],
+    run_mode: RunMode,
     claim: bool = True,
 ) -> dict[str, str]:
     """Everything ai-hats ADDS to the child's environment (HATS-1548).
@@ -90,7 +91,7 @@ def assemble_launch_env(
     """  # comment-length: allow — the omission it fixes was invisible for a reason
     from ai_hats_observe.session import session_env
 
-    from .constants import ENV_ROOT_PID
+    from .constants import BYPASS_FLAGS_NOT_INHERITED, ENV_ROOT_PID
     from .session_identity import SessionIdentity
 
     # HATS-1594: the ONE place a session's identity is produced. Gates running in
@@ -109,7 +110,14 @@ def assemble_launch_env(
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
     # depended on the mode would be the reporting defect, moved (HATS-1554).
+    # A sub-agent is a different session, so it does not carry approvals the
+    # supervisor gave theirs (HATS-1743). Blanked rather than dropped: on the SDK
+    # road the transport builds the child env and an overlay can only overwrite.
+    withheld = (
+        {flag: "" for flag in BYPASS_FLAGS_NOT_INHERITED} if run_mode is RunMode.AUTOMATE else {}
+    )
     return {
+        **withheld,
         **session_env(session_id, trace_path),
         **provider.get_env(session_dir, project_dir),
         **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),

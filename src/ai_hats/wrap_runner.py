@@ -533,6 +533,7 @@ class WrapRunner:
             role=payload.role_expression,
             root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
             extra_env=session_env,
+            run_mode=RunMode.HITL,
         )
         prompt_file = next(
             (p for p in artifacts.materialized if p.suffix in (".md", ".MD")),

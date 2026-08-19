@@ -267,6 +267,7 @@ class SubAgentRunner:
             role=self.payload.role_expression,
             root_pid=str(os.getpid()),  # HATS-955: ownership liveness anchor
             extra_env=artifacts.extra_env,
+            run_mode=RunMode.AUTOMATE,
         )
         described = provider.describe_automate_launch(
             self.project_dir,

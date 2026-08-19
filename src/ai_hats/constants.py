@@ -42,6 +42,33 @@ ENV_PTY_IN_FD = "AI_HATS_PTY_IN_FD"
 ENV_PTY_OUT_FD = "AI_HATS_PTY_OUT_FD"
 DEBUG_FLAGS = frozenset({"--debug", "--verbose", "-v"})
 
+# The supervisor's kill switches and acknowledgements, which a sub-agent does NOT
+# inherit (HATS-1743). An approval is scoped to the session it was given in —
+# `rule_pause_before_shared_state_write` says "the whole session", ADR-0023 says
+# "the shell that launched the session" — and a sub-agent is a different session:
+# own id, own dir, own composition. Consent keys are absent on purpose: their
+# artefacts belong to the consent engine (HATS-1738 / HATS-1739). Knobs are absent
+# too — they answer "how much", never "may I".
+BYPASS_FLAGS_NOT_INHERITED = frozenset(
+    {
+        "AI_HATS_BACKLOG_GATE_OFF",
+        "AI_HATS_COMMENT_LINT_OFF",
+        "AI_HATS_DESTRUCTIVE_ACK",
+        "AI_HATS_DOCS_INDEX_ACK",
+        "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
+        "AI_HATS_PRIVACY_ACK",
+        "AI_HATS_RULE_DELIVERY_ACK",
+        "AI_HATS_SECURITY_LINT_OFF",
+        "AI_HATS_SHARED_STATE_ACK",
+        "AI_HATS_SKILL_LINT_ACK",
+        "AI_HATS_SMOKE_SKIP",
+        "AI_HATS_TOOL_HYGIENE_OFF",
+        "AI_HATS_WT_ENTRY_OFF",
+        "AI_HATS_WT_GATE_OFF",
+        "AI_HATS_YOLO",
+    }
+)
+
 
 def is_debug_mode(argv: list[str] | None = None) -> bool:
     """Return True if debug or verbose mode is enabled via env or CLI flags (HATS-1120)."""

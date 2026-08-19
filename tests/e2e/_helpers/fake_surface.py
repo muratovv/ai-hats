@@ -80,6 +80,12 @@ pid_file = os.environ.get("FAKE_SURFACE_PID_FILE")
 if pid_file:
     with open(pid_file, "w") as fh:
         fh.write(str(os.getpid()))
+dump = os.environ.get("FAKE_SURFACE_ENV_DUMP")
+if dump:
+    import json
+
+    with open(dump, "w") as fh:
+        json.dump(dict(os.environ), fh)
 sys.stdout.write("fake-surface up\\r\\n")
 sys.stdout.flush()
 deadline = time.monotonic() + float(os.environ.get("FAKE_SURFACE_HOLD_SECONDS", "0"))
@@ -287,6 +293,31 @@ class FakeSurface:
         if done.returncode != 0:
             raise AssertionError(
                 f"the ai-hats run failed (exit {done.returncode}):\n"
+                f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
+            )
+        return done
+
+    def run_agent_once(
+        self, *, role: str = "assistant", extra_env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess:
+        """One AUTOMATE session that starts and exits, with ``extra_env`` on the launch.
+
+        The sibling of :meth:`run_once` for the sub-agent road: ``engine()`` is
+        ``None``, so this goes down SubAgentRunner's subprocess path — the branch
+        that hands the surface child a whole environment.
+        """
+        done = subprocess.run(
+            self._agent_argv(role),
+            cwd=str(self.project),
+            env={**self.env, "FAKE_SURFACE_HOLD_SECONDS": "0", **(extra_env or {})},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=RUN_TIMEOUT_S,
+        )
+        if done.returncode != 0:
+            raise AssertionError(
+                f"the sub-agent run failed (exit {done.returncode}):\n"
                 f"{done.stdout[-1500:]}\n{done.stderr[-1500:]}"
             )
         return done

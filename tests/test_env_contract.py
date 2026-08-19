@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.constants import BYPASS_FLAGS_NOT_INHERITED
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INTEGRATOR_SRC = REPO_ROOT / "src" / "ai_hats"
 HOME_MODULE = INTEGRATOR_SRC / "env.py"
@@ -103,49 +105,49 @@ _ENV_NAME = re.compile(r"AI_HATS_[A-Z0-9_]+")
 # and names it explicitly because "an unnamed neighbour is the mechanism by which
 # the set later drifts". Enumerating them here is what closes the vocabulary, and
 # a closed vocabulary is the only thing that can tell a typo from a new key.
-NON_CONTRACT_HOOK_KEYS = {
-    # Point-specific vocabulary of the caller: composition of the channel.
+# The kill switches a sub-agent must NOT inherit live in production — it is the
+# side that acts on them (`constants.BYPASS_FLAGS_NOT_INHERITED`, HATS-1743). The
+# three groups below are what remains: names a shipped hook reads that are neither
+# contract keys nor withheld approvals.
+
+# Point-specific vocabulary of the caller: composition of the channel.
+POINT_SPECIFIC_HOOK_KEYS = {
     "AI_HATS_BRANCH_NAME",
     "AI_HATS_BYPASS_JOURNAL",
     "AI_HATS_HOOK_EVENT",
-    # Kill switches and acknowledgements: a human standing one gate down.
-    "AI_HATS_BACKLOG_GATE_OFF",
-    "AI_HATS_COMMENT_LINT_OFF",
-    "AI_HATS_DESTRUCTIVE_ACK",
-    "AI_HATS_DOCS_INDEX_ACK",
-    # Read by the rack process; NAMED in safety_gate because it refuses them as an
-    # inline self-grant rather than reading them (HATS-1639). The consent ticket
-    # is minted by safety_gate and spent by the rack's plan gate (HATS-1642) — a
-    # per-transition nonce, not a flag a human ever sets.
+}
+
+# Consent's own artefacts. Read by the rack process; NAMED in safety_gate because it
+# refuses them as an inline self-grant rather than reading them (HATS-1639). The
+# consent ticket is minted by safety_gate and spent by the rack's plan gate
+# (HATS-1642) — a per-transition nonce, not a flag a human ever sets. Whether any of
+# these crosses into a child is the consent engine's answer, not the launch seam's
+# (HATS-1738 / HATS-1739), which is why they are not in BYPASS_FLAGS_NOT_INHERITED.
+CONSENT_OWNED_KEYS = {
+    "AI_HATS_CONSENT_ACK",
     "AI_HATS_CONSENT_TICKET",
     "AI_HATS_MERGE_ACK",
     "AI_HATS_PLAN_ACK",
-    # HATS-1682: the point-agnostic pre-approval for a declared consent point,
-    # for the surfaces where no question can be asked at all.
-    "AI_HATS_CONSENT_ACK",
-    "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
-    "AI_HATS_PRIVACY_ACK",
-    "AI_HATS_RULE_DELIVERY_ACK",
-    "AI_HATS_SECURITY_LINT_OFF",
-    # HATS-1682: how many days a pass marker may sit before a write sweeps it.
-    "AI_HATS_GATE_MARKER_KEEP_DAYS",
-    "AI_HATS_SHARED_STATE_ACK",
-    "AI_HATS_SKILL_LINT_ACK",
-    "AI_HATS_SMOKE_SKIP",
-    "AI_HATS_TOOL_HYGIENE_OFF",
-    "AI_HATS_WT_ENTRY_OFF",
-    "AI_HATS_WT_GATE_OFF",
-    "AI_HATS_YOLO",
-    # Tuning knobs and config overrides: "how much" / "run what", set by a human.
+}
+
+# Tuning knobs and config overrides: "how much" / "run what", set by a human. A knob
+# is not an approval, so withholding one from a child would change behaviour rather
+# than withhold consent.
+TUNING_KNOB_KEYS = {
     "AI_HATS_COMMENT_MAX_LINES",
     "AI_HATS_DOCSTRING_MAX_CHARS",
     "AI_HATS_DOCSTRING_MAX_LINES",
     "AI_HATS_E2E_CLEAN_TMP",
     "AI_HATS_E2E_REQUIRE_VENV",
+    "AI_HATS_GATE_MARKER_KEEP_DAYS",
     "AI_HATS_RULE_DELIVERY_CMD",
     "AI_HATS_SKILL_LINT_CMD",
     "AI_HATS_WT_GATE_EXTS",
 }
+
+NON_CONTRACT_HOOK_KEYS = (
+    POINT_SPECIFIC_HOOK_KEYS | CONSENT_OWNED_KEYS | TUNING_KNOB_KEYS | BYPASS_FLAGS_NOT_INHERITED
+)
 
 
 def _integrator_definitions() -> dict[str, list[str]]:
@@ -332,7 +334,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
     """
     import json
 
-    from ai_hats.session_artifacts import assemble_launch_env
+    from ai_hats.session_artifacts import RunMode, assemble_launch_env
     from ai_hats.session_identity import ENV_SESSION_IDENTITY
 
     env = assemble_launch_env(
@@ -344,6 +346,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
         role="maintainer",
         root_pid="4242",
         extra_env={},
+        run_mode=RunMode.HITL,
     )
     envelope = json.loads(env[ENV_SESSION_IDENTITY])
 
@@ -471,3 +474,20 @@ def test_a_sandbox_standing_in_for_a_session_plants_the_whole_envelope() -> None
         f"which every reader refuses. Stand in for one with "
         f"`_helpers.sessions.stand_in_session` instead."
     )
+
+
+def test_the_flags_a_sub_agent_never_inherits_are_productions_to_name() -> None:
+    """G — the neutralised set lives in production, and this file derives from it.
+
+    The vocabulary lived only here, so nothing could ACT on it: production cannot
+    import a test. A supervisor's approval is scoped to a session
+    (`rule_pause_before_shared_state_write` §41), and a sub-agent is a different
+    one — HATS-1743.
+    """
+    assert BYPASS_FLAGS_NOT_INHERITED <= NON_CONTRACT_HOOK_KEYS
+    # Consent keeps its own artefacts and its own cards (HATS-1738 / HATS-1739):
+    # whether a grant crosses into a child is the engine's to answer, not this seam's.
+    assert not (BYPASS_FLAGS_NOT_INHERITED & CONSENT_OWNED_KEYS)
+    # A knob answers "how much", never "may I" — withholding one changes behaviour
+    # instead of withholding an approval.
+    assert not (BYPASS_FLAGS_NOT_INHERITED & TUNING_KNOB_KEYS)
