@@ -22,7 +22,7 @@ from ai_hats_rack.definition import BacklogDefinition, resolve_definition
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.fsm import Topology, all_edges
-from ai_hats_rack.selectors import Selector
+from ai_hats_rack.selectors import ANY, Selector
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 from ai_hats_rack.models import TaskCard
 
@@ -119,9 +119,15 @@ def _runner(tmp_path: Path, *checks: ResolvedCheck, **kwargs) -> CheckSubscriber
     )
 
 
-def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
-    """R2 + R7: the pack is no longer empty, it enumerates the topology handed
-    through the seam (never a re-opened one), and it books slot 15 in-lock."""
+def test_pack_covers_every_edge_of_the_given_topology(tmp_path):
+    """R2 + R7: the pack is no longer empty, it covers every move of the topology
+    handed through the seam (never a re-opened one), and it books slot 15 in-lock.
+
+    Said as one wide selector since HATS-1720 — so the topology is what the
+    subscription is checked AGAINST rather than what it spells. The typed-object
+    assertion stays load-bearing either way: a plain arrow STRING would land in
+    the non-FSM bucket and match nothing.
+    """
     topology = _topology()
     pack = consumer_subscribers(
         tmp_path,
@@ -131,9 +137,9 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
 
     assert pack, "the consumer pack must carry the check runner"
     subs = [spec for sub in pack for spec in sub.subscriptions()]
-    assert {spec.selector for spec in subs} == {
-        Selector(e.from_state, e.to_state) for e in all_edges(topology)
-    }  # typed, not stringly: a plain arrow STRING lands in the non-FSM bucket
+    assert {spec.selector for spec in subs} == {Selector(ANY, ANY)}
+    unreached = [e for e in all_edges(topology) if not subs[0].selector.matches(e)]
+    assert not unreached, f"these moves stopped reaching the runner: {unreached}"
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15

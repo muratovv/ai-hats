@@ -399,19 +399,36 @@ class Dispatcher:
     def subscribers_for_edge(
         self, edge: Edge, phase: Phase, *, alias_key: str | None = None
     ) -> list[Subscriber]:
-        """Every subscription whose selector matches ``edge``, in ONE order.
+        """Every subscriber whose selector matches ``edge``, once each, in ONE order.
 
         Exact and wide interleave by the single (priority, registration) order
         rather than firing in separate passes: matching is a predicate, so all
         matched rows run and the order is the ladder's business, not the
         matcher's (design.md §1.5).
-        """
+
+        **Once each** is the HATS-1720 clause. Wide selectors make a subscriber's
+        own subscriptions overlap — ``ownership-release`` binds ``execute->`` AND
+        ``->done``, and ``execute->done`` matches both — and measured, the two
+        rows made it run TWICE, applying its effect and journaling its outcome
+        twice over. ``on_event`` is handed no subscription handle, so it cannot
+        tell the second call from the first: a subscriber declaring overlapping
+        selectors means the union, never the repetition. The earliest
+        (priority, registration) slot wins, so a subscriber cannot be pushed down
+        the ladder by owning a second, later binding.
+        """  # comment-length: allow — why a subscriber runs once is the contract
         rows = list(self._exact.get((edge, phase), ()))
         rows += [(p, s, sub) for (p, s, sub, sel) in self._wide.get(phase, ()) if sel.matches(edge)]
         if alias_key:
             rows += self._index.get((alias_key, phase), [])
         rows.sort(key=lambda item: (item[0], item[1]))
-        return [sub for _, _, sub in rows]
+        seen: set[int] = set()
+        matched: list[Subscriber] = []
+        for _, _, sub in rows:
+            if id(sub) in seen:
+                continue
+            seen.add(id(sub))
+            matched.append(sub)
+        return matched
 
     def _subscribers_for_event(self, event: Event, phase: Phase) -> list[Subscriber]:
         """Route one event: an FSM edge by its pair, anything else by its key.

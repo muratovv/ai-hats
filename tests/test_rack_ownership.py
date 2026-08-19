@@ -55,13 +55,13 @@ def _kernel(tmp_path: Path, effects=None) -> tuple[Kernel, Path]:
     registry = agent / "ownership.json"
     topology = load_topology()
     subscribers = [
-        OwnershipSingleSlot(registry, topology=topology),
-        OwnershipClaim(registry, topology=topology),
-        OwnershipRelease(registry, topology=topology),
+        OwnershipSingleSlot(registry),
+        OwnershipClaim(registry),
+        OwnershipRelease(registry),
     ]
     worktree = None
     if effects is not None:
-        worktree = WorktreeExtension(tmp_path, effects=effects, topology=topology)
+        worktree = WorktreeExtension(tmp_path, effects=effects)
         subscribers.append(worktree)
     kernel = Kernel(agent / "tasks", prefix="T", topology=topology, subscribers=subscribers)
     if worktree is not None:
@@ -209,6 +209,110 @@ def test_reclaim_dead_owner_via_execute_self_loop(tmp_path, monkeypatch):
     result = _tr(kernel, t1, "execute", cwd=tmp_path)  # reclaim self-loop (non-force)
     assert result.task.state == "execute"
     assert ownership.owner_of(reg, t1)["session_id"] == "sess-b"
+
+
+#: Every road OUT of `execute` in the shipped topology — the reclaim self-loop
+#: included, and `done` only under `--force`. What `execute->` denotes, spelled
+#: here so the test asserts the reach rather than repeating the selector.
+#: `cancelled` carries the extra the card schema requires on entry; the road is
+#: kept because it is one of the ways out that abandons the card.
+_ROADS_OUT_OF_EXECUTE = (
+    ("document", {}),
+    ("blocked", {}),
+    ("failed", {}),
+    ("cancelled", {"resolution": "obsolete"}),
+)
+
+
+class _Sink:
+    def __init__(self) -> None:
+        self.records = []
+
+    def record(self, record) -> None:
+        self.records.append(record)
+
+
+@pytest.mark.parametrize(
+    "road, extra", _ROADS_OUT_OF_EXECUTE, ids=[r for r, _ in _ROADS_OUT_OF_EXECUTE]
+)
+def test_the_hold_is_released_on_every_road_out_of_execute(tmp_path, as_agent_a, road, extra):
+    """The value of the wide selector, asserted where it is CONSUMED (HATS-1720).
+
+    ``ownership-release`` says ``execute->`` now instead of a hand-rolled product
+    of the topology's states. Measured in HATS-1719: exercising ``Selector.matches``
+    in isolation proves nothing about the layer that calls it — a mutation
+    disabling wide matching left 4865 tests green. So this drives the real kernel
+    down each road and asks the registry, not the selector.
+    """
+    kernel, reg = _kernel(tmp_path)
+    tid = _to_execute(kernel, tmp_path, "T-1")
+    assert ownership.owner_of(reg, tid) is not None, "precondition: execute took the hold"
+
+    _tr(kernel, tid, road, cwd=tmp_path, **extra)
+
+    assert ownership.owner_of(reg, tid) is None, f"leaving execute for {road!r} kept the hold"
+
+
+def test_a_forced_road_out_of_execute_releases_too(tmp_path, as_agent_a):
+    """`execute->done` is not a declared edge; `--force` fires the pair anyway,
+    and a selector matches pairs, not the topology's edge list."""
+    kernel, reg = _kernel(tmp_path)
+    tid = _to_execute(kernel, tmp_path, "T-1")
+
+    _tr(kernel, tid, "done", cwd=tmp_path, force=True, reason="shipped on master")
+
+    assert ownership.owner_of(reg, tid) is None
+
+
+def test_reclaim_keeps_the_hold_the_claim_just_took(tmp_path, as_agent_a):
+    """The one place the wider selector is NOT a drop-in (design.md §6.4).
+
+    ``execute->`` includes ``execute->execute``, which the hand-rolled product
+    subtracted by hand; a selector has no subtraction operator and will not get
+    one. So the filter moved into the handler — bind wide, filter inside — and
+    this is its fail-under-revert test: without it the claim at priority 20 takes
+    the hold on a reclaim and the release at 40 drops it in the same lock, leaving
+    the card owned by nobody while an agent is standing in it.
+    """
+    kernel, reg = _kernel(tmp_path)
+    tid = _to_execute(kernel, tmp_path, "T-1")
+
+    _tr(kernel, tid, "execute", cwd=tmp_path)  # the reclaim self-loop
+
+    held = ownership.owner_of(reg, tid)
+    assert held is not None, "the reclaim released the hold it had just taken"
+    assert held["session_id"] == "sess-a"
+
+
+def test_a_road_matching_two_of_its_selectors_runs_the_subscriber_once(tmp_path, as_agent_a):
+    """``execute->failed`` matches BOTH ``execute->`` and ``->failed``.
+
+    Measured before the dedup: the dispatcher returned the subscriber twice, so it
+    applied its effect and journaled its outcome twice for one event. ``on_event``
+    is handed no subscription handle and cannot tell the calls apart, so
+    overlapping selectors mean the union and never the repetition (HATS-1720).
+    """
+    agent = tmp_path / ".agent"
+    registry = agent / "ownership.json"
+    sink = _Sink()
+    kernel = Kernel(
+        agent / "tasks",
+        prefix="T",
+        topology=load_topology(),
+        subscribers=[
+            OwnershipSingleSlot(registry),
+            OwnershipClaim(registry),
+            OwnershipRelease(registry),
+        ],
+        journal_sink=sink,
+    )
+    tid = _to_execute(kernel, tmp_path, "T-1")
+
+    _tr(kernel, tid, "failed", cwd=tmp_path)
+
+    fired = [o for o in sink.records[-1].outcomes if o.subscriber == "ownership-release"]
+    assert sink.records[-1].event_key == "execute->failed"
+    assert len(fired) == 1, f"the subscriber ran {len(fired)} times on one event"
 
 
 def test_live_owner_blocks_reclaim(tmp_path, monkeypatch):

@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Sequence
 
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..events import EdgeEvent, EpicifyEvent
-from ..fsm import Topology, all_edges, load_topology
+from ..fsm import Topology, load_topology
 from ..registry import LinksRegistry, load_registry
-from ..selectors import Selector
+from ..selectors import ANY, Selector
 
 if TYPE_CHECKING:
     from ..kernel import Kernel
@@ -103,10 +103,7 @@ class EpicAutomationExtension:
         )
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [
-            Subscription(Selector(e.from_state, e.to_state), Phase.POST_LOCK, self._priority)
-            for e in all_edges(self._topology)
-        ]
+        subs = [Subscription(Selector(ANY, ANY), Phase.POST_LOCK, self._priority)]
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._priority))
         return subs
 
