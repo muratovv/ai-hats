@@ -44,9 +44,14 @@ AI_HATS_APP = "ai-hats"
 #: The one point of that app: fired once per session, before the launch.
 STARTUP_POINT = "startup"
 
+#: The consent-gate application key (HATS-1735). ai-hats does NOT fire it: its
+#: rows name the OPERATION TYPES a grant may cover, and both readers of the
+#: grant resolve that list rather than knowing what a rack is (ADR-0029 D8).
+CONSENT_GATE_APP = "consent_gate"
+
 #: The roster, not the authority: used ONLY to name a block nobody collects
 #: (R9). Each integration names its own key at its own call site.
-KNOWN_APPS: frozenset[str] = frozenset({"rack", WT_APP, AI_HATS_APP})
+KNOWN_APPS: frozenset[str] = frozenset({"rack", WT_APP, AI_HATS_APP, CONSENT_GATE_APP})
 
 
 def wt_points() -> dict[str, bool]:

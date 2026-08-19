@@ -518,8 +518,15 @@ def test_a_role_without_trait_agent_declares_no_consent(role):
 
 def test_a_lifecycle_role_does_declare_consent():
     """The control: an empty set above must mean "this role declares none", not
-    "the probe reads nothing"."""
+    "the probe reads nothing".
+
+    The `consent_gate` rows answer a different question from the other three —
+    they name the OPERATION TYPES a grant may cover, not where to ask — and they
+    are pinned together so neither list can grow by accident (HATS-1735).
+    """
     assert _shipped_consent("maintainer") == {
+        ("consent_gate", (), "rack.transition"),
+        ("consent_gate", (), "wt.merge"),
         ("rack", ("tasks",), "plan->execute"),
         ("rack", ("tasks",), "review->done"),
         ("wt", (), "pre-merge"),

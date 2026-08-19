@@ -41,7 +41,15 @@ composition:
   # `review->done` and `pre-merge` are the two roads into master
   # (HATS-1130): the FSM automerge and a direct `ai-hats wt merge`. A gate
   # holding only one of them is the asymmetry that started that epic.
+  #
+  # `consent_gate` answers a different question from the two blocks below it:
+  # they say WHERE the supervisor is asked, it says which OPERATION TYPES a
+  # grant may cover. The gate resolves this list instead of knowing what a rack
+  # is, so a third type is data rather than a code change (ADR-0029 D2/D8).
   apps:
+    consent_gate:
+      - at: [rack.transition, wt.merge]
+        consent: true
     rack:
       tasks:
         - at: ['plan->execute', 'review->done']
