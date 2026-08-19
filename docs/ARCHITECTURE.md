@@ -338,13 +338,19 @@ autonomous invocations in two layers:
      Wired into session settings.json by `ClaudeProvider.build_session_artifacts()`.
      Blocks `gh pr merge` and `git push --force` when run without a controlling TTY
      (i.e. agent context).
-   - `library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
+   - `packages/ai-hats-library/src/ai_hats_library/core/skills/git-mastery/git_hooks/pre-push-shared-state.sh`
      — git pre-push hook installed via the HATS-088 mechanism. Detects
      non-fast-forward pushes and blocks them; branch creations and
      deletions short-circuit so benign cleanup is not affected.
 
-   Both hooks honour a per-command override:
-   `AI_HATS_SHARED_STATE_ACK=1 <command>`.
+   `AI_HATS_SHARED_STATE_ACK=1` overrides both, but it does NOT reach them the
+   same way. The git hook runs inside the `git push` process, so a per-command
+   prefix works: `AI_HATS_SHARED_STATE_ACK=1 git push ...`. The PreToolUse hook
+   runs *before* the command it judges is a process, so a prefix never reaches
+   it (HATS-1294) — it reads the ack from its own environment, set where the
+   agent is launched, which pre-approves the whole session. That export stops at
+   the session it was given in: a sub-agent is a different session and the launch
+   blanks the flag for it (HATS-1743, `constants.BYPASS_FLAGS_NOT_INHERITED`).
 
 **Provider asymmetry.** Gemini CLI has no PreToolUse equivalent, so
 Gemini sessions get the rule + the git pre-push hook only — the
