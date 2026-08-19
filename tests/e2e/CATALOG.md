@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**252 of 252 files catalogued — 261 flows.**
+**253 of 253 files catalogued — 262 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -2675,6 +2675,20 @@ as a claim to check, not as evidence.
 
 - **expect** — repair script detects stray ai-hats executables on PATH and emits remediation warnings without deleting files
 - **why** — without stray shadow detection, outdated global binaries on PATH shadow venv launchers causing unexplainable errors
+
+## `test_subagent_env_isolation.py`
+
+*pins HATS-1743*
+
+- **flow** — a supervisor exports a kill switch, then delegates to a sub-agent
+- **cmds**
+
+  ```console
+  AI_HATS_SHARED_STATE_ACK=1 AI_HATS_YOLO=1 ai-hats agent <role> -p holdfast --task hold
+  ```
+
+- **expect** — the surface child sees both flags BLANK, while the session identity arrives intact
+- **why** — an approval is scoped to the session it was given in — `rule_pause_before_shared_state_write` calls the export "pre-approving the whole session" and ADR-0023 "the shell that launched the session". A sub-agent is a different session: own id, own dir, own composition. Only a real launch can answer this: on the SDK road the child's environment is the transport's to build, and no in-process assertion on the returned dict observes it.
 
 ## `test_subagent_sdk_smoke.py`
 

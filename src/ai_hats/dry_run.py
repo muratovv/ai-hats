@@ -85,6 +85,7 @@ def dry_run_hitl(
         role=payload.role_expression,
         root_pid=AT_LAUNCH,
         extra_env=artifacts.extra_env,
+        run_mode=RunMode.HITL,
         claim=False,
     )
     launch = assemble_launch_command(
@@ -179,6 +180,7 @@ def dry_run_automate(
         role=payload.role_expression,
         root_pid=AT_LAUNCH,
         extra_env=artifacts.extra_env,
+        run_mode=RunMode.AUTOMATE,
         claim=False,
     )
     described = prov.describe_automate_launch(

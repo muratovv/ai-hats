@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -67,6 +68,27 @@ def assemble_launch_command(
     return provider.get_cli_launch_args(cmd, provider_session_id, is_resume)
 
 
+def _withheld_from_child() -> dict[str, str]:
+    """The approvals a sub-agent does not inherit from the session that spawned it.
+
+    An approval is scoped to the session it was given in — the export "pre-approves
+    the whole session" (`rule_pause_before_shared_state_write`) — and a sub-agent is
+    a different session: own id, own dir, own composition (HATS-1743).
+
+    Two sources, and only the second one holds the line: the named roster keeps the
+    launch record byte-identical on every machine, while the shape test over the LIVE
+    environment catches a flag no roster knows about — one added after this was
+    written, or one belonging to a project that merely consumes ai-hats.
+
+    Blanked rather than dropped: on the SDK road the transport builds the child's
+    environment and an overlay can only overwrite a key, never remove it.
+    """
+    from .constants import BYPASS_FLAGS_NOT_INHERITED, withheld_from_subagent
+
+    ambient = (name for name in os.environ if withheld_from_subagent(name))
+    return {name: "" for name in (*BYPASS_FLAGS_NOT_INHERITED, *ambient)}
+
+
 def assemble_launch_env(
     provider,
     project_dir: Path,
@@ -77,6 +99,7 @@ def assemble_launch_env(
     role: str,
     root_pid: str,
     extra_env: dict[str, str],
+    run_mode: RunMode,
     claim: bool = True,
 ) -> dict[str, str]:
     """Everything ai-hats ADDS to the child's environment (HATS-1548).
@@ -109,7 +132,9 @@ def assemble_launch_env(
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that
     # depended on the mode would be the reporting defect, moved (HATS-1554).
+    withheld = _withheld_from_child() if run_mode is RunMode.AUTOMATE else {}
     return {
+        **withheld,
         **session_env(session_id, trace_path),
         **provider.get_env(session_dir, project_dir),
         **(provider.claim_launch_env(session_dir, project_dir) if claim else {}),

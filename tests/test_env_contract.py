@@ -21,6 +21,12 @@ from pathlib import Path
 
 import pytest
 
+from ai_hats.constants import (
+    BYPASS_FLAGS_NOT_INHERITED,
+    CONSENT_OWNED_KEYS,
+    withheld_from_subagent,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INTEGRATOR_SRC = REPO_ROOT / "src" / "ai_hats"
 HOME_MODULE = INTEGRATOR_SRC / "env.py"
@@ -103,49 +109,37 @@ _ENV_NAME = re.compile(r"AI_HATS_[A-Z0-9_]+")
 # and names it explicitly because "an unnamed neighbour is the mechanism by which
 # the set later drifts". Enumerating them here is what closes the vocabulary, and
 # a closed vocabulary is the only thing that can tell a typo from a new key.
-NON_CONTRACT_HOOK_KEYS = {
-    # Point-specific vocabulary of the caller: composition of the channel.
+# The kill switches a sub-agent must NOT inherit live in production — it is the
+# side that acts on them (`constants.BYPASS_FLAGS_NOT_INHERITED`, HATS-1743). The
+# three groups below are what remains: names a shipped hook reads that are neither
+# contract keys nor withheld approvals.
+
+# Point-specific vocabulary of the caller: composition of the channel.
+POINT_SPECIFIC_HOOK_KEYS = {
     "AI_HATS_BRANCH_NAME",
     "AI_HATS_BYPASS_JOURNAL",
     "AI_HATS_HOOK_EVENT",
-    # Kill switches and acknowledgements: a human standing one gate down.
-    "AI_HATS_BACKLOG_GATE_OFF",
-    "AI_HATS_COMMENT_LINT_OFF",
-    "AI_HATS_DESTRUCTIVE_ACK",
-    "AI_HATS_DOCS_INDEX_ACK",
-    # Read by the rack process; NAMED in safety_gate because it refuses them as an
-    # inline self-grant rather than reading them (HATS-1639). The consent ticket
-    # is minted by safety_gate and spent by the rack's plan gate (HATS-1642) — a
-    # per-transition nonce, not a flag a human ever sets.
-    "AI_HATS_CONSENT_TICKET",
-    "AI_HATS_MERGE_ACK",
-    "AI_HATS_PLAN_ACK",
-    # HATS-1682: the point-agnostic pre-approval for a declared consent point,
-    # for the surfaces where no question can be asked at all.
-    "AI_HATS_CONSENT_ACK",
-    "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
-    "AI_HATS_PRIVACY_ACK",
-    "AI_HATS_RULE_DELIVERY_ACK",
-    "AI_HATS_SECURITY_LINT_OFF",
-    # HATS-1682: how many days a pass marker may sit before a write sweeps it.
-    "AI_HATS_GATE_MARKER_KEEP_DAYS",
-    "AI_HATS_SHARED_STATE_ACK",
-    "AI_HATS_SKILL_LINT_ACK",
-    "AI_HATS_SMOKE_SKIP",
-    "AI_HATS_TOOL_HYGIENE_OFF",
-    "AI_HATS_WT_ENTRY_OFF",
-    "AI_HATS_WT_GATE_OFF",
-    "AI_HATS_YOLO",
-    # Tuning knobs and config overrides: "how much" / "run what", set by a human.
+}
+
+
+# Tuning knobs and config overrides: "how much" / "run what", set by a human. A knob
+# is not an approval, so withholding one from a child would change behaviour rather
+# than withhold consent.
+TUNING_KNOB_KEYS = {
     "AI_HATS_COMMENT_MAX_LINES",
     "AI_HATS_DOCSTRING_MAX_CHARS",
     "AI_HATS_DOCSTRING_MAX_LINES",
     "AI_HATS_E2E_CLEAN_TMP",
     "AI_HATS_E2E_REQUIRE_VENV",
+    "AI_HATS_GATE_MARKER_KEEP_DAYS",
     "AI_HATS_RULE_DELIVERY_CMD",
     "AI_HATS_SKILL_LINT_CMD",
     "AI_HATS_WT_GATE_EXTS",
 }
+
+NON_CONTRACT_HOOK_KEYS = (
+    POINT_SPECIFIC_HOOK_KEYS | CONSENT_OWNED_KEYS | TUNING_KNOB_KEYS | BYPASS_FLAGS_NOT_INHERITED
+)
 
 
 def _integrator_definitions() -> dict[str, list[str]]:
@@ -279,7 +273,9 @@ def test_shipped_hook_scripts_spell_only_names_the_contract_knows() -> None:
 
     # Doubles as the liveness pin: a scan that stops seeing files passes silently,
     # but every allowlisted name goes unread at once.
-    unread = sorted(NON_CONTRACT_HOOK_KEYS - set(found))
+    # The withheld roster is pinned by its OWN universe below — gates live in repo
+    # scripts too, and pinning it here is what left `AI_HATS_E2E_CATALOG_ACK` off it.
+    unread = sorted(NON_CONTRACT_HOOK_KEYS - BYPASS_FLAGS_NOT_INHERITED - set(found))
     assert not unread, (
         f"NON_CONTRACT_HOOK_KEYS lists {unread}, which no shipped hook reads any "
         f"more. Drop them — an allowlist nobody exercises is a rubber stamp — "
@@ -332,7 +328,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
     """
     import json
 
-    from ai_hats.session_artifacts import assemble_launch_env
+    from ai_hats.session_artifacts import RunMode, assemble_launch_env
     from ai_hats.session_identity import ENV_SESSION_IDENTITY
 
     env = assemble_launch_env(
@@ -344,6 +340,7 @@ def test_the_envelope_and_its_scalars_agree_in_one_launch_env(tmp_path):
         role="maintainer",
         root_pid="4242",
         extra_env={},
+        run_mode=RunMode.HITL,
     )
     envelope = json.loads(env[ENV_SESSION_IDENTITY])
 
@@ -470,4 +467,78 @@ def test_a_sandbox_standing_in_for_a_session_plants_the_whole_envelope() -> None
         f"{offenders} plant a bare AI_HATS_SESSION_ID — a session no launch produces, "
         f"which every reader refuses. Stand in for one with "
         f"`_helpers.sessions.stand_in_session` instead."
+    )
+
+
+def test_the_flags_a_sub_agent_never_inherits_are_productions_to_name() -> None:
+    """G — the neutralised set lives in production, and this file derives from it.
+
+    The vocabulary lived only here, so nothing could ACT on it: production cannot
+    import a test. A supervisor's approval is scoped to a session
+    (`rule_pause_before_shared_state_write` §41), and a sub-agent is a different
+    one — HATS-1743.
+    """
+    assert BYPASS_FLAGS_NOT_INHERITED <= NON_CONTRACT_HOOK_KEYS
+    # Consent keeps its own artefacts and its own cards (HATS-1738 / HATS-1739):
+    # whether a grant crosses into a child is the engine's to answer, not this seam's.
+    assert not (BYPASS_FLAGS_NOT_INHERITED & CONSENT_OWNED_KEYS)
+    # A knob answers "how much", never "may I" — withholding one changes behaviour
+    # instead of withholding an approval.
+    assert not (BYPASS_FLAGS_NOT_INHERITED & TUNING_KNOB_KEYS)
+
+
+#: Where a gate that reads an approval can live. Wider than the shipped-hook scan on
+#: purpose: `scripts/` holds gates too, and trusting the narrower universe is exactly
+#: what left a live flag off the roster (HATS-1743 review).
+def _production_bypass_literals() -> set:
+    """Every withheld-shaped ``AI_HATS_*`` an executable under src/scripts/packages reads."""
+    roots = [REPO_ROOT / "src", REPO_ROOT / "scripts", *sorted(REPO_ROOT.glob("packages/*/src"))]
+    roots += sorted(REPO_ROOT.glob("packages/surfaces/*/src"))
+    # The module that DECLARES the roster is not a reader of it; scanning it would
+    # make this test agree with itself.
+    declaring = REPO_ROOT / "src" / "ai_hats" / "constants.py"
+    spelling = re.compile(r"\bAI_HATS_[A-Z0-9_]+")
+    found = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.suffix not in (".py", ".sh") or not path.is_file() or path == declaring:
+                continue
+            found |= {
+                name
+                for name in spelling.findall(path.read_text(encoding="utf-8", errors="ignore"))
+                if withheld_from_subagent(name)
+            }
+    return found
+
+
+def test_every_withheld_name_answers_the_shape_test_that_holds_the_line() -> None:
+    """G1 — the roster and the predicate cannot disagree about what a bypass is.
+
+    The roster is a convenience over the predicate, never a second opinion: if a name
+    on it failed the shape test, the launch record would promise a withholding the
+    live environment would not perform.
+    """
+    disagree = sorted(n for n in BYPASS_FLAGS_NOT_INHERITED if not withheld_from_subagent(n))
+    assert not disagree, f"on the roster but not withheld-shaped: {disagree}"
+
+
+def test_the_roster_names_every_approval_production_actually_reads() -> None:
+    """G2 — completeness over the universe where gates really live.
+
+    A miss here costs only a line in the launch record — the shape test still
+    withholds the flag — but the roster is what a reader trusts, so it is pinned.
+    """
+    read = _production_bypass_literals()
+    missing = sorted(read - BYPASS_FLAGS_NOT_INHERITED - CONSENT_OWNED_KEYS)
+    assert not missing, (
+        f"production reads withheld-shaped names the roster does not list: {missing}. "
+        "Add them to BYPASS_FLAGS_NOT_INHERITED (they are already withheld at run "
+        "time by shape — this keeps the launch record naming them)."
+    )
+    unread = sorted(BYPASS_FLAGS_NOT_INHERITED - read)
+    assert not unread, (
+        f"the roster lists {unread}, which nothing under src/scripts/packages reads "
+        "any more — drop them, or the roster becomes a rubber stamp."
     )
