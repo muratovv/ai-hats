@@ -28,6 +28,10 @@ GUARDED_COMMANDS = (
     ("rack transition HATS-1 execute", "the plan → execute consent question"),
     ("rack transition HATS-1 --state execute", "the plan → execute consent question"),
     ("ai-hats wt merge task/x", "the pause before a merge into master"),
+    # HATS-1735: the issuing verb. Higher stakes than the rows above — under an
+    # allow-rule the agent writes ITSELF a grant, silently, and a grant is wider
+    # than the one-shot ticket those rows protect.
+    ("consent all 30", "the question the agent's own `consent` attempt turns into"),
 )
 
 #: The inline self-grant HATS-1639 refuses, fossilised into an allow-rule — the

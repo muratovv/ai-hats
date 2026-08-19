@@ -77,9 +77,25 @@ def verdict(op: Operation, *, target_dir: Path | None) -> Verdict:
     )
 
 
-def note(answer: Verdict, op: Operation) -> str:
-    """The work-log line for a move a grant paid for."""
+def note(answer: Verdict, op: Operation, *, hook: str) -> str:
+    """Record a move a grant paid for, and return the work-log line for it.
+
+    Journalling lives here rather than at each call site for the reason
+    ``env_consent_note`` already gives: one wording for every record beats two
+    copies that drift. Without the line, "the grant covered it" and "nobody was
+    ever asked" read the same afterwards (ADR-0029 D11).
+    """
+    import sys
+
+    from ai_hats_library.hooks.bypass_journal import journal_bypass
+
     label = op.label or op.type
+    journal_bypass(
+        "hatch",
+        f"consent grant {answer.grant_id[:8]} ({op.type})",
+        hook=hook,
+        cmd=" ".join(sys.argv),
+    )
     return f"{label}: supervisor consent grant accepted (grant {answer.grant_id[:8]})"
 
 

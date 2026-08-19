@@ -58,6 +58,15 @@ except ImportError:  # sibling absent -> no question to ask; the refusal still s
     #: turn the deny-list entry below into a hole.
     TICKET_ENV = "AI_HATS_CONSENT_TICKET"
 
+# HATS-1735 — the grant: one answer covering a window of moves. Absent sibling
+# means no grant can be read, so every question is asked exactly as before.
+try:
+    import consent_gate as _grant_engine
+    from consent_gate import Outcome as _GrantOutcome
+except ImportError:  # engine not beside us -> no grant road, only the old one
+    _grant_engine = None
+    _GrantOutcome = None
+
 # HATS-1647 — the tracker predicate shares its resolver and its wording with the
 # Edit/Write half of the gate: two texts for one rule is how the coarser one wins.
 try:
@@ -379,6 +388,78 @@ def _declared_points() -> list:
         return []
 
 
+def _grant_policy() -> tuple:
+    """Operation types the role declared under ``apps.consent_gate`` (HATS-1735)."""
+    return tuple(
+        str(entry.get("selector", ""))
+        for entry in _declared_points()
+        if entry.get("app") == "consent_gate" and entry.get("selector")
+    )
+
+
+def grant_covers(op_type: str, subject: str, cmd: str) -> bool:
+    """Has a live grant already answered this, so no question is needed?
+
+    Conservative on purpose, and deliberately NOT identical to the engine's own
+    check. This half only ever SUPPRESSES a question, so every doubt — no
+    envelope, no engine, a target it cannot place inside the session's project —
+    resolves to "ask anyway". The engine stays the authority and stays
+    fail-closed, so the two disagreeing costs at most one extra question and can
+    never cost an unasked move (HATS-1735).
+    """  # comment-length: allow — why the two halves may disagree IS the contract
+    identity = _envelope()
+    if not identity:
+        return False
+    project_dir = identity.get("project_dir") or ""
+    where = target_cwd(cmd)
+    if not project_dir or where is None:
+        return False
+    try:
+        anchor = Path(project_dir).resolve()
+        target = Path(where).resolve()
+    except OSError as exc:
+        journal_bypass("fail-open", f"consent grant target unresolved: {exc!r}", hook="safety_gate.py")
+        return False
+    if target != anchor and anchor not in target.parents:
+        return False  # outside this session's project: never suppress the question
+    verdict = _grant_check(op_type, subject, identity, anchor)
+    if verdict is None or verdict.outcome is not _GrantOutcome.GRANTED:
+        return False
+    journal_bypass(
+        "hatch",
+        f"consent grant {verdict.grant_id[:8]} ({op_type})",
+        hook="safety_gate.py",
+        cmd=cmd,
+    )
+    return True
+
+
+def _envelope() -> dict:
+    """The identity envelope as a dict, or ``{}`` when there is no session."""
+    raw = os.environ.get("AI_HATS_SESSION_IDENTITY", "")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        journal_bypass("fail-open", f"identity envelope unreadable: {exc!r}", hook="safety_gate.py")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _grant_check(op_type: str, subject: str, identity: dict, anchor):
+    """Ask the engine, or ``None`` when it is not on the path beside us."""
+    if _grant_engine is None:
+        return None
+    return _grant_engine.check(
+        _grant_engine.Operation(op_type, subject=subject),
+        session_id=identity.get("id") or "",
+        store_root=_grant_engine.store_root_from(identity.get("session_cache_dir")),
+        project_dir=anchor,
+        policy=_grant_policy(),
+    )
+
+
 def consent_declared_at(app: str, selector: str) -> bool:
     """Did the role declare consent on one named point of ``app``?"""
     return any(e.get("app") == app and e.get("selector") == selector for e in _declared_points())
@@ -650,6 +731,10 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
             declared = declared_consent_targets()  # read once, and only if asked
         if target not in declared:
             continue
+        # A live grant already answered this, for a window the supervisor named
+        # — asking again is the click the grant was issued to remove (HATS-1735).
+        if grant_covers("rack.transition", task_id, cmd):
+            return {}
         # The env channel stands in wherever no question can be asked — headless,
         # cron, a surface without runtime hooks. Set there, a prompt is redundant,
         # and in headless an `ask` does not prompt, it blocks.
@@ -675,6 +760,8 @@ def consent_ask(cmd: str, tool_input: dict, cmd_key: str) -> dict:
         branch = merge_branch(call)
         if not branch or not consent_declared_at("wt", "pre-merge"):
             continue
+        if grant_covers("wt.merge", branch, cmd):
+            return {}
         for flag in (CONSENT_ACK, WT_MERGE_ACK):
             if os.environ.get(flag) == "1":
                 journal_bypass("hatch", flag, hook="safety_gate.py", cmd=cmd)

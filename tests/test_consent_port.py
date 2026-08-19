@@ -112,6 +112,8 @@ def test_an_undeclared_type_is_not_covered_however_wide_the_grant(session):
 
 
 def test_the_work_log_line_names_the_grant_that_paid(session):
+    """The journal half of D11 needs a real git dir, so it is asserted in the
+    e2e (``test_consent_grant_chain``) rather than faked here."""
     project, cache_dir = session
     grant = issue(
         Radius(types=("rack.transition",)),
@@ -121,6 +123,6 @@ def test_the_work_log_line_names_the_grant_that_paid(session):
     )
     answer = verdict(MOVE, target_dir=project)
 
-    line = note(answer, MOVE)
+    line = note(answer, MOVE, hook="test")
     assert "→ execute" in line
     assert grant.id[:8] in line

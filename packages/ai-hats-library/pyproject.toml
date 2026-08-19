@@ -29,6 +29,12 @@ classifiers = [
 # shipped content (core/ · usage/ · hooks/) uniformly across editable + wheel.
 dependencies = []
 
+# HATS-1735 — the issuing verb, unprefixed on purpose (ADR-0029 D3): it is typed
+# into a chat shell escape with no completion, and the short name IS the consent
+# mechanism leaving ai-hats. Same delivery `rack` already proves.
+[project.scripts]
+consent = "ai_hats_library.hooks.consent_gate.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/muratovv/ai-hats"
 Repository = "https://github.com/muratovv/ai-hats"

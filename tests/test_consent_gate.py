@@ -206,3 +206,66 @@ def test_a_grant_from_another_format_version_is_ignored(store, project):
     data["v"] = 999
     grant.path.write_text(json.dumps(data), encoding="utf-8")
     assert _check(store, project).outcome is Outcome.DENIED
+
+
+# --- the verb's grammar --------------------------------------------------------
+
+
+def test_the_grammar_reads_the_trailing_number_as_minutes():
+    from ai_hats_library.hooks.consent_gate.cli import parse
+
+    assert parse([]) == ("all", DEFAULT_WINDOW_MINUTES)
+    assert parse(["30"]) == ("all", 30)
+    assert parse(["rack.transition"]) == ("rack.transition", DEFAULT_WINDOW_MINUTES)
+    assert parse(["rack.transition", "30"]) == ("rack.transition", 30)
+    assert parse(["HATS-1734", "5"]) == ("HATS-1734", 5)
+
+
+def test_a_word_with_a_dot_is_a_type_and_anything_else_is_a_subject():
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    declared = ("rack.transition", "wt.merge")
+
+    assert radius_for("all", declared) == Radius(types=declared)
+    assert radius_for("rack.transition", declared) == Radius(types=("rack.transition",))
+    assert radius_for("HATS-1734", declared) == Radius(types=declared, subjects=("HATS-1734",))
+
+
+def test_an_undeclared_type_is_refused_rather_than_written_as_a_dead_grant():
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    with pytest.raises(IssueError, match="not a declared operation type"):
+        radius_for("cron.run", ("rack.transition",))
+
+
+def test_a_role_declaring_nothing_gets_a_refusal_that_names_the_block():
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    with pytest.raises(IssueError, match="apps.consent_gate"):
+        radius_for("all", ())
+
+
+def test_too_many_words_is_a_refusal_not_a_guess():
+    from ai_hats_library.hooks.consent_gate.cli import parse
+
+    with pytest.raises(IssueError):
+        parse(["rack.transition", "HATS-1", "30"])
+
+
+def test_the_verb_never_prints_the_grant_id(store, project):
+    """The output lands in the model's context; the key must not (ADR-0029 §1.4)."""
+    from ai_hats_library.hooks.consent_gate.cli import describe
+
+    grant = _issue(store, project)
+
+    printed = describe(Radius(types=("rack.transition",)), grant.expires_at)
+    assert grant.id not in printed
+    assert "rack.transition" in printed
+
+
+def test_outside_a_session_the_verb_says_so_with_its_own_code(monkeypatch):
+    from ai_hats_library.hooks.consent_gate.cli import EXIT_NO_SESSION, main
+
+    monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
+
+    assert main([]) == EXIT_NO_SESSION
