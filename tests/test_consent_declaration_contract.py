@@ -133,8 +133,6 @@ _MALFORMED = [
     ("->", "both halves empty"),  # a typo, not "everywhere"
     ("a->b->c", "exactly one"),  # more than one arrow
     ("review -> done", "no whitespace"),  # a second spelling of one selector
-    ("review->", "HATS-1720"),  # wide OUTPUT, reserved
-    ("ANY->ANY", "HATS-1720"),  # "everywhere", reserved
     ("NONE->execute", "HATS-1703"),  # reserved word, no call site yet
     ("ANY->done", "'->done'"),  # ANY on ONE side is a second spelling
     ("a->>b", "not a state name"),  # the natural mistyping of the arrow
@@ -157,6 +155,90 @@ def test_a_malformed_rack_consent_point_is_refused_at_composition(point, branch)
     assert repr(point) in said, "the refusal must name the point it refuses"
     assert "'trait-agent'" in said and "apps.rack" in said, f"the row is unnamed: {said}"
     assert branch in said, f"refused, but not by the branch this input reaches: {said}"
+
+
+# ----- contour 1b: the VETO — not the name, but what the row DOES on it ------
+
+
+#: The two wide-OUTPUT spellings. They left ``_MALFORMED`` in HATS-1720: the
+#: grammar accepts them now, and what refuses them is the veto below — a
+#: different contour, asserted per row KIND rather than per branch.
+_WIDE_OUTPUT = ["execute->", "ANY->ANY"]
+
+
+def _gate_row(point: str, *, declared_by: str = "maintainer"):
+    return _rows(
+        {"rack": {"tasks": [{"run": "gate-skill/hooks/gate.sh", "at": [point]}]}},
+        declared_by=declared_by,
+    )
+
+
+@pytest.mark.parametrize("point", _WIDE_OUTPUT)
+def test_a_gate_on_a_wide_output_is_refused_and_says_what_it_would_cost(point):
+    """The measured consequence, not a style rule.
+
+    A `run:` row is in-lock and may refuse, and a refusal on a wide output stands
+    on EVERY way out of the state — `document`, `blocked`, `failed`, `cancelled`
+    and the reclaim self-loop alike. The card is then locked where it is: measured,
+    `on_error: warn` softens only a check that BROKE (`HookRun.downgradable`) and
+    `--force` relaxes the FSM arrow while the check still runs. So the refusal has
+    to name the cost, and name HATS-1723 — the card that makes a notify-only row
+    legal here.
+    """
+    with pytest.raises(CheckBindingError) as exc:
+        resolve_checks(_gate_row(point), [])
+
+    said = str(exc.value)
+    assert repr(point) in said, "the refusal must name the selector it refuses"
+    assert "locks the card" in said, f"the refusal does not say what it would cost: {said}"
+    assert "HATS-1723" in said, f"the refusal does not name the card that relaxes it: {said}"
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize("point", _WIDE_OUTPUT)
+def test_consent_on_a_wide_output_is_refused_whichever_way_it_speaks(point, value):
+    """Both values, because both are dead config on this selector.
+
+    `true` cannot work: the guard matches on the target state and never learns
+    which state the card is leaving, so the row would reach it with no target and
+    the question would never be asked — silently, the HATS-1682 A5 class. `false`
+    switches off something nothing can switch on. Accepting either quietly is the
+    silence this channel exists to remove; the form opens with HATS-1706.
+    """
+    row = _rows({"rack": {"tasks": [{"at": [point], "consent": value}]}})
+
+    with pytest.raises(CheckBindingError) as exc:
+        resolve_checks(row, [])
+
+    said = str(exc.value)
+    assert repr(point) in said, "the refusal must name the selector it refuses"
+    assert "HATS-1706" in said, f"the refusal does not name the card that opens it: {said}"
+
+
+@pytest.mark.parametrize("point", ["->done", "review->done"])
+def test_a_narrow_target_passes_the_veto_and_is_judged_on_its_merits(point):
+    """The discriminator: a veto that refused every selector would pass the two
+    tests above while disarming the shipped done-gate, which lives on `->done`.
+
+    Reaching the skill lookup IS passing the veto — the row is refused for the
+    missing skill, one contour further in.
+    """
+    with pytest.raises(CheckBindingError) as exc:
+        resolve_checks(_gate_row(point), [])
+
+    said = str(exc.value)
+    assert "composes no skill" in said, f"the row never reached script resolution: {said}"
+    assert "HATS-1723" not in said and "HATS-1706" not in said
+
+
+def test_the_veto_is_asked_before_the_script_exists():
+    """Order matters: the wide-output row above names a skill nothing composes, and
+    the veto still wins. A veto asked after resolution would let a well-composed
+    role install the lock-in gate and only refuse the ones with typos."""
+    with pytest.raises(CheckBindingError) as exc:
+        resolve_checks(_gate_row("execute->"), [])
+
+    assert "composes no skill" not in str(exc.value)
 
 
 def test_the_same_typo_is_refused_alike_with_and_without_a_script(tmp_path):

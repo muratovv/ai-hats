@@ -143,15 +143,21 @@ def selector_form(text: str) -> str | None:
             f"{NONE!r} is reserved and not yet enabled: card creation as an event is HATS-1703, "
             f"and destruction has no call site at all"
         )
-    if target in ("", ANY):
-        return (
-            f"a wide OUTPUT ({text!r}) is HATS-1720: it needs the veto rule that comes with it, "
-            f"because a gate able to refuse would lock the card in that state on every way out"
+    if ANY in (source, target) and not source == target == ANY:
+        # ``ANY`` earns its keystrokes only as "everywhere"; on ONE side it is a
+        # second spelling of the empty side, and ``AppBinding.identity`` holds the
+        # selector verbatim — so two spellings of one selector are two rows.
+        other = target if source == ANY else source
+        instead = (
+            f"{ANY}{ARROW}{ANY}"
+            if not other
+            else f"{ARROW}{other}"
+            if source == ANY
+            else f"{other}{ARROW}"
         )
-    if source == ANY:
         return (
-            f"{ANY!r} spells 'everywhere' on BOTH sides; for any road into a state "
-            f"write '{ARROW}{target}'"
+            f"{ANY!r} spells 'everywhere', and only on BOTH sides: {text!r} is a second "
+            f"spelling of {instead!r} — write that one"
         )
     for half, end in (("source", source), ("target", target)):
         if not end:
@@ -169,3 +175,59 @@ def selector_form(text: str) -> str | None:
                 f"arrow; a selector carries exactly one '{ARROW}'"
             )
     return None
+
+
+def is_wide_output(text: str) -> bool:
+    """Whether ``text`` leaves the TARGET open — "every way out of a state".
+
+    The one predicate behind both vetoes below (design.md §10.3). ``ANY->ANY`` is
+    a wide output too: everywhere includes every way out.
+    """
+    parsed = parse_selector(text)
+    return parsed is not None and parsed.target == ANY
+
+
+def gate_veto(text: str) -> str | None:
+    """Why a row that can REFUSE may not stand on ``text``, or ``None`` when it may.
+
+    The veto is cut by what the row can DO, not by the selector alone (design.md
+    §10.3). Every declared ``run:`` row today runs in-lock and may refuse, and one
+    refusal on a wide output stands on EVERY way out of the state — the ways that
+    abandon the card included — so the card is locked where it is for good.
+    Measured, because the obvious escapes are not ones: ``on_error: warn`` softens
+    a check that BROKE and never one that refused (``hook_exec.HookRun.downgradable``),
+    and ``--force`` relaxes the FSM arrow while the check still runs.
+    """  # comment-length: allow — which half of the rule is measured is the decision
+    if not is_wide_output(text):
+        return None
+    parsed = parse_selector(text)
+    leaving = "any state" if parsed.source == ANY else repr(parsed.source)
+    return (
+        f"{text!r} is a wide OUTPUT, and a row that can refuse may not stand on one: it "
+        f"would run on every way out of {leaving} — the ways that abandon the card "
+        f"included — and a single refusal locks the card there for good ('on_error: warn' "
+        f"softens a check that broke, never one that refused; '--force' relaxes the FSM "
+        f"arrow, not the check). Bind it to the roads IN ('{ARROW}<state>') or to an exact "
+        f"arrow; a row that only NOTIFIES becomes legal here with HATS-1723"
+    )
+
+
+def consent_veto(text: str) -> str | None:
+    """Why consent may not be spoken about on ``text``, or ``None`` when it may.
+
+    The guard that raises the question matches on the TARGET state alone and never
+    learns which state the card is leaving (design.md §4.2), so a wide output
+    reaches it carrying no target — and the question then goes unasked in silence,
+    which is the HATS-1682 A5 class this channel exists to remove. Hence a refusal
+    rather than a warning, and hence it covers ``consent: false`` too: a spelling
+    that cannot be switched on has nothing to switch off.
+    """
+    if not is_wide_output(text):
+        return None
+    return (
+        f"consent cannot be declared on a wide OUTPUT ({text!r}): the guard that asks the "
+        f"supervisor matches on the target state and never knows which state the card is "
+        f"leaving, so this row would reach it with no target and the question would never "
+        f"be asked — in silence. Name the target ('{ARROW}<state>' or an exact arrow); the "
+        f"wide form opens with HATS-1706"
+    )

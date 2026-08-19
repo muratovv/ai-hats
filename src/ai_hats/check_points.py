@@ -121,10 +121,32 @@ def selector_ends(app: str, selector: str) -> tuple[str | None, str | None]:
     )
 
 
+def _rack_gate_veto(selector: str) -> str | None:
+    """The rack's own predicate, asked whether a row that can REFUSE may sit here."""
+    from ai_hats_rack.selectors import gate_veto
+
+    return gate_veto(selector)
+
+
+def _rack_consent_veto(selector: str) -> str | None:
+    """The rack's own predicate, asked whether consent may be declared here."""
+    from ai_hats_rack.selectors import consent_veto
+
+    return consent_veto(selector)
+
+
 #: Apps whose selector GRAMMAR is refused here though ai-hats does not FIRE them.
 #: Not ``_OWNED_POINTS`` (that means running the rows). The predicate is
 #: imported FROM the owner, so ai-hats still never spells the grammar (D11).
 _SELECTOR_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_selector_form}
+
+#: The same seam one level up: not "is this name in the grammar" but "may a row
+#: that DOES this stand on it" (HATS-1720, design.md §10.3). ai-hats knows which
+#: keys a row carries — that half is its own; what they cost on a given selector
+#: is the owner's, so the answer is imported like the form above.
+_ROW_VETO: dict[str, dict[str, Callable[[str], str | None]]] = {
+    "rack": {"run": _rack_gate_veto, "consent": _rack_consent_veto},
+}
 
 
 def _validate_selector_form(row: AppBinding) -> None:
@@ -141,10 +163,22 @@ def _validate_selector_form(row: AppBinding) -> None:
     form = _SELECTOR_FORM.get(row.app)
     if form is None:
         return
+    vetoes = _ROW_VETO.get(row.app, {})
+    # What this row DOES, in the keys ai-hats owns: `run:` spawns a script that
+    # may refuse, `consent:` speaks about the question — and `false` speaks too,
+    # since a spelling nothing can switch on has nothing to switch off.
+    carried = [
+        key for key, held in (("run", bool(row.run)), ("consent", row.consent is not None)) if held
+    ]
     for name in row.at:
         reason = form(name)
         if reason is not None:
             raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
+        for key in carried:
+            veto = vetoes.get(key)
+            reason = veto(name) if veto is not None else None
+            if reason is not None:
+                raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
 
 
 def resolve_checks(

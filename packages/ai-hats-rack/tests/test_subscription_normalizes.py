@@ -20,6 +20,10 @@ from ai_hats_rack.selectors import Selector
     [
         ("review->done", Selector("review", "done")),
         ("->done", Selector("ANY", "done")),
+        # Legal since HATS-1720, and normalized like any other arrow: what the
+        # veto refuses is a declared ROW on a wide output, not the selector.
+        ("execute->", Selector("execute", "ANY")),
+        ("ANY->ANY", Selector("ANY", "ANY")),
     ],
 )
 def test_an_arrow_string_becomes_a_selector(text, expected):
@@ -46,23 +50,30 @@ def test_asking_for_an_arrow_by_key_is_refused_not_answered_empty():
         Dispatcher().subscribers_for("review->done", Phase.IN_LOCK)
 
 
-@pytest.mark.parametrize("text", ["a->b->c", "execute->", "ANY->ANY", "review -> done"])
+@pytest.mark.parametrize("text", ["a->b->c", "review -> done", "NONE->", "review->ANY"])
 def test_a_string_that_is_not_a_legal_selector_is_refused_not_normalized(text):
     """Normalizing without judging just relocates the trap (HATS-1719 review).
 
-    ``parse_selector`` is deliberately wider than the legal grammar, so a
-    typo'd arrow string became either a silent WILDCARD (``execute->`` fires on
-    every way out) or a silently DEAD selector (``a->b->c`` matches nothing) —
-    neither raising. A string goes through the public grammar; internal code
-    that means a wide selector says so with a ``Selector`` object.
+    ``parse_selector`` is deliberately wider than the legal grammar, so a typo'd
+    arrow string became a silently DEAD selector (``a->b->c`` matches nothing)
+    without raising. A string goes through the public grammar, whatever the
+    grammar happens to allow today — ``execute->`` moved from this table to the
+    one above when HATS-1720 made it legal, and ``NONE->`` took its place as the
+    derivable-but-refused case.
     """
     with pytest.raises(ValueError, match="selector"):
         Subscription(text, Phase.IN_LOCK)
 
 
 def test_an_object_is_trusted_where_a_string_is_judged():
-    """The escape hatch the rule needs: HATS-1720 subscribes wide from code."""
-    wide = Selector("execute", "ANY")
+    """The rule, stated on a selector the grammar would refuse as a string.
+
+    ``review->ANY`` is a second spelling of ``review->`` and is refused in text
+    for that reason; as an OBJECT it is the same value the parser would have
+    produced, and there is no second spelling to police. That is the whole of the
+    distinction — the string is judged, the object is taken at its word.
+    """
+    wide = Selector("review", "ANY")
     assert Subscription(wide, Phase.IN_LOCK).selector is wide
 
 
