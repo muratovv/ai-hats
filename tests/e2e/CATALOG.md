@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**253 of 253 files catalogued — 262 flows.**
+**254 of 254 files catalogued — 263 flows.**
 
 ## `test_adr_integrity_gate.py`
 
