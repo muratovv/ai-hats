@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**356 of 356 files catalogued — 364 flows.**
+**357 of 357 files catalogued — 365 flows.**
 
 ## `test_ack_self_grant_chain.py`
 
@@ -1943,6 +1943,20 @@ as a claim to check, not as evidence.
 
 - **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
 - **why** — a unit gate that reuses its caller environment can turn the same broken tree green after the first run contaminates that environment
+
+## `test_hitl_provider_override.py`
+
+*pins HATS-1745*
+
+- **flow** — a developer launches one HITL session with a provider override and no role flag
+- **cmds**
+
+  ```console
+  ai-hats -p holdfast
+  ```
+
+- **expect** — the override launches holdfast while ai-hats.yaml keeps provider: claude
+- **why** — a runtime selection must not become the project's persisted default
 
 ## `test_hook_call_envelope.py`
 
