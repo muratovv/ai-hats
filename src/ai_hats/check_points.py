@@ -14,9 +14,11 @@ the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
 One clause came back in HATS-1682: a point's *spelling* is refused here for a
-foreign app too (``_POINT_FORM``), because consent rides the same row and a
+foreign app too (``_SELECTOR_FORM``), because consent rides the same row and a
 misspelt consent point is a disarmed gate nothing else would ever have read.
-The grammar still belongs to the owner — the predicate is imported from it.
+HATS-1720 added the second half — ``_ROW_VETO``, whether a row that RUNS or ASKS
+may stand on a legal selector at all. The grammar still belongs to the owner:
+both predicates are imported from it.
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
@@ -149,8 +151,14 @@ _ROW_VETO: dict[str, dict[str, Callable[[str], str | None]]] = {
 }
 
 
-def _validate_selector_form(row: AppBinding) -> None:
-    """Refuse a point name outside its app's grammar, at composition (HATS-1682).
+def _validate_selector(row: AppBinding) -> None:
+    """Refuse a row its app will not stand, at composition (HATS-1682, HATS-1720).
+
+    Two questions, asked in order and answered by the owner both times. First the
+    NAME: is it in the grammar at all. Then the ROW: may something that runs a
+    script, or asks the supervisor, sit on that selector — a wide output takes a
+    legal name and turns a gate into a lock-in, which no later channel would
+    catch.
 
     Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
     the rack's topology, so whether ``review->dnoe`` names a REAL edge stays
@@ -196,7 +204,7 @@ def resolve_checks(
     for row in declared:
         # Form first, and for EVERY row: a consent-only row is refused nowhere
         # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
-        _validate_selector_form(row)
+        _validate_selector(row)
         if not row.run:
             # A consent-only row runs nothing (HATS-1682): no script to find, and
             # no root to judge it from — resolving it would make a declaration

@@ -13,7 +13,7 @@ from typing import Sequence
 from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..fsm import Topology, load_topology
 from ..models import TaskCard, atomic_write_text
-from ..selectors import ANY, Selector
+from ..selectors import EVERYWHERE
 
 
 class DerivedViewsExtension:
@@ -35,7 +35,7 @@ class DerivedViewsExtension:
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [Subscription(Selector(ANY, ANY), Phase.POST_LOCK, self._priority)]
+        subs = [Subscription(EVERYWHERE, Phase.POST_LOCK, self._priority)]
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._priority))
         return subs
 

@@ -22,7 +22,7 @@ from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 from .definition import BacklogDefinition
 from .dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from .fsm import Topology, all_edges
-from .selectors import ANY, Edge, Selector, parse_selector
+from .selectors import EVERYWHERE, Edge, Selector, parse_selector
 from .kernel import LOCK_TIMEOUT
 
 #: Reserved "hook" slot of the in-lock ladder — after the plan-gate, before the
@@ -290,7 +290,7 @@ class CheckSubscriber:
         self._timeout = EDGE_CHECK_TIMEOUT_S if timeout is None else timeout
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(Selector(ANY, ANY), Phase.IN_LOCK, self._priority)]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if not callable(getattr(self._port, "check_declarations", None)):

@@ -45,7 +45,7 @@ from ai_hats_rack.extensions import (
     PlanConsentExtension,
     Section,
 )
-from ai_hats_rack.selectors import ANY, Edge, Selector, parse_selector
+from ai_hats_rack.selectors import ANY, EVERYWHERE, Edge, Selector, parse_selector
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 from ai_hats_library.hooks import consent_ticket
@@ -77,12 +77,10 @@ def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
     return Deadline(ctx.lock_expires_at, "rack task lock")
 
 
-#: "any state" on either side of an arrow. The three hand-rolled products this
-#: replaced (`_exact`, `_edges_into`, `_edges_leaving_execute_or_terminal`) each
-#: rebuilt the topology's state product to say what one selector says — which is
-#: why every subscriber below had to be handed a topology it never read for any
-#: other purpose (HATS-1720).
-_EVERYWHERE = Selector(ANY, ANY)
+# The three hand-rolled products these replaced (`_exact`, `_edges_into`,
+# `_edges_leaving_execute_or_terminal`) each rebuilt the topology's state product
+# to say what one selector says — which is why every subscriber below had to be
+# handed a topology it never read for any other purpose (HATS-1720).
 
 
 def _into(state: str) -> Selector:
@@ -131,7 +129,7 @@ class OwnershipSingleSlot:
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(_EVERYWHERE, Phase.IN_LOCK, self._priority)]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         session_id = _session_id()
@@ -483,7 +481,7 @@ class ConsentExtension:
         self._declared: frozenset[Selector] | None = None
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(_EVERYWHERE, Phase.IN_LOCK, self._priority)]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def _selectors(self) -> frozenset[Selector]:
         """The role's declared consent selectors, parsed once.
@@ -590,7 +588,7 @@ class ConsentSpend:
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(_EVERYWHERE, Phase.POST_LOCK, self._priority)]
+        return [Subscription(EVERYWHERE, Phase.POST_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if not isinstance(ctx.event, EdgeEvent):

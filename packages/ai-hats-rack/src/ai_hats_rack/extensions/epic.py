@@ -16,7 +16,7 @@ from ..dispatch import Delta, DispatchContext, Phase, Subscription
 from ..events import EdgeEvent, EpicifyEvent
 from ..fsm import Topology, load_topology
 from ..registry import LinksRegistry, load_registry
-from ..selectors import ANY, Selector
+from ..selectors import EVERYWHERE
 
 if TYPE_CHECKING:
     from ..kernel import Kernel
@@ -103,7 +103,7 @@ class EpicAutomationExtension:
         )
 
     def subscriptions(self) -> Sequence[Subscription]:
-        subs = [Subscription(Selector(ANY, ANY), Phase.POST_LOCK, self._priority)]
+        subs = [Subscription(EVERYWHERE, Phase.POST_LOCK, self._priority)]
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._priority))
         return subs
 

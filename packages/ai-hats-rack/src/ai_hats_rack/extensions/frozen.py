@@ -14,12 +14,7 @@ from typing import Sequence
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from ..docstore import _card_pins, compute_digest
-from ..selectors import ANY, Selector
-
-#: Every move of this backlog, said once. Enumerating the state product here
-#: was the same subscription written the long way, and it is what forced the
-#: extension to hold a topology at all (HATS-1720).
-EVERYWHERE = Selector(ANY, ANY)
+from ..selectors import EVERYWHERE
 
 
 class FrozenIntegrityExtension:

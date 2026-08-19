@@ -62,6 +62,12 @@ class Selector:
         return f"{source}{ARROW}{target}"
 
 
+#: Every event, whatever the pair — the value behind ``ANY->ANY``. Named once so a
+#: subscriber that means "every move of this backlog" says it instead of rebuilding
+#: the topology's state product to spell it (HATS-1720).
+EVERYWHERE = Selector(ANY, ANY)
+
+
 #: The spelling this grammar replaced. Recognised on purpose: it must be REFUSED
 #: rather than quietly filed as a key, or an unmigrated subscriber registers
 #: cleanly and never fires — the silence the arrow was adopted to remove.
