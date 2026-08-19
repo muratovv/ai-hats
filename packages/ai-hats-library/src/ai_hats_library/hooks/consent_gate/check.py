@@ -78,11 +78,15 @@ def grants_dir(store_root: Path) -> Path:
 
 
 def _covers(radius: Mapping[str, object], op: Operation) -> bool:
+    """Type only. The SUBJECT axis is deliberately absent (HATS-1735).
+
+    Narrowing to one card would have to read the id out of a command line the
+    guard sees before the shell expands it — measured: a loop over `$id` hands
+    the gate the literal token. Should per-operation narrowing be wanted, it
+    arrives as a selector, the way `apps.rack` already spells `plan->execute`.
+    """
     types = tuple(radius.get("types") or ())
-    subjects = tuple(radius.get("subjects") or ("*",))
-    if not any(fnmatch.fnmatch(op.type, str(pattern)) for pattern in types):
-        return False
-    return any(fnmatch.fnmatch(op.subject, str(pattern)) for pattern in subjects)
+    return any(fnmatch.fnmatch(op.type, str(pattern)) for pattern in types)
 
 
 def _load(path: Path) -> dict | None:

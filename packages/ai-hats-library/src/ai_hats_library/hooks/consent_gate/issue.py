@@ -30,7 +30,6 @@ class Radius:
     """How wide the grant reaches. Window-only — there is no budget axis (D5)."""
 
     types: tuple[str, ...]
-    subjects: tuple[str, ...] = ("*",)
 
 
 @dataclass(frozen=True)
@@ -81,7 +80,7 @@ def issue(
             "label": label,
             "issued_at": moment,
             "expires_at": expires_at,
-            "radius": {"types": list(radius.types), "subjects": list(radius.subjects)},
+            "radius": {"types": list(radius.types)},
             "issued_via": issued_via,
         },
         separators=(",", ":"),

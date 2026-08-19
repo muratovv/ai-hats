@@ -7,7 +7,6 @@ shell escape with no completion and no hints:
     consent                      every declared type, default window
     consent all 30               the same, 30 minutes
     consent rack.transition 30   one operation type
-    consent HATS-1734 30         one subject, any declared type
 
 Run by the agent instead of the human it is not a hole: PreToolUse fires on the
 agent's commands and not on a person's `!` escape, so the agent's attempt turns
@@ -59,19 +58,14 @@ def radius_for(what: str, declared: tuple[str, ...]) -> Radius:
         return Radius(types=tuple(declared))
     if what in declared:
         return Radius(types=(what,))
-    if "." in what:
-        raise IssueError(
-            f"{what!r} is not a declared operation type — declared: {', '.join(declared)}"
-        )
-    return Radius(types=tuple(declared), subjects=(what,))
+    raise IssueError(f"{what!r} is not a declared operation type — declared: {', '.join(declared)}")
 
 
 def describe(radius: Radius, expires_at: float) -> str:
     """What the human reads back. Never the grant id — this goes to the model's context."""
     left = max(0, int(round((expires_at - time.time()) / 60)))
-    subjects = "" if radius.subjects == ("*",) else f", subject {', '.join(radius.subjects)}"
     return (
-        f"consent granted for {', '.join(radius.types)}{subjects} — "
+        f"consent granted for {', '.join(radius.types)} — "
         f"{left} minutes, until {time.strftime('%H:%M:%S', time.localtime(expires_at))}"
     )
 

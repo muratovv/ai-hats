@@ -53,7 +53,7 @@ def project(tmp_path: Path) -> Path:
 
 def _issue(store: Path, project: Path, *, types=("rack.transition",), **kw):
     return issue(
-        Radius(types=types, subjects=kw.pop("subjects", ("*",))),
+        Radius(types=types),
         store_root=store,
         session_id=kw.pop("session_id", "sid-1"),
         project_dir=kw.pop("project_dir", project),
@@ -128,11 +128,13 @@ def test_a_radius_naming_another_type_does_not_cover_this_one(store, project):
     assert "wt.merge" in verdict.reason, "the refusal must say a grant exists, but not this one"
 
 
-def test_a_subject_radius_covers_only_that_subject(store, project):
-    _issue(store, project, subjects=("HATS-1735",))
+def test_the_grant_covers_every_subject_of_a_declared_type(store, project):
+    """No subject axis (HATS-1735): narrowing to one card would read the id from
+    a command line the guard sees before the shell expands it."""
+    _issue(store, project)
     other = Operation("rack.transition", subject="HATS-0001")
     assert _check(store, project).outcome is Outcome.GRANTED
-    assert _check(store, project, op=other).outcome is Outcome.DENIED
+    assert _check(store, project, op=other).outcome is Outcome.GRANTED
 
 
 # --- policy: the engine never learns what rack is ------------------------------
@@ -218,17 +220,25 @@ def test_the_grammar_reads_the_trailing_number_as_minutes():
     assert parse(["30"]) == ("all", 30)
     assert parse(["rack.transition"]) == ("rack.transition", DEFAULT_WINDOW_MINUTES)
     assert parse(["rack.transition", "30"]) == ("rack.transition", 30)
-    assert parse(["HATS-1734", "5"]) == ("HATS-1734", 5)
+    assert parse(["wt.merge", "5"]) == ("wt.merge", 5)
 
 
-def test_a_word_with_a_dot_is_a_type_and_anything_else_is_a_subject():
+def test_the_word_is_either_all_or_one_declared_type():
     from ai_hats_library.hooks.consent_gate.cli import radius_for
 
     declared = ("rack.transition", "wt.merge")
 
     assert radius_for("all", declared) == Radius(types=declared)
     assert radius_for("rack.transition", declared) == Radius(types=("rack.transition",))
-    assert radius_for("HATS-1734", declared) == Radius(types=declared, subjects=("HATS-1734",))
+
+
+def test_a_card_id_is_refused_rather_than_read_as_a_subject():
+    """Measured (HATS-1735): a loop over `$id` hands the guard the literal token,
+    so a card-shaped radius could never be trusted. It is refused loudly instead."""
+    from ai_hats_library.hooks.consent_gate.cli import radius_for
+
+    with pytest.raises(IssueError, match="not a declared operation type"):
+        radius_for("HATS-1734", ("rack.transition",))
 
 
 def test_an_undeclared_type_is_refused_rather_than_written_as_a_dead_grant():
