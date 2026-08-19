@@ -18,6 +18,11 @@ from ai_hats_codex.provider import _readiness_warnings
 @pytest.fixture(autouse=True)
 def _isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_HATS_CACHE_HOME", str(tmp_path / "cache-home"))
+    codex_home = tmp_path / "user-codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.delenv("CODEX_SQLITE_HOME", raising=False)
+    monkeypatch.delenv("AI_HATS_CODEX_BASE_HOME", raising=False)
 
 
 def _make_skill(tmp_path: Path, name: str, description: str = "Test skill") -> Path:
@@ -152,12 +157,13 @@ def test_hitl_delivers_role_rules_and_skill_index_via_toml(tmp_path: Path) -> No
     assert "You are the repository maintainer." in delivered
     assert "Never bypass repository safety checks." in delivered
     assert "## AVAILABLE SKILLS" in delivered
-    skill_md = session_cache_dir(project, "sid-a") / "skills" / "release" / "SKILL.md"
+    skill_md = CodexProvider().session_skills_root(project, "sid-a") / "release" / "SKILL.md"
     assert str(skill_md) in delivered
     assert "Prepare a safe release" in delivered
     # This fixture skill declares no runtime hook, so the surface must not make
     # the user trust an inert dispatcher or publish hook-only environment pins.
-    assert env == {}
+    assert "AI_HATS_SESSION_CACHE_DIR" not in env
+    assert "AI_HATS_PYTHON" not in env
     assert CodexProvider().get_env(tmp_path / "session", project)["AI_HATS_PROJECT_DIR"] == str(
         project
     )
@@ -251,9 +257,139 @@ def test_skill_materialization_is_session_scoped_and_clean_root(tmp_path: Path) 
 
     CodexProvider().build_session_prompt(project, _fake_result(skills=[skill]), "sid-a")
 
-    delivered = session_cache_dir(project, "sid-a") / "skills" / "release" / "SKILL.md"
+    delivered = CodexProvider().session_skills_root(project, "sid-a") / "release" / "SKILL.md"
     assert delivered.is_file()
     assert list(project.iterdir()) == []
+
+
+def test_role_skills_activate_native_codex_home_with_shared_user_state(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "user-codex-home"
+    (base_home / "auth.json").write_text("shared auth")
+    (base_home / "config.toml").write_text("shared config")
+    sqlite_artifacts = {
+        base_home / "state_5.sqlite",
+        base_home / "state_5.sqlite-shm",
+        base_home / "state_5.sqlite-wal",
+        base_home / "state_5.sqlite-journal",
+    }
+    for path in sqlite_artifacts:
+        path.write_text("shared sqlite state")
+    skill = _make_skill(tmp_path, "release")
+
+    artifacts = CodexProvider().build_session_artifacts(
+        project,
+        _fake_result(skills=[skill]),
+        "sid-native",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    session_home = session_cache_dir(project, "sid-native") / "codex-home"
+    assert artifacts.extra_env["CODEX_HOME"] == str(session_home)
+    assert artifacts.extra_env["CODEX_SQLITE_HOME"] == str(base_home)
+    assert artifacts.extra_env["AI_HATS_CODEX_BASE_HOME"] == str(base_home)
+    assert (session_home / "skills" / "release" / "SKILL.md").is_file()
+    assert (session_home / "auth.json").is_symlink()
+    assert (session_home / "auth.json").resolve() == base_home / "auth.json"
+    assert (session_home / "config.toml").is_symlink()
+    assert not any((session_home / path.name).exists() for path in sqlite_artifacts)
+    assert list(project.iterdir()) == []
+
+
+def test_role_skills_override_collisions_and_preserve_other_base_skills(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_skills = tmp_path / "user-codex-home" / "skills"
+    for name in (".system", "personal", "release"):
+        source = base_skills / name
+        source.mkdir(parents=True)
+        (source / "SKILL.md").write_text(f"base {name}")
+    role_skill = _make_skill(tmp_path, "release")
+
+    CodexProvider().build_session_prompt(project, _fake_result(skills=[role_skill]), "sid-merged")
+
+    skills_root = CodexProvider().session_skills_root(project, "sid-merged")
+    assert (skills_root / ".system").is_symlink()
+    assert (skills_root / "personal").is_symlink()
+    assert not (skills_root / "release").is_symlink()
+    assert (skills_root / "release" / "SKILL.md").read_text().endswith("Instructions.\n")
+    assert (base_skills / "release" / "SKILL.md").read_text() == "base release"
+
+
+def test_empty_role_skills_do_not_activate_codex_home_overlay(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    provider = CodexProvider()
+
+    artifacts = provider.build_session_artifacts(
+        project,
+        _fake_result(),
+        "sid-empty",
+        run_mode=RunMode.HITL,
+        artifacts=BuiltArtifacts(),
+    )
+
+    assert "CODEX_HOME" not in artifacts.extra_env
+    assert "CODEX_SQLITE_HOME" not in artifacts.extra_env
+    assert not provider.session_codex_home(project, "sid-empty").exists()
+
+
+def test_nested_launch_keeps_original_base_home_and_explicit_sqlite_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    base_home = tmp_path / "original-codex-home"
+    base_home.mkdir()
+    (base_home / "config.toml").write_text("shared config")
+    outer_overlay = tmp_path / "outer-codex-home"
+    outer_overlay.mkdir()
+    sqlite_home = tmp_path / "sqlite-home"
+    sqlite_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(outer_overlay))
+    monkeypatch.setenv("AI_HATS_CODEX_BASE_HOME", str(base_home))
+    monkeypatch.setenv("CODEX_SQLITE_HOME", str(sqlite_home))
+
+    artifacts = CodexProvider().build_session_artifacts(
+        project,
+        _fake_result(skills=[_make_skill(tmp_path, "release")]),
+        "sid-nested",
+        run_mode=RunMode.AUTOMATE,
+        artifacts=BuiltArtifacts(),
+    )
+
+    session_home = CodexProvider().session_codex_home(project, "sid-nested")
+    assert artifacts.extra_env["AI_HATS_CODEX_BASE_HOME"] == str(base_home)
+    assert artifacts.extra_env["CODEX_SQLITE_HOME"] == str(sqlite_home)
+    assert (session_home / "config.toml").resolve() == base_home / "config.toml"
+    assert (session_home / "config.toml").resolve() != outer_overlay / "config.toml"
+
+
+def test_recursive_base_home_is_rejected_before_session_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    cache_home = tmp_path / "cache-home"
+    cache_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(cache_home))
+    provider = CodexProvider()
+
+    with pytest.raises(
+        RuntimeError, match="Codex base home must be outside the ai-hats session home"
+    ) as raised:
+        provider.build_session_prompt(
+            project,
+            _fake_result(skills=[_make_skill(tmp_path, "release")]),
+            "sid-recursive",
+        )
+
+    assert str(cache_home) not in str(raised.value)
+    assert not provider.session_codex_home(project, "sid-recursive").exists()
 
 
 def test_parallel_sessions_have_disjoint_skill_trees(tmp_path: Path) -> None:
@@ -344,7 +480,7 @@ def test_automate_materializes_skills_without_project_writes(tmp_path: Path) -> 
         artifacts=BuiltArtifacts(),
     )
 
-    skills_root = session_cache_dir(project, "sid-auto") / "skills"
+    skills_root = CodexProvider().session_skills_root(project, "sid-auto")
     assert (skills_root / "review" / "SKILL.md").is_file()
     assert skills_root in artifacts.materialized
     assert str(skills_root / "review" / "SKILL.md") in (artifacts.full_content or "")

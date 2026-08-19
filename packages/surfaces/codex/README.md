@@ -13,10 +13,12 @@ $ ai-hats -p codex
 - The composed role and always-on rules are passed per run through Codex's
   `developer_instructions` configuration override. No `AGENTS.md` or project
   `.codex` file is created or changed.
-- Skills are copied to ai-hats' external per-session cache and exposed through
-  a compact name, description, and exact `SKILL.md` path index. Each session
-  gets its own skills tree, so parallel Codex sessions do not overwrite one
-  another.
+- Skills are copied to `codex-home/skills` inside ai-hats' external per-session
+  cache. For a role with skills, that directory is registered through a
+  session-scoped `CODEX_HOME`, so Codex exposes the selected skills through its
+  `$` picker and native `skills/list` registry. The compact name, description,
+  and exact `SKILL.md` path index remains as a fallback. Each session gets its
+  own real skills tree, so parallel roles do not overwrite one another.
 - Composed runtime guards are copied into that same session cache. Stable
   per-run Codex hook definitions dispatch `PreToolUse`, `PermissionRequest`,
   and `PostToolUse` to the current session's manifest; the command contains no
@@ -38,9 +40,16 @@ launches ai-hats. When Codex has independently opened a native
 `PermissionRequest`, the same hook's `ask` defers to that existing user prompt.
 An agent cannot grant itself either form of consent from inside its tool command.
 
-Codex's existing user authentication and native user/repository configuration
-remain in place. The plugin neither reads credentials nor redirects
-`CODEX_HOME`.
+Codex's existing user authentication, configuration, and resume state remain
+shared. When the role has skills, the plugin redirects `CODEX_HOME` to a real
+session directory and projects the base Codex home's non-skill, non-SQLite
+entries through symlinks; it neither reads nor copies their contents. The
+session's real `skills/` directory contains copied role skills plus symlinks to
+non-conflicting base skills, with the role copy winning a same-name collision.
+`CODEX_SQLITE_HOME` defaults SQLite-backed state to the base home, while a user
+`sqlite_home` setting keeps Codex's documented precedence. Session cleanup
+removes the overlay and its links, not their targets. A role with no composed
+skills keeps the incoming Codex environment unchanged.
 
 Codex requires explicit review of non-managed hook definitions. On the first
 hook-enabled launch, inspect the stable ai-hats dispatcher with `/hooks` and

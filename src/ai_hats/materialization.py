@@ -26,6 +26,7 @@ LOCK_TIMEOUT = 30.0
 class WriteKind(str, Enum):
     WRITE_TEXT = "write_text"
     COPY_TREE = "copy_tree"
+    SYMLINK = "symlink"
     MERGE_JSON = "merge_json"
     REMOVE_TREE = "remove_tree"
     MKDIR = "mkdir"
@@ -42,7 +43,12 @@ class MaterializationEntry:
     digest: str | None = None
 
 
-_CREATING = (WriteKind.WRITE_TEXT, WriteKind.COPY_TREE, WriteKind.MERGE_JSON)
+_CREATING = (
+    WriteKind.WRITE_TEXT,
+    WriteKind.COPY_TREE,
+    WriteKind.SYMLINK,
+    WriteKind.MERGE_JSON,
+)
 
 
 @dataclass
@@ -84,6 +90,16 @@ def describe_copy_tree(src: Path, dest: Path) -> MaterializationEntry:
         size=sum(p.stat().st_size for p in files),
         file_count=len(files),
         digest=dir_digest(src) if src.is_dir() else None,
+    )
+
+
+def describe_symlink(src: Path, dest: Path) -> MaterializationEntry:
+    return MaterializationEntry(
+        kind=WriteKind.SYMLINK,
+        target=dest,
+        source=src,
+        size=0,
+        file_count=0,
     )
 
 
@@ -155,6 +171,9 @@ class Materializer(abc.ABC):
     def copy_tree(self, src: Path, dest: Path) -> None: ...
 
     @abc.abstractmethod
+    def symlink(self, src: Path, dest: Path) -> None: ...
+
+    @abc.abstractmethod
     def merge_json(self, path: Path, data: dict) -> bool:
         """Write ``data`` as JSON only if it differs; returns whether it does.
 
@@ -194,6 +213,15 @@ class ApplyMaterializer(Materializer):
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(src, dest)
         self._record(entry)
+
+    def symlink(self, src: Path, dest: Path) -> None:
+        if dest.is_symlink() and dest.readlink() == src:
+            return
+        if dest.is_symlink() or dest.exists():
+            raise FileExistsError("session materialization path collision")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(src, target_is_directory=src.is_dir())
+        self._record(describe_symlink(src, dest))
 
     def merge_json(self, path: Path, data: dict) -> bool:
         if not json_differs(path, data):
@@ -265,6 +293,12 @@ class PlanMaterializer(Materializer):
     def copy_tree(self, src: Path, dest: Path) -> None:
         self._mark_created(dest)
         self._record(describe_copy_tree(src, dest))
+
+    def symlink(self, src: Path, dest: Path) -> None:
+        if self._would_exist(dest):
+            raise FileExistsError("session materialization path collision")
+        self._mark_created(dest)
+        self._record(describe_symlink(src, dest))
 
     def merge_json(self, path: Path, data: dict) -> bool:
         if not json_differs(path, data):

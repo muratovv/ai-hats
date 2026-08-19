@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**251 of 251 files catalogued — 260 flows.**
+**252 of 252 files catalogued — 261 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -543,6 +543,20 @@ as a claim to check, not as evidence.
 
 - **expect** — the child inherits the requested project cwd, runtime safety denies a destructive Bash payload, and shutdown leaves no Codex-owned project files
 - **why** — role delivery is insufficient if startup pollutes the repository or the surface bypasses the composed permission chain
+
+## `test_codex_native_role_skills.py`
+
+*pins HATS-1694*
+
+- **flow** — a Codex session selects a composed role skill through native discovery
+- **cmds**
+
+  ```console
+  ai-hats -p codex -r native-role app-server
+  ```
+
+- **expect** — real Codex registers session-scoped hatrack as enabled at the session-copy path and excludes another role's skill
+- **why** — prompt diagnostics can name a skill without proving the native registry contract used by explicit $skill invocation
 
 ## `test_codex_provider_discovery.py`
 
@@ -3099,7 +3113,7 @@ as a claim to check, not as evidence.
   ```
 
 - **expect** — stdout carries the trait as edited in the WORKTREE, not the main checkout's copy of it — asserted on content, never status, because the failure mode is exit 0 with the block present and carrying the wrong text
-- **why** — the defect was silent, which is why it needs a real subprocess: in process ``_detect_source_library_root(cwd)`` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. ``AI_HATS_LIBRARY_ROOT`` is deliberately unset here — setting it is the manual workaround this test exists to remove
+- **why** — the defect was silent, which is why it needs a real subprocess: in process `_detect_source_library_root(cwd)` already returned the worktree, so every in-process probe agreed with the fix while the shipped CLI still composed master. `AI_HATS_LIBRARY_ROOT` is deliberately unset here — setting it is the manual workaround this test exists to remove
 
 ## `test_worktree_lifecycle_robustness_matrix.py`
 

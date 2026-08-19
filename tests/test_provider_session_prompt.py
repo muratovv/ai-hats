@@ -200,6 +200,11 @@ def test_sweep_removes_orphans_older_than_ttl(tmp_path):
     stale = root / "stale-sid"
     stale.mkdir()
     (stale / "prompt.md").write_text("stale")
+    shared_auth = tmp_path / "shared-auth.json"
+    shared_auth.write_text("preserve me")
+    stale_home = stale / "codex-home"
+    stale_home.mkdir()
+    (stale_home / "auth.json").symlink_to(shared_auth)
     # Backdate mtime by 25h.
     past = time.time() - 25 * 3600
     os.utime(stale, (past, past))
@@ -208,6 +213,7 @@ def test_sweep_removes_orphans_older_than_ttl(tmp_path):
 
     assert fresh.is_dir(), "fresh session dir must survive sweep"
     assert not stale.exists(), "stale session dir must be removed"
+    assert shared_auth.read_text() == "preserve me"
 
 
 def test_sweep_is_idempotent_on_empty_cache_root(tmp_path):
