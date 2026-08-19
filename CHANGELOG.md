@@ -36,6 +36,7 @@ since the latest tag lives under **Unreleased** until the next release.
   - **A subscriber runs at most once per event and phase.** Wide selectors let a subscriber's own bindings overlap — `ownership-release` holds `execute->` and `->done`, and `execute->done` matches both — and measured, the dispatcher used to hand it the event twice.
   - **`FrozenIntegrityExtension(tasks_dir, topology=…)` no longer takes `topology`** — it says `ANY->ANY` and no longer needs one. Same for the integrator's ownership/worktree/consent adapters.
   - **`ANY` on ONE side is refused** as a second spelling of the empty side: write `->done`, `execute->`, or `ANY->ANY` for everywhere.
+  - **A card sitting in a state the topology no longer has now reaches the subscribers.** A wide selector matches a PAIR; the enumeration it replaced was drawn from `topology.states`, and the kernel validates only a transition's target. So after a state is renamed or dropped in `backlog.yaml`, `rack transition <id> --state done --force` on a card left behind used to write the state and run nothing at all — no gate, no consent, no worktree teardown, no ownership release. Now it runs them, like every other road into `done`.
 
 ### Added
 

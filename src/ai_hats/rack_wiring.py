@@ -207,12 +207,19 @@ class OwnershipRelease:
             # HATS-977: a task that gained a child is a tracker now — drop its hold.
             ownership.finish(self.registry_path, ctx.event.epic_id)
             return None
-        if isinstance(ctx.event, EdgeEvent) and ctx.event.from_state == ctx.event.to_state:
-            # `execute->` is every road OUT, and a self-loop is not one: on reclaim
+        if (
+            isinstance(ctx.event, EdgeEvent)
+            and ctx.event.from_state == ctx.event.to_state == "execute"
+        ):
+            # `execute->` is every road OUT, and the reclaim self-loop is not one:
             # the claim at 20 takes the hold and this at 40 would drop it again,
-            # leaving the card owned by nobody (HATS-1720, design.md §6.4). The old
-            # hand-rolled product subtracted the pair; a selector cannot, and the
-            # accepted answer is to bind wide and filter here.
+            # leaving the card owned by nobody (HATS-1720, design.md §6.4). A
+            # selector has no subtraction operator, so the accepted answer is to
+            # bind wide and filter here — for exactly the pair the old product
+            # subtracted, and no other. A DECLARED terminal self-loop still
+            # releases: it arrives through `->done` and it always did, and skipping
+            # it strands the session, since the teardown next door has no self-loop
+            # guard and destroys the worktree while the hold survives.
             return None
         if _session_id():
             ownership.finish(self.registry_path, ctx.task.id)

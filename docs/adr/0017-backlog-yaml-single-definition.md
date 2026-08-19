@@ -381,6 +381,15 @@ not read this repo's ADRs, in `packages/ai-hats-rack/README.md` [17]:
   and `NONE` are upper-case because state names in every shipped topology are
   lower-case, which makes the word not a name.
 
+  A wide selector matches a **pair**, not a member of the state product, and the
+  difference is reachable in one direction: the kernel validates only a
+  transition's *target*, and a card's state is a plain string never re-checked on
+  load, so a card left behind by a renamed state still moves under `--force`. Such
+  a move used to match no subscription at all — it wrote the state and ran nothing.
+  It now runs the same subscribers as any other road (HATS-1720). The other
+  difference, an undeclared self-loop, is unreachable: `from == to` is refused even
+  under `--force`.
+
   **The wide-output veto — cut by what the row DOES, not by the arrow.** A wide
   output (`<from>->`, `ANY->ANY`) is legal grammar and is how *code* subscribes to
   every way out of a state; a **declared row** may not stand on one, for two

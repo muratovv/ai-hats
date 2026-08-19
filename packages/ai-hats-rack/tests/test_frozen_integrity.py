@@ -13,7 +13,7 @@ from ai_hats_rack.cli import main
 from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.docstore import compute_digest
 from ai_hats_rack.extensions import FrozenIntegrityExtension, standalone_extensions
-from ai_hats_rack.fsm import load_topology
+from ai_hats_rack.fsm import all_edges, load_topology
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.selectors import Edge
 
@@ -177,12 +177,7 @@ def test_guard_covers_the_full_edge_product(tmp_path):
 
     assert [str(s.selector) for s in subs] == ["ANY->ANY"]
     assert all(s.phase is Phase.IN_LOCK for s in subs)
-    unreached = [
-        Edge(src, dst)
-        for src in load_topology().states
-        for dst in load_topology().states
-        if not subs[0].selector.matches(Edge(src, dst))
-    ]
+    unreached = [e for e in all_edges(load_topology()) if not subs[0].selector.matches(e)]
     assert not unreached, f"these moves stopped reaching the guard: {unreached}"
     assert subs[0].selector.matches(Edge("execute", "execute")), "reclaim must be covered"
 

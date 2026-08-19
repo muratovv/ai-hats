@@ -204,9 +204,9 @@ def gate_veto(text: str) -> str | None:
     a check that BROKE and never one that refused (``hook_exec.HookRun.downgradable``),
     and ``--force`` relaxes the FSM arrow while the check still runs.
     """  # comment-length: allow — which half of the rule is measured is the decision
-    if not is_wide_output(text):
-        return None
     parsed = parse_selector(text)
+    if parsed is None or parsed.target != ANY:
+        return None
     leaving = "any state" if parsed.source == ANY else repr(parsed.source)
     return (
         f"{text!r} is a wide OUTPUT, and a row that can refuse may not stand on one: it "

@@ -17,7 +17,7 @@ from ai_hats_rack.checks import (
     CheckSubscriber,
     classify_bindings,
 )
-from ai_hats_rack.selectors import ANY, Edge, Selector, parse_selector
+from ai_hats_rack.selectors import ANY, Selector, parse_selector
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.fsm import Topology, all_edges
@@ -118,10 +118,8 @@ def test_the_subscription_covers_the_state_product_at_the_reserved_slot():
     assert [s.selector for s in subs] == [Selector(ANY, ANY)]
     assert {s.phase for s in subs} == {Phase.IN_LOCK}
     assert {s.priority for s in subs} == {CHECK_PRIORITY}
-    every_pair = [Edge(src, dst) for src in topology.states for dst in topology.states]
-    unreached = [e for e in every_pair if not subs[0].selector.matches(e)]
+    unreached = [e for e in all_edges(topology) if not subs[0].selector.matches(e)]
     assert not unreached, f"these roads stopped reaching the gate: {unreached}"
-    assert all(subs[0].selector.matches(e) for e in all_edges(topology))
 
 
 def test_a_point_of_another_topology_is_skipped_not_refused():

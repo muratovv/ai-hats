@@ -65,16 +65,23 @@ def test_a_string_that_is_not_a_legal_selector_is_refused_not_normalized(text):
         Subscription(text, Phase.IN_LOCK)
 
 
-def test_an_object_is_trusted_where_a_string_is_judged():
-    """The rule, stated on a selector the grammar would refuse as a string.
+def test_an_object_is_trusted_where_the_same_value_spelt_out_is_judged():
+    """The rule, asserted as the contrast it claims — both halves in one test.
 
-    ``review->ANY`` is a second spelling of ``review->`` and is refused in text
-    for that reason; as an OBJECT it is the same value the parser would have
-    produced, and there is no second spelling to police. That is the whole of the
-    distinction — the string is judged, the object is taken at its word.
+    ``review->ANY`` denotes exactly ``Selector("review", ANY)``, and it is refused
+    as TEXT because it is a second spelling of ``review->`` and the dedup key holds
+    the string verbatim. The identical VALUE is taken at its word: there is no
+    second spelling of an object to police. Asserting only the second half would
+    pass on a constructor that judged nothing at all.
     """
     wide = Selector("review", "ANY")
+
+    with pytest.raises(ValueError, match="selector"):
+        Subscription("review->ANY", Phase.IN_LOCK)
     assert Subscription(wide, Phase.IN_LOCK).selector is wide
+    assert Subscription("review->", Phase.IN_LOCK).selector == wide, (
+        "the legal spelling of that value must reach the same selector"
+    )
 
 
 @pytest.mark.parametrize("key", ["link:a->b", "read:x->y"])

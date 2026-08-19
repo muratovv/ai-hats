@@ -64,13 +64,17 @@ class Subscription:
         ``"review->done"`` would land in the key bucket and match no edge ever —
         disarmed in silence. But normalizing without JUDGING relocates the
         second: ``parse_selector`` is deliberately wider than the legal grammar,
-        so ``"execute->"`` would become a silent WILDCARD and ``"a->b->c"`` a
-        selector that matches nothing — neither raising (HATS-1719 review).
+        so ``"a->b->c"`` would become a selector that matches nothing, without
+        raising (HATS-1719 review).
 
         Hence the rule: a string is validated by the grammar's own predicate and
-        refused when it fails, while code that genuinely means a wide selector
-        says so with a ``Selector`` — which is how HATS-1720 subscribes wide
-        without reopening the string path.
+        refused when it fails. What the grammar allows is not fixed — since
+        HATS-1720 ``"execute->"`` is legal here and normalizes to a wide selector,
+        because the danger in a wide output is what a declared ROW does on it, and
+        that veto lives at composition (``check_points._APP_RULES``), not in this
+        constructor. The object path stays for the values a string cannot spell:
+        ``Selector("review", ANY)`` is legal as a value while ``"review->ANY"`` is
+        refused as a second spelling of ``"review->"``.
         """
         if not isinstance(self.selector, str):
             return
@@ -348,6 +352,32 @@ class JournalSink(Protocol):
     def record(self, record: DispatchRecord) -> None: ...
 
 
+def _once_each(rows: Sequence[tuple[int, int, Subscriber]]) -> list[Subscriber]:
+    """The subscribers of ``rows``, in order, each at its FIRST slot (HATS-1720).
+
+    Wide selectors make a subscriber's own subscriptions overlap —
+    ``ownership-release`` binds ``execute->`` AND ``->done``, and ``execute->done``
+    matches both — and measured, the two rows made it run TWICE, applying its
+    effect and journaling its outcome twice over. ``on_event`` is handed no
+    subscription handle, so it cannot tell the second call from the first: a
+    subscriber declaring overlapping selectors means the union, never the
+    repetition. Keeping the FIRST slot means a subscriber cannot be pushed down
+    the ladder by owning a second, later binding.
+
+    Applied on both routes, though only the edge route can overlap today: the rule
+    is stated without qualification in ADR-0017 §3, and a rule the code holds in
+    one place and the document states in two is how the two drift.
+    """  # comment-length: allow — why a subscriber runs once is the contract
+    seen: set[int] = set()
+    matched: list[Subscriber] = []
+    for _, _, sub in rows:
+        if id(sub) in seen:
+            continue
+        seen.add(id(sub))
+        matched.append(sub)
+    return matched
+
+
 class Dispatcher:
     """Routes events to subscribers by exact key, per phase, priority order."""
 
@@ -394,7 +424,7 @@ class Dispatcher:
                 f"quietly answer 'nothing subscribes' (HATS-1719). The named-edge alias "
                 f"'edge:<name>' is NOT that spelling and is answered normally."
             )
-        return [sub for _, _, sub in self._index.get((event_key, phase), [])]
+        return _once_each(self._index.get((event_key, phase), []))
 
     def subscribers_for_edge(
         self, edge: Edge, phase: Phase, *, alias_key: str | None = None
@@ -406,29 +436,14 @@ class Dispatcher:
         matched rows run and the order is the ladder's business, not the
         matcher's (design.md §1.5).
 
-        **Once each** is the HATS-1720 clause. Wide selectors make a subscriber's
-        own subscriptions overlap — ``ownership-release`` binds ``execute->`` AND
-        ``->done``, and ``execute->done`` matches both — and measured, the two
-        rows made it run TWICE, applying its effect and journaling its outcome
-        twice over. ``on_event`` is handed no subscription handle, so it cannot
-        tell the second call from the first: a subscriber declaring overlapping
-        selectors means the union, never the repetition. The earliest
-        (priority, registration) slot wins, so a subscriber cannot be pushed down
-        the ladder by owning a second, later binding.
-        """  # comment-length: allow — why a subscriber runs once is the contract
+        **Once each** is the HATS-1720 clause — see :func:`_once_each`.
+        """
         rows = list(self._exact.get((edge, phase), ()))
         rows += [(p, s, sub) for (p, s, sub, sel) in self._wide.get(phase, ()) if sel.matches(edge)]
         if alias_key:
             rows += self._index.get((alias_key, phase), [])
         rows.sort(key=lambda item: (item[0], item[1]))
-        seen: set[int] = set()
-        matched: list[Subscriber] = []
-        for _, _, sub in rows:
-            if id(sub) in seen:
-                continue
-            seen.add(id(sub))
-            matched.append(sub)
-        return matched
+        return _once_each(rows)
 
     def _subscribers_for_event(self, event: Event, phase: Phase) -> list[Subscriber]:
         """Route one event: an FSM edge by its pair, anything else by its key.

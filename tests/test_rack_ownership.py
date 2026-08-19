@@ -258,6 +258,7 @@ def test_a_forced_road_out_of_execute_releases_too(tmp_path, as_agent_a):
     and a selector matches pairs, not the topology's edge list."""
     kernel, reg = _kernel(tmp_path)
     tid = _to_execute(kernel, tmp_path, "T-1")
+    assert ownership.owner_of(reg, tid) is not None, "precondition: execute took the hold"
 
     _tr(kernel, tid, "done", cwd=tmp_path, force=True, reason="shipped on master")
 
@@ -282,6 +283,121 @@ def test_reclaim_keeps_the_hold_the_claim_just_took(tmp_path, as_agent_a):
     held = ownership.owner_of(reg, tid)
     assert held is not None, "the reclaim released the hold it had just taken"
     assert held["session_id"] == "sess-a"
+
+
+@pytest.mark.parametrize(
+    "terminal, extra",
+    [("done", {}), ("failed", {}), ("cancelled", {"resolution": "obsolete"})],
+)
+def test_reaching_a_terminal_drops_the_hold_whatever_road_brought_it(
+    tmp_path, as_agent_a, terminal, extra
+):
+    """The OTHER half of the subscriber: `->done`, `->failed`, `->cancelled`.
+
+    Held by nothing until now — narrowing the three terminals to `("done",)` left
+    106 tests green, and `->done` itself was held only by a ladder-ORDER membership
+    list in another file. The hold is planted directly because the road under test
+    does not pass through `execute`: a card can reach a terminal from `review`,
+    and the point of this half is that the hold goes whatever brought it there.
+    """
+    kernel, reg = _kernel(tmp_path)
+    tid = _create(kernel, tmp_path, "T-1")
+    _tr(kernel, tid, "plan", "execute", "document", "review", cwd=tmp_path)
+    ownership.take(reg, tid, "sess-a", os.getpid())
+    assert ownership.owner_of(reg, tid) is not None, "precondition: the hold is planted"
+
+    _tr(kernel, tid, terminal, cwd=tmp_path, **extra)
+
+    assert ownership.owner_of(reg, tid) is None, f"reaching {terminal!r} kept the hold"
+
+
+def test_a_card_left_in_a_state_the_topology_no_longer_has_still_reaches_them(tmp_path, as_agent_a):
+    """A wide selector reaches MORE than the product it replaced, and this is the
+    difference — measured, and deliberate (HATS-1720 review).
+
+    `ANY->ANY` matches any pair; the enumeration it replaced was drawn from
+    `topology.states`. Undeclared self-loops are the difference nobody can reach
+    (the kernel refuses `from == to` even under `--force`), but this one IS
+    reachable: the kernel validates only the TARGET of a transition, and a card's
+    state is a plain string never re-checked on load. Rename or drop a state in
+    `backlog.yaml` — which ADR-0017 says is how you change the contract — and the
+    cards sitting in it keep the old name.
+
+    Before this slice such a force-close matched NO subscription: it wrote the
+    state and ran nothing — no hold released, no worktree torn down, no gate, no
+    consent. That is the same silence the epic exists to remove, so the wider reach
+    is the point rather than a side effect.
+    """
+    from ai_hats_rack import Kernel
+    from ai_hats_rack.fsm import Topology
+
+    agent = tmp_path / ".agent"
+    registry = agent / "ownership.json"
+
+    def _kernel_over(states, edges):
+        return Kernel(
+            agent / "tasks",
+            prefix="T",
+            topology=Topology(initial="open", states=states, edges=edges),
+            subscribers=[
+                OwnershipSingleSlot(registry),
+                OwnershipClaim(registry),
+                OwnershipRelease(registry),
+            ],
+        )
+
+    before = _kernel_over(
+        ("open", "legacy", "done"), {"open": ("legacy",), "legacy": ("done",), "done": ()}
+    )
+    tid = _create(before, tmp_path, "T-1")
+    _tr(before, tid, "legacy", cwd=tmp_path)
+    ownership.take(registry, tid, "sess-a", os.getpid())
+
+    after = _kernel_over(("open", "done"), {"open": ("done",), "done": ()})  # `legacy` renamed away
+    _tr(after, tid, "done", cwd=tmp_path, force=True, reason="the state was dropped")
+
+    assert ownership.owner_of(registry, tid) is None, (
+        "a card stranded in a dropped state force-closed without releasing its hold"
+    )
+
+
+def test_a_declared_terminal_self_loop_still_releases(tmp_path, as_agent_a):
+    """The filter subtracts the reclaim pair and NOT every self-loop (review).
+
+    A backlog may declare `done -> done` — HATS-1719 made a self-loop under any
+    name work. That edge arrives through `->done`, where release always fired.
+    Skipping it strands the session: the worktree teardown next door has no
+    self-loop guard, so the tree is destroyed while the hold survives, and
+    single-slot then refuses every later transition that session attempts on any
+    other card.
+    """
+    from ai_hats_rack import Kernel
+    from ai_hats_rack.fsm import Topology
+
+    topology = Topology(
+        initial="open",
+        states=("open", "execute", "done"),
+        edges={"open": ("execute",), "execute": ("done",), "done": ("done",)},
+    )
+    agent = tmp_path / ".agent"
+    registry = agent / "ownership.json"
+    kernel = Kernel(
+        agent / "tasks",
+        prefix="T",
+        topology=topology,
+        subscribers=[
+            OwnershipSingleSlot(registry),
+            OwnershipClaim(registry),
+            OwnershipRelease(registry),
+        ],
+    )
+    tid = _create(kernel, tmp_path, "T-1")
+    _tr(kernel, tid, "execute", "done", cwd=tmp_path)
+    ownership.take(registry, tid, "sess-a", os.getpid())
+
+    _tr(kernel, tid, "done", cwd=tmp_path)  # the declared self-loop
+
+    assert ownership.owner_of(registry, tid) is None, "a terminal self-loop kept the hold"
 
 
 def test_a_road_matching_two_of_its_selectors_runs_the_subscriber_once(tmp_path, as_agent_a):

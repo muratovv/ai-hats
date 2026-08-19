@@ -14,11 +14,11 @@ the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
 One clause came back in HATS-1682: a point's *spelling* is refused here for a
-foreign app too (``_SELECTOR_FORM``), because consent rides the same row and a
-misspelt consent point is a disarmed gate nothing else would ever have read.
-HATS-1720 added the second half — ``_ROW_VETO``, whether a row that RUNS or ASKS
-may stand on a legal selector at all. The grammar still belongs to the owner:
-both predicates are imported from it.
+foreign app too, because consent rides the same row and a misspelt consent point
+is a disarmed gate nothing else would ever have read. HATS-1720 added the second
+half — whether a row that RUNS or ASKS may stand on a legal selector at all. Both
+live in ``_APP_RULES``, and both predicates are imported from the app that owns
+the grammar.
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
@@ -137,28 +137,44 @@ def _rack_consent_veto(selector: str) -> str | None:
     return consent_veto(selector)
 
 
-#: Apps whose selector GRAMMAR is refused here though ai-hats does not FIRE them.
-#: Not ``_OWNED_POINTS`` (that means running the rows). The predicate is
-#: imported FROM the owner, so ai-hats still never spells the grammar (D11).
-_SELECTOR_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_selector_form}
-
-#: The same seam one level up: not "is this name in the grammar" but "may a row
-#: that DOES this stand on it" (HATS-1720, design.md §10.3). ai-hats knows which
-#: keys a row carries — that half is its own; what they cost on a given selector
-#: is the owner's, so the answer is imported like the form above.
-_ROW_VETO: dict[str, dict[str, Callable[[str], str | None]]] = {
-    "rack": {"run": _rack_gate_veto, "consent": _rack_consent_veto},
+#: What an app refuses about a row of its own, in the order the questions are
+#: asked. The first entry of each pair is the row KEY that has to be present for
+#: the question to apply — ``None`` means "of every row".
+#:
+#: ai-hats does not FIRE these apps (that is ``_OWNED_POINTS``); it only refuses
+#: what their owner says is unusable, and every predicate is imported FROM the
+#: owner, so ai-hats still never spells a grammar (D11). One list rather than a
+#: dict per question on purpose: two registries keyed by app were coupled by
+#: control flow — the loop returned on a missing FORM before it looked a veto up —
+#: which is a silent hole in the one function whose whole job is to fail closed.
+_APP_RULES: dict[str, tuple[tuple[str | None, Callable[[str], str | None]], ...]] = {
+    "rack": (
+        # Is the name in the grammar at all? Asked of EVERY row, because a
+        # consent-only row is refused nowhere else (HATS-1682 A5).
+        (None, _rack_selector_form),
+        # May a row that RUNS a script stand on it? A wide output takes a legal
+        # name and turns a gate into a lock-in (HATS-1720).
+        ("run", _rack_gate_veto),
+        # May a row that speaks about CONSENT stand on it? `false` speaks too:
+        # a spelling nothing can switch on has nothing to switch off.
+        ("consent", _rack_consent_veto),
+    ),
 }
+
+
+def _carried_keys(row: AppBinding) -> frozenset[str]:
+    """The keys ai-hats owns that this row actually carries."""
+    return frozenset(
+        key for key, held in (("run", bool(row.run)), ("consent", row.consent is not None)) if held
+    )
 
 
 def _validate_selector(row: AppBinding) -> None:
     """Refuse a row its app will not stand, at composition (HATS-1682, HATS-1720).
 
-    Two questions, asked in order and answered by the owner both times. First the
-    NAME: is it in the grammar at all. Then the ROW: may something that runs a
-    script, or asks the supervisor, sit on that selector — a wide output takes a
-    legal name and turns a gate into a lock-in, which no later channel would
-    catch.
+    Two questions, answered by the owner both times. First the NAME: is it in the
+    grammar at all. Then the ROW: may something that runs a script, or asks the
+    supervisor, sit on that selector.
 
     Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
     the rack's topology, so whether ``review->dnoe`` names a REAL edge stays
@@ -168,23 +184,12 @@ def _validate_selector(row: AppBinding) -> None:
     consent-only ``plan-execute`` (no arrow) disarmed both roads into master and no
     channel said a word (A5).
     """  # comment-length: allow — which half of the check lives where is the fix
-    form = _SELECTOR_FORM.get(row.app)
-    if form is None:
-        return
-    vetoes = _ROW_VETO.get(row.app, {})
-    # What this row DOES, in the keys ai-hats owns: `run:` spawns a script that
-    # may refuse, `consent:` speaks about the question — and `false` speaks too,
-    # since a spelling nothing can switch on has nothing to switch off.
-    carried = [
-        key for key, held in (("run", bool(row.run)), ("consent", row.consent is not None)) if held
-    ]
+    carried = _carried_keys(row)
     for name in row.at:
-        reason = form(name)
-        if reason is not None:
-            raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
-        for key in carried:
-            veto = vetoes.get(key)
-            reason = veto(name) if veto is not None else None
+        for key, asks in _APP_RULES.get(row.app, ()):
+            if key is not None and key not in carried:
+                continue
+            reason = asks(name)
             if reason is not None:
                 raise CheckBindingError(f"{_label(row)} at {name!r} — {reason}")
 
