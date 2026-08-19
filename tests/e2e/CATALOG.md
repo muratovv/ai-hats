@@ -703,6 +703,21 @@ as a claim to check, not as evidence.
 - **expect** — the composed PreToolUse chain ASKS on the forced close, the engine refuses it until the answer arrives, and one env flag — with no AI_HATS_MERGE_ACK anywhere — carries `review → done` through the merge
 - **why** — `--force` applies to the OPERATION. Consent is not a property of the command, so nothing ADDED to a command can switch it off: `consent | op --force`. In the incident that opened this card, that exact spelling merged a branch into master with no question at all.
 
+## `test_consent_grant_chain.py`
+
+*pins HATS-1735*
+
+- **flow** — a supervisor opens a window with the verb, and the agent's next moves stop asking
+- **cmds**
+
+  ```console
+  consent rack.transition 30
+  rack transition SBX-001 execute
+  ```
+
+- **expect** — the first move is a question; inside the window the composed chain stops asking, the card actually moves, and every use leaves a line in the bypass journal
+- **why** — four joints can each break in silence — the envelope's cache dir, the role's declaration, the verb's file format, and the three call sites — so nothing here is fabricated: every artefact comes from the writer that ships it
+
 ## `test_consent_self_grant_chain.py`
 
 *pins HATS-1639, HATS-1682*

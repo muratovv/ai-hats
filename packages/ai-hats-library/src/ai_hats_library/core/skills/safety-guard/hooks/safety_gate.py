@@ -418,7 +418,9 @@ def grant_covers(op_type: str, subject: str, cmd: str) -> bool:
         anchor = Path(project_dir).resolve()
         target = Path(where).resolve()
     except OSError as exc:
-        journal_bypass("fail-open", f"consent grant target unresolved: {exc!r}", hook="safety_gate.py")
+        journal_bypass(
+            "fail-open", f"consent grant target unresolved: {exc!r}", hook="safety_gate.py"
+        )
         return False
     if target != anchor and anchor not in target.parents:
         return False  # outside this session's project: never suppress the question

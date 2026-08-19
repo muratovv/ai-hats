@@ -539,7 +539,7 @@ class ConsentExtension:
         if not any(selector.matches(edge) for selector in self._selectors()):
             return None
         to_state = ctx.event.to_state
-        # The grant answers FIRST and the ticket is the fallback (ADR-0029 P1).
+        # The grant answers FIRST and the ticket is the fallback (HATS-1735).
         # Reversed, the post-lock spender would burn a ticket on a move the
         # grant already paid for, and the supervisor's click would vanish.
         op = consent_port.Operation(
@@ -557,9 +557,7 @@ class ConsentExtension:
                 return Delta(work_log=(note,))
         if consent_ticket.peek(ctx.task.id, argv=sys.argv[1:]):
             return Delta(work_log=(f"→ {to_state}: supervisor consent ticket accepted",))
-        raise AbortOperation(
-            _consent_refusal(ctx.task.id, ctx.event.from_state, to_state, answer)
-        )
+        raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state, answer))
 
 
 def _consent_refusal(task_id: str, from_state: str, to_state: str, answer) -> str:

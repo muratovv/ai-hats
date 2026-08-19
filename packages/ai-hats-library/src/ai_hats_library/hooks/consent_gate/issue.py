@@ -18,7 +18,7 @@ from pathlib import Path
 from .check import GRANT_VERSION, GRANTS_DIRNAME
 
 #: Default window, in minutes. A supervisor's dial — edit it right here; why 120
-#: rather than polkit's 5 is ADR-0029 Q5 (our unit of work is an agent session).
+#: rather than polkit's 5 is HATS-1735 (our unit of work is an agent session).
 DEFAULT_WINDOW_MINUTES = 120
 
 #: A window nobody can mean. Zero would write a grant already dead.

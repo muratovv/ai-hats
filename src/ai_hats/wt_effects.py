@@ -50,12 +50,10 @@ def _merge_consent(task_id: str, *, target_dir=None) -> tuple[str, object]:
 
     from . import consent_port
 
-    # The grant answers first (ADR-0029 P1) — before the ticket, whose spender
+    # The grant answers first (HATS-1735) — before the ticket, whose spender
     # runs post-lock and would burn a click the grant had already paid for.
     answer = consent_port.verdict(
-        consent_port.Operation(
-            consent_port.WT_MERGE, subject=task_id, label="worktree merge"
-        ),
+        consent_port.Operation(consent_port.WT_MERGE, subject=task_id, label="worktree merge"),
         target_dir=target_dir,
     )
     if answer.outcome is consent_port.Outcome.GRANTED:
