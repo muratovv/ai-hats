@@ -24,6 +24,7 @@ from _helpers.git import git, init_repo
 from ai_hats.assembler import Assembler
 from ai_hats.models import ProjectConfig
 from ai_hats.paths import PROJECT_CONFIG
+from ai_hats.runs_retention import DIAGNOSTICS_JSON
 from ai_hats_observe.artifacts import (
     AUDIT_MD,
     META_PROMPT_TXT,
@@ -44,6 +45,7 @@ LIBRARY_DIR = REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library"
 CODEX_SRC = REPO_ROOT / "packages/surfaces/codex/src"
 SENSITIVE_ARTIFACTS = (
     AUDIT_MD,
+    DIAGNOSTICS_JSON,
     META_PROMPT_TXT,
     METRICS_JSON,
     PTY_RAW_LOG,
@@ -56,6 +58,7 @@ SENSITIVE_ARTIFACTS = (
 )
 CORE_ARTIFACTS = (
     AUDIT_MD,
+    DIAGNOSTICS_JSON,
     META_PROMPT_TXT,
     METRICS_JSON,
     ROLE_MATERIALIZATION_JSON,
