@@ -83,7 +83,6 @@ from .fsm import (
     Topology,
     TopologyError,
     UnknownStateError,
-    all_edge_keys,
     load_topology,
 )
 from .journal import JsonlJournalSink, read_journal
@@ -235,7 +234,6 @@ __all__ = [
     "bind_subscribers",
     "build_bound_subscribers",
     "build_card_schema",
-    "all_edge_keys",
     "build_context",
     "build_extensions",
     "card_filter",

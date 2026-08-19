@@ -32,7 +32,8 @@ Three gates and the mechanism they share:
   `apps.wt` (a direct `ai-hats wt merge`). It asks: is this branch fit to enter
   master. The agent is alone at that refusal, so only what the agent can fix
   without an arbiter belongs to it (HATS-1614, ADR-0023 D3).
-- `hooks/done-gate.sh` — the **`->done`** gate, bound to `edge:review--done`
+- `hooks/done-gate.sh` — the **`->done`** gate, bound to `->done`: EVERY road
+  into the state, the forced close included (HATS-1719)
   under `apps.rack.tasks` (the FSM automerge). It asks: is master green after
   this card — the one question no earlier gate can ask, since two independently
   green branches make a red master. The supervisor is present at this edge.
@@ -97,7 +98,7 @@ it saves `merge-smoke`, and the card will need the fuller run before `done`.
 1. `rack transition <ID> done`.
 2. The rack kernel takes the **per-task file lock** — `<tasks_dir>/<ID>/.lock`,
    30s timeout (`ai_hats_rack.kernel.LOCK_TIMEOUT`).
-3. Still in the lock, it dispatches `edge:review--done` down the priority
+3. Still in the lock, it dispatches the edge into `done` down the priority
    ladder. The checks subscriber (`ai_hats_rack.checks.CheckSubscriber`,
    subscriber name `checks`) sits at **priority 15**, `Phase.IN_LOCK`.
 4. It asks the integrator's port (`ai_hats.rack_consumers.AiHatsCheckPort`) for
@@ -116,7 +117,9 @@ it saves `merge-smoke`, and the card will need the fuller run before `done`.
 
 Every run's full transcript lands beside the card at
 
-    <tasks_dir>/<ID>/.checks/edge-review--done~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
+    <tasks_dir>/<ID>/.checks/<event>~rack~tasks~maintainer-quality-gate~hooks+done-gate.sh~<8hex>.log
+    # <event> is the EDGE that fired, arrow-escaped: `review-%3Edone`, `plan-%3Edone`, …
+    # The row binds `->done`, so there is one log per road — glob, never hand-build.
 
 — one file per (task, edge, binding). The leading-dot directory keeps it out of
 the document registry (`docstore._is_document`), so a gate never pins its own
@@ -271,10 +274,10 @@ composition:
     rack: # the application; below it, rack's own grammar
       tasks: # the backlog this row gates (name or cli_alias)
         - run: maintainer-quality-gate/hooks/done-gate.sh
-          at: [edge:review--done]
+          at: [review->done]
           on_error: refuse
         - run: maintainer-quality-gate/hooks/changelog-entry.sh
-          at: [edge:review--done, edge:execute--review]
+          at: [review->done, execute->review]
           on_error: warn
     wt: # ai-hats's own app: rows sit directly under the key
       - run: maintainer-quality-gate/hooks/merge-gate.sh
@@ -299,7 +302,9 @@ What that means at run time:
   the loop continues.
 - **Each binding writes its own log**,
   `.checks/<event>~<app>[~<level>…]~<skill>~<script>~<digest>.log`, with `/`
-  escaped to `+`. Before HATS-1137 the name carried the edge only, so binding #2
+  escaped to `+` and every other non-literal byte to `%XX` — so the arrow in an
+  event key lands as `review-%3Edone`, never as a shell redirect in a path an
+  operator is asked to paste (HATS-1719). Before HATS-1137 the name carried the edge only, so binding #2
   truncated #1's file; the trailing digest (HATS-1545) covers `at:` and the rest
   of the row's identity, so two rows differing only in the points they bind
   cannot share a file either. Glob for the stem — do not hand-build the name.

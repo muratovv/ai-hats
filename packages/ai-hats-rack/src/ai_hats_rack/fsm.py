@@ -14,6 +14,10 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .errors import RackConfigError, RackError
+from .selectors import ANY, NONE, Edge
+
+#: Words the selector grammar owns, so no topology may take them as state names.
+RESERVED_STATE_NAMES = frozenset({ANY, NONE})
 
 # The load-time `document` anchor (PROP-012) moved to extension-declared
 # `requires_states()`, checked at composition (ADR-0017 §3/§6) — a tasks-
@@ -76,17 +80,31 @@ class Topology:
             raise InvalidTransitionError(task_id, from_state, to_state, self.targets(from_state))
 
 
-def all_edge_keys(topology: Topology) -> list[str]:
-    """Every ``edge:<from>--<to>`` key a transition can fire.
+def declares_self_loop(topology: Topology, state: str) -> bool:
+    """Whether the topology DECLARES ``state -> state`` (ADR-0017 §3).
+
+    The one self-loop rule, named once: the product and the declaration-bound
+    subscription builder both ask it, and before HATS-1719 they answered
+    differently — one wired ``execute`` in by name, the other read the topology.
+    """
+    return state in topology.edges.get(state, ())
+
+
+def all_edges(topology: Topology) -> list[Edge]:
+    """Every event a transition of this topology can fire — the ONE product.
 
     The full state product, not just legal edges: a forced transition fires a
-    real non-topology key. Includes the ``execute`` reclaim self-loop
-    (HATS-955). Promoted to the package surface by HATS-1140 so a consumer
-    enumerating points does not add yet another private copy.
+    real non-topology pair. A self-edge is in it only when the topology
+    DECLARES it (ADR-0017 §3, the reclaim precedent) — the one rule, so a
+    backlog whose self-loop is not called ``execute`` stops losing every
+    subscription taken from the product (HATS-1719).
     """
     states = topology.states
     return [
-        f"edge:{src}--{dst}" for src in states for dst in states if src != dst or src == "execute"
+        Edge(src, dst)
+        for src in states
+        for dst in states
+        if src != dst or declares_self_loop(topology, src)
     ]
 
 
@@ -101,6 +119,18 @@ def _validate(raw: object, source: str) -> Topology:
     states = tuple(states_raw)
     if len(set(states)) != len(states):
         raise TopologyError(f"{source}: duplicate state names")
+    taken = sorted(set(states) & RESERVED_STATE_NAMES)
+    if taken:
+        # Beside the duplicate-name check because it is the same kind of check:
+        # a name that cannot mean what it says. The selector grammar compares
+        # these two words by equality, so a state actually called `ANY` turns
+        # every EXACT subscription into a wildcard — gates, ownership and consent
+        # firing on edges nobody declared them for, in silence (HATS-1719).
+        raise TopologyError(
+            f"{source}: state name(s) {taken} are reserved by the selector grammar "
+            f"({', '.join(sorted(RESERVED_STATE_NAMES))} mean 'any state' and 'no state') — "
+            f"rename them; the lower-case spellings are free"
+        )
     if not isinstance(initial, str) or initial not in states:
         raise TopologyError(f"{source}: 'initial' must name a declared state")
     if not isinstance(edges_raw, dict):

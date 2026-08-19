@@ -17,7 +17,7 @@ from pathlib import Path
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Callable
 
-from .check_points import AI_HATS_APP, STARTUP_POINT, check_log_token
+from .check_points import AI_HATS_APP, STARTUP_POINT, check_log_name
 from .startup_notices import StartupNotice, show_fatal_notice_and_exit
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
@@ -102,7 +102,7 @@ def _run_one(
         extra_env=dict(extra_env or {}),
         # The dedup identity, not the basename: run_hook truncates the log it is
         # handed, so a coarser name lets one row wipe another's (HATS-1137).
-        log_path=session_dir / "checks" / f"{STARTUP_POINT}~{check_log_token(check)}.log",
+        log_path=session_dir / "checks" / check_log_name(STARTUP_POINT, check),
     )
 
 

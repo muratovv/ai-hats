@@ -1,6 +1,6 @@
 """The rack's half of the ``checks:`` channel (HATS-1541, ADR-0019 D11).
 
-The grammar of ``edge:``, the filter against the topology this kernel runs, and
+The arrow grammar, the filter against the topology this kernel runs, and
 the "subscribed but no executor" policy — all of it decided here, standalone,
 with no integrator anywhere near it.
 """
@@ -16,11 +16,11 @@ from ai_hats_rack.checks import (
     CheckOutcome,
     CheckSubscriber,
     classify_bindings,
-    parse_edge_point,
 )
+from ai_hats_rack.selectors import Selector, parse_selector
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
-from ai_hats_rack.fsm import Topology, all_edge_keys
+from ai_hats_rack.fsm import Topology, all_edges
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 from ai_hats_rack.models import TaskCard
 
@@ -34,9 +34,9 @@ def _topology() -> Topology:
 
 
 def _ctx(
-    event_key: str = "edge:review--done", *, lock_expires_at: float | None = None
+    event_key: str = "review->done", *, lock_expires_at: float | None = None
 ) -> DispatchContext:
-    src, dst = event_key.removeprefix("edge:").split("--")
+    src, dst = event_key.split("->")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
         task=TaskCard(id="T-1"),
@@ -87,21 +87,21 @@ class _PortWithoutExecutor:
 
 
 @pytest.mark.parametrize(
-    ("point", "expected"),
+    ("selector", "expected"),
     [
-        ("edge:review--done", ("review", "done")),
-        ("edge:execute--execute", ("execute", "execute")),
-        ("edge:review--done--extra", ("review", "done--extra")),
+        ("review->done", Selector("review", "done")),
+        ("execute->execute", Selector("execute", "execute")),
+        ("->done", Selector("ANY", "done")),
+        # A name holding no arrow belongs to some other application's grammar,
+        # and ``None`` says exactly that — it is not an error (ADR-0019 D11).
         ("wt:pre-merge", None),
         ("card:pre-create", None),
-        ("edge:review", None),
-        ("edge:--done", None),
-        ("edge:review--", None),
+        ("review", None),
         ("review--done", None),
     ],
 )
-def test_only_this_packages_namespace_parses(point, expected):
-    assert parse_edge_point(point) == expected
+def test_only_this_packages_grammar_parses(selector, expected):
+    assert parse_selector(selector) == expected
 
 
 def test_subscriptions_cover_the_state_product_at_the_reserved_slot():
@@ -110,7 +110,9 @@ def test_subscriptions_cover_the_state_product_at_the_reserved_slot():
     topology = _topology()
     subs = CheckSubscriber(_Port(), topology=topology, backlog="tasks").subscriptions()
 
-    assert {s.event_key for s in subs} == set(all_edge_keys(topology))
+    assert {s.selector for s in subs} == {
+        Selector(e.from_state, e.to_state) for e in all_edges(topology)
+    }
     assert {s.phase for s in subs} == {Phase.IN_LOCK}
     assert {s.priority for s in subs} == {CHECK_PRIORITY}
 
@@ -118,11 +120,11 @@ def test_subscriptions_cover_the_state_product_at_the_reserved_slot():
 def test_a_point_of_another_topology_is_skipped_not_refused():
     """D11 clause 2. The carrier cannot tell a typo from a sibling backlog's
     point; this instance answers only for edges it actually has."""
-    port = _Port(_row("edge:plan--execute"), _row("hyp:promoted"))
+    port = _Port(_row("plan->execute"), _row("hyp:promoted"))
     subscriber = CheckSubscriber(port, topology=_topology(), backlog="tasks")
 
-    assert subscriber.on_event(_ctx("edge:open--review")) is None
-    assert subscriber.on_event(_ctx("edge:review--done")) is None
+    assert subscriber.on_event(_ctx("open->review")) is None
+    assert subscriber.on_event(_ctx("review->done")) is None
     assert port.ran == []
 
 
@@ -135,26 +137,26 @@ def test_the_topology_filter_holds_even_when_the_event_key_matches():
     what ADR-0019 D11 exists to make impossible, so the subscriber decides from
     its own topology rather than trusting whoever wired it.
     """
-    port = _Port(_row("edge:plan--execute"))
+    port = _Port(_row("plan->execute"))
     subscriber = CheckSubscriber(port, topology=_topology(), backlog="tasks")
 
-    assert subscriber.on_event(_ctx("edge:plan--execute")) is None
+    assert subscriber.on_event(_ctx("plan->execute")) is None
     assert port.ran == []
 
 
 def test_a_point_of_this_topology_runs_and_carries_the_rack_owned_budget():
     """R12/D11 clause 3: the deadline is the rack's, shipped in the request, so
     the two sides cannot keep constants that drift apart."""
-    port = _Port(_row("edge:review--done"))
+    port = _Port(_row("review->done"))
 
     assert CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx()) is None
-    assert port.ran == ["edge:review--done"]
+    assert port.ran == ["review->done"]
     assert port.budgets == [EDGE_CHECK_TIMEOUT_S]
     assert EDGE_CHECK_TIMEOUT_S < LOCK_TIMEOUT
 
 
 def test_a_refusing_check_aborts_with_the_childs_own_reason():
-    port = _Port(_row("edge:review--done"), outcome=CheckOutcome(ok=False, reason="drain notes"))
+    port = _Port(_row("review->done"), outcome=CheckOutcome(ok=False, reason="drain notes"))
 
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
@@ -165,7 +167,7 @@ def test_a_refusing_check_aborts_with_the_childs_own_reason():
 def test_a_broken_check_is_downgraded_only_when_the_row_said_warn():
     broke = CheckOutcome(ok=False, reason="ruff exploded", downgradable=True)
     warned = CheckSubscriber(
-        _Port(_row("edge:review--done", on_error="warn"), outcome=broke),
+        _Port(_row("review->done", on_error="warn"), outcome=broke),
         topology=_topology(),
         backlog="tasks",
     )
@@ -176,7 +178,7 @@ def test_a_broken_check_is_downgraded_only_when_the_row_said_warn():
 
     with pytest.raises(AbortOperation):
         CheckSubscriber(
-            _Port(_row("edge:review--done"), outcome=broke),
+            _Port(_row("review->done"), outcome=broke),
             topology=_topology(),
             backlog="tasks",
         ).on_event(_ctx())
@@ -189,7 +191,7 @@ def test_a_refusal_is_never_downgraded_by_warn():
 
     with pytest.raises(AbortOperation):
         CheckSubscriber(
-            _Port(_row("edge:review--done", on_error="warn"), outcome=verdict),
+            _Port(_row("review->done", on_error="warn"), outcome=verdict),
             topology=_topology(),
             backlog="tasks",
         ).on_event(_ctx())
@@ -200,14 +202,14 @@ def test_no_executor_is_decided_per_row_not_per_process():
     passing everything is the silence the channel exists to remove."""
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(
-            _PortWithoutExecutor(_row("edge:review--done")),
+            _PortWithoutExecutor(_row("review->done")),
             topology=_topology(),
             backlog="tasks",
         ).on_event(_ctx())
     assert "no check executor" in exc_info.value.reason
 
     delta = CheckSubscriber(
-        _PortWithoutExecutor(_row("edge:review--done", on_error="warn")),
+        _PortWithoutExecutor(_row("review->done", on_error="warn")),
         topology=_topology(),
         backlog="tasks",
     ).on_event(_ctx())
@@ -256,7 +258,7 @@ def test_a_carrier_that_raises_becomes_a_typed_refusal():
 def test_a_row_for_a_sibling_backlog_is_skipped_not_refused():
     """A workspace mounts several backlogs and each gets its own subscriber, so
     a row addressed to `hyp` must not brick every `tasks` transition."""
-    port = _Port(_row("edge:review--done", backlog="hyp"))
+    port = _Port(_row("review->done", backlog="hyp"))
 
     delta = CheckSubscriber(
         port, topology=_topology(), backlog="tasks", known_backlogs=("tasks", "hyp")
@@ -270,7 +272,7 @@ def test_a_row_naming_no_mounted_backlog_is_a_loud_refusal():
     """The other half of the same decision: a name nothing answers to is a typo,
     and a typo that installs no gate silently is what the channel exists to
     remove. `instance_by_name` took a first match before HATS-1545 (D8)."""
-    port = _Port(_row("edge:review--done", backlog="cards"))
+    port = _Port(_row("review->done", backlog="cards"))
 
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(
@@ -289,22 +291,22 @@ def test_an_unaddressable_row_only_refuses_the_edge_it_names():
     refusing on `open--review` too is the tracker bricked, and `--force` cannot
     reach it (ctx.force is passed inside CheckRequest, i.e. after this point).
     """  # comment-length: allow — which edge dies is the whole defect
-    port = _Port(_row("edge:review--done", backlog="tasks"))
+    port = _Port(_row("review->done", backlog="tasks"))
     subscriber = CheckSubscriber(
         port, topology=_topology(), backlog="blog", known_backlogs=("blog",)
     )
 
-    assert subscriber.on_event(_ctx("edge:open--review")) is None
+    assert subscriber.on_event(_ctx("open->review")) is None
     assert port.ran == []
 
     with pytest.raises(AbortOperation):
-        subscriber.on_event(_ctx("edge:review--done"))
+        subscriber.on_event(_ctx("review->done"))
 
 
 def test_the_unmounted_name_refusal_names_the_way_out():
     """A refusal that only states the mismatch sends the reader to the shipped
     role; the fix is one line in their own backlog.yaml (HATS-1576)."""
-    port = _Port(_row("edge:review--done", backlog="tasks"))
+    port = _Port(_row("review->done", backlog="tasks"))
 
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(
@@ -322,7 +324,7 @@ def test_a_rack_row_that_names_no_backlog_at_all_is_a_loud_refusal():
     port = _Port(
         CheckDeclaration(
             path=(),
-            at=("edge:review--done",),
+            at=("review->done",),
             cargo={},
             on_error="refuse",
             label="row with no backlog",
@@ -342,7 +344,7 @@ def test_a_row_binding_several_points_fires_once_per_event():
     port = _Port(
         CheckDeclaration(
             path=("tasks",),
-            at=("edge:open--review", "edge:review--done"),
+            at=("open->review", "review->done"),
             cargo={},
             on_error="refuse",
             label="two-point row",
@@ -353,7 +355,7 @@ def test_a_row_binding_several_points_fires_once_per_event():
 
     assert subscriber.on_event(_ctx()) is None
 
-    assert port.ran == ["edge:review--done"]
+    assert port.ran == ["review->done"]
 
 
 def test_a_row_addressed_by_the_backlogs_cli_alias_fires(tmp_path):
@@ -361,7 +363,7 @@ def test_a_row_addressed_by_the_backlogs_cli_alias_fires(tmp_path):
     backlog. Matching only the name sent an aliased row down the quiet
     sibling-backlog branch: too known to refuse, too unequal to fire — a gate the
     author wrote, that no message ever mentions again."""
-    port = _Port(_row("edge:review--done", backlog="cards"))
+    port = _Port(_row("review->done", backlog="cards"))
 
     delta = CheckSubscriber(
         port,
@@ -371,13 +373,13 @@ def test_a_row_addressed_by_the_backlogs_cli_alias_fires(tmp_path):
     ).on_event(_ctx())
 
     assert delta is None
-    assert port.ran == ["edge:review--done"], "the aliased row must actually run"
+    assert port.ran == ["review->done"], "the aliased row must actually run"
 
 
 def test_the_request_carries_the_lock_ceiling_the_kernel_minted():
     """HATS-1603: the executor cannot bound a check by a lock it cannot see, so
     the ceiling rides the request. A bare float — the rack has no Deadline."""
-    port = _Port(_row("edge:review--done"))
+    port = _Port(_row("review->done"))
 
     CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(
         _ctx(lock_expires_at=1234.5)
@@ -388,7 +390,7 @@ def test_the_request_carries_the_lock_ceiling_the_kernel_minted():
 
 def test_an_unlocked_firing_ships_no_ceiling():
     """No enclosing lock declared -> the executor bounds by its own budget."""
-    port = _Port(_row("edge:review--done"))
+    port = _Port(_row("review->done"))
 
     CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx())
 
@@ -417,17 +419,17 @@ def test_a_point_is_armed_foreign_or_dead_against_every_mounted_topology():
     Given every mounted topology, they are three different facts."""
     rows = classify_bindings(
         [
-            _row("edge:review--done"),
-            _row("edge:active--confirmed"),
-            _row("edge:reviw--done"),
+            _row("review->done"),
+            _row("active->confirmed"),
+            _row("reviw->done"),
         ],
         _mounted(),
     )
 
-    assert [(r.status, r.point) for r in rows] == [
-        ("armed", "edge:review--done"),
-        ("foreign", "edge:active--confirmed"),
-        ("dead", "edge:reviw--done"),
+    assert [(r.status, r.selector) for r in rows] == [
+        ("armed", "review->done"),
+        ("foreign", "active->confirmed"),
+        ("dead", "reviw->done"),
     ]
 
 
@@ -435,11 +437,11 @@ def test_a_row_naming_no_mounted_backlog_is_unaddressed_in_the_subscribers_words
     """One recipe, two readers: the doctor prints the sentence the subscriber
     raises, so the fix an operator is told outside the lock is the one the
     refusal inside it would have given."""
-    row = _row("edge:review--done", backlog="cards")
+    row = _row("review->done", backlog="cards")
 
     (status,) = classify_bindings([row], _mounted())
 
-    assert (status.status, status.point) == ("unaddressed", "")
+    assert (status.status, status.selector) == ("unaddressed", "")
     with pytest.raises(AbortOperation) as exc_info:
         CheckSubscriber(
             _Port(row), topology=_topology(), backlog="tasks", known_backlogs=("tasks", "hyp")
@@ -452,7 +454,7 @@ def test_a_row_at_the_wrong_depth_is_unaddressed_too():
     never examined, because there is no topology to examine it against."""
     row = CheckDeclaration(
         path=(),
-        at=("edge:review--done",),
+        at=("review->done",),
         cargo={},
         on_error="refuse",
         label="deep row",
@@ -471,7 +473,7 @@ def test_the_alias_spelling_of_a_backlog_addresses_it():
     half of HATS-1545 F4, one layer up."""
     topologies = {"tasks": _topology(), "cards": _topology(), "hyp": _hyp_topology()}
 
-    (status,) = classify_bindings([_row("edge:review--done", backlog="cards")], topologies)
+    (status,) = classify_bindings([_row("review->done", backlog="cards")], topologies)
 
     assert status.status == "armed"
 
@@ -481,7 +483,7 @@ def test_a_row_binding_several_points_gets_a_line_per_point():
     and a single verdict for the row would hide whichever half is unhappy."""
     row = CheckDeclaration(
         path=("tasks",),
-        at=("edge:review--done", "edge:reviw--done"),
+        at=("review->done", "reviw->done"),
         cargo={},
         on_error="warn",
         label="two-point row",
@@ -490,9 +492,9 @@ def test_a_row_binding_several_points_gets_a_line_per_point():
 
     rows = classify_bindings([row], _mounted())
 
-    assert [(r.status, r.point) for r in rows] == [
-        ("armed", "edge:review--done"),
-        ("dead", "edge:reviw--done"),
+    assert [(r.status, r.selector) for r in rows] == [
+        ("armed", "review->done"),
+        ("dead", "reviw->done"),
     ]
 
 
@@ -503,4 +505,4 @@ def test_a_dead_points_detail_names_the_mounted_roster():
 
     assert status.status == "dead"
     assert "hyp" in status.detail and "tasks" in status.detail
-    assert "edge:<from>--<to>" in status.detail
+    assert "`review->done`" in status.detail and "`->done`" in status.detail

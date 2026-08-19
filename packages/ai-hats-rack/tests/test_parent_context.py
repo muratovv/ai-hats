@@ -119,7 +119,7 @@ def test_kinds_read_composes_a_read_subscriber(tmp_path):
     assert len(subs) == 1
     sub = subs[0]
     assert isinstance(sub, BoundReadSubscriber) and sub.name == "parent-context"
-    assert [(s.event_key, s.phase) for s in sub.subscriptions()] == [
+    assert [(str(s.selector), s.phase) for s in sub.subscriptions()] == [
         ("read:parent_task", Phase.READ)
     ]
 

@@ -21,7 +21,7 @@ def _create(kernel, cwd, task_id="T-1"):
 
 def test_alias_subscriber_fires_on_named_self_loop(tasks_dir, cwd):
     alias = StubSubscriber("alias", [in_lock("edge:reclaim")])
-    canonical = StubSubscriber("canonical", [in_lock("edge:execute--execute")])
+    canonical = StubSubscriber("canonical", [in_lock("execute->execute")])
     kernel = make_kernel(tasks_dir, subscribers=[alias, canonical], edge_names=EDGE_NAMES)
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", "execute", cwd=cwd)
@@ -30,7 +30,7 @@ def test_alias_subscriber_fires_on_named_self_loop(tasks_dir, cwd):
     assert len(alias.contexts) == 1  # alias key matched additively
     assert len(canonical.contexts) == 1  # canonical subscriber untouched
     event = alias.contexts[0].event
-    assert event.key == "edge:execute--execute"  # canonical key unchanged
+    assert event.key == "execute->execute"  # canonical key unchanged
     assert event.alias_key == "edge:reclaim"
 
 
@@ -47,7 +47,7 @@ def test_alias_matches_post_lock_reactions(tasks_dir, cwd):
 
 def test_unnamed_edge_produces_no_alias_key(tasks_dir, cwd):
     alias = StubSubscriber("alias", [in_lock("edge:reclaim")])
-    canonical = StubSubscriber("canonical", [in_lock("edge:plan--execute")])
+    canonical = StubSubscriber("canonical", [in_lock("plan->execute")])
     kernel = make_kernel(tasks_dir, subscribers=[alias, canonical], edge_names=EDGE_NAMES)
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", cwd=cwd)
@@ -60,7 +60,7 @@ def test_unnamed_edge_produces_no_alias_key(tasks_dir, cwd):
 
 def test_default_kernel_has_no_alias_keys(tasks_dir, cwd):
     # Zero behavior change: no edge-name map → no alias key on any edge.
-    canonical = StubSubscriber("canonical", [in_lock("edge:plan--execute")])
+    canonical = StubSubscriber("canonical", [in_lock("plan->execute")])
     kernel = make_kernel(tasks_dir, subscribers=[canonical])
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", cwd=cwd)

@@ -352,24 +352,24 @@ def _report(*rows, owner: Path | None = Path("/proj"), error: Exception | None =
 def test_a_dead_point_is_a_finding_the_report_carries():
     """The whole reason this section exists: a point no mounted topology has is
     a gate that never fires, and until now nothing said so anywhere."""
-    report = _report(_row("edge:reviw--done"))
+    report = _report(_row("reviw->done"))
 
-    assert [(r.status, r.point) for r in report.rows] == [("dead", "edge:reviw--done")]
+    assert [(r.status, r.selector) for r in report.rows] == [("dead", "reviw->done")]
     assert [f.check for f in report.findings] == ["dead-check-point"]
-    assert "edge:reviw--done" in report.findings[0].detail
+    assert "reviw->done" in report.findings[0].detail
 
 
 def test_a_sibling_backlogs_point_is_listed_and_is_not_a_finding():
     """HATS-1545 R10 made the cross-backlog skip legal; the report says the row
     is there without calling the project broken."""
-    report = _report(_row("edge:active--confirmed"))
+    report = _report(_row("active->confirmed"))
 
     assert [r.status for r in report.rows] == ["foreign"]
     assert report.findings == ()
 
 
 def test_a_row_no_mounted_backlog_answers_to_is_a_finding():
-    report = _report(_row("edge:review--done", backlog="cards"))
+    report = _report(_row("review->done", backlog="cards"))
 
     assert [r.status for r in report.rows] == ["unaddressed"]
     assert [f.check for f in report.findings] == ["unaddressable-check-row"]
@@ -389,7 +389,7 @@ def test_the_port_is_asked_once_for_the_whole_project():
     """Every mounted catalog answers with the same rows — they come from the
     project that owns the backlog — so asking per catalog would re-compose the
     role once per backlog for one identical answer."""
-    port = _Port(_row("edge:review--done"))
+    port = _Port(_row("review->done"))
 
     diagnose_bindings(_workspace(port), owner=Path("/proj"))
 
@@ -410,7 +410,7 @@ def test_an_ownerless_backlog_says_that_rather_than_no_rows():
     """The port answers "no rows" for a backlog nobody owns, which is a
     different fact from a role that declares none — and only one of the two is
     about the role."""
-    report = _report(_row("edge:review--done"), owner=None)
+    report = _report(_row("review->done"), owner=None)
 
     assert report.rows == ()
     assert "no project owns this backlog" in report.note

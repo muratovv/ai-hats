@@ -88,36 +88,52 @@ def owns_app(app: str) -> bool:
     return app in _OWNED_POINTS
 
 
-def _rack_point_form(point: str) -> str | None:
-    """The rack's own parser, asked whether a name is even in its grammar."""
-    from ai_hats_rack.checks import parse_edge_point
+def _rack_selector_form(selector: str) -> str | None:
+    """The rack's own predicate, asked whether a name is even in its grammar."""
+    from ai_hats_rack.selectors import selector_form
 
-    if parse_edge_point(point) is not None:
-        return None
+    return selector_form(selector)
+
+
+def selector_ends(app: str, selector: str) -> tuple[str | None, str | None]:
+    """The parsed ends of a rack selector — ``(None, None)`` for anything else.
+
+    The guard is stdlib-only and cannot import the parser, so the envelope it
+    reads carries the ends ALREADY parsed rather than the grammar (HATS-1719,
+    design.md §4.3). ai-hats still never spells that grammar: it asks the owner
+    and copies the answer.
+    """
+    if app != "rack":
+        return None, None
+    from ai_hats_rack.selectors import ANY, parse_selector
+
+    parsed = parse_selector(selector)
+    if parsed is None:
+        return None, None
     return (
-        "a rack point is spelled `edge:<from>--<to>`: TWO dashes between the "
-        "state names, and neither of them empty"
+        None if parsed.source == ANY else parsed.source,
+        None if parsed.target == ANY else parsed.target,
     )
 
 
-#: Apps whose point GRAMMAR is refused here though ai-hats does not FIRE them.
+#: Apps whose selector GRAMMAR is refused here though ai-hats does not FIRE them.
 #: Not ``_OWNED_POINTS`` (that means running the rows). The predicate is
 #: imported FROM the owner, so ai-hats still never spells the grammar (D11).
-_POINT_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_point_form}
+_SELECTOR_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_selector_form}
 
 
-def _validate_point_form(row: AppBinding) -> None:
+def _validate_selector_form(row: AppBinding) -> None:
     """Refuse a point name outside its app's grammar, at composition (HATS-1682).
 
     Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
-    the rack's topology, so whether ``edge:review--dnoe`` names a REAL edge stays
-    the rack's question, answered where the topology is (``dead_point_reason``).
+    the rack's topology, so whether ``review->dnoe`` names a REAL edge stays
+    the rack's question, answered where the topology is (``dead_selector_reason``).
     What can be answered here is whether the name is in the grammar at all — and
     it must be, because the declaration is now a security boundary: a
-    consent-only ``edge:plan-execute`` disarmed both roads into master and no
+    consent-only ``plan-execute`` (no arrow) disarmed both roads into master and no
     channel said a word (A5).
     """  # comment-length: allow — which half of the check lives where is the fix
-    form = _POINT_FORM.get(row.app)
+    form = _SELECTOR_FORM.get(row.app)
     if form is None:
         return
     for name in row.at:
@@ -141,7 +157,7 @@ def resolve_checks(
     for row in declared:
         # Form first, and for EVERY row: a consent-only row is refused nowhere
         # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
-        _validate_point_form(row)
+        _validate_selector_form(row)
         if not row.run:
             # A consent-only row runs nothing (HATS-1682): no script to find, and
             # no root to judge it from — resolving it would make a declaration
@@ -470,6 +486,18 @@ def check_log_token(check: ResolvedCheck) -> str:
     return f"{_escaped(check.app)}{trail}~{skill}~{_escaped(check.script)}{_cargo_tag(check)}"
 
 
+def check_log_name(event: str, check: ResolvedCheck) -> str:
+    """The filename one firing logs to: the event, escaped, plus the row's identity.
+
+    The event is ESCAPED rather than stripped of one character: the arrow
+    grammar put ``>`` — a shell redirect — into the event key, and a refusal
+    hands this path to an operator to paste (HATS-1719). Escaping keeps the
+    mapping reversible, so two events cannot collide on one name and reopen the
+    truncation defect :func:`check_log_token` exists to close.
+    """
+    return f"{_escaped(event) or 'event'}~{check_log_token(check)}.log"
+
+
 def _cargo_tag(check: ResolvedCheck) -> str:
     """A short digest of the rest of the row's identity — ``at`` and cargo.
 
@@ -488,6 +516,8 @@ __all__ = [
     "AI_HATS_APP",
     "KNOWN_APPS",
     "STARTUP_POINT",
+    "check_log_name",
+    "selector_ends",
     "WT_APP",
     "CheckBindingError",
     "ai_hats_points",

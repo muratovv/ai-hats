@@ -33,7 +33,7 @@ from ai_hats_rack.checks import (
 from ai_hats_rack.definition import BacklogDefinition
 from ai_hats_rack.dispatch import AbortOperation
 
-from .check_points import check_failure_reason, check_log_token
+from .check_points import check_failure_reason, check_log_name
 from .check_resolve import CheckResolutionError, resolve_carried_rows, session_identity_for
 from .hook_exec import run_hook
 from .libraries.models import CheckBindingError
@@ -207,8 +207,7 @@ class AiHatsCheckPort:
         the dedup identity ``check_points.resolve_checks`` keys on, so a retry
         of the same edge still lands on that binding's own previous log.
         """  # comment-length: allow — the collision recurred once already
-        name = f"{event.replace(':', '-') or 'event'}~{check_log_token(check)}.log"
-        return self._catalog / task_id / ".checks" / name
+        return self._catalog / task_id / ".checks" / check_log_name(event, check)
 
 
 def _declaration(check: ResolvedCheck) -> CheckDeclaration:
@@ -238,7 +237,7 @@ def _consent_declaration(point: ConsentPoint) -> CheckDeclaration:
     """
     return CheckDeclaration(
         path=point.path,
-        at=(point.point,),
+        at=(point.selector,),
         cargo={},
         on_error="",
         label=f"{point.declared_by!r} declares consent under apps.{point.app}",

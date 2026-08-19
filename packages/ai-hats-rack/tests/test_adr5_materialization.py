@@ -136,7 +136,7 @@ def test_hyp_unstamped_edge_leaves_closed_absent(tasks_dir, cwd):
 
 
 def test_hyp_any_field_validator_enforced_on_write(tasks_dir, cwd):
-    bad = _writer({"validation_log": Set("not-a-list")}, "edge:active--stalled")
+    bad = _writer({"validation_log": Set("not-a-list")}, "active->stalled")
     kernel = _hyp_kernel(tasks_dir, extra=[bad])
     _seed(tasks_dir, "HYP-1", state="active", hypothesis="h")
     with pytest.raises(FieldValidationError, match="list"):
@@ -167,7 +167,7 @@ def _seed_prop(catalog, task_id="PROP-1"):
 
 
 def test_prop_category_choices_enforced_on_write(tasks_dir, cwd):
-    bad = _writer({"category": Set("bogus")}, "edge:open--accepted")
+    bad = _writer({"category": Set("bogus")}, "open->accepted")
     kernel = _prop_kernel(tasks_dir, extra=[bad])
     _seed_prop(tasks_dir)
     with pytest.raises(FieldValidationError) as exc_info:
@@ -177,7 +177,7 @@ def test_prop_category_choices_enforced_on_write(tasks_dir, cwd):
 
 
 def test_prop_forbid_rejects_an_unknown_key_on_write(tasks_dir, cwd):
-    bad = _writer({"mystery": Set("x")}, "edge:open--accepted")
+    bad = _writer({"mystery": Set("x")}, "open->accepted")
     kernel = _prop_kernel(tasks_dir, extra=[bad])
     _seed_prop(tasks_dir)
     with pytest.raises(ExtrasForbiddenError) as exc_info:
@@ -188,7 +188,7 @@ def test_prop_forbid_rejects_an_unknown_key_on_write(tasks_dir, cwd):
 
 def test_prop_votes_validator_passes_a_valid_append(tasks_dir, cwd):
     vote = {"session_id": "s1", "timestamp": "2026-01-01T00:00:00Z", "reasoning": "sound"}
-    voter = _writer({"votes": Append(vote)}, "edge:open--accepted")
+    voter = _writer({"votes": Append(vote)}, "open->accepted")
     kernel = _prop_kernel(tasks_dir, extra=[voter])
     _seed_prop(tasks_dir)
     card = kernel.transition("PROP-1", "accepted", actor="t", caller_cwd=cwd).task
@@ -197,7 +197,7 @@ def test_prop_votes_validator_passes_a_valid_append(tasks_dir, cwd):
 
 
 def test_prop_votes_validator_refuses_a_malformed_append(tasks_dir, cwd):
-    voter = _writer({"votes": Append("not-a-dict")}, "edge:open--accepted")
+    voter = _writer({"votes": Append("not-a-dict")}, "open->accepted")
     kernel = _prop_kernel(tasks_dir, extra=[voter])
     _seed_prop(tasks_dir)
     with pytest.raises(FieldValidationError):  # prop-vote-entries invoked on Append

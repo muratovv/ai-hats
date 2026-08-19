@@ -11,6 +11,7 @@ from ai_hats_wt import WorktreeMergeConsentError, WorktreeStateLostError
 
 from ai_hats.rack_cli_provider import CliKernelProvider, cli_factory
 from ai_hats_rack.resolver import RackRoot
+from ai_hats_rack.selectors import Edge
 
 
 def test_factory_returns_provider():
@@ -171,7 +172,8 @@ def test_build_kernel_wires_the_consumer_check_runner(tmp_path):
     kernel = CliKernelProvider().build_kernel(root, tmp_path)
 
     on_done = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:review--done", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("review", "done"), Phase.IN_LOCK)
     ]
     assert "checks" in on_done
     assert on_done.index("checks") < on_done.index("worktree")

@@ -266,7 +266,7 @@ def test_journal_carries_every_op_and_the_edge_event(tasks_dir, cwd, tmp_path):
     res = k.transition_ops("T-1", ops, actor="sess", caller_cwd=cwd)
     msgs = "\n".join(e.message for e in res.task.work_log)
     assert "Attached plan.md (overwrote)" in msgs and "noted" in msgs  # per-op work_log trail
-    assert "edge:plan--execute" in [r.event_key for r in sink.records]  # K7 schema unchanged
+    assert "plan->execute" in [r.event_key for r in sink.records]  # K7 schema unchanged
 
 
 # ----- CLI vertical slice: order through the real command ---------------------

@@ -15,6 +15,7 @@ from ai_hats_rack.docstore import compute_digest
 from ai_hats_rack.extensions import FrozenIntegrityExtension, standalone_extensions
 from ai_hats_rack.fsm import load_topology
 from ai_hats_rack.kernel import Kernel
+from ai_hats_rack.selectors import Edge
 
 
 @pytest.fixture
@@ -165,11 +166,11 @@ def test_one_composite_refreeze_and_state_passes_the_guard(runner, tmp_path):
 def test_guard_subscribes_to_the_full_edge_product(tmp_path):
     ext = FrozenIntegrityExtension(tmp_path / "tasks")
     subs = ext.subscriptions()
-    keys = {s.event_key for s in subs}
+    keys = {str(s.selector) for s in subs}
     states = load_topology().states
     # every ordered pair of distinct states + the execute reclaim self-loop
     assert len(keys) == len(states) * (len(states) - 1) + 1
-    assert "edge:execute--execute" in keys
+    assert "execute->execute" in keys
     assert all(s.phase is Phase.IN_LOCK for s in subs)
 
 
@@ -177,6 +178,7 @@ def test_standalone_kit_runs_guard_before_plan_gate(tmp_path):
     tasks_dir = tmp_path / "tasks"
     kernel = Kernel(tasks_dir, subscribers=standalone_extensions(tasks_dir))
     order = [
-        s.name for s in kernel._dispatcher.subscribers_for("edge:plan--execute", Phase.IN_LOCK)
+        s.name
+        for s in kernel._dispatcher.subscribers_for_edge(Edge("plan", "execute"), Phase.IN_LOCK)
     ]
     assert order == ["frozen-integrity", "plan-gate"]

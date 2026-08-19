@@ -22,7 +22,7 @@ def _schema(policy):
 
 def _writer(op):
     return StubSubscriber(
-        "writer", [in_lock("edge:brainstorm--plan")], action=lambda ctx: Delta(fields=op)
+        "writer", [in_lock("brainstorm->plan")], action=lambda ctx: Delta(fields=op)
     )
 
 

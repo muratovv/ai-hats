@@ -38,13 +38,13 @@ composition:
   # not compose this trait declares no consent and gets none; a role that wants
   # one point back writes `consent: false` on it, and the later writer wins.
   #
-  # `edge:review--done` and `pre-merge` are the two roads into master
+  # `review->done` and `pre-merge` are the two roads into master
   # (HATS-1130): the FSM automerge and a direct `ai-hats wt merge`. A gate
   # holding only one of them is the asymmetry that started that epic.
   apps:
     rack:
       tasks:
-        - at: [edge:plan--execute, edge:review--done]
+        - at: ['plan->execute', 'review->done']
           consent: true
     wt:
       - at: [pre-merge]

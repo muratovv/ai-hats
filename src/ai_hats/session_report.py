@@ -28,6 +28,31 @@ def _human_size(n: int) -> str:
     return f"{n / (1024 * 1024):.1f} MB"
 
 
+def consent_entry(consent) -> dict:
+    """One consent declaration as the guard reads it (HATS-1719).
+
+    Public because it is the ONE writer of this shape: the guard on the other
+    side reads fields, and a second place building them by hand is how the two
+    drift until the question quietly stops being asked.
+
+    The ends travel ALREADY PARSED. The guard is stdlib-only and cannot import
+    the rack's parser, so it used to cut the name itself — and on an arrow that
+    cut returned nothing, which disarmed the question on BOTH roads into master
+    without a word (the HATS-1682 A5 class). Fields, not grammar.
+    """
+    from .check_points import selector_ends
+
+    source, target = selector_ends(consent.app, consent.selector)
+    return {
+        "app": consent.app,
+        "path": list(consent.path),
+        "selector": consent.selector,
+        "from": source,
+        "to": target,
+        "declared_by": consent.declared_by,
+    }
+
+
 def _where(check: dict) -> str:
     """The app and points a row binds, as one column of the launch report."""
     at = ",".join(check.get("at") or []) or "-"
@@ -102,15 +127,7 @@ class SessionReport:
                 }
                 for c in self.checks
             ],
-            "consent": [
-                {
-                    "app": c.app,
-                    "path": list(c.path),
-                    "point": c.point,
-                    "declared_by": c.declared_by,
-                }
-                for c in self.consent
-            ],
+            "consent": [consent_entry(c) for c in self.consent],
             "escapes": [str(p) for p in self.escapes],
             "notes": list(self.notes),
         }

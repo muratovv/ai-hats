@@ -379,16 +379,17 @@ def _declared_points() -> list:
         return []
 
 
-def consent_declared_at(app: str, point: str) -> bool:
+def consent_declared_at(app: str, selector: str) -> bool:
     """Did the role declare consent on one named point of ``app``?"""
-    return any(e.get("app") == app and e.get("point") == point for e in _declared_points())
+    return any(e.get("app") == app and e.get("selector") == selector for e in _declared_points())
 
 
 def declared_consent_targets() -> frozenset:
     """States the session's role declared consent on entering, from the envelope.
 
-    The declaration is a role property, so it reaches the guard the way every
-    other role-derived fact does: `AI_HATS_SESSION_IDENTITY` names the session
+    Read from the ``to`` field the composition already parsed — never by cutting
+    the selector here. The declaration is a role property, so it reaches the
+    guard the way every other role-derived fact does: `AI_HATS_SESSION_IDENTITY` names the session
     dir and `role_materialization.json` there carries the composed declaration.
     Launch-frozen on purpose — the surface asks by the declaration the session
     was started with, not by whatever the library says a moment later.
@@ -397,9 +398,13 @@ def declared_consent_targets() -> frozenset:
     for entry in _declared_points():
         if entry.get("app") != "rack":
             continue
-        head, sep, to = str(entry.get("point", "")).partition("--")
-        if sep and head.startswith("edge:") and to:
-            targets.add(to)
+        # The ends arrive parsed (HATS-1719). This hook is stdlib-only and cannot
+        # import the rack's parser, and a hook that cuts the name itself is a
+        # fifth copy of the grammar — one that went silent the moment the
+        # spelling changed, disarming both roads into master (HATS-1682 A5).
+        target = entry.get("to")
+        if target:
+            targets.add(str(target))
     return frozenset(targets)
 
 

@@ -72,11 +72,11 @@ fsm:
   initial: brainstorm
   states:
     # A state carries the handlers of its ENTRY: on_enter expands to the full
-    # edge:<src>--<state> product (§3), so a forced non-topology entry cannot
+    # <src>-><state> product (§3), so a forced non-topology entry cannot
     # slip past a gate — HATS-518 semantics preserved.
     - { name: brainstorm }
     - { name: plan, on_enter: [plan-scaffold] }
-    # on_exit mirrors on_enter over the full edge:<state>--<dst> product (§3):
+    # on_exit mirrors on_enter over the full <state>-><dst> product (§3):
     # release-on-leaving-execute fires even on a forced non-topology exit.
     # The integrator APPENDS ownership/worktree handlers via the code channel
     # (§4) — this packaged default stays the standalone kit.
@@ -92,7 +92,7 @@ fsm:
   edges:
     # ONE shape everywhere — every edge explicit, no adjacency lists.
     # Optional per edge: name (alias event key + T4 verb; canonical key
-    # stays edge:<from>--<to>, §3), handlers (ordered, this exact edge),
+    # stays <from>-><to>, §3), handlers (ordered, this exact edge),
     # skip (opt this edge out of an on_enter handler).
     - { from: brainstorm, to: plan }
     - { from: brainstorm, to: blocked }
@@ -291,12 +291,12 @@ on them* — one model for both edge families, card-state transitions
 (`fsm.edges`) and card-to-card links (`links.kinds`). Three binding slots:
 
 - `states[].on_enter` — entry gates/effects of a state. Expands to the
-  **full** `edge:<src>--<state>` product, not just declared edges — forced
+  **full** `<src>-><state>` product, not just declared edges — forced
   transitions fire real non-topology keys, and a gate bound per-edge only
   would silently miss them (the `_edges_into` semantics [3], HATS-518:
   *force weakens the FSM arrow, not the machinery*).
 - `states[].on_exit` — exit effects, symmetric: the full
-  `edge:<state>--<dst>` product. Required for release semantics — ownership
+  `<state>-><dst>` product. Required for release semantics — ownership
   release fires on *leaving* execute, forced non-topology exits included
   [13]; an on_enter of the destination cannot own an exit effect of the
   source. `skip` on a declared edge opts out of on_exit handlers too.
@@ -310,7 +310,7 @@ on them* — one model for both edge families, card-state transitions
   additive.
 
 Self-loops: the on_enter/on_exit product includes a self-loop key
-(`edge:execute--execute`) only when that self-edge is **declared**
+(`execute->execute`) only when that self-edge is **declared**
 (reclaim) — an undeclared self-loop is not an event source, matching
 today's special-casing [3][13].
 
@@ -345,8 +345,37 @@ not read this repo's ADRs, in `packages/ai-hats-rack/README.md` [17]:
   none), so such a row was skipped here *and* unread there: it could never fire,
   on either road. The reflect/judge workspace mounted no integrator kernel at
   all, which left even the tasks instance ungated on that road.
-- **`at: [<point>, …]`** — the points the row fires on, in this package's own
-  vocabulary (`edge:<from>--<to>` today). A point naming an edge this topology
+- **`at: [<selector>, …]`** — the events the row fires on, in this package's own
+  vocabulary. Since HATS-1719 that vocabulary is an **arrow**, and it denotes a
+  SET rather than one edge:
+
+  ```
+  selector ::= arrow | foreign-selector
+  arrow    ::= source "->" target
+  source   ::= state | "ANY" | ε
+  target   ::= state | "ANY" | ε
+  state    ::= a state name of the topology this kernel runs
+  foreign-selector ::= any name holding no "->" — another application's, and
+                       none of this package's business
+  ```
+
+  | written           | means                                | status                      |
+  | ----------------- | ------------------------------------ | --------------------------- |
+  | `review->done`    | exactly that edge                    | ✔                           |
+  | `->done`          | every road INTO `done` (8 of them)   | ✔                           |
+  | `execute->`       | every road OUT of `execute`          | ✘ — HATS-1720               |
+  | `ANY->ANY`        | every move of this backlog           | ✘ — HATS-1720               |
+  | `NONE->`, `->NONE` | card creation / destruction         | ✘ — reserved, HATS-1703     |
+  | `->`              | —                                    | ✘ — a typo, not "everywhere" |
+  | `a->b->c`         | —                                    | ✘ — one arrow per selector  |
+  | `a -> b`          | —                                    | ✘ — no whitespace: the dedup key holds `at` verbatim, so a second spelling is a second row |
+
+  Matching is a predicate over the pair `(from, to)`, never a string comparison,
+  and **every** matched row fires — order is the ladder's business, not the
+  matcher's. `ANY` and `NONE` are upper-case because state names in every shipped
+  topology are lower-case, which makes the word not a name.
+
+  A selector naming an edge this topology
   lacks is skipped rather than refused: from the carrier's side a typo and a point
   aimed at another topology are the same fact. *That skip is currently wider than
   its rationale: a name this grammar cannot parse at all — `card:pre-create`, say
@@ -377,8 +406,11 @@ order is part of the contract, not an accident of wiring. Handler *phase*
 (in-lock vs post-lock) is the handler's own property — semantics live in
 code (§4), the file only says *where* it hangs.
 
-The canonical event key of an edge **remains positional**:
-`edge:<from>--<to>` [6]. A declared `name` adds a stable **alias key**
+The canonical event key of an edge is **positional, and spelled with the
+arrow**: `<from>-><to>` [6]. It was `edge:<from>--<to>` until HATS-1719; records
+written before that keep the old spelling, so a READER of the journal
+understands both while nothing writes it again. A declared `name` adds a stable
+**alias key**
 (`edge:reclaim`) the dispatcher matches in addition — one event, two match
 keys. Names also become the human vocabulary for T4 (a named edge is a
 natural transition verb) and for the audit journal.
@@ -422,7 +454,7 @@ variant/metric/sample fields — no new mechanics beyond §1.
 ### 4. Extensions: how they work and how they attach
 
 The extension contract keeps its shape [6] — an extension is a `Subscriber`:
-`name`, `subscriptions() -> [Subscription(event_key, phase, priority)]`,
+`name`, `subscriptions() -> [Subscription(selector, phase, priority)]`,
 `on_event(ctx) -> Delta | None`; in-lock subscribers may `AbortOperation`
 with an actionable reason, post-lock subscribers are reactions. Three
 contract extensions (review 2026-07-18, claims б/в):
@@ -655,7 +687,7 @@ despite the name reading oddly for a hypothesis).
 | ownership release on LEAVING execute [13]   | `states[].on_exit`                                 | new slot; full exit product, forced exits covered                         |
 | `_stamp_lifecycle` kernel hardcode [4]      | stock `stamp-lifecycle`/`clear-lifecycle` handlers | kernel slimming (T5); `completed_at`/`final_state` become declared fields |
 | `REQUIRED_STATES` in `fsm.py`               | `requires_states()` + vocabulary-as-config         | owner moves; invariant survives                                           |
-| event keys `edge:<from>--<to>`              | canonical, unchanged                               | named alias keys additive                                                 |
+| event keys `<from>-><to>`                   | canonical (`edge:<from>--<to>` until HATS-1719)    | named alias keys additive                                                 |
 
 ### 7. Migrating backlog-manager onto the rack
 
@@ -710,7 +742,7 @@ Phasing (each phase lands independently; order = dependency order):
 ## Consequences
 
 **What survives of §5.1 [10].** The stability argument was "a hook written
-against `edge:plan--execute` must not break under a user-editable topology."
+against `plan->execute` must not break under a user-editable topology."
 It holds: (a) canonical positional keys are untouched and names are additive
 aliases; (b) the packaged tasks default remains the in-package SSOT — editing
 it is still editing the kernel contract; (c) a per-backlog `backlog.yaml` is

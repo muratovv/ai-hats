@@ -188,7 +188,7 @@ def test_mirror_handler_subscribes_link_target_keys(project):
     subs = build_link_subscribers(alpha.definition, alpha.catalog, stock_factories())
     mirror = [s for s in subs if s.name == "mirror-link"]
     assert len(mirror) == 1  # one channel for both kinds (grouped by name+config)
-    keys = sorted(sub.event_key for sub in mirror[0].subscriptions())
+    keys = sorted(str(sub.selector) for sub in mirror[0].subscriptions())
     assert keys == [
         "link-target:mirror_from",
         "link-target:mirror_to",
@@ -204,7 +204,7 @@ def test_mirror_handler_subscribes_link_target_keys(project):
 def test_packaged_tasks_default_loads_with_no_mirror(tmp_path):
     defn = load_backlog()  # no MissingMirrorReactionError (related/children exempt)
     subs = compose_subscribers(defn, tmp_path, stock_factories())
-    keys = [sub.event_key for s in subs for sub in s.subscriptions()]
+    keys = [str(sub.selector) for s in subs for sub in s.subscriptions()]
     assert not any(k.startswith("link-target:") for k in keys)
 
 

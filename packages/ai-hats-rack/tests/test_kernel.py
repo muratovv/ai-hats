@@ -254,7 +254,7 @@ def test_abort_in_lock_leaves_zero_bytes(tasks_dir, cwd):
     # HATS-723 heir: final_state must not half-apply when a gate aborts.
     gate = StubSubscriber(
         "gate",
-        [in_lock("edge:plan--execute")],
+        [in_lock("plan->execute")],
         action=lambda ctx: (_ for _ in ()).throw(AbortOperation("plan sections empty: Steps")),
     )
     kernel = make_kernel(tasks_dir, subscribers=[gate])
@@ -281,7 +281,7 @@ def test_raising_subscriber_aborts_before_persist(tasks_dir, cwd):
         name = "worktree"
 
         def subscriptions(self):
-            return [in_lock("edge:review--done")]
+            return [in_lock("review->done")]
 
         def on_event(self, ctx):
             raise RuntimeError("merge failed")
@@ -301,7 +301,7 @@ def test_delta_is_applied_and_persisted_last(tasks_dir, cwd):
     # returned delta, inside the same single persist.
     wt = StubSubscriber(
         "worktree",
-        [in_lock("edge:plan--execute")],
+        [in_lock("plan->execute")],
         action=lambda ctx: Delta(work_log=("Worktree: /tmp/wt-t-1",)),
     )
     kernel = make_kernel(tasks_dir, subscribers=[wt])
@@ -317,7 +317,7 @@ def test_subscriber_state_is_immutable_copy(tasks_dir, cwd):
         ctx.task.log_work("smuggled entry")
         return None
 
-    sub = StubSubscriber("vandal", [in_lock("edge:brainstorm--plan")], action=vandalize)
+    sub = StubSubscriber("vandal", [in_lock("brainstorm->plan")], action=vandalize)
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd, title="original")
     walk(kernel, "T-1", "plan", cwd=cwd)
@@ -340,10 +340,10 @@ def test_priority_order_and_registration_tiebreak(tasks_dir, cwd):
         return action
 
     subs = [
-        StubSubscriber("late", [in_lock("edge:brainstorm--plan", priority=200)], recorder("late")),
-        StubSubscriber("first", [in_lock("edge:brainstorm--plan", priority=10)], recorder("first")),
-        StubSubscriber("tie-a", [in_lock("edge:brainstorm--plan", priority=50)], recorder("tie-a")),
-        StubSubscriber("tie-b", [in_lock("edge:brainstorm--plan", priority=50)], recorder("tie-b")),
+        StubSubscriber("late", [in_lock("brainstorm->plan", priority=200)], recorder("late")),
+        StubSubscriber("first", [in_lock("brainstorm->plan", priority=10)], recorder("first")),
+        StubSubscriber("tie-a", [in_lock("brainstorm->plan", priority=50)], recorder("tie-a")),
+        StubSubscriber("tie-b", [in_lock("brainstorm->plan", priority=50)], recorder("tie-b")),
     ]
     kernel = make_kernel(tasks_dir, subscribers=subs)
     _create(kernel, cwd)
@@ -352,7 +352,7 @@ def test_priority_order_and_registration_tiebreak(tasks_dir, cwd):
 
 
 def test_context_carries_caller_cwd_actor_force(tasks_dir, tmp_path):
-    sub = StubSubscriber("probe", [in_lock("edge:brainstorm--plan")])
+    sub = StubSubscriber("probe", [in_lock("brainstorm->plan")])
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     op_cwd = tmp_path / "somewhere"
     op_cwd.mkdir()
@@ -368,12 +368,12 @@ def test_context_carries_caller_cwd_actor_force(tasks_dir, tmp_path):
 def test_force_reaches_subscribers_on_forced_transition(tasks_dir, cwd):
     # HATS-1032 pin (review anchor kernel.py:290): a forced transition threads
     # force=True to BOTH dispatch phases, so subscribers build their own invariant.
-    sub = StubSubscriber("probe", [in_lock("edge:plan--review"), post_lock("edge:plan--review")])
+    sub = StubSubscriber("probe", [in_lock("plan->review"), post_lock("plan->review")])
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", cwd=cwd)  # plan → review is not an edge; force takes it
     kernel.transition("T-1", "review", actor="test", caller_cwd=cwd, force=True, reason="skip")
-    assert {(c.event.key, c.force) for c in sub.contexts} == {("edge:plan--review", True)}
+    assert {(c.event.key, c.force) for c in sub.contexts} == {("plan->review", True)}
     assert len(sub.contexts) == 2  # in-lock + post-lock both saw force
 
 
@@ -382,7 +382,7 @@ def test_force_reaches_subscribers_via_transition_ops(tasks_dir, cwd):
     # state-op's edge to both phases too (HATS-1032).
     from ai_hats_rack.ops import StateOp
 
-    sub = StubSubscriber("probe", [in_lock("edge:plan--review"), post_lock("edge:plan--review")])
+    sub = StubSubscriber("probe", [in_lock("plan->review"), post_lock("plan->review")])
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", cwd=cwd)
@@ -396,7 +396,7 @@ def test_force_reaches_subscribers_via_transition_ops(tasks_dir, cwd):
 def test_is_epic_recomputed_on_every_dispatch(tasks_dir, cwd):
     # HATS-794/977/979 heir: category is a per-dispatch predicate from the
     # CURRENT child-set, never frozen at claim time.
-    sub = StubSubscriber("probe", [in_lock("edge:brainstorm--plan"), in_lock("edge:plan--execute")])
+    sub = StubSubscriber("probe", [in_lock("brainstorm->plan"), in_lock("plan->execute")])
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd, title="parent")
     walk(kernel, "T-1", "plan", cwd=cwd)
@@ -418,7 +418,7 @@ def test_post_lock_runs_after_persist_and_release(tasks_dir, cwd):
             seen["lock_free"] = True
         return None
 
-    sub = StubSubscriber("reactor", [post_lock("edge:brainstorm--plan")], action=reaction)
+    sub = StubSubscriber("reactor", [post_lock("brainstorm->plan")], action=reaction)
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd)
     walk(kernel, "T-1", "plan", cwd=cwd)
@@ -430,7 +430,7 @@ def test_post_lock_error_reported_not_raised(tasks_dir, cwd):
     def explode(ctx):
         raise RuntimeError("view regen failed")
 
-    sub = StubSubscriber("views", [post_lock("edge:brainstorm--plan")], action=explode)
+    sub = StubSubscriber("views", [post_lock("brainstorm->plan")], action=explode)
     kernel = make_kernel(tasks_dir, subscribers=[sub])
     _create(kernel, cwd)
     result = kernel.transition("T-1", "plan", actor="test", caller_cwd=cwd)
@@ -447,20 +447,20 @@ def test_post_lock_error_reported_not_raised(tasks_dir, cwd):
 
 
 def test_journal_records_every_subscriber_outcome(tasks_dir, cwd):
-    ok = StubSubscriber("gate", [in_lock("edge:brainstorm--plan", priority=1)])
+    ok = StubSubscriber("gate", [in_lock("brainstorm->plan", priority=1)])
     delta = StubSubscriber(
         "wt",
-        [in_lock("edge:brainstorm--plan", priority=2)],
+        [in_lock("brainstorm->plan", priority=2)],
         action=lambda ctx: Delta(work_log=("note",)),
     )
-    reactor = StubSubscriber("epic", [post_lock("edge:brainstorm--plan")])
+    reactor = StubSubscriber("epic", [post_lock("brainstorm->plan")])
     kernel = make_kernel(tasks_dir, subscribers=[ok, delta, reactor])
     _create(kernel, cwd)
     result = kernel.transition("T-1", "plan", actor="me", caller_cwd=cwd)
 
     assert len(result.journal) == 1
     record = result.journal[0]
-    assert record.event_key == "edge:brainstorm--plan"
+    assert record.event_key == "brainstorm->plan"
     assert record.task_id == "T-1"
     assert record.actor == "me"
     assert [(o.subscriber, o.outcome) for o in record.outcomes] == [
@@ -476,7 +476,7 @@ def test_sink_receives_aborted_dispatch(tasks_dir, cwd):
     sink = CollectingSink()
     gate = StubSubscriber(
         "gate",
-        [in_lock("edge:brainstorm--plan")],
+        [in_lock("brainstorm->plan")],
         action=lambda ctx: (_ for _ in ()).throw(AbortOperation("nope")),
     )
     kernel = make_kernel(tasks_dir, subscribers=[gate], journal_sink=sink)
@@ -493,7 +493,7 @@ def test_sink_receives_successful_dispatch(tasks_dir, cwd):
     kernel = make_kernel(tasks_dir, journal_sink=sink)
     _create(kernel, cwd)
     kernel.transition("T-1", "plan", actor="test", caller_cwd=cwd)
-    assert [r.event_key for r in sink.records] == ["edge:brainstorm--plan"]
+    assert [r.event_key for r in sink.records] == ["brainstorm->plan"]
     assert sink.records[0].outcomes == ()  # bare kernel: dispatch still journaled
 
 
@@ -571,7 +571,7 @@ def test_delta_fields_applied_in_the_single_persist(tasks_dir, cwd, monkeypatch)
 
     sub = StubSubscriber(
         "verdicts",
-        [in_lock("edge:plan--execute")],
+        [in_lock("plan->execute")],
         action=lambda ctx: Delta(
             work_log=("verdict recorded",),
             fields={"priority": Set("high"), "validation_log": Append({"v": "ok"})},
@@ -599,7 +599,7 @@ def test_delta_append_to_known_list_field_round_trips(tasks_dir, cwd):
 
     sub = StubSubscriber(
         "tagger",
-        [in_lock("edge:brainstorm--plan")],
+        [in_lock("brainstorm->plan")],
         action=lambda ctx: Delta(fields={"tags": Append("auto")}),
     )
     kernel = make_kernel(tasks_dir, subscribers=[sub])
@@ -613,7 +613,7 @@ def test_delta_post_lock_fields_are_journal_only(tasks_dir, cwd):
 
     sub = StubSubscriber(
         "reactor",
-        [post_lock("edge:brainstorm--plan")],
+        [post_lock("brainstorm->plan")],
         action=lambda ctx: Delta(fields={"priority": Set("critical")}),
     )
     kernel = make_kernel(tasks_dir, subscribers=[sub])
@@ -629,7 +629,7 @@ def test_delta_append_onto_scalar_field_aborts_zero_bytes(tasks_dir, cwd):
 
     sub = StubSubscriber(
         "bad",
-        [in_lock("edge:brainstorm--plan")],
+        [in_lock("brainstorm->plan")],
         action=lambda ctx: Delta(fields={"priority": Append("x")}),
     )
     kernel = make_kernel(tasks_dir, subscribers=[sub])
@@ -647,7 +647,7 @@ def test_delta_set_type_mismatch_aborts(tasks_dir, cwd):
 
     sub = StubSubscriber(
         "bad",
-        [in_lock("edge:brainstorm--plan")],
+        [in_lock("brainstorm->plan")],
         action=lambda ctx: Delta(fields={"priority": Set(5)}),
     )
     kernel = make_kernel(tasks_dir, subscribers=[sub])

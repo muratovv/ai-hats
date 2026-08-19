@@ -296,14 +296,14 @@ def test_apps_block_parses_into_rows_with_provenance(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "name: r\ncomposition:\n  apps:\n    rack:\n      tasks:\n"
-        "        - run: s/h.sh\n          at: [edge:plan--execute]\n"
+        "        - run: s/h.sh\n          at: [plan->execute]\n"
     )
 
     config = ComponentConfig.from_yaml(config_file)
     (row,) = parse_app_bindings(config.composition.apps, declared_by="r")
 
     assert (row.app, row.path, row.run) == ("rack", ("tasks",), "s/h.sh")
-    assert row.at == ("edge:plan--execute",)
+    assert row.at == ("plan->execute",)
     assert row.cargo == {}, "at: is owned, so it is not cargo"
     assert row.on_error == "refuse", "the strict default, never inferred from cargo"
     assert row.declared_by == "r"
@@ -341,7 +341,7 @@ def test_a_bare_on_key_is_now_refused_instead_of_remapped(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "name: r\ncomposition:\n  apps:\n    rack:\n      tasks:\n"
-        "        - run: s/h.sh\n          on: [edge:plan--execute]\n"
+        "        - run: s/h.sh\n          on: [plan->execute]\n"
     )
 
     with pytest.raises(ComponentKeyError) as exc:
@@ -377,7 +377,7 @@ def test_the_retired_checks_key_refuses_and_says_where_the_rows_moved(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "name: r\ncomposition:\n  skills: [s]\n  checks:\n"
-        "    - skill: s\n      script: h.sh\n      on: [edge:review--done]\n"
+        "    - skill: s\n      script: h.sh\n      on: [review->done]\n"
         "      on_error: refuse\n"
     )
 
@@ -1292,16 +1292,16 @@ def test_a_row_may_carry_consent_and_no_script():
     """The point that forced the shape: `plan → execute` is consent-gated on
     every lifecycle role, and NO role binds a gate script to it — so consent
     that could only ride an existing row would not reach it at all."""
-    (row,) = _rows({"rack": {"tasks": [{"at": ["edge:plan--execute"], "consent": True}]}})
+    (row,) = _rows({"rack": {"tasks": [{"at": ["plan->execute"], "consent": True}]}})
 
     assert row.run == "", "a consent-only row names no script"
     assert row.consent is True
-    assert row.consent_points() == ((("rack", ("tasks",), "edge:plan--execute"), True),)
+    assert row.consent_points() == ((("rack", ("tasks",), "plan->execute"), True),)
 
 
 def test_a_row_may_carry_both_a_gate_and_consent():
     (row,) = _rows(
-        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"], "consent": True}]}}
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["review->done"], "consent": True}]}}
     )
 
     assert row.run == "g/done.sh" and row.consent is True
@@ -1309,7 +1309,7 @@ def test_a_row_may_carry_both_a_gate_and_consent():
 
 def test_a_row_that_neither_runs_nor_consents_is_refused():
     with pytest.raises(CheckBindingError) as exc:
-        _rows({"rack": {"tasks": [{"at": ["edge:a--b"]}]}})
+        _rows({"rack": {"tasks": [{"at": ["a->b"]}]}})
     assert "'run:'" in str(exc.value)
 
 
@@ -1332,7 +1332,7 @@ def test_a_row_carrying_both_keys_keeps_its_failure_policy():
                 "tasks": [
                     {
                         "run": "g/done.sh",
-                        "at": ["edge:review--done"],
+                        "at": ["review->done"],
                         "on_error": "refuse",
                         "consent": True,
                     }
@@ -1347,13 +1347,13 @@ def test_a_row_carrying_both_keys_keeps_its_failure_policy():
 def test_consent_must_be_a_boolean():
     """Three-valued means true/false/absent — not a string that reads as truthy."""
     with pytest.raises(CheckBindingError) as exc:
-        _rows({"rack": {"tasks": [{"at": ["edge:a--b"], "consent": "yes"}]}})
+        _rows({"rack": {"tasks": [{"at": ["a->b"], "consent": "yes"}]}})
     assert "three-valued" in str(exc.value)
 
 
 def test_consent_is_not_carried_as_cargo():
     """An owned key: ai-hats reads it, so it must not also ride opaquely."""
-    (row,) = _rows({"rack": {"tasks": [{"at": ["edge:a--b"], "consent": True, "extra": 1}]}})
+    (row,) = _rows({"rack": {"tasks": [{"at": ["a->b"], "consent": True, "extra": 1}]}})
 
     assert row.cargo == {"extra": 1}
 
@@ -1366,17 +1366,17 @@ def test_a_later_false_switches_one_declared_point_off():
     from ai_hats.composer import _resolved_consent
 
     trait = _rows(
-        {"rack": {"tasks": [{"at": ["edge:plan--execute", "edge:review--done"], "consent": True}]}},
+        {"rack": {"tasks": [{"at": ["plan->execute", "review->done"], "consent": True}]}},
         declared_by="trait-agent",
     )
     role = _rows(
-        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"], "consent": False}]}},
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["review->done"], "consent": False}]}},
         declared_by="maintainer",
     )
 
-    points = [c.point for c in _resolved_consent([*trait, *role])]
+    points = [c.selector for c in _resolved_consent([*trait, *role])]
 
-    assert points == ["edge:plan--execute"], "the role's `false` did not win"
+    assert points == ["plan->execute"], "the role's `false` did not win"
 
 
 def test_a_row_silent_about_consent_switches_nothing_off():
@@ -1385,12 +1385,12 @@ def test_a_row_silent_about_consent_switches_nothing_off():
     from ai_hats.composer import _resolved_consent
 
     trait = _rows(
-        {"rack": {"tasks": [{"at": ["edge:review--done"], "consent": True}]}},
+        {"rack": {"tasks": [{"at": ["review->done"], "consent": True}]}},
         declared_by="trait-agent",
     )
     gate = _rows(
-        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["edge:review--done"]}]}},
+        {"rack": {"tasks": [{"run": "g/done.sh", "at": ["review->done"]}]}},
         declared_by="maintainer",
     )
 
-    assert [c.point for c in _resolved_consent([*trait, *gate])] == ["edge:review--done"]
+    assert [c.selector for c in _resolved_consent([*trait, *gate])] == ["review->done"]

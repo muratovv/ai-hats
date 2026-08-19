@@ -45,7 +45,8 @@ from ai_hats_rack.extensions import (
     PlanConsentExtension,
     Section,
 )
-from ai_hats_rack.fsm import Topology
+from ai_hats_rack.fsm import Topology, all_edges
+from ai_hats_rack.selectors import Edge, Selector, parse_selector
 from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 from ai_hats_library.hooks import consent_ticket
@@ -77,30 +78,23 @@ def _rack_lock_deadline(ctx: DispatchContext) -> Deadline | None:
     return Deadline(ctx.lock_expires_at, "rack task lock")
 
 
-def _all_edge_keys(topology: Topology) -> list[str]:
-    """Every ``edge:<from>--<to>`` pair: forced transitions fire real
-    (possibly non-topology) keys, so safety subscriptions enumerate the
-    product, not just legal edges."""
-    states = topology.states
+def _exact(edges: Sequence[Edge]) -> list[Selector]:
+    """One selector per pair. Wide forms are HATS-1720: until the veto rule that
+    comes with them exists, the integrator enumerates, so this slice changes the
+    SPELLING of these subscriptions and not their reach."""
+    return [Selector(e.from_state, e.to_state) for e in edges]
+
+
+def _edges_into(topology: Topology, *targets: str) -> list[Edge]:
+    return [e for e in all_edges(topology) if e.to_state in targets]
+
+
+def _edges_leaving_execute_or_terminal(topology: Topology) -> list[Edge]:
     return [
-        f"edge:{src}--{dst}"
-        for src in states
-        for dst in states
-        if src != dst or src == "execute"  # + reclaim self-loop (HATS-955)
+        e
+        for e in all_edges(topology)
+        if (e.from_state == "execute" and e.to_state != "execute") or e.to_state in TERMINAL_STATES
     ]
-
-
-def _keys_into(topology: Topology, *targets: str) -> list[str]:
-    return [k for k in _all_edge_keys(topology) if k.split("--")[-1] in targets]
-
-
-def _keys_leaving_execute_or_terminal(topology: Topology) -> list[str]:
-    out = []
-    for key in _all_edge_keys(topology):
-        src, dst = key.removeprefix("edge:").split("--")
-        if (src == "execute" and dst != "execute") or dst in TERMINAL_STATES:
-            out.append(key)
-    return out
 
 
 def _session_id() -> str:
@@ -139,7 +133,8 @@ class OwnershipSingleSlot:
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(k, Phase.IN_LOCK, self._priority) for k in _all_edge_keys(self._topology)
+            Subscription(s, Phase.IN_LOCK, self._priority)
+            for s in _exact(all_edges(self._topology))
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
@@ -171,8 +166,8 @@ class OwnershipClaim:
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(k, Phase.IN_LOCK, self._priority)
-            for k in _keys_into(self._topology, "execute")
+            Subscription(s, Phase.IN_LOCK, self._priority)
+            for s in _exact(_edges_into(self._topology, "execute"))
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
@@ -213,8 +208,8 @@ class OwnershipRelease:
 
     def subscriptions(self) -> Sequence[Subscription]:
         subs = [
-            Subscription(k, Phase.IN_LOCK, self._priority)
-            for k in _keys_leaving_execute_or_terminal(self._topology)
+            Subscription(s, Phase.IN_LOCK, self._priority)
+            for s in _exact(_edges_leaving_execute_or_terminal(self._topology))
         ]
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._epicify_priority))
         return subs
@@ -269,12 +264,12 @@ class WorktreeExtension:
 
     def subscriptions(self) -> Sequence[Subscription]:
         subs = [
-            Subscription(k, Phase.IN_LOCK, self._setup_priority)
-            for k in _keys_into(self._topology, "execute")
+            Subscription(s, Phase.IN_LOCK, self._setup_priority)
+            for s in _exact(_edges_into(self._topology, "execute"))
         ]
         subs.extend(
-            Subscription(k, Phase.IN_LOCK, self._teardown_priority)
-            for k in _keys_into(self._topology, *TERMINAL_STATES)
+            Subscription(s, Phase.IN_LOCK, self._teardown_priority)
+            for s in _exact(_edges_into(self._topology, *TERMINAL_STATES))
         )
         subs.append(Subscription("epicify", Phase.POST_LOCK, self._epicify_priority))
         return subs
@@ -485,21 +480,40 @@ class ConsentExtension:
         self._backlog = backlog
         self._topology = topology
         self._priority = priority
-        self._declared: frozenset[str] | None = None
+        self._declared: frozenset[Selector] | None = None
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(key, Phase.IN_LOCK, self._priority)
-            for key in _all_edge_keys(self._topology)
+            Subscription(s, Phase.IN_LOCK, self._priority)
+            for s in _exact(all_edges(self._topology))
         ]
 
-    def _points(self) -> frozenset[str]:
+    def _selectors(self) -> frozenset[Selector]:
+        """The role's declared consent selectors, parsed once.
+
+        Parsed, not compared as text: since HATS-1719 a declaration may denote a
+        SET of edges, and a string comparison would silently gate only the one
+        edge whose spelling happened to match.
+        """
         if self._declared is None:
             declared: set[str] = set()
-            if self._backlog_owner is not None:
-                for path in self._backlog:
-                    declared |= resolve_consent_points(self._backlog_owner, "rack", path=(path,))
-            self._declared = frozenset(declared)
+            try:
+                if self._backlog_owner is not None:
+                    for path in self._backlog:
+                        declared |= resolve_consent_points(
+                            self._backlog_owner, "rack", path=(path,)
+                        )
+            except AbortOperation:
+                raise
+            except Exception as exc:
+                # This subscriber runs at 11, BEFORE checks at 15 whose own
+                # resolution already does this — so a role the composer refuses
+                # surfaced here as an untyped traceback twelve frames deep, and
+                # `--json` printed nothing at all. A refusal out of an in-lock
+                # subscriber is a message, not a defect (HATS-1719 review).
+                raise AbortOperation(f"consent: {exc}") from exc
+            parsed = {parse_selector(name) for name in declared}
+            self._declared = frozenset(s for s in parsed if s is not None)
         return self._declared
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
@@ -511,7 +525,8 @@ class ConsentExtension:
         # is not a property of the command — `consent | op --force` (HATS-1682).
         if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
             return None
-        if ctx.event.key not in self._points():
+        edge = Edge(ctx.event.from_state, ctx.event.to_state)
+        if not any(selector.matches(edge) for selector in self._selectors()):
             return None
         to_state = ctx.event.to_state
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_STATE.get(to_state, "")):
@@ -564,8 +579,8 @@ class ConsentSpend:
 
     def subscriptions(self) -> Sequence[Subscription]:
         return [
-            Subscription(key, Phase.POST_LOCK, self._priority)
-            for key in _all_edge_keys(self._topology)
+            Subscription(s, Phase.POST_LOCK, self._priority)
+            for s in _exact(all_edges(self._topology))
         ]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:

@@ -76,7 +76,7 @@ def _echo_bindings(report: BindingReport) -> None:
     click.echo(f"bindings — {report.note}" if report.note else f"bindings ({len(report.rows)}):")
     for row in report.rows:
         where = f"apps.rack.{row.backlog}" if row.backlog else "apps.rack"
-        click.echo(f"  {row.status:<12} {where}  {row.point or '-'}  {row.label}")
+        click.echo(f"  {row.status:<12} {where}  {row.selector or '-'}  {row.label}")
 
 
 def verb() -> Verb:

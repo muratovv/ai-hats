@@ -24,10 +24,10 @@ from _helpers.git import git, init_repo
 pytestmark = pytest.mark.integration
 
 TASKS_SUB = Path(".agent") / "ai-hats" / "tracker" / "backlog" / "tasks"
-EDGE = "edge:brainstorm--plan"
+EDGE = "brainstorm->plan"
 #: The event half of a check-log filename; the binding half follows it
 #: (``<event>~<skill>~<script>.log``, ``rack_consumers._log_path``).
-EDGE_LOG_PREFIX = "edge-brainstorm--plan"
+EDGE_LOG_PREFIX = "brainstorm-%3Eplan"
 SKILL = "gate-skill"
 
 #: Where each known surface mirrors the session's composed skills — since
@@ -74,8 +74,8 @@ ROLES = {
 #: cases the carrier cannot tell apart and the rack can: a typo, and a row
 #: addressed to a SIBLING backlog (this repository ships HYP and PROP next to
 #: tasks). ``reviw`` is the exact string measured on 2026-08-09 taking an
-#: unrelated ``edge:brainstorm--plan`` down with it.
-STRAY_EDGE = "edge:reviw--done"
+#: unrelated ``brainstorm->plan`` down with it.
+STRAY_EDGE = "reviw->done"
 
 #: Roles binding a stray point: alone, and next to a real gate on a real edge.
 STRAY_ROLES = ("stray", "strayed")
@@ -188,6 +188,10 @@ def _seed_library(project: Path) -> None:
     stray_rows = {
         "stray": ((STRAY_EDGE, "pass.sh"),),
         "strayed": ((STRAY_EDGE, "pass.sh"), (EDGE, "refuse.sh")),
+        # A selector the grammar REFUSES, not one that merely misses (HATS-1719):
+        # the wide output is reserved for HATS-1720, so composing this role must
+        # fail — and the failure has to read as a message, not a traceback.
+        "wideout": (("execute->", "pass.sh"),),
     }
     for name, rows in stray_rows.items():
         role_dir = lib / "roles" / name
@@ -906,8 +910,8 @@ def test_the_check_log_lands_under_dot_checks_and_is_no_document(gate_project, r
 
 
 def test_a_point_outside_this_topology_does_not_abort_an_unrelated_edge(gate_project, rack_bin):
-    """D11 clause 2. Measured on 2026-08-09: one row on ``edge:reviw--done``
-    refused ``edge:brainstorm--plan`` — the "every transition refused" symptom
+    """D11 clause 2. Measured on 2026-08-09: one row on ``reviw->done``
+    refused ``brainstorm->plan`` — the "every transition refused" symptom
     that made HATS-1538 withdraw the shipped binding an hour after it landed.
 
     The carrier cannot tell that row from a sibling backlog's (this repository
@@ -1005,9 +1009,43 @@ def test_the_doctor_names_the_dead_point_the_transition_skips(gate_project, rack
     assert payload["clean"] is False
     assert [f["check"] for f in payload["findings"]] == ["dead-check-point"]
     assert STRAY_EDGE in payload["findings"][0]["detail"]
-    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [
+    assert [(r["status"], r["selector"]) for r in payload["bindings"]["rows"]] == [
         ("dead", STRAY_EDGE)
     ]
+
+
+def test_a_refused_selector_reaches_the_operator_as_a_message(gate_project, rack_bin):
+    """A composition refusal is a MESSAGE, not a stack trace (HATS-1719 review).
+
+    The consent subscriber resolves the role's declaration in-lock at priority
+    11 — before the checks subscriber at 15, whose own resolution already turns
+    trouble into this channel's refusal. So a role carrying a selector the
+    grammar refuses surfaced as an untyped exception twelve frames deep. The
+    arrow grammar made that easy to reach, which is what made it worth closing.
+    """
+    project, env = gate_project("wideout")
+    task_id = _create(rack_bin, project, env)
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env)
+    said = refused.stdout + refused.stderr
+
+    assert refused.returncode != 0, f"a refused selector composed clean:\n{said}"
+    assert "Traceback" not in said, f"the refusal reached the operator as a traceback:\n{said}"
+    assert "HATS-1720" in said, f"the refusal does not name the card that opens the form:\n{said}"
+
+
+def test_the_same_refusal_is_machine_readable(gate_project, rack_bin):
+    """`--json` returning NOTHING is how a caller reads a refusal as a crash."""
+    project, env = gate_project("wideout")
+    task_id = _create(rack_bin, project, env)
+
+    refused = _rack(rack_bin, "transition", task_id, "plan", "--json", cwd=project, env=env)
+
+    assert refused.returncode != 0
+    assert json.loads(refused.stdout or "null") is not None, (
+        f"--json printed nothing on a refusal:\nstdout={refused.stdout!r}\n"
+        f"stderr={refused.stderr!r}"
+    )
 
 
 def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):
@@ -1020,7 +1058,7 @@ def test_the_doctor_lists_an_armed_gate_and_stays_green(gate_project, rack_bin):
 
     assert report.returncode == 0, report.stdout + report.stderr
     payload = json.loads(report.stdout)
-    assert [(r["status"], r["point"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
+    assert [(r["status"], r["selector"]) for r in payload["bindings"]["rows"]] == [("armed", EDGE)]
     assert payload["bindings"]["rows"][0]["on_error"] == "refuse"
 
 

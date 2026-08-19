@@ -32,7 +32,7 @@ dependencies = [
     # HATS-1554: get_env spells AT_LAUNCH from ai_hats.session_artifacts, and
     # claim_launch_env overrides a hook that older releases do not call.
     "ai-hats>=0.15.0",
-    "ai-hats-observe>=0.6.0",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-observe>=0.6.1",  # floor tracks the workspace version (HATS-1399)
     "filelock>=3.0",  # HATS-963: concurrent-session guard for .cline/skills/ rebuild
 ]
 

@@ -10,6 +10,24 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- **A rack lifecycle point is now an arrow, and it denotes a SET** (HATS-1719). `at: [edge:<from>--<to>]` is replaced by `at: ['<from>-><to>']`, and the new `at: ['-><to>']` binds **every** road into a state. The retired spelling is **removed, not aliased**: a role still carrying it is refused at composition, naming the row. Grammar and legality: ADR-0017 §3.
+
+  Why it is worth the break: the shipped `->done` gate ("is master green after this card") was bound to `edge:review--done` — **one** of the **eight** edges into `done` that the worktree teardown-merge fires on. A forced close (`rack transition <id> --state done --force`, blessed by `docs/ARCHITECTURE.md`) merged into master with that question never asked. `at: ['->done']` closes all eight, and the forced close is now gated like every other road.
+
+  Also breaking, for anyone reading these surfaces:
+  - **The event key** in the transition journal, `audit.jsonl` and `AI_HATS_HOOK_POINT` is now `<from>-><to>`. Records written earlier keep the old spelling; `rack context --attr audit --event` accepts **both** and resolves them to the same record.
+  - **`rack doctor --json`** renamed its per-row key `point` → `selector`, and `role_materialization.json` did the same — the latter additionally carrying `from` and `to` already parsed, because the PreToolUse guard is stdlib-only and must not hold a second copy of the grammar.
+  - **`ai_hats_rack`**: `Subscription.event_key` → `.selector` (a `Selector` or a non-FSM key string), `BindingStatus.point` → `.selector`, `checks.parse_edge_point` → `selectors.parse_selector`, `checks.EDGE_PREFIX` removed. `Dispatcher.subscribers_for` now answers for non-FSM keys only; an edge is addressed by its pair via `subscribers_for_edge`.
+  - **`ai_hats_core`**: `ConsentPoint.point` → `.selector`.
+  - **`ai_hats_rack.all_edge_keys` is gone** — the product is `all_edges`, and it returns typed pairs. The string form had no caller left and its docstring named a spelling the journal does not take from it.
+  - **A topology may no longer name a state `ANY` or `NONE`** — refused at load. The selector grammar owns both words, and a state actually called `ANY` would turn exact subscriptions into wildcards.
+
+  Consent deliberately did **not** widen: it migrates one-to-one and stays on the edges the trait already named. A wide question without a batch is click-spam (HATS-1728). That split the `maintainer` role's single row in two — the "run + consent on one row" form ties the gate's reach to the question's, and here they differ.
+
+  Not yet legal, each refused by name of the card that opens it: `<from>->` and `ANY->ANY` (HATS-1720), `NONE->` / `->NONE` (HATS-1703).
+
 ### Added
 
 - **`rack ls --id <ID>`** (HATS-1654). Accept `--id` as an alias for the positional `TASK_ID`, the spelling `rack create` already uses. Until now it exited 2 and click's nearest-string hint offered `--deep` / `--link`, neither of which selects a card.

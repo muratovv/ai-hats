@@ -133,7 +133,7 @@ flow-блоком стало 228 -> 233 -> 238. Число, расходящее
 и `ci.yml`, скрипты хуков в него не входят.
 
 **Половина гейта холостая.** По транскриптам в `<ID>/.checks/`: **17
-срабатываний `edge:review--done`, 13 ответили «has no worktree — nothing to
+срабатываний `review->done`, 13 ответили «has no worktree — nothing to
 gate. Passing», и 11 из этих 13 — карточки, чей воркtree был влит в master.**
 Причина в порядке: в 8 случаях из 9 `wt:pre-merge` стреляет раньше ребра
 (`ai-hats wt merge`, через секунды `rack transition done`), и к ребру дерева уже

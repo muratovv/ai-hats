@@ -142,7 +142,7 @@ def test_kind_handler_subscribes_once_per_link_event(tmp_path):
     subs = build_link_subscribers(defn, tmp_path, {"dep-check": lambda d, c, cfg: _Recorder()})
     dep = [s for s in subs if s.name == "dep-check"]
     assert len(dep) == 1  # one channel — not one per (kind, verb)
-    keys = [s.event_key for s in dep[0].subscriptions()]
+    keys = [str(s.selector) for s in dep[0].subscriptions()]
     assert sorted(keys) == ["link:depends_on", "unlink:depends_on"]
     assert len(keys) == len(set(keys))  # no double-subscription
     # kind handlers are the LINK builder's job — the state/edge builder ignores

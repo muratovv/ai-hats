@@ -75,10 +75,10 @@ def _port(*points: ConsentPoint, tmp_path: Path) -> AiHatsCheckPort:
 
 
 def _point(name: str, *, backlog: str = "tasks", declared_by: str = "trait-agent") -> ConsentPoint:
-    return ConsentPoint(declared_by=declared_by, app="rack", path=(backlog,), point=name)
+    return ConsentPoint(declared_by=declared_by, app="rack", path=(backlog,), selector=name)
 
 
-def _check(script: Path, *, point: str = "edge:review--done") -> ResolvedCheck:
+def _check(script: Path, *, point: str = "review->done") -> ResolvedCheck:
     return ResolvedCheck(
         app="rack",
         path=("tasks",),
@@ -107,8 +107,8 @@ def _subscriber(port, *, known_backlogs=("tasks", "hyp")) -> CheckSubscriber:
     return CheckSubscriber(port, topology=_TOPOLOGY, backlog="tasks", known_backlogs=known_backlogs)
 
 
-def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
-    src, dst = event_key.removeprefix("edge:").split("--")
+def _ctx(event_key: str = "review->done") -> DispatchContext:
+    src, dst = event_key.split("->")
     return DispatchContext(
         event=EdgeEvent(from_state=src, to_state=dst),
         task=TaskCard(id="T-1"),
@@ -121,27 +121,42 @@ def _ctx(event_key: str = "edge:review--done") -> DispatchContext:
 # ----- contour 1: form, at composition, fail-closed -------------------------
 
 
-@pytest.mark.parametrize(
-    "point",
-    [
-        "edge:plan-execute",  # one dash — the measured A5 typo
-        "edge:--done",  # empty source half
-        "edge:review--",  # empty target half
-        "edge:",  # both halves empty
-        "review--done",  # no prefix at all
-    ],
-)
-def test_a_malformed_rack_consent_point_is_refused_at_composition(point):
-    """Fail-closed, because the alternative is what A5 measured: `edge:plan-execute`
+#: Every branch of the grammar's refusal, reached through the ai-hats composition
+#: contour — the fail-closed boundary A5 measured. Migrating this table by
+#: leaving the retired spellings in place left all five hitting the SAME first
+#: branch ("holds no arrow"), so a mutation that stopped judging arrows entirely
+#: kept 3883 tests green (HATS-1719 review). Each row names the branch it reaches.
+_MALFORMED = [
+    ("plan-execute", "an arrow"),  # the measured A5 typo, respelt
+    ("edge:plan--execute", "an arrow"),  # the RETIRED spelling is not an alias
+    ("review--done", "an arrow"),  # no arrow at all
+    ("->", "both halves empty"),  # a typo, not "everywhere"
+    ("a->b->c", "exactly one"),  # more than one arrow
+    ("review -> done", "no whitespace"),  # a second spelling of one selector
+    ("review->", "HATS-1720"),  # wide OUTPUT, reserved
+    ("ANY->ANY", "HATS-1720"),  # "everywhere", reserved
+    ("NONE->execute", "HATS-1703"),  # reserved word, no call site yet
+    ("ANY->done", "'->done'"),  # ANY on ONE side is a second spelling
+    ("a->>b", "not a state name"),  # the natural mistyping of the arrow
+    ("a-->b", "ends in '-'"),  # the other natural mistyping
+]
+
+
+@pytest.mark.parametrize("point, branch", _MALFORMED, ids=[p for p, _ in _MALFORMED])
+def test_a_malformed_rack_consent_point_is_refused_at_composition(point, branch):
+    """Fail-closed, because the alternative is what A5 measured: `plan-execute`
     composed with no error, no warning and nothing on any channel, and both roads
-    into master were open."""
+    into master were open.
+
+    Asserted per BRANCH, not against one shared sentence: a table whose rows all
+    reach the same refusal proves only that one refusal exists."""
     with pytest.raises(CheckBindingError) as exc:
         resolve_checks(_consent_row(point), [])
 
     said = str(exc.value)
     assert repr(point) in said, "the refusal must name the point it refuses"
     assert "'trait-agent'" in said and "apps.rack" in said, f"the row is unnamed: {said}"
-    assert "edge:<from>--<to>" in said, f"the refusal must spell the grammar: {said}"
+    assert branch in said, f"refused, but not by the branch this input reaches: {said}"
 
 
 def test_the_same_typo_is_refused_alike_with_and_without_a_script(tmp_path):
@@ -159,9 +174,9 @@ def test_the_same_typo_is_refused_alike_with_and_without_a_script(tmp_path):
         {"rack": {"tasks": [{"run": "gate-skill/hooks/gate.sh", "at": ["edge:plan-execute"]}]}}
     )
 
-    with pytest.raises(CheckBindingError, match="edge:<from>--<to>"):
+    with pytest.raises(CheckBindingError, match="a rack selector is an arrow"):
         resolve_checks(gate, [skill])
-    with pytest.raises(CheckBindingError, match="edge:<from>--<to>"):
+    with pytest.raises(CheckBindingError, match="a rack selector is an arrow"):
         resolve_checks(_consent_row("edge:plan-execute"), [skill])
 
 
@@ -169,10 +184,10 @@ def test_a_well_formed_point_for_an_edge_ai_hats_cannot_know_still_composes():
     """The form contour answers grammar only. Whether `plan` is a state of the
     backlog this row gates is the rack's question — ai-hats holds no topology,
     and refusing here would refuse every project whose backlog it cannot see."""
-    (row,) = _consent_row("edge:plan--execute")
+    (row,) = _consent_row("plan->execute")
 
     assert resolve_checks([row], []) == ()
-    assert [c.point for c in _resolved_consent([row])] == ["edge:plan--execute"]
+    assert [c.selector for c in _resolved_consent([row])] == ["plan->execute"]
 
 
 def test_a_foreign_app_keeps_its_own_grammar():
@@ -189,22 +204,22 @@ def test_a_foreign_app_keeps_its_own_grammar():
 def test_a_consent_point_naming_an_edge_the_topology_lacks_is_reported_dead(tmp_path):
     """The half the form contour cannot answer, answered where it can be: the
     same `dead` mechanism a gate row's typo already gets (`rack doctor`)."""
-    declarations = _port(_point("edge:reviw--done"), tmp_path=tmp_path).check_declarations()
+    declarations = _port(_point("reviw->done"), tmp_path=tmp_path).check_declarations()
 
     (status,) = classify_bindings(declarations, {"tasks": _TOPOLOGY})
 
     assert status.status == "dead"
-    assert "edge:reviw--done" in status.detail
+    assert "reviw->done" in status.detail
     assert "consent question" in status.detail, f"a consent row is not a gate: {status.detail}"
 
 
 def test_a_live_consent_point_reports_armed(tmp_path):
     """The control: without it "dead" above could be how every consent row reads."""
-    declarations = _port(_point("edge:review--done"), tmp_path=tmp_path).check_declarations()
+    declarations = _port(_point("review->done"), tmp_path=tmp_path).check_declarations()
 
     (status,) = classify_bindings(declarations, {"tasks": _TOPOLOGY})
 
-    assert (status.status, status.point) == ("armed", "edge:review--done")
+    assert (status.status, status.selector) == ("armed", "review->done")
 
 
 def test_a_consent_point_aimed_at_a_sibling_backlog_is_not_an_error(tmp_path):
@@ -215,7 +230,7 @@ def test_a_consent_point_aimed_at_a_sibling_backlog_is_not_an_error(tmp_path):
     Both halves: the `tasks` subscriber passes the edge without a word, and the
     doctor, which sees every topology, calls the row healthy on its own backlog.
     """
-    port = _port(_point("edge:review--done", backlog="hyp"), tmp_path=tmp_path)
+    port = _port(_point("review->done", backlog="hyp"), tmp_path=tmp_path)
 
     assert _subscriber(port).on_event(_ctx()) is None, "a sibling's row must not fire here"
 
@@ -231,7 +246,7 @@ def test_a_point_belonging_to_a_sibling_topology_is_foreign_not_dead(tmp_path):
     sibling = Topology(
         initial="new", states=("new", "active", "confirmed"), edges={"active": ("confirmed",)}
     )
-    port = _port(_point("edge:active--confirmed"), tmp_path=tmp_path)
+    port = _port(_point("active->confirmed"), tmp_path=tmp_path)
 
     (status,) = classify_bindings(port.check_declarations(), {"tasks": _TOPOLOGY, "hyp": sibling})
 
@@ -243,7 +258,7 @@ def test_a_consent_point_on_a_backlog_nothing_answers_to_refuses_in_the_lock(tmp
     """The other half of what A5 measured: `apps.rack.taks` (a typo'd backlog)
     reached no validator, so the point silently gated nothing. It now meets the
     same `_addresses_me` refusal a gate row has always met."""
-    port = _port(_point("edge:review--done", backlog="taks"), tmp_path=tmp_path)
+    port = _port(_point("review->done", backlog="taks"), tmp_path=tmp_path)
 
     with pytest.raises(AbortOperation) as exc:
         _subscriber(port).on_event(_ctx())
@@ -257,13 +272,13 @@ def test_the_carried_consent_row_is_marked_as_one(tmp_path):
     port = AiHatsCheckPort(
         tmp_path,
         catalog=tmp_path / "tasks",
-        resolve_consent=lambda: (_point("edge:review--done"),),
+        resolve_consent=lambda: (_point("review->done"),),
     )
 
     (declaration,) = port.check_declarations()
 
     assert declaration.kind == CONSENT_ROW
-    assert declaration.at == ("edge:review--done",)
+    assert declaration.at == ("review->done",)
     assert declaration.path == ("tasks",)
     assert declaration.on_error == "", "a row that spawns nothing has no failure policy"
     assert "declares consent" in declaration.label
@@ -277,7 +292,7 @@ def test_a_consent_only_row_never_reaches_script_resolution():
     is the empty string, so resolving one asks for a script inside a skill that
     was never named — and refuses the declaration for a defect it does not have.
     No skill is composed here on purpose: the row must not need one."""
-    assert resolve_checks(_consent_row("edge:review--done"), []) == ()
+    assert resolve_checks(_consent_row("review->done"), []) == ()
     assert resolve_checks(_rows({"wt": [{"at": ["pre-merge"], "consent": True}]}), []) == ()
 
 
@@ -315,11 +330,11 @@ def test_a_consent_point_composed_inside_a_linked_worktree_still_resolves(tmp_pa
         tmp_path,
         "rack",
         identity=None,
-        compose=lambda _p: _composed(consent=(_point("edge:review--done"),)),
+        compose=lambda _p: _composed(consent=(_point("review->done"),)),
     )
 
     assert checks == ()
-    assert [p.point for p in consent] == ["edge:review--done"]
+    assert [p.selector for p in consent] == ["review->done"]
 
 
 def test_a_consent_row_is_never_handed_to_the_executor(tmp_path):
@@ -331,7 +346,7 @@ def test_a_consent_row_is_never_handed_to_the_executor(tmp_path):
             return AiHatsCheckPort(
                 tmp_path,
                 catalog=tmp_path / "tasks",
-                resolve_consent=lambda: (_point("edge:review--done"),),
+                resolve_consent=lambda: (_point("review->done"),),
             ).check_declarations()
 
         def run_check(self, request):
@@ -352,7 +367,7 @@ def test_a_gate_row_on_the_same_edge_still_runs(tmp_path):
             return (
                 CheckDeclaration(
                     path=("tasks",),
-                    at=("edge:review--done",),
+                    at=("review->done",),
                     cargo={},
                     on_error="refuse",
                     label="a gate",
@@ -362,7 +377,7 @@ def test_a_gate_row_on_the_same_edge_still_runs(tmp_path):
                 *AiHatsCheckPort(
                     tmp_path,
                     catalog=tmp_path / "tasks",
-                    resolve_consent=lambda: (_point("edge:review--done"),),
+                    resolve_consent=lambda: (_point("review->done"),),
                 ).check_declarations(),
             )
 
@@ -384,9 +399,9 @@ def test_a_later_trait_switching_consent_off_warns(capsys):
     """B10: `_resolved_consent` is last-writer-wins, and the later writer need
     not be the role — an overlay appends a trait to the tail of the list. The
     RULE stays (the supervisor ruled a `false` wins); the silence does not."""
-    first = _consent_row("edge:review--done", declared_by="trait-agent")
+    first = _consent_row("review->done", declared_by="trait-agent")
     second = _rows(
-        {"rack": {"tasks": [{"at": ["edge:review--done"], "consent": False}]}},
+        {"rack": {"tasks": [{"at": ["review->done"], "consent": False}]}},
         declared_by="trait-late",
     )
 
@@ -395,21 +410,21 @@ def test_a_later_trait_switching_consent_off_warns(capsys):
     said = capsys.readouterr().err
     assert said.startswith("WARN:"), f"the flip was silent: {said!r}"
     assert "'trait-agent'" in said and "'trait-late'" in said
-    assert "edge:review--done" in said and "apps.rack.tasks" in said
+    assert "review->done" in said and "apps.rack.tasks" in said
 
 
 def test_re_declaring_the_same_consent_is_idempotent_and_silent(capsys):
     """The card's own rule, and what makes the maintainer done-gate duplicate
     (Q3) free: a second `true` moves nothing and says nothing."""
-    trait = _consent_row("edge:review--done", declared_by="trait-agent")
+    trait = _consent_row("review->done", declared_by="trait-agent")
     role = _rows(
-        {"rack": {"tasks": [{"run": "g/d.sh", "at": ["edge:review--done"], "consent": True}]}},
+        {"rack": {"tasks": [{"run": "g/d.sh", "at": ["review->done"], "consent": True}]}},
         declared_by="maintainer",
     )
 
     resolved = _resolved_consent([*trait, *role])
 
-    assert [(c.point, c.declared_by) for c in resolved] == [("edge:review--done", "trait-agent")]
+    assert [(c.selector, c.declared_by) for c in resolved] == [("review->done", "trait-agent")]
     assert capsys.readouterr().err == "", "an idempotent duplicate must be silent"
 
 
@@ -417,12 +432,12 @@ def test_arming_a_point_a_row_had_switched_off_does_not_warn(capsys):
     """Only the disarming direction is a finding — turning a gate ON is never
     the event that needs explaining."""
     off = _rows(
-        {"rack": {"tasks": [{"at": ["edge:review--done"], "consent": False}]}},
+        {"rack": {"tasks": [{"at": ["review->done"], "consent": False}]}},
         declared_by="trait-a",
     )
-    on = _consent_row("edge:review--done", declared_by="trait-b")
+    on = _consent_row("review->done", declared_by="trait-b")
 
-    assert [c.point for c in _resolved_consent([*off, *on])] == ["edge:review--done"]
+    assert [c.selector for c in _resolved_consent([*off, *on])] == ["review->done"]
     assert capsys.readouterr().err == ""
 
 
@@ -457,7 +472,7 @@ def test_a_consent_only_row_at_a_real_owned_point_still_composes():
     rows = _rows({"wt": [{"at": ["pre-merge"], "consent": True}]})
 
     assert resolve_checks(rows, []) == ()
-    assert [c.point for c in _resolved_consent(rows)] == ["pre-merge"]
+    assert [c.selector for c in _resolved_consent(rows)] == ["pre-merge"]
 
 
 # ----- the entry point is exported like its siblings (B14) ------------------
@@ -478,7 +493,7 @@ def _shipped_consent(role: str) -> set[tuple[str, tuple[str, ...], str]]:
     asm = Assembler(_REPO_ROOT, library_paths=[_LIBRARY / "core", _LIBRARY / "usage"])
     result = asm.composer.compose(role)
     assert result.errors == [], result.errors
-    return {(p.app, p.path, p.point) for p in result.consent}
+    return {(p.app, p.path, p.selector) for p in result.consent}
 
 
 @pytest.mark.parametrize(
@@ -505,26 +520,34 @@ def test_a_lifecycle_role_does_declare_consent():
     """The control: an empty set above must mean "this role declares none", not
     "the probe reads nothing"."""
     assert _shipped_consent("maintainer") == {
-        ("rack", ("tasks",), "edge:plan--execute"),
-        ("rack", ("tasks",), "edge:review--done"),
+        ("rack", ("tasks",), "plan->execute"),
+        ("rack", ("tasks",), "review->done"),
         ("wt", (), "pre-merge"),
     }
 
 
-def test_the_maintainer_done_gate_row_carries_both_keys():
-    """Q3: the "run + consent on one row" form the glossary and ADR-0027 present
-    as adopted had no carrier anywhere in the library. It has one now, and the
-    duplicate with `trait-agent`'s declaration resolves to the identical set —
-    the assertion above is the same one it made before the key was added."""
+def test_the_maintainer_gate_is_wide_and_its_consent_stays_narrow():
+    """HATS-1719: the two reaches differ, so they are TWO rows.
+
+    The "run + consent on one row" form (ADR-0027 D1a) ties the gate's reach to
+    the question's. Here they must differ: the gate covers every road into
+    `done` — the measured hole was 1 edge of 8 — while the question stays on the
+    review edge, because a wide question without a batch is click-spam
+    (HATS-1728). A single row cannot say that, and the form's limit is the
+    finding this pin records.
+    """
     import yaml
 
     config = yaml.safe_load(
         (_LIBRARY / "usage/roles/maintainer/config.yaml").read_text(encoding="utf-8")
     )
-    (row,) = [
-        r
-        for r in config["composition"]["apps"]["rack"]["tasks"]
-        if "edge:review--done" in r.get("at", [])
-    ]
+    rows = config["composition"]["apps"]["rack"]["tasks"]
 
-    assert row["run"] and row["consent"] is True and row["on_error"] == "refuse"
+    (gate,) = [r for r in rows if r.get("run")]
+    assert gate["at"] == ["->done"], "the gate must cover every road into done"
+    assert gate["on_error"] == "refuse"
+    assert "consent" not in gate, "a wide gate must not drag the question wide with it"
+
+    (question,) = [r for r in rows if r.get("consent") is True]
+    assert question["at"] == ["review->done"]
+    assert "run" not in question

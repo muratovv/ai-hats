@@ -93,7 +93,7 @@ def test_transition_json_carries_deltas_and_journal(runner, tmp_path):
     assert payload["transitions"] == [
         {"task_id": "HATS-001", "from": "brainstorm", "to": "plan", "reason": ""}
     ]
-    assert payload["journal"][0]["event"] == "edge:brainstorm--plan"
+    assert payload["journal"][0]["event"] == "brainstorm->plan"
 
 
 def test_invalid_transition_prints_legal_edges(runner, tmp_path):

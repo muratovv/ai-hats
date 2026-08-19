@@ -33,8 +33,8 @@ FileLock(task) → FSM-guard → in-memory mutation → in-lock subscribers → 
 class MyExtension:
     name = "my-extension"
 
-    def subscriptions(self) -> list[Subscription]:  # (event_key, phase, priority)
-        return [Subscription("edge:plan--execute", Phase.IN_LOCK, priority=10)]
+    def subscriptions(self) -> list[Subscription]:  # (selector, phase, priority)
+        return [Subscription("plan->execute", Phase.IN_LOCK, priority=10)]
 
     def on_event(
         self, ctx: DispatchContext
@@ -56,7 +56,7 @@ class MyExtension:
 
 | Event key                       | Fired by                                                           | Named consumer                                                                                                                                                        |
 | ------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `edge:<from>--<to>`             | `Kernel.transition`                                                | K3 core extensions (plan-gate, ownership, worktree in-lock; epic-automation, views post-lock); K4 hook-runner                                                         |
+| `<from>-><to>` / `-><to>`       | `Kernel.transition`                                                | K3 core extensions (plan-gate, ownership, worktree in-lock; epic-automation, views post-lock); K4 hook-runner                                                         |
 | `epicify`                       | `Kernel.create` / `Kernel.set_parent` (child gained)               | K3 ownership + worktree reconciliation handlers (idempotent release / `discard_if_empty`, HATS-977/979)                                                               |
 | `pre-destroy`                   | extensions via `Kernel.publish`                                    | K3 guards on irreversible ops (abort / extract before worktree merge-discard, PROP-047/058)                                                                           |
 | `link:<kind>` / `unlink:<kind>` | `Kernel.transition_ops` `--link`/`--unlink` (owning side, in-lock) | declared `links.kinds[].handlers` (e.g. a dep-cycle-check); fires only for a kind that declares handlers — the cross-backlog mirror `link-target:<kind>` is HATS-1044 |
@@ -103,8 +103,8 @@ one-directional — the rack never imports them.
 `backlog.yaml` binds handlers where the edge is declared — the file says what
 fires where. Four slots, expanded to subscriptions by the loader:
 
-- `states[].on_enter` / `on_exit` — the FULL `edge:<src>--<state>` /
-  `edge:<state>--<dst>` product (forced non-topology edges included, HATS-518); a
+- `states[].on_enter` / `on_exit` — the FULL `<src>-><state>` /
+  `<state>-><dst>` product (forced non-topology edges included, HATS-518); a
   declared self-loop (`reclaim`) is in the product, an undeclared one is not.
 - `edges[].handlers` — one exact edge; `edges[].skip: [name]` opts that edge out
   of an on_enter/on_exit handler (the declarative reopen `skip: [plan-gate]`).
@@ -135,7 +135,7 @@ is ADR-0017 §3 in the ai-hats repo — keep the two in step.)
   row gates, matched against `BacklogDefinition.name` **or** its `cli_alias`.
   The level is not optional: a row sitting directly under `apps.rack` refuses.
 - **`at: [<point>, …]`** — the points the row fires on, in this package's own
-  vocabulary (`edge:<from>--<to>` today).
+  vocabulary — an ARROW: `<from>-><to>` for exactly that edge, `-><to>` for every road into a state (grammar and legality: ADR-0017 §3).
 - Any other key rides along in `CheckDeclaration.cargo` and is read by nobody:
   an extra key is a no-op, not a setting.
 

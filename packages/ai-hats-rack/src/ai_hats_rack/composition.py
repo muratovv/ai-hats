@@ -25,7 +25,8 @@ from .dispatch import (
     validate_requires_states,
 )
 from .errors import RackConfigError
-from .fsm import Topology
+from .fsm import Topology, declares_self_loop
+from .selectors import Selector
 
 if TYPE_CHECKING:
     from .extensions.sections import Section
@@ -183,9 +184,10 @@ class BoundReadSubscriber:
 
 
 def _self_loops(topology: Topology) -> set[str]:
-    """States carrying a DECLARED self-edge (reclaim precedent, ADR-0017 §3): the
-    on_enter/on_exit product includes ``edge:S--S`` only for these."""
-    return {s for s in topology.states if s in topology.edges.get(s, ())}
+    """States carrying a DECLARED self-edge: the on_enter/on_exit product
+    includes ``S->S`` only for these. The rule itself lives in ``fsm`` — this
+    is the set-shaped view of it, not a second copy (HATS-1719)."""
+    return {s for s in topology.states if declares_self_loop(topology, s)}
 
 
 def _product_keys(
@@ -252,7 +254,7 @@ def build_bound_subscribers(
     groups: dict[tuple[str, Any], dict[str, Any]] = {}
     for ref, kind, target, prio in records:
         keys = {
-            f"edge:{src}--{dst}": prio
+            Selector(src, dst): prio
             for (src, dst) in _product_keys(kind, target, topology, self_loops)
             if ref.name not in b.edge_skips.get((src, dst), frozenset())
         }

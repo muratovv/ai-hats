@@ -12,7 +12,7 @@ That gate proves this view matches the docstrings. It cannot prove a
 docstring still matches its own test — both go stale together. Treat a row
 as a claim to check, not as evidence.
 
-**250 of 250 files catalogued — 259 flows.**
+**251 of 251 files catalogued — 260 flows.**
 
 ## `test_adr_integrity_gate.py`
 
@@ -172,6 +172,21 @@ as a claim to check, not as evidence.
 
 - **expect** — worktree gate hook denies destructive writes in main checkout
 - **why** — without worktree gate hooks materialized for agy, agents make unauthorized direct edits to main checkout
+
+## `test_arrow_consent_chain.py`
+
+*pins HATS-1719*
+
+- **flow** — a role whose consent is declared in the ARROW spelling, read across the process boundary by the composed PreToolUse chain
+- **cmds**
+
+  ```console
+  rack transition HATS-1 execute
+  rack transition HATS-1 done
+  ```
+
+- **expect** — the chain still raises the supervisor's question on both declared roads
+- **why** — the guard is stdlib-only and cannot import the rack's parser. It used to cut the point name itself (`safety_gate.py`, `partition("--")`), and on an arrow that cut returns nothing — `declared_consent_targets()` empties and the question disappears on BOTH roads into master, in silence. That is defect A5 of HATS-1682, and this is the test that catches it: revert the envelope half of HATS-1719 and these assertions go red.
 
 ## `test_backlog_write_gate.py`
 

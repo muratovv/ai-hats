@@ -72,7 +72,7 @@ _STATES = ("plan", "execute", "document", "done", "shipped")
 
 
 def _keys(sub) -> set[str]:
-    return {s.event_key for s in sub.subscriptions()}
+    return {str(s.selector) for s in sub.subscriptions()}
 
 
 def _by_name(subs):
@@ -85,33 +85,33 @@ def test_on_enter_expands_over_the_full_edge_product(tmp_path):
     subs = _by_name(build_bound_subscribers(_defn(tmp_path, _DOC), tmp_path, _factories()))
     gate = _keys(subs["plan-gate"])
     assert gate == {
-        "edge:plan--execute",
-        "edge:document--execute",
-        "edge:shipped--execute",
-        "edge:execute--execute",  # declared self-loop (reclaim) IS in the product
+        "plan->execute",
+        "document->execute",
+        "shipped->execute",
+        "execute->execute",  # declared self-loop (reclaim) IS in the product
     }
-    assert "edge:done--execute" not in gate  # reopen skips plan-gate (ADR-0017 §3)
+    assert "done->execute" not in gate  # reopen skips plan-gate (ADR-0017 §3)
 
 
 def test_self_loop_key_only_when_the_self_edge_is_declared(tmp_path):
     subs = _by_name(build_bound_subscribers(_defn(tmp_path, _DOC), tmp_path, _factories()))
     # `done`/`shipped` have no self-edge → no self-loop key in the stamp product;
-    # `execute` DOES (reclaim) → plan-gate carries edge:execute--execute.
-    assert "edge:done--done" not in _keys(subs["stamp-lifecycle"])
-    assert "edge:shipped--shipped" not in _keys(subs["stamp-lifecycle"])
-    assert "edge:execute--execute" in _keys(subs["plan-gate"])
+    # `execute` DOES (reclaim) → plan-gate carries execute->execute.
+    assert "done->done" not in _keys(subs["stamp-lifecycle"])
+    assert "shipped->shipped" not in _keys(subs["stamp-lifecycle"])
+    assert "execute->execute" in _keys(subs["plan-gate"])
 
 
 def test_on_exit_is_the_symmetric_full_product(tmp_path):
     # `scribe` on plan.on_exit: every edge:plan--<dst> for dst != plan (no
     # plan--plan self-edge declared, so none here).
     subs = _by_name(build_bound_subscribers(_defn(tmp_path, _DOC), tmp_path, _factories()))
-    assert _keys(subs["scribe"]) == {f"edge:plan--{dst}" for dst in _STATES if dst != "plan"}
+    assert _keys(subs["scribe"]) == {f"plan->{dst}" for dst in _STATES if dst != "plan"}
 
 
 def test_edge_handlers_bind_that_exact_edge_only(tmp_path):
     subs = _by_name(build_bound_subscribers(_defn(tmp_path, _DOC), tmp_path, _factories()))
-    assert _keys(subs["clear-lifecycle"]) == {"edge:done--execute"}
+    assert _keys(subs["clear-lifecycle"]) == {"done->execute"}
 
 
 def test_band_vs_explicit_pin_ordering(tmp_path):
@@ -146,7 +146,7 @@ def test_declared_handler_subscribes_once_per_event(tmp_path):
         _defn(tmp_path, body), tmp_path, {"guard": _stub_factory("guard")}
     )
     guard = next(s for s in subs if s.name == "guard")
-    hits = [s for s in guard.subscriptions() if s.event_key == "edge:plan--execute"]
+    hits = [s for s in guard.subscriptions() if str(s.selector) == "plan->execute"]
     assert len(hits) == 1
 
 
@@ -178,7 +178,7 @@ def _kit_kernel(tmp_path, cwd):
 
 def test_forced_non_topology_entry_fires_declared_on_enter(tmp_path, cwd):
     # `shipped` has no incoming edge; a FORCED plan→shipped fires the real
-    # edge:plan--shipped key, and the declared on_enter stamp still runs
+    # plan->shipped key, and the declared on_enter stamp still runs
     # (HATS-518: force weakens the arrow, not the machinery).
     kernel = _kit_kernel(tmp_path, cwd)
     kernel.create(actor="test", caller_cwd=cwd, task_id="T-1", title="t")

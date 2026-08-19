@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     "ai-hats",
     "ai-hats-core",
-    "ai-hats-observe>=0.6.0",  # floor tracks the workspace version (HATS-1399)
+    "ai-hats-observe>=0.6.1",  # floor tracks the workspace version (HATS-1399)
     "filelock>=3.0",
 ]
 

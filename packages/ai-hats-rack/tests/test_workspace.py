@@ -16,6 +16,7 @@ import pytest
 from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.kernel import Kernel
 from ai_hats_rack.resolver import RackRoot
+from ai_hats_rack.selectors import Edge
 from ai_hats_rack.workspace import (
     AmbiguousPrefixError,
     DuplicatePrefixError,
@@ -192,7 +193,11 @@ def test_kernel_for_sibling_builds_the_portable_kit(tmp_path):
 
 
 def _names_on(kernel: Kernel, event_key: str) -> set[str]:
-    return {sub.name for sub in kernel._dispatcher.subscribers_for(event_key, Phase.IN_LOCK)}
+    source, target = event_key.split("->")
+    return {
+        sub.name
+        for sub in kernel._dispatcher.subscribers_for_edge(Edge(source, target), Phase.IN_LOCK)
+    }
 
 
 def test_sibling_kernel_carries_its_own_check_subscriber(tmp_path):
@@ -203,7 +208,7 @@ def test_sibling_kernel_carries_its_own_check_subscriber(tmp_path):
     ws = Workspace.discover(
         [root], kernel_builder=lambda inst: None, check_port=lambda catalog: object()
     )
-    assert "checks" in _names_on(ws.kernel_for("HYP-7"), "edge:active--confirmed")
+    assert "checks" in _names_on(ws.kernel_for("HYP-7"), "active->confirmed")
 
 
 def test_no_check_port_leaves_the_portable_kit_untouched(tmp_path):
@@ -211,7 +216,7 @@ def test_no_check_port_leaves_the_portable_kit_untouched(tmp_path):
     root = _root(tmp_path)
     _mount_hyp(root)
     ws = Workspace.discover([root], kernel_builder=lambda inst: None)
-    assert "checks" not in _names_on(ws.kernel_for("HYP-7"), "edge:active--confirmed")
+    assert "checks" not in _names_on(ws.kernel_for("HYP-7"), "active->confirmed")
 
 
 def test_check_port_is_asked_for_the_gated_catalog(tmp_path):
@@ -234,7 +239,7 @@ def test_tasks_instance_gets_one_when_no_builder_claims_it(tmp_path):
     walks PROP along a named edge — there the tasks instance was ungated too."""
     root = _root(tmp_path)
     ws = Workspace.discover([root], check_port=lambda catalog: object())
-    assert "checks" in _names_on(ws.kernel_for("HATS-1"), "edge:review--done")
+    assert "checks" in _names_on(ws.kernel_for("HATS-1"), "review->done")
 
 
 def test_subscriber_knows_every_selector_of_its_root(tmp_path):

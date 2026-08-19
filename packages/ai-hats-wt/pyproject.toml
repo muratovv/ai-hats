@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-hats-wt"
-version = "0.6.0"
+version = "0.6.1"
 description = "Hook-agnostic git-worktree engine for the ai-hats framework (WorktreeManager + the L1-L4 concurrency model)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
-    "ai-hats-core>=0.9.0",  # Deadline.clamped_to, used by the lifecycle lock (HATS-1603)
+    "ai-hats-core>=0.10.0",  # floor tracks the workspace version (HATS-1719); Deadline.clamped_to needs only 0.9.0
     "filelock>=3.12",
     "pydantic>=2.0",
 ]

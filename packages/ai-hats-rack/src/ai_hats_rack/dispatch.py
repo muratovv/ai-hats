@@ -13,7 +13,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 from .errors import RackConfigError, RackError
-from .events import Event
+from .events import EdgeEvent, Event
+from .selectors import (
+    ANY,
+    Edge,
+    Selector,
+    is_event_key,
+    is_retired_point,
+    parse_selector,
+    selector_form,
+)
 from .models import TaskCard, utc_now
 
 if TYPE_CHECKING:
@@ -35,11 +44,51 @@ class Phase(str, Enum):
 
 @dataclass(frozen=True)
 class Subscription:
-    """Interest declaration: exact event key + phase + priority (lower first)."""
+    """Interest declaration: what to match + phase + priority (lower first).
 
-    event_key: str
+    ``selector`` is a :class:`~.selectors.Selector` for an FSM event — matched by
+    the PAIR, so one subscription answers for every edge it denotes — or a plain
+    string for the events that are not FSM edges at all (``epicify``,
+    ``link:<kind>``, ``read:<kind>``, ``op:<op>``, ``pre-destroy``), which obey no
+    arrow grammar (HATS-1719, design §1.5/§9).
+    """
+
+    selector: Selector | str
     phase: Phase
     priority: int = 100
+
+    def __post_init__(self) -> None:
+        """A STRING goes through the public grammar; a Selector OBJECT is trusted.
+
+        Two traps, and normalizing alone only closed the first. A plain
+        ``"review->done"`` would land in the key bucket and match no edge ever —
+        disarmed in silence. But normalizing without JUDGING relocates the
+        second: ``parse_selector`` is deliberately wider than the legal grammar,
+        so ``"execute->"`` would become a silent WILDCARD and ``"a->b->c"`` a
+        selector that matches nothing — neither raising (HATS-1719 review).
+
+        Hence the rule: a string is validated by the grammar's own predicate and
+        refused when it fails, while code that genuinely means a wide selector
+        says so with a ``Selector`` — which is how HATS-1720 subscribes wide
+        without reopening the string path.
+        """
+        if not isinstance(self.selector, str):
+            return
+        if is_retired_point(self.selector):
+            raise ValueError(
+                f"{self.selector!r} is the retired point spelling — write the arrow "
+                f"({self.selector[len('edge:') :].replace('--', '->')!r}). Filed as a key it "
+                f"would register cleanly and never fire (HATS-1719)."
+            )
+        if is_event_key(self.selector):
+            return
+        parsed = parse_selector(self.selector)
+        if parsed is None:
+            return  # a name holding no arrow: a foreign event key, left alone
+        refusal = selector_form(self.selector)
+        if refusal is not None:
+            raise ValueError(f"{self.selector!r} is not a usable selector — {refusal}")
+        object.__setattr__(self, "selector", parsed)
 
 
 @dataclass(frozen=True)
@@ -303,31 +352,80 @@ class Dispatcher:
     """Routes events to subscribers by exact key, per phase, priority order."""
 
     def __init__(self, subscribers: Sequence[Subscriber] = ()) -> None:
+        #: Non-FSM events, matched by their bare key.
         self._index: dict[tuple[str, Phase], list[tuple[int, int, Subscriber]]] = {}
+        #: FSM subscriptions naming ONE pair — a dict, so the common case stays
+        #: a lookup rather than a scan over every subscription in the process.
+        self._exact: dict[tuple[Edge, Phase], list[tuple[int, int, Subscriber]]] = {}
+        #: FSM subscriptions denoting a SET; scanned, since a predicate cannot
+        #: be a dict key. Kept apart from ``_exact`` for that reason alone.
+        self._wide: dict[Phase, list[tuple[int, int, Subscriber, Selector]]] = {}
         for seq, sub in enumerate(subscribers):
             for spec in sub.subscriptions():
-                self._index.setdefault((spec.event_key, spec.phase), []).append(
-                    (spec.priority, seq, sub)
-                )
-        for bucket in self._index.values():
+                selector = spec.selector
+                if isinstance(selector, str):
+                    self._index.setdefault((selector, spec.phase), []).append(
+                        (spec.priority, seq, sub)
+                    )
+                elif ANY in (selector.source, selector.target):
+                    self._wide.setdefault(spec.phase, []).append(
+                        (spec.priority, seq, sub, selector)
+                    )
+                else:
+                    key = (Edge(selector.source, selector.target), spec.phase)
+                    self._exact.setdefault(key, []).append((spec.priority, seq, sub))
+        for bucket in (*self._index.values(), *self._exact.values(), *self._wide.values()):
             bucket.sort(key=lambda item: (item[0], item[1]))
 
     def subscribers_for(self, event_key: str, phase: Phase) -> list[Subscriber]:
+        """Subscribers for a NON-FSM event key.
+
+        An FSM edge is addressed by its pair — :meth:`subscribers_for_edge` —
+        because a selector denotes a SET and no string can stand for one. Asked
+        with an arrow this method would find an empty bucket and answer ``[]``,
+        which reads exactly like "nothing is subscribed"; refusing is the whole
+        point, since that silence is the defect class this grammar removed.
+        """
+        if parse_selector(event_key) is not None or is_retired_point(event_key):
+            raise ValueError(
+                f"{event_key!r} addresses an FSM edge, not a non-FSM event — ask "
+                f"subscribers_for_edge(Edge(...), phase). A selector denotes a SET of edges "
+                f"and cannot be looked up as one string, and the retired spelling would "
+                f"quietly answer 'nothing subscribes' (HATS-1719). The named-edge alias "
+                f"'edge:<name>' is NOT that spelling and is answered normally."
+            )
         return [sub for _, _, sub in self._index.get((event_key, phase), [])]
 
-    def _subscribers_for_event(self, event: Event, phase: Phase) -> list[Subscriber]:
-        """Subscribers for an event's match keys, merged into one priority order.
+    def subscribers_for_edge(
+        self, edge: Edge, phase: Phase, *, alias_key: str | None = None
+    ) -> list[Subscriber]:
+        """Every subscription whose selector matches ``edge``, in ONE order.
 
-        A named edge (HATS-1042 §3) matches the canonical ``edge:<from>--<to>``
-        key AND the alias ``edge:<name>``; both buckets interleave by the single
-        (priority, registration) order, so alias and canonical subscribers share
-        one total order rather than firing in separate passes.
+        Exact and wide interleave by the single (priority, registration) order
+        rather than firing in separate passes: matching is a predicate, so all
+        matched rows run and the order is the ladder's business, not the
+        matcher's (design.md §1.5).
         """
-        alias = getattr(event, "alias_key", None)
-        if not alias:
+        rows = list(self._exact.get((edge, phase), ()))
+        rows += [(p, s, sub) for (p, s, sub, sel) in self._wide.get(phase, ()) if sel.matches(edge)]
+        if alias_key:
+            rows += self._index.get((alias_key, phase), [])
+        rows.sort(key=lambda item: (item[0], item[1]))
+        return [sub for _, _, sub in rows]
+
+    def _subscribers_for_event(self, event: Event, phase: Phase) -> list[Subscriber]:
+        """Route one event: an FSM edge by its pair, anything else by its key.
+
+        A named edge (HATS-1042 §3) additionally matches the alias ``edge:<name>``,
+        which lives in the string index and interleaves into the same order.
+        """
+        if not isinstance(event, EdgeEvent):
             return self.subscribers_for(event.key, phase)
-        merged = self._index.get((event.key, phase), []) + self._index.get((alias, phase), [])
-        return [sub for _, _, sub in sorted(merged, key=lambda item: (item[0], item[1]))]
+        return self.subscribers_for_edge(
+            Edge(event.from_state, event.to_state),
+            phase,
+            alias_key=event.alias_key,
+        )
 
     def run_blocking(
         self,

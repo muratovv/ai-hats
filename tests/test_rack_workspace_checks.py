@@ -16,6 +16,7 @@ import pytest
 from ai_hats.paths.constants import ENV_AI_HATS_DIR, PROJECT_CONFIG
 from ai_hats.rack_workspace import ensure_backlog, rack_workspace
 from ai_hats_rack.dispatch import Phase
+from ai_hats_rack.selectors import Edge
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,11 @@ def _project(tmp_path: Path) -> Path:
 
 
 def _in_lock_names(kernel, event_key: str) -> set[str]:
-    return {sub.name for sub in kernel._dispatcher.subscribers_for(event_key, Phase.IN_LOCK)}
+    source, target = event_key.split("->")
+    return {
+        sub.name
+        for sub in kernel._dispatcher.subscribers_for_edge(Edge(source, target), Phase.IN_LOCK)
+    }
 
 
 def test_judge_road_mounts_the_check_executor(tmp_path):
@@ -40,7 +45,7 @@ def test_tasks_kernel_on_this_road_is_gated(tmp_path):
     """No kernel_builder here, so the tasks instance takes the portable path —
     the road on which it had no check subscriber at all."""
     ws = rack_workspace(_project(tmp_path))
-    assert "checks" in _in_lock_names(ws.kernel_for("HATS-1"), "edge:review--done")
+    assert "checks" in _in_lock_names(ws.kernel_for("HATS-1"), "review->done")
 
 
 def test_sibling_kernel_on_this_road_is_gated(tmp_path):
@@ -50,4 +55,4 @@ def test_sibling_kernel_on_this_road_is_gated(tmp_path):
     ws = rack_workspace(project)
     kernel = ws.kernel_for("PROP-1")
     edge = next(iter(kernel.topology.edges["open"]))
-    assert "checks" in _in_lock_names(kernel, f"edge:open--{edge}")
+    assert "checks" in _in_lock_names(kernel, f"open->{edge}")
