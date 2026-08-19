@@ -1,0 +1,22 @@
+vars: @./_palette
+
+direction: down
+
+human: "ЧЕЛОВЕК набирает в чате:\n! consent rack.transition 30\n(PreToolUse на эту строку\nне срабатывает)"
+issue: "Флоу ВЫДАЧИ:\nглагол пишет грант.\nНи агент, ни поверхность\nне участвуют"
+store: "consent/ в кэш-каталоге сессии:\nрадиус, двое часов, session_id,\nproject_dir, 0600" {shape: cylinder}
+
+agent: "АГЕНТ запускает операцию:\nrack transition HATS-1 done"
+guard: "Страж (stdlib-хук):\nчитает грант по пути\nиз конверта identity"
+engine: "Движок (in-lock):\nчитает тот же грант,\nзнает тип и субъект"
+verdict: "Четыре исхода:\n0 разрешено · 1 отказано\n2 спросить негде · 3 человек отказал"
+journal: "Строка журнала\nна КАЖДОЕ использование" {shape: parallelogram}
+
+human -> issue
+issue -> store
+agent -> guard: PreToolUse
+guard -> store: только читает
+guard -> engine: команда доехала
+engine -> store: только читает
+engine -> verdict
+verdict -> journal
