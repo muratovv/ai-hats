@@ -24,9 +24,12 @@ from _helpers.fake_surface import install
 
 pytestmark = pytest.mark.integration
 
-#: Two of the fifteen, picked because the journal shows them most: SHARED_STATE_ACK
-#: leads every count and YOLO switches off the guard wholesale.
-EXPORTED = {"AI_HATS_SHARED_STATE_ACK": "1", "AI_HATS_YOLO": "1"}
+#: Two the journal shows most — SHARED_STATE_ACK leads every count and YOLO switches
+#: off the guard wholesale — plus one no roster has ever heard of, which is the case
+#: a list cannot cover: a gate flag added later, or one belonging to a project that
+#: merely consumes ai-hats.
+STRANGER = "AI_HATS_SOME_FUTURE_GATE_OFF"
+EXPORTED = {"AI_HATS_SHARED_STATE_ACK": "1", "AI_HATS_YOLO": "1", STRANGER: "1"}
 
 
 @pytest.fixture
@@ -51,6 +54,18 @@ def test_a_sub_agent_does_not_inherit_the_supervisors_exported_approvals(child_e
     assert not carried, (
         f"the child inherited approvals the supervisor gave THEIR session: {carried}. "
         "The launch must blank them — see assemble_launch_env (HATS-1743)."
+    )
+
+
+def test_an_undeclared_gate_flag_is_withheld_by_shape_not_by_roster(child_env) -> None:
+    """The end-to-end half of the shape test — no roster names this flag anywhere."""
+    from ai_hats.constants import withheld_from_subagent
+
+    assert withheld_from_subagent(STRANGER), "the probe must look like an approval"
+    assert STRANGER not in BYPASS_FLAGS_NOT_INHERITED, "and must be off every roster"
+    assert child_env.get(STRANGER) == "", (
+        f"{STRANGER} rode into the sub-agent: the seam is only as complete as its "
+        "roster, which is the failure this shape test exists to prevent."
     )
 
 

@@ -42,19 +42,46 @@ ENV_PTY_IN_FD = "AI_HATS_PTY_IN_FD"
 ENV_PTY_OUT_FD = "AI_HATS_PTY_OUT_FD"
 DEBUG_FLAGS = frozenset({"--debug", "--verbose", "-v"})
 
-# The supervisor's kill switches and acknowledgements, which a sub-agent does NOT
-# inherit (HATS-1743). An approval is scoped to the session it was given in —
-# `rule_pause_before_shared_state_write` says "the whole session", ADR-0023 says
-# "the shell that launched the session" — and a sub-agent is a different session:
-# own id, own dir, own composition. Consent keys are absent on purpose: their
-# artefacts belong to the consent engine (HATS-1738 / HATS-1739). Knobs are absent
-# too — they answer "how much", never "may I".
+# Consent's own artefacts. Whether one of these crosses into a child is the consent
+# engine's answer, not this seam's (HATS-1738 / HATS-1739), so the shape test below
+# carves them out rather than withholding them.
+CONSENT_OWNED_KEYS = frozenset(
+    {
+        "AI_HATS_CONSENT_ACK",
+        "AI_HATS_CONSENT_TICKET",
+        "AI_HATS_MERGE_ACK",
+        "AI_HATS_PLAN_ACK",
+    }
+)
+
+#: How a withheld approval is SPELLED. Recognising one by shape rather than by a
+#: roster is what makes the seam fail closed: a gate flag added next month — here or
+#: in a project that only consumes ai-hats — is withheld from a sub-agent with nobody
+#: remembering to declare it. A roster fails the other way, and did: it was written
+#: from the shipped-hook vocabulary and so missed `AI_HATS_E2E_CATALOG_ACK`, which a
+#: repo script reads (HATS-1743 review).
+BYPASS_FLAG_SUFFIXES = ("_ACK", "_OFF", "_SKIP")
+
+
+def withheld_from_subagent(name: str) -> bool:
+    """Is ``name`` an approval the parent holds that its sub-agent must not?"""
+    if not name.startswith("AI_HATS_") or name in CONSENT_OWNED_KEYS:
+        return False
+    return name == "AI_HATS_YOLO" or name.endswith(BYPASS_FLAG_SUFFIXES)
+
+
+# The flags this repo KNOWS are withheld — every one of them also answers the shape
+# test above, which is what actually holds the line. Naming them keeps the launch
+# record identical on every machine (the dry-run-equals-the-launch invariant) and
+# gives the reader the roster; forgetting one now costs a line in that record, not
+# the withholding itself.
 BYPASS_FLAGS_NOT_INHERITED = frozenset(
     {
         "AI_HATS_BACKLOG_GATE_OFF",
         "AI_HATS_COMMENT_LINT_OFF",
         "AI_HATS_DESTRUCTIVE_ACK",
         "AI_HATS_DOCS_INDEX_ACK",
+        "AI_HATS_E2E_CATALOG_ACK",
         "AI_HATS_NO_RAW_DESTRUCTIVE_SKIP",
         "AI_HATS_PRIVACY_ACK",
         "AI_HATS_RULE_DELIVERY_ACK",

@@ -127,3 +127,35 @@ def test_the_supervisors_own_session_is_left_alone(tmp_path: Path) -> None:
     supervisor = _env(tmp_path, None, run_mode=RunMode.HITL)
 
     assert not (set(supervisor) & BYPASS_FLAGS_NOT_INHERITED)
+
+
+def test_a_flag_no_roster_knows_about_is_withheld_all_the_same(tmp_path: Path, monkeypatch) -> None:
+    """The point of the shape test: the seam does not depend on being kept up to date.
+
+    A roster is fail-open — the day someone adds a gate flag and forgets this file,
+    the child inherits it and nothing goes red. That already happened once while this
+    card was in review (`AI_HATS_E2E_CATALOG_ACK`, read by a repo script the
+    shipped-hook vocabulary never covered), which is why the line is held by shape.
+    A flag from a project that merely consumes ai-hats can never be on our roster at
+    all, and is withheld just the same.
+    """
+    stranger = "AI_HATS_SOME_FUTURE_GATE_OFF"
+    assert stranger not in BYPASS_FLAGS_NOT_INHERITED, "pick a name no roster knows"
+    monkeypatch.setenv(stranger, "1")
+
+    child = _env(tmp_path, None, run_mode=RunMode.AUTOMATE)
+
+    assert child[stranger] == "", "an undeclared gate flag rode into the sub-agent"
+
+
+def test_a_knob_is_not_an_approval_and_keeps_travelling(tmp_path: Path, monkeypatch) -> None:
+    """The counterweight to the shape test: withholding is aimed at "may I", not "how much".
+
+    Blanking a knob would change the child's BEHAVIOUR rather than withhold consent —
+    a tuning value the parent set is not an approval, so nothing takes it away.
+    """
+    monkeypatch.setenv("AI_HATS_COMMENT_MAX_LINES", "12")
+
+    child = _env(tmp_path, None, run_mode=RunMode.AUTOMATE)
+
+    assert "AI_HATS_COMMENT_MAX_LINES" not in child

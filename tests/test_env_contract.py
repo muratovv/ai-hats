@@ -21,7 +21,11 @@ from pathlib import Path
 
 import pytest
 
-from ai_hats.constants import BYPASS_FLAGS_NOT_INHERITED
+from ai_hats.constants import (
+    BYPASS_FLAGS_NOT_INHERITED,
+    CONSENT_OWNED_KEYS,
+    withheld_from_subagent,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INTEGRATOR_SRC = REPO_ROOT / "src" / "ai_hats"
@@ -117,18 +121,6 @@ POINT_SPECIFIC_HOOK_KEYS = {
     "AI_HATS_HOOK_EVENT",
 }
 
-# Consent's own artefacts. Read by the rack process; NAMED in safety_gate because it
-# refuses them as an inline self-grant rather than reading them (HATS-1639). The
-# consent ticket is minted by safety_gate and spent by the rack's plan gate
-# (HATS-1642) — a per-transition nonce, not a flag a human ever sets. Whether any of
-# these crosses into a child is the consent engine's answer, not the launch seam's
-# (HATS-1738 / HATS-1739), which is why they are not in BYPASS_FLAGS_NOT_INHERITED.
-CONSENT_OWNED_KEYS = {
-    "AI_HATS_CONSENT_ACK",
-    "AI_HATS_CONSENT_TICKET",
-    "AI_HATS_MERGE_ACK",
-    "AI_HATS_PLAN_ACK",
-}
 
 # Tuning knobs and config overrides: "how much" / "run what", set by a human. A knob
 # is not an approval, so withholding one from a child would change behaviour rather
@@ -281,7 +273,9 @@ def test_shipped_hook_scripts_spell_only_names_the_contract_knows() -> None:
 
     # Doubles as the liveness pin: a scan that stops seeing files passes silently,
     # but every allowlisted name goes unread at once.
-    unread = sorted(NON_CONTRACT_HOOK_KEYS - set(found))
+    # The withheld roster is pinned by its OWN universe below — gates live in repo
+    # scripts too, and pinning it here is what left `AI_HATS_E2E_CATALOG_ACK` off it.
+    unread = sorted(NON_CONTRACT_HOOK_KEYS - BYPASS_FLAGS_NOT_INHERITED - set(found))
     assert not unread, (
         f"NON_CONTRACT_HOOK_KEYS lists {unread}, which no shipped hook reads any "
         f"more. Drop them — an allowlist nobody exercises is a rubber stamp — "
@@ -491,3 +485,60 @@ def test_the_flags_a_sub_agent_never_inherits_are_productions_to_name() -> None:
     # A knob answers "how much", never "may I" — withholding one changes behaviour
     # instead of withholding an approval.
     assert not (BYPASS_FLAGS_NOT_INHERITED & TUNING_KNOB_KEYS)
+
+
+#: Where a gate that reads an approval can live. Wider than the shipped-hook scan on
+#: purpose: `scripts/` holds gates too, and trusting the narrower universe is exactly
+#: what left a live flag off the roster (HATS-1743 review).
+def _production_bypass_literals() -> set:
+    """Every withheld-shaped ``AI_HATS_*`` an executable under src/scripts/packages reads."""
+    roots = [REPO_ROOT / "src", REPO_ROOT / "scripts", *sorted(REPO_ROOT.glob("packages/*/src"))]
+    roots += sorted(REPO_ROOT.glob("packages/surfaces/*/src"))
+    # The module that DECLARES the roster is not a reader of it; scanning it would
+    # make this test agree with itself.
+    declaring = REPO_ROOT / "src" / "ai_hats" / "constants.py"
+    spelling = re.compile(r"\bAI_HATS_[A-Z0-9_]+")
+    found = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.suffix not in (".py", ".sh") or not path.is_file() or path == declaring:
+                continue
+            found |= {
+                name
+                for name in spelling.findall(path.read_text(encoding="utf-8", errors="ignore"))
+                if withheld_from_subagent(name)
+            }
+    return found
+
+
+def test_every_withheld_name_answers_the_shape_test_that_holds_the_line() -> None:
+    """G1 — the roster and the predicate cannot disagree about what a bypass is.
+
+    The roster is a convenience over the predicate, never a second opinion: if a name
+    on it failed the shape test, the launch record would promise a withholding the
+    live environment would not perform.
+    """
+    disagree = sorted(n for n in BYPASS_FLAGS_NOT_INHERITED if not withheld_from_subagent(n))
+    assert not disagree, f"on the roster but not withheld-shaped: {disagree}"
+
+
+def test_the_roster_names_every_approval_production_actually_reads() -> None:
+    """G2 — completeness over the universe where gates really live.
+
+    A miss here costs only a line in the launch record — the shape test still
+    withholds the flag — but the roster is what a reader trusts, so it is pinned.
+    """
+    read = _production_bypass_literals()
+    missing = sorted(read - BYPASS_FLAGS_NOT_INHERITED - CONSENT_OWNED_KEYS)
+    assert not missing, (
+        f"production reads withheld-shaped names the roster does not list: {missing}. "
+        "Add them to BYPASS_FLAGS_NOT_INHERITED (they are already withheld at run "
+        "time by shape — this keeps the launch record naming them)."
+    )
+    unread = sorted(BYPASS_FLAGS_NOT_INHERITED - read)
+    assert not unread, (
+        f"the roster lists {unread}, which nothing under src/scripts/packages reads "
+        "any more — drop them, or the roster becomes a rubber stamp."
+    )
