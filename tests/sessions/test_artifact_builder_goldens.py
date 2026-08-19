@@ -82,7 +82,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     ProjectConfig(provider="claude", library_paths=[str(lib)]).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role", provider_name="claude")
+    asm.bootstrap_role("test-role", provider_name="claude")
     return proj
 
 

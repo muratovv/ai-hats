@@ -42,7 +42,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[LIBRARY_DIR])
     asm.init()
-    asm.set_role("maintainer", provider_name="claude")
+    asm.bootstrap_role("maintainer", provider_name="claude")
     monkeypatch.setenv("AI_HATS_NO_UPDATE_CHECK", "1")
     # Where claude keeps its transcripts, kept inside this test's sandbox.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))

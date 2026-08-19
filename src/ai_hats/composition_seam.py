@@ -2,7 +2,7 @@
 
 The single place launch paths derive a composition for prompt delivery
 (ADR-0005 D1): effective-role resolution, role-existence validation, the HITL
-first-run ``set_role`` side effect, the audit snapshot (walking assembler
+first-run ``bootstrap_role`` side effect, the audit snapshot (walking assembler
 internals is legal HERE, never in bricks), and provider resolution. Bricks
 receive the ready payload; they never import the composition layer.
 """
@@ -166,8 +166,8 @@ class MissingProviderError(RuntimeError):
 
 
 def _effective_provider(cfg, override: str | None) -> str:
-    """The provider-fallback chain: override → cfg.provider, loud when absent."""
-    eff = override or cfg.provider
+    """The provider-fallback chain: override → default, loud when absent."""
+    eff = override or cfg.default_provider
     if not eff:
         from .surface_registry import surface_names
 
@@ -219,12 +219,17 @@ def _maybe_sync_active_role(
     """HITL first-run / provider-switch: persist ``active_role`` before the
     session starts (hoisted from ``WrapRunner.run``, semantics intact).
 
-    ``warnings_sink`` collects the set_role materialize warnings so the caller can
+    ``warnings_sink`` collects the bootstrap_role materialize warnings so the caller can
     route them through the read-hold instead of a bare pre-launch print.
     ``result`` is the seam's composition of ``effective_role``."""
     first_run_hitl = interactive and effective_role and not role_override
-    if first_run_hitl and (not cfg.active_role or cfg.provider != eff_provider):
-        asm.set_role(effective_role, eff_provider, warnings_sink=warnings_sink, result=result)
+    if first_run_hitl and (not cfg.active_role or cfg.default_provider != eff_provider):
+        asm.bootstrap_role(
+            effective_role,
+            eff_provider,
+            warnings_sink=warnings_sink,
+            result=result,
+        )
         return asm.project_config
     return cfg
 
@@ -241,11 +246,11 @@ def build_composition_payload(
 
     Ordering preserves the older observable sequence: explicit-role
     validation, the provider check (``MissingProviderError``), provider
-    resolution, then the HITL first-run ``set_role`` side effect.
+    resolution, then the HITL first-run ``bootstrap_role`` side effect.
     ``strict=False`` skips the explicit-role raises for tolerant callers
     (retro reviewer spawn, which owns its own failure mode). ``interactive``
-    gates ONLY that ``set_role`` persist — ``provider_name`` wins over
-    ``cfg.provider`` on either path.
+    gates ONLY that ``bootstrap_role`` persist — ``provider_name`` wins over
+    ``cfg.default_provider`` on either path.
     """
     from ai_hats_observe import AuditWriter, Session
     from .surface_registry import get_surface
@@ -402,7 +407,7 @@ def build_preview_payload(
 ) -> CompositionPayload:
     """Read-only payload for the ``materialize_system_prompt`` preview surface.
 
-    No ``set_role`` side effect, no hooks/analyzer — pure "what would the
+    No ``bootstrap_role`` side effect, no hooks/analyzer — pure "what would the
     agent see". Raises ``RuntimeError`` (the no-role case) or its
     ``MissingProviderError`` subclass, both of which ``config show-prompt``
     renders as a friendly exit 2.
@@ -552,7 +557,7 @@ def resolve_provider_for_help(
     if role_name and project_dir is not None:
         try:
             asm, cfg, effective_role, _runtime, _spec = _project_context(project_dir, role_name)
-            eff = cfg.provider
+            eff = cfg.default_provider
             if eff:
                 return get_surface(eff)
         except Exception:  # silent-ok: best-effort provider resolution for --help  # noqa: S110

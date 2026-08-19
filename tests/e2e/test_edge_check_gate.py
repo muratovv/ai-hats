@@ -385,7 +385,7 @@ def _mirror_root(project: Path, env: dict[str, str], session_id: str = "") -> Pa
     from ai_hats.surface_registry import get_surface
 
     with mock.patch.dict(os.environ, env, clear=True):
-        surface = ProjectConfig.from_yaml(project / PROJECT_CONFIG).provider
+        surface = ProjectConfig.from_yaml(project / PROJECT_CONFIG).default_provider
         return get_surface(surface).session_skills_root(
             ProjectLayout.at(project), session_id or env["AI_HATS_SESSION_ID"]
         )

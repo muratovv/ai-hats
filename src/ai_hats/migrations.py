@@ -5,7 +5,7 @@ Migrations run **once per project**, gated by ``ProjectConfig.migration_step``
 cleanups, content heals). Orthogonal to ``schema_version`` (the on-disk yaml
 format, handled in ``ProjectConfig.from_yaml``): bumping one never implies the
 other. Replayed by ``Assembler._refresh(install_time=True)`` (init / do_bump);
-the ``set_role`` runtime path skips it.
+the ``bootstrap_role`` runtime path skips it.
 
 **Migration contract** (each entry MUST honour — the runner does not roll back,
 and advances the step only after the function returns):
@@ -17,7 +17,7 @@ and advances the step only after the function returns):
   not a bug); ``_safe_replace`` file locks handle most byte-level races.
 
 ``run_pending`` is not the only call site: some wrapped methods also run
-directly from ``init`` / ``set_role``, so idempotency must hold for those direct
+directly from ``init`` / ``bootstrap_role``, so idempotency must hold for those direct
 invocations, not just the gated replay.
 
 The generic step-gated *runner* now lives in ``ai_hats_core.migrations``

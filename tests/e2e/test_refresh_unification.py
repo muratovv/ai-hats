@@ -185,23 +185,23 @@ def test_no_residual_bump_call_sites_in_src():
     )
 
 
-# ----- Test 4: first-session bootstrap (set_role) silent -----
+# ----- Test 4: first-session bootstrap (bootstrap_role) silent -----
 
 
 @pytest.mark.integration
-def test_e2e_set_role_bootstrap_silent_on_stderr(
+def test_e2e_bootstrap_role_is_silent_on_stderr(
     installed_launcher,
     tmp_path,
 ):
     """Runtime first-session bootstrap MUST NOT print migration banner or
     diagnostics. Subprocess invokes the installed wheel's ``Assembler.
-    set_role`` against a project that has ``migration_step=latest`` but
+    bootstrap_role`` against a project that has ``migration_step=latest`` but
     deliberate orphan condition (would trigger diagnostic if invoked).
 
     Asserts:
     - No ``[ai-hats] running migration`` (D2 ``install_time=False`` skips
       registry — HATS-469 contract).
-    - No orphan-warning text on stderr (R3: set_role is runtime auto-
+    - No orphan-warning text on stderr (R3: bootstrap_role is runtime auto-
       trigger and must stay silent).
     - ``.claude/settings.json`` IS written + PreToolUse hook script IS
       materialized (D1: static hooks always-fire in ``_refresh``).
@@ -210,7 +210,7 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
     project = tmp_path / "bootstrap"
 
     # 1. Greenfield init WITHOUT a role (so default_role stays empty and
-    # set_role is the first thing to bootstrap).
+    # bootstrap_role is the first thing to bootstrap).
     _init(launcher, project, env, "-p", "claude", "--no-wizard")
 
     # 2. Plant orphan condition: a fake ``~/.claude/skills/<dir>/.ai-hats-managed``
@@ -225,24 +225,24 @@ def test_e2e_set_role_bootstrap_silent_on_stderr(
     bootstrap_env = dict(env)
     bootstrap_env["HOME"] = str(fake_home)
 
-    # 3. Invoke set_role from the installed wheel.
+    # 3. Invoke bootstrap_role from the installed wheel.
     probe = (
         "from pathlib import Path; "
         "from ai_hats.assembler import Assembler; "
         f"asm = Assembler(Path({str(project)!r})); "
-        "asm.set_role('assistant', provider_name='claude'); "
-        "print('set_role ok')"
+        "asm.bootstrap_role('assistant', provider_name='claude'); "
+        "print('bootstrap_role ok')"
     )
     py = venv / "bin" / "python"
     res = _run([str(py), "-c", probe], cwd=project, env=bootstrap_env, timeout=30)
 
-    # Set_role MUST be silent on registry banner (install_time=False).
+    # Runtime bootstrap MUST be silent on registry banner (install_time=False).
     assert MIGRATION_BANNER not in res.stderr, (
-        f"set_role replayed registry (install_time=False contract broken):\n{res.stderr}"
+        f"bootstrap_role replayed registry (install_time=False contract broken):\n{res.stderr}"
     )
     # Diagnostics MUST stay silent (R3).
     assert ORPHAN_WARN_FRAGMENT not in res.stderr, (
-        f"set_role surfaced orphan diagnostic (HATS-469 R3 broken):\n{res.stderr}"
+        f"bootstrap_role surfaced orphan diagnostic (HATS-469 R3 broken):\n{res.stderr}"
     )
 
 

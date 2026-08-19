@@ -80,7 +80,7 @@ def test_session_start_heals_markerless_skills_mirror(tmp_path: Path, monkeypatc
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("mirror-role", provider_name="claude")
+    asm.bootstrap_role("mirror-role", provider_name="claude")
 
     # Plant the pre-marker legacy state: a stale mirror dir matching the composed
     # skill ``alpha`` — but NO ``.ai-hats-managed`` marker. ``gamma`` is not a

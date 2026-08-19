@@ -100,7 +100,7 @@ def composed(project_with_hook_skill):
     project, lib = project_with_hook_skill
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
     return project, lib, asm
 
 
@@ -155,7 +155,7 @@ def test_no_githooks_when_no_declarations(tmp_path):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert not (project / GITHOOKS_DIR).exists()
     assert _git_get(project, "core.hooksPath") == ""
@@ -163,7 +163,7 @@ def test_no_githooks_when_no_declarations(tmp_path):
 
 def test_reinstall_is_idempotent(composed):
     project, _lib, asm = composed
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     githooks = project / GITHOOKS_DIR
     assert sorted(p.name for p in githooks.iterdir()) == ["pre-commit"]
@@ -177,7 +177,7 @@ def test_dispatcher_dropped_when_the_skill_drops_its_declaration(composed):
     (lib / "skills" / "hook_skill" / "SKILL.md").write_text(
         "---\nname: hook_skill\ndescription: now no hooks\n---\n# Hook Skill\n"
     )
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert not (project / GITHOOKS_DIR / "pre-commit").exists()
 
@@ -209,7 +209,7 @@ def test_unknown_event_silently_skipped(tmp_path):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert not (project / GITHOOKS_DIR).exists()
 
@@ -273,7 +273,7 @@ def test_a_pre_1337_relative_hookspath_is_migrated_quietly(project_with_hook_ski
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     capsys.readouterr()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert Path(_git_get(project, "core.hooksPath")).is_absolute()
     assert _git_get(project, "ai-hats.previousHooksPath") == ""
@@ -288,7 +288,7 @@ def test_an_already_absolute_hookspath_is_left_alone(project_with_hook_skill, ca
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     capsys.readouterr()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert _git_get(project, "core.hooksPath") == absolute
     assert "taken over" not in capsys.readouterr().out
@@ -307,7 +307,7 @@ def test_a_foreign_hookspath_is_taken_over_and_recorded(project_with_hook_skill,
     asm = Assembler(project, library_paths=[lib])
     asm.init()
     capsys.readouterr()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert Path(_git_get(project, "core.hooksPath")).is_absolute()
     assert _git_get(project, "ai-hats.previousHooksPath") == "custom-hooks"
@@ -325,13 +325,13 @@ def test_existing_dispatcher_without_marker_left_alone(project_with_hook_skill, 
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert foreign.read_text().startswith("#!/usr/bin/env bash\n# user's own dispatcher")
     assert "not managed by ai-hats" in capsys.readouterr().out
 
 
-def test_set_role_routes_hooks_warning_to_sink(project_with_hook_skill, capsys):
+def test_bootstrap_role_routes_hooks_warning_to_sink(project_with_hook_skill, capsys):
     """HATS-970: warnings ride the sink for the HITL read-hold, not stdout."""
     project, lib = project_with_hook_skill
     asm = Assembler(project, library_paths=[lib])
@@ -342,7 +342,7 @@ def test_set_role_routes_hooks_warning_to_sink(project_with_hook_skill, capsys):
     capsys.readouterr()
 
     sink: list[str] = []
-    asm.set_role("test-role", warnings_sink=sink)
+    asm.bootstrap_role("test-role", warnings_sink=sink)
 
     assert any("taken over" in w for w in sink)
     assert "taken over" not in capsys.readouterr().out
@@ -368,7 +368,7 @@ def test_pre_1337_copies_and_manifest_are_retired(project_with_hook_skill):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert not copy.exists()
     assert not (githooks / GITHOOKS_MANIFEST).exists()
@@ -395,7 +395,7 @@ def test_retirement_keeps_a_script_the_user_dropped_in(project_with_hook_skill):
 
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("test-role")
+    asm.bootstrap_role("test-role")
 
     assert not ours.exists()
     assert theirs.is_file(), "a script ai-hats never wrote is not ai-hats's to delete"

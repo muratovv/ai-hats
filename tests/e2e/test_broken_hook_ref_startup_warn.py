@@ -85,7 +85,7 @@ def test_session_start_warns_on_broken_managed_hook_ref(tmp_path: Path, monkeypa
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("hook-role", provider_name="claude")
+    asm.bootstrap_role("hook-role", provider_name="claude")
     # Isolate from the developer's real user-global settings.
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-cfg"))
 

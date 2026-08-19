@@ -541,16 +541,11 @@ def set_role(
             raise SystemExit(1)
         console.print(f"[green]Initialized[/] ai-hats in {project_dir}")
     elif provider and not role:
-        # Surface-only update — validate before persisting, so unknown
-        # providers do not get silently written to ai-hats.yaml.
-        from ..surface_registry import get_surface
-
         try:
-            get_surface(provider)
+            asm.set_default_provider(provider)
         except ValueError as err:
             console.print(f"[red]Error[/]: {err}")
             raise SystemExit(1)
-        asm.save_config(provider=provider)
 
     # task-prefix is set independently of role/provider, and overwrites
     # any existing value (unlike `self init` which refuses conflicts).
@@ -666,7 +661,7 @@ def set_role(
             "ai-hats content — use `ai-hats execute` for role + user-rules.[/]"
         )
 
-    console.print(f"  Provider: [bold]{provider or asm.project_config.provider}[/]")
+    console.print(f"  Provider: [bold]{provider or asm.project_config.default_provider}[/]")
 
 
 def _apply_overlay_edits(

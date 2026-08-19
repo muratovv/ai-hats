@@ -55,7 +55,7 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     ).save(proj / PROJECT_CONFIG)
     asm = Assembler(proj, library_paths=[LIB_CORE, LIB_USAGE])
     asm.init()
-    asm.set_role("maintainer", provider_name="claude")
+    asm.bootstrap_role("maintainer", provider_name="claude")
     monkeypatch.chdir(proj)
     import ai_hats._bootstrap as boot
 

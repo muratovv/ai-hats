@@ -488,7 +488,25 @@ def test_project_config_no_customizations_backward_compat(tmp_path):
 
     config = ProjectConfig.from_yaml(path)
     assert config.customizations == {}
-    assert config.provider == "claude"
+    assert config.default_provider == "claude"
+
+
+def test_provider_yaml_maps_to_typed_default_provider_without_warning(tmp_path, capsys):
+    path = tmp_path / PROJECT_CONFIG
+    path.write_text(
+        "provider: claude\ndefault_role: assistant\n"
+        "schema_version: 4\nai_hats_dir: .agent/ai-hats\n"
+    )
+
+    config = ProjectConfig.from_yaml(path)
+
+    assert config.default_provider == "claude"
+    assert not hasattr(config, "provider")
+    assert capsys.readouterr().err == ""
+    config.save(path)
+    content = path.read_text()
+    assert "provider: claude" in content
+    assert "default_provider" not in content
 
 
 def test_project_config_empty_customizations_not_serialized(tmp_path):
@@ -518,7 +536,7 @@ def test_from_yaml_strips_unknown_future_key(tmp_path, capsys):
 
     cfg = ProjectConfig.from_yaml(path)
 
-    assert cfg.provider == "claude"
+    assert cfg.default_provider == "claude"
     assert not hasattr(cfg, "future_field")
     err = capsys.readouterr().err
     assert "dropping unknown field 'future_field'" in err
@@ -540,7 +558,7 @@ def test_from_yaml_strips_migration_step_on_old_schema(tmp_path, capsys, monkeyp
 
     cfg = ProjectConfig.from_yaml(path)
 
-    assert cfg.provider == "claude"
+    assert cfg.default_provider == "claude"
     err = capsys.readouterr().err
     assert "dropping unknown field 'migration_step'" in err
 
@@ -632,7 +650,7 @@ def test_project_config_passes_unknown_provider_through(tmp_path):
     path.write_text("provider: agy-2.5\nschema_version: 2\n")
 
     cfg = ProjectConfig.from_yaml(path)
-    assert cfg.provider == "agy-2.5"
+    assert cfg.default_provider == "agy-2.5"
 
 
 def test_project_config_valid_load_still_works(tmp_path):
@@ -641,7 +659,7 @@ def test_project_config_valid_load_still_works(tmp_path):
     path.write_text("provider: claude\nactive_role: assistant\nschema_version: 2\n")
 
     config = ProjectConfig.from_yaml(path)
-    assert config.provider == "claude"
+    assert config.default_provider == "claude"
     assert config.active_role == "assistant"
 
 
@@ -827,7 +845,7 @@ def test_project_config_v2_roundtrip(tmp_path):
 
     loaded = ProjectConfig.from_yaml(path)
     assert loaded.active_role == "assistant"
-    assert loaded.provider == "claude"
+    assert loaded.default_provider == "claude"
     assert loaded.feedback.session_retro.policy == FeedbackPolicy.HINT
     assert loaded.schema_version == 4
 
@@ -885,7 +903,7 @@ def test_migration_v1_to_v2_merges_profile(tmp_path):
     config = ProjectConfig.from_yaml(yaml_path)
     assert config.schema_version == 4
     assert config.active_role == "assistant"
-    assert config.provider == "claude"  # profile wins
+    assert config.default_provider == "claude"  # profile wins
     assert config.default_role == "sre"  # preserved from yaml
     assert config.feedback.session_retro.policy == FeedbackPolicy.HINT
     # profile.json renamed to .bak
@@ -900,7 +918,7 @@ def test_migration_v1_without_profile(tmp_path):
 
     config = ProjectConfig.from_yaml(yaml_path)
     assert config.schema_version == 4
-    assert config.provider == "claude"
+    assert config.default_provider == "claude"
     assert config.active_role == ""
     assert config.feedback.is_default
 

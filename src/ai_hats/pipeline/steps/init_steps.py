@@ -99,7 +99,9 @@ class SelectProviderStep(Step):
                 res_provider = wizard.choose_provider(wizard.detected_providers()).name
 
         if res_provider is None:
-            res_provider = (bootstrapper.config.provider if already else None) or PROVIDER_CLAUDE
+            res_provider = (
+                bootstrapper.config.default_provider if already else None
+            ) or PROVIDER_CLAUDE
 
         out: dict[str, Any] = {KEY_PROVIDER: res_provider, ALREADY_INITIALIZED: already}
         if res_channel is not None:

@@ -3,7 +3,7 @@
 The legacy backup / clean / copy_components / verify side-effects were
 trimmed: with per-session compose, framework content
 never lands in the canonical tree, so the heavy assembly cycle became
-dead-work. ``set_role`` is now a session-bootstrap helper for runtime;
+dead-work. ``bootstrap_role`` is the session-bootstrap helper for runtime;
 the CLI surface uses :meth:`Assembler.set_default_role` which mutates
 only ``ai-hats.yaml``. ``Assembler.rollback`` and its backup helpers
 were removed — git owns user recovery.
@@ -139,8 +139,8 @@ class Assembler:
         )
         # Read-path net for a hand-edited ai-hats.yaml: the schema no longer
         # validates ``provider`` (the schema→providers link was severed).
-        if self.project_config.provider:
-            self._validate_provider(self.project_config.provider)
+        if self.project_config.default_provider:
+            self._validate_provider(self.project_config.default_provider)
 
         # User-level customizations layer. Loaded lazily-eagerly here
         # so the global overlay applies to every composer invocation through
@@ -370,8 +370,8 @@ class Assembler:
             # Surface must be set before the first save (yaml rejects none).
             # Requested value, else claude — the sole builtin (agy/cline are
             # out-of-tree, maybe uninstalled).
-            if not self.config_path.exists() and not self.project_config.provider:
-                early_delta["provider"] = provider or PROVIDER_CLAUDE
+            if not self.config_path.exists() and not self.project_config.default_provider:
+                early_delta["default_provider"] = provider or PROVIDER_CLAUDE
             self.save_config(**early_delta)
 
         # All framework roots live under
@@ -392,7 +392,7 @@ class Assembler:
         # Create/update ai-hats.yaml (delta-write)
         delta: dict[str, Any] = {}
         if greenfield:
-            delta["provider"] = provider or PROVIDER_CLAUDE
+            delta["default_provider"] = provider or PROVIDER_CLAUDE
             if role:
                 delta["default_role"] = role
             # Greenfield projects start at the latest migration
@@ -401,7 +401,7 @@ class Assembler:
 
             delta["migration_step"] = latest_step()
         elif provider:
-            delta["provider"] = provider
+            delta["default_provider"] = provider
         if task_prefix is not None:
             delta["task_prefix"] = task_prefix
         if delta:
@@ -657,6 +657,13 @@ class Assembler:
                 provenance["skills"][name] = label
         return provenance
 
+    def set_default_provider(self, provider_name: str) -> str:
+        """Persist an explicitly selected project default provider."""
+        provider = get_surface(provider_name)
+        if self.project_config.default_provider != provider.name:
+            self.save_config(default_provider=provider.name)
+        return provider.name
+
     def set_default_role(
         self, role_name: str, provider_name: str | None = None
     ) -> CompositionResult:
@@ -668,7 +675,7 @@ class Assembler:
         backup, copy, or hook-install side-effects happen here.
 
         ``active_role`` is intentionally untouched — it is a runtime cache
-        managed by :meth:`set_role` on the session-bootstrap path.
+        managed by :meth:`bootstrap_role` on the session-bootstrap path.
 
         Idempotent: when both target values already match the current yaml,
         no write occurs.
@@ -684,14 +691,14 @@ class Assembler:
         result = compose_to_install(self, role_name)
 
         cfg = self.project_config
-        new_provider = provider_name or cfg.provider
-        if cfg.default_role == role_name and cfg.provider == new_provider:
+        new_provider = get_surface(provider_name).name if provider_name else cfg.default_provider
+        if cfg.default_role == role_name and cfg.default_provider == new_provider:
             return result  # idempotent no-op
 
-        self.save_config(default_role=role_name, provider=new_provider)
+        self.save_config(default_role=role_name, default_provider=new_provider)
         return result
 
-    def set_role(
+    def bootstrap_role(
         self,
         role_name: str,
         provider_name: str | None = None,
@@ -699,27 +706,19 @@ class Assembler:
         warnings_sink: list[str] | None = None,
         result: CompositionResult | None = None,
     ) -> CompositionResult:
-        """Runtime-bootstrap: sync ``active_role`` + materialize per-session deps.
+        """Prepare one runtime role/provider selection without changing defaults.
 
-        Called by :class:`Runtime` on the first session of a fresh project (or
-        on provider switch) to bring on-disk state into a usable shape: the
-        canonical user-rules aggregator and skill-contributed git hooks.
-        NOT invoked by the CLI surface — use
-        :meth:`set_default_role` for that.
+        Called on the first session of a fresh project to materialize
+        per-session deps (user-rules aggregator, skill-contributed git hooks).
+        NOT invoked by the CLI surface — use :meth:`set_default_role` for that.
 
-        Delegated to :meth:`_refresh` (install_time=False — runtime
-        bootstrap does not re-run migrations; init/bump already did). The
-        Agy inline-prompt path and ``active_role``/``provider`` persist
-        stay here as set_role-only concerns.
+        The provider controls provider-specific materialization for this run;
+        only ``active_role`` is persisted. Validation precedes every side effect.
+        Delegated to :meth:`_refresh` with ``install_time=False`` — runtime
+        bootstrap does not re-run migrations.
 
-        Backup/clean/copy_components/verify side-effects were
-        removed; per-session compose means framework content is
-        never materialized into the canonical tree. The Agy inline-prompt
-        path is retained as a known asymmetry (no scaffold-template
-        equivalent for bare-agy in project_dir).
-
-        Fails loudly on unknown role/provider: the project must not end up
-        in a half-applied state where active_role is saved but composition
+        Fails loudly on unknown role or provider: the project must not end up
+        in a half-applied state where ``active_role`` is saved but composition
         is broken.
         """
         # Validate before doing any work so we fail fast with a clear message.
@@ -727,7 +726,7 @@ class Assembler:
         if provider_name is not None:
             self._validate_provider(provider_name)
 
-        provider = get_surface(provider_name or self.project_config.provider)
+        provider = get_surface(provider_name or self.project_config.default_provider)
         # Single derivation point — used for hooks install
         # AND build_system_prompt for Agy scaffold-less branch (below).
         # The caller's composition OF role_name, when it has one.
@@ -749,8 +748,7 @@ class Assembler:
         prompt_content = expand_path_placeholders(prompt_content, self.layout)
         provider.update_system_prompt(self.layout, prompt_content)
 
-        # Persist active_role + provider.
-        self.save_config(active_role=role_name, provider=provider.name)
+        self.save_config(active_role=role_name)
 
         return result
 
@@ -768,7 +766,7 @@ class Assembler:
             "role": effective_role,
             "default_role": cfg.default_role,
             "active_role": cfg.active_role,
-            "provider": cfg.provider,
+            "provider": cfg.default_provider,
             "project_dir": str(self.project_dir),
             "library_paths": [str(p) for p in self.library_paths],
             "health": {},
@@ -798,14 +796,14 @@ class Assembler:
         Parameters:
             install_time: ``True`` for ``init`` / ``do_bump`` — runs the
                 migration registry (``migrations.run_pending``). ``False`` for
-                ``set_role`` (runtime bootstrap) — migrations already replayed
+                ``bootstrap_role`` (runtime bootstrap) — migrations already replayed
                 via init or a prior bump.
             result: composition for the active role, or ``None`` (legacy
                 bare-bump / init without ``-r``). When provided AND ``.git/``
                 exists, role-specific git hooks are installed.
 
         Concurrency: per the migrations.py migration contract, under N parallel
-        ``init`` / ``set_role`` / ``bump`` processes every method invoked here
+        ``init`` / ``bootstrap_role`` / ``bump`` processes every method invoked here
         MUST be idempotent. The registry guarantees at-most-once across
         sequential invocations; concurrent ones may replay one step per process.
 
@@ -820,7 +818,7 @@ class Assembler:
             run_pending(self)
 
         # 1b. Unclaimed-marker sweep — install_time only: dead
-        # mechanisms' leftovers reclaimed on init/bump, never on set_role.
+        # mechanisms' leftovers reclaimed on init/bump, never on bootstrap_role.
         if install_time:
             self._sweep_unclaimed_markers()
 
@@ -830,7 +828,7 @@ class Assembler:
         # 3. Managed hooks — provider settings.json wiring + the three surfaces,
         # delegated to the HooksManager facade. The.git guard lives
         # inside materialize(), so non-git project dirs skip git hooks silently.
-        # All idempotent and REQUIRED on set_role first-session bootstrap.
+        # All idempotent and REQUIRED on bootstrap_role first-session bootstrap.
         self.hooks.materialize(result, warnings_sink=warnings_sink)
 
     def _sweep_unclaimed_markers(self) -> None:
@@ -855,13 +853,13 @@ class Assembler:
 
         NOT called from:
 
-        - :meth:`set_role` — runtime auto-trigger; must be silent
+        - :meth:`bootstrap_role` — runtime auto-trigger; must be silent
           (orphan-warning every session = bad UX).
         - Greenfield ``init`` — nothing to diagnose on a fresh project.
         """
         self._warn_orphan_user_level_managed_skills()
-        if self.project_config.provider:
-            provider = get_surface(self.project_config.provider)
+        if self.project_config.default_provider:
+            provider = get_surface(self.project_config.default_provider)
             self._warn_leaked_user_global_project_hooks(provider)
         self._note_empty_legacy_agent_dir()
         self._warn_leftover_hook_sidecars()
@@ -1065,14 +1063,16 @@ class Assembler:
         del result  # composition is checked in-memory via composer.compose
         health: dict[str, str] = {}
         try:
-            provider = get_surface(self.project_config.provider)
+            provider = get_surface(self.project_config.default_provider)
             prompt_path = provider.system_prompt_path(self.layout)
         except Exception as exc:
             # An unresolvable provider used to drop the key entirely, so the
             # report read as "nothing to check" — the one failure this check
             # exists to catch.
             logger.warning(
-                "health: provider %r did not resolve: %r", self.project_config.provider, exc
+                "health: provider %r did not resolve: %r",
+                self.project_config.default_provider,
+                exc,
             )
             health["system_prompt"] = HealthStatus.UNKNOWN
             return health
@@ -1567,7 +1567,7 @@ class Assembler:
         Detection only — never rewrites or deletes (supervisor: the user
         migrates by hand). It lives here, in :meth:`_run_diagnostics`, not the
         one-shot migration registry, so it re-fires on every user-initiated
-        bump until fixed and stays silent on per-session ``set_role``.
+        bump until fixed and stays silent on per-session ``bootstrap_role``.
 
         Returns ``True`` when a WARN was emitted (test seam).
         """

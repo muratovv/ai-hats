@@ -555,6 +555,8 @@ since the latest tag lives under **Unreleased** until the next release.
 
 ### Fixed
 
+- **A one-shot `-p <provider>` no longer replaces the project default** (HATS-1745). The persisted intent is now named `ProjectConfig.default_provider` internally while the compatible YAML key stays `provider:`. Runtime selection remains on `CompositionPayload.provider` and `SessionIdentity.provider`; `Assembler.bootstrap_role` persists only `active_role`, while `init` and `Assembler.set_default_provider` are explicit default writers.
+
 - **Editable installs now repair stale built-in step metadata before the CLI starts** (HATS-1810). A checkout whose `[project.entry-points."ai_hats.steps"]` declarations changed after installation no longer fails pipeline resolution while `uv sync --check` reports no work: bootstrap detects the exact name-to-target drift, reinstalls the checkout, verifies the refreshed entry points, and re-execs the requested command. Local `ai-hats self update` now runs the same post-install integrity check and fails loudly if a first-party step target cannot load.
 
 - **A consent recipe now works when followed one line at a time** (HATS-1654). Every gate that asks for `AI_HATS_MERGE_ACK` / `AI_HATS_PLAN_ACK` printed the `export` on a line of its own with the command it unlocks on the next one. Typed one command at a time — a harness bash call, a tool call, any per-command subshell — the export died with its shell and the gate refused a correctly typed command; measured twice on one merge. The export and the command it unlocks now ride one line joined by `&&`. `export` remains the only spelling: an inline `AI_HATS_*_ACK=1 <cmd>` prefix is still refused as a self-grant (HATS-1639).

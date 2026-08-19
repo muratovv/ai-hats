@@ -203,8 +203,11 @@ class FakeSurface:
     cache_home: Path
     tmp: Path
 
-    def _argv(self, role: str) -> list[str]:
-        return [str(self.binary), "-r", role, "-p", SURFACE]
+    def _argv(self, role: str | None) -> list[str]:
+        argv = [str(self.binary)]
+        if role is not None:
+            argv.extend(["-r", role])
+        return [*argv, "-p", SURFACE]
 
     def _agent_argv(self, role: str) -> list[str]:
         # Default isolation (``discard``): the CLI exposes no "none", and the
@@ -285,7 +288,7 @@ class FakeSurface:
             f"{STARTUP_TIMEOUT_S:.0f}s; log tail:\n{log.read_text(errors='replace')[-2000:]}"
         )
 
-    def run_once(self, *, role: str = "assistant") -> subprocess.CompletedProcess:
+    def run_once(self, *, role: str | None = "assistant") -> subprocess.CompletedProcess:
         """One session that starts and exits — the recovery sweeps fire at its start."""
         done = subprocess.run(
             self._argv(role),

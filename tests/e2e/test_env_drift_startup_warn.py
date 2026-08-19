@@ -79,7 +79,7 @@ def test_env_drift_warning_reaches_prelaunch_output(tmp_path: Path, monkeypatch)
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("drift-role", provider_name="claude")
+    asm.bootstrap_role("drift-role", provider_name="claude")
 
     monkeypatch.setattr(ai_hats.env_drift, "stale_dev_env_warnings", lambda: [DRIFT_TEXT])
     output = _launch(project, monkeypatch)
@@ -94,7 +94,7 @@ def test_in_sync_env_launches_silent(tmp_path: Path, monkeypatch):
     project, lib = _make_project(tmp_path)
     asm = Assembler(project, library_paths=[lib])
     asm.init()
-    asm.set_role("drift-role", provider_name="claude")
+    asm.bootstrap_role("drift-role", provider_name="claude")
 
     monkeypatch.setattr(ai_hats.env_drift, "stale_dev_env_warnings", lambda: [])
     output = _launch(project, monkeypatch)

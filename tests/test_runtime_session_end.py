@@ -377,7 +377,7 @@ def wrap_runner_factory(tmp_path, monkeypatch):
     ).save(project / PROJECT_CONFIG)
     asm = Assembler(project, library_paths=[library])
     asm.init()
-    asm.set_role("maintainer", provider_name="claude")
+    asm.bootstrap_role("maintainer", provider_name="claude")
 
     monkeypatch.setenv("AI_HATS_QUIET", "1")
 

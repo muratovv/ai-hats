@@ -52,9 +52,9 @@ class ProjectConfig(_YamlModel):
     """
 
     # Reject unknown keys so typos in ai-hats.yaml fail loudly instead of silently dropping.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    provider: str = PROVIDER_CLAUDE
+    default_provider: str = Field(default=PROVIDER_CLAUDE, validation_alias="provider")
     default_role: str = ""
     active_role: str = ""
     schema_version: int = 4
@@ -210,7 +210,13 @@ class ProjectConfig(_YamlModel):
         Channel: plain stderr (fires at yaml-load, before logging config).
         """
         extra: dict[str, Any] = {}
-        for field in sorted(set(data) - set(cls.model_fields)):
+        known_fields = set(cls.model_fields)
+        known_fields.update(
+            field.validation_alias
+            for field in cls.model_fields.values()
+            if isinstance(field.validation_alias, str)
+        )
+        for field in sorted(set(data) - known_fields):
             extra[field] = data.pop(field)
             print(
                 f"WARN: {path}: dropping unknown field {field!r} "
@@ -238,7 +244,7 @@ class ProjectConfig(_YamlModel):
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "schema_version": 4,
-            "provider": self.provider,
+            "provider": self.default_provider,
             # ai_hats_dir is unconditionally serialized so users
             # see the configurable path in their ai-hats.yaml.
             "ai_hats_dir": self.ai_hats_dir,

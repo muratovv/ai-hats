@@ -63,7 +63,7 @@ def compose_for_role(
     Single source of truth for the question "what is the
     ``CompositionResult`` for role X in this project?". Every runtime
     and pipeline consumer (``WrapRunner``, ``SubAgentRunner``,
-    ``MaterializeSystemPrompt`` step, ``Assembler.set_role`` writer,
+    ``MaterializeSystemPrompt`` step, ``Assembler.bootstrap_role`` writer,
     and ancillary compose-only sites in Assembler) routes through this
     function — direct calls to ``assembler.composer.compose(...)``
     outside this module are a drift signal (caught by

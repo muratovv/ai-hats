@@ -4,7 +4,7 @@ Pipeline-integration layer: the CLI, the compose seam and the ``execute``
 pipeline run for real; only the runner boundary is stubbed (``mock_runners``),
 so these assert what ``SubAgentRunner`` was actually constructed with.
 
-Pre-fix ``build_composition_payload`` hard-read ``cfg.provider`` whenever
+Pre-fix ``build_composition_payload`` hard-read ``cfg.default_provider`` whenever
 ``interactive=False``, so ``execute -p X --batch`` ran the configured surface
 and ``ai-hats agent`` had no ``-p`` at all.
 """
