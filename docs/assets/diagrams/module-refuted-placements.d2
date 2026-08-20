@@ -1,0 +1,40 @@
+vars: @./_palette
+
+direction: right
+
+# Пять размещений, опровергнутых СТРУКТУРНО (2026-08-20): их нельзя починить
+# рефакторингом, потому что потребитель физически не может зависеть от того
+# слоя, куда способность положили.
+# Пунктир — куда клала модель. Сплошная — где реальный потребитель.
+
+c1: C1\nрезолюция проекта {style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+c6: C6\nидентичность сессии {style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+c11: C11\nканал обновлений {style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+c10: C10\nконсент {style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+c8: C8\nзнание о провайдере {style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+
+model_ui: модель клала\nв UI {style.fill: "#fcd8c2"; style.stroke-dash: 4}
+model_rt: модель клала\nв runtime → observability {style.fill: "#fcd8c2"; style.stroke-dash: 4}
+model_deps: модель клала\nв deps {style.fill: "#fcd8c2"; style.stroke-dash: 4}
+model_mat: модель клала\nв материализацию {style.fill: "#fcd8c2"; style.stroke-dash: 4}
+
+real_bash: bash ДО процесса ai-hats\ndispatcher.sh:23 внутри git commit\nai-hats-launcher:22-36 {shape: page}
+real_ext: процессы, которых ai-hats НЕ запускает\ngit → .githooks · агент → rack transition\nоператор → ai-hats wt merge {shape: page}
+real_boot: bash при бутстрапе\nai-hats-launcher:58-79 читает harness.channel {shape: page}
+real_split: способность в ДВУХ коробках\nдвижок — в library (низ)\nшов consent_port — в интеграторе {shape: page}
+real_above: поверхности ВЫШЕ интегратора\ntest_workspace_boundaries.py:72-75 {shape: page}
+
+c1 -> model_ui {style.stroke-dash: 4}
+c1 -> real_bash: у git-хука UI нет физически {style.stroke: "#b54818"}
+
+c6 -> model_rt {style.stroke-dash: 4}
+c6 -> real_ext: читают там, где runtime нет {style.stroke: "#b54818"}
+
+c11 -> model_ui {style.stroke-dash: 4}
+c11 -> real_boot: это загрузка, не отчётность {style.stroke: "#b54818"}
+
+c10 -> model_deps {style.stroke-dash: 4}
+c10 -> real_split: одна способность, две коробки {style.stroke: "#b54818"}
+
+c8 -> model_mat {style.stroke-dash: 4}
+c8 -> real_above: Provider растянут через три коробки {style.stroke: "#b54818"}
