@@ -240,6 +240,7 @@ def resolve_checks(
             on_error=row.on_error,
             script_path=script_path,
             declared_by=row.declared_by,
+            declared_in=row.declared_in,
         )
         resolved[row.identity()] = _stricter(resolved.get(row.identity()), check)
     _warn_unclaimed_apps(declared)

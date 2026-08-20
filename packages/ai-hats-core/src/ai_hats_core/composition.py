@@ -89,6 +89,9 @@ class ResolvedCheck:
     #: that refused are still the bytes the library ships (HATS-1651) — the two
     #: diverge silently as a session ages, and only the rebaser sees both.
     source_path: Path | None = None
+    #: The component file that DECLARED this row — distinct from ``source_path``,
+    #: which is about the script. What a diagnostic tells the human to open.
+    declared_in: Path | None = None
 
     @property
     def skill(self) -> str:

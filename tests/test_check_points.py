@@ -370,3 +370,13 @@ def test_the_app_roster_matches_the_integrations_that_claim_the_keys():
         "the roster must list exactly the apps some integration claims — an extra "
         "entry silences the warning for an app nobody collects"
     )
+
+
+def test_resolution_carries_the_declaring_file_onto_the_resolved_row(skill, tmp_path):
+    """HATS-1753: a resolved row keeps its address, so a duplicate warning can
+    name the file to edit and not just the component that declared it."""
+    source = tmp_path / "trait-x" / "config.yaml"
+
+    (resolved,) = resolve_checks([_row(declared_in=source)], [skill])
+
+    assert resolved.declared_in == source
