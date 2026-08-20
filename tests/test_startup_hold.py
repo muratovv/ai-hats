@@ -145,3 +145,52 @@ def test_poll_enter_non_tty_sleeps_and_never_skips(monkeypatch):
 
     assert wr.WrapRunner._poll_enter(1.0) is False
     assert slept == [1.0]
+
+
+# --- HATS-1753: rendering is not the hold ---------------------------------
+
+
+def test_headless_still_shows_the_notices_it_does_not_wait_for(capsys):
+    """A run with no hold must still SAY what it found. Before HATS-1753 the
+    function returned on `delay <= 0` before printing, so every CI, headless and
+    subagent launch dropped every notice on the floor while writing it to disk."""
+    from ai_hats.startup_notices import StartupNotice, show_and_hold_startup_notices
+
+    slept: list[float] = []
+
+    show_and_hold_startup_notices(
+        [StartupNotice("warn", "gate disarmed")],
+        is_tty=False,
+        sleep=slept.append,
+        env={},
+    )
+
+    assert "gate disarmed" in capsys.readouterr().out
+    assert slept == [], "headless must never be delayed — that part was always right"
+
+
+def test_a_tty_both_shows_and_waits(capsys):
+    from ai_hats.startup_notices import StartupNotice, show_and_hold_startup_notices
+
+    slept: list[float] = []
+
+    show_and_hold_startup_notices(
+        [StartupNotice("warn", "gate disarmed")],
+        is_tty=True,
+        sleep=slept.append,
+        env={"AI_HATS_STARTUP_HOLD": "3"},
+    )
+
+    assert "gate disarmed" in capsys.readouterr().out
+    assert slept == [3.0]
+
+
+def test_a_clean_start_renders_nothing_and_holds_for_nothing(capsys):
+    from ai_hats.startup_notices import show_and_hold_startup_notices
+
+    slept: list[float] = []
+
+    show_and_hold_startup_notices([], is_tty=True, sleep=slept.append, env={})
+
+    assert capsys.readouterr().out == ""
+    assert slept == []

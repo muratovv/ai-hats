@@ -144,12 +144,18 @@ def show_and_hold_startup_notices(notices, *, is_tty, sleep, env=None) -> None:
     *policy* stays in :func:`_startup_hold_seconds`). ``sleep(delay)`` performs
     the actual wait — the caller injects a Ctrl-C-aware countdown so this stays
     free of PTY/TUI concerns and unit-testable.
-    """
-    delay = _startup_hold_seconds(bool(notices), is_tty=is_tty, env=env)
-    if delay <= 0:
+
+    Rendering does not depend on the hold (HATS-1753). It used to: a zero delay
+    returned before the print, so a headless, CI or ``AI_HATS_NON_INTERACTIVE``
+    launch wrote every notice to ``diagnostics.json`` and showed none of them.
+    "Never delayed" was the invariant; "never shown" was the accident.
+    """  # comment-length: allow — the render/hold split is the fix, and it reads as a no-op
+    if not notices:
         return
     _print_startup_notices(notices)
-    sleep(delay)
+    delay = _startup_hold_seconds(True, is_tty=is_tty, env=env)
+    if delay > 0:
+        sleep(delay)
 
 
 def show_fatal_notice_and_exit(

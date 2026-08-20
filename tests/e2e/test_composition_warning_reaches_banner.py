@@ -95,3 +95,15 @@ def test_composition_warning_reaches_the_pre_launch_banner(tmp_path, monkeypatch
     assert "nosuchapp" in output, "the composition's finding must reach the banner"
     assert "will never fire" in output
     assert str(role_config) in output, "and it must name the YAML to open"
+
+
+def test_a_headless_launch_shows_the_warning_it_does_not_wait_for(tmp_path, monkeypatch):
+    """HATS-1753: with the hold at zero the launch must still SAY what it found.
+    This is the prong that fails on the pre-fix code — the notice was written to
+    diagnostics.json and never rendered, so CI and subagent runs saw nothing."""
+    project, role_config = _make_project(tmp_path)
+
+    output = _launch(project, monkeypatch, hold="0")
+
+    assert "nosuchapp" in output
+    assert str(role_config) in output
