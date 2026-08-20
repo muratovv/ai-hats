@@ -1070,6 +1070,20 @@ as a claim to check, not as evidence.
 - **expect** — rack transition logs message cleanly without silent failure or truncated log entries
 - **why** — without log escaping, special characters in transition logs cause silent task transition drops
 
+## `test_hook_call_envelope.py`
+
+*pins HATS-1724*
+
+- **flow** — a gate script asking WHO moved the card and WHICH declaration called it
+- **cmds**
+
+  ```console
+  rack create --parent / rack transition --state done --force
+  ```
+
+- **expect** — every spawned check receives AI_HATS_HOOK_CALL, so a script tells a person's forced fast-close from the epic automation's own hop
+- **why** — the automation hop is an in-process nested transition, so the session identity and every ambient signal around it are byte-identical to the human move — a gate on a wide selector otherwise runs blind on both
+
 ## `test_hook_chain_fail_open_recorded.py`
 
 *pins HATS-1373*

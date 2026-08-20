@@ -68,7 +68,9 @@ def _ctx(source: str, target: str, actor: str) -> DispatchContext:
 
 
 def _fire(port: _Port, source: str, target: str, actor: str) -> CheckRequest:
-    CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(_ctx(source, target, actor))
+    CheckSubscriber(port, topology=_topology(), backlog="tasks").on_event(
+        _ctx(source, target, actor)
+    )
     return port.seen[-1]
 
 
