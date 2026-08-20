@@ -18,7 +18,7 @@ injection: |
 
   ### Testing
   - pytest as test framework
-  - Tests in tests/ directory mirroring src/ structure
+  - Tests live in a dedicated `tests/` directory — either mirroring `src/`, or co-located with the module it covers. Pick one per project and hold it.
   - Integration tests preferred over excessive mocking
 
   ### Dependencies
