@@ -73,10 +73,24 @@ def covers(rule: str, command: str) -> bool:
         return False
 
 
-def _why(rule: str) -> str:
+def _why(rule: str, restored=()) -> str:
+    """Why ``rule`` is a finding — ``""`` when it silences nothing.
+
+    ``restored`` holds the deny- and ask-rules. The harness resolves
+    `deny -> ask -> allow` and weighs no specificity, so a guarded call one of
+    them names is asked about anyway and this rule takes nothing away. Reported
+    regardless: a fossilised inline self-grant, which the guard refuses on its
+    own terms (HATS-1639).
+    """
     if INLINE_GRANT.search(rule):
         return SELF_GRANT
-    silenced = sorted({why for command, why in GUARDED_COMMANDS if covers(rule, command)})
+    silenced = sorted(
+        {
+            why
+            for command, why in GUARDED_COMMANDS
+            if covers(rule, command) and not any(covers(other, command) for other in restored)
+        }
+    )
     if not silenced:
         return ""
     return "auto-approves the call, so " + " and ".join(silenced) + " never happens"
@@ -87,6 +101,14 @@ def _line_of(rule: str, lines: list[str]) -> int:
         if rule in line:
             return number
     return 0
+
+
+def _rules(permissions: dict, key: str) -> list[str]:
+    """The string rules under ``key`` — any other shape is skipped, not guessed at."""
+    rules = permissions.get(key)
+    if not isinstance(rules, list):
+        return []
+    return [rule for rule in rules if isinstance(rule, str)]
 
 
 def findings_in(text: str) -> list[Finding]:
@@ -102,15 +124,16 @@ def findings_in(text: str) -> list[Finding]:
     if not isinstance(data, dict):
         return []
     permissions = data.get("permissions")
-    allow = permissions.get("allow") if isinstance(permissions, dict) else None
-    if not isinstance(allow, list):
+    if not isinstance(permissions, dict):
         return []
+    allow = _rules(permissions, "allow")
+    if not allow:
+        return []
+    restored = _rules(permissions, "deny") + _rules(permissions, "ask")
     lines = text.splitlines()
     out = []
     for rule in allow:
-        if not isinstance(rule, str):
-            continue
-        why = _why(rule)
+        why = _why(rule, restored)
         if why:
             out.append(Finding(_line_of(rule, lines), rule, why))
     return out

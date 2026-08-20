@@ -63,8 +63,13 @@ def test_the_lint_is_carried_by_the_hook_not_by_a_bound_check():
     )
 
 
-def _settings(rules) -> str:
-    return json.dumps({"permissions": {"allow": rules}}, indent=2)
+def _settings(rules, *, ask=None, deny=None) -> str:
+    permissions = {"allow": rules}
+    if ask is not None:
+        permissions["ask"] = ask
+    if deny is not None:
+        permissions["deny"] = deny
+    return json.dumps({"permissions": permissions}, indent=2)
 
 
 @pytest.mark.parametrize(
@@ -146,3 +151,38 @@ def test_a_session_is_told_once(lint, tmp_path):
     assert lint.already_warned(marker, "sid-1") is False
     assert lint.already_warned(marker, "sid-1") is True
     assert lint.already_warned(marker, "sid-2") is False, "a new session hears it again"
+
+
+# --- HATS-1754: the verdict is the WHOLE permission block, not one array of it ---
+#
+# The harness resolves `deny -> ask -> allow` and does not weigh specificity: "a
+# matching ask rule prompts even when a more specific allow rule also matches the
+# same call". So an allow-rule whose question some ask-rule restores silences
+# nothing — and saying it does, on every Bash call, is the guard-that-cries-wolf
+# of the HATS-1252 retro. The project's other settings lint already walks all
+# three arrays (`src/ai_hats/surfaces/claude/provider.py`).
+
+
+def test_an_ask_rule_restores_the_question_the_allow_rule_removed(lint):
+    text = _settings(["Bash(ai-hats:*)"], ask=["Bash(ai-hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], (
+        "the pause is restored by the ask-rule, so the allow-rule silences nothing"
+    )
+
+
+def test_a_deny_rule_beats_the_allow_rule_too(lint):
+    text = _settings(["Bash(ai-hats:*)"], deny=["Bash(ai-hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], "deny wins over allow — there is nothing to report"
+
+
+def test_an_ask_rule_about_another_verb_excuses_nothing(lint):
+    """The control: a lint that swallows a finding whenever ANY ask-rule exists
+    would pass the two above while reporting nothing ever again."""
+    text = _settings(["Bash(ai-hats:*)"], ask=["Bash(ai-hats self update:*)"])
+
+    found = lint.findings_in(text)
+
+    assert len(found) == 1, f"the merge pause is still gone and was not reported: {found}"
+    assert "merge into master" in found[0].why, found[0].why
