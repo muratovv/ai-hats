@@ -83,6 +83,24 @@ def covers(rule: str, command: str) -> bool:
         return False
 
 
+def _prefix_tokens(rule: str) -> list[str]:
+    """The tokens a `Bash(…)` rule's prefix is made of — ``[]`` for any other rule.
+
+    One reading of the rule grammar, because three readings of it drift — which
+    is the shape of defect this file was opened for.
+    """
+    if not (rule.startswith("Bash(") and rule.endswith(")")):
+        return []
+    inner = rule[len("Bash(") : -1].strip()
+    if inner.endswith(":*"):
+        inner = inner[:-2]
+    return [token for token in inner.split(" ") if token]
+
+
+def _is_assignment(token: str) -> bool:
+    return "=" in token and not token.startswith("-")
+
+
 def _assignments(rule: str) -> str:
     """The leading `VAR=VAL` run of a Bash rule's prefix, or ``""``.
 
@@ -90,14 +108,23 @@ def _assignments(rule: str) -> str:
     (measured), so a rule that spells the assignment is judged carrying it —
     otherwise it is the sole opener of a spelling nothing ever probes.
     """
-    if not (rule.startswith("Bash(") and rule.endswith(")")):
-        return ""
     lead = []
-    for token in rule[len("Bash(") : -1].strip().split(" "):
-        if "=" not in token or token.startswith("-"):
+    for token in _prefix_tokens(rule):
+        if not _is_assignment(token):
             break
         lead.append(token)
     return " ".join(lead)
+
+
+def _command_tokens(rule: str) -> list[str]:
+    """A rule's prefix with its leading assignments dropped.
+
+    `env FOO=1 python:*` hands out the same interpreter `python:*` does.
+    """
+    tokens = _prefix_tokens(rule)
+    while tokens and _is_assignment(tokens[0]):
+        tokens = tokens[1:]
+    return tokens
 
 
 def _answered(call: str, restored) -> bool:
@@ -130,14 +157,7 @@ def hands_out_an_interpreter(rule: str) -> bool:
     `Bash(python -m ai_hats:*)` bounds it to a module and is judged by the probes
     instead; `Bash(python:*)` and `Bash(zsh *)` bound nothing.
     """
-    if not (rule.startswith("Bash(") and rule.endswith(")")):
-        return False
-    inner = rule[len("Bash(") : -1].strip()
-    if inner.endswith(":*"):
-        inner = inner[:-2]
-    tokens = [token for token in inner.split(" ") if token]
-    while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
-        tokens = tokens[1:]  # `env FOO=1 python:*` hands out the same interpreter
+    tokens = _command_tokens(rule)
     if not tokens or not is_interpreter_or_shell(tokens[0]):
         return False
     return not tokens[1:] or tokens[1] in _UNBOUND
@@ -171,12 +191,7 @@ def interpreter_notes_in(text: str) -> list[Finding]:
 
 def _binary_of(rule: str) -> str:
     """The interpreter a rule names, for a message that says which one."""
-    inner = rule[len("Bash(") : -1].strip()
-    if inner.endswith(":*"):
-        inner = inner[:-2]
-    tokens = [token for token in inner.split(" ") if token]
-    while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
-        tokens = tokens[1:]
+    tokens = _command_tokens(rule)
     return tokens[0] if tokens else "the interpreter"
 
 
