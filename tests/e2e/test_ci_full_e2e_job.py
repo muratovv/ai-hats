@@ -29,6 +29,7 @@ WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
 
 # HATS-1708
 def test_full_e2e_job_drives_the_canonical_dispatcher():
+    """The canonical full tier excludes live agy calls, not offline agy coverage."""
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
     step = next(step for step in jobs["e2e"]["steps"] if step.get("name") == "Run full e2e tier")
     argv = shlex.split(step["run"])
@@ -50,3 +51,10 @@ def test_full_e2e_job_drives_the_canonical_dispatcher():
     assert result.returncode == 0, combined
     assert "[ci-local] e2e" in combined
     assert "test_ci_full_e2e_job.py::test_full_e2e_job_drives_the_canonical_dispatcher" in combined
+    assert "test_agy_bypass.py::test_agy_bypasses_root_gemini_md" not in combined
+    assert "test_clean_root_sentinel.py::test_agy_clean_root_sentinel" not in combined
+    assert "test_edge_check_gate.py::test_the_gate_fires_inside_a_live_agy_session" not in combined
+    assert "test_agy_session_recorded.py::test_agy_session_records_audit_and_usage" not in combined
+    assert (
+        "test_agy_session_recorded.py::test_agy_session_transcript_resolution_and_audit" in combined
+    )

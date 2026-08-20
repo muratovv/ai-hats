@@ -138,8 +138,8 @@ ci_adr_integrity() {
 # the master pre-push gate runs, kept here so `make e2e` cannot mean something
 # narrower than the gate that guards the push (HATS-1372).
 ci_e2e() {
-    echo "[ci-local] e2e (integration + smoke, quarantine excluded)" >&2
-    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q ${@+"$@"}
+    echo "[ci-local] e2e (integration + smoke, quarantine and live agy excluded)" >&2
+    "$PY" -B -m pytest -m "(integration or smoke) and not quarantine and not live_agy" tests/e2e/ tests/smoke/ -q ${@+"$@"}
 }
 
 # HATS-1137/HATS-1604/HATS-1614 — what each gate is made of, and the ONE place

@@ -3,6 +3,8 @@
 * ``requires_claude_auth`` — skip-marker: ``claude`` binary on PATH +
   ``claude --version`` exits 0. Mirrors the probe used by other e2e
   files (test_role_isolation.py, test_subagent_sdk_smoke.py).
+* ``requires_agy_auth`` — skip-marker: ``agy`` binary on PATH +
+  ``agy --version`` exits 0.
 * ``repo_root`` — single source of truth for repo path math.
 * ``tmp_project`` — generic role-less project for subprocess-only
   tests against the ``ai-hats`` CLI. Function-scoped. Returns a
@@ -181,14 +183,12 @@ def _install_heavy_group_map(install_heavy_files, k):  # noqa: ANN001, ANN202
 def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     """Assign xdist scheduling groups for ``--dist=loadgroup``.
 
-    Three goals under parallel runs:
+    The collection policy has these goals under parallel runs:
 
-    * **live-claude (cohort B) → one worker + a deselect marker.** Every live
-      test gates on the ``requires_claude_auth`` fixture; we (a) tag it with a
-      real ``live_claude`` marker so ``-m "not live_claude"`` yields a
-      deterministic offline / no-auth e2e run (HATS-583), and (b) pin the whole
-      cohort to a single ``live_claude`` xdist group so a parallel run never
-      opens N concurrent SDK sessions (cost / rate-limit hazard, HATS-589).
+    * **live providers → one worker per provider + deselect markers.** Tests
+      gated by ``requires_claude_auth`` or ``requires_agy_auth`` receive the
+      matching marker and xdist group, so external sessions are selectable and
+      cannot fan out concurrently (HATS-583, HATS-589, HATS-1767).
     * **install-heavy → ``INSTALL_HEAVY_GROUPS`` capped groups.** Tests tagged
       ``@pytest.mark.install_heavy`` run a real ``uv pip install`` at call time;
       round-robining their files into a small fixed set of groups caps how many
@@ -197,12 +197,11 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
     * **everything else → grouped by file.** Mirrors ``--dist=loadfile``
       semantics so module-scoped venv fixtures stay coherent per worker.
 
-    Precedence (xdist groups): live_claude → install_heavy → per-file. The
+    Precedence (xdist groups): live provider → install_heavy → per-file. The
     ``xdist_group`` assignments are consulted only by the ``loadgroup``
     scheduler — under ``loadfile``, ``-n0`` (serial), or no xdist they are
-    inert, so this hook is safe in every run mode. The ``live_claude`` *deselect*
-    marker (HATS-583) is the exception: it is a normal marker, honoured by
-    ``-m`` selection in every run mode.
+    inert, so this hook is safe in every run mode. The live-provider deselect
+    markers are normal markers, honoured by ``-m`` selection in every run mode.
 
     NOTE (HATS-678 Category A): the per-worker session ``_shared_launcher_venv``
     builds still fire uncapped at session start, but install from the LOCAL repo
@@ -225,6 +224,9 @@ def pytest_collection_modifyitems(config, items):  # noqa: ANN001, ANN201
             # ...plus the xdist scheduling group (loadgroup-only) that pins the
             # whole live cohort to ONE worker — no N concurrent SDK sessions.
             item.add_marker(pytest.mark.xdist_group("live_claude"))
+        elif "requires_agy_auth" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.live_agy)
+            item.add_marker(pytest.mark.xdist_group("live_agy"))
         elif item.get_closest_marker("install_heavy"):
             item.add_marker(pytest.mark.xdist_group(group_for_file[item.nodeid.split("::", 1)[0]]))
         else:

@@ -4,8 +4,7 @@ End-to-end tests that exercise the **real** ai-hats CLI surface,
 launcher install flow, and (where needed) the live Claude SDK. They
 catch integration bugs that the unit suite stubs away.
 
-If you're adding a new e2e test, read [How to add an e2e
-test](#how-to-add-an-e2e-test) first.
+If you're adding a new e2e test, read [How to add an e2e test](#how-to-add-an-e2e-test) first.
 
 ## Cost tiers
 
@@ -14,11 +13,11 @@ that still exercises the surface under test. The full Core catalog
 with per-scenario classification lives in
 `.claude/plans/466-scenarios-catalog-v1.md`.
 
-| Tier | Fixture | Wall-clock budget | Quota | Use for |
-|---|---|---|---|---|
-| free | `tmp_project` | <5s per test | $0 | CLI commands that don't spawn an agent (`ai-hats list`, `config`, `task`, `attach`, …) |
-| venv | `tmp_venv_project` | <120s first test in module, <5s subsequent | $0 | Launcher install, `self update`, `self init`, `self bump`, anything that needs a real installed binary |
-| live | `probe_project` + `live_session()` | <30s per test | budget-capped via `max_budget_usd`, typically <$0.05 per test | Agent-loop scenarios — tool use, multi-turn state, session-id stability |
+| Tier | Fixture                            | Wall-clock budget                          | Quota                                                         | Use for                                                                                                |
+| ---- | ---------------------------------- | ------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| free | `tmp_project`                      | <5s per test                               | $0                                                            | CLI commands that don't spawn an agent (`ai-hats list`, `config`, `task`, `attach`, …)                 |
+| venv | `tmp_venv_project`                 | <120s first test in module, <5s subsequent | $0                                                            | Launcher install, `self update`, `self init`, `self bump`, anything that needs a real installed binary |
+| live | `probe_project` + `live_session()` | <30s per test                              | budget-capped via `max_budget_usd`, typically <$0.05 per test | Agent-loop scenarios — tool use, multi-turn state, session-id stability                                |
 
 The 51 Core scenarios in the catalog split 32 free / 19 venv / a
 handful live. Always prefer free over venv over live.
@@ -79,21 +78,24 @@ handful live. Always prefer free over venv over live.
    venv- and live-tier in fast iterations:
    `pytest -m "not integration" tests/e2e/`. For a deterministic
    **offline / no-auth** run that keeps the rest of the e2e suite but
-   drops every test making a real `claude` call:
-   `pytest -m "not live_claude" tests/e2e/`. The `live_claude` marker is
-   auto-applied (no decorator needed) to any test gating on the
-   `requires_claude_auth` fixture; the pre-push gate intentionally does
-   **not** deselect it, so live coverage stays on for authed gate runs.
+   drops real provider calls:
+   `pytest -m "not live_claude and not live_agy" tests/e2e/`. The
+   `live_claude` and `live_agy` markers are auto-applied (no decorator
+   needed) to tests gating on `requires_claude_auth` and
+   `requires_agy_auth`, respectively. The canonical full e2e gate excludes
+   `live_agy`; run that cohort explicitly with
+   `pytest -m live_agy tests/e2e/`.
 
 ## Fixtures (`conftest.py`)
 
-| Fixture | Scope | Returns | Notes |
-|---|---|---|---|
-| `repo_root` | session | `Path` | Repo checkout root. Process-wide constant. |
-| `requires_claude_auth` | function | `None` | Skip marker. Skips if `claude --version` doesn't exit 0. |
-| `tmp_project` | function | `Project` | Role-less project + dev-venv binary. Free-tier. |
-| `tmp_venv_project` | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier. |
-| `probe_project` | function | `Path` | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows. |
+| Fixture                | Scope                                      | Returns   | Notes                                                                                                                                          |
+| ---------------------- | ------------------------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repo_root`            | session                                    | `Path`    | Repo checkout root. Process-wide constant.                                                                                                     |
+| `requires_claude_auth` | function                                   | `None`    | Skip marker. Skips if `claude --version` doesn't exit 0.                                                                                       |
+| `requires_agy_auth`    | function                                   | `None`    | Skip marker. Skips if `agy --version` doesn't exit 0.                                                                                          |
+| `tmp_project`          | function                                   | `Project` | Role-less project + dev-venv binary. Free-tier.                                                                                                |
+| `tmp_venv_project`     | function (on a module-scoped venv builder) | `Project` | Fresh project dir + shared launcher venv via `AI_HATS_VENV`. Venv-tier.                                                                        |
+| `probe_project`        | function                                   | `Path`    | Bakes a deterministic `probe` role for live-session tests. Gated on `requires_claude_auth` at the test signature when a live SDK call follows. |
 
 `tmp_venv_project` is layered: an internal module-scoped builder
 (`_shared_launcher_venv`) runs `bash scripts/install-launcher.sh` +
@@ -108,11 +110,11 @@ own function-scoped builder.
 
 ## Helper modules (`tests/e2e/_helpers/`)
 
-| File | What it provides |
-|---|---|
-| `project.py` | `Project` + `RunResult` — subprocess driver for one-shot CLI invocations with fluent `.expect_*` verbs. |
-| `live.py` | `live_session()` + `LiveSession` + `TurnResult` — async multi-turn driver for the Claude Agent SDK. |
-| `venv.py` | `build_launcher_venv()` — installs the bash launcher and bootstraps its inner ai-hats venv. Used by `tmp_venv_project`. |
+| File         | What it provides                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `project.py` | `Project` + `RunResult` — subprocess driver for one-shot CLI invocations with fluent `.expect_*` verbs.                 |
+| `live.py`    | `live_session()` + `LiveSession` + `TurnResult` — async multi-turn driver for the Claude Agent SDK.                     |
+| `venv.py`    | `build_launcher_venv()` — installs the bash launcher and bootstraps its inner ai-hats venv. Used by `tmp_venv_project`. |
 
 The original framework plan
 (`.claude/plans/466-framework-skeleton.md`) sketched a separate
@@ -122,14 +124,14 @@ be YAGNI today.
 
 ## When something breaks
 
-* **Free-tier tests fail with "ai-hats: command not found"** — your
+- **Free-tier tests fail with "ai-hats: command not found"** — your
   dev venv is missing or stale. Run `pip install -e '.[dev]'`.
-* **Venv-tier tests skip with "launcher venv build failed"** — pip
+- **Venv-tier tests skip with "launcher venv build failed"** — pip
   needs network to fetch transitive deps and the cache is cold.
   Either ensure network access or pre-warm the cache.
-* **Live-tier tests skip with "claude binary not found"** — install
+- **Live-tier tests skip with "claude binary not found"** — install
   the Claude CLI and authenticate (`claude login`).
-* **Live-tier tests fail with budget exceeded** — bump
+- **Live-tier tests fail with budget exceeded** — bump
   `max_budget_usd=` on `live_session()`. Default per test is $0.10.
 
 ## Adding a new fixture
