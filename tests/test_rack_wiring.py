@@ -412,7 +412,8 @@ def test_force_does_not_switch_consent_off(reviewed, project):
 
     `--force` relaxes the FSM arrow; consent is not a property of the command,
     so nothing ADDED to the command can remove it — `consent | op --force`.
-    The documented `close` recipe keeps working, it just asks once.
+    The documented `close` recipe keeps working; it is asked like any other
+    road into `done` (HATS-1752).
     """
     with pytest.raises(OperationAborted) as exc_info:
         reviewed.transition(
