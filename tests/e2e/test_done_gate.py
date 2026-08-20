@@ -307,14 +307,15 @@ def test_the_maintainer_role_binds_a_gate_to_both_roads_into_master():
     (ADR-0023 D3/D4), and one script on both could only ever ask one of them.
     """
     apps = shipped_apps()
-    # TWO rows on the rack road since HATS-1719, and the split is the point: the
-    # GATE covers every road into `done` (the teardown-merge fires on 8 of the 8
-    # edges and this gate covered 1), while the QUESTION stays on the review edge
-    # because a wide question without a batch is click-spam (HATS-1728). The
-    # "both keys on one row" form ties the two reaches together and cannot say it.
+    # ONE row on the rack road again since HATS-1752. HATS-1719 split it in two
+    # because the reaches differed — the GATE covered every road into `done`
+    # (the teardown-merge fires on 8 of the 8 edges and this gate covered 1)
+    # while the QUESTION stayed on the review edge, a wide question costing a
+    # click per move (HATS-1728). The grant window closed that gap, the trait's
+    # question widened to `->done`, and this role's second row stopped saying
+    # anything the trait does not.
     assert apps["rack"]["tasks"] == [
         {"run": f"{SKILL}/{SCRIPT}", "at": ["->done"], "on_error": "refuse"},
-        {"at": [EDGE], "consent": True},
     ], "the FSM automerge road, qualified by the backlog it gates"
     assert apps["wt"] == [
         {"run": f"{SKILL}/{MERGE_SCRIPT}", "at": ["pre-merge"], "on_error": "refuse"}

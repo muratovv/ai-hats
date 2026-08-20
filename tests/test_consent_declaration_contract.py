@@ -528,21 +528,22 @@ def test_a_lifecycle_role_does_declare_consent():
         ("consent_gate", (), "rack.transition"),
         ("consent_gate", (), "wt.merge"),
         ("rack", ("tasks",), "plan->execute"),
-        ("rack", ("tasks",), "review->done"),
+        ("rack", ("tasks",), "->done"),
         ("wt", (), "pre-merge"),
     }
 
 
-def test_the_maintainer_gate_is_wide_and_its_consent_stays_narrow():
-    """HATS-1719: the two reaches differ, so they are TWO rows.
+def test_the_maintainer_gate_is_wide_and_the_question_no_longer_lags_it():
+    """HATS-1752: the two reaches converged, so the role is back to ONE row.
 
-    The "run + consent on one row" form (ADR-0027 D1a) ties the gate's reach to
-    the question's. Here they must differ: the gate covers every road into
-    `done` — the measured hole was 1 edge of 8 — while the question stays on the
-    review edge, because a wide question without a batch is click-spam
-    (HATS-1728). A single row cannot say that, and the form's limit is the
-    finding this pin records.
-    """
+    HATS-1719 split them because they genuinely differed — the gate covered
+    every road into `done` while the question stayed on the review edge, a wide
+    question costing a click per move (HATS-1728). HATS-1735 made one grant pay
+    for a series, so the trait's question widened to `->done` and this role's
+    second row declared nothing the trait does not. The question is not
+    re-declared here: it belongs to every lifecycle role, and only this one owns
+    the gate script.
+    """  # comment-length: allow — why the row went away is the pin
     import yaml
 
     config = yaml.safe_load(
@@ -550,11 +551,14 @@ def test_the_maintainer_gate_is_wide_and_its_consent_stays_narrow():
     )
     rows = config["composition"]["apps"]["rack"]["tasks"]
 
-    (gate,) = [r for r in rows if r.get("run")]
+    (gate,) = rows
     assert gate["at"] == ["->done"], "the gate must cover every road into done"
     assert gate["on_error"] == "refuse"
-    assert "consent" not in gate, "a wide gate must not drag the question wide with it"
+    assert gate["run"].endswith("done-gate.sh")
 
-    (question,) = [r for r in rows if r.get("consent") is True]
-    assert question["at"] == ["review->done"]
-    assert "run" not in question
+    trait = yaml.safe_load((_LIBRARY / "core/traits/trait-agent/config.yaml").read_text("utf-8"))
+    (question,) = trait["composition"]["apps"]["rack"]["tasks"]
+    assert question["at"] == ["plan->execute", "->done"], (
+        "the question rides every road into done, and `plan->execute` stays EXACT: "
+        "a wide `->execute` would gate the rework loop"
+    )

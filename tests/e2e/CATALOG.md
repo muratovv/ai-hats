@@ -690,7 +690,7 @@ as a claim to check, not as evidence.
 
 ## `test_consent_force_chain.py`
 
-*pins HATS-1682*
+*pins HATS-1682, HATS-1752*
 
 - **flow** — an agent taking the documented force-close, and the headless road home
 - **cmds**
@@ -700,7 +700,7 @@ as a claim to check, not as evidence.
   AI_HATS_CONSENT_ACK=1 rack transition SBX-001 done
   ```
 
-- **expect** — the composed PreToolUse chain ASKS on the forced close, the engine refuses it until the answer arrives, and one env flag — with no AI_HATS_MERGE_ACK anywhere — carries `review → done` through the merge
+- **expect** — the composed PreToolUse chain ASKS on the forced close, the engine refuses it on EVERY road into done until the answer arrives, one env flag — with no AI_HATS_MERGE_ACK anywhere — carries `review → done` through the merge, and the rework loop carries no question at all
 - **why** — `--force` applies to the OPERATION. Consent is not a property of the command, so nothing ADDED to a command can switch it off: `consent | op --force`. In the incident that opened this card, that exact spelling merged a branch into master with no question at all.
 
 ## `test_consent_grant_chain.py`

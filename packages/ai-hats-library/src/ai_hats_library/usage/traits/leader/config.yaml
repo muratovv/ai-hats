@@ -70,7 +70,8 @@ injection: |
 
   When the work looks ready, **do not close the card.** Say it is ready for the
   human's review, and stop. `review → done` happens only after his "accepted" —
-  then take the edge and run the quality gate.
+  run the quality gate first (the edge only looks its marker up), then take the
+  edge and answer the consent question it raises.
 
   ### What you never do
 

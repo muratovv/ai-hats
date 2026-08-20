@@ -63,16 +63,15 @@ composition:
   apps:
     rack:
       tasks:
-        # The GATE covers every road into `done` (HATS-1719). The CONSENT stays on
-        # the review edge alone — and that is why these are two rows and not the
-        # "both keys on one row" form: that form ties the two reaches together,
-        # and here they genuinely differ. A wide question without a batch is
-        # click-spam (HATS-1728); a narrow gate is the hole this card measured.
+        # One row again since HATS-1752: the gate covers every road into `done`
+        # (HATS-1719) and the trait's question now covers the same set, so the
+        # second row this role carried — a narrow `review->done` consent held
+        # back while a wide question cost a click per move — declared nothing
+        # the trait does not. The question lives on the TRAIT, not here: every
+        # lifecycle role wants it, only this one owns the gate script.
         - run: maintainer-quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
-        - at: ['review->done']
-          consent: true
     wt:
       - run: maintainer-quality-gate/hooks/merge-gate.sh
         at: [pre-merge]

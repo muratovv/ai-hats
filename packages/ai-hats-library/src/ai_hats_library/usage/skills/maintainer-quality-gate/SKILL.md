@@ -273,11 +273,11 @@ composition:
   apps:
     rack: # the application; below it, rack's own grammar
       tasks: # the backlog this row gates (name or cli_alias)
-        - run: maintainer-quality-gate/hooks/done-gate.sh
-          at: [review->done]
+        - run: maintainer-quality-gate/hooks/done-gate.sh # the shipped row
+          at: ['->done']
           on_error: refuse
-        - run: maintainer-quality-gate/hooks/changelog-entry.sh
-          at: [review->done, execute->review]
+        - run: maintainer-quality-gate/hooks/changelog-entry.sh # hypothetical
+          at: ['->done', 'execute->review']
           on_error: warn
     wt: # ai-hats's own app: rows sit directly under the key
       - run: maintainer-quality-gate/hooks/merge-gate.sh

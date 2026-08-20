@@ -139,10 +139,13 @@ rack transition HATS-NNN review
 rack transition HATS-NNN done        # the reviewer drives this one
 ```
 
-Two of those edges are **consent-gated**, so an agent can neither walk its own
-plan into implementation nor land its own branch on master without your
-approval: `plan → execute` and `review → done`. A direct `ai-hats wt merge` —
-the other road into master — is gated the same way.
+Those moves are **consent-gated**, so an agent can neither walk its own plan
+into implementation nor land its own branch on master without your approval:
+`plan → execute`, and **every** road into `done` — the reviewer's
+`review → done` and a forced close alike (HATS-1752). A direct
+`ai-hats wt merge` — the other road into master — is gated the same way. The
+rework loop (`review → execute`, and back through `document`) carries no
+question: it lands nothing on master.
 
 Which edges those are is not fixed by the backlog: it is the ROLE's
 declaration. The agent trait names them, so a role that does not compose it is
@@ -154,7 +157,7 @@ composition:
   apps:
     rack:
       tasks:
-        - at: [plan->execute, review->done]
+        - at: ['plan->execute', '->done']
           consent: true
     wt:
       - at: [pre-merge]
@@ -239,7 +242,9 @@ bookkeep. From `execute` onward, walk the states normally.
 `--force` does **not** relax consent. Consent is a property of the move, not of
 the command — `consent | op --force` — so nothing you add to the command line
 switches the question off, and there is no set of "flags we do not ask on" left
-to join. The recipe still works; it asks once (HATS-1682).
+to join. The recipe still works, and since HATS-1752 it is asked on **every**
+road into `done`, not just the reviewer's — how often you are asked is the grant
+window's business, never the command's.
 
 ### d) File a HYP from a session
 

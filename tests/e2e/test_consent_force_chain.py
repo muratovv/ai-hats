@@ -1,12 +1,13 @@
-"""e2e (HATS-1682)
+"""e2e (HATS-1682, HATS-1752)
 
 flow:   an agent taking the documented force-close, and the headless road home
 cmds:
     rack transition SBX-001 --state done --force --reason close
     AI_HATS_CONSENT_ACK=1 rack transition SBX-001 done
 expect: the composed PreToolUse chain ASKS on the forced close, the engine
-        refuses it until the answer arrives, and one env flag — with no
-        AI_HATS_MERGE_ACK anywhere — carries `review → done` through the merge
+        refuses it on EVERY road into done until the answer arrives, one env
+        flag — with no AI_HATS_MERGE_ACK anywhere — carries `review → done`
+        through the merge, and the rework loop carries no question at all
 why:    `--force` applies to the OPERATION. Consent is not a property of the
         command, so nothing ADDED to a command can switch it off:
         `consent | op --force`. In the incident that opened this card, that
@@ -216,6 +217,47 @@ def test_the_documented_force_close_asks_once_and_then_works(project, settings, 
 
     assert moved.returncode == 0, f"the answered forced close was still refused:\n{moved}"
     assert _state_of(project, env, task_id) == "done"
+
+
+def test_a_forced_close_from_a_non_review_road_is_refused_too(project, env, planned):
+    """HATS-1752: the question rides EVERY road into `done`, not the review one.
+
+    Measured on the live acceptance of HATS-1735: `plan -> done --force` printed
+    `consent (in-lock) -> ok` and closed the card. The guard already asks by the
+    declaration's `to` — the parametrised case above proves it on this very
+    road — so a narrow engine made that question theatre everywhere else.
+    """
+    task_id = planned("forced from plan")
+    forced = ("transition", task_id, "--state", "done", "--force", "--reason", "close")
+
+    refused = _rack(project, *forced, env=env)
+
+    assert refused.returncode != 0, f"the forced close was waved through:\n{refused.stdout}"
+    assert "requires supervisor approval" in refused.stdout + refused.stderr
+    assert _state_of(project, env, task_id) == "plan"
+
+    closed = _rack(project, *forced, env={**env, CONSENT_ACK: "1"})
+
+    assert closed.returncode == 0, (
+        f"the consented close was refused:\n{closed.stdout}{closed.stderr}"
+    )
+    assert _state_of(project, env, task_id) == "done"
+
+
+def test_the_rework_loop_carries_no_question(project, env, reviewed):
+    """The other half of the radius, pinned so widening cannot creep further.
+
+    Supervisor ruling on HATS-1752: `plan->execute` stays an EXACT edge and the
+    rework loop stays free. A `->execute` selector would gate both moves below,
+    and the loop is walked on every review that returns comments.
+    """
+    task_id = reviewed()
+    assert CONSENT_ACK not in env and TICKET_ENV not in env
+
+    for state in ("execute", "document", "review"):
+        moved = _rack(project, "transition", task_id, state, env=env)
+        assert moved.returncode == 0, f"-> {state} asked: {moved.stdout}{moved.stderr}"
+    assert _state_of(project, env, task_id) == "review"
 
 
 def test_consent_ack_alone_carries_review_to_done(project, env, reviewed):
