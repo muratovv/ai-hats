@@ -346,7 +346,7 @@ def _call_envelope(
             "from": from_state if arrow else None,
             "to": to_state if arrow else None,
             "task_id": task_id,
-            "actor": actor,
+            "actor": actor or None,
             "force": force,
             "worktree": str(worktree_path) if worktree_path else None,
             "tasks_dir": str(tasks_dir) if tasks_dir else None,

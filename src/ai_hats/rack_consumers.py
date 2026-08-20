@@ -129,6 +129,8 @@ class AiHatsCheckPort:
             task_id=request.task_id,
             worktree_path=self._worktree_path(request.task_id),
             tasks_dir=self._catalog,
+            actor=request.actor,
+            selector=request.selector,
             log_path=self._log_path(request.task_id, check, request.event),
         )
         return CheckOutcome(
