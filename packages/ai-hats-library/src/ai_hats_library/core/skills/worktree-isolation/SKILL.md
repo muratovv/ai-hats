@@ -77,8 +77,7 @@ Isolated development using git worktrees. Each task gets its own working copy â€
    # agent's own command as a self-grant (HATS-1639). On ONE line: a lone
    # export dies with the shell that ran it (HATS-1654).
    export AI_HATS_MERGE_ACK=1 && ai-hats wt merge <task-branch>
-   rack transition <id> done      # no MERGE_ACK: already merged (HATS-596) â€”
-                                  # the edge's own consent question still fires
+   rack transition <id> done      # already merged (HATS-596)
    ```
    The supervisor may equally run the merge himself. Yolo-mode is inherited,
    not requested: a supervisor-exported `AI_HATS_MERGE_ACK=1` flows into
