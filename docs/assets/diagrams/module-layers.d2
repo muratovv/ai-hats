@@ -2,51 +2,72 @@ vars: @./_palette
 
 direction: down
 
-# Предлагаемая иерархия модулей после состязательной проверки 2026-08-20.
-# Стрелка вниз читается как «зависит от». Оранжевым — два узла, которых
-# в исходной модели не было, и оба несут дублирование.
+# Целевая иерархия модулей, ред. 2 (2026-08-20) — после состязательной проверки
+# и правок супервизора #1..#8. Стрелка вниз читается как «зависит от».
+# Оранжевым — то, чего в исходной модели не было или что требует работы.
 
-surfaces: Поверхности\nclaude · agy · cline · codex\n(потребительский ярус НАД интегратором) {
-  style.fill: "#f5e8d0"
-  style.stroke: "#c9bba0"
-}
-
-ui: UI\nбаннеры · reporting / doctor
-pipelines: pipeline_executor (C9)\n+ reflection
-runtime: runtime\nзапуск сессий · C12 observability
-mat: материализация (C3)\n+ композиция (C4) · стрелочная нотация
-
-glue: КЛЕЯ НЕТ ДОМА — ~2000 строк\nrack_wiring · rack_consumers · wt_effects\nwt_lifecycle · wt_carry · tracker_wiring\nтрогает C1 C2 C4 C5 C6 C7 C10 разом {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
-
-deps: deps\nrack · wt · library\n(односторонне: не импортируют ai_hats) {
-  style.fill: "#bac4d8"
-}
-
-core: ai-hats-core — ФУНДАМЕНТ, В МОДЕЛИ ОТСУТСТВОВАЛ\nC1 default_project_dir · C3 atomic_io · C4 CompositionResult\nC5 file_lock · C10 ConsentPoint · C13 deadline · C16 safe_delete {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
-
-legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y (импорт или зависимость пакета)\nпунктир: поиск во время выполнения — зависимостью НЕ является {
+legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y (импорт или зависимость пакета)\nпунктир: поиск во время выполнения — зависимостью НЕ является\nоранжевое: узел или ребро, требующее работы {
   shape: page
   style.fill: "#ebeef4"
   style.stroke: "#a2acbf"
 }
 
-surfaces -> runtime: объявляют зависимость\nна ai-hats (pyproject)
-runtime -> surfaces: инверсия плагина —\nинтегратор находит их\nчерез реестр entry-points (C8) {style.stroke-dash: 4; style.stroke: "#e8632b"}
+surfaces: Поверхности\nclaude · agy · cline · codex\nреализуют порт, объявляют зависимость на ai-hats {
+  style.fill: "#f5e8d0"
+  style.stroke: "#c9bba0"
+}
+
+ui: UI — только инициализация\nдальше просто использует зависимости
+install: install (C14)\nтри бутстрапа, не могущие разделить код:\nai-hats-launcher · _bootstrap.py · dispatcher.sh {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+pipelines: pipeline_executor (C9)\n+ reflection
+runtime: runtime — запуск сессий\nвладеет портом Provider («что звать и как»)
+observability: observability\nC6 identity · C12 session_log · C15 GC и TTL
+reporting: reporting + doctor\nC11 канал обновлений\nопущено из UI
+mat: материализация (C3)\n+ композиция (C4) · стрелочная нотация
+
+glue: КЛЕЙ К DEPS — ДОМА НЕТ, ~2000 строк\nrack_wiring · rack_consumers · wt_effects\nwt_lifecycle · wt_carry · tracker_wiring\nцель: растворить в портах A–D {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+deps: deps\nrack · wt · library (внутри неё движок consent)\nне импортируют ai_hats {
+  style.fill: "#bac4d8"
+}
+
+core: ai-hats-core — ФУНДАМЕНТ\nядро ~370 строк: atomic_io · locks · deadline\ngit_env · migrations · yaml_model · recovery\nНЕ хватает: словарь идентичности сессии {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+ci: общий CI\nодин гейт на все дистрибуции {
+  shape: page
+  style.fill: "#f5e8d0"
+  style.stroke: "#c9bba0"
+}
+
+surfaces -> runtime: реализуют порт Provider
+runtime -> surfaces: находит реализации\nчерез реестр entry-points {style.stroke-dash: 4; style.stroke: "#e8632b"}
+
+ui -> install
 ui -> pipelines
 pipelines -> runtime: вправе использовать,\nне переписывать
+runtime -> observability
 runtime -> mat
-mat -> deps
-glue -> deps: импортирует вниз
-runtime -> glue
+runtime -> glue: цель — обнулить {style.stroke: "#e8632b"}
+reporting -> core
+install -> core
+observability -> core
+mat -> deps: ТОЛЬКО хуки из library,\nне весь rack и wt {style.stroke: "#e8632b"}
+glue -> deps
 mat -> core
-deps -> core
+deps -> core: rack и library сегодня\nНЕ зависят от core {style.stroke: "#e8632b"}
 glue -> core
-ui -> core: настоящая зависимость,\nминующая промежуточные слои —\nC1 нужен до всякого UI
+ui -> core: настоящая зависимость,\nминующая слои — C1 нужен до всякого UI
+ci -> deps: гоняет всё дерево {style.stroke-dash: 4}

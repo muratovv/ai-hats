@@ -1,0 +1,67 @@
+vars: @./_palette
+
+direction: right
+
+# Правка супервизора #7: идентичность и артефакты сессии — кто владеет,
+# кто удаляет, кто отвечает за TTL. Замер 2026-08-20.
+# Оранжевое — там, где владельца нет или он не один.
+
+legend: ЛЕГЕНДА\nсиний: есть владелец\nоранжевый: владельца нет или их несколько\nпунктир: удаление / истечение {
+  shape: page
+  style.fill: "#ebeef4"
+  style.stroke: "#a2acbf"
+}
+
+identity: ИДЕНТИЧНОСТЬ (C6)\nчеканка расщеплена надвое:\nSessionManager.create_session\nи wrap_runner (uuid провайдера) {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+literal: словарь идентичности —\nлитерал AI_HATS_SESSION_ID\nв 8 файлах 5 дистрибуций\nв core его НЕТ {
+  shape: page
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+runs: runs/ — запись прогона\nobserve: Session · AuditWriter {shape: cylinder; style.fill: "#e8632b"; style.font-color: "#faf2e6"}
+skills: сессионное зеркало скиллов\nи hooks.json {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+tickets: консентные тикеты\nlibrary: consent_ticket {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+worktrees: worktrees/\nwt: WorktreeManager {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+trash: trash/ — корзина\ncore: safe_delete {shape: cylinder; style.fill: "#e8632b"; style.font-color: "#faf2e6"}
+
+gc: СБОРКА МУСОРА (C15) — ПЯТЬ РАЗНЫХ ПРАВИЛ,\nобщего владельца нет {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+  style.stroke: "#b54818"
+}
+
+r_death: доказательство смерти\nsession_liveness
+r_owner: реестр владельцев\nsweeper + owners
+r_age: возраст по списку\nruns_retention — TTL ЕСТЬ\nтолько здесь
+r_git: состояние git\nreclaim_if_clean
+r_argv: привязка к argv\nconsent_ticket.sweep
+r_never: КОРЗИНА НЕ ЧИСТИТСЯ\nникогда, намеренно {
+  style.fill: "#e8632b"
+  style.font-color: "#faf2e6"
+}
+
+identity -> literal: ключ, по которому\nвсе читают
+identity -> runs: именует
+identity -> skills: именует
+identity -> worktrees: именует
+
+gc -> r_death
+gc -> r_owner
+gc -> r_age
+gc -> r_git
+gc -> r_argv
+gc -> r_never
+
+r_death -> skills: HATS-1339/S1 — свип снёс скиллы\nи hooks.json у 12 ЖИВЫХ сессий {style.stroke-dash: 4; style.stroke: "#b54818"}
+r_owner -> skills {style.stroke-dash: 4}
+r_age -> runs {style.stroke-dash: 4}
+r_git -> worktrees {style.stroke-dash: 4}
+r_argv -> tickets {style.stroke-dash: 4}
+r_never -> trash {style.stroke-dash: 4}
