@@ -87,9 +87,12 @@ def _settings(rules, *, ask=None, deny=None) -> str:
     ],
 )
 def test_a_rule_that_disarms_the_consent_gate_is_reported(lint, rule):
+    """One line per PAUSE removed (HATS-1754): `Bash(*)` takes away three
+    different questions, and reporting them as one hides two of them."""
     found = lint.findings_in(_settings([rule]))
-    assert len(found) == 1, f"{rule!r} was not reported: {found}"
-    assert found[0].rule == rule
+
+    assert found, f"{rule!r} was not reported"
+    assert {f.rule for f in found} == {rule}, found
 
 
 @pytest.mark.parametrize(
@@ -186,3 +189,51 @@ def test_an_ask_rule_about_another_verb_excuses_nothing(lint):
 
     assert len(found) == 1, f"the merge pause is still gone and was not reported: {found}"
     assert "merge into master" in found[0].why, found[0].why
+
+
+# --- HATS-1754: the unit of judgment is the SPELLING, not the rule ---
+#
+# `GUARDED_COMMANDS` held one spelling per verb, so a rule opening the same call
+# through a runner was never tried. Measured on a live config: five such holes,
+# none reported. The probe now walks every spelling the guard itself can see —
+# one table, shared with `safety_gate` (`consent_spellings.py`).
+
+
+def test_a_module_spelling_of_a_guarded_call_is_reported(lint):
+    found = lint.findings_in(_settings(["Bash(python3 -m ai_hats:*)"]))
+
+    assert len(found) == 1, f"the module spelling was not tried: {found}"
+    assert "python3 -m ai_hats wt merge" in found[0].why, found[0].why
+
+
+def test_a_broad_runner_rule_is_reported_for_every_pause_it_opens(lint):
+    found = lint.findings_in(_settings(["Bash(uv run:*)"]))
+    whys = " | ".join(f.why for f in found)
+
+    assert "merge into master" in whys, whys
+    assert "consent question" in whys, whys
+    assert all("uv run " in f.why for f in found), whys
+
+
+def test_an_assignment_prefixed_rule_is_judged_carrying_its_own_prefix(lint):
+    """`Bash(python:*)` does NOT cover a command starting with `PYTHONPATH=` —
+    measured — so this rule is the only opener of that spelling, and a probe
+    that drops the assignment misses one of the five holes of the card."""
+    found = lint.findings_in(_settings(["Bash(PYTHONPATH=src python -m ai_hats:*)"]))
+
+    assert len(found) == 1, f"the assignment-prefixed spelling was not tried: {found}"
+    assert "PYTHONPATH=src python -m ai_hats wt merge" in found[0].why, found[0].why
+
+
+def test_an_ask_rule_closes_the_one_runner_spelling_it_names(lint):
+    """The shape the live config uses: the allow-rule stays broad on purpose and
+    the ask-rule, narrower, still wins."""
+    text = _settings(["Bash(python3 -m ai_hats:*)"], ask=["Bash(python3 -m ai_hats wt merge:*)"])
+
+    assert lint.findings_in(text) == [], "the ask-rule names the only spelling this rule opens"
+
+
+def test_an_ask_rule_as_wide_as_the_allow_rule_closes_all_of_it(lint):
+    text = _settings(["Bash(uv run:*)"], ask=["Bash(uv run:*)"])
+
+    assert lint.findings_in(text) == [], "ask wins over allow at equal width"

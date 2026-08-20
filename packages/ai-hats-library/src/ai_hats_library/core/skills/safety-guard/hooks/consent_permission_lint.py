@@ -14,9 +14,18 @@ from worktrees. The hook runs everywhere, and warns without blocking.
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import NamedTuple
+
+# The spellings table is a sibling, as it is for the gate — one table, so the
+# two cannot drift. Absent, this module does not import at all, and the gate's
+# own `except ImportError` turns the lint off rather than shrinking it silently.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from consent_spellings import spellings_for  # noqa: E402
 
 #: Settings files a project or a user can put an allow-rule in, nearest first.
 SETTINGS_FILES = (".claude/settings.json", ".claude/settings.local.json")
@@ -73,27 +82,40 @@ def covers(rule: str, command: str) -> bool:
         return False
 
 
-def _why(rule: str, restored=()) -> str:
-    """Why ``rule`` is a finding — ``""`` when it silences nothing.
+def _assignments(rule: str) -> str:
+    """The leading `VAR=VAL` run of a Bash rule's prefix, or ``""``.
 
-    ``restored`` holds the deny- and ask-rules. The harness resolves
-    `deny -> ask -> allow` and weighs no specificity, so a guarded call one of
-    them names is asked about anyway and this rule takes nothing away. Reported
-    regardless: a fossilised inline self-grant, which the guard refuses on its
-    own terms (HATS-1639).
+    `Bash(python:*)` does NOT cover a command starting with `PYTHONPATH=`
+    (measured), so a rule that spells the assignment is judged carrying it —
+    otherwise it is the sole opener of a spelling nothing ever probes.
     """
-    if INLINE_GRANT.search(rule):
-        return SELF_GRANT
-    silenced = sorted(
-        {
-            why
-            for command, why in GUARDED_COMMANDS
-            if covers(rule, command) and not any(covers(other, command) for other in restored)
-        }
-    )
-    if not silenced:
+    if not (rule.startswith("Bash(") and rule.endswith(")")):
         return ""
-    return "auto-approves the call, so " + " and ".join(silenced) + " never happens"
+    lead = []
+    for token in rule[len("Bash(") : -1].strip().split(" "):
+        if "=" not in token or token.startswith("-"):
+            break
+        lead.append(token)
+    return " ".join(lead)
+
+
+def _answered(call: str, restored) -> bool:
+    """True when a deny- or ask-rule names ``call``, so the question survives.
+
+    The harness resolves `deny -> ask -> allow` and weighs no specificity: "a
+    matching ask rule prompts even when a more specific allow rule also matches
+    the same call". An allow-rule under one of those takes nothing away.
+    """
+    return any(covers(rule, call) for rule in restored)
+
+
+def _probes() -> list[tuple[str, str]]:
+    """Every (spelling, pause) pair a rule can be judged against."""
+    return [
+        (spelling, why)
+        for command, why in GUARDED_COMMANDS
+        for spelling in spellings_for(command)
+    ]
 
 
 def _line_of(rule: str, lines: list[str]) -> int:
@@ -130,12 +152,26 @@ def findings_in(text: str) -> list[Finding]:
     if not allow:
         return []
     restored = _rules(permissions, "deny") + _rules(permissions, "ask")
+    probes = _probes()
+    unanswered = [pair for pair in probes if not _answered(pair[0], restored)]
     lines = text.splitlines()
     out = []
     for rule in allow:
-        why = _why(rule, restored)
-        if why:
-            out.append(Finding(_line_of(rule, lines), rule, why))
+        if INLINE_GRANT.search(rule):
+            out.append(Finding(_line_of(rule, lines), rule, SELF_GRANT))
+            continue
+        prefix = _assignments(rule)
+        opened = {}
+        for spelling, why in (probes if prefix else unanswered):
+            call = f"{prefix} {spelling}" if prefix else spelling
+            if why in opened or (prefix and _answered(call, restored)):
+                continue
+            if covers(rule, call):
+                opened[why] = call
+        out.extend(
+            Finding(_line_of(rule, lines), rule, f"auto-approves `{call}`, so {why} never happens")
+            for why, call in sorted(opened.items())
+        )
     return out
 
 
@@ -174,8 +210,10 @@ def warning_for(roots=None) -> str:
         [
             "permissions.allow silences a guard that is meant to ask:",
             *reported,
-            "Narrow or drop these rules. The routine rack calls are allowed by "
-            "this guard itself, so no allow-rule is needed for them.",
+            "Add an `ask` rule for the spelling on each line, or narrow the allow-rule. "
+            "An ask-rule wins whatever the allow-rule's width — which is the only lever "
+            "when the same call is opened by a broad rule kept on purpose. The routine "
+            "rack calls are allowed by this guard itself, so no allow-rule is needed.",
         ]
     )
 

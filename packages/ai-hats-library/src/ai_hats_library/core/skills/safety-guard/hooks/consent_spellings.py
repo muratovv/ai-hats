@@ -35,6 +35,11 @@ MODULE_BINARIES = {
 #: `python`, `python3`, `python3.11` — and any of them behind a path.
 _INTERPRETER = re.compile(r"python\d*(?:\.\d+)?")
 
+#: The interpreters a spelling is WRITTEN with. Narrower than what
+#: :func:`is_interpreter` recognises on the way in: a probe list has to be
+#: finite, while the guard should read any interpreter it meets.
+INTERPRETERS = ("python", "python3", ".venv/bin/python")
+
 
 def is_interpreter(token: str) -> bool:
     """True when ``token`` names a Python interpreter, path spellings included."""
@@ -58,3 +63,22 @@ def module_binary(tokens):
         return []
     binary = MODULE_BINARIES.get(tokens[at + 1])
     return [binary, *tokens[at + 2 :]] if binary else []
+
+
+def spellings_for(command: str) -> list[str]:
+    """Every way ``command`` can reach the shell, the console script first.
+
+    The permission lint probes this list, and the guard sees the same shapes —
+    that is the point of one table: a spelling the guard watches while the lint
+    stays silent is the hole the lint exists to report.
+    """
+    binary, _, rest = command.partition(" ")
+    out = [command, *(f"{runner} {command}" for runner in RUNNERS)]
+    for module, mapped in MODULE_BINARIES.items():
+        if mapped != binary:
+            continue
+        for interpreter in INTERPRETERS:
+            call = f"{interpreter} -m {module} {rest}".rstrip()
+            out.append(call)
+            out.append(f"uv run {call}")
+    return out
