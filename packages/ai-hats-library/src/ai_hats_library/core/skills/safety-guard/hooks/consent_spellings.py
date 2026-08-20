@@ -41,6 +41,13 @@ _INTERPRETER = re.compile(r"python\d*(?:\.\d+)?")
 INTERPRETERS = ("python", "python3", ".venv/bin/python")
 
 
+#: Binaries that run whatever the caller writes. A rule handing one of these out
+#: cannot be bounded by a probe: the command line does not name the operation —
+#: `python -c "subprocess.run([...])"` is a different STRING that does the guarded
+#: thing, and reaching it is analysis over arbitrary code, not prefix matching.
+SHELLS = ("sh", "bash", "zsh", "fish", "dash", "ksh", "source", "node", "ruby", "perl")
+
+
 def is_interpreter(token: str) -> bool:
     """True when ``token`` names a Python interpreter, path spellings included."""
     return bool(_INTERPRETER.fullmatch(os.path.basename(token)))
@@ -82,3 +89,8 @@ def spellings_for(command: str) -> list[str]:
             out.append(call)
             out.append(f"uv run {call}")
     return out
+
+
+def is_interpreter_or_shell(token: str) -> bool:
+    """True when ``token`` names something that runs code the caller supplies."""
+    return is_interpreter(token) or os.path.basename(token) in SHELLS

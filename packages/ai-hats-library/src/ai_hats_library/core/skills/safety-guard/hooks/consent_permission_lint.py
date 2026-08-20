@@ -13,6 +13,7 @@ from worktrees. The hook runs everywhere, and warns without blocking.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,7 @@ from typing import NamedTuple
 # own `except ImportError` turns the lint off rather than shrinking it silently.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from consent_spellings import spellings_for  # noqa: E402
+from consent_spellings import is_interpreter_or_shell, spellings_for  # noqa: E402
 
 #: Settings files a project or a user can put an allow-rule in, nearest first.
 SETTINGS_FILES = (".claude/settings.json", ".claude/settings.local.json")
@@ -118,9 +119,79 @@ def _probes() -> list[tuple[str, str]]:
     ]
 
 
+#: What follows an interpreter without bounding it: nothing at all, anything, or
+#: the flag that carries the program on the command line.
+_UNBOUND = ("*", "-c", "-e")
+
+HANDS_OUT = "runs whatever the command line carries, so no probe can bound this rule"
+
+
+def hands_out_an_interpreter(rule: str) -> bool:
+    """True when ``rule`` opens an interpreter without bounding what it runs.
+
+    `Bash(python -m ai_hats:*)` bounds it to a module and is judged by the probes
+    instead; `Bash(python:*)` and `Bash(zsh *)` bound nothing.
+    """
+    if not (rule.startswith("Bash(") and rule.endswith(")")):
+        return False
+    inner = rule[len("Bash(") : -1].strip()
+    if inner.endswith(":*"):
+        inner = inner[:-2]
+    tokens = [token for token in inner.split(" ") if token]
+    while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
+        tokens = tokens[1:]  # `env FOO=1 python:*` hands out the same interpreter
+    if not tokens or not is_interpreter_or_shell(tokens[0]):
+        return False
+    return not tokens[1:] or tokens[1] in _UNBOUND
+
+
+def interpreter_notes_in(text: str) -> list[Finding]:
+    """Every allow-rule in ``text`` that hands out an interpreter, with its line.
+
+    A separate verdict from :func:`findings_in`, with a separate message: these
+    rules are kept broad ON PURPOSE (supervisor ruling 2026-08-20 — a prefix rule
+    cannot hold an interpreter, and narrowing costs a prompt on every ad-hoc
+    `python3 -c`). Telling him to narrow them every session would be the guard
+    that cries wolf — the very defect this file is being fixed for.
+    """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    permissions = data.get("permissions")
+    if not isinstance(permissions, dict):
+        return []
+    lines = text.splitlines()
+    return [
+        Finding(_line_of(rule, lines), rule, f"{_binary_of(rule)} {HANDS_OUT}")
+        for rule in _rules(permissions, "allow")
+        if hands_out_an_interpreter(rule)
+    ]
+
+
+def _binary_of(rule: str) -> str:
+    """The interpreter a rule names, for a message that says which one."""
+    inner = rule[len("Bash(") : -1].strip()
+    if inner.endswith(":*"):
+        inner = inner[:-2]
+    tokens = [token for token in inner.split(" ") if token]
+    while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
+        tokens = tokens[1:]
+    return tokens[0] if tokens else "the interpreter"
+
+
 def _line_of(rule: str, lines: list[str]) -> int:
+    """The line ``rule`` sits on, or 0 when the file spells it unrecognisably.
+
+    A rule carrying a quote or a backslash appears in the file JSON-ESCAPED, so
+    the raw string matches no line and the finding pointed at line 0 — a place
+    nobody can open. Both spellings are tried.
+    """
+    escaped = json.dumps(rule)[1:-1]
     for number, line in enumerate(lines, 1):
-        if rule in line:
+        if rule in line or escaped in line:
             return number
     return 0
 
@@ -191,49 +262,104 @@ def settings_paths(roots) -> list[Path]:
     return paths
 
 
-def warning_for(roots=None) -> str:
-    """The message to surface, or ``""`` when the allow-list leaves the gates alone.
+def warning_for(roots=None, *, findings=True, notes=True) -> str:
+    """The message to surface, or ``""`` when the settings leave the gates alone.
+
+    Two blocks, deliberately apart. The first names a spelling somebody can close
+    and asks for that. The second only NAMES reach that no rule can bound — the
+    supervisor keeps those rules broad knowingly, so a demand there would be
+    noise on a decision already taken.
 
     ``roots`` defaults to the two places a rule lives — resolved HERE rather than
     three frames down, so a caller can name its own.
     """
-    reported = []
+    reported, noted = [], []
     for path in settings_paths(roots if roots is not None else (Path.cwd(), Path.home())):
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue  # absent or unreadable: nothing this check can say
-        reported.extend(f"  {path}:{f.line}: {f.rule!r} — {f.why}" for f in findings_in(text))
-    if not reported:
-        return ""
-    return "\n".join(
-        [
-            "permissions.allow silences a guard that is meant to ask:",
-            *reported,
-            "Add an `ask` rule for the spelling on each line, or narrow the allow-rule. "
-            "An ask-rule wins whatever the allow-rule's width — which is the only lever "
-            "when the same call is opened by a broad rule kept on purpose. The routine "
-            "rack calls are allowed by this guard itself, so no allow-rule is needed.",
-        ]
-    )
+        if findings:
+            reported.extend(f"  {path}:{f.line}: {f.rule!r} — {f.why}" for f in findings_in(text))
+        if notes:
+            noted.extend(
+                f"  {path}:{f.line}: {f.rule!r} — {f.why}" for f in interpreter_notes_in(text)
+            )
+    blocks = []
+    if reported:
+        blocks.append(
+            "\n".join(
+                [
+                    "permissions.allow silences a guard that is meant to ask:",
+                    *reported,
+                    "Add an `ask` rule for the spelling on each line — it wins whatever the "
+                    "allow-rule's width, which is the only lever when the same call is opened "
+                    "by a broad rule kept on purpose. The routine rack calls are allowed by "
+                    "this guard itself, so no allow-rule is needed for them.",
+                ]
+            )
+        )
+    if noted:
+        blocks.append(
+            "\n".join(
+                [
+                    "permissions.allow hands out an interpreter, and a gate can be re-spelled "
+                    "under one:",
+                    *noted,
+                    "Said once per settings change, and not a request to change them: what "
+                    "runs under an interpreter cannot be named by any rule. An `ask` rule "
+                    "still closes the spelling an agent reaches for by habit.",
+                ]
+            )
+        )
+    return "\n\n".join(blocks)
 
 
-def already_warned(marker: Path, session: str) -> bool:
-    """True when ``session`` has already been told; records it when it has not.
+class Said(NamedTuple):
+    findings: bool
+    notes: bool
 
-    One file, rewritten rather than accumulated: a warning worth repeating every
-    session is not worth a directory of markers. Unwritable means "not warned",
-    so the message repeats rather than vanishing.
+
+def digest_of(roots=None) -> str:
+    """A fingerprint of every settings file this check reads."""
+    digest = hashlib.sha256()
+    for path in settings_paths(roots if roots is not None else (Path.cwd(), Path.home())):
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            continue  # absent or unreadable: it contributes nothing, consistently
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def to_say(marker: Path, session: str, digest: str) -> Said:
+    """What is still worth saying about this config; records that it was said.
+
+    Findings repeat once a session — each names a spelling somebody can close.
+    The interpreter notes are a standing property of a rule kept on purpose, so
+    they are said once per settings CONTENT: repeated every session they would
+    become the permanent warning nobody reads (HATS-1252), which is the defect
+    this file exists to remove.
+
+    One file, rewritten rather than accumulated. Unwritable means "not said", so
+    the message repeats rather than vanishing.
     """
     try:
-        seen = json.loads(marker.read_text(encoding="utf-8")).get("session_id")
-    except (OSError, ValueError, UnicodeDecodeError, AttributeError):
-        seen = None
-    if seen == session:
-        return True
-    try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"session_id": session}), encoding="utf-8")
-    except OSError:
-        pass
-    return False
+        seen = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        seen = {}
+    if not isinstance(seen, dict):
+        seen = {}
+    said = Said(
+        findings=seen.get("session_id") != session or seen.get("digest") != digest,
+        notes=seen.get("digest") != digest,
+    )
+    if said.findings or said.notes:
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(
+                json.dumps({"session_id": session, "digest": digest}), encoding="utf-8"
+            )
+        except OSError:
+            pass
+    return said

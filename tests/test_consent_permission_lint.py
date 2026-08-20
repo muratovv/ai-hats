@@ -148,12 +148,31 @@ def test_a_clean_project_says_nothing(lint, tmp_path):
     assert lint.warning_for(roots=[tmp_path]) == ""
 
 
-def test_a_session_is_told_once(lint, tmp_path):
+def test_a_session_is_told_once_and_a_changed_config_is_told_again(lint, tmp_path):
     marker = tmp_path / "consent-lint.json"
 
-    assert lint.already_warned(marker, "sid-1") is False
-    assert lint.already_warned(marker, "sid-1") is True
-    assert lint.already_warned(marker, "sid-2") is False, "a new session hears it again"
+    first = lint.to_say(marker, "sid-1", "digest-a")
+    assert first == (True, True)
+
+    assert lint.to_say(marker, "sid-1", "digest-a") == (False, False), "same session, same config"
+
+    later = lint.to_say(marker, "sid-2", "digest-a")
+    assert later.findings is True, "a new session hears the closable findings again"
+    assert later.notes is False, "a standing property is not repeated at every session"
+
+    changed = lint.to_say(marker, "sid-2", "digest-b")
+    assert changed == (True, True), "an edited config is judged afresh, notes included"
+
+
+def test_the_digest_follows_the_settings_it_reads(lint, tmp_path):
+    (tmp_path / ".claude").mkdir()
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.write_text(_settings(["Bash(rack context *)"]), encoding="utf-8")
+
+    before = lint.digest_of(roots=[tmp_path])
+    settings.write_text(_settings(["Bash(rack transition *)"]), encoding="utf-8")
+
+    assert lint.digest_of(roots=[tmp_path]) != before, "an edited allow-list must be judged again"
 
 
 # --- HATS-1754: the verdict is the WHOLE permission block, not one array of it ---
@@ -237,3 +256,72 @@ def test_an_ask_rule_as_wide_as_the_allow_rule_closes_all_of_it(lint):
     text = _settings(["Bash(uv run:*)"], ask=["Bash(uv run:*)"])
 
     assert lint.findings_in(text) == [], "ask wins over allow at equal width"
+
+
+# --- HATS-1754 defect 3: a rule that hands out an interpreter ---
+#
+# `Bash(python:*)` covers no probe — its prefix is not the prefix of any guarded
+# call — yet it lifts every gate at once, because `python -c "…"` is a different
+# STRING that does the guarded thing. Prefix matching cannot reach that; it is
+# reachability analysis over arbitrary code. So the rule is judged by CATEGORY,
+# and the message INFORMS: the supervisor keeps these broad on purpose
+# (ruling 2026-08-20), and demanding they be narrowed would be the eternal
+# warning this very card is fixing.
+
+
+@pytest.mark.parametrize(
+    "rule",
+    ["Bash(python:*)", "Bash(python3:*)", "Bash(.venv/bin/python:*)", "Bash(zsh *)", "Bash(source:*)"],
+)
+def test_a_rule_handing_out_an_interpreter_is_named(lint, rule):
+    notes = lint.interpreter_notes_in(_settings([rule]))
+
+    assert len(notes) == 1, f"{rule!r} lifts every gate and was not named: {notes}"
+    assert notes[0].rule == rule
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "Bash(rm:*)",  # a dangerous BINARY, not arbitrary execution — deny-side, not here
+        "Bash(python -m ai_hats:*)",  # bounded to a module: the probes judge this one
+        "Bash(python3 -m pytest:*)",
+        "Bash(git status:*)",
+    ],
+)
+def test_a_bounded_rule_is_not_an_interpreter_handout(lint, rule):
+    assert lint.interpreter_notes_in(_settings([rule])) == []
+
+
+def test_the_interpreter_note_informs_and_does_not_demand(lint, tmp_path):
+    """The supervisor keeps these rules broad deliberately; a message telling him
+    to narrow them every session is the defect, not the fix."""
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(_settings(["Bash(python3:*)"]), "utf-8")
+
+    said = lint.warning_for(roots=[tmp_path], findings=False)
+
+    assert "python3" in said, said
+    assert "narrow" not in said.lower() and "drop" not in said.lower(), said
+
+
+def test_both_verdicts_are_said_apart_when_both_apply(lint, tmp_path):
+    """`Bash(python3:*)` is both: it opens a module spelling somebody can close,
+    AND it hands out an interpreter nobody can bound. Two facts, two blocks."""
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(_settings(["Bash(python3:*)"]), "utf-8")
+
+    said = lint.warning_for(roots=[tmp_path])
+
+    assert "silences a guard" in said, said
+    assert "hands out an interpreter" in said, said
+
+
+def test_a_rule_spelled_with_quotes_still_names_its_line(lint):
+    """Found live: a `-c '` rule appears JSON-escaped in the file, so the raw
+    string matched no line and the finding pointed at line 0."""
+    rule = "Bash(python3 -c \" *)"
+    notes = lint.interpreter_notes_in(_settings([rule]))
+
+    assert len(notes) == 1, notes
+    assert notes[0].line > 0, "a finding nobody can open is half a finding"
