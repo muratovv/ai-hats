@@ -1,67 +1,60 @@
 vars: @./_palette
 
-direction: right
+direction: down
 
-# Правка супервизора #7: идентичность и артефакты сессии — кто владеет,
-# кто удаляет, кто отвечает за TTL. Замер 2026-08-20.
-# Оранжевое — там, где владельца нет или он не один.
+# D13 (2026-08-20): артефакт принадлежит фазе, что его создала.
+# Материализация — то, что создано ДО сессии. Runtime — то, что создано сессией
+# и остаётся персистом ПОСЛЕ. У обеих фаз FSM с двумя терминальными путями.
+# Оранжевое — сегодняшнее состояние, требующее работы.
 
-legend: ЛЕГЕНДА\nсиний: есть владелец\nоранжевый: владельца нет или их несколько\nпунктир: удаление / истечение {
+legend: ЛЕГЕНДА\nсиний: владелец назначен правилом D13\nоранжевый: сегодня владельца нет или их несколько\nпунктир: освобождение ресурса {
   shape: page
   style.fill: "#ebeef4"
   style.stroke: "#a2acbf"
 }
 
-identity: ИДЕНТИЧНОСТЬ (C6)\nчеканка расщеплена надвое:\nSessionManager.create_session\nи wrap_runner (uuid провайдера) {
+mat_fsm: FSM МАТЕРИАЛИЗАЦИИ\nвладеет тем, что создано ДО сессии {
+  style.fill: "#3a4f7a"
+  style.font-color: "#faf2e6"
+}
+mat_art: сессионное зеркало скиллов\nhooks.json · CLAUDE.md / GEMINI.md {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+
+rt_fsm: FSM RUNTIME\nвладеет тем, что создано сессией\nи остаётся ПОСЛЕ неё {
+  style.fill: "#3a4f7a"
+  style.font-color: "#faf2e6"
+}
+rt_art: runs/ — запись прогона\naudit.jsonl · транскрипты {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
+
+graceful: ШТАТНЫЙ ВЫХОД\nтерминальный переход → деструктор\nдоказывается тестом
+death: СВЕРЩИК ПО ДОКАЗАТЕЛЬСТВУ СМЕРТИ\nчужой процесс освобождает за умершего\nSIGKILL не исполняет ничего {
   style.fill: "#e8632b"
   style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
 }
 
-literal: словарь идентичности —\nлитерал AI_HATS_SESSION_ID\nв 8 файлах 5 дистрибуций\nв core его НЕТ {
+exc: ТРИ НАЗВАННЫХ ИСКЛЮЧЕНИЯ\nworktrees/ — переживают сессию\nс работой человека, гейт по git\nтикеты — выпускает человек вне сессии\ntrash/ — не чистится никогда, намеренно {
+  shape: page
+  style.fill: "#f5e8d0"
+  style.stroke: "#c9bba0"
+}
+
+today: СЕГОДНЯ: пять несовместимых правил\nнастоящий TTL только у runs_retention\nHATS-1339/S1 — свип снёс скиллы и hooks.json\nу 12 ЖИВЫХ сессий {
   shape: page
   style.fill: "#e8632b"
   style.font-color: "#faf2e6"
   style.stroke: "#b54818"
 }
 
-runs: runs/ — запись прогона\nobserve: Session · AuditWriter {shape: cylinder; style.fill: "#e8632b"; style.font-color: "#faf2e6"}
-skills: сессионное зеркало скиллов\nи hooks.json {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
-tickets: консентные тикеты\nlibrary: consent_ticket {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
-worktrees: worktrees/\nwt: WorktreeManager {shape: cylinder; style.fill: "#5a6f9a"; style.font-color: "#faf2e6"}
-trash: trash/ — корзина\ncore: safe_delete {shape: cylinder; style.fill: "#e8632b"; style.font-color: "#faf2e6"}
+mat_fsm -> mat_art: создаёт до сессии
+rt_fsm -> rt_art: создаёт в сессии,\nоставляет после
 
-gc: СБОРКА МУСОРА (C15) — ПЯТЬ РАЗНЫХ ПРАВИЛ,\nобщего владельца нет {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-  style.stroke: "#b54818"
-}
+mat_fsm -> graceful
+rt_fsm -> graceful
+mat_fsm -> death
+rt_fsm -> death
 
-r_death: доказательство смерти\nsession_liveness
-r_owner: реестр владельцев\nsweeper + owners
-r_age: возраст по списку\nruns_retention — TTL ЕСТЬ\nтолько здесь
-r_git: состояние git\nreclaim_if_clean
-r_argv: привязка к argv\nconsent_ticket.sweep
-r_never: КОРЗИНА НЕ ЧИСТИТСЯ\nникогда, намеренно {
-  style.fill: "#e8632b"
-  style.font-color: "#faf2e6"
-}
+graceful -> mat_art: освобождает {style.stroke-dash: 4}
+graceful -> rt_art: закрывает запись {style.stroke-dash: 4}
+death -> mat_art: освобождает за умершего {style.stroke-dash: 4; style.stroke: "#b54818"}
 
-identity -> literal: ключ, по которому\nвсе читают
-identity -> runs: именует
-identity -> skills: именует
-identity -> worktrees: именует
-
-gc -> r_death
-gc -> r_owner
-gc -> r_age
-gc -> r_git
-gc -> r_argv
-gc -> r_never
-
-r_death -> skills: HATS-1339/S1 — свип снёс скиллы\nи hooks.json у 12 ЖИВЫХ сессий {style.stroke-dash: 4; style.stroke: "#b54818"}
-r_owner -> skills {style.stroke-dash: 4}
-r_age -> runs {style.stroke-dash: 4}
-r_git -> worktrees {style.stroke-dash: 4}
-r_argv -> tickets {style.stroke-dash: 4}
-r_never -> trash {style.stroke-dash: 4}
+exc -> mat_fsm: вне правила {style.stroke-dash: 4}
+today -> death: почему нужен второй путь {style.stroke-dash: 4; style.stroke: "#b54818"}
