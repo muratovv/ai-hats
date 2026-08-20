@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -49,7 +49,7 @@ def test_seam_routes_through_facade(tmp_path: Path):
         patch("ai_hats.providers.get_provider", return_value=MagicMock()),
     ):
         payload = build_composition_payload(tmp_path, role_override="judge")
-    facade.assert_called_once_with(asm, "judge")
+    facade.assert_called_once_with(asm, "judge", diagnostics=ANY)
     assert payload.result is fake_result
     assert payload.effective_role == "judge"
 

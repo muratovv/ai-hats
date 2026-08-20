@@ -86,3 +86,31 @@ def test_payload_startup_warnings_surface_as_warn_notices(tmp_path):
 
     assert [n.level for n in notices] == ["warn"]
     assert "core.hooksPath is already set" in notices[0].text
+
+
+def test_composition_diagnostics_surface_as_notices_of_their_own_level(tmp_path):
+    """HATS-1753: the composition states the level, and the banner honours it —
+    contrast the neighbouring producers, which hardcode "warn" at the boundary."""
+    from dataclasses import replace
+
+    from ai_hats.diagnostics import Diagnostic, Level
+
+    project = tmp_path / "plain"
+    project.mkdir()
+    _git_init(project)
+    ProjectConfig(provider="agy").save(project / PROJECT_CONFIG)
+
+    runner = _runner(project)
+    runner.payload = replace(
+        runner.payload,
+        startup_warnings=("a hooks warning",),
+        diagnostics=(
+            Diagnostic(Level.WARN, "those rows will never fire", where=Path("/lib/r.yaml")),
+            Diagnostic(Level.NOTE, "nothing to worry about"),
+        ),
+    )
+
+    notices = runner._payload_startup_notices()
+
+    assert [n.level for n in notices] == ["warn", "warn", "note"], "hooks first, then ours"
+    assert "/lib/r.yaml: those rows will never fire" == notices[1].text

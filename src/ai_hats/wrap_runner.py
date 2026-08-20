@@ -176,10 +176,17 @@ class WrapRunner:
         return []
 
     def _payload_startup_notices(self) -> list[StartupNotice]:
-        """Hooks warnings from the first-run compose seam (set_role materialize),
-        carried on the payload → surfaced as WARN notices so they hit the read-hold
-        instead of a bare pre-launch print (HATS-970)."""
-        return [StartupNotice("warn", w) for w in self.payload.startup_warnings]
+        """What the compose seam carried, surfaced so it hits the read-hold instead
+        of a bare pre-launch print the alternate screen buffer eats.
+
+        Two producers, one hold: hooks warnings arrive as bare strings and are
+        warnings by construction (HATS-970); composition diagnostics arrive typed
+        and keep the level their producer chose (HATS-1753).
+        """
+        return [
+            *(StartupNotice("warn", w) for w in self.payload.startup_warnings),
+            *(StartupNotice(diag.level.value, diag.render()) for diag in self.payload.diagnostics),
+        ]
 
     def _check_skill_collisions(self, session: Session, result) -> list[StartupNotice]:
         """HATS-901: WARN when a composed skill will double-register this session;

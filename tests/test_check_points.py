@@ -380,3 +380,20 @@ def test_resolution_carries_the_declaring_file_onto_the_resolved_row(skill, tmp_
     (resolved,) = resolve_checks([_row(declared_in=source)], [skill])
 
     assert resolved.declared_in == source
+
+
+def test_a_sink_takes_the_diagnostic_instead_of_stderr(skill, capsys, tmp_path):
+    """HATS-1753: when a caller collects, nothing is printed — and the collected
+    value carries the level and the file, which a bare stderr line could not."""
+    from ai_hats.diagnostics import Level
+
+    source = tmp_path / "trait-x" / "config.yaml"
+    sink: list = []
+
+    resolve_checks([_row(app="rak", declared_in=source)], [skill], diagnostics=sink)
+
+    assert capsys.readouterr().err == "", "a collected diagnostic must not also print"
+    (diag,) = sink
+    assert diag.level is Level.WARN
+    assert diag.where == source
+    assert "apps.rak" in diag.text

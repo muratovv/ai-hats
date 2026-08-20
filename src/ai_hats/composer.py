@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import sys
 
 from ai_hats_core import ComponentKind, CompositionResult, ResolvedComponent
 
 from .check_points import resolve_checks
+from .diagnostics import Diagnostic, Level, emit_to_stderr
 from .resolver import LibraryResolver
 from .models import (
     AppBinding,
@@ -33,6 +33,7 @@ class Composer:
         overlay: OverlayConfig | None = None,
         *,
         overlays: list[OverlayConfig] | None = None,
+        diagnostics: list[Diagnostic] | None = None,
     ) -> CompositionResult:
         """Compose a role by resolving its full dependency tree.
 
@@ -194,7 +195,8 @@ class Composer:
             appended_overlay_texts.append(text)
         overlay_injection_text = "\n\n".join(appended_overlay_texts)
 
-        return CompositionResult(
+        found = [] if diagnostics is None else diagnostics
+        result = CompositionResult(
             name=config.name,
             priorities=config.priorities,  # Only from root role
             rules=rules,
@@ -204,9 +206,17 @@ class Composer:
             trait_injections=trait_injections,
             role_injection=role_injection_text,
             overlay_injection=overlay_injection_text,
-            checks=resolve_checks(declared_checks, skills, removed_skills=requested_skill_removes),
-            consent=_resolved_consent(declared_checks),
+            checks=resolve_checks(
+                declared_checks,
+                skills,
+                removed_skills=requested_skill_removes,
+                diagnostics=found,
+            ),
+            consent=_resolved_consent(declared_checks, found),
         )
+        if diagnostics is None:
+            emit_to_stderr(found)
+        return result
 
     @staticmethod
     def _apply_overlay(
@@ -379,7 +389,7 @@ class Composer:
 # bricks reach them without importing the composition layer.
 
 
-def _resolved_consent(rows: "list[AppBinding]") -> tuple:
+def _resolved_consent(rows: "list[AppBinding]", found: list[Diagnostic] | None = None) -> tuple:
     """The points this composition wants asked on, per ``(app, path, point)``.
 
     Resolved per POINT and not per row: a trait names several points in one row,
@@ -389,17 +399,20 @@ def _resolved_consent(rows: "list[AppBinding]") -> tuple:
     """
     from ai_hats_core import ConsentPoint
 
+    said = [] if found is None else found
     decided: dict[tuple, tuple[bool, str]] = {}
     for row in rows:
         for key, value in row.consent_points():
             previous = decided.get(key)
-            _warn_on_disarm(key, previous, value, row.declared_by)
+            _warn_on_disarm(key, previous, value, row, said)
             # The first declarer keeps the slot while the ANSWER is unchanged, as
             # in ``check_points._stricter``: re-declaring the same value is
             # idempotent by the card's rule, so it must move nothing at all.
             if previous is not None and previous[0] == value:
                 continue
             decided[key] = (value, row.declared_by)
+    if found is None:
+        emit_to_stderr(said)
     return tuple(
         ConsentPoint(declared_by=who, app=app, path=path, selector=point)
         for (app, path, point), (value, who) in decided.items()
@@ -408,7 +421,11 @@ def _resolved_consent(rows: "list[AppBinding]") -> tuple:
 
 
 def _warn_on_disarm(
-    key: tuple, previous: "tuple[bool, str] | None", value: bool, declarer: str
+    key: tuple,
+    previous: "tuple[bool, str] | None",
+    value: bool,
+    row: "AppBinding",
+    found: list[Diagnostic],
 ) -> None:
     """A later `false` over an earlier `true`, said out loud (HATS-1682 B10).
 
@@ -424,9 +441,12 @@ def _warn_on_disarm(
         return
     app, path, point = key
     trail = "".join(f".{part}" for part in path)
-    print(
-        f"WARN: consent at {point!r} under apps.{app}{trail} was declared by "
-        f"{previous[1]!r} and is switched OFF by {declarer!r} — the later writer wins, "
-        f"so the supervisor will NOT be asked there",
-        file=sys.stderr,
+    found.append(
+        Diagnostic(
+            Level.WARN,
+            f"consent at {point!r} under apps.{app}{trail} was declared by "
+            f"{previous[1]!r} and is switched OFF by {row.declared_by!r} — the later "
+            f"writer wins, so the supervisor will NOT be asked there",
+            where=row.declared_in,
+        )
     )

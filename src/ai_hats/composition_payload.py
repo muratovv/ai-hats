@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from ai_hats_core import CompositionResult
 
+from .diagnostics import Diagnostic
+
 from .session_artifacts import SessionPolicy
 
 if TYPE_CHECKING:
@@ -45,5 +47,8 @@ class CompositionPayload:
     # HATS-970: hooks warnings from the first-run set_role side effect, routed to
     # the HITL read-hold instead of a bare pre-launch print.
     startup_warnings: tuple[str, ...] = ()
+    # HATS-1753: what the COMPOSITION itself found — carried typed, so the level
+    # is the producer's word and not the banner's guess.
+    diagnostics: tuple[Diagnostic, ...] = ()
     # HATS-1207: session policy passed down to runners
     policy: SessionPolicy = field(default_factory=SessionPolicy)
