@@ -32,8 +32,14 @@ core: ai-hats-core — ФУНДАМЕНТ, В МОДЕЛИ ОТСУТСТВОВ�
   style.stroke: "#b54818"
 }
 
+legend: ЛЕГЕНДА\nсплошная X → Y: X зависит от Y (импорт или зависимость пакета)\nпунктир: поиск во время выполнения — зависимостью НЕ является {
+  shape: page
+  style.fill: "#ebeef4"
+  style.stroke: "#a2acbf"
+}
+
 surfaces -> runtime: объявляют зависимость\nна ai-hats (pyproject)
-runtime -> surfaces: инверсия плагина —\nинтегратор находит их\nчерез реестр entry-points (C8) {style.stroke-dash: 4}
+runtime -> surfaces: инверсия плагина —\nинтегратор находит их\nчерез реестр entry-points (C8) {style.stroke-dash: 4; style.stroke: "#e8632b"}
 ui -> pipelines
 pipelines -> runtime: вправе использовать,\nне переписывать
 runtime -> mat
@@ -43,4 +49,4 @@ runtime -> glue
 mat -> core
 deps -> core
 glue -> core
-ui -> core: C1 нужен до всякого UI {style.stroke-dash: 4}
+ui -> core: настоящая зависимость,\nминующая промежуточные слои —\nC1 нужен до всякого UI
