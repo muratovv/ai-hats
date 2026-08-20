@@ -8,6 +8,7 @@ so a verbose diagnostic stream cannot push the verdict out of the tail.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -24,6 +25,7 @@ from ai_hats_core.deadline import Deadline
 from .env import (
     AI_HATS_PROJECT_DIR_ENV,
     ENV_FORCE,
+    ENV_HOOK_CALL,
     ENV_HOOK_POINT,
     ENV_IN_HOOK,
     ENV_TASK_ID,
@@ -33,6 +35,11 @@ from .env import (
 
 # Big enough for a multi-line instruction, not just a verdict line.
 REASON_TAIL_BYTES = 4096
+
+#: The call envelope's version (HATS-1724). Bumped only when a field is removed,
+#: retyped or changes meaning — an ADDED field does not bump it, because readers
+#: ignore what they do not know. Same discipline as ``IDENTITY_VERSION``.
+HOOK_CALL_VERSION = 1
 
 # CSI sequences, OSC strings (BEL- or ST-terminated) and the single-char Fe set.
 _ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
@@ -119,6 +126,8 @@ def run_hook(
     task_id: str | None = None,
     worktree_path: Path | None = None,
     tasks_dir: Path | None = None,
+    actor: str | None = None,
+    selector: str | None = None,
     extra_env: Mapping[str, str] | None = None,
     log_path: Path | None = None,
     tail_bytes: int = REASON_TAIL_BYTES,
@@ -182,7 +191,15 @@ def run_hook(
                 [str(script)],
                 cwd=str(project_dir),
                 env=_hook_env(
-                    point, project_dir, force, task_id, worktree_path, tasks_dir, extra_env
+                    point,
+                    project_dir,
+                    force,
+                    task_id,
+                    worktree_path,
+                    tasks_dir,
+                    actor,
+                    selector,
+                    extra_env,
                 ),
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
@@ -259,6 +276,8 @@ def _hook_env(
     task_id: str | None,
     worktree_path: Path | None,
     tasks_dir: Path | None,
+    actor: str | None,
+    selector: str | None,
     extra: Mapping[str, str] | None,
 ) -> dict[str, str]:
     """The shared base every hook receives (ADR-0020 D2), then the caller's own
@@ -288,8 +307,53 @@ def _hook_env(
     # value reached the gate and a script comparing it to its own tracker read
     # "not my backlog" and waved the merge through — measured, not feared.
     _put(env, ENV_TASKS_DIR, str(tasks_dir) if tasks_dir else None)
+    env[ENV_HOOK_CALL] = _call_envelope(
+        point, project_dir, force, task_id, worktree_path, tasks_dir, actor, selector
+    )
     env.update(extra or {})
     return env
+
+
+def _call_envelope(
+    point: str,
+    project_dir: Path,
+    force: bool,
+    task_id: str | None,
+    worktree_path: Path | None,
+    tasks_dir: Path | None,
+    actor: str | None,
+    selector: str | None,
+) -> str:
+    """The per-CALL facts as one versioned object (HATS-1724).
+
+    Every field is ALWAYS present; one that does not apply here is ``null``.
+    That is the whole point: a scalar's absence is indistinguishable from a
+    value that is legitimately empty, and a gate reading an absent
+    ``AI_HATS_WORKTREE_PATH`` as "this card brings no commits" waves the
+    transition through. An absent envelope means "no contract", a null field
+    means "resolved, none" — a script may refuse on the first.
+
+    ``selector`` is what DECLARED the run (``->done``), ``event`` what fired
+    (``review->done``); they differ only where a wide form was declared, so a
+    caller that names no selector is one whose declaration named the point.
+    """  # comment-length: allow — null-vs-absent is the contract
+    from_state, arrow, to_state = point.partition("->")
+    return json.dumps(
+        {
+            "v": HOOK_CALL_VERSION,
+            "selector": selector or point,
+            "event": point,
+            "from": from_state if arrow else None,
+            "to": to_state if arrow else None,
+            "task_id": task_id,
+            "actor": actor,
+            "force": force,
+            "worktree": str(worktree_path) if worktree_path else None,
+            "tasks_dir": str(tasks_dir) if tasks_dir else None,
+            "project_dir": str(project_dir),
+        },
+        separators=(",", ":"),
+    )
 
 
 def _put(env: dict[str, str], name: str, value: str | None) -> None:

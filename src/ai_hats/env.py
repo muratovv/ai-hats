@@ -34,6 +34,9 @@ ENV_FORCE = "AI_HATS_FORCE"
 ENV_TASK_ID = "AI_HATS_TASK_ID"
 ENV_WORKTREE_PATH = "AI_HATS_WORKTREE_PATH"
 ENV_TASKS_DIR = "AI_HATS_TASKS_DIR"  # NOT rack's own RACK_TASKS_DIR
+#: The call envelope (HATS-1724) — per-CALL facts as one versioned JSON object,
+#: BESIDE the scalars above, which shell keeps reading (the HATS-1594 ruling).
+ENV_HOOK_CALL = "AI_HATS_HOOK_CALL"
 
 
 def _read(name: str) -> str | None:
@@ -138,6 +141,7 @@ __all__ = [
     "ENV_TASK_ID",
     "ENV_WORKTREE_PATH",
     "ENV_TASKS_DIR",
+    "ENV_HOOK_CALL",
     "user_home_override",
     "ai_hats_dir_override",
     "project_dir_pin",
