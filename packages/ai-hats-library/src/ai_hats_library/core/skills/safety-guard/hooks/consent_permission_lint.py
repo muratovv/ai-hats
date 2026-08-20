@@ -113,9 +113,7 @@ def _answered(call: str, restored) -> bool:
 def _probes() -> list[tuple[str, str]]:
     """Every (spelling, pause) pair a rule can be judged against."""
     return [
-        (spelling, why)
-        for command, why in GUARDED_COMMANDS
-        for spelling in spellings_for(command)
+        (spelling, why) for command, why in GUARDED_COMMANDS for spelling in spellings_for(command)
     ]
 
 
@@ -233,7 +231,7 @@ def findings_in(text: str) -> list[Finding]:
             continue
         prefix = _assignments(rule)
         opened = {}
-        for spelling, why in (probes if prefix else unanswered):
+        for spelling, why in probes if prefix else unanswered:
             call = f"{prefix} {spelling}" if prefix else spelling
             if why in opened or (prefix and _answered(call, restored)):
                 continue

@@ -271,7 +271,13 @@ def test_an_ask_rule_as_wide_as_the_allow_rule_closes_all_of_it(lint):
 
 @pytest.mark.parametrize(
     "rule",
-    ["Bash(python:*)", "Bash(python3:*)", "Bash(.venv/bin/python:*)", "Bash(zsh *)", "Bash(source:*)"],
+    [
+        "Bash(python:*)",
+        "Bash(python3:*)",
+        "Bash(.venv/bin/python:*)",
+        "Bash(zsh *)",
+        "Bash(source:*)",
+    ],
 )
 def test_a_rule_handing_out_an_interpreter_is_named(lint, rule):
     notes = lint.interpreter_notes_in(_settings([rule]))
@@ -320,7 +326,7 @@ def test_both_verdicts_are_said_apart_when_both_apply(lint, tmp_path):
 def test_a_rule_spelled_with_quotes_still_names_its_line(lint):
     """Found live: a `-c '` rule appears JSON-escaped in the file, so the raw
     string matched no line and the finding pointed at line 0."""
-    rule = "Bash(python3 -c \" *)"
+    rule = 'Bash(python3 -c " *)'
     notes = lint.interpreter_notes_in(_settings([rule]))
 
     assert len(notes) == 1, notes

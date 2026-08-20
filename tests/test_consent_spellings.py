@@ -20,9 +20,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HOOKS = (
-    REPO_ROOT
-    / "packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard"
-    / "hooks"
+    REPO_ROOT / "packages/ai-hats-library/src/ai_hats_library/core/skills/safety-guard" / "hooks"
 )
 SPELLINGS = HOOKS / "consent_spellings.py"
 
@@ -115,7 +113,9 @@ def test_a_missing_table_costs_the_guard_its_sight_and_says_so(tmp_path):
     """The fail-open branch, exercised — an unrecorded one is indistinguishable
     from a gate that simply had nothing to say (`dev_rule_silent_fallback`)."""
     hooks = tmp_path / "hooks"
-    shutil.copytree(HOOKS, hooks, ignore=shutil.ignore_patterns("consent_spellings.py", "__pycache__"))
+    shutil.copytree(
+        HOOKS, hooks, ignore=shutil.ignore_patterns("consent_spellings.py", "__pycache__")
+    )
     assert not (hooks / "consent_spellings.py").exists()
 
     payload = json.dumps(
