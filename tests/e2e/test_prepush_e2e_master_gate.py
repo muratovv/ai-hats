@@ -186,7 +186,8 @@ def _write_dispatcher(repo: Path, *, stages: str = "e2e") -> Path:
         "#!/usr/bin/env bash\n"
         f'if [[ "$1" == "--stages" ]]; then echo "{stages}"; exit 0; fi\n'
         'if [[ "$1" == "e2e" ]]; then\n'
-        '  exec pytest -m "(integration or smoke) and not quarantine" tests/e2e/ tests/smoke/ -q\n'
+        '  exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
+        "tests/e2e/ tests/smoke/ -q\n"
         "fi\n"
         "exit 0\n"
     )
@@ -447,7 +448,7 @@ def _commit_dispatcher(
         f"  lint) exit {lint_rc} ;;\n"
         f"  unit) exit {unit_rc} ;;\n"
         f"  e2e-catalog) exit {e2e_catalog_rc} ;;\n"
-        '  e2e) exec pytest -m "(integration or smoke) and not quarantine" '
+        '  e2e) exec pytest -m "(integration or smoke) and not quarantine and not live_agy" '
         "tests/e2e/ tests/smoke/ -q ;;\n"
         "esac\n"
         "exit 0\n"
@@ -685,11 +686,10 @@ def test_run_mode_argv_has_markers_and_folders(tmp_path: Path):
 
 
 @pytest.mark.integration
-def test_run_mode_deselects_quarantined_tests(tmp_path: Path):
-    """HATS-676: the gate filter subtracts ``@pytest.mark.quarantine`` via
-    ``-m "(integration or smoke) and not quarantine"``.
+def test_run_mode_deselects_quarantined_and_live_agy_tests(tmp_path: Path):
+    """The gate subtracts quarantined tests and external agy sessions.
 
-    Fail-under-revert: drop ``and not quarantine`` from the hook → red.
+    Fail-under-revert: drop either exclusion from the dispatcher → red.
     """
     repo = _git_repo(tmp_path)
     bindir = tmp_path / "bin"
@@ -700,6 +700,7 @@ def test_run_mode_deselects_quarantined_tests(tmp_path: Path):
     assert res.returncode == 0, res.stderr
     argv = (bindir / "last_argv").read_text()
     assert "not quarantine" in argv, argv
+    assert "not live_agy" in argv, argv
     assert "integration or smoke" in argv, argv
 
 

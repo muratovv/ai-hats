@@ -62,9 +62,21 @@ def test_group_map_balanced_and_deterministic() -> None:
 class _FakeItem:
     """Minimal stand-in for a pytest Item for the grouping hook."""
 
-    def __init__(self, nodeid: str, *, install_heavy: bool = False, live: bool = False):
+    def __init__(
+        self,
+        nodeid: str,
+        *,
+        install_heavy: bool = False,
+        live: bool = False,
+        live_agy: bool = False,
+    ):
         self.nodeid = nodeid
-        self.fixturenames = ("requires_claude_auth",) if live else ()
+        if live:
+            self.fixturenames = ("requires_claude_auth",)
+        elif live_agy:
+            self.fixturenames = ("requires_agy_auth",)
+        else:
+            self.fixturenames = ()
         self._has_install_heavy = install_heavy
         self.group: str | None = None
         self.markers: set[str] = set()
@@ -128,6 +140,23 @@ def test_hook_applies_live_claude_deselect_marker() -> None:
     assert "live_claude" in items[0].markers, "live test must carry the marker"
     assert "live_claude" not in items[1].markers, "plain test must not"
     assert "live_claude" not in items[2].markers, "install_heavy test must not"
+
+
+def test_hook_applies_live_agy_deselect_marker_and_group() -> None:
+    items = [
+        _FakeItem(
+            "tests/e2e/test_agy.py::test_live",
+            install_heavy=True,
+            live_agy=True,
+        ),
+        _FakeItem("tests/e2e/test_agy.py::test_offline"),
+    ]
+
+    _modifyitems(None, items)
+
+    assert "live_agy" in items[0].markers
+    assert items[0].group == "live_agy"
+    assert "live_agy" not in items[1].markers
 
 
 def test_hook_keeps_a_files_install_heavy_tests_together() -> None:
