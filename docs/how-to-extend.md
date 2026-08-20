@@ -248,6 +248,71 @@ string map that rejects nested values). A leftover `metadata.yaml` carrying
 (`LeftoverSidecarHooksError`): move the keys into frontmatter and delete the
 sidecar.
 
+## What every hook is told about the call
+
+Every hook **ai-hats itself spawns** — a bound check on an FSM edge, a worktree
+lifecycle hook, a startup check — receives `AI_HATS_HOOK_CALL`: one JSON object
+describing *this* run, beside the plain scalars (`AI_HATS_TASK_ID`,
+`AI_HATS_WORKTREE_PATH`, …) that shell keeps reading directly. Git hooks are the
+exception: git spawns them, possibly with no ai-hats process alive, so their
+per-call shape is git's.
+
+```json
+{"v":1,"selector":"->done","event":"review->done","from":"review","to":"done",
+ "task_id":"HATS-1724","actor":"human:fedor","force":false,
+ "worktree":"/tmp/wt-…","tasks_dir":"/…/backlog/tasks","project_dir":"/…"}
+```
+
+| field                | what it answers                                                              |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `v`                  | contract version — bumped only when a field is removed, retyped or re-meant  |
+| `selector`           | which declaration called (`->done` — the row's own spelling)                 |
+| `event` / `from`/`to` | which road was actually taken (`review->done`); `null` off the FSM channel   |
+| `actor`              | who moved the card — see below                                               |
+| `force`              | whether the transition was forced                                            |
+| the paths            | the tree, the backlog and the project this call is about; `null` when none   |
+
+**A field that does not apply is `null`, never a missing key.** That is the one
+thing the envelope gives you that a scalar cannot: an absent scalar is
+indistinguishable from a legitimately empty one, so a gate reading an absent
+`AI_HATS_WORKTREE_PATH` as "no commits here, nothing to gate" waves the
+transition through. An absent *envelope* means "no contract" — refuse on that.
+
+**Reading it.** No parser is shipped, and none is needed — `jq` when you have
+it, `python3` otherwise:
+
+```bash
+# hook-call-reader — pinned verbatim by tests/test_doc_hook_call_reader.py
+hook_call_field() {
+    if command -v jq >/dev/null 2>&1; then
+        jq -r --arg f "$1" '.[$f] // empty' <<<"${AI_HATS_HOOK_CALL:-}"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import json,os,sys; print(json.loads(os.environ.get("AI_HATS_HOOK_CALL") or "{}").get(sys.argv[1]) or "")' "$1"
+    fi
+}
+```
+
+**Telling automation from a person.** `rack:` is the framework's reserved space
+— `rack:epic-automation`, `rack:hyp-autoclose`, `rack:reflect`,
+`rack:session-reviewer`. Nothing a person or an agent runs can mint it: the CLI
+spells `session:<id>` inside a session and `human:<login>` outside one. So the
+predicate is a prefix test, and it matters most on a wide selector, where your
+row also fires on moves the framework makes itself:
+
+```bash
+# a gate that only judges human moves
+case "$(hook_call_field actor)" in
+    rack:*) exit 0 ;;   # the framework moved this card, not a person
+esac
+```
+
+Do **not** compare against `"user"` — no road ever produces that value.
+
+**What is deliberately not in the envelope.** Whether the card is an epic: it is
+a scan of the card's children, and a script that needs it can run that scan
+itself against `tasks_dir`. Whether a human or an agent is driving: that is a
+property of the *session*, and `AI_HATS_SESSION_IDENTITY` already carries it.
+
 ## Declaring tool dependencies from a skill (`requires`)
 
 If your skill *drives an external tool* (a CLI, or an MCP server), declare that

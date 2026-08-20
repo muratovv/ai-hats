@@ -2,14 +2,12 @@
 
 flow:   a gate script asking WHO moved the card and WHICH declaration called it
 cmds:
-    rack create / rack create --parent / rack transition --state done --force
-expect: every spawned check receives AI_HATS_HOOK_CALL — one versioned object of
-        per-call facts — so a script distinguishes a person's forced fast-close
-        from the epic automation's own hop
-why: without it the two are indistinguishable to a script. The automation hop is
-     an in-process nested transition, so the session identity, the environment
-     and every ambient signal around it are byte-identical to the human move;
-     a gate bound to a wide selector then runs blind on both.
+    rack create --parent / rack transition --state done --force
+expect: every spawned check receives AI_HATS_HOOK_CALL, so a script tells a
+        person's forced fast-close from the epic automation's own hop
+why: the automation hop is an in-process nested transition, so the session
+     identity and every ambient signal around it are byte-identical to the
+     human move — a gate on a wide selector otherwise runs blind on both
 """
 
 from __future__ import annotations

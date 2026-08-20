@@ -719,3 +719,30 @@ def test_the_call_envelope_reaches_the_child_beside_the_scalars(tmp_path):
     # Present and null — NOT absent. This is the distinction the envelope buys.
     assert "worktree" in call and call["worktree"] is None
     assert "tasks_dir" in call and call["tasks_dir"] is None
+
+
+def test_a_point_that_is_not_an_edge_states_its_missing_halves_as_null(tmp_path):
+    """The wt and startup channels have no from/to — and say so IN the envelope.
+
+    `null` rather than a dropped key, because a reader distinguishing "this
+    channel has no such notion" from "I am not being told" is the only reason
+    the envelope earns its place beside the scalars.
+    """
+    import json
+
+    script = _script(tmp_path / "w.sh", 'printf "%s" "$AI_HATS_HOOK_CALL"\nexit 0\n')
+
+    run = run_hook(
+        script,
+        point="wt:teardown[wt_out]",
+        budget=10,
+        deadline=Deadline.without_lock(10, why="unit test"),
+        project_dir=tmp_path,
+    )
+
+    call = json.loads(run.said)
+    assert call["event"] == "wt:teardown[wt_out]"
+    assert call["from"] is None and call["to"] is None
+    assert call["actor"] is None
+    # A caller naming no selector is one whose declaration named the point.
+    assert call["selector"] == "wt:teardown[wt_out]"
