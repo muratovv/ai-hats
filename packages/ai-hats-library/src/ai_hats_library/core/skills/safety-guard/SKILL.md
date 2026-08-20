@@ -46,10 +46,13 @@ yours to know here. Three things you can do, and nothing else:
 - **Present what you are asking approval for, and stop.** While a question is
   waiting, do not nudge or re-ask: it does not expire, and the supervisor may
   take as long as reading needs.
-- **If the engine refused for want of an answer, re-run that exact command
-  unchanged.** Each run raises a fresh question, so this is the one thing that
-  helps. Mutating the command does not: the answer binds to the exact call the
-  supervisor was shown, and a consent flag you add yourself is a self-grant.
+- **If the engine refused for want of an answer, say so and stop.** A re-run
+  helps only where a question can be raised at all; on a surface with no hooks
+  it buys a second refusal. What opens the move is the supervisor typing the
+  verb himself (`consent <type> <minutes>`), and his window then covers the
+  series without asking again. Mutating the command never helps: the answer
+  binds to the exact call he was shown, and a consent flag you add yourself is
+  a self-grant.
 
 ## The tracker backlog is `rack`-only
 

@@ -109,8 +109,11 @@ rack transition PROJ-042 --state done --force --reason "shipped on master"
 
 `--force` relaxes the FSM **arrow**, never consent — `consent | op --force`.
 Nothing you add to the command line switches the supervisor's question off, so
-run the recipe bare and let the question happen; it still works, it just asks
-once.
+run the recipe bare and let the question happen. **Every** road into `done`
+carries it, the forced one included (HATS-1752). How many times you are asked is
+not the command's property either: an open grant window pays for the move in
+silence, and where nobody can be asked, `AI_HATS_CONSENT_ACK=1` in the
+**launching** environment stands in.
 
 ### Hypotheses & proposals — the `rack hyp` / `rack proposal` groups
 
@@ -155,7 +158,7 @@ transition is a live signal to the supervisor, so move the card **as each phase
 completes** — never batch every transition at the end. Finished work left in
 `execute` reads as "still working".
 
-| Edge                                         | Trigger                                            | Action (and gate skill)                                                                                                                                                                |
+| Edge                                         | Trigger                                            | Action (and the skill that owns it)                                                                                                                                                    |
 | -------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `brainstorm → plan`                          | requirements clear enough to plan                  | **plan-gate** fills every required `plan.md` section, then transition                                                                                                                  |
 | `plan → execute`                             | plan approved                                      | re-validate the premise first (below); rack auto-creates the `task/<id>` worktree — `cd` into it (**worktree-isolation**)                                                              |
