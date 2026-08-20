@@ -293,7 +293,7 @@ def build_composition_payload(
         static_cost_analyzer=_static_cost_analyzer(project_dir),
         channel=cfg.harness.channel.value,
         startup_warnings=tuple(startup_warnings),
-        diagnostics=tuple(dict.fromkeys(diagnostics)),
+        diagnostics=tuple(diagnostics),
         # HATS-867: observe factories threaded runner→finalize pipelines.
         # HATS-948: the audit writer carries the provider's transcript parser.
         session_factory=Session,
