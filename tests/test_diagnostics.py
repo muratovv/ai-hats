@@ -21,11 +21,16 @@ def test_source_path_prefixes_the_text():
     assert diag.render() == "/lib/role.yaml: no integration collects 'foo'"
 
 
-def test_remedy_lands_on_its_own_line_so_it_copy_pastes():
-    """Given a remedy, when rendered, then it is a line of its own (HATS-1013 form)."""
+def test_remedy_lands_on_its_own_indented_line():
+    """Given a remedy, when rendered, then it is an indented line of its own.
+
+    The banner prints one notice as `  • {text}` and indents no continuation,
+    so a producer that wants alignment indents its own — same as
+    `_broken_hook_refs_text` and `_format_skill_collisions` already do.
+    """
     diag = Diagnostic(Level.WARN, "dev env outdated", remedy="uv sync --inexact")
 
-    assert diag.render() == "dev env outdated\nuv sync --inexact"
+    assert diag.render() == "dev env outdated\n    uv sync --inexact"
 
 
 def test_stderr_channel_marks_the_level_and_is_the_only_speller(capsys):

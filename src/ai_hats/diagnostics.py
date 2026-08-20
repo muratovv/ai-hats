@@ -35,11 +35,13 @@ class Diagnostic:
     def render(self) -> str:
         """The human-readable body, without a level marker — that is the channel's.
 
-        The remedy gets its own unquoted line so it copy-pastes into a shell
-        (the HATS-1013 form).
+        The remedy gets its own line, indented under the notice's bullet: the
+        banner prints `  • {text}` and indents no continuation of its own, so a
+        producer that wants alignment does it here — the same way
+        ``wrap_runner._broken_hook_refs_text`` already does.
         """
         body = f"{self.where}: {self.text}" if self.where is not None else self.text
-        return f"{body}\n{self.remedy}" if self.remedy else body
+        return f"{body}\n    {self.remedy}" if self.remedy else body
 
 
 #: What each level is called on the plain-text channel. The banner has its own

@@ -53,7 +53,7 @@ def _make_project(tmp_path: Path) -> tuple[Path, Path]:
         "  traits:\n    - trait-base\n"
         "  skills:\n    - gate-skill\n"
         "  apps:\n"
-        "    nosuchapp:\n"
+        "    rak:\n"
         "      - run: gate-skill/g.sh\n"
         "        at: [some-point]\n"
         "injection: R.\n"
@@ -92,9 +92,10 @@ def test_composition_warning_reaches_the_pre_launch_banner(tmp_path, monkeypatch
 
     output = _launch(project, monkeypatch)
 
-    assert "nosuchapp" in output, "the composition's finding must reach the banner"
+    assert "apps.rak" in output, "the composition's finding must reach the banner"
     assert "will never fire" in output
     assert str(role_config) in output, "and it must name the YAML to open"
+    assert "did you mean 'rack'?" in output, "and what to do about it"
 
 
 def test_a_headless_launch_shows_the_warning_it_does_not_wait_for(tmp_path, monkeypatch):
@@ -105,5 +106,5 @@ def test_a_headless_launch_shows_the_warning_it_does_not_wait_for(tmp_path, monk
 
     output = _launch(project, monkeypatch, hold="0")
 
-    assert "nosuchapp" in output
+    assert "apps.rak" in output
     assert str(role_config) in output

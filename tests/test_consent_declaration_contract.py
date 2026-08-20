@@ -646,3 +646,22 @@ def test_the_maintainer_gate_is_wide_and_the_question_no_longer_lags_it():
         "the question rides every road into done, and `plan->execute` stays EXACT: "
         "a wide `->execute` would gate the rework loop"
     )
+
+
+def test_a_legal_disarm_is_reported_without_a_remedy():
+    """HATS-1753, supervisor ruling: last-writer-wins is the DECLARED rule — a role
+    is entitled to switch off a point its trait declared. Reporting it is right;
+    telling the human to "fix" what may be deliberate is not, so the remedy stays
+    empty here while the other three composition diagnostics carry one."""
+    first = _consent_row("review->done", declared_by="trait-agent")
+    second = _rows(
+        {"rack": {"tasks": [{"at": ["review->done"], "consent": False}]}},
+        declared_by="trait-late",
+    )
+    sink: list = []
+
+    _resolved_consent([*first, *second], sink)
+
+    (diag,) = sink
+    assert diag.remedy == "", "a legal move must not be dressed as a defect"
+    assert "'trait-agent'" in diag.text and "'trait-late'" in diag.text

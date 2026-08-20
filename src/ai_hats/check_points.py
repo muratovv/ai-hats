@@ -23,6 +23,7 @@ the grammar.
 
 from __future__ import annotations
 
+import difflib
 import json
 import string
 from hashlib import sha1
@@ -277,6 +278,10 @@ def _stricter(
             f"the gate installs ONCE, with on_error: "
             f"{'refuse' if 'refuse' in (existing.on_error, incoming.on_error) else existing.on_error}",
             where=incoming.declared_in,
+            remedy=(
+                f"drop the row from {existing.declared_by!r} or from "
+                f"{incoming.declared_by!r} — one of the two"
+            ),
         )
     )
     if existing.on_error == "refuse" or incoming.on_error != "refuse":
@@ -288,6 +293,7 @@ def _warn_unclaimed_apps(declared: Sequence[AppBinding], found: list[Diagnostic]
     """A block no integration collects is a gate that can never fire (R9)."""
     for app in sorted({row.app for row in declared} - KNOWN_APPS):
         declarers = sorted({row.declared_by for row in declared if row.app == app})
+        close = difflib.get_close_matches(app, sorted(KNOWN_APPS), n=1)
         found.append(
             Diagnostic(
                 Level.WARN,
@@ -295,6 +301,9 @@ def _warn_unclaimed_apps(declared: Sequence[AppBinding], found: list[Diagnostic]
                 f"but no integration in this build collects {app!r} (known: "
                 f"{', '.join(sorted(KNOWN_APPS))}) — those rows will never fire",
                 where=next((r.declared_in for r in declared if r.app == app), None),
+                # A guess that is wrong costs more than no guess, so only a
+                # close match speaks — same bar as models.py and the seam.
+                remedy=f"did you mean {close[0]!r}?" if close else "",
             )
         )
 
@@ -492,6 +501,7 @@ def _report_missing_skill(
             f"{label}, but an overlay removed that skill — dropping the "
             f"row and continuing; the gate will NOT fire",
             where=row.declared_in,
+            remedy=(f"re-add skill {row.skill!r} to the composition, or drop this row"),
         )
     )
 

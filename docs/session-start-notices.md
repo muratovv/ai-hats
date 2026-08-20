@@ -158,10 +158,23 @@ They now speak in `Diagnostic` (`src/ai_hats/diagnostics.py`) — a frozen
 
 ```
 ⚠ 1 startup warning(s):
-  • /lib/roles/warn-role/config.yaml: composition.apps.nosuchapp is declared by
-    'warn-role', but no integration in this build collects 'nosuchapp'
+  • /lib/roles/warn-role/config.yaml: composition.apps.rak is declared by
+    'warn-role', but no integration in this build collects 'rak'
     (known: …) — those rows will never fire
+    did you mean 'rack'?
 ```
+
+`remedy` is the last line, indented under the bullet. The banner indents no
+continuation of its own, so `Diagnostic.render` does it — the same way
+`wrap_runner._broken_hook_refs_text` already does.
+
+Three of the four composition sites carry one: a misspelt app key gets a
+computed `difflib` guess (and stays silent when nothing is close, since a wrong
+guess costs more than none), a row orphaned by an overlay names both exits, and
+a gate declared twice names the two declarations to choose between. The fourth —
+a consent point switched off by a later writer — deliberately carries **no**
+remedy: last-writer-wins is the declared rule, so the flip is reported but never
+dressed as a defect.
 
 Transport is the sink convention already used for hooks warnings, with a typed
 payload instead of `list[str]`: `compose_for_role(..., diagnostics=<list>)`
