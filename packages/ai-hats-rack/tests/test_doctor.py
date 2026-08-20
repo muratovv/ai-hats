@@ -359,13 +359,17 @@ def test_a_dead_point_is_a_finding_the_report_carries():
     assert "reviw->done" in report.findings[0].detail
 
 
-def test_a_sibling_backlogs_point_is_listed_and_is_not_a_finding():
-    """HATS-1545 R10 made the cross-backlog skip legal; the report says the row
-    is there without calling the project broken."""
+def test_a_sibling_backlogs_arrow_under_this_backlog_is_a_finding():
+    """HATS-1774 reverses what HATS-1584 decided here. The skip R10 made legal is
+    a row that arms under its OWN backlog; this one is addressed to ``tasks`` and
+    written in the hypotheses grammar, so it fires nowhere — and calling that a
+    legal skip is what let a declared gate be a silent no-op with a clean report.
+    """
     report = _report(_row("active->confirmed"))
 
-    assert [r.status for r in report.rows] == ["foreign"]
-    assert report.findings == ()
+    assert [r.status for r in report.rows] == ["dead"]
+    assert [f.check for f in report.findings] == ["dead-check-point"]
+    assert "apps.rack.hyp" in report.findings[0].detail
 
 
 def test_a_row_no_mounted_backlog_answers_to_is_a_finding():

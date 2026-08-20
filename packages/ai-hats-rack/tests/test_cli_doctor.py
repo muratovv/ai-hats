@@ -4,6 +4,7 @@ Read-only; exit 0 on a clean workspace, exit 1 when findings exist."""
 from __future__ import annotations
 
 import json
+from unittest import mock
 
 import pytest
 from click.testing import CliRunner
@@ -94,3 +95,57 @@ def test_the_json_shape_tells_a_finished_run_from_one_that_could_not_start(runne
     assert set(finished) == {"clean", "scanned", "findings", "bindings"}
     assert could_not_start.exit_code == 1
     assert set(json.loads(could_not_start.output)) == {"error"}
+
+
+def test_a_row_whose_arrow_is_a_siblings_grammar_is_dead_and_exits_one(runner, tmp_path):
+    """HATS-1774, the HATS-1719 repro: a row under ``apps.rack.hyp`` bound to
+    ``->done`` names a road hypotheses has no state for. The tasks topology does
+    have it, and until this ruling that hit elsewhere read as a legal
+    cross-backlog skip — the report stayed clean, rc 0, and the gate fired
+    nowhere. It is now a finding, and the detail carries the move-it recipe.
+    """
+    from ai_hats_rack import cli
+    from ai_hats_rack.checks import CheckDeclaration
+
+    row = CheckDeclaration(
+        path=("hyp",),
+        at=("->done",),
+        cargo={},
+        on_error="refuse",
+        label="'role' binds skill/gate.sh under apps.rack",
+        handle=None,
+    )
+
+    class _Port:
+        def check_declarations(self):
+            return (row,)
+
+    class _Provider:
+        def build_kernel(self, root, caller_cwd):
+            return None
+
+        def after_create(self, root, result):  # pragma: no cover - unused here
+            pass
+
+        def check_port(self, root, catalog):
+            return _Port()
+
+    class _FakeEP:
+        def load(self):
+            return _Provider
+
+    tasks = _tracker(tmp_path)
+    cli._provider.cache_clear()
+    try:
+        with mock.patch("importlib.metadata.entry_points", lambda group=None: [_FakeEP()]):
+            result = _run(runner, tasks, "doctor", "--json")
+    finally:
+        cli._provider.cache_clear()
+
+    payload = json.loads(result.output)
+    assert result.exit_code == 1
+    assert [(r["status"], r["backlog"], r["selector"]) for r in payload["bindings"]["rows"]] == [
+        ("dead", "hyp", "->done")
+    ]
+    assert [f["check"] for f in payload["findings"]] == ["dead-check-point"]
+    assert "apps.rack.tasks" in payload["findings"][0]["detail"]
