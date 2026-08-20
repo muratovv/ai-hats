@@ -55,8 +55,8 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
                     # it reads `to` rather than cutting `selector` itself.
                     *(
                         {
-                            "app": "rack",
-                            "path": ["tasks"],
+                            "app": "consent_gate",
+                            "path": ["rack.transition"],
                             "selector": f"x->{state}",
                             "from": "x",
                             "to": state,
@@ -66,8 +66,8 @@ def _plant_session(repo: Path, *targets: str, wt: bool = False) -> None:
                     *(
                         [
                             {
-                                "app": "wt",
-                                "path": [],
+                                "app": "consent_gate",
+                                "path": ["wt.merge"],
                                 "selector": "pre-merge",
                                 "from": None,
                                 "to": None,
@@ -558,3 +558,44 @@ def test_a_role_that_declared_no_merge_point_is_not_asked(tmp_path):
     _plant_session(tmp_path, "execute")  # rack only — no wt point
 
     assert _decide("ai-hats wt merge task/hats-1", cwd=tmp_path) == {}
+
+
+def test_command_p_cannot_bypass_the_session_wrapper(tmp_path):
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "done")
+
+    reason = _denied("command -p rack transition HATS-1 done", cwd=tmp_path)
+
+    assert "session wrapper" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "PATH=/usr/bin:/bin rack transition HATS-1 done",
+        "env -i rack transition HATS-1 done",
+        "env --unset=PATH rack transition HATS-1 done",
+    ],
+)
+def test_path_changing_prefix_cannot_bypass_the_session_wrapper(tmp_path, command):
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "done")
+
+    reason = _denied(command, cwd=tmp_path)
+
+    assert "session wrapper" in reason
+
+
+def test_env_with_an_unrelated_variable_still_reaches_the_wrapper(tmp_path):
+    subprocess.run(  # noqa: S603,S607 - literal argv, git from PATH
+        ["git", "init", "-q"], cwd=str(tmp_path), check=True, timeout=30
+    )
+    _plant_session(tmp_path, "done")
+
+    verdict = _decide("env KEEP=yes rack transition HATS-1 done", cwd=tmp_path)
+
+    assert verdict["permissionDecision"] == "ask"

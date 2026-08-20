@@ -37,6 +37,11 @@ ADVICE_SITES = (
     "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/SKILL.md",
 )
 
+INTERACTIVE_GUIDANCE = (
+    "packages/ai-hats-library/src/ai_hats_library/core/skills/worktree-isolation/SKILL.md",
+    "docs/how-to-configure.md",
+)
+
 
 def test_the_advice_sites_all_exist():
     """Green must mean 'checked and clean', never 'matched nothing'."""
@@ -95,3 +100,22 @@ def test_the_lone_export_detector_tells_the_forms_apart():
     # Prose naming the flag is not a recipe step, chained or not.
     assert not LONE_EXPORT.search("a supervisor-exported `AI_HATS_MERGE_ACK=1` flows in")
     assert not LONE_EXPORT.search("AI_HATS_PLAN_ACK=1 is not set in environment.")
+
+
+def test_interactive_guidance_prescribes_no_acknowledgement_flag() -> None:
+    offenders = {
+        path: [
+            line.strip()
+            for line in (REPO_ROOT / path).read_text(encoding="utf-8").splitlines()
+            if "_ACK" in line
+        ]
+        for path in INTERACTIVE_GUIDANCE
+    }
+    offenders = {path: lines for path, lines in offenders.items() if lines}
+    assert not offenders, f"interactive guidance must use the consent wrapper: {offenders}"
+
+
+def test_worktree_close_recipe_uses_the_wrapped_canonical_command() -> None:
+    content = (REPO_ROOT / INTERACTIVE_GUIDANCE[0]).read_text(encoding="utf-8")
+    assert "external consent wrapper" in content
+    assert "rack transition <id> done" in content

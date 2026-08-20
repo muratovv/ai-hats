@@ -43,17 +43,16 @@ class ResolvedComponent:
 class ConsentPoint:
     """One point a component declared needs the supervisor's explicit approval.
 
-    Same address shape as :class:`ResolvedCheck` — ``app`` plus the trail of keys
-    below it — and the same policy on the name: ai-hats carries it, the owning
-    application says what it means. A DECLARATION, not a binding: nothing is
-    spawned, so there is no script and no failure policy (HATS-1682).
+    ``app`` is ``consent_gate``; ``path`` names the wrapped operation type and
+    ``selector`` is adapter cargo. A declaration, not a check binding: the
+    session wrapper compiles it and no script or failure policy belongs here
+    (ADR-0030).
     """
 
     declared_by: str
     app: str
     path: tuple[str, ...]
-    #: ``selector`` since HATS-1719: under ``apps.rack`` this may denote a SET of
-    #: edges (``->done`` is eight), so "point" was honest only for the exact form.
+    #: The external operation adapter defines this selector's grammar.
     selector: str
 
 

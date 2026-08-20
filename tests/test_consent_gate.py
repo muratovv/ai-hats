@@ -16,6 +16,7 @@ import pytest
 
 from ai_hats_library.hooks.consent_gate import (
     DEFAULT_WINDOW_MINUTES,
+    JOURNAL_FILENAME,
     IssueError,
     Operation,
     Outcome,
@@ -23,6 +24,8 @@ from ai_hats_library.hooks.consent_gate import (
     check,
     grants_dir,
     issue,
+    mode_refusal,
+    record,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -279,3 +282,155 @@ def test_outside_a_session_the_verb_says_so_with_its_own_code(monkeypatch):
     monkeypatch.delenv("AI_HATS_SESSION_IDENTITY", raising=False)
 
     assert main([]) == EXIT_NO_SESSION
+
+
+# --- HATS-1736 S2: bad permissions are a REFUSAL, never a warning --------------
+#
+# Prior art rule 4: `ssh-add` ignores identity files others can read, and sudoers
+# refuses a group-writable timestamp dir. Until now `0600` was set on write and
+# never checked on read, so a grant planted by anyone could be spent by us.
+
+
+@pytest.mark.parametrize(
+    "mode, who",
+    [
+        pytest.param(0o640, "the group", id="group-readable"),
+        pytest.param(0o604, "everyone", id="world-readable"),
+        pytest.param(0o660, "the group", id="group-writable"),
+    ],
+)
+def test_a_grant_others_can_read_is_ignored_and_the_reason_is_named(store, project, mode, who):
+    grant = _issue(store, project)
+    grant.path.chmod(mode)
+
+    verdict = _check(store, project)
+
+    assert verdict.outcome is Outcome.DENIED, f"a loose grant was honoured: {verdict}"
+    assert "permission" in verdict.reason.lower(), (
+        f"the refusal did not say the grant was ignored for its mode: {verdict.reason!r}"
+    )
+    assert oct(mode)[-3:] in verdict.reason, (
+        f"the refusal did not name the offending mode: {verdict.reason!r}"
+    )
+
+
+def test_a_store_directory_others_can_reach_disarms_every_grant_in_it(store, project):
+    _issue(store, project)
+    grants_dir(store).chmod(0o750)
+
+    verdict = _check(store, project)
+
+    assert verdict.outcome is Outcome.DENIED, f"a loose store was honoured: {verdict}"
+    assert "permission" in verdict.reason.lower(), verdict.reason
+
+
+def test_a_private_grant_is_still_honoured(store, project):
+    """The guard rail must not fire on the mode the verb actually writes."""
+    grant = _issue(store, project)
+
+    assert stat.S_IMODE(grant.path.stat().st_mode) == 0o600
+    assert _check(store, project).outcome is Outcome.GRANTED
+
+
+def test_issuing_into_a_store_others_can_reach_is_refused(store, project):
+    _issue(store, project)  # creates the tree
+    grants_dir(store).chmod(0o750)
+
+    with pytest.raises(IssueError) as exc:
+        _issue(store, project)
+
+    assert "permission" in str(exc.value).lower(), str(exc.value)
+
+
+# --- HATS-1736 S3/S4: the record, and who is allowed to write it --------------
+
+
+def test_the_engine_writes_its_own_record_when_no_host_supplies_a_sink(store, project):
+    """HATS-1740 leans on this: shipped alone, the engine still journals."""
+    _issue(store, project)
+    granted = _check(store, project)
+
+    assert record(granted, MOVE, store_root=store, now=NOW) is True
+
+    path = store / JOURNAL_FILENAME
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600, "the engine's own journal is not private"
+    entry = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["op"] == "rack.transition"
+    assert entry["radius"] == ["rack.transition"], entry
+    assert entry["outcome"] == "granted"
+    assert entry["grant_id"] == granted.grant_id
+
+
+def test_the_record_carries_the_window_it_was_spent_against(store, project):
+    _issue(store, project, minutes=30)
+    granted = _check(store, project, now=NOW + 600)
+
+    written: list[dict] = []
+    record(granted, MOVE, journal=lambda e: written.append(dict(e)) or True, now=NOW + 600)
+
+    assert written[0]["window_s"] == 30 * 60, written
+    assert written[0]["left_s"] == 20 * 60, written
+
+
+def test_a_refusal_is_not_a_use_and_writes_nothing(store, project):
+    """P6: only a grant that ANSWERED is a use; a refusal sends the caller
+    to another channel, which writes its own record."""
+    refused = _check(store, project)
+    assert refused.outcome is Outcome.DENIED
+
+    written: list[dict] = []
+
+    assert record(refused, MOVE, journal=lambda e: written.append(dict(e)) or True) is False
+    assert written == [], f"a refusal was journalled as a use: {written}"
+
+
+def test_a_check_outside_the_declared_policy_writes_nothing(store, project):
+    """Otherwise a PreToolUse on every Bash makes the journal unreadable."""
+    _issue(store, project)
+    undeclared = Operation("fs.rm")
+    refused = _check(store, project, op=undeclared)
+    assert refused.outcome is Outcome.DENIED
+
+    written: list[dict] = []
+
+    assert record(refused, undeclared, journal=lambda e: written.append(dict(e)) or True) is False
+    assert written == []
+
+
+def test_a_use_with_nowhere_to_record_says_so_rather_than_going_quiet(store, project, capsys):
+    _issue(store, project)
+    granted = _check(store, project)
+
+    assert record(granted, MOVE) is False
+    assert "NOT RECORDED" in capsys.readouterr().err
+
+
+def test_a_symlink_in_the_store_is_not_a_grant(store, project):
+    """`stat` would have judged the mode of whatever the link points AT, so a
+    link to a file we never inspected could carry a grant."""
+    real = _issue(store, project)
+    planted = grants_dir(store) / "planted.json"
+    planted.symlink_to(real.path)
+    real.path.unlink()
+
+    verdict = _check(store, project)
+
+    assert verdict.outcome is Outcome.DENIED, f"a symlinked grant was honoured: {verdict}"
+    assert "symlink" in verdict.reason, verdict.reason
+
+
+def test_a_grant_that_vanished_mid_scan_is_reported_not_swallowed(store, project, tmp_path):
+    """`iterdir` then `lstat` is two syscalls; the file can go between them."""
+    gone = tmp_path / "never-existed.json"
+
+    assert "permissions unreadable" in mode_refusal(gone)
+
+
+def test_a_journal_that_cannot_be_written_says_so_rather_than_going_quiet(store, project, capsys):
+    """dev_rule_silent_fallback: the sink's own failure must reach a human."""
+    _issue(store, project)
+    granted = _check(store, project)
+    (store / JOURNAL_FILENAME).mkdir(parents=True)  # a directory where the file goes
+
+    assert record(granted, MOVE, store_root=store, now=NOW) is False
+    assert "NOT RECORDED" in capsys.readouterr().err

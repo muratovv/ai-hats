@@ -63,16 +63,11 @@ composition:
   apps:
     rack:
       tasks:
-        # The GATE covers every road into `done` (HATS-1719). The CONSENT stays on
-        # the review edge alone — and that is why these are two rows and not the
-        # "both keys on one row" form: that form ties the two reaches together,
-        # and here they genuinely differ. A wide question without a batch is
-        # click-spam (HATS-1728); a narrow gate is the hole this card measured.
+        # The gate covers every road into `done` (HATS-1719). Consent is separate
+        # session middleware declared by trait-agent under apps.consent_gate.
         - run: maintainer-quality-gate/hooks/done-gate.sh
           at: ['->done']
           on_error: refuse
-        - at: ['review->done']
-          consent: true
     wt:
       - run: maintainer-quality-gate/hooks/merge-gate.sh
         at: [pre-merge]

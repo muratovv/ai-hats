@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ai_hats_wt import WorktreeMergeConsentError, WorktreeStateLostError
+from ai_hats_wt import WorktreeStateLostError
 
 from ai_hats.rack_cli_provider import CliKernelProvider, cli_factory
 from ai_hats_rack.resolver import RackRoot
@@ -19,20 +19,6 @@ def test_factory_returns_provider():
 
 
 # ----- typed wt-error rendering ----------------------------------------------
-
-
-def test_merge_consent_renders_review_handoff(capsys):
-    exc = WorktreeMergeConsentError("task/hats-1", "master")
-    handled = CliKernelProvider().handle_error(exc, as_json=False, task_id="HATS-1")
-    assert handled is True
-    err = capsys.readouterr().err
-    assert "review consent required" in err
-    # `export`, on its own line: the inline prefix is refused as a self-grant, so a
-    # recipe spelling it that way would send the agent at a wall (HATS-1639).
-    assert "export AI_HATS_MERGE_ACK=1" in err
-    assert "ai-hats wt merge task/hats-1" in err
-    assert "AI_HATS_MERGE_ACK=1 ai-hats wt merge" not in err
-    assert "rack transition HATS-1 --state done" in err
 
 
 def test_state_lost_renders_recovery_recipe(capsys):
@@ -115,14 +101,6 @@ def test_recipe_omits_cd_when_no_project_root(capsys, tmp_path, monkeypatch):
     err = capsys.readouterr().err
     assert "cd " not in err
     assert "git checkout master" in err
-
-
-def test_merge_consent_json_carries_code(capsys):
-    exc = WorktreeMergeConsentError("task/hats-1", "master")
-    handled = CliKernelProvider().handle_error(exc, as_json=True, task_id="HATS-1")
-    assert handled is True
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["error"]["code"] == "worktree_merge_consent"
 
 
 def test_new_recipe_errors_carry_distinct_json_codes(capsys):

@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .check_snapshot import describe_checks
+from .consent_wrapper import materialize_consent_wrappers
 from .materialization import PlanMaterializer
 from .session_artifacts import (
     AT_LAUNCH,
@@ -75,6 +76,10 @@ def dry_run_hitl(
             policy=eff_policy,
             artifacts=artifacts,
         )
+        if prov.supports_session_command_wrappers():
+            materialize_consent_wrappers(
+                project_dir, payload.result, DRY_RUN_SESSION_ID, prov, artifacts
+            )
 
     env = assemble_launch_env(
         prov,
@@ -125,10 +130,16 @@ def _launch_notices(prov, project_dir: Path, result, policy: SessionPolicy) -> l
     """
     from .check_snapshot import legacy_launch_notices, surface_skew_notice
 
+    notices = []
+    if result.consent and not prov.supports_session_command_wrappers():
+        notices.append(
+            f"provider {prov.name!r} cannot enforce role-declared command consent; "
+            "the real HITL launch will be refused"
+        )
     if not prov.handles_artifact_categories():
-        return legacy_launch_notices(prov.name, result, policy)
+        return [*notices, *legacy_launch_notices(prov.name, result, policy)]
     skew = surface_skew_notice(prov.name, prov, project_dir, result)
-    return [skew] if skew else []
+    return [*notices, *([skew] if skew else [])]
 
 
 def dry_run_automate(

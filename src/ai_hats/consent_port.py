@@ -1,19 +1,11 @@
-"""The seam between ai-hats and the consent gate — a leaf, on purpose (HATS-1735).
-
-A leaf because ``wt_effects`` may not import ``rack_wiring`` (that edge is a
-cycle, spelled out at ``wt_effects.py:23-25``), and both of them plus the
-PreToolUse guard have to ask the same question.
-
-The answer is a four-valued :class:`Verdict`, never a bool: collapsing "no
-session, so I could not look" into "refused" is what ADR-0029 D6 forbids, and
-the collapse would happen right here if this returned ``True``/``False``.
-"""
+"""Ai-hats host seam used only by the external session consent wrapper."""
 
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
+from typing import Callable, Mapping
 
 from ai_hats_library.hooks.consent_gate import Operation, Outcome, Verdict, check, store_root_from
 
@@ -44,22 +36,21 @@ def declared_types(session_dir: Path) -> tuple[str, ...]:
     except (OSError, ValueError) as exc:
         logger.warning("consent declaration unreadable at %s: %r", session_dir, exc)
         return ()
-    return tuple(
-        str(row.get("selector", ""))
-        for row in rows
-        if isinstance(row, dict) and row.get("app") == APP and row.get("selector")
-    )
+    declared: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path")
+        if row.get("app") != APP or not isinstance(path, list) or not path:
+            continue
+        operation = str(path[0])
+        if operation and operation not in declared:
+            declared.append(operation)
+    return tuple(declared)
 
 
 def verdict(op: Operation, *, target_dir: Path | None) -> Verdict:
-    """Does a live grant cover ``op``?
-
-    ``target_dir`` is the project anchor ALREADY RESOLVED by the caller — rack
-    hands its ``RackRoot.project_dir``, ``wt_effects`` its own. Measured
-    (HATS-1735): re-resolving here would answer ``/Users/<me>`` for a linked
-    worktree, because ai-hats's own resolver finds a home-level ``.agent/``
-    before it reaches the gitlink hop.
-    """
+    """Return the four-valued grant verdict for the wrapper's project anchor."""
     from .session_identity import SessionIdentity, SessionIdentityError
 
     try:
@@ -77,26 +68,45 @@ def verdict(op: Operation, *, target_dir: Path | None) -> Verdict:
     )
 
 
-def note(answer: Verdict, op: Operation, *, hook: str) -> str:
-    """Record a move a grant paid for, and return the work-log line for it.
-
-    Journalling lives here rather than at each call site for the reason
-    ``env_consent_note`` already gives: one wording for every record beats two
-    copies that drift. Without the line, "the grant covered it" and "nobody was
-    ever asked" read the same afterwards (ADR-0029 D11).
-    """
+def journal_sink(hook: str, project_dir: Path) -> Callable[[Mapping[str, object]], bool]:
+    """Bind the engine's record callback to this project's bypass journal."""
     import sys
 
     from ai_hats_library.hooks.bypass_journal import journal_bypass
 
-    label = op.label or op.type
-    journal_bypass(
-        "hatch",
-        f"consent grant {answer.grant_id[:8]} ({op.type})",
-        hook=hook,
-        cmd=" ".join(sys.argv),
+    def _write(entry: Mapping[str, object]) -> bool:
+        return journal_bypass(
+            "hatch",
+            journal_reason(entry),
+            hook=hook,
+            cmd=" ".join(sys.argv),
+            cwd=project_dir,
+        )
+
+    return _write
+
+
+def journal_reason(entry: Mapping[str, object]) -> str:
+    """One greppable line: which grant, which operation, how wide, how much left.
+
+    Kept in ``reason`` rather than widened into ``bypass_journal.FIELDS``: that
+    schema is shared with every git hook, so a new column would rewrite the shape
+    of every line in the journal to serve one of them.
+    """
+    radius = ",".join(str(item) for item in (entry.get("radius") or ()))
+    left = int(entry.get("left_s") or 0) // 60
+    window = int(entry.get("window_s") or 0) // 60
+    return (
+        f"consent grant {str(entry.get('grant_id') or '')[:8]} ({entry.get('op')}) "
+        f"radius=[{radius}] window={left}m/{window}m outcome={entry.get('outcome')}"
     )
-    return f"{label}: supervisor consent grant accepted (grant {answer.grant_id[:8]})"
+
+
+def record_use(answer: Verdict, op: Operation, *, hook: str, project_dir: Path) -> bool:
+    """Record one authorization use in the wrapper's project journal."""
+    from ai_hats_library.hooks.consent_gate import record
+
+    return record(answer, op, journal=journal_sink(hook, project_dir))
 
 
 __all__ = [
@@ -107,6 +117,8 @@ __all__ = [
     "Outcome",
     "Verdict",
     "declared_types",
-    "note",
+    "journal_reason",
+    "journal_sink",
+    "record_use",
     "verdict",
 ]

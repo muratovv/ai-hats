@@ -251,6 +251,35 @@ def stand_in_session(
     return env
 
 
+def stand_in_wrapped_session(
+    env: dict[str, str],
+    project: Path,
+    session_id: str,
+    *,
+    role: str = "assistant",
+    provider: str = "claude",
+) -> dict[str, str]:
+    """Build a stand-in HITL session with the production command middleware."""
+    from ai_hats.assembler import Assembler
+    from ai_hats.consent_wrapper import materialize_consent_wrappers
+    from ai_hats.providers import get_provider
+    from ai_hats.session_artifacts import BuiltArtifacts
+
+    stand_in_session(env, project, session_id, role=role, provider=provider)
+    artifacts = BuiltArtifacts()
+    result = Assembler(project).composer.compose(role)
+    materialize_consent_wrappers(
+        project,
+        result,
+        session_id,
+        get_provider(provider),
+        artifacts,
+        environ=env,
+    )
+    env.update(artifacts.extra_env)
+    return env
+
+
 def _write_role_materialization(session_dir: Path, project: Path, role: str) -> None:
     """The envelope's on-disk half, as a real launch writes it (HATS-1682).
 

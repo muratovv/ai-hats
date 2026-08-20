@@ -26,37 +26,17 @@ composition:
     - task-summary
     - tool-call-hygiene
     - design-minimalism
-  # HATS-1682 — where this role needs the supervisor's explicit approval, said
-  # once, on the point. Consent is a property OF AN EDGE, so it rides the same
-  # rows a quality gate does: a row carries `run:`, `consent:`, or both. These
-  # carry only consent — there is nothing to run at these points, which is
-  # exactly why the declaration cannot live on a gate's row alone.
-  #
-  # It lives on the TRAIT and not in the packaged `backlog.yaml`, because that
-  # file is the rack's kernel contract and can say nothing about `wt` — and a
-  # merge into master is the other half of the same question. A role that does
-  # not compose this trait declares no consent and gets none; a role that wants
-  # one point back writes `consent: false` on it, and the later writer wins.
-  #
-  # `review->done` and `pre-merge` are the two roads into master
-  # (HATS-1130): the FSM automerge and a direct `ai-hats wt merge`. A gate
-  # holding only one of them is the asymmetry that started that epic.
-  #
-  # `consent_gate` answers a different question from the two blocks below it:
-  # they say WHERE the supervisor is asked, it says which OPERATION TYPES a
-  # grant may cover. The gate resolves this list instead of knowing what a rack
-  # is, so a third type is data rather than a code change (ADR-0029 D2/D8).
+  # HATS-1755 — external session middleware owns consent. The operation type is
+  # the path below consent_gate; `at` is the selector its adapter matches.
+  # Rack, wt and their gate rows never read this policy (ADR-0030 D3).
   apps:
     consent_gate:
-      - at: [rack.transition, wt.merge]
-        consent: true
-    rack:
-      tasks:
+      rack.transition:
         - at: ['plan->execute', 'review->done']
           consent: true
-    wt:
-      - at: [pre-merge]
-        consent: true
+      wt.merge:
+        - at: [pre-merge]
+          consent: true
 injection: |
   ## AGENT BEHAVIOR
 
@@ -68,7 +48,7 @@ injection: |
   - **Explicit Task IDs**: Always identify and output tasks by their full ID (e.g., `HATS-1176`) or full path to card (`.../tasks/HATS-1176/task.yaml`). Never refer to a task card using the generic filename "task.yaml" alone.
     - ✅ Correct: "Working on task HATS-1176", "Created card `.agent/ai-hats/tracker/backlog/tasks/HATS-1176/task.yaml`", "Tasks HATS-101 and HATS-102"
     - ❌ Incorrect: "Working on task.yaml", "Updated task.yaml", "The task.yaml card"
-  - All backlog ops (tasks, HYP, PROP) go through **rack** — see rule `rule_backlog_discipline` and skill `hatrack`; never edit tracker YAML by hand. Lifecycle / reads / documents / links → `rack <verb>`; field edits (title/description/priority/reviewer/role/tags/re-parent) → `rack transition --set`; `close` → forced `rack transition --state done --force` (`--force` relaxes the FSM arrow, never consent — `consent | op --force`, so the forced close still raises the question once and nothing you add to the command line switches it off); `plan-extract` → `rack plan-extract`; hypotheses / proposals → the `rack hyp` / `rack proposal` groups.
+  - All backlog ops (tasks, HYP, PROP) go through **rack** — see rule `rule_backlog_discipline` and skill `hatrack`; never edit tracker YAML by hand. Lifecycle / reads / documents / links → `rack <verb>`; field edits (title/description/priority/reviewer/role/tags/re-parent) → `rack transition --set`; `close` → forced `rack transition --state done --force` (`--force` relaxes only rack's FSM arrow; the external session wrapper still applies the role's consent requirement); `plan-extract` → `rack plan-extract`; hypotheses / proposals → the `rack hyp` / `rack proposal` groups.
   - Write retrospectives for completed work.
 
   ### Delegation

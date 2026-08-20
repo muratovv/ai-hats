@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .composition_payload import CompositionPayload
+from .consent_wrapper import materialize_consent_wrappers
 
 # HATS-649: the session-cache sweep moved to ``environment_recovery`` so it sits
 # beside the other recovery passes (bundled and run at the create_session
@@ -464,6 +465,7 @@ class WrapRunner:
         # HATS-452 (D2): no override channel on WrapRunner — the payload's
         # composition flows straight into the builder.
         builder_notices: list[StartupNotice] = []
+        artifacts = BuiltArtifacts()
         with provider.execution_context(self.project_dir):
             result = payload.result
             if provider.handles_artifact_categories():
@@ -473,7 +475,7 @@ class WrapRunner:
                     session.session_id,
                     run_mode=RunMode.HITL,
                     policy=payload.policy,
-                    artifacts=BuiltArtifacts(),
+                    artifacts=artifacts,
                 )
                 session_args = artifacts.cli_args
                 session_env = artifacts.extra_env
@@ -490,10 +492,15 @@ class WrapRunner:
                 session_args, session_env, meta_prompt = provider.build_session_prompt(
                     self.project_dir, result, session.session_id
                 )
+                artifacts.extra_env.update(session_env)
                 builder_notices.extend(
                     StartupNotice("warn", text)
                     for text in legacy_launch_notices(provider_name, result, payload.policy)
                 )
+            materialize_consent_wrappers(
+                self.project_dir, result, session.session_id, provider, artifacts
+            )
+            session_env = artifacts.extra_env
         _claim_session_cache(self.project_dir, session.session_id)
         session.init_audit(
             role=active_role,

@@ -77,6 +77,21 @@ def test_write_text_is_recorded_with_its_byte_size(port: Materializer, tmp_path:
     assert entry.size == 5
 
 
+def test_write_executable_records_bytes_and_only_apply_sets_mode(
+    port: Materializer, tmp_path: Path
+):
+    target = tmp_path / "session" / "bin" / "rack"
+
+    port.write_executable(target, "#!/bin/sh\nexit 0\n")
+
+    [entry] = port.plan.entries
+    assert entry.kind is WriteKind.WRITE_EXECUTABLE
+    assert entry.size == 17
+    assert target.exists() is isinstance(port, ApplyMaterializer)
+    if isinstance(port, ApplyMaterializer):
+        assert target.stat().st_mode & 0o111
+
+
 def test_copy_tree_is_recorded_with_file_count_and_bytes(port: Materializer, tmp_path: Path):
     src = _skill_src(tmp_path)
     port.copy_tree(src, tmp_path / "cache" / "skills" / "s")

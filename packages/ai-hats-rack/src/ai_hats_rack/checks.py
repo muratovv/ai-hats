@@ -41,13 +41,7 @@ if EDGE_CHECK_TIMEOUT_S >= LOCK_TIMEOUT:  # pragma: no cover — explicit raise 
     )
 
 
-#: What a carried row IS (HATS-1682). A ``CHECK_ROW`` spawns a script when its
-#: point fires; a ``CONSENT_ROW`` spawns nothing and only declares that the
-#: supervisor is asked there. Both are addressed and judged against the topology
-#: alike — the second kind is carried for exactly that, and never run.
-# comment-length: allow — which kind runs is the contract
 CHECK_ROW = "check"
-CONSENT_ROW = "consent"
 
 
 @dataclass(frozen=True)
@@ -68,7 +62,6 @@ class CheckDeclaration:
     on_error: str
     label: str
     handle: Any
-    kind: str = CHECK_ROW
 
     def points(self) -> tuple[str, ...]:
         """The point names this row binds. The carrier guarantees it is non-empty
@@ -248,11 +241,10 @@ def dead_selector_reason(row: CheckDeclaration, point: str, mounted: Sequence[st
     """Why a point fires nowhere. Said with the mounted roster, because that is
     what makes it a typo rather than a row aimed at a backlog of some other
     project — the distinction only a holder of every topology can draw."""
-    what = "the gate" if row.kind == CHECK_ROW else "the consent question"
     return (
         f"checks: {row.label} binds {point!r} under apps.rack.{'.'.join(row.path)}, but no "
         f"topology mounted in this project matches it (backlogs: {', '.join(mounted)}) — "
-        f"{what} can never fire, on that edge or any other. A rack selector is an "
+        "the gate can never fire, on that edge or any other. A rack selector is an "
         f"arrow between the state names of the backlog it gates: `review->done` for "
         f"exactly that edge, `->done` for every road into the state."
     )
@@ -351,11 +343,6 @@ class CheckSubscriber:
             if not self._fires_on(row, edge, edges):
                 continue
             if not self._addresses_me(row):
-                continue
-            if row.kind != CHECK_ROW:
-                # A consent row spawns nothing. It is carried this far so the
-                # addressing check above sees it — that is the whole reason the
-                # kind exists (HATS-1682) — and it stops here, before run_check.
                 continue
             bound.append(row)
         return tuple(bound)
@@ -462,7 +449,6 @@ __all__ = [
     "ARMED",
     "CHECK_PRIORITY",
     "CHECK_ROW",
-    "CONSENT_ROW",
     "EDGE_CHECK_TIMEOUT_S",
     "CheckDeclaration",
     "CheckOutcome",

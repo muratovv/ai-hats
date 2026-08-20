@@ -21,18 +21,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
-    from ai_hats_core import CompositionResult, ConsentPoint, ResolvedCheck
+    from ai_hats_core import CompositionResult, ResolvedCheck
 
     from .session_identity import SessionIdentity
 
 
 #: ``apps`` in every spelling the YAML parser accepts, plus the retired
 #: ``checks`` so a config left on it still composes far enough to hear why it is
-#: refused (HATS-1545 R11). ``consent`` is vestigial: it is a key ON an ``apps``
-#: row (HATS-1682), and :func:`declares_checks`'s prefilter admits no other
-#: spelling. Line-anchored so ``prechecks:`` is not one; a scan, not a parse —
+#: refused (HATS-1545 R11). Line-anchored so ``prechecks:`` is not one; a scan, not a parse —
 #: a false positive costs one compose, a false negative disarms a gate.
-_CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks|consent)['"]?[ \t]*:""", re.MULTILINE)
+_CHECKS_KEY = re.compile(rb"""^[ \t]*['"]?(?:apps|checks)['"]?[ \t]*:""", re.MULTILINE)
 
 
 #: "the caller did not supply one" — distinct from ``None``, which is a caller
@@ -100,30 +98,6 @@ def resolve_carried_checks(
     if not checks:
         return ()
     return _rooted(result, checks, identity)
-
-
-def resolve_carried_rows(
-    project_dir: Path,
-    app: str,
-    *,
-    identity: SessionIdentity | None | Any = FROM_ENV,
-    compose: Callable[[Path], CompositionResult | None] | None = None,
-) -> tuple[tuple[ResolvedCheck, ...], tuple[ConsentPoint, ...]]:
-    """Both kinds of row declared under ``app``, from ONE composition.
-
-    The consent half rides along so the owner of ``app`` can judge a consent
-    point against its topology exactly as it judges a gate's (HATS-1682 A5).
-    It is returned UNROOTED and never passes through :func:`_rooted`: a consent
-    point names no script, so there are no bytes to re-base and nothing for
-    ``reject_worktree_root`` to look at — which is what keeps a declaration that
-    spawns nothing from refusing because the session was launched in a worktree.
-    """  # comment-length: allow — that the consent half is never rooted IS the contract
-    result, identity = _composed(project_dir, identity, compose)
-    if result is None:
-        return (), ()
-    checks = tuple(check for check in result.checks if check.app == app)
-    consent = tuple(point for point in result.consent if point.app == app)
-    return (_rooted(result, checks, identity) if checks else ()), consent
 
 
 def resolve_checks_at(
@@ -456,30 +430,6 @@ def _compose_fail_closed(
     return result, identity
 
 
-def resolve_consent_points(
-    project_dir: Path,
-    app: str,
-    *,
-    path: tuple[str, ...] = (),
-    identity: SessionIdentity | None | Any = FROM_ENV,
-    compose: Callable[[Path], CompositionResult | None] | None = None,
-) -> frozenset[str]:
-    """Points of ``app`` this project's role wants the supervisor asked on.
-
-    No re-basing and no worktree clause, unlike its ``resolve_checks_at``
-    sibling: a consent point names no script, so there are no bytes to run from
-    the wrong tree and nothing a linked worktree could poison (HATS-1682).
-    """
-    result, _identity = _composed(project_dir, identity, compose)
-    if result is None:
-        return frozenset()
-    return frozenset(
-        point.selector
-        for point in result.consent
-        if point.app == app and (not path or point.path == path)
-    )
-
-
 def _composed(
     project_dir: Path,
     identity: SessionIdentity | None | Any,
@@ -511,8 +461,6 @@ __all__ = [
     "CheckResolutionError",
     "declares_checks",
     "resolve_carried_checks",
-    "resolve_carried_rows",
     "resolve_checks_at",
-    "resolve_consent_points",
     "session_identity",
 ]

@@ -46,26 +46,25 @@ class AppBinding:
     """One row of ``composition.apps``, with its declarer and its place in the tree.
 
     ai-hats owns four keys — ``run`` (what executes), ``at`` (where),
-    ``on_error`` (how a verdict is read) and ``consent`` (whether the supervisor
-    is asked before this point); ``cargo`` is every other key and is never read
-    here. ``at`` is owned but not *interpreted*: ai-hats checks only that a row
+    ``on_error`` (how a verdict is read) and ``consent`` (external middleware
+    policy); ``cargo`` is every other key and is never read here. ``at`` is owned
+    but not *interpreted*: ai-hats checks only that a row
     names at least one point, because a row bound to nothing is a gate that never
     fires — the silent absence this channel exists to remove. What each name
     MEANS stays the owning application's question (HATS-1545 F3).
 
-    A row carries ``run``, ``consent``, or both (HATS-1682). Consent runs
-    nothing, so a row declaring only consent has no script — which is what lets
-    an edge be gated on a role that binds no gate to it at all, and why an
-    explicit ``on_error`` on such a row is refused: it polices a failure that
-    cannot happen.
+    A row carrying ``consent`` is valid only below ``apps.consent_gate``
+    (ADR-0030). It has no script; the session wrapper compiles its operation path
+    and selectors. An explicit ``on_error`` on such a row is refused because it
+    polices a script failure that cannot happen.
 
     ``consent`` is THREE-valued: absent says nothing, and only `true`/`false`
     speak. Reading absence as `false` would make every gate row silently switch
     off a consent its trait declared.
 
-    ``path`` is the trail of keys from the app node down to the row, so an
-    application that nests (``apps.rack.<backlog>``) gets its level back and one
-    that does not (``apps.wt``) gets an empty trail.
+    ``path`` is the trail of keys from the app node down to the row. For example,
+    ``apps.rack.<backlog>`` carries the backlog, while
+    ``apps.consent_gate.<operation>`` carries the wrapped operation type.
     """  # comment-length: allow — which of the four keys is interpreted is the contract
 
     declared_by: str

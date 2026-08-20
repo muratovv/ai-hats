@@ -14,9 +14,10 @@ from ai_hats_wt import (
     WorktreeCreateError,
     WorktreeDirtyError,
     WorktreeManager,
-    WorktreeMergeConsentError,
     WorktreeStateIncompleteError,
 )
+from ai_hats.consent_wrapper import WrapperConfig, run_wrapped
+from ai_hats_library.hooks.consent_gate import Outcome, Verdict
 
 
 pytestmark = pytest.mark.integration
@@ -432,12 +433,42 @@ class TestOriginalBranchMissing:
 # ---------------------------------------------------------------------------
 
 
+def _run_wt_wrapper(
+    mgr: WorktreeManager,
+    *,
+    environ: dict[str, str] | None = None,
+    force: bool = False,
+) -> tuple[int, list[dict[str, str]]]:
+    child_environments: list[dict[str, str]] = []
+    argv = ["wt", "merge", mgr.branch_name, *(["--force"] if force else [])]
+
+    def spawn(_command, child_env):
+        child_environments.append(dict(child_env))
+        mgr.merge(force=force)
+        return 0
+
+    result = run_wrapped(
+        "ai-hats",
+        argv,
+        WrapperConfig(
+            project_dir=mgr.project_dir,
+            originals={"ai-hats": "/original/ai-hats"},
+            policy={"wt.merge": ("pre-merge",)},
+        ),
+        environ=environ or {},
+        check_grant=lambda operation, target: Verdict(Outcome.DENIED, "review required"),
+        peek_ticket=lambda subject, command: False,
+        consume_ticket=lambda subject, command: False,
+        spawn=spawn,
+    )
+    return result, child_environments
+
+
 class TestMergeConsentGate:
     def test_merge_denied_without_ack(
         self, git_project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Without AI_HATS_MERGE_ACK=1, merge() must refuse before any
-        mutation: worktree dir + branch preserved, base branch untouched."""
+        """The external wrapper refuses before the plain merge engine starts."""
         monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
         mgr = WorktreeManager(git_project, "tester", "sess-1019a", IsolationMode.SQUASH)
         wt = mgr.create()
@@ -445,10 +476,11 @@ class TestMergeConsentGate:
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "wip")
 
-        with pytest.raises(WorktreeMergeConsentError):
-            mgr.merge()
+        exit_code, children = _run_wt_wrapper(mgr)
 
-        assert wt.exists(), "worktree dir must survive a consent refusal"
+        assert exit_code == 2
+        assert children == []
+        assert wt.exists(), "worktree dir must survive a wrapper refusal"
         assert not (git_project / "feature.txt").exists(), "base must be untouched"
         result = subprocess.run(
             ["git", "branch", "--list", mgr.branch_name],
@@ -466,15 +498,19 @@ class TestMergeConsentGate:
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "feature")
 
-        mgr.merge()
+        exit_code, children = _run_wt_wrapper(
+            mgr, environ={"AI_HATS_MERGE_ACK": "1", "KEEP": "yes"}
+        )
 
+        assert exit_code == 0
+        assert children == [{"KEEP": "yes"}]
         assert (git_project / "feature.txt").exists(), "change must land on base"
         assert not wt.exists()
 
     def test_force_does_not_bypass_consent(
         self, git_project: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """force handles dirty state, not consent (same split as drift)."""
+        """A tool option cannot bypass the external authorization wrapper."""
         monkeypatch.delenv("AI_HATS_MERGE_ACK", raising=False)
         mgr = WorktreeManager(git_project, "tester", "sess-1019c", IsolationMode.SQUASH)
         wt = mgr.create()
@@ -482,9 +518,10 @@ class TestMergeConsentGate:
         _git(wt, "add", ".")
         _git(wt, "commit", "-m", "wip")
 
-        with pytest.raises(WorktreeMergeConsentError):
-            mgr.merge(force=True)
+        exit_code, children = _run_wt_wrapper(mgr, force=True)
 
+        assert exit_code == 2
+        assert children == []
         assert wt.exists()
 
     def test_already_merged_teardown_needs_no_ack(
@@ -502,7 +539,7 @@ class TestMergeConsentGate:
         # Supervisor-side merge of the task branch into base
         _git(git_project, "merge", "--no-ff", mgr.branch_name, "-m", "supervisor merge")
 
-        mgr.merge()  # no raise: cleanup only
+        mgr.merge()
 
         assert not wt.exists()
         assert (git_project / "feature.txt").exists()

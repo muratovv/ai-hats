@@ -152,58 +152,54 @@ topology rather than the guard:
 ```yaml
 composition:
   apps:
-    rack:
-      tasks:
+    consent_gate:
+      rack.transition:
         - at: [plan->execute, review->done]
           consent: true
-    wt:
-      - at: [pre-merge]
-        consent: true
+      wt.merge:
+        - at: [pre-merge]
+          consent: true
 ```
 
-Consent is a property of an **edge**, so it rides the same rows a quality gate
-does — a row carries `run:`, `consent:`, or both. A role that wants one of those
-points back writes `consent: false` on it; the later declaration wins, and
-saying nothing switches nothing off.
+`apps.consent_gate` is an external command policy. Its adapter understands the
+operation's selectors, while `rack` and `wt` receive ordinary commands and know
+nothing about consent. A role without this declaration gets the original
+command surface unchanged.
 
 On a surface with runtime hooks the agent simply runs the command and the guard
-turns it into a **question in chat**: the
-call carries a one-shot ticket, good for that card, in that session, for that
-exact command, and spent only if the transition actually lands. The question
-does not expire — read the plan for as long as you need. Nothing is typed by
-the agent — a consent prefix it writes itself is refused as a self-grant.
+turns it into a **question in chat**. The answer carries a one-shot ticket to the
+session-local command wrapper, good for that card, session, and exact command.
+The wrapper consumes it immediately before starting the original executable;
+downstream validation failure does not restore authorization for another
+attempt. Nothing is typed by the agent — a consent prefix it writes itself is
+refused as a self-grant.
 
-One thing does switch the question off: an entry under `permissions.allow` that
-covers the call, such as `"Bash(rack transition *)"`. The harness then approves
-it before the prompt can appear. A startup check reports any such rule it finds
-in your project or user settings, naming the file and the line.
+An entry under `permissions.allow` that covers the call, such as
+`"Bash(rack transition *)"`, can suppress the harness question but cannot bypass
+the wrapper. Without a grant or ticket the original command still does not
+start. A startup check reports such rules because they break the interactive
+handshake.
 
 The question goes up before the plan is read, so a `plan → execute` that then
 fails on empty plan sections spent your answer on a move that did not happen —
 the next attempt asks again.
 
-`AI_HATS_MERGE_ACK` does **not** answer the `review → done` question. It
-approves `ai-hats wt merge`, and letting a pre-approval given for one thing open
-another is how the edge into master used to pass unasked.
-
 Where there is nobody to ask — headless (`claude -p`), cron, or a surface with
-no runtime hooks — consent comes from the environment that launches the session:
+no runtime hooks — the compatibility channel is the environment that launches
+the session:
 
 ```bash
 export AI_HATS_CONSENT_ACK=1
 ```
 
-**One flag covers the whole move.** On `review → done` that means the FSM edge
-*and* the worktree merge inside its teardown: the merge reads the same consent
-the edge did, so the headless road no longer needs `AI_HATS_MERGE_ACK` beside
-it. Legitimate is not the same as quiet — every gate this flag opens writes a
-`hatch` line to `<git-common-dir>/ai-hats/bypasses.jsonl`, and the two inside
-the transition (the edge gate and the teardown merge) also leave a work-log note
-saying the move closed with no question asked. On a hookless surface that record
-is the only trace there is.
+**One flag covers the whole top-level command.** On `review → done` that means
+the FSM edge and the worktree merge inside its teardown. The wrapper strips the
+authorization before starting `rack`, so nested effects cannot reinterpret or
+reuse it. Every accepted compatibility acknowledgement writes one `hatch` line
+to `<git-common-dir>/ai-hats/bypasses.jsonl` before the original command starts.
 
-(`AI_HATS_PLAN_ACK=1` still answers `plan → execute` alone, for a shell that
-already exports it.)
+`AI_HATS_PLAN_ACK` and `AI_HATS_MERGE_ACK` remain legacy compatibility channels;
+interactive sessions use the question-backed wrapper path above.
 
 There is no `sync` step — see [STATE.md is reactive](#statemd-is-reactive).
 

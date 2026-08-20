@@ -113,7 +113,7 @@ def selector_form(text: str) -> str | None:
     edge is named is a question only a holder of the topology can answer, and it
     is answered elsewhere (``dead_point_reason``). What can be answered here is
     whether the name is in the grammar at all — and it must be, because the
-    declaration is a security boundary: a misspelt consent row disarmed both
+    declaration is a security boundary: a misspelt protected row disarmed both
     roads into master and no channel said a word (HATS-1682 A5).
 
     A form this slice does not enable is refused BY NAME of the card that opens

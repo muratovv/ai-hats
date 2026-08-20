@@ -9,113 +9,11 @@ read one section catalog (``sections.py``) so template and checklist cannot drif
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Protocol, Sequence
 
-from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
+from ..dispatch import AbortOperation, Delta, DispatchContext, Phase
 from .epic import AUTOMATION_ACTOR
 from .sections import DEFAULT_PLAN_SECTIONS, Section, render_scaffold, unfilled_sections
-from ..selectors import Selector
-
-#: The edge the ticket pays for. Named once: the gate and its spender must not
-#: drift into checking one move and settling another.
-CONSENT_EDGE = Selector("plan", "execute")
-
-
-class TicketStore(Protocol):
-    """The consent-ticket seam the integrator fills (HATS-1642).
-
-    Two acts, deliberately apart: ``peek`` answers whether consent is on hand,
-    ``spend`` uses it up. The rack may not import the library that writes the
-    ticket, so both arrive through the factory.
-    """
-
-    def peek(self, task_id: str) -> bool: ...
-
-    def spend(self, task_id: str) -> bool: ...
-
-
-class PlanConsentExtension:
-    """Blocks ``plan → execute`` until the supervisor consents (in-lock).
-
-    Two channels: a one-shot ticket the guard minted when the supervisor answered
-    in chat, and ``AI_HATS_PLAN_ACK=1`` in the launching environment wherever no
-    question can be asked. The ticket is only CHECKED here, so the refusal stays
-    early; spending it is :meth:`spender`'s, post-lock — subscribers after this
-    one can still abort, and an eaten click cannot be given again.
-    """
-
-    name = "plan-consent"
-    PHASE = Phase.IN_LOCK
-
-    def __init__(self, tickets: TicketStore | None = None) -> None:
-        self._tickets = tickets
-        self._accepted: set[str] = set()
-
-    def requires_states(self) -> frozenset[str]:
-        return frozenset({"execute"})  # gates on entering execute
-
-    def spender(self, *, priority: int = 15) -> "PlanConsentSpend":
-        """The post-lock half — see the class docstring."""
-        return PlanConsentSpend(self, priority=priority)
-
-    def settle(self, task_id: str) -> str:
-        """Spend the ticket this transition rode in on; a note when it could not."""
-        if task_id not in self._accepted:
-            return ""
-        self._accepted.discard(task_id)
-        if self._tickets is None or self._tickets.spend(task_id):
-            return ""
-        return f"consent ticket for {task_id} could not be spent — it may still be on disk"
-
-    def on_event(self, ctx: DispatchContext) -> Delta | None:
-        # HATS-1682: `ctx.force` is deliberately NOT here — consent is not a
-        # property of the command. The card and the actor still are, and there
-        # is nobody to ask on either.
-        if ctx.actor == AUTOMATION_ACTOR or ctx.is_epic:
-            return None
-        if getattr(ctx.event, "from_state", "") != "plan":
-            return None
-        self._accepted.discard(ctx.task.id)  # a prior attempt that never settled
-        if os.environ.get("AI_HATS_PLAN_ACK") == "1":
-            return None
-        if self._tickets is not None and self._tickets.peek(ctx.task.id):
-            self._accepted.add(ctx.task.id)
-            return Delta(work_log=("plan → execute: supervisor consent ticket accepted",))
-        raise AbortOperation(
-            f"Transition 'plan -> execute' for '{ctx.task.id}' requires supervisor approval, "
-            "and none has arrived.\n"
-            "1. Present plan.md to the supervisor in chat and STOP.\n"
-            "2. Then re-run this exact command: the guard turns it into a one-click\n"
-            "   question in chat, and the supervisor's answer is what carries consent.\n"
-            "3. Where there is nobody to ask — headless, cron, a surface without\n"
-            "   runtime hooks — consent comes from the environment instead. One\n"
-            "   line: a lone export dies with the shell that ran it (HATS-1654):\n"
-            f"     export AI_HATS_PLAN_ACK=1 && rack transition {ctx.task.id} execute"
-        )
-
-
-class PlanConsentSpend:
-    """Post-lock half of ``plan-consent``: the ticket is spent once the
-    transition has actually happened (HATS-1642). Code-channel, not declared —
-    the declaration binds a handler to ONE phase, and this is the other one."""
-
-    name = "plan-consent-spend"
-
-    def __init__(self, gate: PlanConsentExtension, *, priority: int = 15) -> None:
-        self._gate = gate
-        self._priority = priority
-
-    def requires_states(self) -> frozenset[str]:
-        return frozenset({"plan", "execute"})
-
-    def subscriptions(self) -> Sequence[Subscription]:
-        return [Subscription(CONSENT_EDGE, Phase.POST_LOCK, self._priority)]
-
-    def on_event(self, ctx: DispatchContext) -> Delta | None:
-        note = self._gate.settle(ctx.task.id)
-        return Delta(work_log=(note,)) if note else None
 
 
 class PlanScaffoldExtension:
@@ -191,19 +89,6 @@ class PlanGateExtension:
         if unfilled:
             raise AbortOperation(
                 f"Empty required section(s) in {plan_path}: {', '.join(unfilled)} — "
-                "fill them before entering execute" + self._spent_question(ctx)
+                "fill them before entering execute"
             )
         return None
-
-    @staticmethod
-    def _spent_question(ctx: DispatchContext) -> str:
-        """`plan → execute` raises a consent prompt BEFORE the plan is read, so a
-        refusal here means the supervisor answered for a move that did not
-        happen. Saying so beats a second plan-gate inside the hook (HATS-1642)."""
-        if getattr(ctx.event, "from_state", "") != "plan":
-            return ""
-        return (
-            ".\nThe consent prompt for this move goes up before the plan is read, so an "
-            "answer already given was spent on a transition that did not happen — the "
-            "next attempt is asked again."
-        )

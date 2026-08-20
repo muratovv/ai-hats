@@ -14,9 +14,9 @@ why:    four joints can each break in silence — the envelope's cache dir, the 
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -38,8 +38,8 @@ _PLAN_SECTIONS = (
 
 
 def _rack(project: Path, *args: str, env: dict) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - our own module, literal argv
-        [sys.executable, "-m", "ai_hats_rack", *args],
+    return subprocess.run(  # noqa: S603,S607 - session PATH selects the wrapper
+        ["rack", *args],
         cwd=str(project),
         env=env,
         capture_output=True,
@@ -64,16 +64,17 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env(project: Path) -> dict:
+def env(project: Path, ai_hats_shim: Path) -> dict:
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_session
+    from _helpers.sessions import stand_in_wrapped_session
 
     e = os.environ.copy()
     for stale in ("AI_HATS_PLAN_ACK", "AI_HATS_CONSENT_ACK", "AI_HATS_CONSENT_TICKET"):
         e.pop(stale, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    return stand_in_session(e, project, SESSION_ID)
+    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    return stand_in_wrapped_session(e, project, SESSION_ID)
 
 
 @pytest.fixture
@@ -198,6 +199,46 @@ def test_every_use_leaves_a_line_in_the_journal(project, settings, env, planned)
     journal = _journal(project)
     assert "consent grant" in journal, f"no record of the grant being used:\n{journal}"
     assert "rack.transition" in journal
+
+
+def _grant_lines(project: Path) -> list[str]:
+    return [line for line in _journal(project).splitlines() if "consent grant" in line]
+
+
+def test_one_move_leaves_exactly_one_record(project, settings, env, planned):
+    """One operation, one line — the guard's suppression is a PEEK, not a use.
+
+    Fail-under-revert for S4 (HATS-1736): with the guard journalling its own
+    check too, a single gated move wrote TWO records that read alike, so the
+    journal over-counted every grant road it gated and "how often was the grant
+    used" stopped being answerable from the file.
+    """
+    task_id = planned("counted once")
+    assert _issue_verb(project, env, "rack.transition", "30").returncode == 0
+    before = len(_grant_lines(project))
+
+    verdict = run_chain(project, f"rack transition {task_id} execute", settings=settings, env=env)
+    assert verdict.decision != "ask", f"the grant did not suppress the question: {verdict}"
+    moved = run_unasked(project, f"rack transition {task_id} execute", env=env)
+    assert moved.returncode == 0, moved.stderr or moved.stdout
+
+    added = _grant_lines(project)[before:]
+    assert len(added) == 1, f"one move wrote {len(added)} records:\n" + "\n".join(added)
+
+
+def test_the_record_says_what_the_grant_actually_allowed(project, settings, env, planned):
+    """A record without the radius cannot tell a narrow grant from `consent all`."""
+    task_id = planned("described")
+    assert _issue_verb(project, env, "rack.transition", "30").returncode == 0
+    before = len(_grant_lines(project))
+
+    run_chain(project, f"rack transition {task_id} execute", settings=settings, env=env)
+    run_unasked(project, f"rack transition {task_id} execute", env=env)
+
+    line = _grant_lines(project)[before:][0]
+    assert "radius=[rack.transition]" in line, line
+    assert "outcome=granted" in line, line
+    assert re.search(r"window=\d+m/30m", line), line
 
 
 # --- the three axes, observed through the whole chain --------------------------

@@ -544,6 +544,21 @@ as a claim to check, not as evidence.
 - **expect** — the child inherits the requested project cwd, runtime safety denies a destructive Bash payload, and shutdown leaves no Codex-owned project files
 - **why** — role delivery is insufficient if startup pollutes the repository or the surface bypasses the composed permission chain
 
+## `test_codex_consent_grant.py`
+
+*pins HATS-1755*
+
+- **flow** — a human grants rack.transition inside Codex; review-to-done then merges
+- **cmds**
+
+  ```console
+  consent rack.transition 30
+  rack transition HATS-001 done
+  ```
+
+- **expect** — Codex merges without env acks; a stale envelope refuses the grant
+- **why** — HATS-1755 exposed a nested worktree merge and Codex recovery path
+
 ## `test_codex_native_role_skills.py`
 
 *pins HATS-1694*
@@ -3619,20 +3634,6 @@ as a claim to check, not as evidence.
 
 - **expect** — the composed chain answers `ask` with a one-shot ticket, and the command it approved — run verbatim through a real shell, with no AI_HATS_MERGE_ACK anywhere in the environment — lands the merge, once
 - **why** — the click here was inert: the guard minted under the branch it saw while the CLI looked for a card, so the merge still demanded the env ack
-
-## `test_wt_merge_consent_gate.py`
-
-*pins HATS-1019*
-
-- **flow** — a developer merging a worktree branch without authorization acknowledgment
-- **cmds**
-
-  ```console
-  ai-hats wt merge task/test-consent
-  ```
-
-- **expect** — merge is refused without AI_HATS_MERGE_ACK and succeeds when ack is provided
-- **why** — worktree merge is default-deny to ensure supervisor review before landing work
 
 ## `test_wt_merge_drift.py`
 

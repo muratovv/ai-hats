@@ -44,9 +44,8 @@ dependencies = [
     # integrator's ticket STORE and exposes the post-lock spender it pairs with).
     "ai-hats-rack>=0.4.0",  # ai_hats_rack.selectors — the arrow grammar rack_wiring binds by (HATS-1719)
     "ai-hats-observe>=0.6.1",  # session_env, imported by assemble_launch_env (0.6.0, HATS-1548)
-    # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket with its
-    # peek/consume pair — imported at module level by rack_wiring — and the
-    # startup check trait-base binds against permissions.allow.
+    # 0.5.7 (HATS-1642) publishes ai_hats_library.hooks.consent_ticket; since
+    # HATS-1755 the external session wrapper, not rack, consumes its tickets.
     "ai-hats-library>=0.6.0",  # shipped declarations migrated to the arrow spelling (HATS-1719)
     "click>=8.1",
     "pyyaml>=6.0",

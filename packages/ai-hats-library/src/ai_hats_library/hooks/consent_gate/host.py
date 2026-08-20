@@ -59,8 +59,14 @@ def policy(identity: dict) -> tuple[str, ...]:
         rows = report.get("consent") or []
     except (OSError, ValueError):
         return ()  # nothing declared that we can see; the verb refuses and says so
-    return tuple(
-        str(row.get("selector", ""))
-        for row in rows
-        if isinstance(row, dict) and row.get("app") == CONSENT_GATE_APP and row.get("selector")
-    )
+    declared: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path")
+        if row.get("app") != CONSENT_GATE_APP or not isinstance(path, list) or not path:
+            continue
+        operation = str(path[0])
+        if operation and operation not in declared:
+            declared.append(operation)
+    return tuple(declared)

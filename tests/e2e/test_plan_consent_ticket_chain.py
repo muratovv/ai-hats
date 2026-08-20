@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -37,8 +36,8 @@ _PLAN_SECTIONS = (
 
 
 def _rack(project: Path, *args: str, env: dict) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - our own module, literal argv
-        [sys.executable, "-m", "ai_hats_rack", *args],
+    return subprocess.run(  # noqa: S603,S607 - session PATH selects the wrapper
+        ["rack", *args],
         cwd=str(project),
         env=env,
         capture_output=True,
@@ -48,16 +47,17 @@ def _rack(project: Path, *args: str, env: dict) -> subprocess.CompletedProcess[s
 
 
 @pytest.fixture
-def env(project: Path) -> dict:
+def env(project: Path, ai_hats_shim: Path) -> dict:
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_session
+    from _helpers.sessions import stand_in_wrapped_session
 
     e = os.environ.copy()
     e.pop("AI_HATS_PLAN_ACK", None)
     e.pop(TICKET_ENV, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    return stand_in_session(e, project, "e2e-plan-consent-ticket")
+    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    return stand_in_wrapped_session(e, project, "e2e-plan-consent-ticket")
 
 
 @pytest.fixture
@@ -171,9 +171,10 @@ def test_the_ticket_opens_the_command_it_was_asked_about_and_no_other(
     assert asked.returncode == 0, f"the call it WAS asked about was refused:\n{asked}"
 
 
-def test_a_transition_that_fails_downstream_gives_the_click_back(project, settings, env, planned):
-    """The gate runs before ownership and the worktree, both of which can still
-    abort — a ticket spent there burns a click on nothing (HATS-1642 review)."""
+def test_a_transition_that_fails_downstream_still_spends_the_ticket(
+    project, settings, env, planned
+):
+    """The wrapper consumes one-use authorization before starting the tool."""
     task_id = planned("downstream failure")
     verdict = _ask_for(project, settings, env, task_id)
     # A FILE where the worktree bookkeeping wants a directory: `→ execute` gets
@@ -188,7 +189,8 @@ def test_a_transition_that_fails_downstream_gives_the_click_back(project, settin
     worktrees.unlink()
     retried = run_approved(project, verdict, env=env)
 
-    assert retried.returncode == 0, f"the click was eaten by the failed attempt:\n{retried}"
+    assert retried.returncode != 0, f"a spent ticket was replayed:\n{retried}"
+    assert "ticket already spent or never issued" in retried.output
 
 
 def test_a_spent_ticket_does_not_open_the_gate_twice(project, settings, env, planned):

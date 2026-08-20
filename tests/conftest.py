@@ -274,25 +274,9 @@ def _isolate_installed_launcher(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _grant_merge_consent(monkeypatch):
-    """Grant ``AI_HATS_MERGE_ACK`` — and ONLY that — for every test (HATS-1019).
-
-    ``WorktreeManager.merge`` is default-deny; 43 merge-inventory tests
-    (measured on HATS-1682) exercise merge *semantics*, not consent, and all
-    red without it. A consent test re-``delenv``s in its own body — this runs
-    first, so the local drop wins. Propagates into subprocess e2e by env
-    inheritance, which is why the drop has to be local rather than a mark.
-
-    ``AI_HATS_PLAN_ACK`` is deliberately NOT here any more: since HATS-1682 it
-    is the env consent channel for ``plan → execute``, so handing it to every
-    test made every test of that channel vacuous. Measured blast radius of
-    dropping it: one test, which now asks for it explicitly.
-    """  # comment-length: allow — the asymmetry between the two flags is the point
-    monkeypatch.setenv("AI_HATS_MERGE_ACK", "1")
-    # …and the two point-agnostic ones are actively SCRUBBED: a developer whose
-    # shell exports either (the documented headless recipe) would otherwise run
-    # a suite where nothing about consent can fail.
-    for leaked in ("AI_HATS_PLAN_ACK", "AI_HATS_CONSENT_ACK"):
+def _scrub_legacy_authorization_flags(monkeypatch):
+    """Tests opt into wrapper authorization explicitly."""
+    for leaked in ("AI_HATS_PLAN_ACK", "AI_HATS_MERGE_ACK", "AI_HATS_CONSENT_ACK"):
         monkeypatch.delenv(leaked, raising=False)
     yield
 

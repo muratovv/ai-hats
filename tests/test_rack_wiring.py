@@ -12,9 +12,7 @@ from pathlib import Path
 import pytest
 
 from ai_hats_rack import OperationAborted
-from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
-from ai_hats_rack.events import EdgeEvent
-from ai_hats_rack.extensions.epic import AUTOMATION_ACTOR
+from ai_hats_rack.dispatch import Phase
 from ai_hats_rack.extensions import standalone_extensions
 from ai_hats_rack.selectors import Edge
 from ai_hats.paths import worktrees_dir
@@ -198,10 +196,6 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
-        # HATS-1682: the integrator's own, at the slot `plan-consent` held while
-        # the packaged backlog declared it. Which edges it fires on is the role's
-        # declaration now, so it subscribes to all of them and filters on dispatch.
-        "consent",
         "ownership",
         "worktree",
     ]
@@ -214,10 +208,6 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
     assert to_done == [
         "ownership-single-slot",
         "frozen-integrity",
-        # HATS-1682: `consent` sits on THIS edge too — the role declares the two
-        # roads into master, and its silence here was a merge nobody was asked
-        # about. Ahead of the worktree teardown, so a refusal leaves no merge.
-        "consent",
         "stamp-lifecycle",
         "worktree",
         "ownership-release",
@@ -239,7 +229,6 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
         "ownership-single-slot",
         "frozen-integrity",
         "plan-gate",
-        "consent",
         "checks",
         "ownership",
         "worktree",
@@ -249,12 +238,6 @@ def test_check_runner_takes_the_reserved_hook_slot(project):
 def test_check_refusal_leaves_no_ownership_and_no_worktree(project, monkeypatch):
     """R2 with the REAL extensions: slot 15 sits before the claim, so a refused
     check leaves no registry record, no worktree and an unchanged card."""
-    # `consent` (11) sits ahead of `checks` (15) on this edge, and a role that
-    # composes `trait-agent` declares `plan → execute` — so the check would be
-    # unreachable behind an unanswered question. `session-reviewer` declares no
-    # consent point, which keeps this test about the ORDER it was written for.
-    # It stopped mattering only because the root conftest used to pre-grant the
-    # env channel to every test in the repository (HATS-1682 fix 5).
     _be_session(monkeypatch, "sess-a", project, role="session-reviewer")
     monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
     script = project / "gate.sh"
@@ -309,8 +292,6 @@ def test_standalone_kit_has_no_wt_or_ownership(tmp_path):
     """Standalone kit is composed from the packaged definition (HATS-1043):
     frozen-integrity + scaffold/gate/stamp/clear — still no worktree/ownership."""
     names = {ext.name for ext in standalone_extensions(tmp_path / "tasks")}
-    # `plan-consent` is NOT here since HATS-1682: the packaged definition stopped
-    # declaring it, and the rack composes only what a definition declares.
     assert names == {
         "frozen-integrity",
         "plan-scaffold",
@@ -370,131 +351,3 @@ def test_full_stack_lifecycle_with_views(project, monkeypatch):
 
     state_md = (project / ".agent" / "STATE.md").read_text()
     assert "## DONE" in state_md and "T-1" in state_md
-
-
-# --- consent is a property of the edge, not of the command line (HATS-1682) ---
-
-
-@pytest.fixture
-def reviewed(project, monkeypatch):
-    """A card parked in ``review`` under a role that declares the roads into master.
-
-    `assistant` composes `trait-agent`, so it declares consent on
-    `plan → execute` and `review → done`. The card is FORCED from `plan`
-    straight to `review`: walking `plan → execute` is itself a declared point,
-    and granting a consent here to set up a consent test is how a fixture ends
-    up proving nothing. That the forced `plan → review` passes is the control —
-    the gate matches declared EDGES, and force did not become a blanket refusal.
-    """  # comment-length: allow — why the setup edge is forced and what it proves
-    _be_session(monkeypatch, "sess-consent", project, role="assistant")
-    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
-
-    kernel = _kernel(project)
-    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="into master")
-    kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
-    (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
-    kernel.transition("T-1", "review", actor="test", caller_cwd=project, force=True, reason="park")
-    assert kernel.get("T-1").state == "review", "the undeclared setup edge was gated"
-    return kernel
-
-
-def test_the_edge_into_master_is_refused_when_nobody_answered(reviewed, project):
-    """Control for everything below: unanswered, the move does not happen."""
-    with pytest.raises(OperationAborted) as exc_info:
-        reviewed.transition("T-1", "done", actor="test", caller_cwd=project)
-
-    assert exc_info.value.subscriber == "consent"
-    assert reviewed.get("T-1").state == "review"
-
-
-def test_force_does_not_switch_consent_off(reviewed, project):
-    """The incident this card was filed for.
-
-    `--force` relaxes the FSM arrow; consent is not a property of the command,
-    so nothing ADDED to the command can remove it — `consent | op --force`.
-    The documented `close` recipe keeps working, it just asks once.
-    """
-    with pytest.raises(OperationAborted) as exc_info:
-        reviewed.transition(
-            "T-1", "done", actor="test", caller_cwd=project, force=True, reason="close"
-        )
-
-    assert exc_info.value.subscriber == "consent"
-    assert reviewed.get("T-1").state == "review"
-
-
-def test_the_card_and_the_actor_stay_exempt_while_the_command_line_does_not(reviewed, project):
-    """The asymmetry, in one place: an epic and the epic automation answer to
-    nobody, so they pass; `force` is an addition to the command, so it does not.
-    """
-    consent = next(
-        s
-        for s in reviewed._dispatcher.subscribers_for_edge(Edge("review", "done"), Phase.IN_LOCK)
-        if s.name == "consent"
-    )
-
-    def ctx(**over):
-        base = dict(
-            event=EdgeEvent("review", "done"),
-            task=reviewed.get("T-1"),
-            caller_cwd=project,
-            is_epic=False,
-            actor="test",
-        )
-        return DispatchContext(**{**base, **over})
-
-    assert consent.on_event(ctx(is_epic=True)) is None
-    assert consent.on_event(ctx(actor=AUTOMATION_ACTOR)) is None
-    with pytest.raises(AbortOperation):
-        consent.on_event(ctx(force=True))
-
-
-def test_plan_to_execute_is_refused_when_nobody_answered(project, monkeypatch):
-    """The other declared point, and the tripwire for the conftest grant.
-
-    While the root conftest handed `AI_HATS_PLAN_ACK=1` to EVERY test, this
-    assertion could not fail: the env channel was pre-granted for the whole
-    suite, so nothing about `plan → execute` consent was testable (HATS-1682).
-    """
-    _be_session(monkeypatch, "sess-plan", project, role="assistant")
-    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
-    kernel = _kernel(project)
-    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="t")
-    kernel.transition("T-1", "plan", actor="test", caller_cwd=project)
-    (kernel.tasks_dir / "T-1" / "plan.md").write_text(_FILLED_PLAN)
-
-    with pytest.raises(OperationAborted) as exc_info:
-        kernel.transition("T-1", "execute", actor="test", caller_cwd=project)
-
-    assert exc_info.value.subscriber == "consent"
-    assert kernel.get("T-1").state == "plan"
-    assert not WorktreeManager.branch_exists(project, "task/t-1")
-
-
-def test_a_backlog_nobody_owns_is_asked_nothing(project, tmp_path, monkeypatch):
-    """The HATS-1538 leak, closed on the consent half of the same row.
-
-    `consent:` and `run:` live on ONE row of `composition.apps`, so they must
-    have one scope. `AiHatsCheckPort` already refuses to fire a gate on a
-    backlog nobody owns; consent resolved from the cwd's project instead, which
-    is the shape that turned master red — this repo's own rack tests build a
-    scratch `--tasks-dir` and would each have been stopped for want of a click.
-    """  # comment-length: allow — the leak and why the two halves share a scope
-    _be_session(monkeypatch, "sess-foreign", project, role="assistant")
-    monkeypatch.setenv("AI_HATS_ROOT_PID", str(os.getpid()))
-    scratch = tmp_path / "scratch" / "tasks"
-    scratch.mkdir(parents=True)
-
-    kernel = build_rack_kernel(
-        project,
-        backlog_owner=None,
-        tasks_dir=scratch,
-        state_md_path=scratch.parent / "STATE.md",
-        prefix="T",
-    )
-    kernel.create(actor="test", caller_cwd=project, task_id="T-1", title="someone else's")
-    kernel.transition("T-1", "review", actor="test", caller_cwd=project, force=True, reason="park")
-
-    kernel.transition("T-1", "done", actor="test", caller_cwd=project)
-
-    assert kernel.get("T-1").state == "done"

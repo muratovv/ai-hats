@@ -13,10 +13,9 @@ is checked by the application that owns it, when it next runs. Since HATS-1545
 the app is a key of the declaration rather than a prefix of a point name, so
 ai-hats no longer needs to know any application's namespaces to route a row.
 
-One clause came back in HATS-1682: a point's *spelling* is refused here for a
-foreign app too (``_POINT_FORM``), because consent rides the same row and a
-misspelt consent point is a disarmed gate nothing else would ever have read.
-The grammar still belongs to the owner — the predicate is imported from it.
+Selector spelling for a foreign check app is validated through the owner's
+predicate. Consent policy has its own compiler in ``consent_wrapper`` and does
+not use this executable-check resolver (ADR-0030).
 """  # comment-length: allow — what left the catalog, and why, is the decision
 
 from __future__ import annotations
@@ -44,9 +43,7 @@ AI_HATS_APP = "ai-hats"
 #: The one point of that app: fired once per session, before the launch.
 STARTUP_POINT = "startup"
 
-#: The consent-gate application key (HATS-1735). ai-hats does NOT fire it: its
-#: rows name the OPERATION TYPES a grant may cover, and both readers of the
-#: grant resolve that list rather than knowing what a rack is (ADR-0029 D8).
+#: External command middleware owns this application (ADR-0030).
 CONSENT_GATE_APP = "consent_gate"
 
 #: The roster, not the authority: used ONLY to name a block nobody collects
@@ -128,15 +125,12 @@ _SELECTOR_FORM: dict[str, Callable[[str], str | None]] = {"rack": _rack_selector
 
 
 def _validate_selector_form(row: AppBinding) -> None:
-    """Refuse a point name outside its app's grammar, at composition (HATS-1682).
+    """Refuse a check point name outside its app's grammar at composition.
 
     Weaker than :func:`_validate_owned_points` on purpose: ai-hats does not hold
     the rack's topology, so whether ``review->dnoe`` names a REAL edge stays
     the rack's question, answered where the topology is (``dead_selector_reason``).
-    What can be answered here is whether the name is in the grammar at all — and
-    it must be, because the declaration is now a security boundary: a
-    consent-only ``plan-execute`` (no arrow) disarmed both roads into master and no
-    channel said a word (A5).
+    What can be answered here is whether the name is in the grammar at all.
     """  # comment-length: allow — which half of the check lives where is the fix
     form = _SELECTOR_FORM.get(row.app)
     if form is None:
@@ -160,13 +154,10 @@ def resolve_checks(
     removed = {resolve_namespace(name) for name in removed_skills}
     resolved: dict[tuple[str, tuple[str, ...], str, str], ResolvedCheck] = {}
     for row in declared:
-        # Form first, and for EVERY row: a consent-only row is refused nowhere
-        # else, and a typo in one disarms a gate in silence (HATS-1682 A5).
+        # Form first so a malformed check cannot compose as a silent no-op.
         _validate_selector_form(row)
         if not row.run:
-            # A consent-only row runs nothing (HATS-1682): no script to find, and
-            # no root to judge it from — resolving it would make a declaration
-            # that spawns nothing refuse from a linked worktree.
+            # Metadata-only rows run no script; their owning integration consumes them.
             if owns_app(row.app):
                 _validate_owned_points(row)
             continue
@@ -236,9 +227,7 @@ _FROM_ENV: Any = object()
 
 
 def _label(check: ResolvedCheck | AppBinding) -> str:
-    """What a message calls this row. A consent-only row names no script, and
-    "binds  under apps.wt" printed the hole where the ``run`` would be instead
-    of saying what the row IS (HATS-1682)."""
+    """What a message calls this row, including metadata-only declarations."""
     if not check.run:
         return f"checks: {check.declared_by!r} declares consent under apps.{check.app}"
     return f"checks: {check.declared_by!r} binds {check.run} under apps.{check.app}"

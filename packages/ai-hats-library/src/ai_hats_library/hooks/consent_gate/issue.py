@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .check import GRANT_VERSION, GRANTS_DIRNAME
+from .check import GRANT_VERSION, GRANTS_DIRNAME, mode_refusal
 
 #: Default window, in minutes. A supervisor's dial — edit it right here; why 120
 #: rather than polkit's 5 is HATS-1735 (our unit of work is an agent session).
@@ -66,8 +66,16 @@ def issue(
     moment = float(now) if now is not None else time.time()
     expires_at = moment + minutes * 60
     grant_id = secrets.token_hex(16)
+    # `parents=True` ignores `mode` for the parents it creates, so the store
+    # root would land world-listable while only `grants/` was private.
+    Path(store_root).mkdir(parents=True, exist_ok=True, mode=0o700)
     directory = Path(store_root) / GRANTS_DIRNAME
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.mkdir(exist_ok=True, mode=0o700)
+    loose = mode_refusal(directory)
+    if loose:
+        raise IssueError(
+            f"the grant store is not private ({loose}) — refusing to write a grant into it"
+        )
     path = directory / f"{grant_id}.json"
     payload = json.dumps(
         {

@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -41,8 +40,8 @@ _PLAN_SECTIONS = (
 
 
 def _rack(project: Path, *args: str, env: dict) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - our own module, literal argv
-        [sys.executable, "-m", "ai_hats_rack", *args],
+    return subprocess.run(  # noqa: S603,S607 - session PATH selects the wrapper
+        ["rack", *args],
         cwd=str(project),
         env=env,
         capture_output=True,
@@ -67,7 +66,7 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def env(project: Path) -> dict:
+def env(project: Path, ai_hats_shim: Path) -> dict:
     """A session env with EVERY consent flag stripped — including the merge ack.
 
     The root conftest grants ``AI_HATS_MERGE_ACK`` to every test, and that is
@@ -75,14 +74,15 @@ def env(project: Path) -> dict:
     (HATS-1682 T4). A file about consent cannot inherit it.
     """
     from _helpers.env import checkout_pythonpath
-    from _helpers.sessions import stand_in_session
+    from _helpers.sessions import stand_in_wrapped_session
 
     e = os.environ.copy()
     for flag in ("AI_HATS_PLAN_ACK", CONSENT_ACK, MERGE_ACK, TICKET_ENV):
         e.pop(flag, None)
     e["PYTHONPATH"] = checkout_pythonpath(REPO_ROOT, e.get("PYTHONPATH", ""))
     e["AI_HATS_ROOT_PID"] = str(os.getpid())
-    return stand_in_session(e, project, "e2e-consent-force")
+    e["PATH"] = os.pathsep.join([str(ai_hats_shim.parent), e.get("PATH", "")])
+    return stand_in_wrapped_session(e, project, "e2e-consent-force")
 
 
 @pytest.fixture
@@ -238,12 +238,7 @@ def test_consent_ack_alone_carries_review_to_done(project, env, reviewed):
 
 
 def test_the_headless_road_is_loud_on_both_gates(project, env, reviewed):
-    """B2: the env channel is allowed where nothing can ask, never quiet.
-
-    Two writers, because two gates hatched — the rack's edge gate and the merge
-    inside the teardown. On a hookless surface the journal and the card are the
-    only trace a consented `→ done` ever leaves.
-    """
+    """The external wrapper records one use of the headless consent channel."""
     task_id = reviewed()
     # The setup walk hatched on the env channel too, so only what THIS close
     # wrote counts — a set read whole would pass on the walk's entries alone.
@@ -252,9 +247,7 @@ def test_the_headless_road_is_loud_on_both_gates(project, env, reviewed):
     closed = _rack(project, "transition", task_id, "done", env={**env, CONSENT_ACK: "1"})
     assert closed.returncode == 0, closed.stdout + closed.stderr
 
-    hatched = {r["hook"] for r in _hatches(project)[before:] if r["reason"] == CONSENT_ACK}
-    assert hatched == {"rack_wiring.py", "wt_effects.py"}, (
-        f"a gate hatched on the env channel without a journal entry: {hatched}"
-    )
-    seen = _rack(project, "context", task_id, env=env).stdout
-    assert "no question was asked" in seen, f"the card does not say how it closed:\n{seen}"
+    hatches = _hatches(project)[before:]
+    assert [(r["hook"], r["reason"]) for r in hatches] == [
+        ("consent_wrapper.py", f"{CONSENT_ACK} (rack.transition)")
+    ]

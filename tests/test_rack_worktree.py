@@ -401,10 +401,9 @@ class _SpyMergeManager:
     def __init__(self, captured: dict) -> None:
         self._captured = captured
 
-    def merge(self, *, force: bool = False, outer_deadline=None, consent: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         self._captured["force"] = force
         self._captured["outer_deadline"] = outer_deadline
-        self._captured["consent"] = consent  # HATS-1682: a click on `→ done` is enough
 
     def discard(self, *, force: bool = False) -> None:  # pragma: no cover
         pass
@@ -432,7 +431,7 @@ class _FailingMergeManager:
     branch_name = "task/t-1"
     worktree_path = Path("/nonexistent-failing-worktree")
 
-    def merge(self, *, force: bool = False, outer_deadline=None, consent: bool = False) -> None:
+    def merge(self, *, force: bool = False, outer_deadline=None) -> None:
         raise subprocess.CalledProcessError(
             returncode=128,
             cmd=["git", "merge", "--no-ff", self.branch_name],

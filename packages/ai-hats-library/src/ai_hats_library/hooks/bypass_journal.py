@@ -31,7 +31,7 @@ FIELDS = (
 )
 
 
-def _git(*args: str) -> str:
+def _git(*args: str, cwd: Path | None = None) -> str:
     """Run a read-only git command; empty string when git cannot answer."""
     try:
         res = subprocess.run(  # noqa: S603 — argv is literal, never caller input
@@ -40,6 +40,7 @@ def _git(*args: str) -> str:
             text=True,
             timeout=5,
             check=False,
+            cwd=cwd,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -53,6 +54,7 @@ def journal_bypass(
     hook: str | None = None,
     cmd: str = "",
     session_id: str = "",
+    cwd: Path | None = None,
 ) -> bool:
     """Append one bypass record. Returns False (loudly) if it could not.
 
@@ -62,7 +64,7 @@ def journal_bypass(
     hook_name = hook or Path(sys.argv[0]).name or "unknown"
     # The COMMON dir, so a bypass from a worktree lands in the journal the
     # reviewer reads on the main checkout.
-    git_dir = _git("rev-parse", "--git-common-dir")
+    git_dir = _git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)
     if not git_dir:
         print(f"[bypass-journal] NOT RECORDED ({kind}: {reason}) — no git dir", file=sys.stderr)
         return False
@@ -74,8 +76,8 @@ def journal_bypass(
         "kind": kind,
         "reason": reason,
         "cmd": cmd,
-        "head_before": _git("rev-parse", "HEAD"),
-        "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
+        "head_before": _git("rev-parse", "HEAD", cwd=cwd),
+        "branch": _git("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd),
         "session_id": session_id or os.environ.get("AI_HATS_SESSION_ID", ""),
         "sha": "",
     }

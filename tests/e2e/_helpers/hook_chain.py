@@ -149,8 +149,9 @@ def run_approved(
     base_env.pop("AI_HATS_YOLO", None)
     if ack:
         base_env[ack] = "1"
-    bin_dir = str(Path(sys.executable).parent)
-    base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
+    if "AI_HATS_CONSENT_WRAPPER_CONFIG" not in base_env:
+        bin_dir = str(Path(sys.executable).parent)
+        base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
 
     proc = subprocess.run(  # noqa: S603 - the command the guard itself wrote
         ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
@@ -187,8 +188,9 @@ def run_unasked(
     base_env.pop("AI_HATS_YOLO", None)
     if ack:
         base_env[ack] = "1"
-    bin_dir = str(Path(sys.executable).parent)
-    base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
+    if "AI_HATS_CONSENT_WRAPPER_CONFIG" not in base_env:
+        bin_dir = str(Path(sys.executable).parent)
+        base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
 
     proc = subprocess.run(  # noqa: S603 - the command under test, spelled by the caller
         ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
