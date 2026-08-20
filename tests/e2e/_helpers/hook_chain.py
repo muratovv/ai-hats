@@ -163,6 +163,44 @@ def run_approved(
     return Approved(command, proc.returncode, proc.stdout, proc.stderr)
 
 
+def run_unasked(
+    project: Path,
+    command: str,
+    *,
+    env: dict | None = None,
+    ack: str | None = None,
+    timeout: int = 180,
+) -> Approved:
+    """Execute a command the chain did NOT turn into a question (HATS-1735).
+
+    The grant road raises no `ask` and rewrites nothing, so :func:`run_approved`
+    — which requires both — cannot run it. Same shell and the same ack hygiene
+    on purpose: comparing "asked" against "not asked" is only a comparison when
+    the two commands meet the same environment.
+
+    Deliberately NOT verifying the verdict: a caller asserts that separately, and
+    a runner that re-ran the chain would double every hook's side effects.
+    """
+    base_env = dict(env) if env is not None else os.environ.copy()
+    for key in [k for k in base_env if ACK_FLAG_RE.fullmatch(k)]:
+        del base_env[key]
+    base_env.pop("AI_HATS_YOLO", None)
+    if ack:
+        base_env[ack] = "1"
+    bin_dir = str(Path(sys.executable).parent)
+    base_env["PATH"] = os.pathsep.join([bin_dir, base_env.get("PATH", "")]).rstrip(os.pathsep)
+
+    proc = subprocess.run(  # noqa: S603 - the command under test, spelled by the caller
+        ["bash", "-c", command],  # noqa: S607 - bash from PATH, as the harness runs it
+        cwd=str(project),
+        env=base_env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return Approved(command, proc.returncode, proc.stdout, proc.stderr)
+
+
 def _matches_tool(matcher: str, tool: str) -> bool:
     """True when a settings.json matcher applies to ``tool``."""
     if not matcher or matcher == "*":

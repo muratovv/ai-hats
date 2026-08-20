@@ -107,6 +107,10 @@ class SessionIdentity:
     #: runs its bytes from. Empty when it mirrors none: a refusal decided once at
     #: launch, not re-resolved through the provider registry on every firing.
     skills_root: str = ""
+    #: This session's cache dir, where the consent store sits beside ``plugin/``.
+    #: Carried, never recomputed: the path runs through a hashed ``project_key()``
+    #: that a stdlib hook could only copy, and a copy drifts (HATS-1735).
+    session_cache_dir: str = ""
 
     def to_env(self) -> dict[str, str]:
         """The envelope plus its scalar projections — one writer, so no drift."""
@@ -120,6 +124,7 @@ class SessionIdentity:
                     "project_dir": str(self.project_dir),
                     "session_dir": str(self.session_dir),
                     "skills_root": self.skills_root,
+                    "session_cache_dir": self.session_cache_dir,
                 },
                 separators=(",", ":"),
                 sort_keys=True,
@@ -172,6 +177,7 @@ class SessionIdentity:
                 # Unknown keys are ignored on purpose — that is what lets a key
                 # be added without bumping the version.
                 skills_root=str(data.get("skills_root", "")),
+                session_cache_dir=str(data.get("session_cache_dir", "")),
             )
         except SessionIdentityError:
             raise

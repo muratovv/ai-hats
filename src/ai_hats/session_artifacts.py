@@ -114,6 +114,7 @@ def assemble_launch_env(
     from ai_hats_observe.session import session_env
 
     from .constants import ENV_ROOT_PID
+    from .paths import session_cache_dir
     from .session_identity import SessionIdentity
 
     # HATS-1594: the ONE place a session's identity is produced. Gates running in
@@ -128,6 +129,9 @@ def assemble_launch_env(
         # Resolved where the provider object is in hand, so no consumer takes a
         # second surface lookup that could answer differently.
         skills_root=str(provider.session_skills_root(project_dir, session_id) or ""),
+        # HATS-1735: the consent store's home, published so a stdlib hook never
+        # has to re-derive a hashed path.
+        session_cache_dir=str(session_cache_dir(project_dir, session_id)),
     )
     # ``claim`` separates a report from a launch: only the launch may take a
     # resource (cline binds a hub port). Same keys either way — a key set that

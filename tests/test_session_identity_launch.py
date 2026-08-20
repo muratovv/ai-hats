@@ -159,3 +159,27 @@ def test_a_knob_is_not_an_approval_and_keeps_travelling(tmp_path: Path, monkeypa
     child = _env(tmp_path, None, run_mode=RunMode.AUTOMATE)
 
     assert "AI_HATS_COMMENT_MAX_LINES" not in child
+
+
+def test_the_launch_publishes_the_session_cache_dir(tmp_path: Path):
+    """HATS-1735 J1: the consent store's home, or the gate can never find it.
+
+    Asserted against ``paths.session_cache_dir`` rather than a literal — a hook
+    re-deriving the hashed path is exactly what the field exists to prevent, and
+    a test spelling it out by hand would be that copy.
+    """
+    from ai_hats.paths import session_cache_dir
+
+    envelope = _envelope(_env(tmp_path, tmp_path / "m"))
+
+    assert envelope["session_cache_dir"] == str(session_cache_dir(tmp_path, "sess-a"))
+
+
+def test_an_envelope_written_before_the_field_existed_still_reads(tmp_path: Path):
+    """An added key must not turn an older session's envelope into a refusal."""
+    env = _env(tmp_path, tmp_path / "m")
+    envelope = _envelope(env)
+    del envelope["session_cache_dir"]
+    env[ENV_SESSION_IDENTITY] = json.dumps(envelope)
+
+    assert SessionIdentity.from_env(env).session_cache_dir == ""

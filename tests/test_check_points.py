@@ -350,15 +350,23 @@ def test_the_app_roster_matches_the_integrations_that_claim_the_keys():
     HATS-1581 gave ai-hats a SECOND app of its own, so the roster is stated as
     ``{rack's key} | {apps ai-hats owns}`` rather than a hand-listed pair — which
     keeps the teeth: an entry neither side answers for still fails.
+
+    HATS-1735 added a THIRD kind: a key ai-hats neither fires nor runs, whose
+    rows are READ as policy by the consent seam. Collected, not owned — the same
+    standing the rack's key has — so it is named from its own integration.
     """
     from ai_hats.check_points import WT_APP
+    from ai_hats.consent_port import APP as CONSENT_GATE
     from ai_hats.rack_consumers import AiHatsCheckPort
 
     owned = {WT_APP, AI_HATS_APP}
+    collected = {AiHatsCheckPort.APP, CONSENT_GATE}
 
     assert all(owns_app(app) for app in owned), "each of ai-hats's own apps must be owned"
-    assert not owns_app(AiHatsCheckPort.APP), "the rack's key is collected by it, never owned here"
-    assert KNOWN_APPS == {AiHatsCheckPort.APP} | owned, (
+    assert not any(owns_app(app) for app in collected), (
+        "a collected key is read by its integration, never fired here"
+    )
+    assert KNOWN_APPS == collected | owned, (
         "the roster must list exactly the apps some integration claims — an extra "
         "entry silences the warning for an app nobody collects"
     )

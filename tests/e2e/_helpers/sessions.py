@@ -230,6 +230,7 @@ def stand_in_session(
     correct for a sandbox that binds no check. A test whose bindings must
     resolve passes the root it actually planted into.
     """  # comment-length: allow — why setting the id alone stopped working
+    from ai_hats.paths import session_cache_dir
     from ai_hats.session_identity import SessionIdentity
 
     session_dir = project / ".agent" / "ai-hats" / "sessions" / "runs" / session_id
@@ -240,6 +241,10 @@ def stand_in_session(
         project_dir=project,
         session_dir=session_dir,
         skills_root=str(skills_root if skills_root is not None else session_dir / "skills"),
+        # The consent store lives under it (HATS-1735). Through the production
+        # function, never spelled here — a hand-built path in a fixture is the
+        # copy the published field exists to prevent.
+        session_cache_dir=str(session_cache_dir(project, session_id)),
     )
     env.update(identity.to_env())
     _write_role_materialization(session_dir, project, role)

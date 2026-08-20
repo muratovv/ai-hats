@@ -51,7 +51,7 @@ from ai_hats_core import scrubbed_git_env
 from ai_hats_core.deadline import Deadline
 from ai_hats_library.hooks import consent_ticket
 
-from . import ownership
+from . import consent_port, ownership
 from .check_resolve import resolve_consent_points
 from .constants import ENV_ROOT_PID
 from .paths import worktrees_dir
@@ -469,7 +469,13 @@ class ConsentExtension:
     PHASE = Phase.IN_LOCK
 
     def __init__(
-        self, backlog_owner: Path | None, backlog: tuple[str, ...], topology, *, priority=11
+        self,
+        backlog_owner: Path | None,
+        backlog: tuple[str, ...],
+        topology,
+        *,
+        project_dir: Path | None = None,
+        priority=11,
     ):
         #: The backlog's OWN project, or ``None`` where nobody owns it. Not the
         #: cwd's project as a fallback: a role composed here declares consent for
@@ -477,6 +483,10 @@ class ConsentExtension:
         #: HATS-1538 turned master red with — the same one `AiHatsCheckPort`
         #: closes on the gate half of the very same row (HATS-1682).
         self._backlog_owner = backlog_owner
+        #: The anchor a grant is matched against, already resolved by
+        #: ``resolve_root``. Never re-derived from ``ctx.caller_cwd``: ai-hats's
+        #: own resolver answers the HOME dir for a cache-hosted worktree (HATS-1735).
+        self._project_dir = project_dir
         self._backlog = backlog
         self._topology = topology
         self._priority = priority
@@ -529,29 +539,45 @@ class ConsentExtension:
         if not any(selector.matches(edge) for selector in self._selectors()):
             return None
         to_state = ctx.event.to_state
+        # The grant answers FIRST and the ticket is the fallback (HATS-1735).
+        # Reversed, the post-lock spender would burn a ticket on a move the
+        # grant already paid for, and the supervisor's click would vanish.
+        op = consent_port.Operation(
+            consent_port.RACK_TRANSITION,
+            subject=ctx.task.id,
+            params={"to": to_state},
+            label=f"→ {to_state}",
+        )
+        answer = consent_port.verdict(op, target_dir=self._project_dir)
+        if answer.outcome is consent_port.Outcome.GRANTED:
+            return Delta(work_log=(consent_port.note(answer, op, hook="rack_wiring.py"),))
         for flag in (CONSENT_ACK, LEGACY_ACK_BY_STATE.get(to_state, "")):
             if flag and os.environ.get(flag) == "1":
                 note = env_consent_note(flag, f"→ {to_state}", hook="rack_wiring.py")
                 return Delta(work_log=(note,))
         if consent_ticket.peek(ctx.task.id, argv=sys.argv[1:]):
             return Delta(work_log=(f"→ {to_state}: supervisor consent ticket accepted",))
-        raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state))
+        raise AbortOperation(_consent_refusal(ctx.task.id, ctx.event.from_state, to_state, answer))
 
 
-def _consent_refusal(task_id: str, from_state: str, to_state: str) -> str:
+def _consent_refusal(task_id: str, from_state: str, to_state: str, answer) -> str:
     """Why the move stopped, and what the reader can actually do about it.
 
-    Step 3 is addressed to whoever LAUNCHES the session, not to the agent
-    reading this. Spelled as a command the agent could paste, it is one line
-    away from being no refusal at all (HATS-1682 C4).
-    """
+    Every step is addressed to the SUPERVISOR, not to the agent reading it: the
+    agent's own copy of any of these is a self-grant. "Re-run this exact command"
+    is gone with HATS-1735 — it described the fused hook, and on a surface with
+    no hooks a re-run only buys a second refusal. So is "the question does not
+    expire": a grant has a deadline by construction.
+    """  # comment-length: allow — who each step addresses IS the contract
     return (
         f"Transition '{from_state} -> {to_state}' for '{task_id}' requires supervisor "
-        "approval, and none has arrived.\n"
+        f"approval, and none has arrived ({answer.reason}).\n"
         "1. Present what you are asking approval for in chat and STOP.\n"
-        "2. Then re-run this exact command, with no consent prefix of your own: the\n"
-        "   guard turns it into a one-click question in chat, and the supervisor's\n"
-        "   answer is what carries consent. The question does not expire.\n"
+        "2. The supervisor opens a window by typing the verb himself — in chat on a\n"
+        "   surface with a shell escape, otherwise in a terminal of this session:\n"
+        f"     consent {consent_port.RACK_TRANSITION} 30\n"
+        "   The window covers every move of that type until it runs out. Typing it\n"
+        "   yourself is a self-grant: the guard turns your attempt into a question.\n"
         "3. Where there is nobody to ask — headless, cron, a surface with no hooks —\n"
         f"   {CONSENT_ACK} stands in, and only the environment that LAUNCHES the\n"
         "   session may set it (one line, since a lone export dies with its shell):\n"
@@ -665,6 +691,7 @@ def build_rack_kernel(
             backlog_owner,
             tuple(dict.fromkeys((defn.name, defn.cli_alias or defn.name))),
             topology,
+            project_dir=project_dir,
         )
     )
     subscribers.append(ConsentSpend(topology))
