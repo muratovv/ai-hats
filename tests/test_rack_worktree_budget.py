@@ -55,7 +55,7 @@ class _Sink:
 
 def _kernel(tasks_dir, effects, sink):
     topology = load_topology()
-    wt = WorktreeExtension(tasks_dir, effects=effects, topology=topology)
+    wt = WorktreeExtension(tasks_dir, effects=effects)
     return Kernel(tasks_dir, prefix="T", topology=topology, subscribers=[wt], journal_sink=sink)
 
 
@@ -77,12 +77,11 @@ def test_worktree_git_timeout_aborts_the_transition_and_journals(tasks_dir, cwd)
 
 
 def test_default_budget_threads_into_the_worktree_effects(tasks_dir):
-    topology = load_topology()
     assert WORKTREE_BUDGET == 60.0
-    wt = WorktreeExtension(tasks_dir, topology=topology)  # default effects
+    wt = WorktreeExtension(tasks_dir)  # default effects
     assert wt._budget == 60.0
     assert wt._effects._git_timeout == 60.0
-    tight = WorktreeExtension(tasks_dir, topology=topology, budget=5.0)
+    tight = WorktreeExtension(tasks_dir, budget=5.0)
     assert tight._effects._git_timeout == 5.0
 
 

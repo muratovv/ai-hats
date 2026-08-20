@@ -14,8 +14,7 @@ from typing import Sequence
 
 from ..dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from ..docstore import _card_pins, compute_digest
-from ..fsm import Topology, all_edges, load_topology
-from ..selectors import Selector
+from ..selectors import EVERYWHERE
 
 
 class FrozenIntegrityExtension:
@@ -34,20 +33,15 @@ class FrozenIntegrityExtension:
         self,
         tasks_dir: Path,
         *,
-        topology: Topology | None = None,
         priority: int = 8,
     ) -> None:
         self.tasks_dir = tasks_dir
-        self._topology = topology if topology is not None else load_topology()
         # 8 = after the session-slot guard (5), before the plan-gate (10):
         # data-integrity refusals outrank workflow gating (HATS-1031 plan §5).
         self._priority = priority
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(Selector(e.from_state, e.to_state), Phase.IN_LOCK, self._priority)
-            for e in all_edges(self._topology)
-        ]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         card_dir = self.tasks_dir / ctx.task.id

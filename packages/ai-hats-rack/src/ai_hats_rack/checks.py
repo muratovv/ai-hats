@@ -22,7 +22,7 @@ from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 from .definition import BacklogDefinition
 from .dispatch import AbortOperation, Delta, DispatchContext, Phase, Subscription
 from .fsm import Topology, all_edges
-from .selectors import Edge, Selector, parse_selector
+from .selectors import EVERYWHERE, Edge, Selector, parse_selector
 from .kernel import LOCK_TIMEOUT
 
 #: Reserved "hook" slot of the in-lock ladder — after the plan-gate, before the
@@ -121,6 +121,17 @@ class CheckPort(Protocol):
 #: How an integrator supplies the executor for ONE catalog. The rack builds the
 #: subscriber itself (:func:`check_subscriber`); this is the whole of what the
 #: integrator contributes, because it is the whole of what the rack cannot do.
+#:
+#: **The carrier owes the wide-output veto** (HATS-1720). This package decides what
+#: a selector MEANS and will honour ``execute->`` on every road out of the state;
+#: whether a row that can REFUSE may stand there is a question about the row, and
+#: it is refused where rows are composed — ai-hats does it in
+#: ``check_points._APP_RULES``, using this package's own
+#: :func:`~.selectors.gate_veto` / :func:`~.selectors.consent_veto`. A second
+#: carrier that skips them installs a gate that locks a card in one state on every
+#: way out, and nothing here will stop it: refusing in-lock is the same lock-in one
+#: layer down, so the refusal has to happen at composition, which is the carrier's
+#: side of the seam.
 CheckPortFactory = Callable[[Path], CheckPort]
 
 
@@ -290,10 +301,7 @@ class CheckSubscriber:
         self._timeout = EDGE_CHECK_TIMEOUT_S if timeout is None else timeout
 
     def subscriptions(self) -> Sequence[Subscription]:
-        return [
-            Subscription(Selector(e.from_state, e.to_state), Phase.IN_LOCK, self._priority)
-            for e in all_edges(self._topology)
-        ]
+        return [Subscription(EVERYWHERE, Phase.IN_LOCK, self._priority)]
 
     def on_event(self, ctx: DispatchContext) -> Delta | None:
         if not callable(getattr(self._port, "check_declarations", None)):

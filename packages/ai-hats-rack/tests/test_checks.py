@@ -17,7 +17,7 @@ from ai_hats_rack.checks import (
     CheckSubscriber,
     classify_bindings,
 )
-from ai_hats_rack.selectors import Selector, parse_selector
+from ai_hats_rack.selectors import ANY, Selector, parse_selector
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
 from ai_hats_rack.fsm import Topology, all_edges
@@ -104,17 +104,22 @@ def test_only_this_packages_grammar_parses(selector, expected):
     assert parse_selector(selector) == expected
 
 
-def test_subscriptions_cover_the_state_product_at_the_reserved_slot():
+def test_the_subscription_covers_the_state_product_at_the_reserved_slot():
     """The full product, not just legal edges: a forced transition fires a real
-    non-topology key, and the gate must not be the thing force bypasses."""
+    non-topology pair, and the gate must not be the thing force bypasses.
+
+    ONE selector says it since HATS-1720, so the guarantee is asserted AGAINST the
+    product instead of being spelled as it: what the enumeration bought was that
+    every dispatchable pair reaches the gate, and that is what is checked here.
+    """
     topology = _topology()
     subs = CheckSubscriber(_Port(), topology=topology, backlog="tasks").subscriptions()
 
-    assert {s.selector for s in subs} == {
-        Selector(e.from_state, e.to_state) for e in all_edges(topology)
-    }
+    assert [s.selector for s in subs] == [Selector(ANY, ANY)]
     assert {s.phase for s in subs} == {Phase.IN_LOCK}
     assert {s.priority for s in subs} == {CHECK_PRIORITY}
+    unreached = [e for e in all_edges(topology) if not subs[0].selector.matches(e)]
+    assert not unreached, f"these roads stopped reaching the gate: {unreached}"
 
 
 def test_a_point_of_another_topology_is_skipped_not_refused():

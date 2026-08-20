@@ -20,6 +20,10 @@ from ai_hats_rack.selectors import Selector
     [
         ("review->done", Selector("review", "done")),
         ("->done", Selector("ANY", "done")),
+        # Legal since HATS-1720, and normalized like any other arrow: what the
+        # veto refuses is a declared ROW on a wide output, not the selector.
+        ("execute->", Selector("execute", "ANY")),
+        ("ANY->ANY", Selector("ANY", "ANY")),
     ],
 )
 def test_an_arrow_string_becomes_a_selector(text, expected):
@@ -46,24 +50,38 @@ def test_asking_for_an_arrow_by_key_is_refused_not_answered_empty():
         Dispatcher().subscribers_for("review->done", Phase.IN_LOCK)
 
 
-@pytest.mark.parametrize("text", ["a->b->c", "execute->", "ANY->ANY", "review -> done"])
+@pytest.mark.parametrize("text", ["a->b->c", "review -> done", "NONE->", "review->ANY"])
 def test_a_string_that_is_not_a_legal_selector_is_refused_not_normalized(text):
     """Normalizing without judging just relocates the trap (HATS-1719 review).
 
-    ``parse_selector`` is deliberately wider than the legal grammar, so a
-    typo'd arrow string became either a silent WILDCARD (``execute->`` fires on
-    every way out) or a silently DEAD selector (``a->b->c`` matches nothing) —
-    neither raising. A string goes through the public grammar; internal code
-    that means a wide selector says so with a ``Selector`` object.
+    ``parse_selector`` is deliberately wider than the legal grammar, so a typo'd
+    arrow string became a silently DEAD selector (``a->b->c`` matches nothing)
+    without raising. A string goes through the public grammar, whatever the
+    grammar happens to allow today — ``execute->`` moved from this table to the
+    one above when HATS-1720 made it legal, and ``NONE->`` took its place as the
+    derivable-but-refused case.
     """
     with pytest.raises(ValueError, match="selector"):
         Subscription(text, Phase.IN_LOCK)
 
 
-def test_an_object_is_trusted_where_a_string_is_judged():
-    """The escape hatch the rule needs: HATS-1720 subscribes wide from code."""
-    wide = Selector("execute", "ANY")
+def test_an_object_is_trusted_where_the_same_value_spelt_out_is_judged():
+    """The rule, asserted as the contrast it claims — both halves in one test.
+
+    ``review->ANY`` denotes exactly ``Selector("review", ANY)``, and it is refused
+    as TEXT because it is a second spelling of ``review->`` and the dedup key holds
+    the string verbatim. The identical VALUE is taken at its word: there is no
+    second spelling of an object to police. Asserting only the second half would
+    pass on a constructor that judged nothing at all.
+    """
+    wide = Selector("review", "ANY")
+
+    with pytest.raises(ValueError, match="selector"):
+        Subscription("review->ANY", Phase.IN_LOCK)
     assert Subscription(wide, Phase.IN_LOCK).selector is wide
+    assert Subscription("review->", Phase.IN_LOCK).selector == wide, (
+        "the legal spelling of that value must reach the same selector"
+    )
 
 
 @pytest.mark.parametrize("key", ["link:a->b", "read:x->y"])

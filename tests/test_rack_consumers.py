@@ -21,8 +21,8 @@ from ai_hats_core import ComponentKind, CompositionResult, ResolvedCheck, Resolv
 from ai_hats_rack.definition import BacklogDefinition, resolve_definition
 from ai_hats_rack.dispatch import AbortOperation, DispatchContext, Phase
 from ai_hats_rack.events import EdgeEvent
-from ai_hats_rack.fsm import Topology, all_edges
-from ai_hats_rack.selectors import Selector
+from ai_hats_rack.fsm import Topology
+from ai_hats_rack.selectors import ANY, Selector
 from ai_hats_rack.kernel import LOCK_TIMEOUT
 from ai_hats_rack.models import TaskCard
 
@@ -34,7 +34,7 @@ from ai_hats_core.deadline import Deadline
 from ai_hats.hook_exec import run_hook
 from ai_hats.models import AppBinding
 from ai_hats.paths import session_cache_dir
-from ai_hats_rack.checks import CheckSubscriber
+from ai_hats_rack.checks import CheckSubscriber, check_subscriber
 
 from ai_hats.rack_consumers import (
     CHECK_PRIORITY,
@@ -119,9 +119,15 @@ def _runner(tmp_path: Path, *checks: ResolvedCheck, **kwargs) -> CheckSubscriber
     )
 
 
-def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
-    """R2 + R7: the pack is no longer empty, it enumerates the topology handed
-    through the seam (never a re-opened one), and it books slot 15 in-lock."""
+def test_pack_covers_every_edge_of_the_given_topology(tmp_path):
+    """R2 + R7: the pack is no longer empty, it covers every move of the topology
+    handed through the seam (never a re-opened one), and it books slot 15 in-lock.
+
+    Said as one wide selector since HATS-1720 — so the topology is what the
+    subscription is checked AGAINST rather than what it spells. The typed-object
+    assertion stays load-bearing either way: a plain arrow STRING would land in
+    the non-FSM bucket and match nothing.
+    """
     topology = _topology()
     pack = consumer_subscribers(
         tmp_path,
@@ -131,12 +137,42 @@ def test_pack_subscribes_to_every_edge_of_the_given_topology(tmp_path):
 
     assert pack, "the consumer pack must carry the check runner"
     subs = [spec for sub in pack for spec in sub.subscriptions()]
-    assert {spec.selector for spec in subs} == {
-        Selector(e.from_state, e.to_state) for e in all_edges(topology)
-    }  # typed, not stringly: a plain arrow STRING lands in the non-FSM bucket
+    assert {spec.selector for spec in subs} == {Selector(ANY, ANY)}
     assert {spec.phase for spec in subs} == {Phase.IN_LOCK}
     assert {spec.priority for spec in subs} == {15}
     assert CHECK_PRIORITY == 15
+
+
+def test_the_pack_judges_rows_against_the_topology_handed_through_the_seam(tmp_path):
+    """R7, and it needs its own test now that the subscription is topology-free.
+
+    While the pack ENUMERATED the product, re-opening the packaged `backlog.yaml`
+    instead of taking `definition.topology` changed the subscription set and the
+    assertion above caught it. One wide selector is the same whatever topology it
+    came from, so the seam has to be pinned where it is still observable: the
+    subscriber judges a row against the topology it holds, and `open->review`
+    exists only in the one handed in — the packaged file has no `open` state at all.
+    """
+    packaged = resolve_definition(tmp_path / "unwritten", project_dir=tmp_path).topology
+    assert "open" not in packaged.states, (
+        "the packaged topology must NOT hold this state, or the test proves nothing"
+    )
+    script = _script(tmp_path, "echo 'the row fired'\nexit 1")
+    # Through `check_subscriber`, because THAT is the seam: it is the one line
+    # that decides which topology the subscriber judges rows against.
+    runner = check_subscriber(
+        _definition(_topology(), tmp_path=tmp_path),
+        port=AiHatsCheckPort(
+            tmp_path,
+            catalog=tmp_path / "tasks",
+            resolve=lambda: (_check(script, point="open->review"),),
+        ),
+    )
+
+    # A REFUSING script, because a passing one proves nothing: a row skipped for a
+    # topology that never had `open->review` also returns None.
+    with pytest.raises(AbortOperation):
+        runner.on_event(_ctx("open->review"))
 
 
 def test_an_unowned_backlog_composes_nothing_and_says_so(tmp_path, capsys):

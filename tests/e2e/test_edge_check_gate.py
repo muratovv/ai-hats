@@ -188,9 +188,11 @@ def _seed_library(project: Path) -> None:
     stray_rows = {
         "stray": ((STRAY_EDGE, "pass.sh"),),
         "strayed": ((STRAY_EDGE, "pass.sh"), (EDGE, "refuse.sh")),
-        # A selector the grammar REFUSES, not one that merely misses (HATS-1719):
-        # the wide output is reserved for HATS-1720, so composing this role must
-        # fail — and the failure has to read as a message, not a traceback.
+        # A row the composition REFUSES, not one that merely misses (HATS-1719).
+        # The selector itself is legal grammar since HATS-1720; what is refused is
+        # a row that can REFUSE standing on a wide output, because one such gate
+        # locks the card in `execute` on every way out. The failure has to read as
+        # a message, not a traceback.
         "wideout": (("execute->", "pass.sh"),),
     }
     for name, rows in stray_rows.items():
@@ -1014,14 +1016,18 @@ def test_the_doctor_names_the_dead_point_the_transition_skips(gate_project, rack
     ]
 
 
-def test_a_refused_selector_reaches_the_operator_as_a_message(gate_project, rack_bin):
+def test_a_refused_row_reaches_the_operator_as_a_message(gate_project, rack_bin):
     """A composition refusal is a MESSAGE, not a stack trace (HATS-1719 review).
 
     The consent subscriber resolves the role's declaration in-lock at priority
     11 — before the checks subscriber at 15, whose own resolution already turns
-    trouble into this channel's refusal. So a role carrying a selector the
-    grammar refuses surfaced as an untyped exception twelve frames deep. The
-    arrow grammar made that easy to reach, which is what made it worth closing.
+    trouble into this channel's refusal. So a role carrying a row the composition
+    refuses surfaced as an untyped exception twelve frames deep. The arrow grammar
+    made that easy to reach, which is what made it worth closing.
+
+    Through the REAL binary, which is the half a unit test cannot buy: a gate on a
+    wide output would otherwise install here and lock the card in `execute`, and
+    `--force` would not reach it (HATS-1720).
     """
     project, env = gate_project("wideout")
     task_id = _create(rack_bin, project, env)
@@ -1029,9 +1035,10 @@ def test_a_refused_selector_reaches_the_operator_as_a_message(gate_project, rack
     refused = _rack(rack_bin, "transition", task_id, "plan", cwd=project, env=env)
     said = refused.stdout + refused.stderr
 
-    assert refused.returncode != 0, f"a refused selector composed clean:\n{said}"
+    assert refused.returncode != 0, f"a gate on a wide output composed clean:\n{said}"
     assert "Traceback" not in said, f"the refusal reached the operator as a traceback:\n{said}"
-    assert "HATS-1720" in said, f"the refusal does not name the card that opens the form:\n{said}"
+    assert "locks the card" in said, f"the refusal does not say what it would cost:\n{said}"
+    assert "HATS-1723" in said, f"the refusal does not name the card that relaxes it:\n{said}"
 
 
 def test_the_same_refusal_is_machine_readable(gate_project, rack_bin):

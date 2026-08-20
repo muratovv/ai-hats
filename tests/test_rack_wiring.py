@@ -227,6 +227,24 @@ def test_in_lock_order_reproduces_the_tracker_sequence(project):
     assert epicify == ["ownership-release", "worktree", "epic-automation", "derived-views"]
 
 
+@pytest.mark.parametrize("edge", [Edge("plan", "execute"), Edge("review", "done")])
+def test_the_post_lock_reactions_answer_on_every_move(project, edge):
+    """`consent-spend`, `epic-automation` and `derived-views` say `ANY->ANY`.
+
+    Pinned on a NON-terminal edge as well as on the road into master, because that
+    is where a narrowed selector would hide: `consent-spend` returns the click for
+    whatever move it paid for, and the ticket is bound to this process's argv
+    rather than to a state — so a subscriber that only woke on `->done` would eat
+    a ticket nobody spent. Narrowing it to `->done` left the whole unit tier green
+    until this pin (HATS-1720 review).
+    """
+    kernel = _kernel(project)
+
+    reactions = [s.name for s in kernel._dispatcher.subscribers_for_edge(edge, Phase.POST_LOCK)]
+
+    assert reactions == ["consent-spend", "epic-automation", "derived-views"]
+
+
 def test_check_runner_takes_the_reserved_hook_slot(project):
     """HATS-1141: the checks runner books priority 15 — after the plan-gate,
     before the ownership claim and the worktree, so a refusal costs nothing."""
