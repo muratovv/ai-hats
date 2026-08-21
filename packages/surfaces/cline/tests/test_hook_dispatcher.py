@@ -183,6 +183,7 @@ def test_additional_context_becomes_cline_context_modification(
 
 def test_legacy_and_current_cline_tools_use_claude_matcher_names(tmp_path: Path) -> None:
     expected = {
+        "bash": "Bash",
         "execute_command": "Bash",
         "run_commands": "Bash",
         "write_to_file": "Write",
@@ -192,6 +193,7 @@ def test_legacy_and_current_cline_tools_use_claude_matcher_names(tmp_path: Path)
         "read_files": "Read",
         "search_files": "Grep",
         "search_codebase": "Grep",
+        "search": "Grep",
         "list_files": "Glob",
     }
 

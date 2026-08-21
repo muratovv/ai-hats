@@ -10,6 +10,7 @@ _PATCH_PATH = re.compile(r"^\*\*\* (Update|Add|Delete) File: (.+)$", re.MULTILIN
 _PATCH_MOVE = re.compile(r"^\*\*\* Move to: (.+)$", re.MULTILINE)
 
 _TOOL_NAMES = {
+    "bash": "Bash",
     "execute_command": "Bash",
     "run_commands": "Bash",
     "write_to_file": "Write",
@@ -19,6 +20,7 @@ _TOOL_NAMES = {
     "read_files": "Read",
     "search_files": "Grep",
     "search_codebase": "Grep",
+    "search": "Grep",
     "list_files": "Glob",
     "apply_patch": "Edit",
 }
@@ -72,7 +74,7 @@ def to_claude_hook_payloads(payload: dict, event: str) -> list[dict]:
             result["tool_response"] = event_payload["result"]
         return result
 
-    if tool_name == "run_commands":
+    if tool_name in {"bash", "run_commands"}:
         commands = parameters.get("commands")
         if not isinstance(commands, list):
             command = parameters.get("command")
