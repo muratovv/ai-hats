@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
+
+from ai_hats_core import ConsentPoint
 
 from ai_hats.materialization import PlanMaterializer
 from ai_hats.session_artifacts import SessionPolicy
@@ -146,3 +149,56 @@ def test_full_render_still_falls_back_to_the_file_on_a_real_record(tmp_path: Pat
     )
 
     assert "bytes on disk" in report.render(full=True)
+
+
+def _consent(app: str, path: tuple[str, ...], selector: str) -> ConsentPoint:
+    return ConsentPoint(declared_by="trait-agent", app=app, path=path, selector=selector)
+
+
+def test_consent_section_names_the_field_each_reader_keys_on(tmp_path: Path):
+    """HATS-1726: three grammars ride one list, and each is found by a DIFFERENT
+    field — printing one selector for all of them would be a plausible lie about
+    the one grammar the section exists for.
+
+    Measured: `_grant_policy` keys on `selector`, `declared_consent_targets` on
+    `to`, and the wt question on the exact (app, selector) pair.
+    """
+    report = replace(
+        _report(tmp_path),
+        consent=(
+            _consent("consent_gate", (), "rack.transition"),
+            _consent("consent_gate", (), "wt.merge"),
+            _consent("rack", ("tasks",), "plan->execute"),
+            _consent("rack", ("tasks",), "->done"),
+            _consent("wt", (), "pre-merge"),
+        ),
+    )
+
+    text = report.render()
+
+    assert "\nconsent\n" in text
+    # The selector is quoted in every channel that prints it: bare, `->` is a
+    # shell redirect, so a copied line stops being a selector (HATS-1733).
+    assert "'rack.transition'" in text
+    assert "'->done'" in text
+    # consent_gate: read as an operation type, by `selector`.
+    assert "operation type" in text
+    # rack: read by `to`, NEVER by the selector — so the target is what shows.
+    assert "entering 'execute'" in text
+    assert "entering 'done'" in text
+    # wt: found by the exact pair, so the point itself is the key.
+    assert "wt point" in text
+    assert text.count("by trait-agent") == 5
+
+
+def test_a_role_declaring_no_consent_says_so_instead_of_dropping_the_section(tmp_path: Path):
+    """A role asking about nothing, and a section that did not render, differ.
+
+    The sibling `checks` section already draws this line with `(none bound)`;
+    a consent section that vanishes when empty rebuilds the exact silence this
+    report exists to remove (HATS-1726).
+    """
+    text = _report(tmp_path).render()
+
+    assert "\nconsent\n" in text
+    assert "(none declared)" in text
