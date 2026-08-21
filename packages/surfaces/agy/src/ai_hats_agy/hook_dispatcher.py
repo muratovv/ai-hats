@@ -147,19 +147,29 @@ def _answered(said: str, payload: dict) -> str:
     return said if answered is decision else json.dumps(answered) + "\n"
 
 
-def dispatch_hook(event_arg: str | None = None, tool_name: str | None = None) -> int:
-    """Read session hooks manifest and execute matching hooks for this event."""
+def dispatch_hook(
+    event_arg: str | None = None,
+    tool_name: str | None = None,
+    stdin_data: str | None = None,
+) -> int:
+    """Read session hooks manifest and execute matching hooks for this event.
+
+    ``stdin_data`` is the surface's payload. A parameter rather than a read
+    inside, so a caller can hand one over without a test having to patch the
+    process's own stdin — the mock this seam exists to avoid.
+    """
     identity = _session_identity()
     if not identity or not identity.get("id") or not identity.get("project_dir"):
         # Standalone agy run outside ai-hats session — no-op exit 0
         return 0
 
-    stdin_data = ""
-    try:
-        if not sys.stdin.isatty():
-            stdin_data = sys.stdin.read()
-    except (OSError, AttributeError):
+    if stdin_data is None:
         stdin_data = ""
+        try:
+            if not sys.stdin.isatty():
+                stdin_data = sys.stdin.read()
+        except (OSError, AttributeError):
+            stdin_data = ""
 
     # The payload is the source of truth for what this call IS: the event, and
     # the tool it is about. argv carries both only when the surface chose to

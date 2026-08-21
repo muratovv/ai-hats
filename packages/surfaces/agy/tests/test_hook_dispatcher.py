@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -170,13 +169,6 @@ def _agy_payload(tool: str = "run_command", command: str = "git push --force") -
     )
 
 
-def _speak(monkeypatch, payload: str) -> None:
-    """Hand the dispatcher a payload on stdin, the way the surface does."""
-    import io
-
-    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
-
-
 def _recording_hook(tmp_path: Path, *, answers: str = "") -> tuple[Path, Path]:
     """A hook that writes down the payload it was handed, and optionally answers."""
     seen = tmp_path / "seen.json"
@@ -212,10 +204,10 @@ def test_a_bash_row_fires_on_agys_terminal_tool(tmp_path: Path, monkeypatch) -> 
     cache_dir = _session(tmp_path, monkeypatch, "sid-bash")
     seen, script = _recording_hook(tmp_path)
     _manifest(cache_dir, script, "Bash")
-    _speak(monkeypatch, _agy_payload())
+    payload = _agy_payload()
 
     # Named the way the surface names it — the comparison that used to be literal.
-    assert dispatch_hook("PreToolUse", tool_name="run_command") == 0
+    assert dispatch_hook("PreToolUse", tool_name="run_command", stdin_data=payload) == 0
     assert seen.is_file(), "the guard was installed and never invoked"
 
 
@@ -225,9 +217,7 @@ def test_the_hook_is_handed_the_claude_dialect(tmp_path: Path, monkeypatch) -> N
     cache_dir = _session(tmp_path, monkeypatch, "sid-dialect")
     seen, script = _recording_hook(tmp_path)
     _manifest(cache_dir, script, "Bash")
-    _speak(monkeypatch, _agy_payload(command="rm -rf /"))
-
-    dispatch_hook("PreToolUse")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload(command="rm -rf /"))
 
     handed = json.loads(seen.read_text())
     assert handed["tool_input"]["command"] == "rm -rf /"
@@ -243,9 +233,7 @@ def test_the_tool_name_is_taken_from_the_payload_when_argv_is_silent(
     cache_dir = _session(tmp_path, monkeypatch, "sid-argv")
     seen, script = _recording_hook(tmp_path)
     _manifest(cache_dir, script, "Edit|Write|MultiEdit")
-    _speak(monkeypatch, _agy_payload())
-
-    dispatch_hook("PreToolUse")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload())
 
     assert not seen.exists(), "an edit-tool row fired on a terminal call"
 
@@ -268,9 +256,7 @@ def test_a_rewritten_input_leaves_in_the_key_agy_speaks(
     )
     _seen, script = _recording_hook(tmp_path, answers=answer)
     _manifest(cache_dir, script, "Bash")
-    _speak(monkeypatch, _agy_payload())
-
-    dispatch_hook("PreToolUse")
+    dispatch_hook("PreToolUse", stdin_data=_agy_payload())
 
     said = json.loads(capsys.readouterr().out)
     assert said["hookSpecificOutput"]["updatedInput"] == {"CommandLine": ticket}
