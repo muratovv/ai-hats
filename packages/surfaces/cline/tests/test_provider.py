@@ -72,6 +72,10 @@ def test_name_is_cline() -> None:
     assert ClineProvider().name == "cline"
 
 
+def test_hitl_children_inherit_authoritative_session_path() -> None:
+    assert ClineProvider().supports_session_command_wrappers()
+
+
 def test_get_cli_command_is_bare_binary() -> None:
     # Bare base so the HITL `-i` (added by build_session_prompt) and the automate
     # `--yolo` (added by get_run_command) never collide.
