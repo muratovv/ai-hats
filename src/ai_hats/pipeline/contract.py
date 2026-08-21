@@ -109,7 +109,9 @@ class PipelineResult:
 
     exit_code: int | None = None
     session: SessionRef | None = None
-    errors: tuple[str, ...] = ()
+    # Step name -> the exception a ``failure_policy=continue`` step swallowed,
+    # as the runner records it (``pipeline.py``).
+    errors: Mapping[str, BaseException] = field(default_factory=dict)
 
     @classmethod
     def from_state(cls, state: Mapping[str, Any]) -> "PipelineResult":
@@ -128,7 +130,7 @@ class PipelineResult:
         return cls(
             exit_code=None if code is None else int(code),
             session=session,
-            errors=tuple(state.get(_keys.KEY_ERRORS) or ()),
+            errors=dict(state.get(_keys.KEY_ERRORS) or {}),
         )
 
     def exit_code_or(self, default: int) -> int:
