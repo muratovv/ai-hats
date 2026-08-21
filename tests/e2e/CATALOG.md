@@ -1099,6 +1099,21 @@ as a claim to check, not as evidence.
 - **expect** — rack transition logs message cleanly without silent failure or truncated log entries
 - **why** — without log escaping, special characters in transition logs cause silent task transition drops
 
+## `test_hermetic_unit_gate.py`
+
+*pins HATS-1700*
+
+- **flow** — a developer runs the local unit gate repeatedly after using extra provider surfaces in the caller virtual environment
+- **cmds**
+
+  ```console
+  bash scripts/ci-local.sh unit
+  bash scripts/ci-local.sh unit
+  ```
+
+- **expect** — both runs detect a test-installed provider, ignore caller-only providers, and leave the caller virtual environment and checkout unchanged
+- **why** — a unit gate that reuses its caller environment can turn the same broken tree green after the first run contaminates that environment
+
 ## `test_hook_chain_fail_open_recorded.py`
 
 *pins HATS-1373*

@@ -17,6 +17,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -125,6 +127,14 @@ def test_installs_synthetic_provider():
     )
 
 
+@pytest.fixture
+def mutating_test_file() -> Iterator[Path]:
+    with tempfile.TemporaryDirectory(prefix="hats1700-", dir=REPO_ROOT / "tests") as root:
+        path = Path(root) / "test_synthetic_provider_mutation.py"
+        _write_mutating_test(path)
+        yield path
+
+
 def _run_unit(
     python: Path, test_file: Path, mutation_package: Path, seen_providers: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -151,19 +161,18 @@ def _run_unit(
 
 def test_unit_stage_ignores_caller_provider_set_and_preserves_it(
     caller_environment: tuple[Path, Path],
+    mutating_test_file: Path,
 ) -> None:
     python, root = caller_environment
     mutation_package = _write_provider_package(root, "hats1700-test-provider", TEST_ENTRY_POINT)
-    test_file = root / "test_synthetic_provider_mutation.py"
-    _write_mutating_test(test_file)
     before = _provider_names(python)
     assert HOST_ENTRY_POINT in before
     assert TEST_ENTRY_POINT not in before
 
     seen_first = root / "seen-first.json"
     seen_second = root / "seen-second.json"
-    first = _run_unit(python, test_file, mutation_package, seen_first)
-    second = _run_unit(python, test_file, mutation_package, seen_second)
+    first = _run_unit(python, mutating_test_file, mutation_package, seen_first)
+    second = _run_unit(python, mutating_test_file, mutation_package, seen_second)
 
     diagnostics = (
         f"first stdout:\n{first.stdout}\nfirst stderr:\n{first.stderr}\n"
