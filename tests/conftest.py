@@ -72,6 +72,27 @@ def _provider_integrity_state() -> _ProviderIntegrityState:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _workspace_surface_providers() -> Iterator[None]:
+    """Register workspace provider classes without installing their distributions."""
+    from ai_hats import providers
+    from ai_hats_agy import AgyProvider
+    from ai_hats_cline import ClineProvider
+    from ai_hats_codex import CodexProvider
+
+    saved = dict(providers._PROVIDER_REGISTRY)
+    for name, provider in (
+        ("agy", AgyProvider),
+        ("cline", ClineProvider),
+        ("codex", CodexProvider),
+    ):
+        if name not in providers._PROVIDER_REGISTRY:
+            providers.register_provider(name, provider)
+    yield
+    providers._PROVIDER_REGISTRY.clear()
+    providers._PROVIDER_REGISTRY.update(saved)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _no_retired_prune(request):
     """Keep the retired-distribution prune out of the developer's own venv.
 
