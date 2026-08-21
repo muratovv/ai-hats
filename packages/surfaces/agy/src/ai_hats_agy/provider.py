@@ -44,11 +44,6 @@ if TYPE_CHECKING:
     from ai_hats.providers import ProviderHint
 
 
-AGY_FILE_MUTATION_MATCHER = (
-    "Create|Edit|Write|MultiEdit|write_to_file|replace_file_content|multi_replace_file_content"
-)
-
-
 class AgyProvider(Provider):
     """`agy` CLI adapter, registered via the `ai_hats.providers` entry point."""
 
@@ -191,9 +186,12 @@ class AgyProvider(Provider):
         for event, entries in collect_runtime_hooks(result).items():
             event_list = manifest.setdefault(event, [])
             for skill_name, hook in entries:
+                # Kept in the row's own (Claude) vocabulary. Translating it here
+                # covered one class and left `Bash` alone, so the shared-state
+                # guard never fired on this surface; the dispatcher now asks
+                # `claude_hook_adapter` instead, which knows every class
+                # (HATS-1776).
                 matcher = getattr(hook, "matcher", "")
-                if "Edit" in matcher or "Write" in matcher:
-                    matcher = AGY_FILE_MUTATION_MATCHER
                 script = getattr(hook, "script", "")
                 event_list.append(
                     {

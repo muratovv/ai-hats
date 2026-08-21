@@ -50,11 +50,22 @@ def test_agy_materializes_and_enforces_wt_gate_in_main_checkout(tmp_path: Path) 
     assert hooks_file.is_file(), "hooks.json must be created in session cache"
     hooks_data = json.loads(hooks_file.read_text())
     pre_tool_hooks = hooks_data.get("PreToolUse", [])
+    # The manifest keeps the row's own (Claude) matcher; knowing that agy calls
+    # the same tool `Create` is the dispatcher's job, via `claude_hook_adapter`
+    # (HATS-1776) — pinned by test_claude_hook_adapter.py, which asks the
+    # translator directly instead of reading a rewritten string out of a file.
     assert any(
-        "wt_gate.py" in h.get("command", "") and "Create" in h.get("matcher", "")
+        "wt_gate.py" in h.get("command", "") and "Edit" in h.get("matcher", "")
         for h in pre_tool_hooks
         if isinstance(h, dict)
-    ), "wt_gate.py PreToolUse matcher in agy hooks.json must include Create"
+    ), "wt_gate.py PreToolUse row must be in agy hooks.json"
+
+    from ai_hats_agy.claude_hook_adapter import matches_claude_hook
+
+    matcher = next(
+        h["matcher"] for h in pre_tool_hooks if "wt_gate.py" in h.get("command", "")
+    )
+    assert matches_claude_hook(matcher, "Create"), "the row must answer agy's own tool name"
 
     hook_script = (
         session_cache_dir(main, "sid-agy-gate")
